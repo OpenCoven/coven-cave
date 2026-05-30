@@ -242,12 +242,10 @@ function SessionsTab({
   familiar: Familiar | null;
   sessions: SessionRow[];
 }) {
-  const [scope, setScope] = useState<"familiar" | "all">("familiar");
-
   const filtered = useMemo(() => {
-    if (scope === "all" || !familiar) return sessions;
+    if (!familiar) return [];
     return sessions.filter((s) => s.familiarId === familiar.id);
-  }, [sessions, scope, familiar]);
+  }, [sessions, familiar]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, SessionRow[]>();
@@ -260,27 +258,18 @@ function SessionsTab({
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
+  if (!familiar) {
+    return <p className="p-4 text-xs text-zinc-500">Pick a familiar to see their sessions.</p>;
+  }
+
   return (
     <div className="flex h-full flex-col text-xs">
-      <div className="flex items-center gap-1 border-b border-zinc-800 p-2">
-        {(["familiar", "all"] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setScope(s)}
-            className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-widest transition-colors ${
-              scope === s
-                ? "bg-violet-600/80 text-white"
-                : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
-            }`}
-          >
-            {s === "familiar"
-              ? familiar
-                ? familiar.display_name.toLowerCase()
-                : "familiar"
-              : "all"}
-          </button>
-        ))}
-        <span className="ml-auto text-[10px] text-zinc-500">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+        <span className="flex items-center gap-1.5 text-zinc-300">
+          <span className="text-sm">{familiar.emoji}</span>
+          <span className="font-semibold">{familiar.display_name}</span>
+        </span>
+        <span className="text-[10px] text-zinc-500">
           {filtered.length} session{filtered.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -288,9 +277,7 @@ function SessionsTab({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <p className="p-4 text-zinc-500">
-            {scope === "familiar" && familiar
-              ? `No sessions tied to ${familiar.display_name} yet — start one from the terminal.`
-              : "No sessions yet."}
+            No sessions tied to {familiar.display_name} yet — start one from the terminal.
           </p>
         ) : (
           <div className="space-y-4 p-2">
@@ -321,14 +308,7 @@ function SessionsTab({
                             {age(s.updated_at)}
                           </span>
                         </div>
-                        <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-zinc-500">
-                          <span className="truncate">{s.project_root}</span>
-                          {s.familiarId ? (
-                            <span className="shrink-0 rounded bg-zinc-800 px-1 py-px text-zinc-400">
-                              {s.familiarId}
-                            </span>
-                          ) : null}
-                        </div>
+                        <div className="mt-0.5 truncate text-[10px] text-zinc-500">{s.project_root}</div>
                       </li>
                     );
                   })}
