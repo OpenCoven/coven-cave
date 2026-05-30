@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatView } from "@/components/chat-view";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -16,12 +16,43 @@ type Props = {
   onSessionStarted?: () => void;
 };
 
-export function ChatRouter({ familiar, sessions, daemonRunning, onSessionStarted }: Props) {
+export type ChatRouterHandle = {
+  goToList: () => void;
+  newChat: () => void;
+  openSession: (sessionId: string) => void;
+  currentSessionId: () => string | null;
+  clearTranscript: () => void;
+  runSlash: (command: string) => void;
+};
+
+type ChatViewHandle = {
+  clearTranscript: () => void;
+  runSlash: (command: string) => void;
+};
+
+export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
+  { familiar, sessions, daemonRunning, onSessionStarted },
+  ref,
+) {
   const [view, setView] = useState<View>({ kind: "list" });
+  const viewHandle = useRef<ChatViewHandle | null>(null);
 
   useEffect(() => {
     setView({ kind: "list" });
   }, [familiar?.id]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      goToList: () => setView({ kind: "list" }),
+      newChat: () => setView({ kind: "chat", sessionId: null }),
+      openSession: (sessionId: string) => setView({ kind: "chat", sessionId }),
+      currentSessionId: () => (view.kind === "chat" ? view.sessionId : null),
+      clearTranscript: () => viewHandle.current?.clearTranscript(),
+      runSlash: (command: string) => viewHandle.current?.runSlash(command),
+    }),
+    [view],
+  );
 
   if (!familiar) {
     return (
@@ -45,6 +76,7 @@ export function ChatRouter({ familiar, sessions, daemonRunning, onSessionStarted
 
   return (
     <ChatView
+      ref={viewHandle}
       familiar={familiar}
       sessionId={view.sessionId}
       daemonRunning={daemonRunning}
@@ -55,4 +87,4 @@ export function ChatRouter({ familiar, sessions, daemonRunning, onSessionStarted
       }}
     />
   );
-}
+});
