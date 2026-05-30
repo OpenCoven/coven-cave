@@ -1,8 +1,8 @@
 import {
   computeNextOccurrence,
-  createItem,
   loadInbox,
   saveInbox,
+  withInboxLock,
   type InboxItem,
 } from "@/lib/cave-inbox";
 
@@ -64,54 +64,58 @@ export async function snapshot(): Promise<InboxItem[]> {
 }
 
 async function tick(): Promise<void> {
-  const now = Date.now();
-  const file = await loadInbox();
+  const fired = await withInboxLock(async () => {
+    const now = Date.now();
+    const file = await loadInbox();
 
-  const dueIdx: number[] = [];
-  for (let i = 0; i < file.items.length; i++) {
-    const it = file.items[i];
-    if (it.status !== "pending") continue;
-    const target = it.fireAt ? Date.parse(it.fireAt) : NaN;
-    if (Number.isFinite(target) && target <= now) {
-      dueIdx.push(i);
-    }
-  }
-
-  if (dueIdx.length === 0) return;
-
-  const fired: InboxItem[] = [];
-  const nowIso = new Date(now).toISOString();
-  for (const i of dueIdx) {
-    const it = file.items[i];
-    const updated: InboxItem = {
-      ...it,
-      status: "fired",
-      firedAt: nowIso,
-      updatedAt: nowIso,
-    };
-    file.items[i] = updated;
-    fired.push(updated);
-
-    if (updated.recurrence && updated.recurrence.type !== "none") {
-      const nextIso = computeNextOccurrence(updated.recurrence, now);
-      if (nextIso) {
-        const sibling: InboxItem = {
-          ...updated,
-          id: crypto.randomUUID(),
-          status: "pending",
-          fireAt: nextIso,
-          firedAt: null,
-          snoozeUntil: null,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        };
-        file.items.push(sibling);
+    const dueIdx: number[] = [];
+    for (let i = 0; i < file.items.length; i++) {
+      const it = file.items[i];
+      if (it.status !== "pending") continue;
+      const target = it.fireAt ? Date.parse(it.fireAt) : NaN;
+      if (Number.isFinite(target) && target <= now) {
+        dueIdx.push(i);
       }
     }
-  }
 
-  await saveInbox(file);
-  broadcast({ type: "fired", items: fired });
+    if (dueIdx.length === 0) return [] as InboxItem[];
+
+    const out: InboxItem[] = [];
+    const nowIso = new Date(now).toISOString();
+    for (const i of dueIdx) {
+      const it = file.items[i];
+      const updated: InboxItem = {
+        ...it,
+        status: "fired",
+        firedAt: nowIso,
+        updatedAt: nowIso,
+      };
+      file.items[i] = updated;
+      out.push(updated);
+
+      if (updated.recurrence && updated.recurrence.type !== "none") {
+        const nextIso = computeNextOccurrence(updated.recurrence, now);
+        if (nextIso) {
+          const sibling: InboxItem = {
+            ...updated,
+            id: crypto.randomUUID(),
+            status: "pending",
+            fireAt: nextIso,
+            firedAt: null,
+            snoozeUntil: null,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
+          file.items.push(sibling);
+        }
+      }
+    }
+
+    await saveInbox(file);
+    return out;
+  });
+
+  if (fired.length) broadcast({ type: "fired", items: fired });
 }
 
 export function startScheduler(): void {

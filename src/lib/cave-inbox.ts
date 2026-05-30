@@ -65,6 +65,23 @@ export async function saveInbox(file: InboxFile): Promise<void> {
   await writeFile(INBOX_PATH, JSON.stringify(file, null, 2), "utf8");
 }
 
+// Serialize all read-modify-write sequences against the inbox file. Without
+// this, two concurrent route handlers can each load N items, each remove
+// their target, and each save N-1 — the last writer wins and the other
+// deletion is lost. Attached to globalThis so the chain survives Next.js
+// dev hot-reloads (same pattern as the scheduler singleton).
+declare global {
+  // eslint-disable-next-line no-var
+  var __inboxWriteChain: Promise<unknown> | undefined;
+}
+
+export function withInboxLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = globalThis.__inboxWriteChain ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  globalThis.__inboxWriteChain = next.catch(() => undefined);
+  return next;
+}
+
 export type NewItemInput = {
   kind: ItemKind;
   title: string;
@@ -78,59 +95,65 @@ export type NewItemInput = {
 };
 
 export async function createItem(input: NewItemInput): Promise<InboxItem> {
-  const file = await loadInbox();
-  const now = new Date().toISOString();
-  const status: ItemStatus =
-    input.kind === "agent" && !input.fireAt ? "fired" : "pending";
-  const item: InboxItem = {
-    id: crypto.randomUUID(),
-    kind: input.kind,
-    title: input.title.trim(),
-    body: input.body?.trim() || undefined,
-    status,
-    createdAt: now,
-    updatedAt: now,
-    fireAt: input.fireAt ?? null,
-    firedAt: status === "fired" ? now : null,
-    snoozeUntil: null,
-    recurrence: input.recurrence ?? { type: "none" },
-    source: input.source ?? "user",
-    familiarId: input.familiarId ?? null,
-    sessionId: input.sessionId ?? null,
-    link: input.link ?? null,
-  };
-  file.items.push(item);
-  await saveInbox(file);
-  return item;
+  return withInboxLock(async () => {
+    const file = await loadInbox();
+    const now = new Date().toISOString();
+    const status: ItemStatus =
+      input.kind === "agent" && !input.fireAt ? "fired" : "pending";
+    const item: InboxItem = {
+      id: crypto.randomUUID(),
+      kind: input.kind,
+      title: input.title.trim(),
+      body: input.body?.trim() || undefined,
+      status,
+      createdAt: now,
+      updatedAt: now,
+      fireAt: input.fireAt ?? null,
+      firedAt: status === "fired" ? now : null,
+      snoozeUntil: null,
+      recurrence: input.recurrence ?? { type: "none" },
+      source: input.source ?? "user",
+      familiarId: input.familiarId ?? null,
+      sessionId: input.sessionId ?? null,
+      link: input.link ?? null,
+    };
+    file.items.push(item);
+    await saveInbox(file);
+    return item;
+  });
 }
 
 export async function updateItem(
   id: string,
   patch: Partial<Omit<InboxItem, "id" | "createdAt">>,
 ): Promise<InboxItem | null> {
-  const file = await loadInbox();
-  const idx = file.items.findIndex((i) => i.id === id);
-  if (idx < 0) return null;
-  const current = file.items[idx];
-  const next: InboxItem = {
-    ...current,
-    ...patch,
-    id: current.id,
-    createdAt: current.createdAt,
-    updatedAt: new Date().toISOString(),
-  };
-  file.items[idx] = next;
-  await saveInbox(file);
-  return next;
+  return withInboxLock(async () => {
+    const file = await loadInbox();
+    const idx = file.items.findIndex((i) => i.id === id);
+    if (idx < 0) return null;
+    const current = file.items[idx];
+    const next: InboxItem = {
+      ...current,
+      ...patch,
+      id: current.id,
+      createdAt: current.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+    file.items[idx] = next;
+    await saveInbox(file);
+    return next;
+  });
 }
 
 export async function deleteItem(id: string): Promise<boolean> {
-  const file = await loadInbox();
-  const before = file.items.length;
-  file.items = file.items.filter((i) => i.id !== id);
-  if (file.items.length === before) return false;
-  await saveInbox(file);
-  return true;
+  return withInboxLock(async () => {
+    const file = await loadInbox();
+    const before = file.items.length;
+    file.items = file.items.filter((i) => i.id !== id);
+    if (file.items.length === before) return false;
+    await saveInbox(file);
+    return true;
+  });
 }
 
 export async function listPending(): Promise<InboxItem[]> {
