@@ -1,19 +1,20 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
-import { nextCronFireFromLocal, parseCron } from "@/lib/cron";
+import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 
 const INBOX_PATH = path.join(homedir(), ".coven", "cave-inbox.json");
 
 export type ItemKind = "reminder" | "agent" | "response-needed";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";
 
-export type Recurrence =
-  | { type: "none" }
-  | { type: "interval"; everyMs: number }
-  | { type: "daily"; hour: number; minute: number }
-  | { type: "weekly"; days: number[]; hour: number; minute: number }
-  | { type: "cron"; expr: string };
+// Re-exported so existing consumers that say
+// `import { Recurrence, computeNextOccurrence } from "@/lib/cave-inbox"`
+// keep working. Definitions live in inbox-recurrence.ts (pure, no node:
+// imports) so client components can reach them without dragging fs/promises
+// into the browser bundle.
+export { computeNextOccurrence };
+export type { Recurrence };
 
 export type LinkRef = {
   kind: "session" | "card" | "memory" | "url";
@@ -181,45 +182,6 @@ export async function markDone(id: string): Promise<InboxItem | null> {
 
 export async function dismissItem(id: string): Promise<InboxItem | null> {
   return updateItem(id, { status: "dismissed" });
-}
-
-/**
- * Phase 1 supports only one-shots; recurrence stays for forward compatibility.
- * Returns null when there is no further occurrence (one-shot, or "none").
- */
-export function computeNextOccurrence(
-  rec: Recurrence,
-  fromMs: number,
-): string | null {
-  if (rec.type === "none") return null;
-  if (rec.type === "interval") {
-    return new Date(fromMs + rec.everyMs).toISOString();
-  }
-  if (rec.type === "daily") {
-    const d = new Date(fromMs);
-    d.setSeconds(0, 0);
-    d.setHours(rec.hour, rec.minute, 0, 0);
-    while (d.getTime() <= fromMs) d.setDate(d.getDate() + 1);
-    return d.toISOString();
-  }
-  if (rec.type === "weekly") {
-    if (rec.days.length === 0) return null;
-    const allowed = new Set(rec.days);
-    const d = new Date(fromMs);
-    d.setSeconds(0, 0);
-    d.setHours(rec.hour, rec.minute, 0, 0);
-    for (let i = 0; i < 14; i++) {
-      if (d.getTime() > fromMs && allowed.has(d.getDay())) return d.toISOString();
-      d.setDate(d.getDate() + 1);
-    }
-    return null;
-  }
-  if (rec.type === "cron") {
-    const fields = parseCron(rec.expr);
-    if (!fields) return null;
-    return nextCronFireFromLocal(fields, fromMs);
-  }
-  return null;
 }
 
 export { INBOX_PATH };

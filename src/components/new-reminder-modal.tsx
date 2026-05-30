@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import { computeNextOccurrence, type Recurrence } from "@/lib/cave-inbox";
+import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen, splitWhenAndText } from "@/lib/parse-when";
 import { parseCron } from "@/lib/cron";
 
