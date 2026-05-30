@@ -1,4 +1,4 @@
-import { computeNextOccurrence, type Recurrence } from "@/lib/cave-inbox";
+import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 
 export type ParsedWhen = {
   fireAt: string;
