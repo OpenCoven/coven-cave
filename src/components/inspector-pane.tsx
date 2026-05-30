@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { Familiar } from "@/lib/types";
 
-type Tab = "memory" | "sessions" | "tools";
+type Tab = "memory" | "tools";
 
 type MemoryEntry = {
   root: string;
@@ -34,11 +34,10 @@ type Skill = {
   description?: string;
 };
 
-type Props = { familiar: Familiar | null; sessions: SessionRow[] };
+type Props = { familiar: Familiar | null };
 
 const TAB_LABEL: Record<Tab, string> = {
   memory: "Memory",
-  sessions: "Sessions",
   tools: "Tools",
 };
 
@@ -53,13 +52,14 @@ function age(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-export function InspectorPane({ familiar, sessions }: Props) {
+export function InspectorPane({ familiar }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
+  void familiar;
 
   return (
     <aside className="flex h-full flex-col border-l border-zinc-800 bg-zinc-900/40">
       <nav className="flex border-b border-zinc-800 text-[11px]">
-        {(["memory", "sessions", "tools"] as const).map((t) => (
+        {(["memory", "tools"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -76,7 +76,6 @@ export function InspectorPane({ familiar, sessions }: Props) {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "memory" ? <MemoryTab /> : null}
-        {tab === "sessions" ? <SessionsTab familiar={familiar} sessions={sessions} /> : null}
         {tab === "tools" ? <ToolsTab /> : null}
       </div>
     </aside>
@@ -229,95 +228,6 @@ function MemoryTab() {
           </li>
         ) : null}
       </ul>
-    </div>
-  );
-}
-
-/* ---------- Sessions tab ---------- */
-
-function SessionsTab({
-  familiar,
-  sessions,
-}: {
-  familiar: Familiar | null;
-  sessions: SessionRow[];
-}) {
-  const filtered = useMemo(() => {
-    if (!familiar) return [];
-    return sessions.filter((s) => s.familiarId === familiar.id);
-  }, [sessions, familiar]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, SessionRow[]>();
-    for (const s of filtered) {
-      const k = s.harness || "unknown";
-      const list = map.get(k) ?? [];
-      list.push(s);
-      map.set(k, list);
-    }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered]);
-
-  if (!familiar) {
-    return <p className="p-4 text-xs text-zinc-500">Pick a familiar to see their sessions.</p>;
-  }
-
-  return (
-    <div className="flex h-full flex-col text-xs">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-        <span className="flex items-center gap-1.5 text-zinc-300">
-          <span className="text-sm">{familiar.emoji}</span>
-          <span className="font-semibold">{familiar.display_name}</span>
-        </span>
-        <span className="text-[10px] text-zinc-500">
-          {filtered.length} session{filtered.length === 1 ? "" : "s"}
-        </span>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {filtered.length === 0 ? (
-          <p className="p-4 text-zinc-500">
-            No sessions tied to {familiar.display_name} yet — start one from the terminal.
-          </p>
-        ) : (
-          <div className="space-y-4 p-2">
-            {grouped.map(([harness, rows]) => (
-              <section key={harness}>
-                <header className="mb-1 flex items-center gap-2 px-1">
-                  <span className="text-[10px] uppercase tracking-widest text-zinc-500">{harness}</span>
-                  <span className="text-[10px] text-zinc-600">{rows.length}</span>
-                </header>
-                <ul className="space-y-1">
-                  {rows.slice(0, 80).map((s) => {
-                    const isRunning = s.status === "running";
-                    return (
-                      <li
-                        key={s.id}
-                        className="rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                isRunning ? "bg-emerald-400 animate-pulse" : "bg-zinc-600"
-                              }`}
-                            />
-                            <span className="truncate text-zinc-200">{s.title || "(untitled)"}</span>
-                          </span>
-                          <span className="shrink-0 font-mono text-[10px] text-zinc-500">
-                            {age(s.updated_at)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 truncate text-[10px] text-zinc-500">{s.project_root}</div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -17,10 +17,18 @@ type CovenEvent = {
 
 type Props = {
   familiar: Familiar | null;
+  /** When set, attach to this existing session (replay + tail). */
+  attachSessionId?: string | null;
+  onBack?: () => void;
   onResponseNeededChange?: (familiarId: string, needed: boolean) => void;
 };
 
-export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
+export function TerminalPane({
+  familiar,
+  attachSessionId,
+  onBack,
+  onResponseNeededChange,
+}: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const fitRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
@@ -29,12 +37,12 @@ export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
   const strippedTailRef = useRef<string>("");
   const familiarIdRef = useRef<string | null>(null);
 
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(attachSessionId ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsReply, setNeedsReply] = useState<boolean>(false);
 
-  // Mount the terminal once
+  // Mount xterm once
   useEffect(() => {
     let disposed = false;
     let resizeObs: ResizeObserver | null = null;
@@ -93,7 +101,6 @@ export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ text: data }),
         });
-        // user replied — clear the "needs reply" flag optimistically
         if (familiarIdRef.current) {
           setNeedsReply(false);
           onResponseNeededChange?.(familiarIdRef.current, false);
@@ -102,9 +109,6 @@ export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
 
       termRef.current = term;
       fitRef.current = fit;
-      term.writeln(
-        "\x1b[38;5;141m✨ CovenCave terminal\x1b[0m — pick a familiar from the rail to start a coven session.",
-      );
 
       resizeObs = new ResizeObserver(() => {
         try {
@@ -125,35 +129,38 @@ export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
     };
   }, [onResponseNeededChange]);
 
-  // Reset session whenever the active familiar changes
+  // Whenever the familiar OR the attached session changes, reset terminal state
   useEffect(() => {
-    sessionRef.current = null;
+    sessionRef.current = attachSessionId ?? null;
     familiarIdRef.current = familiar?.id ?? null;
-    setSessionId(null);
+    setSessionId(attachSessionId ?? null);
     setError(null);
     setNeedsReply(false);
     lastSeqRef.current = 0;
     strippedTailRef.current = "";
     const term = termRef.current;
-    if (term) {
-      term.clear();
-      term.reset();
-      if (familiar) {
-        term.writeln(
-          `\x1b[38;5;141m✨\x1b[0m Ready to summon \x1b[1m${familiar.display_name}\x1b[0m (\x1b[2m${familiar.harness ?? "codex"} · ${familiar.model ?? "?"}\x1b[0m) — press Enter or start typing to begin.`,
-        );
-      } else {
-        term.writeln(
-          "\x1b[38;5;141m✨\x1b[0m Pick a familiar from the rail to start a coven session.",
-        );
-      }
+    if (!term) return;
+    term.clear();
+    term.reset();
+    if (attachSessionId) {
+      term.writeln(
+        `\x1b[2m… attaching to session ${attachSessionId.slice(0, 8)}\x1b[0m`,
+      );
+    } else if (familiar) {
+      term.writeln(
+        `\x1b[38;5;141m✨\x1b[0m New chat with \x1b[1m${familiar.display_name}\x1b[0m (\x1b[2m${familiar.harness ?? "codex"} · ${familiar.model ?? "?"}\x1b[0m) — press Enter or start typing.`,
+      );
+    } else {
+      term.writeln(
+        "\x1b[38;5;141m✨\x1b[0m Pick a familiar from the rail to start a chat.",
+      );
     }
-  }, [familiar?.id, familiar]);
+  }, [familiar?.id, familiar, attachSessionId]);
 
-  // Start a session on first keystroke when none exists
+  // Bootstrap a fresh session on first keystroke when no session is attached
   useEffect(() => {
     const term = termRef.current;
-    if (!term || !familiar) return;
+    if (!term || !familiar || attachSessionId) return;
 
     const disp = term.onData(async (data) => {
       if (sessionRef.current || busy) return;
@@ -162,7 +169,7 @@ export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
     });
     return () => disp.dispose();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [familiar, busy]);
+  }, [familiar, busy, attachSessionId]);
 
   const startSession = async (prompt: string) => {
     if (sessionRef.current || busy || !familiar) return;
@@ -248,20 +255,32 @@ export function TerminalPane({ familiar, onResponseNeededChange }: Props) {
 
   return (
     <section className="flex h-full flex-col bg-zinc-950">
-      <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-        {familiar ? (
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-lg">{familiar.emoji}</span>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">{familiar.display_name}</div>
-              <div className="truncate text-[11px] text-zinc-500">
-                {familiar.harness ?? "?"} · <span className="font-mono">{familiar.model ?? "?"}</span>
+      <header className="flex items-center justify-between border-b border-zinc-800 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          {onBack ? (
+            <button
+              onClick={onBack}
+              className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-300 transition-colors hover:bg-zinc-800"
+              title="Back to chats"
+            >
+              ← chats
+            </button>
+          ) : null}
+          {familiar ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-lg">{familiar.emoji}</span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{familiar.display_name}</div>
+                <div className="truncate text-[11px] text-zinc-500">
+                  {familiar.harness ?? "?"} ·{" "}
+                  <span className="font-mono">{familiar.model ?? "?"}</span>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="text-sm text-zinc-500">No familiar selected</div>
-        )}
+          ) : (
+            <div className="text-sm text-zinc-500">No familiar selected</div>
+          )}
+        </div>
         <div className="flex items-center gap-3 text-xs text-zinc-500">
           {needsReply ? (
             <span className="font-mono text-amber-400" title="Waiting for your response">
