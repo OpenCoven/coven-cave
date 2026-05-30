@@ -54,7 +54,6 @@ function age(iso: string): string {
 
 export function InspectorPane({ familiar }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
-  void familiar;
 
   return (
     <aside className="flex h-full flex-col border-l border-zinc-800 bg-zinc-900/40">
@@ -75,7 +74,7 @@ export function InspectorPane({ familiar }: Props) {
       </nav>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "memory" ? <MemoryTab /> : null}
+        {tab === "memory" ? <MemoryTab familiar={familiar} /> : null}
         {tab === "tools" ? <ToolsTab /> : null}
       </div>
     </aside>
@@ -84,13 +83,36 @@ export function InspectorPane({ familiar }: Props) {
 
 /* ---------- Memory tab ---------- */
 
-function MemoryTab() {
+type CovenMemoryEntry = {
+  id: string;
+  familiar_id: string;
+  title: string;
+  path: string;
+  updated_at: string;
+  excerpt?: string;
+};
+
+function MemoryTab({ familiar }: { familiar: Familiar | null }) {
+  const [mode, setMode] = useState<"coven" | "files">("coven");
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [openFile, setOpenFile] = useState<MemoryFile | null>(null);
   const [reveal, setReveal] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/coven-memory", { cache: "no-store" });
+        const json = await res.json();
+        if (json.ok) setCovenEntries(json.entries ?? []);
+      } catch {
+        /* keep empty — files mode still works */
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -140,6 +162,20 @@ function MemoryTab() {
     if (!q) return entries;
     return entries.filter((e) => e.relPath.toLowerCase().includes(q) || e.rootLabel.toLowerCase().includes(q));
   }, [entries, query]);
+
+  const covenFiltered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return covenEntries
+      .filter((e) => !familiar || e.familiar_id === familiar.id)
+      .filter(
+        (e) =>
+          !q ||
+          e.title.toLowerCase().includes(q) ||
+          (e.excerpt ?? "").toLowerCase().includes(q) ||
+          e.familiar_id.toLowerCase().includes(q),
+      )
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+  }, [covenEntries, query, familiar]);
 
   if (error) {
     return <p className="p-4 text-xs text-amber-300">Memory unavailable: {error}</p>;
@@ -194,14 +230,82 @@ function MemoryTab() {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="flex items-center gap-1 border-b border-zinc-800 px-2 py-1.5">
+        {(["coven", "files"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => {
+              setQuery("");
+              setMode(m);
+            }}
+            className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-widest transition-colors ${
+              mode === m
+                ? "bg-violet-600/80 text-white"
+                : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+            }`}
+          >
+            {m}
+          </button>
+        ))}
+        <span className="ml-auto text-[10px] text-zinc-500">
+          {mode === "coven" ? covenFiltered.length : filtered.length}
+        </span>
+      </div>
       <div className="border-b border-zinc-800 p-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter memory files…"
+          placeholder={mode === "coven" ? "Filter coven memory…" : "Filter memory files…"}
           className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-600"
         />
       </div>
+
+      {mode === "coven" ? (
+        <ul className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
+          {covenFiltered.length === 0 ? (
+            <li className="px-2 py-4 text-center text-zinc-600">
+              {familiar
+                ? `No coven memory entries for ${familiar.display_name} yet.`
+                : "No coven memory entries yet."}
+            </li>
+          ) : null}
+          {covenFiltered.map((e) => (
+            <li key={e.id} className="mb-2 rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 truncate">
+                  <span className="rounded bg-zinc-800 px-1 py-px text-[10px] text-zinc-400">
+                    {e.familiar_id}
+                  </span>
+                  <span className="truncate text-zinc-200">{e.title}</span>
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+                  {e.updated_at}
+                </span>
+              </div>
+              {e.excerpt ? (
+                <p className="mt-1 line-clamp-3 text-[10px] leading-snug text-zinc-400">
+                  {e.excerpt}
+                </p>
+              ) : null}
+              <button
+                onClick={() => {
+                  // Open the underlying file in the redacted file viewer if it
+                  // sits inside one of our allowed memory roots.
+                  const guessed = e.path.startsWith("/")
+                    ? e.path
+                    : `${process.env.NEXT_PUBLIC_COVEN_MEMORY_ROOT ?? "/Users/buns/.coven/memory"}/${e.path}`;
+                  setOpenPath(guessed);
+                }}
+                className="mt-1 text-[10px] text-violet-300 hover:text-violet-200"
+              >
+                open file →
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {mode === "files" ? (
       <ul className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
         {filtered.length === 0 ? (
           <li className="px-2 py-4 text-center text-zinc-600">No matches.</li>
@@ -228,6 +332,7 @@ function MemoryTab() {
           </li>
         ) : null}
       </ul>
+      ) : null}
     </div>
   );
 }
