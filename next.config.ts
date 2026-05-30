@@ -14,6 +14,14 @@ const nextConfig: NextConfig = {
       "./scripts/**/*",
     ],
   },
+  // Next's tracer misses runtime-required packages that go through its
+  // own require-hook (e.g. @swc/helpers/_/_interop_require_default).
+  // Force-include the offenders so server.js can boot.
+  outputFileTracingIncludes: {
+    "*": [
+      "./node_modules/@swc/helpers/**/*",
+    ],
+  },
 };
 
 export default nextConfig;
