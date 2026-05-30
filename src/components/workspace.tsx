@@ -65,11 +65,11 @@ export function Workspace() {
         <Panel
           panelRef={leftRef}
           id="rail"
-          defaultSize={22}
-          minSize={18}
-          maxSize={34}
+          defaultSize="22%"
+          minSize="18%"
+          maxSize="34%"
           collapsible
-          collapsedSize={0}
+          collapsedSize="0%"
         >
           <FamiliarRail
             familiars={familiars}
@@ -81,7 +81,7 @@ export function Workspace() {
 
         <Separator className={handleClass} />
 
-        <Panel id="chat" defaultSize={50} minSize={28}>
+        <Panel id="chat" defaultSize="50%" minSize="28%">
           <ChatPane familiar={active} />
         </Panel>
 
@@ -90,11 +90,11 @@ export function Workspace() {
         <Panel
           panelRef={rightRef}
           id="inspector"
-          defaultSize={28}
-          minSize={22}
-          maxSize={42}
+          defaultSize="28%"
+          minSize="22%"
+          maxSize="42%"
           collapsible
-          collapsedSize={0}
+          collapsedSize="0%"
         >
           <InspectorPane familiar={active} />
         </Panel>
