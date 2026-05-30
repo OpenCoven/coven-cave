@@ -36,6 +36,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/tui", hint: "open in Coven Code", description: "Open the current session in the external Coven Code TUI.", section: "view" },
   { name: "/board", hint: "Coven Board", description: "Open the Coven Board kanban view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
+  { name: "/inbox", hint: "Inbox", description: "Open the notifications & reminders inbox.", section: "view" },
+  { name: "/remind", hint: "new reminder", description: "Create a reminder. Try “/remind in 30m check the build”.", argPlaceholder: "when + text", section: "view" },
 
   // Launch
   { name: "/run", hint: "run task", description: "Run a task through the active familiar's harness.", argPlaceholder: "task…", section: "launch" },

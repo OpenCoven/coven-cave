@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
+import type { Recurrence } from "@/lib/cave-inbox";
 import { parseWhen, splitWhenAndText } from "@/lib/parse-when";
 
 export type NewReminderDraft = {
@@ -9,7 +10,39 @@ export type NewReminderDraft = {
   body?: string;
   fireAt: string;
   familiarId: string | null;
+  recurrence?: Recurrence;
 };
+
+type RecurPreset =
+  | "none"
+  | "every-30m"
+  | "every-1h"
+  | "every-day"
+  | "every-weekday"
+  | "every-weekend";
+
+const RECUR_PRESETS: { value: RecurPreset; label: string }[] = [
+  { value: "none", label: "One-shot" },
+  { value: "every-30m", label: "Every 30 min" },
+  { value: "every-1h", label: "Every 1 hour" },
+  { value: "every-day", label: "Every day (same time)" },
+  { value: "every-weekday", label: "Every weekday (same time)" },
+  { value: "every-weekend", label: "Every weekend (same time)" },
+];
+
+function recurrenceFor(preset: RecurPreset, fireAt: string): Recurrence {
+  if (preset === "none") return { type: "none" };
+  if (preset === "every-30m") return { type: "interval", everyMs: 30 * 60_000 };
+  if (preset === "every-1h") return { type: "interval", everyMs: 60 * 60_000 };
+  const d = new Date(fireAt);
+  const hour = d.getHours();
+  const minute = d.getMinutes();
+  if (preset === "every-day") return { type: "daily", hour, minute };
+  if (preset === "every-weekday")
+    return { type: "weekly", days: [1, 2, 3, 4, 5], hour, minute };
+  // every-weekend
+  return { type: "weekly", days: [0, 6], hour, minute };
+}
 
 type Props = {
   open: boolean;
@@ -42,6 +75,7 @@ export function NewReminderModal({
   const [whenText, setWhenText] = useState(defaultWhenText);
   const [manualFireAt, setManualFireAt] = useState<string>("");
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
+  const [recurPreset, setRecurPreset] = useState<RecurPreset>("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +85,7 @@ export function NewReminderModal({
     setWhenText(defaultWhenText);
     setManualFireAt("");
     setFamiliarId(defaultFamiliarId);
+    setRecurPreset("none");
     setError(null);
   }, [open, defaultFamiliarId, defaultWhenText, defaultTitle]);
 
@@ -68,6 +103,26 @@ export function NewReminderModal({
     if (!w) return null;
     return parseWhen(w);
   }, [whenText]);
+
+  // If the natural-language phrase implies a recurrence, reflect it in the
+  // picker — user sees what was inferred and can override.
+  useEffect(() => {
+    if (!parsed) return;
+    const r = parsed.recurrence;
+    if (r.type === "none") {
+      setRecurPreset("none");
+    } else if (r.type === "interval" && r.everyMs === 30 * 60_000) {
+      setRecurPreset("every-30m");
+    } else if (r.type === "interval" && r.everyMs === 60 * 60_000) {
+      setRecurPreset("every-1h");
+    } else if (r.type === "daily") {
+      setRecurPreset("every-day");
+    } else if (r.type === "weekly") {
+      const days = r.days.slice().sort().join(",");
+      if (days === "1,2,3,4,5") setRecurPreset("every-weekday");
+      else if (days === "0,6") setRecurPreset("every-weekend");
+    }
+  }, [parsed]);
 
   const resolvedFireAt = useMemo<string | null>(() => {
     if (manualFireAt) {
@@ -89,6 +144,7 @@ export function NewReminderModal({
         title: title.trim(),
         fireAt: resolvedFireAt,
         familiarId,
+        recurrence: recurrenceFor(recurPreset, resolvedFireAt),
       });
       onClose();
     } catch (err) {
@@ -180,19 +236,28 @@ export function NewReminderModal({
           />
         </Field>
 
-        <Field label="Familiar">
-          <Select
-            value={familiarId ?? ""}
-            onChange={(v) => setFamiliarId(v || null)}
-            options={[
-              { value: "", label: "No familiar" },
-              ...familiars.map((f) => ({
-                value: f.id,
-                label: `${f.display_name} · ${f.harness ?? "?"}`,
-              })),
-            ]}
-          />
-        </Field>
+        <div className="mb-4 grid grid-cols-2 gap-4">
+          <Field label="Repeat">
+            <Select
+              value={recurPreset}
+              onChange={(v) => setRecurPreset(v as RecurPreset)}
+              options={RECUR_PRESETS}
+            />
+          </Field>
+          <Field label="Familiar">
+            <Select
+              value={familiarId ?? ""}
+              onChange={(v) => setFamiliarId(v || null)}
+              options={[
+                { value: "", label: "No familiar" },
+                ...familiars.map((f) => ({
+                  value: f.id,
+                  label: `${f.display_name} · ${f.harness ?? "?"}`,
+                })),
+              ]}
+            />
+          </Field>
+        </div>
 
         {error ? (
           <div className="mb-3 rounded border border-amber-700/40 bg-amber-900/20 px-3 py-1.5 text-xs text-amber-200">

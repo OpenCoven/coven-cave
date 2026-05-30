@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { FamiliarRail } from "@/components/familiar-rail";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
@@ -10,9 +10,14 @@ import { CommandPalette, type PaletteIntent } from "@/components/command-palette
 import { BoardView } from "@/components/board-view";
 import { PluginsView } from "@/components/plugins-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import { InboxView } from "@/components/inbox-view";
+import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
+import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
+import { nativeNotify } from "@/lib/native-notify";
+import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-type Mode = "chats" | "board" | "plugins";
+type Mode = "chats" | "board" | "plugins" | "inbox";
 
 export function Workspace() {
   const leftRef = usePanelRef();
@@ -27,6 +32,13 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("chats");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [reminderModalOpen, setReminderModalOpen] = useState(false);
+  const [reminderModalDefaults, setReminderModalDefaults] = useState<{
+    title: string;
+    whenText: string;
+  }>({ title: "", whenText: "" });
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
 
@@ -65,6 +77,74 @@ export function Workspace() {
     const t = setInterval(loadSessions, 4000);
     return () => clearInterval(t);
   }, [loadFamiliars, loadSessions]);
+
+  // Subscribe to the inbox SSE stream: drives the inbox list, toasts, and
+  // macOS system notifications. EventSource auto-reconnects on its own.
+  useEffect(() => {
+    const es = new EventSource("/api/inbox/stream");
+    es.onmessage = (ev) => {
+      let event: unknown;
+      try {
+        event = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      if (!event || typeof event !== "object") return;
+      const e = event as
+        | { type: "snapshot"; items: InboxItem[] }
+        | { type: "fired"; items: InboxItem[] }
+        | { type: "created"; item: InboxItem }
+        | { type: "updated"; item: InboxItem }
+        | { type: "deleted"; id: string };
+      if (e.type === "snapshot") {
+        setInboxItems(e.items);
+        return;
+      }
+      if (e.type === "created") {
+        setInboxItems((prev) => [...prev, e.item]);
+        if (e.item.status === "fired") {
+          setToasts((prev) => [...prev, toastFromItem(e.item)]);
+          void nativeNotify(e.item.title, e.item.body);
+        }
+        return;
+      }
+      if (e.type === "updated") {
+        setInboxItems((prev) =>
+          prev.map((it) => (it.id === e.item.id ? e.item : it)),
+        );
+        return;
+      }
+      if (e.type === "deleted") {
+        setInboxItems((prev) => prev.filter((it) => it.id !== e.id));
+        return;
+      }
+      if (e.type === "fired") {
+        setInboxItems((prev) => {
+          const byId = new Map(e.items.map((it) => [it.id, it]));
+          const merged = prev.map((it) => byId.get(it.id) ?? it);
+          // Append any siblings that recurrence created and weren't in prev.
+          for (const fresh of e.items) {
+            if (!prev.find((it) => it.id === fresh.id)) merged.push(fresh);
+          }
+          return merged;
+        });
+        if (e.items.length === 1) {
+          const item = e.items[0];
+          setToasts((prev) => [...prev, toastFromItem(item)]);
+          void nativeNotify(item.title, item.body);
+        } else if (e.items.length > 1) {
+          const summary: Toast = {
+            id: `missed-${Date.now()}`,
+            title: `${e.items.length} reminders fired`,
+            body: e.items.map((it) => it.title).join(" · "),
+          };
+          setToasts((prev) => [...prev, summary]);
+          void nativeNotify(summary.title, summary.body);
+        }
+      }
+    };
+    return () => es.close();
+  }, []);
 
   const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
   const closeOnboarding = useCallback(() => {
@@ -123,6 +203,52 @@ export function Workspace() {
     setResponseNeeded((prev) => prev);
   }, []);
   void setFamiliarResponse;
+
+  const refreshInbox = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inbox", { cache: "no-store" });
+      const json = await res.json();
+      if (json.ok) setInboxItems(json.items ?? []);
+    } catch {
+      /* SSE will reconcile on next event */
+    }
+  }, []);
+
+  const openReminderModal = useCallback((title = "", whenText = "") => {
+    setReminderModalDefaults({ title, whenText });
+    setReminderModalOpen(true);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+    // Persist dismissal for real items. Skip synthetic ids (missed-batches,
+    // ephemeral response-needed rows).
+    if (!id.startsWith("missed-") && !id.startsWith("eph:")) {
+      void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
+    }
+  }, []);
+
+  const snoozeToast = useCallback((toast: Toast, untilIso: string) => {
+    if (toast.itemId && !toast.itemId.startsWith("eph:")) {
+      void fetch(`/api/inbox/${toast.itemId}/snooze`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ untilIso }),
+      });
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+  }, []);
+
+  const openToastTarget = useCallback((toast: Toast) => {
+    setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+    if (toast.sessionId) {
+      if (toast.familiarId) setActiveId(toast.familiarId);
+      setMode("chats");
+      setTimeout(() => routerRef.current?.openSession(toast.sessionId!), 0);
+    } else {
+      setMode("inbox");
+    }
+  }, []);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
@@ -184,6 +310,17 @@ export function Workspace() {
         case "/chats":
           setMode("chats");
           return;
+        case "/inbox":
+          setMode("inbox");
+          return;
+        case "/remind": {
+          const args = (intent.args ?? "").trim();
+          const { title, whenText } = args
+            ? draftFromSlashArgs(args)
+            : { title: "", whenText: "" };
+          openReminderModal(title, whenText);
+          return;
+        }
         case "/palette":
           setPaletteOpen(true);
           return;
@@ -254,6 +391,41 @@ export function Workspace() {
   const handleClass =
     "w-px bg-zinc-800 transition-colors hover:bg-purple-500/60 data-[resize-handle-state=drag]:bg-purple-500";
 
+  // Ephemeral bridge: turn each "needs response" familiar into a transient
+  // InboxItem so the bell badge, inbox view, and inspector tab all surface it
+  // without writing anything to disk. IDs are prefixed `eph:` so dismiss/snooze
+  // handlers can detect and skip the API call.
+  const inboxItemsWithEphemeral = useMemo<InboxItem[]>(() => {
+    if (responseNeeded.size === 0) return inboxItems;
+    const ephemeral: InboxItem[] = [];
+    const nowIso = new Date().toISOString();
+    for (const familiarId of responseNeeded) {
+      const familiar = familiars.find((f) => f.id === familiarId);
+      const latestSession = sessions
+        .filter((s) => s.familiarId === familiarId)
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0];
+      ephemeral.push({
+        id: `eph:response-needed:${familiarId}`,
+        kind: "response-needed",
+        title: familiar
+          ? `${familiar.display_name} needs a reply`
+          : `${familiarId} needs a reply`,
+        status: "pending",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        fireAt: null,
+        firedAt: null,
+        snoozeUntil: null,
+        recurrence: { type: "none" },
+        source: "system",
+        familiarId,
+        sessionId: latestSession?.id ?? null,
+        link: latestSession ? { kind: "session", ref: latestSession.id } : null,
+      });
+    }
+    return [...inboxItems, ...ephemeral];
+  }, [inboxItems, responseNeeded, familiars, sessions]);
+
   return (
     <div className="flex h-screen w-screen flex-col bg-zinc-950 text-zinc-100">
       <DaemonBar
@@ -262,10 +434,21 @@ export function Workspace() {
         responseNeededCount={responseNeeded.size}
         onRunningChange={setDaemonRunning}
         onOpenOnboarding={openOnboarding}
+        inboxItems={inboxItemsWithEphemeral}
+        onOpenInbox={() => setMode("inbox")}
+        onOpenInboxItem={(item) => {
+          if (item.sessionId) {
+            if (item.familiarId) setActiveId(item.familiarId);
+            setMode("chats");
+            setTimeout(() => routerRef.current?.openSession(item.sessionId!), 0);
+          } else {
+            setMode("inbox");
+          }
+        }}
       />
 
       <nav className="flex items-center gap-1 border-b border-zinc-900 bg-zinc-950 px-3 py-1.5 text-[11px]">
-        {(["chats", "board", "plugins"] as const).map((m) => (
+        {(["chats", "board", "inbox", "plugins"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setMode(m)}
@@ -275,7 +458,27 @@ export function Workspace() {
                 : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
             }`}
           >
-            {m === "chats" ? "Chats" : m === "board" ? "Board" : "Plugins"}
+            {m === "chats"
+              ? "Chats"
+              : m === "board"
+              ? "Board"
+              : m === "inbox"
+              ? `Inbox${
+                  inboxItemsWithEphemeral.filter(
+                    (i) =>
+                      i.status === "fired" ||
+                      (i.status === "pending" && i.kind === "response-needed"),
+                  ).length
+                    ? ` · ${
+                        inboxItemsWithEphemeral.filter(
+                          (i) =>
+                            i.status === "fired" ||
+                            (i.status === "pending" && i.kind === "response-needed"),
+                        ).length
+                      }`
+                    : ""
+                }`
+              : "Plugins"}
           </button>
         ))}
         <span className="ml-auto text-[10px] text-zinc-600">⌘K palette · ⌘B rail · ⇧⌘B inspector</span>
@@ -329,6 +532,18 @@ export function Workspace() {
                 setTimeout(() => routerRef.current?.openSession(sessionId), 0);
               }}
             />
+          ) : mode === "inbox" ? (
+            <InboxView
+              items={inboxItemsWithEphemeral}
+              familiars={familiars}
+              onRefresh={refreshInbox}
+              onNewReminder={() => openReminderModal()}
+              onOpenSession={(sessionId, familiarId) => {
+                if (familiarId) setActiveId(familiarId);
+                setMode("chats");
+                setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+              }}
+            />
           ) : (
             <PluginsView
               onOpenChat={() => {
@@ -350,13 +565,26 @@ export function Workspace() {
           collapsible
           collapsedSize="0%"
         >
-          <InspectorPane familiar={active} />
+          <InspectorPane
+            familiar={active}
+            inboxItems={inboxItemsWithEphemeral}
+            onOpenInbox={() => setMode("inbox")}
+          />
         </Panel>
       </Group>
 
       <footer className="flex items-center justify-between border-t border-zinc-800 px-3 py-1 text-[10px] text-zinc-500">
         <span>CovenCave · v0</span>
-        <span>mode · {mode === "chats" ? "Chats" : mode === "board" ? "Coven Board" : "Plugins"}</span>
+        <span>
+          mode ·{" "}
+          {mode === "chats"
+            ? "Chats"
+            : mode === "board"
+            ? "Coven Board"
+            : mode === "inbox"
+            ? "Inbox"
+            : "Plugins"}
+        </span>
       </footer>
 
       <CommandPalette
@@ -369,6 +597,38 @@ export function Workspace() {
       />
 
       <OnboardingOverlay open={onboardingOpen} onDismiss={closeOnboarding} />
+
+      <NewReminderModal
+        open={reminderModalOpen}
+        onClose={() => setReminderModalOpen(false)}
+        familiars={familiars}
+        defaultFamiliarId={activeId}
+        defaultWhenText={reminderModalDefaults.whenText}
+        defaultTitle={reminderModalDefaults.title}
+        onCreate={async (draft) => {
+          await fetch("/api/inbox", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              kind: "reminder",
+              title: draft.title,
+              body: draft.body,
+              fireAt: draft.fireAt,
+              familiarId: draft.familiarId,
+              recurrence: draft.recurrence ?? { type: "none" },
+              source: "user",
+            }),
+          });
+          // SSE `created` event will append the row; no manual refresh needed.
+        }}
+      />
+
+      <InboxToastStack
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onSnooze={snoozeToast}
+        onOpen={openToastTarget}
+      />
     </div>
   );
 }

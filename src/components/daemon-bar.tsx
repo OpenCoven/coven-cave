@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { DaemonStatus, SessionRow } from "@/lib/types";
+import type { InboxItem } from "@/lib/cave-inbox";
+import { NotificationBell } from "@/components/notification-bell";
 
 type Props = {
   onDaemonStarted?: () => void;
@@ -9,6 +11,9 @@ type Props = {
   responseNeededCount?: number;
   onRunningChange?: (running: boolean) => void;
   onOpenOnboarding?: () => void;
+  inboxItems?: InboxItem[];
+  onOpenInbox?: () => void;
+  onOpenInboxItem?: (item: InboxItem) => void;
 };
 
 export function DaemonBar({
@@ -17,6 +22,9 @@ export function DaemonBar({
   responseNeededCount = 0,
   onRunningChange,
   onOpenOnboarding,
+  inboxItems = [],
+  onOpenInbox,
+  onOpenInboxItem,
 }: Props) {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -109,6 +117,14 @@ export function DaemonBar({
             refresh
           </button>
         )}
+
+        {onOpenInbox ? (
+          <NotificationBell
+            items={inboxItems}
+            onOpenInbox={onOpenInbox}
+            onOpenItem={onOpenInboxItem}
+          />
+        ) : null}
 
         {onOpenOnboarding ? (
           <button

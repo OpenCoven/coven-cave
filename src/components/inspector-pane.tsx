@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
+import type { InboxItem } from "@/lib/cave-inbox";
 
-type Tab = "memory" | "tools";
+type Tab = "memory" | "tools" | "inbox";
 
 type MemoryEntry = {
   root: string;
@@ -34,15 +35,20 @@ type Skill = {
   description?: string;
 };
 
-type Props = { familiar: Familiar | null };
+type Props = {
+  familiar: Familiar | null;
+  inboxItems?: InboxItem[];
+  onOpenInbox?: () => void;
+};
 
 const TAB_LABEL: Record<Tab, string> = {
   memory: "Memory",
   tools: "Tools",
+  inbox: "Inbox",
 };
 
 function age(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
+  const ms = Math.abs(Date.now() - new Date(iso).getTime());
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -52,13 +58,30 @@ function age(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-export function InspectorPane({ familiar }: Props) {
+export function InspectorPane({ familiar, inboxItems = [], onOpenInbox }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
+
+  const familiarInbox = useMemo(() => {
+    if (!familiar) return [];
+    return inboxItems
+      .filter((i) => i.familiarId === familiar.id)
+      .filter((i) => i.status === "pending" || i.status === "fired")
+      .sort((a, b) => {
+        // Fired first (loudest), then upcoming pending by fireAt asc.
+        if (a.status !== b.status) return a.status === "fired" ? -1 : 1;
+        if (a.status === "fired") {
+          return (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt);
+        }
+        return (a.fireAt ?? "").localeCompare(b.fireAt ?? "");
+      });
+  }, [inboxItems, familiar]);
+
+  const inboxBadge = familiarInbox.filter((i) => i.status === "fired").length;
 
   return (
     <aside className="flex h-full flex-col border-l border-zinc-800 bg-zinc-900/40">
       <nav className="flex border-b border-zinc-800 text-[11px]">
-        {(["memory", "tools"] as const).map((t) => (
+        {(["memory", "tools", "inbox"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -69,6 +92,11 @@ export function InspectorPane({ familiar }: Props) {
             }`}
           >
             {TAB_LABEL[t]}
+            {t === "inbox" && inboxBadge > 0 ? (
+              <span className="ml-1 rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">
+                {inboxBadge}
+              </span>
+            ) : null}
           </button>
         ))}
       </nav>
@@ -76,8 +104,121 @@ export function InspectorPane({ familiar }: Props) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "memory" ? <MemoryTab familiar={familiar} /> : null}
         {tab === "tools" ? <ToolsTab /> : null}
+        {tab === "inbox" ? (
+          <InboxTab
+            familiar={familiar}
+            items={familiarInbox}
+            onOpenInbox={onOpenInbox}
+          />
+        ) : null}
       </div>
     </aside>
+  );
+}
+
+/* ---------- Inbox tab ---------- */
+
+function InboxTab({
+  familiar,
+  items,
+  onOpenInbox,
+}: {
+  familiar: Familiar | null;
+  items: InboxItem[];
+  onOpenInbox?: () => void;
+}) {
+  if (!familiar) {
+    return (
+      <p className="p-4 text-xs text-zinc-500">
+        Select a familiar to see its reminders.
+      </p>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="p-4 text-xs text-zinc-500">
+        Nothing scheduled for {familiar.display_name}.
+        {onOpenInbox ? (
+          <button
+            onClick={onOpenInbox}
+            className="ml-1 text-purple-300 hover:text-purple-200"
+          >
+            Create →
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <ul className="p-2 text-xs">
+      {items.map((it) => (
+        <li
+          key={it.id}
+          className="mb-2 rounded-md border border-zinc-800 bg-zinc-900/40 px-2 py-2"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <span className="flex-1 truncate text-zinc-100">{it.title}</span>
+            <span
+              className={`shrink-0 rounded px-1 py-px text-[9px] uppercase tracking-widest ${
+                it.status === "fired"
+                  ? "bg-amber-500/20 text-amber-200"
+                  : "bg-sky-500/20 text-sky-200"
+              }`}
+            >
+              {it.status}
+            </span>
+          </div>
+          {it.body ? (
+            <p className="mt-1 line-clamp-2 text-[10px] text-zinc-500">{it.body}</p>
+          ) : null}
+          <div className="mt-1 text-[10px] text-zinc-500">
+            {it.status === "fired"
+              ? `fired ${age(it.firedAt ?? it.updatedAt)} ago`
+              : `in ${age(it.fireAt ?? it.updatedAt)}`}
+          </div>
+          <div className="mt-1.5 flex gap-1">
+            {it.id.startsWith("eph:") ? (
+              <span className="text-[10px] italic text-zinc-500">
+                respond in chat to clear
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() =>
+                    void fetch(`/api/inbox/${it.id}/snooze`, {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify({ minutes: 10 }),
+                    })
+                  }
+                  className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800"
+                >
+                  Snooze 10m
+                </button>
+                <button
+                  onClick={() =>
+                    void fetch(`/api/inbox/${it.id}/dismiss`, { method: "POST" })
+                  }
+                  className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800"
+                >
+                  Dismiss
+                </button>
+                {it.status === "fired" ? (
+                  <button
+                    onClick={() =>
+                      void fetch(`/api/inbox/${it.id}/done`, { method: "POST" })
+                    }
+                    className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800"
+                  >
+                    Done
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
