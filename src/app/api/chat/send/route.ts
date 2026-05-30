@@ -167,6 +167,16 @@ export async function POST(req: Request) {
       let assistantText = "";
       let jsonBuf = "";
       let result: { duration_ms?: number; is_error?: boolean } = {};
+      // Keep stderr off the assistant stream — surface it only on failure
+      // or empty-success so users don't see raw 401 traces mid-bubble.
+      const stderrTail: string[] = [];
+      const STDERR_KEEP = 15;
+      // Some harnesses (notably codex) route their error output through
+      // stdout, where the AssistantFilter discards it. Capture any stdout
+      // lines that look like errors as a fallback for the diagnostic.
+      const stdoutErrTail: string[] = [];
+      const STDOUT_ERR_KEEP = 10;
+      const ERR_LINE_RE = /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
 
       const child = spawn("coven", args, {
         cwd,
@@ -208,6 +218,12 @@ export async function POST(req: Request) {
           }
         }
         const cleaned = stripAnsi(line);
+        // Snapshot error-looking stdout lines for the empty-response diagnostic.
+        const trimmed = cleaned.trim();
+        if (trimmed && ERR_LINE_RE.test(trimmed)) {
+          stdoutErrTail.push(trimmed);
+          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
+        }
         const filtered = assistantFilter.push(cleaned + "\n");
         if (filtered) {
           assistantText += filtered;
@@ -226,7 +242,13 @@ export async function POST(req: Request) {
       });
 
       child.stderr.on("data", (data: Buffer) => {
-        push({ kind: "assistant_chunk", text: stripAnsi(data.toString("utf8")) });
+        const text = stripAnsi(data.toString("utf8"));
+        for (const line of text.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          stderrTail.push(trimmed);
+          if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+        }
       });
 
       child.on("error", (err: NodeJS.ErrnoException) => {
@@ -250,6 +272,27 @@ export async function POST(req: Request) {
         if (tail) {
           assistantText += tail;
           push({ kind: "assistant_chunk", text: tail });
+        }
+
+        // Empty-response diagnostic: when the harness reports done but never
+        // produced assistant text, the user otherwise sees a silent empty
+        // bubble. Synthesize a short explanation so they know what to do.
+        if (!assistantText.trim()) {
+          const harness = binding.harness;
+          const durMs = result.duration_ms;
+          const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
+          // Prefer real stderr; fall back to error-looking stdout lines for
+          // harnesses (codex) that route auth errors through stdout.
+          const tailSource = stderrTail.length ? stderrTail : stdoutErrTail;
+          const tailBlock = tailSource.length
+            ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
+            : "";
+          const diagnostic = result.is_error
+            ? `_The "${harness}" harness errored${durSuffix} and returned no text._${tailBlock || "\n\nNo error output captured. Try `/doctor` for diagnostics."}`
+            : `_The "${harness}" harness completed${durSuffix} but produced no output._\n\nUsually this means the CLI is installed but not authenticated to a provider. Try \`/doctor\`, re-run \`coven\`'s sign-in (\`codex login\` / Claude API key), or check the harness logs.${tailBlock}`;
+          assistantText = diagnostic;
+          result.is_error = true; // mark in the chat metadata so it tints amber
+          push({ kind: "assistant_chunk", text: diagnostic });
         }
 
         const finalSessionId = sessionId;
