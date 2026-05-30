@@ -72,11 +72,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSlashIdx(0);
   }, [input]);
 
-  // Load history on attach; show empty composer on a new chat
+  // Load history on attach; new chats open with the /help block visible
   useEffect(() => {
     currentSessionRef.current = sessionId;
     if (!sessionId) {
-      setTurns([]);
+      setTurns([
+        {
+          id: "help-bootstrap",
+          role: "system",
+          text: formatHelp(),
+        },
+      ]);
       return;
     }
     void (async () => {
