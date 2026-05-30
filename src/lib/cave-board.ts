@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 
 const BOARD_PATH = path.join(homedir(), ".coven", "cave-board.json");
 
-export type CardStatus = "backlog" | "inbox" | "running" | "review" | "blocked";
+export type CardStatus = "inbox" | "running" | "review" | "blocked";
 export type CardPriority = "low" | "medium" | "high" | "urgent";
 
 export type Card = {
@@ -21,7 +21,7 @@ export type Card = {
   updatedAt: string;
 };
 
-export const STATUSES: CardStatus[] = ["inbox", "backlog", "running", "review", "blocked"];
+export const STATUSES: CardStatus[] = ["inbox", "running", "review", "blocked"];
 export const PRIORITIES: CardPriority[] = ["urgent", "high", "medium", "low"];
 
 type BoardFile = {

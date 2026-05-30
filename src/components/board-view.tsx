@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 
-type CardStatus = "backlog" | "inbox" | "running" | "review" | "blocked";
+type CardStatus = "inbox" | "running" | "review" | "blocked";
 type CardPriority = "low" | "medium" | "high" | "urgent";
 
 type Card = {
@@ -23,7 +23,6 @@ type Card = {
 
 const COLUMNS: { id: CardStatus; label: string; accent: string }[] = [
   { id: "inbox", label: "Inbox", accent: "border-sky-500/40" },
-  { id: "backlog", label: "Backlog", accent: "border-zinc-700" },
   { id: "running", label: "Running", accent: "border-emerald-500/60" },
   { id: "review", label: "Review", accent: "border-violet-500/60" },
   { id: "blocked", label: "Blocked", accent: "border-rose-500/60" },

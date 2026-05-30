@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 const TEMPLATES = ["Bugfix", "Docs", "Release", "PR review", "Plugin"];
-const STATUSES: CardStatus[] = ["inbox", "backlog", "running", "review", "blocked"];
+const STATUSES: CardStatus[] = ["inbox", "running", "review", "blocked"];
 const PRIORITIES: CardPriority[] = ["urgent", "high", "medium", "low"];
 
-type CardStatus = "backlog" | "inbox" | "running" | "review" | "blocked";
+type CardStatus = "inbox" | "running" | "review" | "blocked";
 type CardPriority = "low" | "medium" | "high" | "urgent";
 
 export type NewCardDraft = {
