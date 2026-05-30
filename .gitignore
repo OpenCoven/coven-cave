@@ -6,3 +6,5 @@ out
 .env*.local
 src-tauri/target
 src-tauri/gen
+tsconfig.tsbuildinfo
+next-env.d.ts

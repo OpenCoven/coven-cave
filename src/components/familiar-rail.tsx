@@ -1,28 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import type { Familiar } from "@/lib/types";
 
-type Familiar = {
-  id: string;
-  name: string;
-  role: string;
-  glyph: string;
-  harness: string;
-  model: string;
+type Props = {
+  familiars: Familiar[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  error?: string | null;
 };
 
-const FAMILIARS: Familiar[] = [
-  { id: "nova", name: "Nova", role: "Companion", glyph: "✨", harness: "openclaw", model: "claude-opus-4-7" },
-  { id: "sage", name: "Sage", role: "Research", glyph: "🜂", harness: "openclaw", model: "openai/gpt-5.5" },
-  { id: "echo", name: "Echo", role: "Memory", glyph: "🜄", harness: "openclaw", model: "openai/gpt-5.5" },
-  { id: "cody", name: "Cody", role: "Code", glyph: "🜔", harness: "claude-code", model: "claude-sonnet-4-6" },
-  { id: "charm", name: "Charm", role: "Voice", glyph: "🜍", harness: "openclaw", model: "openai/gpt-5.4-mini" },
-  { id: "astra", name: "Astra", role: "Navigator", glyph: "🜚", harness: "openclaw", model: "openai/gpt-5.5" },
-];
-
-export function FamiliarRail() {
-  const [active, setActive] = useState<string>("nova");
-  const current = FAMILIARS.find((f) => f.id === active)!;
+export function FamiliarRail({ familiars, activeId, onSelect, error }: Props) {
+  const current = familiars.find((f) => f.id === activeId) ?? null;
 
   return (
     <aside className="flex h-full flex-col border-r border-zinc-800 bg-zinc-900/40">
@@ -32,33 +20,64 @@ export function FamiliarRail() {
       </header>
 
       <ul className="flex-1 overflow-y-auto py-2">
-        {FAMILIARS.map((f) => (
-          <li key={f.id}>
-            <button
-              onClick={() => setActive(f.id)}
-              className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${
-                active === f.id
-                  ? "bg-zinc-800/80 text-zinc-50"
-                  : "text-zinc-300 hover:bg-zinc-800/40"
-              }`}
-            >
-              <span className="text-lg">{f.glyph}</span>
-              <span className="flex-1 truncate">{f.name}</span>
-              <span className="text-xs text-zinc-500">{f.role}</span>
-            </button>
+        {familiars.length === 0 && !error ? (
+          <li className="px-4 py-3 text-xs text-zinc-500">No familiars loaded yet…</li>
+        ) : null}
+
+        {error ? (
+          <li className="mx-3 my-2 rounded-md border border-amber-700/40 bg-amber-900/20 px-3 py-2 text-xs text-amber-200">
+            Familiars unavailable: {error}
           </li>
-        ))}
+        ) : null}
+
+        {familiars.map((f) => {
+          const isActive = activeId === f.id;
+          const online = f.status === "online";
+          return (
+            <li key={f.id}>
+              <button
+                onClick={() => onSelect(f.id)}
+                className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${
+                  isActive
+                    ? "bg-zinc-800/80 text-zinc-50"
+                    : "text-zinc-300 hover:bg-zinc-800/40"
+                }`}
+              >
+                <span className="text-lg leading-none">{f.emoji}</span>
+                <span className="flex flex-1 flex-col min-w-0">
+                  <span className="flex items-center gap-1.5 truncate">
+                    <span className="truncate">{f.display_name}</span>
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        online ? "bg-emerald-400" : "bg-zinc-600"
+                      }`}
+                    />
+                  </span>
+                  <span className="truncate text-[10px] uppercase tracking-widest text-zinc-500">
+                    {f.role}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
 
-      <section className="border-t border-zinc-800 px-4 py-3 text-xs">
-        <div className="mb-2 text-zinc-500">Configurator</div>
-        <dl className="grid grid-cols-[64px_1fr] gap-y-1 text-zinc-300">
-          <dt className="text-zinc-500">Harness</dt>
-          <dd className="font-mono">{current.harness}</dd>
-          <dt className="text-zinc-500">Model</dt>
-          <dd className="font-mono truncate">{current.model}</dd>
-        </dl>
-      </section>
+      {current ? (
+        <section className="border-t border-zinc-800 px-4 py-3 text-xs">
+          <div className="mb-2 text-zinc-500">Configurator</div>
+          <dl className="grid grid-cols-[88px_1fr] gap-y-1 text-zinc-300">
+            <dt className="text-zinc-500">Status</dt>
+            <dd className="font-mono">{current.status ?? "—"}</dd>
+            <dt className="text-zinc-500">Last seen</dt>
+            <dd className="font-mono truncate">{current.last_seen ?? "—"}</dd>
+            <dt className="text-zinc-500">Sessions</dt>
+            <dd className="font-mono">{current.active_sessions ?? 0}</dd>
+            <dt className="text-zinc-500">Memory</dt>
+            <dd className="font-mono truncate">{current.memory_freshness ?? "—"}</dd>
+          </dl>
+        </section>
+      ) : null}
     </aside>
   );
 }

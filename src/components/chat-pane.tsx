@@ -1,36 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import type { Familiar } from "@/lib/types";
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
+type Message = { id: string; role: "user" | "assistant"; content: string };
 
-const SEED: Message[] = [
-  {
-    id: "seed-1",
-    role: "assistant",
-    content:
-      "Welcome to CovenBoard. Pick a familiar from the rail. /commands and @mentions are coming.",
-  },
-];
+type Props = { familiar: Familiar | null };
 
-export function ChatPane() {
-  const [messages, setMessages] = useState<Message[]>(SEED);
+export function ChatPane({ familiar }: Props) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
 
   const send = () => {
     const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!trimmed || !familiar) return;
     setMessages((prev) => [
       ...prev,
       { id: crypto.randomUUID(), role: "user", content: trimmed },
       {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "(streaming not wired yet — v0 stub)",
+        content: `(${familiar.display_name} streaming not wired yet — v0 stub)`,
       },
     ]);
     setInput("");
@@ -39,17 +29,28 @@ export function ChatPane() {
   return (
     <section className="flex h-full flex-col bg-zinc-950">
       <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">✨</span>
-          <div>
-            <div className="text-sm font-semibold">Nova</div>
-            <div className="text-xs text-zinc-500">openclaw · claude-opus-4-7</div>
+        {familiar ? (
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{familiar.emoji}</span>
+            <div>
+              <div className="text-sm font-semibold">{familiar.display_name}</div>
+              <div className="text-xs text-zinc-500">{familiar.role}</div>
+            </div>
           </div>
-        </div>
-        <div className="text-xs text-zinc-500">⌘K · slash · mentions</div>
+        ) : (
+          <div className="text-sm text-zinc-500">No familiar selected</div>
+        )}
+        <div className="text-xs text-zinc-500">slash · mentions</div>
       </header>
 
       <ol className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {messages.length === 0 ? (
+          <li className="text-center text-xs text-zinc-600">
+            {familiar
+              ? `Start a conversation with ${familiar.display_name}.`
+              : "Pick a familiar from the rail."}
+          </li>
+        ) : null}
         {messages.map((m) => (
           <li
             key={m.id}
@@ -79,13 +80,15 @@ export function ChatPane() {
                 send();
               }
             }}
-            placeholder="Message the coven…"
+            placeholder={familiar ? `Message ${familiar.display_name}…` : "Pick a familiar to chat…"}
             rows={1}
-            className="flex-1 resize-none bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+            disabled={!familiar}
+            className="flex-1 resize-none bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500 disabled:opacity-50"
           />
           <button
             onClick={send}
-            className="rounded-lg bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-500"
+            disabled={!familiar}
+            className="rounded-lg bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-500 disabled:opacity-50"
           >
             Send
           </button>
