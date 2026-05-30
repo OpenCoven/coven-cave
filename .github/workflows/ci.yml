@@ -27,7 +27,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm build
+      # Next 16.2.6 / Turbopack has non-deterministic chunking errors on
+      # the same SHA (~50% pass rate observed on this codebase). Retry up
+      # to 3 times with a clean .next between attempts. Remove once we
+      # upgrade past the buggy Turbopack release.
+      - name: pnpm build (with Turbopack flake retry)
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm build; then
+              exit 0
+            fi
+            echo "::warning::pnpm build attempt $attempt failed; retrying with clean .next"
+            rm -rf .next
+          done
+          echo "::error::pnpm build failed 3 times — not a flake"
+          exit 1
 
   cargo-check:
     name: Rust check
