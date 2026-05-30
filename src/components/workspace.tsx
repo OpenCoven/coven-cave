@@ -135,10 +135,46 @@ export function Workspace() {
         case "/chats":
           setMode("chats");
           return;
+        case "/palette":
+          setPaletteOpen(true);
+          return;
+        case "/quit":
+          setMode("chats");
+          routerRef.current?.goToList();
+          return;
         case "/sessions":
           setMode("chats");
           routerRef.current?.goToList();
           return;
+        case "/agent": {
+          const name = (intent.args ?? "").trim().toLowerCase();
+          if (name) {
+            const match = familiars.find(
+              (f) => f.id === name || f.display_name.toLowerCase() === name,
+            );
+            if (match) {
+              setActiveId(match.id);
+              setMode("chats");
+              routerRef.current?.goToList();
+              return;
+            }
+          }
+          setPaletteOpen(true);
+          return;
+        }
+        case "/attach": {
+          const sid = (intent.args ?? "").trim();
+          if (!sid) {
+            setPaletteOpen(true);
+            return;
+          }
+          // Find which familiar this session belongs to so we surface the right rail row
+          const target = sessions.find((s) => s.id === sid);
+          if (target?.familiarId) setActiveId(target.familiarId);
+          setMode("chats");
+          setTimeout(() => routerRef.current?.openSession(sid), 0);
+          return;
+        }
         case "/tui": {
           const sid = routerRef.current?.currentSessionId();
           if (sid) {
@@ -225,6 +261,10 @@ export function Workspace() {
               sessions={sessions}
               daemonRunning={daemonRunning}
               onSessionStarted={loadSessions}
+              onSlashFromChat={(command, args) => {
+                onPaletteIntent({ kind: "slash", command, args });
+                return true;
+              }}
             />
           ) : (
             <BoardView

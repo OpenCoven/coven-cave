@@ -14,6 +14,7 @@ type Props = {
   sessions: SessionRow[];
   daemonRunning?: boolean;
   onSessionStarted?: () => void;
+  onSlashFromChat?: (command: string, args: string) => boolean;
 };
 
 export type ChatRouterHandle = {
@@ -25,13 +26,14 @@ export type ChatRouterHandle = {
   runSlash: (command: string) => void;
 };
 
+
 type ChatViewHandle = {
   clearTranscript: () => void;
   runSlash: (command: string) => void;
 };
 
 export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
-  { familiar, sessions, daemonRunning, onSessionStarted },
+  { familiar, sessions, daemonRunning, onSessionStarted, onSlashFromChat },
   ref,
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
@@ -85,6 +87,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         setView({ kind: "chat", sessionId: sid });
         onSessionStarted?.();
       }}
+      onSlashCommand={onSlashFromChat}
     />
   );
 });

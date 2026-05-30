@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
-import { matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 
 const PROJECT_ROOT =
   process.env.NEXT_PUBLIC_COVEN_PROJECT_ROOT ??
@@ -115,12 +115,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   }, [sessionId]);
 
+  const appendSystem = (text: string) => {
+    setTurns((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), role: "system", text },
+    ]);
+  };
+
+  const runCovenExec = async (subcommand: "doctor" | "daemon") => {
+    appendSystem(`$ coven ${subcommand}${subcommand === "daemon" ? " status" : ""}\nrunning…`);
+    try {
+      const res = await fetch("/api/coven/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command: subcommand }),
+      });
+      const json = await res.json();
+      const out = [json.stdout, json.stderr].filter(Boolean).join("\n").trim();
+      appendSystem(
+        json.ok
+          ? `coven ${subcommand} — exit 0\n\n${out || "(no output)"}`
+          : `coven ${subcommand} — failed${json.exitCode != null ? ` (exit ${json.exitCode})` : ""}\n\n${out || json.error || "(no output)"}`,
+      );
+    } catch (err) {
+      appendSystem(
+        `coven ${subcommand} — error: ${err instanceof Error ? err.message : "unknown"}`,
+      );
+    }
+  };
+
   const intentFromSlash = (raw: string): boolean => {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("/")) return false;
     const space = trimmed.indexOf(" ");
-    const command = space < 0 ? trimmed : trimmed.slice(0, space);
-    const args = space < 0 ? "" : trimmed.slice(space + 1);
+    const token = space < 0 ? trimmed : trimmed.slice(0, space);
+    const args = space < 0 ? "" : trimmed.slice(space + 1).trim();
+    const command = canonicalize(token) ?? token;
 
     if (command === "/clear") {
       setTurns([]);
@@ -128,37 +158,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return true;
     }
     if (command === "/help") {
-      setTurns((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "system",
-          text:
-            "/new — start a fresh chat\n" +
-            "/sessions — back to the chat list\n" +
-            "/tui — open this session in Coven Code TUI\n" +
-            "/clear — clear local transcript\n" +
-            "/run <task> — run a task through the active familiar\n" +
-            "/codex <task> · /claude <task> — force a harness\n" +
-            "/familiar <name> — switch active familiar (use ⌘K too)",
-        },
-      ]);
+      appendSystem(formatHelp());
       setInput("");
       return true;
     }
+    if (command === "/doctor" || command === "/daemon") {
+      setInput("");
+      void runCovenExec(command === "/doctor" ? "doctor" : "daemon");
+      return true;
+    }
+    // Workspace-level commands routed through the parent
     if (onSlashCommand?.(command, args)) {
       setInput("");
       return true;
     }
-    // /run, /codex, /claude — fall through into a normal send with the args as the prompt
+    // /run, /codex, /claude — fall through into a normal send
     if (command === "/run" || command === "/codex" || command === "/claude") {
       if (!args.trim()) return true;
-      setInput(args);
-      // queue real send next tick
+      setInput("");
       setTimeout(() => sendRaw(args), 0);
       return true;
     }
-    return false;
+    // Unknown slash command: surface inline rather than send to the harness
+    appendSystem(`Unknown command: ${token}. Try /help.`);
+    setInput("");
+    return true;
   };
 
   const sendRaw = async (text: string) => {

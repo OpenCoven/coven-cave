@@ -8,7 +8,7 @@ type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
   | { kind: "open-session"; sessionId: string; familiarId?: string | null }
   | { kind: "new-chat"; familiarId?: string }
-  | { kind: "slash"; command: string }
+  | { kind: "slash"; command: string; args?: string }
   | { kind: "back-to-list" }
   | { kind: "open-tui-session"; sessionId: string };
 
