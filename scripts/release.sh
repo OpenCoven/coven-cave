@@ -67,8 +67,16 @@ codesign --force --options runtime --timestamp \
 echo "==> Verifying signature"
 codesign -vvv "$APP_PATH" 2>&1 | tail -n 5
 
-echo "==> Packaging DMG"
-hdiutil create -volname "${APP_NAME}" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH" >/dev/null
+echo "==> Packaging DMG with Applications shortcut"
+# Stage the .app and a symlink to /Applications so the DMG window shows the
+# canonical "drag CovenCave to Applications" install flow. Without this users
+# tend to double-click the .app inside the mounted DMG, which causes macOS to
+# AppTranslocate the bundle into a sandbox path.
+DMG_STAGE=$(mktemp -d -t covencave-dmg)
+trap 'rm -rf "$DMG_STAGE"' EXIT
+cp -R "$APP_PATH" "$DMG_STAGE/"
+ln -s /Applications "$DMG_STAGE/Applications"
+hdiutil create -volname "${APP_NAME}" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
 
 echo "==> Submitting DMG for notarization"
 xcrun notarytool submit "$DMG_PATH" \

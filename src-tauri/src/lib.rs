@@ -28,6 +28,27 @@ fn fatal_exit(msg: &str) -> ! {
     std::process::exit(1);
 }
 
+/// macOS AppTranslocation: if the user launches the app from the DMG or
+/// downloads folder without first dragging it to /Applications, Gatekeeper
+/// runs it from a randomized read-only path under
+/// `/private/var/folders/.../AppTranslocation/`. Bundled resources still work
+/// but anything that needs writable state (or that the user expects to be
+/// "installed") breaks. Surface a clear "Move to Applications" prompt instead
+/// of silently running translocated.
+fn check_app_translocation() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let path = exe.to_string_lossy().to_string();
+    if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
+        return;
+    }
+    let msg = format!(
+        "CovenCave is running from a read-only quarantine path:\n\n{}\n\nTo install properly, quit, then drag CovenCave.app into your /Applications folder and launch it from there.",
+        path
+    );
+    show_fatal_dialog(&msg);
+    std::process::exit(1);
+}
+
 /// Find a usable `node` binary. macOS GUI launches do NOT inherit the user's
 /// shell PATH (`/usr/bin:/bin:/usr/sbin:/sbin` only), so a bare
 /// `Command::new("node")` will fail when the user launches Cave from the
@@ -122,6 +143,8 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            check_app_translocation();
 
             let resource_dir = match app.path().resource_dir() {
                 Ok(d) => d,
