@@ -489,11 +489,14 @@ export function Workspace() {
   return (
     <div className="flex h-screen w-screen flex-col bg-zinc-950 text-zinc-100">
       <DaemonBar
-        onDaemonStarted={loadFamiliars}
-        sessions={sessions}
-        responseNeededCount={responseNeeded.size}
+        mode={mode}
+        onModeChange={setMode}
+        inboxBadgeCount={inboxItemsWithEphemeral.filter(
+          (i) =>
+            i.status === "fired" ||
+            (i.status === "pending" && i.kind === "response-needed"),
+        ).length}
         onRunningChange={setDaemonRunning}
-        onOpenOnboarding={openOnboarding}
         inboxItems={inboxItemsWithEphemeral}
         inboxPrefs={inboxPrefs}
         familiars={familiars}
@@ -509,43 +512,6 @@ export function Workspace() {
           }
         }}
       />
-
-      <nav className="flex items-center gap-1 border-b border-zinc-900 bg-zinc-950 px-3 py-1.5 text-[11px]">
-        {(["chats", "board", "inbox", "plugins"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded-md px-3 py-1 transition-colors ${
-              mode === m
-                ? "bg-zinc-800 text-zinc-100"
-                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-            }`}
-          >
-            {m === "chats"
-              ? "Chats"
-              : m === "board"
-              ? "Board"
-              : m === "inbox"
-              ? `Inbox${
-                  inboxItemsWithEphemeral.filter(
-                    (i) =>
-                      i.status === "fired" ||
-                      (i.status === "pending" && i.kind === "response-needed"),
-                  ).length
-                    ? ` · ${
-                        inboxItemsWithEphemeral.filter(
-                          (i) =>
-                            i.status === "fired" ||
-                            (i.status === "pending" && i.kind === "response-needed"),
-                        ).length
-                      }`
-                    : ""
-                }`
-              : "Plugins"}
-          </button>
-        ))}
-        <span className="ml-auto text-[10px] text-zinc-600">⌘K palette · ⌘B rail · ⇧⌘B inspector</span>
-      </nav>
 
       <Group orientation="horizontal" className="flex-1 min-h-0 flex">
         <Panel
@@ -635,20 +601,6 @@ export function Workspace() {
           />
         </Panel>
       </Group>
-
-      <footer className="flex items-center justify-between border-t border-zinc-800 px-3 py-1 text-[10px] text-zinc-500">
-        <span>CovenCave · v0</span>
-        <span>
-          mode ·{" "}
-          {mode === "chats"
-            ? "Chats"
-            : mode === "board"
-            ? "Coven Board"
-            : mode === "inbox"
-            ? "Inbox"
-            : "Plugins"}
-        </span>
-      </footer>
 
       <CommandPalette
         open={paletteOpen}

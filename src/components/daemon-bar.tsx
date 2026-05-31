@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { DaemonStatus, Familiar, SessionRow } from "@/lib/types";
+import { useEffect } from "react";
+import type { DaemonStatus, Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { NotificationBell } from "@/components/notification-bell";
 
+export type Mode = "chats" | "board" | "inbox" | "plugins";
+
 type Props = {
-  onDaemonStarted?: () => void;
-  sessions?: SessionRow[];
-  responseNeededCount?: number;
+  mode: Mode;
+  onModeChange: (mode: Mode) => void;
+  inboxBadgeCount?: number;
   onRunningChange?: (running: boolean) => void;
-  onOpenOnboarding?: () => void;
   inboxItems?: InboxItem[];
   inboxPrefs?: InboxPrefs;
   familiars?: Familiar[];
@@ -20,12 +21,18 @@ type Props = {
   onPrefsChanged?: () => void;
 };
 
+const MODE_LABEL: Record<Mode, string> = {
+  chats: "Chats",
+  board: "Board",
+  inbox: "Inbox",
+  plugins: "Plugins",
+};
+
 export function DaemonBar({
-  onDaemonStarted,
-  sessions = [],
-  responseNeededCount = 0,
+  mode,
+  onModeChange,
+  inboxBadgeCount = 0,
   onRunningChange,
-  onOpenOnboarding,
   inboxItems = [],
   inboxPrefs,
   familiars = [],
@@ -33,98 +40,58 @@ export function DaemonBar({
   onOpenInboxItem,
   onPrefsChanged,
 }: Props) {
-  const [status, setStatus] = useState<DaemonStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const refresh = async () => {
-    try {
-      const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      const json = (await res.json()) as DaemonStatus;
-      setStatus(json);
-      onRunningChange?.(json.running === true);
-    } catch {
-      setStatus({ running: false, reason: "fetch failed" });
-      onRunningChange?.(false);
-    }
-  };
-
+  // Daemon status is polled silently so other panes (chat list, familiar rail)
+  // can react via `onRunningChange`. The header no longer renders the status —
+  // start/stop happens via /doctor or the CLI.
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, []);
-
-  const stats = useMemo(() => {
-    const running = sessions.filter((s) => s.status === "running").length;
-    return { total: sessions.length, running };
-  }, [sessions]);
-
-  const start = async () => {
-    setBusy(true);
-    try {
-      await fetch("/api/daemon/start", { method: "POST" });
-      await refresh();
-      onDaemonStarted?.();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const running = status?.running === true;
-  const dotClass = running ? "bg-emerald-400" : "bg-zinc-500";
-  const label = running ? "daemon running" : "daemon offline";
+    if (!onRunningChange) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/daemon/status", { cache: "no-store" });
+        const json = (await res.json()) as DaemonStatus;
+        if (!cancelled) onRunningChange(json.running === true);
+      } catch {
+        if (!cancelled) onRunningChange(false);
+      }
+    };
+    void tick();
+    const t = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [onRunningChange]);
 
   return (
     <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-xs">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <span className="font-semibold tracking-tight">CovenCave</span>
+        <nav className="flex items-center gap-0.5">
+          {(["chats", "board", "inbox", "plugins"] as const).map((m) => {
+            const active = mode === m;
+            const label =
+              m === "inbox" && inboxBadgeCount > 0
+                ? `${MODE_LABEL[m]} · ${inboxBadgeCount}`
+                : MODE_LABEL[m];
+            return (
+              <button
+                key={m}
+                onClick={() => onModeChange(m)}
+                className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
+                  active
+                    ? "bg-zinc-800 text-zinc-100"
+                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-zinc-300">
-          <span className={`h-2 w-2 rounded-full ${dotClass}`} />
-          <span>{label}</span>
-          {running && status?.daemon ? (
-            <span className="text-zinc-500">· pid {status.daemon.pid}</span>
-          ) : null}
-          {!running && status?.reason ? (
-            <span className="text-zinc-500">· {status.reason}</span>
-          ) : null}
-        </div>
-
-        {running ? (
-          <div className="flex items-center gap-3 text-zinc-400">
-            <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-mono">{stats.running}</span>
-              <span className="text-zinc-500">live</span>
-            </span>
-            <span className="font-mono text-zinc-500">{stats.total} total</span>
-            {responseNeededCount > 0 ? (
-              <span className="flex items-center gap-1 rounded bg-amber-500/80 px-1.5 py-[1px] font-bold uppercase tracking-widest text-zinc-900">
-                {responseNeededCount} reply
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
-        {!running ? (
-          <button
-            onClick={start}
-            disabled={busy}
-            className="rounded-md bg-purple-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-purple-500 disabled:opacity-50"
-          >
-            {busy ? "starting…" : "start daemon"}
-          </button>
-        ) : (
-          <button
-            onClick={refresh}
-            className="rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] text-zinc-300 hover:bg-zinc-800"
-          >
-            refresh
-          </button>
-        )}
-
+      <div className="flex items-center gap-2">
         {onOpenInbox && inboxPrefs && onPrefsChanged ? (
           <NotificationBell
             items={inboxItems}
@@ -134,16 +101,6 @@ export function DaemonBar({
             onOpenItem={onOpenInboxItem}
             onPrefsChanged={onPrefsChanged}
           />
-        ) : null}
-
-        {onOpenOnboarding ? (
-          <button
-            onClick={onOpenOnboarding}
-            className="rounded-md border border-zinc-800 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-            title="Open setup"
-          >
-            setup
-          </button>
         ) : null}
       </div>
     </header>

@@ -7,10 +7,22 @@ import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/s
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 
+type ToolEvent = {
+  id: string;
+  name: string;
+  input?: string;
+  output?: string;
+  status: "running" | "ok" | "error";
+  durationMs?: number;
+};
+
 type Turn = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  reasoning?: string;
+  tools?: ToolEvent[];
+  createdAt: string;
   pending?: boolean;
   error?: boolean;
   durationMs?: number;
@@ -35,6 +47,7 @@ type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "tool_use"; id?: string; name: string; input?: string; output?: string; status?: "running" | "ok" | "error"; durationMs?: number }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string }
   | { kind: "error"; message: string; code?: string };
 
@@ -47,8 +60,39 @@ function fmtDuration(ms?: number): string | null {
   return `${m}m ${rem}s`;
 }
 
+function fmtTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Split assistant text into visible body + accumulated reasoning. We treat any
+ * `<thinking>...</thinking>` or `<reasoning>...</reasoning>` block (both
+ * commonly emitted by Claude/Codex harnesses) as reasoning to be collapsed.
+ * Unclosed blocks fall through as visible text — they become reasoning once
+ * the closing tag arrives in a later chunk.
+ */
+function splitReasoning(text: string): { visible: string; reasoning: string } {
+  const reasoningParts: string[] = [];
+  const visible = text.replace(
+    /<(thinking|reasoning)>([\s\S]*?)<\/\1>/g,
+    (_m, _tag, inner) => {
+      reasoningParts.push(inner.trim());
+      return "";
+    },
+  );
+  return {
+    visible: visible.replace(/\n{3,}/g, "\n\n").trimStart(),
+    reasoning: reasoningParts.join("\n\n").trim(),
+  };
+}
+
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, daemonRunning, onSessionStarted, onBack, onSlashCommand, onOpenOnboarding },
+  { familiar, sessionId, onSessionStarted, onSlashCommand, onOpenOnboarding },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -82,6 +126,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           id: "help-bootstrap",
           role: "system",
           text: formatHelp(),
+          createdAt: new Date().toISOString(),
         },
       ]);
       return;
@@ -99,11 +144,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             json.conversation.turns
               .filter((t: { role: string }) => t.role === "user" || t.role === "assistant")
               .map(
-                (t: { id: string; role: "user" | "assistant"; text: string; durationMs?: number }) => ({
+                (t: { id: string; role: "user" | "assistant"; text: string; durationMs?: number; createdAt?: string }) => ({
                   id: t.id,
                   role: t.role,
                   text: t.text,
                   durationMs: t.durationMs,
+                  createdAt: t.createdAt ?? new Date().toISOString(),
                 }),
               ),
           );
@@ -125,7 +171,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const appendSystem = (text: string) => {
     setTurns((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: "system", text },
+      {
+        id: crypto.randomUUID(),
+        role: "system",
+        text,
+        createdAt: new Date().toISOString(),
+      },
     ]);
   };
 
@@ -197,9 +248,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setBusy(true);
     setError(null);
 
-    const userTurn: Turn = { id: crypto.randomUUID(), role: "user", text };
+    const now = new Date().toISOString();
+    const userTurn: Turn = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text,
+      createdAt: now,
+    };
     const assistantId = crypto.randomUUID();
-    const assistantTurn: Turn = { id: assistantId, role: "assistant", text: "", pending: true };
+    const assistantTurn: Turn = {
+      id: assistantId,
+      role: "assistant",
+      text: "",
+      pending: true,
+      createdAt: now,
+      tools: [],
+    };
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
 
     const controller = new AbortController();
@@ -293,6 +357,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         return;
       }
+      case "tool_use": {
+        const incoming: ToolEvent = {
+          id: ev.id ?? crypto.randomUUID(),
+          name: ev.name,
+          input: ev.input,
+          output: ev.output,
+          status: ev.status ?? "running",
+          durationMs: ev.durationMs,
+        };
+        setTurns((prev) =>
+          prev.map((t) => {
+            if (t.id !== assistantId) return t;
+            const tools = t.tools ?? [];
+            const existingIdx = tools.findIndex((x) => x.id === incoming.id);
+            const nextTools =
+              existingIdx >= 0
+                ? tools.map((x, i) =>
+                    i === existingIdx
+                      ? {
+                          ...x,
+                          ...incoming,
+                          // Preserve previously captured input/output if the
+                          // update doesn't supply them.
+                          input: incoming.input ?? x.input,
+                          output: incoming.output ?? x.output,
+                        }
+                      : x,
+                  )
+                : [...tools, incoming];
+            return { ...t, tools: nextTools };
+          }),
+        );
+        return;
+      }
       case "done": {
         setTurns((prev) =>
           prev.map((t) =>
@@ -352,8 +450,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  const projectName = "home";
-
   useImperativeHandle(
     ref,
     () => ({
@@ -378,48 +474,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   return (
     <section className="flex h-full flex-col bg-zinc-950 text-zinc-200">
-      {/* Compact status row */}
-      <header className="flex items-center gap-2 border-b border-zinc-900 px-5 py-2.5 text-[11px] text-zinc-400">
-        {onBack ? (
-          <button
-            onClick={onBack}
-            className="rounded border border-zinc-800 px-1.5 py-0.5 text-zinc-300 transition-colors hover:bg-zinc-900"
-            title="Back to chats"
-          >
-            ← chats
-          </button>
-        ) : null}
-        <span className="flex items-center gap-1.5">
-          <span className="font-medium text-zinc-100">{familiar.display_name}</span>
-        </span>
-        <span className="text-zinc-700">·</span>
-        <span className="font-mono text-zinc-500">{familiar.harness ?? "codex"}</span>
-        <span className="text-zinc-700">·</span>
-        <span className="truncate font-mono text-zinc-500">{projectName}</span>
-        <span className="text-zinc-700">·</span>
-        <span className="text-zinc-500">
-          daemon{" "}
-          <span className={daemonRunning ? "text-emerald-400" : "text-rose-400"}>
-            {daemonRunning ? "running" : "offline"}
-          </span>
-        </span>
-        <span className="ml-auto text-zinc-500">
-          {busy ? (
-            <span className="text-amber-400">streaming…</span>
-          ) : currentSessionRef.current ? (
-            <span className="inline-flex items-center gap-1 text-emerald-400">
-              <Icon name="ph:circle-fill" width="0.5rem" height="0.5rem" />
-              live
-            </span>
-          ) : (
-            <span>new</span>
-          )}
-        </span>
-      </header>
-
       {/* Transcript */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
-        <div className="mx-auto max-w-3xl space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <div className="space-y-6">
           {turns.length === 0 ? (
             <div className="py-14 text-center text-sm text-zinc-500">
               <p className="text-zinc-300">Chat with {familiar.display_name}.</p>
@@ -450,8 +507,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
 
       {/* Composer — Codex style */}
-      <footer className="px-5 pb-5 pt-2">
-        <div className="relative mx-auto max-w-3xl">
+      <footer className="px-6 pb-5 pt-2">
+        <div className="relative">
           {slashSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1">
@@ -535,12 +592,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           </div>
-          <div className="mt-2 flex items-center justify-between text-[10px] text-zinc-600">
-            <span>↵ send · ⇧↵ newline · / commands · ⌘K palette</span>
-            <span className="font-mono">
-              {familiar.harness} · {familiar.model ?? ""}
-            </span>
-          </div>
         </div>
       </footer>
     </section>
@@ -550,36 +601,134 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 function TurnRow({ turn }: { turn: Turn }) {
   if (turn.role === "system") {
     return (
-      <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-zinc-400 whitespace-pre-wrap">
-        {turn.text}
+      <div>
+        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-zinc-400 whitespace-pre-wrap">
+          {turn.text}
+        </div>
+        <div className="mt-1 text-right text-[10px] text-zinc-600">{fmtTime(turn.createdAt)}</div>
       </div>
     );
   }
   if (turn.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end">
         <div className="max-w-[80%] rounded-2xl bg-zinc-800/70 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
           <RichText text={turn.text} />
         </div>
+        <div className="mt-1 text-[10px] text-zinc-600">{fmtTime(turn.createdAt)}</div>
       </div>
     );
   }
   // Assistant — plain, no bubble
   const duration = fmtDuration(turn.durationMs);
+  const { visible, reasoning } = splitReasoning(turn.text);
+  const tools = turn.tools ?? [];
   return (
     <div className="text-[14px] leading-relaxed text-zinc-200">
-      {duration && !turn.pending ? (
-        <div className="mb-2 flex items-center gap-1 text-[11px] text-zinc-500">
-          <span>Worked for {duration}</span>
-          <span>›</span>
+      {tools.length > 0 ? (
+        <div className="mb-3 space-y-1.5">
+          {tools.map((t) => (
+            <ToolBlock key={t.id} tool={t} />
+          ))}
         </div>
       ) : null}
+      {reasoning ? <ReasoningBlock text={reasoning} /> : null}
       <div className={turn.error ? "text-amber-200" : ""}>
-        <RichText text={turn.text || (turn.pending ? "…" : "")} />
-        {turn.pending && turn.text ? (
+        <RichText text={visible || (turn.pending ? "…" : "")} />
+        {turn.pending && visible ? (
           <span className="ml-1 inline-block animate-pulse text-zinc-400">▌</span>
         ) : null}
       </div>
+      <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-600">
+        <span>{fmtTime(turn.createdAt)}</span>
+        {duration && !turn.pending ? (
+          <>
+            <span className="text-zinc-700">·</span>
+            <span>worked for {duration}</span>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ReasoningBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const lineCount = text.split("\n").length;
+  return (
+    <div className="mb-3 overflow-hidden rounded-lg border border-zinc-800/70 bg-zinc-900/30 text-[12px]">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-zinc-400 transition-colors hover:bg-zinc-900/60"
+      >
+        <Icon
+          name="ph:caret-right-bold"
+          width="0.7rem"
+          height="0.7rem"
+          className={`transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        <span className="text-zinc-300">reasoning</span>
+        <span className="text-zinc-600">· {lineCount} line{lineCount === 1 ? "" : "s"}</span>
+      </button>
+      {open ? (
+        <div className="border-t border-zinc-800/70 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-zinc-400">
+          {text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ToolBlock({ tool }: { tool: ToolEvent }) {
+  const [open, setOpen] = useState(false);
+  const statusDot =
+    tool.status === "running"
+      ? "bg-amber-400 animate-pulse"
+      : tool.status === "error"
+      ? "bg-rose-400"
+      : "bg-emerald-400";
+  const hasBody = !!(tool.input || tool.output);
+  const dur = fmtDuration(tool.durationMs);
+  return (
+    <div className="overflow-hidden rounded-lg border border-zinc-800/70 bg-zinc-900/30 text-[12px]">
+      <button
+        onClick={() => hasBody && setOpen((v) => !v)}
+        disabled={!hasBody}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
+          hasBody ? "transition-colors hover:bg-zinc-900/60" : "cursor-default"
+        }`}
+      >
+        <Icon
+          name="ph:caret-right-bold"
+          width="0.7rem"
+          height="0.7rem"
+          className={`text-zinc-600 transition-transform ${open ? "rotate-90" : ""} ${
+            hasBody ? "" : "opacity-30"
+          }`}
+        />
+        <Icon name="ph:wrench-bold" width="0.85rem" height="0.85rem" className="text-purple-300" />
+        <span className="font-mono text-zinc-200">{tool.name}</span>
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${statusDot}`} />
+        {dur && tool.status !== "running" ? (
+          <span className="font-mono text-zinc-500">{dur}</span>
+        ) : null}
+      </button>
+      {open && hasBody ? (
+        <div className="space-y-2 border-t border-zinc-800/70 px-3 py-2 font-mono text-[12px] leading-relaxed">
+          {tool.input ? (
+            <div>
+              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">input</div>
+              <pre className="whitespace-pre-wrap text-zinc-300">{tool.input}</pre>
+            </div>
+          ) : null}
+          {tool.output ? (
+            <div>
+              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">output</div>
+              <pre className="whitespace-pre-wrap text-zinc-400">{tool.output}</pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

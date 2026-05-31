@@ -23,10 +23,25 @@ type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | {
+      kind: "tool_use";
+      id?: string;
+      name: string;
+      input?: string;
+      output?: string;
+      status?: "running" | "ok" | "error";
+      durationMs?: number;
+    }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string }
   | { kind: "error"; message: string; code?: string };
 
 const HOOK_LINE_RE = /^hook:\s+/;
+// Hook-line shapes emitted by codex/claude harnesses while a tool runs.
+// Examples:
+//   hook: tool_use Bash {...}
+//   hook: pre_tool_use Edit { ... }
+//   hook: post_tool_use Bash {... exitCode: 0 ...}
+const TOOL_HOOK_RE = /^hook:\s+(?:pre_tool_use|post_tool_use|tool_use)\s+(\S+)(?:\s+(.*))?$/;
 const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning|session id:|tokens used|\d[\d,]*\s*$)/;
 const CODEX_START_LINE = "codex";
 const CLAUDE_ASSISTANT_RE = /^claude(?:\s+code)?$/i;
@@ -171,6 +186,18 @@ export async function POST(req: Request) {
       let assistantText = "";
       let jsonBuf = "";
       let result: { duration_ms?: number; is_error?: boolean } = {};
+      // Per-tool start times so post_tool_use can compute durationMs and
+      // associate output with the matching pre_tool_use event.
+      const toolStartTimes = new Map<string, { startedAt: number; id: string }>();
+      let toolSeq = 0;
+      const toolIdFor = (name: string): string => {
+        const existing = toolStartTimes.get(name);
+        if (existing) return existing.id;
+        toolSeq += 1;
+        const id = `tool-${toolSeq}-${name}`;
+        toolStartTimes.set(name, { startedAt: Date.now(), id });
+        return id;
+      };
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -227,6 +254,38 @@ export async function POST(req: Request) {
         if (trimmed && ERR_LINE_RE.test(trimmed)) {
           stdoutErrTail.push(trimmed);
           if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
+        }
+        // Surface tool-use hook lines as structured events so the chat can
+        // render a tool block. Hooks are still discarded by AssistantFilter
+        // below, so this is purely additive.
+        const toolMatch = trimmed.match(TOOL_HOOK_RE);
+        if (toolMatch) {
+          const isPost = trimmed.startsWith("hook: post_tool_use");
+          const name = toolMatch[1];
+          const rest = (toolMatch[2] ?? "").trim();
+          const id = toolIdFor(name);
+          if (isPost) {
+            const meta = toolStartTimes.get(name);
+            const durationMs = meta ? Date.now() - meta.startedAt : undefined;
+            const isError = /error|fail|denied|exit\s*[1-9]/i.test(rest);
+            push({
+              kind: "tool_use",
+              id,
+              name,
+              output: rest || undefined,
+              status: isError ? "error" : "ok",
+              durationMs,
+            });
+            toolStartTimes.delete(name);
+          } else {
+            push({
+              kind: "tool_use",
+              id,
+              name,
+              input: rest || undefined,
+              status: "running",
+            });
+          }
         }
         const filtered = assistantFilter.push(cleaned + "\n");
         if (filtered) {
