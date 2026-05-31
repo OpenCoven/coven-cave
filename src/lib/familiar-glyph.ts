@@ -50,17 +50,23 @@ export function serializeGlyph(glyph: FamiliarGlyph): string {
  * Resolve the glyph to render for a familiar.
  *
  * Precedence (highest first):
- *   1. Cave-local override (`overrides[familiar.id]`)
- *   2. Daemon-provided `familiar.emoji`
- *   3. `DEFAULT_FAMILIAR_GLYPH`
+ *   1. Cave-local override (`overrides[familiar.id]`) — picks that haven't
+ *      finished syncing to the daemon yet, or that exist on this Cave only.
+ *   2. Daemon-provided `familiar.icon` — the canonical source written by the
+ *      `PUT /api/v1/familiars/{id}/icon` endpoint and persisted to TOML.
+ *   3. Legacy daemon `familiar.emoji` — older field, kept as a fallback so
+ *      pre-icon `familiars.toml` configs render correctly.
+ *   4. `DEFAULT_FAMILIAR_GLYPH` — sparkle.
  */
 export function resolveFamiliarGlyph(
-  familiar: Pick<Familiar, "id" | "emoji">,
+  familiar: Pick<Familiar, "id" | "emoji" | "icon">,
   overrides: Record<string, string>,
 ): FamiliarGlyph {
   const override = parseGlyphString(overrides[familiar.id]);
   if (override) return override;
-  const daemon = parseGlyphString(familiar.emoji);
-  if (daemon) return daemon;
+  const daemonIcon = parseGlyphString(familiar.icon);
+  if (daemonIcon) return daemonIcon;
+  const daemonEmoji = parseGlyphString(familiar.emoji);
+  if (daemonEmoji) return daemonEmoji;
   return DEFAULT_FAMILIAR_GLYPH;
 }
