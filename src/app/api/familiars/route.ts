@@ -18,7 +18,9 @@ type DaemonFamiliar = {
 
 export async function GET() {
   const [res, config] = await Promise.all([
-    callDaemon<(DaemonFamiliar & { emoji?: string })[]>({ path: "/api/v1/familiars" }),
+    callDaemon<(DaemonFamiliar & { emoji?: string; icon?: string })[]>({
+      path: "/api/v1/familiars",
+    }),
     loadConfig(),
   ]);
   if (!res.ok) {

@@ -90,20 +90,48 @@ function writeRecent(next: string[]) {
 // Mutators (always go through these so listeners fire)
 // ---------------------------------------------------------------------------
 
+/**
+ * Fire-and-forget daemon write. The localStorage override is the source of
+ * truth for the UI's immediate render, so we don't await — but a successful
+ * daemon write means `familiars.toml` carries the user's pick across devices
+ * and reinstalls, which is the durable home.
+ */
+async function syncToDaemon(familiarId: string, glyph: string | null): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    await fetch(`/api/familiars/${encodeURIComponent(familiarId)}/icon`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ icon: glyph }),
+    });
+  } catch {
+    // Daemon offline or transient network blip — the localStorage override
+    // still wins on render until the next pick or until it's manually cleared.
+  }
+}
+
 /** Set the glyph override for a single familiar. */
 export function setGlyphOverride(familiarId: string, glyph: string): void {
   const next = { ...getOverrides(), [familiarId]: glyph };
   writeOverrides(next);
   pushRecent(glyph);
+  void syncToDaemon(familiarId, glyph);
 }
 
-/** Remove the override so we fall back to daemon emoji / default. */
+/** Remove the override so we fall back to daemon icon / emoji / default. */
 export function clearGlyphOverride(familiarId: string): void {
   const curr = getOverrides();
-  if (!(familiarId in curr)) return;
-  const next = { ...curr };
-  delete next[familiarId];
-  writeOverrides(next);
+  const hadLocal = familiarId in curr;
+  if (hadLocal) {
+    const next = { ...curr };
+    delete next[familiarId];
+    writeOverrides(next);
+  }
+  // Also clear on the daemon side so the canonical `familiars.toml` reflects
+  // "no override," even if the user never had a localStorage entry to begin
+  // with (e.g., cleared via the picker's "reset to default" button after a
+  // pick that was already synced).
+  void syncToDaemon(familiarId, null);
 }
 
 /** Move `glyph` to the head of the recents list, deduped, capped at RECENT_MAX. */

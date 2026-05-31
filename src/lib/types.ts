@@ -10,11 +10,18 @@ export type Familiar = {
   active_sessions?: number;
   memory_freshness?: string;
   /**
-   * Daemon-owned glyph hint. Either a literal emoji character (`"🐈"`) or a
-   * Phosphor icon name (`"ph:cat-fill"`). The Cave-local override store
-   * (see `cave-glyph-overrides.ts`) wins over this when both are present.
+   * Legacy daemon emoji field. Treated as a glyph hint of last resort —
+   * `icon` wins when both are present.
    */
   emoji?: string;
+  /**
+   * Daemon-owned glyph. Either a literal emoji character (`"🐈"`) or a
+   * Phosphor icon name (`"ph:cat-fill"`). Written by `PUT /api/v1/familiars/{id}/icon`.
+   * Wins over `emoji` and is the primary daemon source of truth for the
+   * familiar's glyph. The Cave-local override store still wins on render
+   * while it has a value, but its writes flow back into this field.
+   */
+  icon?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
   model?: string;
