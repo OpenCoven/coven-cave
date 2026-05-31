@@ -22,17 +22,19 @@ type Card = {
   updatedAt: string;
 };
 
-const COLUMNS: { id: CardStatus; label: string; accent: string }[] = [
-  { id: "inbox", label: "Inbox", accent: "border-sky-500/40" },
-  { id: "running", label: "Running", accent: "border-emerald-500/60" },
-  { id: "review", label: "Review", accent: "border-purple-500/60" },
+const COLUMNS: { id: CardStatus; label: string }[] = [
+  { id: "inbox", label: "Inbox" },
+  { id: "running", label: "Running" },
+  { id: "review", label: "Review" },
 ];
 
+// Priority chrome stays neutral per Mood C — visual emphasis comes from
+// border + text weight, not saturated fills. Reserves accent for presence.
 const PRIORITIES: { id: CardPriority; label: string; pill: string }[] = [
-  { id: "urgent", label: "Urgent", pill: "bg-rose-600/20 text-rose-300 border-rose-600/40" },
-  { id: "high", label: "High", pill: "bg-amber-600/20 text-amber-200 border-amber-600/40" },
-  { id: "medium", label: "Medium", pill: "bg-zinc-700/40 text-zinc-200 border-zinc-700" },
-  { id: "low", label: "Low", pill: "bg-zinc-800/60 text-zinc-400 border-zinc-800" },
+  { id: "urgent", label: "Urgent", pill: "bg-muted text-foreground border-border-strong" },
+  { id: "high", label: "High", pill: "bg-card text-foreground border-border-strong" },
+  { id: "medium", label: "Medium", pill: "bg-card text-muted-foreground border-border" },
+  { id: "low", label: "Low", pill: "bg-card text-muted-foreground border-border" },
 ];
 
 type Props = {
@@ -175,11 +177,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   };
 
   return (
-    <section className="flex h-full flex-col bg-zinc-950 text-zinc-200">
-      <header className="flex flex-wrap items-center gap-3 border-b border-zinc-900 px-5 py-3">
+    <section className="flex h-full flex-col bg-background text-foreground">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
         <div>
-          <h1 className="text-base font-semibold text-zinc-100">Board</h1>
-          <p className="text-[11px] text-zinc-500">
+          <h1 className="text-base font-semibold text-foreground">Board</h1>
+          <p className="text-[11px] text-muted-foreground">
             Queue work for familiars. {filtered.length} of {cards.length} card
             {cards.length === 1 ? "" : "s"} shown.
           </p>
@@ -191,8 +193,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               onClick={() => setScopeToFamiliar((v) => !v)}
               className={`rounded-full border px-3 py-1 text-[11px] transition-colors ${
                 scopeToFamiliar
-                  ? "border-purple-500 bg-purple-500/20 text-purple-100"
-                  : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                  ? "border-border-strong bg-muted text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted"
               }`}
               title="Show only the active familiar's cards"
             >
@@ -204,14 +206,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               setModalDefaultStatus("inbox");
               setModalOpen(true);
             }}
-            className="rounded-md bg-rose-700 px-3 py-1.5 text-xs font-medium text-zinc-50 transition-colors hover:bg-rose-600"
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
           >
             + New card
           </button>
         </div>
 
         <div className="flex w-full items-center gap-2">
-          <span className="text-[10px] uppercase tracking-widest text-zinc-500">priority</span>
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">priority</span>
           {PRIORITIES.map((p) => {
             const on = priorityFilter.has(p.id);
             return (
@@ -219,7 +221,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
                 key={p.id}
                 onClick={() => togglePriority(p.id)}
                 className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                  on ? p.pill : "border-zinc-800 bg-zinc-900 text-zinc-500 hover:text-zinc-300"
+                  on ? p.pill : "border-border bg-card text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {p.label}
@@ -229,7 +231,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           {priorityFilter.size > 0 ? (
             <button
               onClick={() => setPriorityFilter(new Set())}
-              className="text-[10px] text-zinc-500 hover:text-zinc-300"
+              className="text-[10px] text-muted-foreground hover:text-foreground"
             >
               clear
             </button>
@@ -238,7 +240,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       </header>
 
       {error ? (
-        <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-1.5 text-xs text-amber-200">
+        <div className="border-b border-border bg-card px-5 py-1.5 text-xs text-muted-foreground">
           {error}
         </div>
       ) : null}
@@ -255,18 +257,16 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
                 onDragOver={(e) => handleDragOver(e, col.id)}
                 onDragLeave={(e) => handleDragLeave(e, col.id)}
                 onDrop={(e) => handleDrop(e, col.id)}
-                className={`flex h-full min-w-0 flex-1 basis-0 flex-col rounded-xl border bg-zinc-900/30 transition-colors ${
+                className={`flex h-full min-w-0 flex-1 basis-0 flex-col rounded-xl border bg-card transition-colors ${
                   isDropTarget
-                    ? "border-purple-500/60 bg-purple-500/5"
-                    : "border-zinc-900"
+                    ? "border-border-strong bg-muted"
+                    : "border-border"
                 }`}
               >
-                <div
-                  className={`flex items-center justify-between border-b ${col.accent} px-3 py-2`}
-                >
+                <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-zinc-100">{col.label}</span>
-                    <span className="rounded-full bg-zinc-800 px-1.5 py-px text-[10px] text-zinc-400">
+                    <span className="text-sm font-medium text-foreground">{col.label}</span>
+                    <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
                       {rows.length}
                     </span>
                   </div>
@@ -276,7 +276,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
                       setModalOpen(true);
                     }}
                     title={`Add card to ${col.label}`}
-                    className="grid h-5 w-5 place-items-center rounded text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                    className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     +
                   </button>
@@ -287,8 +287,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
                     <li
                       className={`rounded-md border border-dashed px-3 py-4 text-center text-[11px] transition-colors ${
                         isDropTarget
-                          ? "border-purple-500/40 text-purple-300"
-                          : "border-zinc-800 text-zinc-600"
+                          ? "border-border-strong text-foreground"
+                          : "border-border text-muted-foreground"
                       }`}
                     >
                       {isDropTarget ? "Drop here" : "Empty"}
@@ -374,12 +374,12 @@ function CardItem({
         if (draggedRef.current) return;
         setExpanded((v) => !v);
       }}
-      className={`cursor-grab rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 transition-all active:cursor-grabbing hover:border-zinc-700 ${
+      className={`cursor-grab rounded-lg border border-border bg-background p-3 transition-all active:cursor-grabbing hover:border-border-strong ${
         isDragging ? "opacity-40" : ""
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="flex-1 text-[13px] leading-snug text-zinc-100">{card.title}</span>
+        <span className="flex-1 text-[13px] leading-snug text-foreground">{card.title}</span>
         <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${pri.pill}`}>
           {pri.label}
         </span>
@@ -390,7 +390,7 @@ function CardItem({
           {card.labels.map((l) => (
             <span
               key={l}
-              className="rounded bg-zinc-800/80 px-1.5 py-px text-[10px] text-zinc-300"
+              className="rounded border border-border bg-card px-1.5 py-px text-[10px] text-foreground"
             >
               {l}
             </span>
@@ -398,13 +398,13 @@ function CardItem({
         </div>
       ) : null}
 
-      <div className="mt-2 flex items-center gap-2 text-[10px] text-zinc-500">
+      <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
         {familiar ? (
           <span title={`${familiar.display_name} · ${familiar.harness ?? "?"}`}>
             {familiar.display_name}
           </span>
         ) : (
-          <span className="text-zinc-600">unassigned</span>
+          <span>unassigned</span>
         )}
         {session ? (
           <button
@@ -413,13 +413,7 @@ function CardItem({
               onJumpToSession?.(session.id, session.familiarId ?? null);
             }}
             title={`Open session: ${session.title || "(untitled)"}`}
-            className={`ml-auto rounded px-1.5 py-px transition-colors ${
-              session.status === "running"
-                ? "bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40"
-                : session.status === "failed"
-                  ? "bg-rose-600/20 text-rose-300 hover:bg-rose-600/40"
-                  : "bg-zinc-700/40 text-zinc-300 hover:bg-zinc-700/70"
-            }`}
+            className="ml-auto rounded border border-border bg-card px-1.5 py-px text-foreground transition-colors hover:bg-muted"
           >
             <span className="inline-flex items-center gap-1">
               {session.status === "running" ? (
@@ -436,17 +430,17 @@ function CardItem({
       {expanded ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="mt-3 space-y-2 rounded border border-zinc-800 bg-zinc-900/40 p-2"
+          className="mt-3 space-y-2 rounded border border-border bg-card p-2"
         >
           {card.notes ? (
-            <p className="whitespace-pre-wrap text-[11px] text-zinc-400">{card.notes}</p>
+            <p className="whitespace-pre-wrap text-[11px] text-muted-foreground">{card.notes}</p>
           ) : null}
           <div className="grid grid-cols-2 gap-1.5 text-[11px]">
             <Mini label="Status">
               <select
                 value={card.status}
                 onChange={(e) => onPatch({ status: e.target.value as CardStatus })}
-                className="w-full rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-200"
+                className="w-full rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-foreground"
               >
                 {COLUMNS.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -459,7 +453,7 @@ function CardItem({
               <select
                 value={card.priority}
                 onChange={(e) => onPatch({ priority: e.target.value as CardPriority })}
-                className="w-full rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-200"
+                className="w-full rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-foreground"
               >
                 {PRIORITIES.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -472,7 +466,7 @@ function CardItem({
               <select
                 value={card.familiarId ?? ""}
                 onChange={(e) => onPatch({ familiarId: e.target.value || null })}
-                className="w-full rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-200"
+                className="w-full rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-foreground"
               >
                 <option value="">Default familiar</option>
                 {familiars.map((f) => (
@@ -486,7 +480,7 @@ function CardItem({
               <select
                 value={card.sessionId ?? ""}
                 onChange={(e) => onPatch({ sessionId: e.target.value || null })}
-                className="w-full rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[11px] text-zinc-200"
+                className="w-full rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-foreground"
               >
                 <option value="">No linked session</option>
                 {sessions
@@ -505,7 +499,7 @@ function CardItem({
               onClick={() => {
                 if (confirm("Delete card?")) onDelete();
               }}
-              className="rounded border border-rose-900/60 px-2 py-0.5 text-[10px] text-rose-300 hover:bg-rose-900/30"
+              className="rounded border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               delete
             </button>
@@ -519,7 +513,7 @@ function CardItem({
 function Mini({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="mb-0.5 text-[9px] uppercase tracking-widest text-zinc-500">{label}</div>
+      <div className="mb-0.5 text-[9px] uppercase tracking-widest text-muted-foreground">{label}</div>
       {children}
     </label>
   );
