@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# coven-cave pre-commit hook
+#
+# Refuses commits that introduce:
+#   1. Files matching dangerous path patterns (env files, private keys,
+#      certificates, signing material, agent scratch state).
+#   2. Inline secret-shaped strings in staged diffs (AWS, Stripe, Slack,
+#      GitHub PAT, OpenAI, Anthropic, Telegram bot tokens, generic
+#      Bearer tokens, password assignments, PEM private-key blocks).
+#
+# Bypass for genuine false positives:
+#     git commit --no-verify
+#
+# Install:
+#     scripts/install-git-hooks.sh
+set -uo pipefail
+
+RED=$'\033[31m'; YELLOW=$'\033[33m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
+
+fail() { printf "%s[pre-commit blocked]%s %s\n" "$RED" "$RESET" "$1" >&2; }
+warn() { printf "%s[pre-commit warn]%s %s\n" "$YELLOW" "$RESET" "$1" >&2; }
+info() { printf "%s[pre-commit]%s %s\n" "$CYAN" "$RESET" "$1" >&2; }
+
+# Capture staged file list to a temp file (NUL-separated). Avoids bash
+# command-substitution stripping NULs, which would collapse all paths
+# into one blob.
+TMPDIR_RUN=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_RUN"' EXIT
+STAGED_FILE="$TMPDIR_RUN/staged"
+git diff --cached --name-only --diff-filter=ACMR -z > "$STAGED_FILE"
+[ -s "$STAGED_FILE" ] || exit 0
+
+BLOCKED=0
+
+# ---- 1. Path-based blocks --------------------------------------------------
+BLOCK_PATH_RE='(^|/)\.env(\.[^/]*)?$|\.(pem|key|p12|pfx|p8|cer|crt|der|jks|keystore|mobileprovision|provisionprofile)$|(^|/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$|(^|/)\.netrc$|(^|/)(secrets|credentials)/|(^|/)\.aws/credentials$|(^|/)\.ssh/(id_|authorized_keys|known_hosts)|(^|/)\.pypirc$|(^|/)\.claude/scheduled_tasks\.lock$|(^|/)\.claude/session|(^|/)\.cursor/|(^|/)\.aider'
+
+# Allow tracked *.example / *.sample / *.dist even with key extensions.
+ALLOW_PATH_RE='\.example$|\.sample$|\.dist$'
+
+STAGED_FILES=()
+while IFS= read -r -d '' f; do
+  STAGED_FILES+=("$f")
+done < "$STAGED_FILE"
+
+for f in "${STAGED_FILES[@]}"; do
+  if [[ "$f" =~ $BLOCK_PATH_RE ]] && ! [[ "$f" =~ $ALLOW_PATH_RE ]]; then
+    if [ "$f" = ".npmrc" ]; then
+      if git diff --cached -- "$f" | grep -qE '_authToken|//.*:_password|//.*:_auth='; then
+        fail ".npmrc change contains a registry auth token: $f"
+        BLOCKED=1
+      else
+        warn ".npmrc modified — confirm no auth tokens were added"
+      fi
+      continue
+    fi
+    fail "refusing to commit private/credential file: $f"
+    BLOCKED=1
+  fi
+done
+
+# ---- 2. Inline secret scan over the staged diff ----------------------------
+DIFF_FILE="$TMPDIR_RUN/diff"
+git diff --cached --no-color --unified=0 > "$DIFF_FILE"
+
+ADDED_FILE="$TMPDIR_RUN/added"
+awk '/^\+\+\+ /{next} /^\+/{sub(/^\+/,""); print}' "$DIFF_FILE" > "$ADDED_FILE"
+
+scan() {
+  local label="$1" pattern="$2"
+  local hits
+  hits=$(grep -InE -e "$pattern" "$ADDED_FILE" || true)
+  if [ -n "$hits" ]; then
+    fail "possible $label in staged diff:"
+    printf '%s\n' "$hits" | head -5 | sed 's/^/    /' >&2
+    BLOCKED=1
+  fi
+}
+
+# Patterns intentionally aligned with src/lib/redact.ts so contributors get
+# the same coverage at commit time as users get at render time.
+scan "AWS access key"        'AKIA[0-9A-Z]{16}'
+scan "AWS secret access key" 'aws_secret_access_key[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9/+=]{30,}'
+scan "GitHub PAT"            'gh[pousr]_[A-Za-z0-9]{30,}'
+scan "Slack token"           'xox[abprs]-[A-Za-z0-9-]{10,}'
+scan "Stripe secret"         'sk_(live|test)_[A-Za-z0-9]{20,}'
+scan "OpenAI key"            'sk-[A-Za-z0-9]{32,}'
+scan "Anthropic key"         'sk-ant-[A-Za-z0-9_-]{20,}'
+scan "Google API key"        'AIza[0-9A-Za-z_-]{30,}'
+scan "Telegram bot token"    '(^|[^0-9])[0-9]{8,11}:[A-Za-z0-9_-]{30,}'
+scan "Bearer token"          'Bearer[[:space:]]+[A-Za-z0-9_.-]{16,}'
+scan "PEM private key"       'BEGIN ((RSA|EC|OPENSSH|DSA|PGP|ENCRYPTED) )?PRIVATE KEY'
+scan "password assignment"   '(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'\''][^"'\''[:space:]]{8,}["'\'']'
+
+if [ "$BLOCKED" -ne 0 ]; then
+  cat >&2 <<EOF
+
+${RED}commit refused.${RESET} If a hit is a false positive (e.g. a regex literal
+in a redaction module, a test fixture, or documentation), bypass once with:
+
+    git commit --no-verify
+
+Prefer fixing the diff first.
+EOF
+  exit 1
+fi
+
+info "ok (${#STAGED_FILES[@]} files scanned)"
+exit 0

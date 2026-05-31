@@ -22,11 +22,20 @@ A familiar isn't a chat window. It has a name, a purpose, a memory, a toolset, a
 
 ```bash
 pnpm install
-pnpm tauri dev    # native window, hot-reloads Next.js
-pnpm dev          # browser-only at http://localhost:3000
+scripts/install-git-hooks.sh    # one-time: enable secret-scanning pre-commit
+pnpm tauri dev                  # native window, hot-reloads Next.js
+pnpm dev                        # browser-only at http://localhost:3000
 ```
 
 You'll need the `coven` daemon running locally so Cave has something to talk to. See [OpenCoven/coven](https://github.com/OpenCoven/coven) for setup.
+
+### Pre-commit hook
+
+`scripts/git-hooks/pre-commit` blocks commits that introduce env files,
+private keys, signing material, agent scratch state, or inline tokens
+(AWS / Stripe / Slack / GitHub PAT / OpenAI / Anthropic / Telegram /
+Bearer / PEM private-key blocks). Patterns mirror `src/lib/redact.ts`.
+Bypass a confirmed false positive with `git commit --no-verify`.
 
 ## Keybinds
 
@@ -62,7 +71,9 @@ You'll need the `coven` daemon running locally so Cave has something to talk to.
 
 ## License
 
-AGPL + MIT dual license — same as the rest of the Coven.
+Dual-licensed at your option: **AGPL-3.0** ([LICENSE-AGPL](LICENSE-AGPL))
+or **MIT** ([LICENSE-MIT](LICENSE-MIT)). See [LICENSE](LICENSE) for the
+top-level pointer. Same offer as the rest of the Coven.
 
 ---
 

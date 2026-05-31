@@ -1,11 +1,9 @@
+# Dependencies
 node_modules
+
+# Build output
 .next
 out
-.DS_Store
-*.log
-.env*.local
-.env*
-!.env.example
 src-tauri/target
 src-tauri/gen
 tsconfig.tsbuildinfo
@@ -16,4 +14,54 @@ src-tauri/resources/server/
 
 # Notarized release artifacts
 release/
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.zed/
+
+# Agent / tool scratch state (local automation, not for sharing)
+.claude/
+.cursor/
+.aider*
 .comux*
+
+# Environment files (bare + scoped). Per-machine overrides via
+# .env*.local already covered, and *.example files stay tracked.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Secrets & credentials — defense in depth alongside the pre-commit hook
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.cer
+*.crt
+*.der
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+id_rsa
+id_ed25519
+id_ecdsa
+id_dsa
+secrets/
+credentials/
+.netrc
