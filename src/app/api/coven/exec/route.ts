@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { stripAnsi } from "@/lib/ansi";
+import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,10 @@ export async function POST(req: Request) {
   const args = [body.command, ...(SUBCOMMAND_ARGS[body.command] ?? [])];
 
   return new Promise<Response>((resolve) => {
-    const child = spawn("coven", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(covenBin(), args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: covenSpawnEnv(),
+    });
     let out = "";
     let err = "";
     child.stdout.on("data", (d) => (out += d.toString()));

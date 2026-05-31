@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { stripAnsi } from "@/lib/ansi";
 import { bindingFor, loadConfig, recordSessionFamiliar } from "@/lib/cave-config";
+import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import {
   type ChatTurn,
   loadConversation,
@@ -182,9 +183,10 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE = /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
 
-      const child = spawn("coven", args, {
+      const child = spawn(covenBin(), args, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
+        env: covenSpawnEnv(),
       });
 
       // Client-side abort (cancel button) → kill the subprocess.

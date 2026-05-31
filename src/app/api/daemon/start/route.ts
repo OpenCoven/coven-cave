@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
   return new Promise<Response>((resolve) => {
-    const child = spawn("coven", ["daemon", "start"], {
+    const child = spawn(covenBin(), ["daemon", "start"], {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
+      env: covenSpawnEnv(),
     });
 
     let stdout = "";
