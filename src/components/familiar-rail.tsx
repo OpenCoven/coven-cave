@@ -71,23 +71,23 @@ export function FamiliarRail({
   }, [sessions]);
 
   return (
-    <aside className="flex h-full flex-col border-r border-zinc-800 bg-zinc-900/40">
-      <header className="border-b border-zinc-800 px-4 py-3">
-        <div className="text-xs uppercase tracking-widest text-zinc-500">Coven</div>
-        <div className="text-sm font-semibold text-zinc-100">Familiars</div>
+    <aside className="flex h-full flex-col border-r border-border bg-background">
+      <header className="border-b border-border px-4 py-3">
+        <div className="text-xs uppercase tracking-widest text-muted-foreground">Coven</div>
+        <div className="text-sm font-semibold text-foreground">Familiars</div>
       </header>
 
       <ul className="flex-1 overflow-y-auto py-2">
         {familiars.length === 0 && !error ? (
-          <li className="mx-3 my-2 rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-xs text-zinc-300">
-            <div className="font-medium text-zinc-200">No familiars yet</div>
-            <div className="mt-0.5 text-[11px] text-zinc-500">
+          <li className="mx-3 my-2 rounded-md border border-border bg-card px-3 py-2.5 text-xs text-foreground">
+            <div className="font-medium">No familiars yet</div>
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
               Run setup to scaffold the canonical roster.
             </div>
             {onOpenOnboarding ? (
               <button
                 onClick={onOpenOnboarding}
-                className="mt-2 w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-[11px] text-zinc-100 hover:bg-zinc-700"
+                className="mt-2 w-full rounded border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-card"
               >
                 Open setup →
               </button>
@@ -96,12 +96,12 @@ export function FamiliarRail({
         ) : null}
 
         {error ? (
-          <li className="mx-3 my-2 rounded-md border border-amber-700/40 bg-amber-900/20 px-3 py-2 text-xs text-amber-200">
+          <li className="mx-3 my-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
             <div>Familiars unavailable: {error}</div>
             {onOpenOnboarding ? (
               <button
                 onClick={onOpenOnboarding}
-                className="mt-2 w-full rounded border border-amber-700/60 bg-amber-900/40 px-2 py-1 text-[11px] text-amber-100 hover:bg-amber-900/60"
+                className="mt-2 w-full rounded border border-border bg-muted px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-card"
               >
                 Open setup →
               </button>
@@ -133,8 +133,8 @@ export function FamiliarRail({
                 }}
                 className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${
                   isActive
-                    ? "bg-zinc-800/80 text-zinc-50"
-                    : "text-zinc-300 hover:bg-zinc-800/40"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:bg-card"
                 }`}
                 title={onEditGlyph ? "Right-click to change glyph" : undefined}
               >
@@ -146,7 +146,7 @@ export function FamiliarRail({
                     e.stopPropagation();
                     onEditGlyph(f);
                   }}
-                  className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md bg-zinc-900/60 transition-colors hover:bg-zinc-800/90"
+                  className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md bg-card transition-colors hover:bg-muted"
                   aria-label="Change glyph"
                   title="Change glyph"
                 >
@@ -173,10 +173,10 @@ export function FamiliarRail({
                       {presence.label}
                     </span>
                   </span>
-                  <span className="flex items-center gap-1.5 truncate text-[10px] uppercase tracking-widest text-zinc-500">
+                  <span className="flex items-center gap-1.5 truncate text-[10px] uppercase tracking-widest text-muted-foreground">
                     <span className="truncate">{f.role}</span>
                     {liveCount > 0 ? (
-                      <span className="rounded bg-emerald-600/30 px-1 font-mono text-emerald-200">
+                      <span className="rounded border border-border bg-card px-1 font-mono text-foreground">
                         {liveCount}
                       </span>
                     ) : null}
@@ -189,8 +189,8 @@ export function FamiliarRail({
       </ul>
 
       {current ? (
-        <section className="border-t border-zinc-800 px-4 py-3 text-xs">
-          <div className="mb-2 flex items-center justify-between text-zinc-500">
+        <section className="border-t border-border px-4 py-3 text-xs">
+          <div className="mb-2 flex items-center justify-between text-muted-foreground">
             <span>Configurator</span>
             {harnessReport ? (
               <span
@@ -201,13 +201,7 @@ export function FamiliarRail({
                       ? "Native chat is wired for this harness"
                       : `${harnessReport.label} is installed but chat isn't wired yet — open in TUI`
                 }
-                className={`rounded px-1.5 py-px text-[9px] uppercase tracking-widest ${
-                  !harnessReport.installed
-                    ? "bg-rose-600/20 text-rose-300"
-                    : harnessReport.chatSupported
-                      ? "bg-emerald-600/20 text-emerald-300"
-                      : "bg-amber-600/20 text-amber-200"
-                }`}
+                className="rounded border border-border bg-card px-1.5 py-px text-[9px] uppercase tracking-widest text-muted-foreground"
               >
                 {!harnessReport.installed
                   ? "missing"
@@ -217,25 +211,25 @@ export function FamiliarRail({
               </span>
             ) : null}
           </div>
-          <dl className="grid grid-cols-[72px_1fr] gap-y-1 text-zinc-300">
-            <dt className="text-zinc-500">Harness</dt>
+          <dl className="grid grid-cols-[72px_1fr] gap-y-1 text-foreground">
+            <dt className="text-muted-foreground">Harness</dt>
             <dd className="font-mono truncate" title={harnessReport?.version ?? undefined}>
               {current.harness ?? "—"}
               {harnessReport?.version ? (
-                <span className="ml-1 text-[10px] text-zinc-500">
+                <span className="ml-1 text-[10px] text-muted-foreground">
                   {harnessReport.version.split(/\s/).pop()}
                 </span>
               ) : null}
             </dd>
-            <dt className="text-zinc-500">Model</dt>
+            <dt className="text-muted-foreground">Model</dt>
             <dd className="font-mono truncate" title={current.model}>
               {current.model ?? "—"}
             </dd>
-            <dt className="text-zinc-500">Status</dt>
+            <dt className="text-muted-foreground">Status</dt>
             <dd className="font-mono">{current.status ?? "—"}</dd>
-            <dt className="text-zinc-500">Sessions</dt>
+            <dt className="text-muted-foreground">Sessions</dt>
             <dd className="font-mono">{liveCounts.get(current.id) ?? 0} live</dd>
-            <dt className="text-zinc-500">Memory</dt>
+            <dt className="text-muted-foreground">Memory</dt>
             <dd className="font-mono truncate">{current.memory_freshness ?? "—"}</dd>
           </dl>
         </section>

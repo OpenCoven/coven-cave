@@ -39,10 +39,10 @@ type Props = {
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
 };
 
-const COLUMNS: { id: ItemStatus; label: string; accent: string }[] = [
-  { id: "pending", label: "Pending", accent: "border-sky-500/40" },
-  { id: "fired", label: "Fired", accent: "border-amber-500/60" },
-  { id: "done", label: "Done", accent: "border-emerald-500/60" },
+const COLUMNS: { id: ItemStatus; label: string }[] = [
+  { id: "pending", label: "Pending" },
+  { id: "fired", label: "Fired" },
+  { id: "done", label: "Done" },
 ];
 
 function fmtFireAt(iso?: string | null): string {
@@ -151,17 +151,17 @@ export function InboxView({
   };
 
   return (
-    <div className="flex h-full flex-col bg-zinc-950">
-      <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-2.5">
+    <div className="flex h-full flex-col bg-background">
+      <header className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-sm font-semibold text-zinc-100">Inbox</h1>
-          <span className="text-[11px] text-zinc-500">
+          <h1 className="text-sm font-semibold text-foreground">Inbox</h1>
+          <span className="text-[11px] text-muted-foreground">
             {items.length} item{items.length === 1 ? "" : "s"}
           </span>
         </div>
         <button
           onClick={onNewReminder}
-          className="rounded-md bg-rose-700 px-3 py-1 text-xs font-medium text-zinc-50 transition-colors hover:bg-rose-600"
+          className="rounded-md border border-border bg-card px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
         >
           + New reminder
         </button>
@@ -173,35 +173,35 @@ export function InboxView({
           return (
             <section
               key={col.id}
-              className={`flex w-80 shrink-0 flex-col rounded-xl border ${col.accent} bg-zinc-900/40`}
+              className="flex w-80 shrink-0 flex-col rounded-xl border border-border bg-card"
             >
-              <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2 text-[11px] uppercase tracking-widest text-zinc-400">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] uppercase tracking-widest text-muted-foreground">
                 <span>{col.label}</span>
-                <span className="text-zinc-600">{colItems.length}</span>
+                <span>{colItems.length}</span>
               </div>
               <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
                 {colItems.length === 0 ? (
-                  <li className="px-2 py-6 text-center text-[11px] text-zinc-600">
+                  <li className="px-2 py-6 text-center text-[11px] text-muted-foreground">
                     Empty.
                   </li>
                 ) : null}
                 {colItems.map((it) => (
                   <li
                     key={it.id}
-                    className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-2.5"
+                    className="rounded-lg border border-border bg-background p-2.5"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className="flex-1 truncate text-sm text-zinc-100">
+                      <span className="flex-1 truncate text-sm text-foreground">
                         {it.title}
                       </span>
                       <KindBadge kind={it.kind} source={it.source} />
                     </div>
                     {it.body ? (
-                      <p className="mt-1 line-clamp-2 text-[11px] text-zinc-400">
+                      <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
                         {it.body}
                       </p>
                     ) : null}
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                       {col.id === "pending" ? (
                         <span className="inline-flex items-center gap-1">
                           <Icon name="ph:alarm-bold" />
@@ -214,7 +214,7 @@ export function InboxView({
                       )}
                       {describeRecurrence(it.recurrence) ? (
                         <span
-                          className="inline-flex items-center gap-1 rounded bg-zinc-900 px-1 py-px text-zinc-400"
+                          className="inline-flex items-center gap-1 rounded border border-border bg-card px-1 py-px"
                           title="Repeats — use Stop recurrence to break the chain"
                         >
                           <Icon name="ph:arrows-clockwise-bold" />
@@ -222,7 +222,7 @@ export function InboxView({
                         </span>
                       ) : null}
                       {familiarLabel(it.familiarId) ? (
-                        <span className="rounded bg-zinc-800 px-1 py-px">
+                        <span className="rounded border border-border bg-card px-1 py-px">
                           {familiarLabel(it.familiarId)}
                         </span>
                       ) : null}
@@ -323,7 +323,7 @@ function Btn({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="rounded border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+      className="rounded border border-border bg-card px-2 py-0.5 text-[10px] text-foreground transition-colors hover:bg-muted disabled:opacity-50"
     >
       {children}
     </button>
@@ -345,14 +345,8 @@ function KindBadge({
         ? "agent"
         : "event"
       : "needs you";
-  const tone =
-    kind === "reminder"
-      ? "bg-sky-600/20 text-sky-200"
-      : kind === "agent"
-      ? "bg-purple-600/20 text-purple-200"
-      : "bg-rose-600/20 text-rose-200";
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${tone}`}>
+    <span className="rounded border border-border bg-card px-1.5 py-0.5 text-[9px] uppercase tracking-widest text-muted-foreground">
       {label}
     </span>
   );

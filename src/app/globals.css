@@ -1,27 +1,333 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
 
+/* ============================================================
+   Coven aesthetic tokens (Mood C — foundation, issue #14)
+   ============================================================
+   Promoted from the /mockup clean-room theme so the entire app
+   inherits the same palette/radii/spacing. The mockup's
+   `.multica-theme` class still works — it now just inherits these
+   :root values.
+
+   Two vocabularies are exposed on the same palette:
+     - Mockup names: --background, --card, --muted, --border, --primary, --brand…
+     - Issue #14 names: --bg-base, --bg-raised, --border-hairline, --text-*…
+   Both resolve to the same colours so they stay in sync.
+
+   Brand: OpenCoven lavender (#9A8ECD) lives at --accent-presence.
+   Reserved for familiar presence dots and the health strip — not
+   for primary CTAs. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ---- Palette (oklch — same colour science as shadcn) ---- */
+  --background: oklch(0.18 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.92 0.004 286.32);
+  --primary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.552 0.016 285.938);
+
+  /* ---- Coven brand ----
+     Lavender presence accent. Use sparingly — familiar dots,
+     status strip, the gradient AI toggle in #22. */
+  --accent-presence: #9a8ecd;
+  --accent-presence-soft: oklch(0.72 0.08 295);
+  --brand: var(--accent-presence);
+  --brand-foreground: oklch(0.985 0 0);
+
+  /* ---- Issue #14 named aliases ----
+     Semantic names called out in the spec. Resolve to the same
+     palette as above so either vocabulary works. */
+  --bg-base: var(--background);
+  --bg-raised: var(--card);
+  --border-hairline: var(--border);
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-muted: oklch(0.985 0 0 / 40%);
+
+  /* ---- Radii ---- */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  /* Issue #14 named aliases */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+
+  /* ---- Spacing ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ---- Shell pane widths ---- */
+  --shell-nav-width: 240px;
+  --shell-list-width: 260px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent-presence: var(--accent-presence);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
 }
 
 body {
-  background: var(--background);
+  font-family:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   Shell primitives — the three-pane app chrome.
+   Composed by <Shell> in src/components/shell.tsx.
+   ============================================================ */
+
+.shell-root {
+  width: 100vw;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* react-resizable-panels wrappers — make each Panel fill its allotted
+   width and hand vertical layout to the inner aside/main. */
+.shell-nav-panel,
+.shell-list-panel,
+.shell-detail-panel {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.shell-nav-panel > .shell-nav,
+.shell-list-panel > .shell-list,
+.shell-detail-panel > .shell-detail {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Separator — 1px hairline with a slightly wider hit area, lavender on
+   hover/active to match the Mood C accent. */
+.shell-separator {
+  flex: 0 0 1px;
+  background: var(--border-hairline);
+  cursor: col-resize;
+  position: relative;
+  transition: background-color 0.12s ease;
+}
+
+.shell-separator::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.shell-separator:hover,
+.shell-separator:active {
+  background: var(--accent-presence);
+}
+
+.shell-nav {
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--bg-base);
+  overflow-y: auto;
+}
+
+.shell-nav-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  width: 100%;
+  text-align: left;
+  transition: background-color 0.12s ease;
+}
+
+.shell-nav-header:hover {
+  background: var(--muted);
+}
+
+.shell-nav-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.shell-nav-eyebrow {
+  margin: var(--space-4) var(--space-2) var(--space-1);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+
+.shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.shell-nav-item:hover {
+  background: var(--muted);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+.shell-nav-item--active {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.shell-nav-item-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.shell-nav-kbd,
+.shell-kbd {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  background: oklch(1 0 0 / 4%);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline);
+}
+
+.shell-nav-item .shell-nav-kbd {
+  margin-left: auto;
+}
+
+.shell-list {
+  background: var(--bg-base);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.shell-list-header {
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.shell-detail {
+  background: var(--bg-base);
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Presence dot used by familiar rail and status chips. */
+.shell-presence-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 2px oklch(0.605 0.12 295 / 18%);
+}
+
+.shell-presence-dot--idle {
+  background: var(--muted-foreground);
+  box-shadow: none;
+  opacity: 0.5;
+}
+
+/* Generic card / surface primitives used outside the shell pane chrome. */
+.shell-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.shell-chip-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  background: oklch(1 0 0 / 4%);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--muted-foreground);
 }
