@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { FamiliarRail } from "@/components/familiar-rail";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { InspectorPane } from "@/components/inspector-pane";
@@ -14,6 +13,7 @@ import { InboxView } from "@/components/inbox-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
+import { Shell, ShellNav, ShellNavHeader, type ShellNavItem } from "@/components/shell";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -22,8 +22,6 @@ import type { Familiar, SessionRow } from "@/lib/types";
 type Mode = "chats" | "board" | "plugins" | "inbox";
 
 export function Workspace() {
-  const leftRef = usePanelRef();
-  const rightRef = usePanelRef();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
@@ -241,14 +239,6 @@ export function Workspace() {
       const meta = e.metaKey || e.ctrlKey;
       if (!meta) return;
       const k = e.key.toLowerCase();
-      if (k === "b") {
-        e.preventDefault();
-        const target = e.shiftKey ? rightRef.current : leftRef.current;
-        if (!target) return;
-        if (target.isCollapsed()) target.expand();
-        else target.collapse();
-        return;
-      }
       if (k === "k") {
         e.preventDefault();
         setPaletteOpen(true);
@@ -257,7 +247,7 @@ export function Workspace() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [leftRef, rightRef]);
+  }, []);
 
   const setFamiliarResponse = useCallback((familiarId: string, needed: boolean) => {
     void familiarId;
@@ -450,8 +440,6 @@ export function Workspace() {
   };
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
-  const handleClass =
-    "w-px bg-zinc-800 transition-colors hover:bg-purple-500/60 data-[resize-handle-state=drag]:bg-purple-500";
 
   // Ephemeral bridge: turn each "needs response" familiar into a transient
   // InboxItem so the bell badge, inbox view, and inspector tab all surface it
@@ -488,122 +476,199 @@ export function Workspace() {
     return [...inboxItems, ...ephemeral];
   }, [inboxItems, responseNeeded, familiars, sessions]);
 
-  return (
-    <div className="flex h-screen w-screen flex-col bg-zinc-950 text-zinc-100">
-      <DaemonBar
-        mode={mode}
-        onModeChange={setMode}
-        inboxBadgeCount={inboxItemsWithEphemeral.filter(
-          (i) =>
-            i.status === "fired" ||
-            (i.status === "pending" && i.kind === "response-needed"),
-        ).length}
-        onRunningChange={setDaemonRunning}
-        inboxItems={inboxItemsWithEphemeral}
-        inboxPrefs={inboxPrefs}
-        familiars={familiars}
-        onPrefsChanged={refreshPrefs}
-        onOpenInbox={() => setMode("inbox")}
-        onOpenInboxItem={(item) => {
-          if (item.sessionId) {
-            if (item.familiarId) setActiveId(item.familiarId);
-            setMode("chats");
-            setTimeout(() => routerRef.current?.openSession(item.sessionId!), 0);
-          } else {
-            setMode("inbox");
-          }
-        }}
-      />
+  // Mood C three-pane Shell:
+  //   nav   = always present (mode switcher + command launchers)
+  //   list  = only in chats mode (familiar rail). Inbox/Board/Plugins
+  //           are full-width detail surfaces — they have their own list
+  //           UI baked in and we don't want to double-list.
+  //   detail = the active view. Chats mode renders an inline inspector
+  //           rail on its right edge so we keep the inspector affordance
+  //           without spawning a 4th pane.
+  const inboxBadgeCount = inboxItemsWithEphemeral.filter(
+    (i) =>
+      i.status === "fired" ||
+      (i.status === "pending" && i.kind === "response-needed"),
+  ).length;
 
-      <Group orientation="horizontal" className="flex-1 min-h-0 flex">
-        <Panel
-          panelRef={leftRef}
-          id="rail"
-          defaultSize="22%"
-          minSize="18%"
-          maxSize="34%"
-          collapsible
-          collapsedSize="0%"
-        >
-          <FamiliarRail
-            familiars={familiars}
-            activeId={activeId}
-            onSelect={setActiveId}
-            onEditGlyph={(f) => setGlyphPickerFor(f)}
-            error={familiarsError}
+  const navSections = [
+    {
+      items: [
+        {
+          id: "search",
+          label: "Search…",
+          icon: "ph:magnifying-glass" as const,
+          kbd: "⌘K",
+          onClick: () => setPaletteOpen(true),
+        },
+        {
+          id: "new",
+          label: "New chat",
+          icon: "ph:note-pencil" as const,
+          onClick: () => {
+            setMode("chats");
+            setTimeout(() => routerRef.current?.newChat(), 0);
+          },
+        },
+      ] as ShellNavItem[],
+    },
+    {
+      label: "Workspace",
+      items: [
+        {
+          id: "chats",
+          label: "Chats",
+          icon: "ph:chat-circle-dots" as const,
+          active: mode === "chats",
+          onClick: () => setMode("chats"),
+        },
+        {
+          id: "inbox",
+          label: "Inbox",
+          icon: "ph:tray" as const,
+          active: mode === "inbox",
+          onClick: () => setMode("inbox"),
+          kbd: inboxBadgeCount > 0 ? String(inboxBadgeCount) : undefined,
+        },
+        {
+          id: "board",
+          label: "Board",
+          icon: "ph:kanban" as const,
+          active: mode === "board",
+          onClick: () => setMode("board"),
+        },
+        {
+          id: "plugins",
+          label: "Plugins",
+          icon: "ph:plug" as const,
+          active: mode === "plugins",
+          onClick: () => setMode("plugins"),
+        },
+      ] as ShellNavItem[],
+    },
+    {
+      label: "Configure",
+      items: [
+        {
+          id: "settings",
+          label: "Settings",
+          icon: "ph:gear-six" as const,
+          onClick: openOnboarding,
+        },
+      ] as ShellNavItem[],
+    },
+  ];
+
+  const list =
+    mode === "chats" ? (
+      <FamiliarRail
+        familiars={familiars}
+        activeId={activeId}
+        onSelect={setActiveId}
+        onEditGlyph={(f) => setGlyphPickerFor(f)}
+        error={familiarsError}
+        sessions={sessions}
+        responseNeeded={responseNeeded}
+        onOpenOnboarding={openOnboarding}
+      />
+    ) : undefined;
+
+  const detail =
+    mode === "chats" ? (
+      <div className="flex flex-1 min-h-0">
+        <div className="flex-1 min-w-0">
+          <ChatRouter
+            ref={routerRef}
+            familiar={active}
             sessions={sessions}
-            responseNeeded={responseNeeded}
+            daemonRunning={daemonRunning}
+            onSessionStarted={loadSessions}
+            onSlashFromChat={(command, args) => {
+              onPaletteIntent({ kind: "slash", command, args });
+              return true;
+            }}
             onOpenOnboarding={openOnboarding}
           />
-        </Panel>
-
-        <Separator className={handleClass} />
-
-        <Panel id="chat" defaultSize="50%" minSize="28%">
-          {mode === "chats" ? (
-            <ChatRouter
-              ref={routerRef}
-              familiar={active}
-              sessions={sessions}
-              daemonRunning={daemonRunning}
-              onSessionStarted={loadSessions}
-              onSlashFromChat={(command, args) => {
-                onPaletteIntent({ kind: "slash", command, args });
-                return true;
-              }}
-              onOpenOnboarding={openOnboarding}
-            />
-          ) : mode === "board" ? (
-            <BoardView
-              familiars={familiars}
-              sessions={sessions}
-              activeFamiliarId={activeId}
-              onJumpToSession={(sessionId, familiarId) => {
-                if (familiarId) setActiveId(familiarId);
-                setMode("chats");
-                setTimeout(() => routerRef.current?.openSession(sessionId), 0);
-              }}
-            />
-          ) : mode === "inbox" ? (
-            <InboxView
-              items={inboxItemsWithEphemeral}
-              familiars={familiars}
-              onRefresh={refreshInbox}
-              onNewReminder={() => openReminderModal()}
-              onOpenSession={(sessionId, familiarId) => {
-                if (familiarId) setActiveId(familiarId);
-                setMode("chats");
-                setTimeout(() => routerRef.current?.openSession(sessionId), 0);
-              }}
-            />
-          ) : (
-            <PluginsView
-              onOpenChat={() => {
-                setMode("chats");
-                setTimeout(() => routerRef.current?.newChat(), 0);
-              }}
-            />
-          )}
-        </Panel>
-
-        <Separator className={handleClass} />
-
-        <Panel
-          panelRef={rightRef}
-          id="inspector"
-          defaultSize="28%"
-          minSize="22%"
-          maxSize="42%"
-          collapsible
-          collapsedSize="0%"
+        </div>
+        <aside
+          className="hidden lg:flex flex-col w-[320px] shrink-0 overflow-y-auto"
+          style={{ borderLeft: "1px solid var(--border-hairline)" }}
         >
           <InspectorPane
             familiar={active}
             inboxItems={inboxItemsWithEphemeral}
             onOpenInbox={() => setMode("inbox")}
           />
-        </Panel>
-      </Group>
+        </aside>
+      </div>
+    ) : mode === "board" ? (
+      <BoardView
+        familiars={familiars}
+        sessions={sessions}
+        activeFamiliarId={activeId}
+        onJumpToSession={(sessionId, familiarId) => {
+          if (familiarId) setActiveId(familiarId);
+          setMode("chats");
+          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+        }}
+      />
+    ) : mode === "inbox" ? (
+      <InboxView
+        items={inboxItemsWithEphemeral}
+        familiars={familiars}
+        onRefresh={refreshInbox}
+        onNewReminder={() => openReminderModal()}
+        onOpenSession={(sessionId, familiarId) => {
+          if (familiarId) setActiveId(familiarId);
+          setMode("chats");
+          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+        }}
+      />
+    ) : (
+      <PluginsView
+        onOpenChat={() => {
+          setMode("chats");
+          setTimeout(() => routerRef.current?.newChat(), 0);
+        }}
+      />
+    );
+
+  return (
+    <>
+      <Shell
+        topBar={
+          <DaemonBar
+            mode={mode}
+            onModeChange={setMode}
+            inboxBadgeCount={inboxBadgeCount}
+            onRunningChange={setDaemonRunning}
+            inboxItems={inboxItemsWithEphemeral}
+            inboxPrefs={inboxPrefs}
+            familiars={familiars}
+            onPrefsChanged={refreshPrefs}
+            onOpenInbox={() => setMode("inbox")}
+            onOpenInboxItem={(item) => {
+              if (item.sessionId) {
+                if (item.familiarId) setActiveId(item.familiarId);
+                setMode("chats");
+                setTimeout(
+                  () => routerRef.current?.openSession(item.sessionId!),
+                  0,
+                );
+              } else {
+                setMode("inbox");
+              }
+            }}
+          />
+        }
+        nav={
+          <ShellNav
+            header={<ShellNavHeader initial="C" label="CovenCave" />}
+            sections={navSections}
+          />
+        }
+        list={list}
+        detail={detail}
+      />
 
       <CommandPalette
         open={paletteOpen}
@@ -653,6 +718,6 @@ export function Workspace() {
         familiar={glyphPickerFor}
         onClose={() => setGlyphPickerFor(null)}
       />
-    </div>
+    </>
   );
 }
