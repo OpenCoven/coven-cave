@@ -1,0 +1,632 @@
+/* mockup.css — multica-inspired design tokens, scoped to the /mockup route
+   via the `.multica-theme` class on the route's root element. This keeps
+   the rest of the app untouched until we decide to roll the tokens out
+   globally.
+
+   Tokens are oklch — same colour-science basis as shadcn's defaults so
+   we're aligned with the broader ecosystem rather than inventing new
+   values. Clean-room rewrite; no multica source code copied. */
+
+.multica-theme {
+  /* ---- Palette ---- */
+  --background: oklch(0.18 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.92 0.004 286.32);
+  --primary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.552 0.016 285.938);
+  --brand: oklch(0.65 0.16 255);
+  --brand-foreground: oklch(0.985 0 0);
+
+  /* ---- Radii ---- */
+  --radius: 0.625rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+
+  /* ---- Spacing scale ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Layout primitives ---- */
+
+.multica-layout {
+  display: grid;
+  grid-template-columns: 240px 240px 1fr;
+  min-height: 100vh;
+}
+
+.multica-layout--two-pane {
+  grid-template-columns: 240px 1fr;
+}
+
+/* ---- Sidebar (main, left) ---- */
+
+.multica-sidebar {
+  border-right: 1px solid var(--border);
+  padding: var(--space-3) var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.multica-sidebar-org {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.multica-sidebar-org:hover {
+  background: var(--muted);
+}
+
+.multica-sidebar-org-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.multica-sidebar-eyebrow {
+  margin: var(--space-4) var(--space-2) var(--space-1);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+  text-transform: none;
+}
+
+.multica-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
+
+.multica-sidebar-item:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.multica-sidebar-item--active {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.multica-sidebar-item-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.multica-sidebar-item-kbd {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+/* ---- Sub-sidebar (settings/agents nested nav) ---- */
+
+.multica-subsidebar {
+  border-right: 1px solid var(--border);
+  padding: var(--space-3) var(--space-2);
+}
+
+.multica-subsidebar-title {
+  padding: var(--space-2) var(--space-3) var(--space-4);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.multica-subsidebar-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.multica-subsidebar-item:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.multica-subsidebar-item--active {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.multica-subsidebar-item--active::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--foreground);
+}
+
+/* ---- Content area ---- */
+
+.multica-content {
+  padding: var(--space-8) var(--space-10);
+  overflow-y: auto;
+}
+
+.multica-content-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.multica-content-header-icon {
+  color: var(--muted-foreground);
+}
+
+.multica-content-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10) 0;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.multica-content-empty-icon {
+  margin-bottom: var(--space-3);
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+.multica-content-empty-title {
+  font-size: 14px;
+  color: var(--foreground);
+  font-weight: 500;
+  margin-bottom: var(--space-2);
+}
+
+.multica-content-empty-subtitle {
+  font-size: 13px;
+  max-width: 380px;
+}
+
+/* ---- Card grid (for template cards under "No autopilots yet") ---- */
+
+.multica-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  max-width: 720px;
+  margin: var(--space-6) auto 0;
+}
+
+.multica-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+  font-family: inherit;
+  color: inherit;
+}
+
+.multica-card:hover {
+  border-color: var(--border-strong);
+}
+
+.multica-card-icon {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+.multica-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 4px;
+}
+
+.multica-card-subtitle {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.45;
+}
+
+.multica-card-grid-footer {
+  margin: var(--space-4) auto 0;
+  text-align: center;
+  max-width: 720px;
+}
+
+/* ---- Buttons ---- */
+
+.multica-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.multica-btn:hover {
+  background: var(--muted);
+  border-color: var(--border-strong);
+}
+
+.multica-btn--primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.multica-btn--primary:hover {
+  background: var(--primary);
+  opacity: 0.92;
+}
+
+.multica-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.multica-btn--ghost:hover {
+  background: var(--muted);
+}
+
+/* Top-right action chip in content header (matches "+ New autopilot") */
+.multica-content-action {
+  margin-left: auto;
+}
+
+/* ---- Settings card ---- */
+
+.multica-settings-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  padding: var(--space-5);
+  max-width: 720px;
+  margin-bottom: var(--space-4);
+}
+
+.multica-settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.multica-settings-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.multica-settings-card-description {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.multica-settings-card-empty {
+  color: var(--muted-foreground);
+  font-style: italic;
+  font-size: 13px;
+  margin-bottom: var(--space-3);
+}
+
+/* ---- Modal (matches "Create Agent" screenshot) ---- */
+
+.multica-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  z-index: 50;
+}
+
+.multica-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 680px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.multica-modal-header {
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.multica-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.multica-modal-description {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.multica-modal-body {
+  padding: var(--space-5) var(--space-6);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.multica-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.multica-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.multica-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.multica-field-input,
+.multica-field-textarea,
+.multica-field-select {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.12s ease;
+}
+
+.multica-field-input:focus,
+.multica-field-textarea:focus,
+.multica-field-select:focus {
+  border-color: var(--border-strong);
+  outline: 2px solid var(--ring);
+  outline-offset: -1px;
+}
+
+.multica-field-textarea {
+  min-height: 80px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.multica-field-visibility {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.multica-visibility-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.multica-visibility-option:hover {
+  border-color: var(--border-strong);
+}
+
+.multica-visibility-option--active {
+  border-color: var(--foreground);
+}
+
+.multica-visibility-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.multica-visibility-subtitle {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+/* ---- Floating chat panel (bottom-right) ---- */
+
+.multica-chat-panel {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  width: 340px;
+  height: 440px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
+  z-index: 40;
+}
+
+.multica-chat-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.multica-chat-panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--muted-foreground);
+}
+
+.multica-chat-panel-body-title {
+  color: var(--foreground);
+  font-weight: 500;
+  margin-bottom: var(--space-2);
+}
+
+.multica-chat-panel-input-row {
+  border-top: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.multica-chat-panel-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.multica-chat-panel-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ---- View-switcher pills (top of the mockup page) ---- */
+
+.multica-view-switcher {
+  position: fixed;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--space-1);
+  padding: 4px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius-xl);
+  z-index: 30;
+}
+
+.multica-view-switcher-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.multica-view-switcher-btn--active {
+  background: var(--muted);
+  color: var(--foreground);
+}
