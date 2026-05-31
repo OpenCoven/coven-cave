@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -82,6 +83,7 @@ export function CommandPalette({
   const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
   const [fsMemory, setFsMemory] = useState<FsMemoryEntry[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const keys = useKeySymbols();
 
   // Fetch the searchable corpora once on first open. Cheap calls; refreshed
   // every time the palette opens so the index doesn't go stale.
@@ -368,7 +370,7 @@ export function CommandPalette({
                   {row.kind === "command" ? (
                     <>
                       <span className="font-mono text-zinc-300">{row.name}</span>
-                      <span className="flex-1 text-zinc-500">{row.hint}</span>
+                      <span className="flex-1 text-zinc-500">{platformizeHint(row.hint, keys)}</span>
                       <span className="text-[10px] text-zinc-500">run</span>
                     </>
                   ) : null}
@@ -378,8 +380,8 @@ export function CommandPalette({
           })}
         </ul>
         <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-2 text-[10px] text-zinc-500">
-          <span>↑↓ navigate · ↵ select · esc close</span>
-          <span>⌘K</span>
+          <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
+          <span>{keys.mod}K</span>
         </div>
       </div>
     </div>

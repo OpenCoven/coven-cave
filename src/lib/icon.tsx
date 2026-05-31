@@ -10,8 +10,37 @@ function ensureRegistered() {
   registered = true;
 }
 
+/**
+ * Every Phosphor icon used in the cave. Keep this list narrow on purpose —
+ * adding a name here is a deliberate review point, and `IconName` makes the
+ * Icon component reject typos at compile time so `pnpm build` is the test.
+ *
+ * If you need a new icon: confirm it exists in Phosphor
+ * (https://phosphoricons.com/), add it here, then reference it in your
+ * component as `<Icon name="ph:my-new-icon" />`.
+ */
+export const ICON_NAMES = [
+  "ph:alarm-bold",
+  "ph:alarm-fill",
+  "ph:bell-fill",
+  "ph:caret-right-bold",
+  "ph:chat-circle-dots-bold",
+  "ph:chat-circle-dots-fill",
+  "ph:check-bold",
+  "ph:circle",
+  "ph:circle-fill",
+  "ph:gear-six-bold",
+  "ph:magic-wand-fill",
+  "ph:magnifying-glass-bold",
+  "ph:wrench-bold",
+  "ph:x-bold",
+  "ph:x-circle-fill",
+] as const;
+
+export type IconName = (typeof ICON_NAMES)[number];
+
 type IconProps = {
-  name: string;
+  name: IconName;
   className?: string;
   width?: number | string;
   height?: number | string;

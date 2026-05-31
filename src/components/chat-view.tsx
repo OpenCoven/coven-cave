@@ -5,6 +5,7 @@ import type { Familiar } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 type Turn = {
   id: string;
@@ -58,6 +59,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const tailRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const keys = useKeySymbols();
 
   // Slash suggestions
   const slashSuggestions: SlashCommand[] = useMemo(() => {
@@ -430,7 +432,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <code className="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[12px] text-zinc-300">
                   coven
                 </code>{" "}
-                CLI. ⌘K to jump · / for commands.
+                CLI. {keys.mod}K to jump · / for commands.
               </p>
             </div>
           ) : null}
@@ -482,7 +484,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 })}
               </ul>
               <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] text-zinc-500">
-                ↑↓ navigate · ↵ run · Tab complete · esc cancel
+                {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>
             </div>
           ) : null}
@@ -525,7 +527,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onClick={() => void send()}
                     disabled={!input.trim()}
                     className="grid h-7 w-7 place-items-center rounded-full bg-zinc-100 text-zinc-900 transition-colors hover:bg-white disabled:opacity-40"
-                    title="Send (↵)"
+                    title={`Send (${keys.enter})`}
                   >
                     ↑
                   </button>

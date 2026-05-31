@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
+import { useKeySymbols } from "@/lib/platform-keys";
 
 const PROJECT_ROOT =
   process.env.NEXT_PUBLIC_COVEN_PROJECT_ROOT ??
@@ -30,6 +31,7 @@ function age(iso: string): string {
 export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat }: Props) {
   const [busyTuiId, setBusyTuiId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const keys = useKeySymbols();
 
   const mine = useMemo(() => {
     return sessions
@@ -171,7 +173,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
       </div>
 
       <footer className="border-t border-zinc-900 px-5 py-2 text-[10px] text-zinc-600">
-        ↵ open · ⌘K palette · / commands in chat
+        {keys.enter} open · {keys.mod}K palette · / commands in chat
       </footer>
     </section>
   );
