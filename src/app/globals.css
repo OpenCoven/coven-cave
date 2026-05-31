@@ -117,20 +117,52 @@ body {
    ============================================================ */
 
 .shell-root {
-  display: grid;
-  grid-template-columns: var(--shell-nav-width) var(--shell-list-width) 1fr;
-  min-height: 100vh;
   width: 100vw;
   background: var(--bg-base);
   color: var(--text-primary);
 }
 
-.shell-root--two-pane {
-  grid-template-columns: var(--shell-nav-width) 1fr;
+/* react-resizable-panels wrappers — make each Panel fill its allotted
+   width and hand vertical layout to the inner aside/main. */
+.shell-nav-panel,
+.shell-list-panel,
+.shell-detail-panel {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.shell-nav-panel > .shell-nav,
+.shell-list-panel > .shell-list,
+.shell-detail-panel > .shell-detail {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Separator — 1px hairline with a slightly wider hit area, lavender on
+   hover/active to match the Mood C accent. */
+.shell-separator {
+  flex: 0 0 1px;
+  background: var(--border-hairline);
+  cursor: col-resize;
+  position: relative;
+  transition: background-color 0.12s ease;
+}
+
+.shell-separator::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.shell-separator:hover,
+.shell-separator:active {
+  background: var(--accent-presence);
 }
 
 .shell-nav {
-  border-right: 1px solid var(--border-hairline);
   padding: var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
@@ -234,7 +266,6 @@ body {
 }
 
 .shell-list {
-  border-right: 1px solid var(--border-hairline);
   background: var(--bg-base);
   overflow-y: auto;
   min-height: 0;
