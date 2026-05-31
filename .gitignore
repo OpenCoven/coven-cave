@@ -14,3 +14,4 @@ src-tauri/resources/server/
 
 # Notarized release artifacts
 release/
+.comux*
