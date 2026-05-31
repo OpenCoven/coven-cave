@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Icon } from "@/lib/icon";
 
 type Tab = "plugins" | "skills";
 type FilterChip = "curated" | "shared" | "created" | "more";
@@ -154,7 +155,7 @@ export function PluginsView({ onOpenChat }: Props) {
             className="flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-1.5 text-zinc-300 transition-colors hover:bg-zinc-800/80"
             title="Manage plugins (not wired in v1)"
           >
-            <span className="text-zinc-400">⚙</span>
+            <Icon name="ph:gear-six-bold" className="text-zinc-400" />
             <span>Manage</span>
           </button>
           <button
@@ -215,9 +216,12 @@ export function PluginsView({ onOpenChat }: Props) {
             </div>
 
             <div className="relative">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500">
-                ⌕
-              </span>
+              <Icon
+                name="ph:magnifying-glass-bold"
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                width="0.85rem"
+                height="0.85rem"
+              />
               <input
                 type="search"
                 value={query}
@@ -335,8 +339,9 @@ function PluginGrid({
                 <span
                   className="flex h-6 w-6 items-center justify-center rounded-full text-zinc-300"
                   title="Installed"
+                  aria-label="Installed"
                 >
-                  ✓
+                  <Icon name="ph:check-bold" />
                 </span>
               ) : (
                 <span
@@ -402,8 +407,9 @@ function SkillGrid({
             <span
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-300"
               title="Available"
+              aria-label="Available"
             >
-              ✓
+              <Icon name="ph:check-bold" />
             </span>
           </div>
         );

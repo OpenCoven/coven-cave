@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "@/lib/icon";
 
 type Step = { ok: boolean; detail?: string; hint?: string };
 
@@ -193,7 +194,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   <div className="text-[13px] font-medium text-zinc-100">{tmpl.label}</div>
                   <div className="mt-0.5 text-[11px] text-zinc-400">{tmpl.blurb}</div>
                   {active ? (
-                    <div className="mt-1.5 text-[10px] font-mono text-emerald-300">✓ saved</div>
+                    <div className="mt-1.5 flex items-center gap-1 font-mono text-[10px] text-emerald-300">
+                      <Icon name="ph:check-bold" />
+                      <span>saved</span>
+                    </div>
                   ) : null}
                 </button>
               );
@@ -256,7 +260,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       : "border-zinc-700 bg-zinc-900 text-zinc-400"
                   }`}
                 >
-                  {s.ok ? "✓" : i + 1}
+                  {s.ok ? <Icon name="ph:check-bold" /> : i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

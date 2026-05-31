@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import type { Familiar } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { Icon } from "@/lib/icon";
 
 type Turn = {
   id: string;
@@ -404,7 +405,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           {busy ? (
             <span className="text-amber-400">streaming…</span>
           ) : currentSessionRef.current ? (
-            <span className="text-emerald-400">● live</span>
+            <span className="inline-flex items-center gap-1 text-emerald-400">
+              <Icon name="ph:circle-fill" width="0.5rem" height="0.5rem" />
+              live
+            </span>
           ) : (
             <span>new</span>
           )}

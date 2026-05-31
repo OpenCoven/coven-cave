@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import type { InboxPrefs, SoundMode } from "@/lib/cave-inbox-prefs";
+import { Icon } from "@/lib/icon";
 
 type Props = {
   items: InboxItem[];
@@ -122,7 +123,8 @@ export function NotificationBell({
         }`}
         title={`${badgeCount} unread`}
       >
-        <span aria-hidden>🔔</span>
+        <Icon name="ph:bell-fill" aria-label="Notifications" />
+
         {badgeCount > 0 ? (
           <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white">
             {badgeCount > 9 ? "9+" : badgeCount}
@@ -139,10 +141,11 @@ export function NotificationBell({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSettingsOpen((v) => !v)}
-                className="text-[10px] text-zinc-400 hover:text-zinc-200"
+                className="grid h-5 w-5 place-items-center text-zinc-400 hover:text-zinc-200"
                 title="Notification settings"
+                aria-label="Notification settings"
               >
-                ⚙
+                <Icon name="ph:gear-six-bold" />
               </button>
               <button
                 onClick={() => {
@@ -233,13 +236,18 @@ export function NotificationBell({
                 className="mb-1 rounded-md border border-zinc-800 bg-zinc-900/40 p-2"
               >
                 <div className="flex items-start gap-2">
-                  <span className="text-sm leading-none">
-                    {it.kind === "response-needed"
-                      ? "💬"
-                      : it.kind === "agent"
-                      ? "🧙"
-                      : "⏰"}
-                  </span>
+                  <Icon
+                    name={
+                      it.kind === "response-needed"
+                        ? "ph:chat-circle-dots-fill"
+                        : it.kind === "agent"
+                        ? "ph:magic-wand-fill"
+                        : "ph:alarm-fill"
+                    }
+                    className="mt-0.5 shrink-0 text-zinc-400"
+                    width="0.95rem"
+                    height="0.95rem"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-zinc-100">{it.title}</div>
                     {it.body ? (
