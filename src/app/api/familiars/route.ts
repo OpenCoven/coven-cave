@@ -27,7 +27,10 @@ export async function GET() {
       { status: 503 },
     );
   }
-  const familiars = (res.data ?? []).map(({ emoji: _emoji, ...f }) => {
+  // Pass `emoji` through — it's the daemon-provided default glyph the
+  // glyph picker uses as the starting value. The Cave-local override store
+  // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
+  const familiars = (res.data ?? []).map((f) => {
     const binding = bindingFor(config, f.id);
     return { ...f, harness: binding.harness, model: binding.model, note: binding.note };
   });

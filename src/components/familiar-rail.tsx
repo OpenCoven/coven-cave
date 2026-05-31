@@ -3,6 +3,9 @@
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useEffect, useMemo, useState } from "react";
 import { computePresence } from "@/lib/presence";
+import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
 
 type HarnessReport = {
   id: string;
@@ -16,6 +19,8 @@ type Props = {
   familiars: Familiar[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** Right-click on a row opens the glyph picker for that familiar. */
+  onEditGlyph?: (familiar: Familiar) => void;
   error?: string | null;
   sessions: SessionRow[];
   responseNeeded: Set<string>;
@@ -26,11 +31,13 @@ export function FamiliarRail({
   familiars,
   activeId,
   onSelect,
+  onEditGlyph,
   error,
   sessions,
   responseNeeded,
   onOpenOnboarding,
 }: Props) {
+  const glyphOverrides = useGlyphOverrides();
   const current = familiars.find((f) => f.id === activeId) ?? null;
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
 
@@ -119,12 +126,35 @@ export function FamiliarRail({
             <li key={f.id}>
               <button
                 onClick={() => onSelect(f.id)}
+                onContextMenu={(e) => {
+                  if (!onEditGlyph) return;
+                  e.preventDefault();
+                  onEditGlyph(f);
+                }}
                 className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${
                   isActive
                     ? "bg-zinc-800/80 text-zinc-50"
                     : "text-zinc-300 hover:bg-zinc-800/40"
                 }`}
+                title={onEditGlyph ? "Right-click to change glyph" : undefined}
               >
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    if (!onEditGlyph) return;
+                    e.stopPropagation();
+                    onEditGlyph(f);
+                  }}
+                  className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md bg-zinc-900/60 transition-colors hover:bg-zinc-800/90"
+                  aria-label="Change glyph"
+                  title="Change glyph"
+                >
+                  <FamiliarGlyph
+                    glyph={resolveFamiliarGlyph(f, glyphOverrides)}
+                    size="sm"
+                  />
+                </span>
                 <span className="flex flex-1 flex-col min-w-0">
                   <span className="flex items-center gap-1.5 truncate">
                     <span className="truncate">{f.display_name}</span>

@@ -13,6 +13,7 @@ import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxView } from "@/components/inbox-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
+import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -45,6 +46,7 @@ export function Workspace() {
     whenText: string;
   }>({ title: "", whenText: "" });
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
 
@@ -561,6 +563,7 @@ export function Workspace() {
             familiars={familiars}
             activeId={activeId}
             onSelect={setActiveId}
+            onEditGlyph={(f) => setGlyphPickerFor(f)}
             error={familiarsError}
             sessions={sessions}
             responseNeeded={responseNeeded}
@@ -691,6 +694,12 @@ export function Workspace() {
         onDismiss={dismissToast}
         onSnooze={snoozeToast}
         onOpen={openToastTarget}
+      />
+
+      <FamiliarGlyphPicker
+        open={glyphPickerFor !== null}
+        familiar={glyphPickerFor}
+        onClose={() => setGlyphPickerFor(null)}
       />
     </div>
   );

@@ -9,6 +9,12 @@ export type Familiar = {
   last_seen?: string;
   active_sessions?: number;
   memory_freshness?: string;
+  /**
+   * Daemon-owned glyph hint. Either a literal emoji character (`"🐈"`) or a
+   * Phosphor icon name (`"ph:cat-fill"`). The Cave-local override store
+   * (see `cave-glyph-overrides.ts`) wins over this when both are present.
+   */
+  emoji?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
   model?: string;
