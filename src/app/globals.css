@@ -331,3 +331,443 @@ body {
   font-size: 11px;
   color: var(--muted-foreground);
 }
+
+/* ============================================================
+   Component library — Mood C v1.1 (issue #22)
+   ============================================================
+   Modals, dock chat, property pills, gradient AI toggle, etc.
+   Each primitive owns its own class prefix so a downstream
+   refactor can swap implementation without colliding with
+   shell-* (issue #14) names. */
+
+/* ---- Modal -------------------------------------------------- */
+.ui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: oklch(0 0 0 / 60%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: var(--space-4);
+  animation: ui-modal-fade-in 120ms ease-out;
+}
+
+@keyframes ui-modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ui-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 2 * var(--space-4));
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px oklch(0 0 0 / 50%);
+}
+
+.ui-modal--wide { max-width: 720px; }
+
+.ui-modal-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.ui-modal-header-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-modal-header-breadcrumb > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-modal-header-breadcrumb-sep {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ui-modal-header-breadcrumb strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.ui-modal-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ui-modal-close:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-modal-body {
+  padding: var(--space-5);
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.ui-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+}
+
+.ui-modal-footer-pills {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ui-modal-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---- Property pill ----------------------------------------- */
+.ui-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+
+.ui-pill:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-pill--filled {
+  background: var(--muted);
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+
+.ui-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Chooser list buttons (three-option chooser) ----------- */
+.ui-chooser-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ui-chooser-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  width: 100%;
+}
+
+.ui-chooser-option:hover {
+  background: var(--muted);
+  border-color: var(--border-strong);
+}
+
+.ui-chooser-option-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-control);
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-chooser-option-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-chooser-option-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ui-chooser-option-subtitle {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.ui-chooser-option-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* ---- Template card grid ------------------------------------ */
+.ui-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (min-width: 900px) {
+  .ui-template-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.ui-template-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.ui-template-card:hover {
+  background: var(--muted);
+  border-color: var(--border-strong);
+}
+
+.ui-template-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-template-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ui-template-card-subtitle {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+
+/* ---- Floating dock chat ------------------------------------ */
+.ui-dock-chat {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  width: 440px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 16px 48px oklch(0 0 0 / 50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.18s ease, height 0.18s ease;
+}
+
+.ui-dock-chat--collapsed {
+  height: 44px;
+}
+
+.ui-dock-chat--expanded {
+  position: fixed;
+  inset: var(--space-4);
+  width: auto;
+  height: auto;
+  max-width: none;
+}
+
+.ui-dock-chat-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  height: 44px;
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.ui-dock-chat-title {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--foreground);
+}
+
+.ui-dock-chat-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ui-dock-chat-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.ui-dock-chat-icon-btn:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.ui-dock-chat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-5);
+  text-align: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.ui-dock-chat-body-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ui-dock-chat-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  flex-shrink: 0;
+}
+
+.ui-dock-chat-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.ui-dock-chat-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* ---- AI toggle (Manual ↔ Agent) ---------------------------- */
+.ui-ai-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border-hairline);
+  transition: color 0.12s ease;
+}
+
+.ui-ai-toggle:hover {
+  color: var(--foreground);
+}
+
+/* When in Agent mode, replace the hairline border with a lavender
+   gradient stroke. Implemented as a doubled background so the inner
+   tile keeps the bg colour while the outer pseudo carries the
+   gradient. */
+.ui-ai-toggle--agent {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg-base), var(--bg-base)) padding-box,
+    linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
+  color: var(--foreground);
+}
+
+.ui-ai-toggle--agent:hover {
+  background:
+    linear-gradient(var(--muted), var(--muted)) padding-box,
+    linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
+}
