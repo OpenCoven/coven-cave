@@ -22,6 +22,7 @@ function ensureRegistered() {
 export const ICON_NAMES = [
   "ph:alarm-bold",
   "ph:alarm-fill",
+  "ph:arrows-clockwise-bold",
   "ph:bell-fill",
   "ph:caret-right-bold",
   "ph:chat-circle-dots-bold",

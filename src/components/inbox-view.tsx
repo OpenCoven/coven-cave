@@ -3,8 +3,33 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, ItemStatus } from "@/lib/cave-inbox";
+import type { Recurrence } from "@/lib/inbox-recurrence";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon } from "@/lib/icon";
+
+const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+function describeRecurrence(rec: Recurrence | undefined): string | null {
+  if (!rec || rec.type === "none") return null;
+  if (rec.type === "interval") {
+    const ms = rec.everyMs;
+    if (ms < 60_000) return `every ${Math.round(ms / 1000)}s`;
+    if (ms < 3_600_000) return `every ${Math.round(ms / 60_000)}m`;
+    if (ms < 86_400_000) return `every ${Math.round(ms / 3_600_000)}h`;
+    return `every ${Math.round(ms / 86_400_000)}d`;
+  }
+  if (rec.type === "daily") {
+    return `daily ${String(rec.hour).padStart(2, "0")}:${String(rec.minute).padStart(2, "0")}`;
+  }
+  if (rec.type === "weekly") {
+    const days = rec.days.map((d) => DAY_INITIALS[d] ?? "?").join("/");
+    return `${days} ${String(rec.hour).padStart(2, "0")}:${String(rec.minute).padStart(2, "0")}`;
+  }
+  if (rec.type === "cron") {
+    return `cron: ${rec.expr}`;
+  }
+  return null;
+}
 
 type Props = {
   items: InboxItem[];
@@ -99,6 +124,26 @@ export function InboxView({
     [onRefresh],
   );
 
+  // PATCH the root inbox item — used for stop-recurrence, which sets
+  // recurrence.type to "none" so the next fire stops spawning a sibling.
+  const patch = useCallback(
+    async (id: string, body: object) => {
+      if (id.startsWith("eph:")) return;
+      setBusyId(id);
+      try {
+        await fetch(`/api/inbox/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        onRefresh();
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [onRefresh],
+  );
+
   const familiarLabel = (fid: string | null | undefined) => {
     if (!fid) return null;
     const f = familiars.find((x) => x.id === fid);
@@ -156,7 +201,7 @@ export function InboxView({
                         {it.body}
                       </p>
                     ) : null}
-                    <div className="mt-1.5 flex items-center gap-2 text-[10px] text-zinc-500">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
                       {col.id === "pending" ? (
                         <span className="inline-flex items-center gap-1">
                           <Icon name="ph:alarm-bold" />
@@ -167,6 +212,15 @@ export function InboxView({
                       ) : (
                         <span>done {fmtFireAt(it.updatedAt)}</span>
                       )}
+                      {describeRecurrence(it.recurrence) ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-zinc-900 px-1 py-px text-zinc-400"
+                          title="Repeats — use Stop recurrence to break the chain"
+                        >
+                          <Icon name="ph:arrows-clockwise-bold" />
+                          {describeRecurrence(it.recurrence)}
+                        </span>
+                      ) : null}
                       {familiarLabel(it.familiarId) ? (
                         <span className="rounded bg-zinc-800 px-1 py-px">
                           {familiarLabel(it.familiarId)}
@@ -188,6 +242,17 @@ export function InboxView({
                           >
                             Dismiss
                           </Btn>
+                          {describeRecurrence(it.recurrence) ? (
+                            <Btn
+                              disabled={busyId === it.id}
+                              onClick={() =>
+                                patch(it.id, { recurrence: { type: "none" } })
+                              }
+                              title="Stop this reminder from re-spawning after it fires"
+                            >
+                              Stop recurrence
+                            </Btn>
+                          ) : null}
                         </>
                       ) : null}
                       {col.id === "fired" ? (
@@ -246,15 +311,18 @@ function Btn({
   children,
   onClick,
   disabled,
+  title,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className="rounded border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
     >
       {children}

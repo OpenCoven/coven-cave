@@ -9,8 +9,7 @@ import {
 } from "react";
 import { Icon } from "@/lib/icon";
 import {
-  ALL_EMOJI_ENTRIES,
-  categoriesFor,
+  categories,
   searchGlyphs,
   type GlyphCatalogEntry,
 } from "@/lib/glyph-catalog";
@@ -29,8 +28,6 @@ import {
 import { FamiliarGlyph as GlyphView } from "@/components/familiar-glyph";
 import type { Familiar } from "@/lib/types";
 
-type PickerTab = "emoji" | "icon";
-
 type Props = {
   open: boolean;
   familiar: Familiar | null;
@@ -41,7 +38,6 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
   const overrides = useGlyphOverrides();
   const recent = useRecentGlyphs();
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<PickerTab>("emoji");
   const [hovered, setHovered] = useState<GlyphCatalogEntry | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -50,16 +46,8 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
     if (!open) return;
     setQuery("");
     setHovered(null);
-    // Default tab: emoji if the user has any recents that are emoji, else
-    // whatever the current glyph kind is.
-    const currentGlyph = familiar
-      ? resolveFamiliarGlyph(familiar, overrides)
-      : null;
-    setTab(currentGlyph?.kind === "icon" ? "icon" : "emoji");
     const t = setTimeout(() => inputRef.current?.focus(), 20);
     return () => clearTimeout(t);
-    // overrides intentionally NOT in deps — we only want this on open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, familiar?.id]);
 
   // Esc closes; Cmd/Ctrl+Backspace clears the current override.
@@ -84,43 +72,32 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
   }, [familiar, overrides]);
 
   const results = useMemo(() => {
-    return searchGlyphs({
-      query,
-      kinds: query.trim() ? ["emoji", "icon"] : [tab],
-    }).slice(0, 800);
-  }, [query, tab]);
+    return searchGlyphs({ query }).slice(0, 800);
+  }, [query]);
 
-  const categories = useMemo(() => {
+  const categoryList = useMemo(() => {
     if (query.trim()) return [];
-    return categoriesFor([tab]);
-  }, [tab, query]);
+    return categories();
+  }, [query]);
 
+  // Recent only includes icon picks since the picker is icon-only now.
+  // Older emoji entries in localStorage are dropped from the recent strip
+  // (still render fine on the familiar itself via the legacy renderer).
   const recentEntries: GlyphCatalogEntry[] = useMemo(() => {
-    return recent
-      .map((value) => {
-        const parsed = parseGlyphString(value);
-        if (!parsed) return null;
-        if (parsed.kind === "emoji") {
-          const found = ALL_EMOJI_ENTRIES.find((e) => e.value === parsed.char);
-          if (found) return found;
-          return {
-            value: parsed.char,
-            kind: "emoji" as const,
-            name: parsed.char,
-            category: "Recent",
-            keywords: [],
-          };
-        }
-        return {
-          value: parsed.name,
-          kind: "icon" as const,
-          name: parsed.name.replace(/^ph:/, "").replace(/-/g, " "),
-          category: "Recent",
-          keywords: [],
-        };
-      })
-      .filter((e): e is GlyphCatalogEntry => e !== null)
-      .slice(0, 12);
+    const out: GlyphCatalogEntry[] = [];
+    for (const value of recent) {
+      const parsed = parseGlyphString(value);
+      if (!parsed || parsed.kind !== "icon") continue;
+      out.push({
+        value: parsed.name,
+        kind: "icon",
+        name: parsed.name.replace(/^ph:/, "").replace(/-/g, " "),
+        category: "Recent",
+        keywords: [],
+      });
+      if (out.length >= 12) break;
+    }
+    return out;
   }, [recent]);
 
   const onPick = useCallback(
@@ -154,7 +131,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
               {familiar.display_name}
             </span>
             <span className="text-[11px] text-zinc-500">
-              {hovered?.name ?? "Pick a glyph"}
+              {hovered?.name ?? "Pick an icon"}
             </span>
           </div>
           <button
@@ -213,38 +190,26 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
           </div>
         ) : null}
 
-        {/* Tabs (hidden during free-text search since we merge both kinds) */}
-        {!query.trim() ? (
-          <div className="flex items-center gap-0.5 border-b border-zinc-900 px-4 py-1.5 text-[11px]">
-            <TabButton
-              active={tab === "emoji"}
-              onClick={() => setTab("emoji")}
-              label="Emoji"
-            />
-            <TabButton
-              active={tab === "icon"}
-              onClick={() => setTab("icon")}
-              label="Icons"
-            />
-            <div className="ml-auto text-[10px] text-zinc-600">
-              {results.length.toLocaleString()} options
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-1.5 text-[10px] text-zinc-500">
-            <span>
-              {results.length.toLocaleString()} matches for {`"`}
-              {query.trim()}
-              {`"`}
-            </span>
-            <button
-              onClick={() => setQuery("")}
-              className="text-zinc-400 hover:text-zinc-200"
-            >
-              clear
-            </button>
-          </div>
-        )}
+        {/* Results count */}
+        <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-1.5 text-[10px] text-zinc-500">
+          {query.trim() ? (
+            <>
+              <span>
+                {results.length.toLocaleString()} matches for {`"`}
+                {query.trim()}
+                {`"`}
+              </span>
+              <button
+                onClick={() => setQuery("")}
+                className="text-zinc-400 hover:text-zinc-200"
+              >
+                clear
+              </button>
+            </>
+          ) : (
+            <span>{results.length.toLocaleString()} icons</span>
+          )}
+        </div>
 
         {/* Grid */}
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -262,7 +227,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
           ) : (
             <CategorizedGrid
               entries={results}
-              categories={categories}
+              categories={categoryList}
               currentValue={currentGlyph ? serializeGlyph(currentGlyph) : null}
               onPick={onPick}
               onHover={setHovered}
@@ -290,29 +255,6 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function TabButton({
-  active,
-  onClick,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-md px-2.5 py-1 transition-colors ${
-        active
-          ? "bg-zinc-800 text-zinc-100"
-          : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
 function GlyphButton({
   entry,
   size = "sm",
@@ -327,10 +269,7 @@ function GlyphButton({
   onHover: (e: GlyphCatalogEntry | null) => void;
 }) {
   const cell = size === "md" ? "h-9 w-9" : "h-8 w-8";
-  const glyph: FamiliarGlyph =
-    entry.kind === "emoji"
-      ? { kind: "emoji", char: entry.value }
-      : { kind: "icon", name: entry.value };
+  const glyph: FamiliarGlyph = { kind: "icon", name: entry.value };
   return (
     <button
       onClick={() => onPick(entry)}
@@ -363,7 +302,7 @@ function GlyphGrid({
     <div className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1">
       {entries.map((e) => (
         <GlyphButton
-          key={`${e.kind}:${e.value}`}
+          key={e.value}
           entry={e}
           active={e.value === currentValue}
           onPick={onPick}

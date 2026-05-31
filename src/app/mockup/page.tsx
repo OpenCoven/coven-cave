@@ -388,7 +388,7 @@ function ChatPanel() {
       <div className="multica-chat-panel-body">
         <div className="multica-chat-panel-body-title">Chat with your agents</div>
         <div style={{ fontSize: 12, marginBottom: 16 }}>
-          ✨ They know your workspace — <span style={{ color: "var(--foreground)" }}>issues, projects, skills</span>.
+          They know your workspace — <span style={{ color: "var(--foreground)" }}>issues, projects, skills</span>.
         </div>
         <div style={{ fontSize: 12 }}>Ask for a summary, plan your day, or hand off a quick task.</div>
       </div>
