@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, ItemStatus } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
+import { Icon } from "@/lib/icon";
 
 type Props = {
   items: InboxItem[];
@@ -157,7 +158,10 @@ export function InboxView({
                     ) : null}
                     <div className="mt-1.5 flex items-center gap-2 text-[10px] text-zinc-500">
                       {col.id === "pending" ? (
-                        <span>⏰ {fmtFireAt(it.fireAt)}</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Icon name="ph:alarm-bold" />
+                          {fmtFireAt(it.fireAt)}
+                        </span>
                       ) : col.id === "fired" ? (
                         <span>fired {fmtFireAt(it.firedAt)}</span>
                       ) : (

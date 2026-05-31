@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { Icon } from "@/lib/icon";
 
 const TEMPLATES = ["Bugfix", "Docs", "Release", "PR review", "Plugin"];
 const STATUSES: CardStatus[] = ["inbox", "running", "review"];
@@ -122,8 +123,9 @@ export function NewCardModal({
           <button
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-400 hover:bg-zinc-900"
+            aria-label="Close"
           >
-            ✕
+            <Icon name="ph:x-bold" />
           </button>
         </div>
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { Icon } from "@/lib/icon";
 
 const PROJECT_ROOT =
   process.env.NEXT_PUBLIC_COVEN_PROJECT_ROOT ??
@@ -132,14 +133,15 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                       }}
                       className="group flex cursor-pointer items-center gap-3 py-3 transition-colors hover:bg-zinc-900/30"
                     >
-                      <span
+                      <Icon
+                        name={running ? "ph:circle-fill" : "ph:circle"}
                         className={
                           running ? "text-emerald-400 animate-pulse" : "text-zinc-700"
                         }
                         title={running ? "running" : "idle"}
-                      >
-                        {running ? "●" : "○"}
-                      </span>
+                        width="0.6rem"
+                        height="0.6rem"
+                      />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-sm text-zinc-100">
                           {s.title || "(untitled chat)"}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS } from "@/lib/slash-commands";
+import { Icon } from "@/lib/icon";
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -315,7 +316,7 @@ export function CommandPalette({
                   ) : null}
                   {row.kind === "session" ? (
                     <>
-                      <span className="text-lg">✦</span>
+                      <Icon name="ph:chat-circle-dots-bold" className="text-zinc-400" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-zinc-100">
                           {row.session.title || "(untitled chat)"}

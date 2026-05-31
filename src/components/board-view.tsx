@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
+import { Icon } from "@/lib/icon";
 
 type CardStatus = "inbox" | "running" | "review";
 type CardPriority = "low" | "medium" | "high" | "urgent";
@@ -420,7 +421,14 @@ function CardItem({
                   : "bg-zinc-700/40 text-zinc-300 hover:bg-zinc-700/70"
             }`}
           >
-            {session.status === "running" ? "● open" : session.status === "failed" ? "✗ open" : "open"}
+            <span className="inline-flex items-center gap-1">
+              {session.status === "running" ? (
+                <Icon name="ph:circle-fill" width="0.5rem" height="0.5rem" />
+              ) : session.status === "failed" ? (
+                <Icon name="ph:x-circle-fill" width="0.7rem" height="0.7rem" />
+              ) : null}
+              open
+            </span>
           </button>
         ) : null}
       </div>

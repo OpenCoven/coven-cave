@@ -5,6 +5,7 @@ import type { Familiar } from "@/lib/types";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen, splitWhenAndText } from "@/lib/parse-when";
 import { parseCron } from "@/lib/cron";
+import { Icon } from "@/lib/icon";
 
 export type NewReminderDraft = {
   title: string;
@@ -215,8 +216,9 @@ export function NewReminderModal({
           <button
             onClick={onClose}
             className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-400 hover:bg-zinc-900"
+            aria-label="Close"
           >
-            ✕
+            <Icon name="ph:x-bold" />
           </button>
         </div>
 

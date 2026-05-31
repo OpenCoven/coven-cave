@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
+import { Icon } from "@/lib/icon";
 
 export type Toast = {
   id: string;
@@ -41,13 +42,14 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
           className="pointer-events-auto rounded-xl border border-zinc-700 bg-zinc-900 p-3 shadow-2xl"
         >
           <div className="mb-1 flex items-start gap-2">
-            <span className="text-base">⏰</span>
+            <Icon name="ph:alarm-fill" className="mt-0.5 shrink-0 text-amber-300" />
             <span className="flex-1 text-sm font-medium text-zinc-100">{t.title}</span>
             <button
               onClick={() => onDismiss(t.id)}
-              className="text-zinc-500 hover:text-zinc-200"
+              className="grid h-5 w-5 place-items-center text-zinc-500 hover:text-zinc-200"
+              aria-label="Dismiss"
             >
-              ✕
+              <Icon name="ph:x-bold" />
             </button>
           </div>
           {t.body ? (
