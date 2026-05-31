@@ -4,6 +4,7 @@ out
 .DS_Store
 *.log
 .env*.local
+.env*
 src-tauri/target
 src-tauri/gen
 tsconfig.tsbuildinfo
