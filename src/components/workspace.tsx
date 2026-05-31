@@ -14,6 +14,8 @@ import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, ShellNav, ShellNavHeader, type ShellNavItem } from "@/components/shell";
+import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
+import { DockChat } from "@/components/ui/dock-chat";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -45,6 +47,7 @@ export function Workspace() {
   }>({ title: "", whenText: "" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
+  const [addChooserOpen, setAddChooserOpen] = useState(false);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
 
@@ -509,6 +512,12 @@ export function Workspace() {
             setTimeout(() => routerRef.current?.newChat(), 0);
           },
         },
+        {
+          id: "add",
+          label: "Add…",
+          icon: "ph:plus" as const,
+          onClick: () => setAddChooserOpen(true),
+        },
       ] as ShellNavItem[],
     },
     {
@@ -717,6 +726,46 @@ export function Workspace() {
         open={glyphPickerFor !== null}
         familiar={glyphPickerFor}
         onClose={() => setGlyphPickerFor(null)}
+      />
+
+      <ChooserModal
+        open={addChooserOpen}
+        onClose={() => setAddChooserOpen(false)}
+        breadcrumb={["CovenCave", "Add"]}
+        options={
+          [
+            {
+              id: "reminder",
+              icon: "ph:alarm-bold",
+              title: "Reminder",
+              description: "Schedule a reminder to fire at a specific time.",
+            },
+            {
+              id: "board-card",
+              icon: "ph:kanban",
+              title: "Board card",
+              description: "Queue work for a familiar on the board.",
+            },
+            {
+              id: "familiar",
+              icon: "ph:sparkle",
+              title: "Familiar",
+              description: "Run setup to scaffold a new familiar.",
+            },
+          ] as ChooserOption[]
+        }
+        onPick={(id) => {
+          if (id === "reminder") openReminderModal();
+          else if (id === "board-card") setMode("board");
+          else if (id === "familiar") openOnboarding();
+        }}
+      />
+
+      <DockChat
+        onSubmit={() => {
+          setMode("chats");
+          setTimeout(() => routerRef.current?.newChat(), 0);
+        }}
       />
     </>
   );

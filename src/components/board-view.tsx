@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
+import { TemplateCardGrid } from "@/components/ui/template-card-grid";
 
 type CardStatus = "inbox" | "running" | "review";
 type CardPriority = "low" | "medium" | "high" | "urgent";
@@ -245,6 +246,34 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         </div>
       ) : null}
 
+      {cards.length === 0 ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-12">
+          <div className="mx-auto w-full max-w-[720px]">
+            <TemplateCardGrid
+              headline="No cards yet"
+              subtitle="Queue work for a familiar with a starter template, or start from scratch."
+              columns={3}
+              templates={[
+                { id: "bugfix", icon: "ph:wrench-bold", title: "Bugfix", description: "Track down and fix a defect." },
+                { id: "docs", icon: "ph:note-pencil", title: "Docs", description: "Write or update documentation." },
+                { id: "release", icon: "ph:sparkle", title: "Release", description: "Cut, sign, and publish a release." },
+                { id: "pr-review", icon: "ph:check-bold", title: "PR review", description: "Hand off a PR to a familiar to review." },
+                { id: "plugin", icon: "ph:plug", title: "Plugin", description: "Wire up or test a harness plugin." },
+                { id: "tidy", icon: "ph:magic-wand-fill", title: "Tidy", description: "Repo hygiene or refactor." },
+              ]}
+              onPick={() => {
+                setModalDefaultStatus("inbox");
+                setModalOpen(true);
+              }}
+              startFromScratchLabel="Start from scratch"
+              onStartFromScratch={() => {
+                setModalDefaultStatus("inbox");
+                setModalOpen(true);
+              }}
+            />
+          </div>
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="flex h-full w-full gap-3 px-5 py-4">
           {COLUMNS.map((col) => {
@@ -314,6 +343,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           })}
         </div>
       </div>
+      )}
 
       <NewCardModal
         open={modalOpen}

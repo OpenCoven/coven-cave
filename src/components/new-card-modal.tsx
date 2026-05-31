@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { Icon } from "@/lib/icon";
+import { Modal } from "@/components/ui/modal";
+import { PropertyPill } from "@/components/ui/property-pill";
 
 const TEMPLATES = ["Bugfix", "Docs", "Release", "PR review", "Plugin"];
 const STATUSES: CardStatus[] = ["inbox", "running", "review"];
@@ -65,17 +66,6 @@ export function NewCardModal({
     setError(null);
   }, [open, defaultStatus, defaultFamiliarId]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const eligibleSessions = familiarId
     ? sessions.filter((s) => s.familiarId === familiarId)
     : sessions;
@@ -93,8 +83,8 @@ export function NewCardModal({
         familiarId,
         sessionId,
         labels: labels
-          .split(",")
-          .map((l) => l.trim())
+          .split(/[,\s]+/)
+          .map((s) => s.trim())
           .filter(Boolean),
         template,
       });
@@ -106,157 +96,170 @@ export function NewCardModal({
     }
   };
 
+  const familiarLabel =
+    familiars.find((f) => f.id === familiarId)?.display_name ?? "Default familiar";
+  const sessionLabel =
+    sessions.find((s) => s.id === sessionId)?.title ?? null;
+
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-[680px] max-w-[94vw] max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
-      >
-        <div className="mb-5 flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-100">New card</h2>
-            <p className="text-[12px] text-zinc-500">Queue work for a familiar session.</p>
-          </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      breadcrumb={["Board", "New card"]}
+      footerPills={
+        <>
+          <PropertyPill
+            icon="ph:circle"
+            label={`Status: ${cap(status)}`}
+            filled
+            title="Status (set in fields above)"
+          />
+          <PropertyPill
+            icon="ph:circle-fill"
+            label={`Priority: ${cap(priority)}`}
+            filled
+            title="Priority (set in fields above)"
+          />
+          <PropertyPill
+            icon="ph:sparkle"
+            label={familiarLabel}
+            filled={familiarId !== null}
+          />
+          {sessionLabel ? (
+            <PropertyPill icon="ph:chat-circle-dots" label={sessionLabel} filled />
+          ) : null}
+        </>
+      }
+      footerActions={
+        <>
           <button
             onClick={onClose}
-            className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-400 hover:bg-zinc-900"
-            aria-label="Close"
-          >
-            <Icon name="ph:x-bold" />
-          </button>
-        </div>
-
-        <div className="mb-5 flex flex-wrap gap-2">
-          {TEMPLATES.map((t) => {
-            const active = template === t;
-            return (
-              <button
-                key={t}
-                onClick={() => {
-                  setTemplate(active ? null : t);
-                  if (!active && !title.trim()) setTitle(`${t}: `);
-                }}
-                className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-                  active
-                    ? "border-purple-500 bg-purple-500/20 text-purple-100"
-                    : "border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                {t}
-              </button>
-            );
-          })}
-        </div>
-
-        <Field label="Title">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Card title"
-            autoFocus
-            className="w-full rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-600"
-          />
-        </Field>
-
-        <Field label="Notes">
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Notes, acceptance criteria, links"
-            rows={6}
-            className="w-full resize-y rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-600"
-          />
-        </Field>
-
-        <div className="mb-4 grid grid-cols-2 gap-4">
-          <Field label="Status">
-            <Select
-              value={status}
-              onChange={(v) => setStatus(v as CardStatus)}
-              options={STATUSES.map((s) => ({ value: s, label: cap(s) }))}
-            />
-          </Field>
-          <Field label="Priority">
-            <Select
-              value={priority}
-              onChange={(v) => setPriority(v as CardPriority)}
-              options={PRIORITIES.map((p) => ({ value: p, label: cap(p) }))}
-            />
-          </Field>
-
-          <Field label="Familiar">
-            <Select
-              value={familiarId ?? ""}
-              onChange={(v) => {
-                setFamiliarId(v || null);
-                setSessionId(null);
-              }}
-              options={[
-                { value: "", label: "Default familiar" },
-                ...familiars.map((f) => ({
-                  value: f.id,
-                  label: `${f.display_name} · ${f.harness ?? "?"}`,
-                })),
-              ]}
-            />
-          </Field>
-          <Field label="Session">
-            <Select
-              value={sessionId ?? ""}
-              onChange={(v) => setSessionId(v || null)}
-              options={[
-                { value: "", label: "No linked session" },
-                ...eligibleSessions.slice(0, 30).map((s) => ({
-                  value: s.id,
-                  label: `${s.title || "(untitled)"} · ${s.harness}`,
-                })),
-              ]}
-            />
-          </Field>
-        </div>
-
-        <Field label="Labels">
-          <input
-            value={labels}
-            onChange={(e) => setLabels(e.target.value)}
-            placeholder="ui, docs"
-            className="w-full rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-600"
-          />
-        </Field>
-
-        {error ? (
-          <div className="mb-3 rounded border border-amber-700/40 bg-amber-900/20 px-3 py-1.5 text-xs text-amber-200">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-2">
-          <button
-            onClick={create}
-            disabled={!title.trim() || busy}
-            className="rounded-md bg-rose-700 px-4 py-1.5 text-sm font-medium text-zinc-50 transition-colors hover:bg-rose-600 disabled:opacity-50"
-          >
-            {busy ? "Creating…" : "Create"}
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded-md border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
           >
             Cancel
           </button>
-        </div>
+          <button
+            onClick={create}
+            disabled={!title.trim() || busy}
+            className="rounded-md border border-border-strong bg-muted px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-card disabled:opacity-50"
+          >
+            {busy ? "Creating…" : "Create"}
+          </button>
+        </>
+      }
+    >
+      <div className="mb-5 flex flex-wrap gap-2">
+        {TEMPLATES.map((t) => {
+          const active = template === t;
+          return (
+            <button
+              key={t}
+              onClick={() => {
+                setTemplate(active ? null : t);
+                if (!active && !title.trim()) setTitle(`${t}: `);
+              }}
+              className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                active
+                  ? "border-border-strong bg-muted text-foreground"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              {t}
+            </button>
+          );
+        })}
       </div>
-    </div>
+
+      <Field label="Title">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Card title"
+          autoFocus
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+        />
+      </Field>
+
+      <Field label="Notes">
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notes, acceptance criteria, links"
+          rows={6}
+          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+        />
+      </Field>
+
+      <div className="mb-4 grid grid-cols-2 gap-4">
+        <Field label="Status">
+          <Select
+            value={status}
+            onChange={(v) => setStatus(v as CardStatus)}
+            options={STATUSES.map((s) => ({ value: s, label: cap(s) }))}
+          />
+        </Field>
+        <Field label="Priority">
+          <Select
+            value={priority}
+            onChange={(v) => setPriority(v as CardPriority)}
+            options={PRIORITIES.map((p) => ({ value: p, label: cap(p) }))}
+          />
+        </Field>
+
+        <Field label="Familiar">
+          <Select
+            value={familiarId ?? ""}
+            onChange={(v) => {
+              setFamiliarId(v || null);
+              setSessionId(null);
+            }}
+            options={[
+              { value: "", label: "Default familiar" },
+              ...familiars.map((f) => ({
+                value: f.id,
+                label: `${f.display_name} · ${f.harness ?? "?"}`,
+              })),
+            ]}
+          />
+        </Field>
+        <Field label="Session">
+          <Select
+            value={sessionId ?? ""}
+            onChange={(v) => setSessionId(v || null)}
+            options={[
+              { value: "", label: "No linked session" },
+              ...eligibleSessions.slice(0, 30).map((s) => ({
+                value: s.id,
+                label: `${s.title || "(untitled)"} · ${s.harness}`,
+              })),
+            ]}
+          />
+        </Field>
+      </div>
+
+      <Field label="Labels">
+        <input
+          value={labels}
+          onChange={(e) => setLabels(e.target.value)}
+          placeholder="ui, docs"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+        />
+      </Field>
+
+      {error ? (
+        <div className="mb-3 rounded border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+          {error}
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="mb-4 block">
-      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-zinc-500">{label}</div>
+      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
       {children}
     </label>
   );
@@ -276,15 +279,15 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 pr-8 text-sm text-zinc-100 outline-none focus:border-purple-600"
+        className="w-full appearance-none rounded-md border border-border bg-background px-3 py-2 pr-8 text-sm text-foreground outline-none focus:border-border-strong"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-zinc-900">
+          <option key={o.value} value={o.value} className="bg-card">
             {o.label}
           </option>
         ))}
       </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500">
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
         ▾
       </span>
     </div>
