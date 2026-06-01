@@ -583,7 +583,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <button
                     onClick={() => void send()}
                     disabled={!input.trim()}
-                    className="grid h-7 w-7 place-items-center rounded-full bg-zinc-100 text-zinc-900 transition-colors hover:bg-white disabled:opacity-40"
+                    className="grid h-7 w-7 place-items-center rounded-full bg-[--accent-presence] text-white transition-colors hover:bg-[--accent-presence-soft] disabled:opacity-40"
                     title={`Send (${keys.enter})`}
                   >
                     ↑

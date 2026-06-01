@@ -81,7 +81,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
         <span className="ml-auto flex items-center gap-2">
           <button
             onClick={onNewChat}
-            className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-medium text-zinc-900 transition-colors hover:bg-white"
+            className="rounded-full bg-[--accent-presence] px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-[--accent-presence-soft]"
           >
             + New chat
           </button>
@@ -116,7 +116,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
               </p>
               <button
                 onClick={onNewChat}
-                className="mt-5 rounded-full bg-zinc-100 px-4 py-1.5 text-xs font-medium text-zinc-900 transition-colors hover:bg-white"
+                className="mt-5 rounded-full bg-[--accent-presence] px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[--accent-presence-soft]"
               >
                 + New chat
               </button>

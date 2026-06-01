@@ -331,7 +331,7 @@ export function NewReminderModal({
           <button
             onClick={create}
             disabled={!title.trim() || !resolvedFireAt || busy}
-            className="rounded-md bg-rose-700 px-4 py-1.5 text-sm font-medium text-zinc-50 transition-colors hover:bg-rose-600 disabled:opacity-50"
+            className="rounded-md bg-rose-700 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-rose-600 disabled:opacity-50"
           >
             {busy ? "Creating…" : previewLabel ? `Remind ${previewLabel}` : "Create"}
           </button>

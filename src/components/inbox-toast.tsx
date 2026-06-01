@@ -66,7 +66,7 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
             {onOpen ? (
               <button
                 onClick={() => onOpen(t)}
-                className="rounded bg-rose-700 px-2 py-0.5 text-[10px] text-zinc-50 hover:bg-rose-600"
+                className="rounded bg-rose-700 px-2 py-0.5 text-[10px] text-white hover:bg-rose-600"
               >
                 Open
               </button>

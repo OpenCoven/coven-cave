@@ -291,7 +291,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           {status?.complete ? (
             <button
               onClick={onDismiss}
-              className="rounded-md bg-emerald-500/90 px-4 py-1.5 text-[13px] font-medium text-zinc-950 hover:bg-emerald-400"
+              className="rounded-md bg-emerald-500/90 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-emerald-400"
             >
               Open Cave →
             </button>
