@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Group,
   Panel,
@@ -80,6 +80,11 @@ export function Shell({
 }) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
+  // Persisted widths come from localStorage on client only; render a
+  // layout-free placeholder on server + first client paint to keep the
+  // hydration tree matching, then mount the real Group.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const twoPane = !list;
   const panelIds = twoPane ? ["nav", "detail"] : ["nav", "list", "detail"];
@@ -107,6 +112,15 @@ export function Shell({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [twoPane]);
+
+  if (!mounted) {
+    return (
+      <div className="flex h-screen w-screen flex-col">
+        {topBar}
+        <div className="shell-root flex-1 min-h-0" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen flex-col">
