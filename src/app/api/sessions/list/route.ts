@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadState } from "@/lib/cave-config";
+import { inferOrigin } from "@/lib/session-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export async function GET() {
   const sessions = res.data.map((s) => ({
     ...s,
     familiarId: state.sessionFamiliar[s.id] ?? null,
+    origin: inferOrigin(s),
   }));
   return NextResponse.json({ ok: true, sessions });
 }

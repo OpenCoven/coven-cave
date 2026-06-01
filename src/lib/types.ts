@@ -47,4 +47,13 @@ export type SessionRow = {
   created_at: string;
   updated_at: string;
   familiarId?: string | null;
+  origin?: SessionOrigin;
 };
+
+export type SessionOrigin =
+  | "chat"
+  | "mention"
+  | "board"
+  | "cron"
+  | "heartbeat"
+  | "call";

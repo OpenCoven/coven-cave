@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
+import { OriginChip } from "@/components/ui/origin-chip";
 
 const PROJECT_ROOT =
   process.env.NEXT_PUBLIC_COVEN_PROJECT_ROOT ??
@@ -145,8 +146,11 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                         height="0.6rem"
                       />
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm text-zinc-100">
-                          {s.title || "(untitled chat)"}
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm text-zinc-100">
+                            {s.title || "(untitled chat)"}
+                          </span>
+                          {s.origin ? <OriginChip origin={s.origin} /> : null}
                         </span>
                         <span className="truncate text-[11px] text-zinc-500">
                           <span className="font-mono text-zinc-400">{s.harness}</span>
