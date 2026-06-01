@@ -1,0 +1,81 @@
+{
+  "name": "mood-c-dark",
+  "displayName": "Mood C Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#0d0d12",
+    "editor.foreground": "#c9c2dc",
+    "editorLineNumber.foreground": "#4a4560",
+    "editorLineNumber.activeForeground": "#7a6fa0"
+  },
+  "tokenColors": [
+    {
+      "scope": ["comment", "punctuation.definition.comment", "string.comment"],
+      "settings": { "foreground": "#4a4560", "fontStyle": "italic" }
+    },
+    {
+      "scope": ["keyword", "keyword.control", "keyword.operator", "storage.type", "storage.modifier"],
+      "settings": { "foreground": "#b388ff" }
+    },
+    {
+      "scope": ["entity.name.function", "support.function", "meta.function-call entity.name.function"],
+      "settings": { "foreground": "#d4a9ff" }
+    },
+    {
+      "scope": ["entity.name.type", "entity.name.class", "entity.name.interface", "support.class"],
+      "settings": { "foreground": "#c5aaff" }
+    },
+    {
+      "scope": ["variable", "variable.other", "meta.definition.variable.name"],
+      "settings": { "foreground": "#c9c2dc" }
+    },
+    {
+      "scope": ["variable.parameter"],
+      "settings": { "foreground": "#e8d8ff" }
+    },
+    {
+      "scope": ["string", "string.quoted", "string.template", "punctuation.definition.string"],
+      "settings": { "foreground": "#a8c8ff" }
+    },
+    {
+      "scope": ["constant.numeric", "constant.language", "constant.character"],
+      "settings": { "foreground": "#ffb3c6" }
+    },
+    {
+      "scope": ["support.type.property-name", "entity.name.tag"],
+      "settings": { "foreground": "#9dd5ff" }
+    },
+    {
+      "scope": ["entity.other.attribute-name"],
+      "settings": { "foreground": "#b8d8ff" }
+    },
+    {
+      "scope": ["punctuation", "meta.brace", "meta.delimiter"],
+      "settings": { "foreground": "#8070a0" }
+    },
+    {
+      "scope": ["operator", "keyword.operator.assignment", "keyword.operator.comparison"],
+      "settings": { "foreground": "#c09ef0" }
+    },
+    {
+      "scope": ["meta.import", "keyword.control.import", "keyword.control.export"],
+      "settings": { "foreground": "#b388ff" }
+    },
+    {
+      "scope": ["support.type", "support.class.builtin"],
+      "settings": { "foreground": "#c5aaff" }
+    },
+    {
+      "scope": ["markup.inserted", "diff.inserted"],
+      "settings": { "foreground": "#89ddff" }
+    },
+    {
+      "scope": ["markup.deleted", "diff.deleted"],
+      "settings": { "foreground": "#ff8a9b" }
+    },
+    {
+      "scope": ["markup.changed"],
+      "settings": { "foreground": "#ffcc80" }
+    }
+  ]
+}

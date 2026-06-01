@@ -9,6 +9,9 @@
     "start": "next start"
   },
   "dependencies": {
+    "@create-markdown/core": "2.0.3",
+    "@create-markdown/preview": "2.0.3",
+    "@create-markdown/react": "2.0.3",
     "@iconify-json/ph": "^1.2.2",
     "@iconify/react": "^6.0.2",
     "@tauri-apps/api": "^2",
@@ -19,7 +22,8 @@
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-resizable-panels": "^4.11.2"
+    "react-resizable-panels": "^4.11.2",
+    "shiki": "^4.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

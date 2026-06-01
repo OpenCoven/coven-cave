@@ -1,0 +1,242 @@
+/* cave-chat.css — Markdown styles for Cave chat bubbles.
+ * Scoped to .cave-md so Shiki + MD styles don't bleed into app chrome.
+ * Uses only existing CSS custom properties; no new colors.
+ */
+
+/* ── Base prose ──────────────────────────────────────────────────────────── */
+.cave-md {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.cave-md > * + * {
+  margin-top: 0.65em;
+}
+
+/* ── Headings ────────────────────────────────────────────────────────────── */
+.cave-md h1,
+.cave-md h2,
+.cave-md h3,
+.cave-md h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+.cave-md h1 { font-size: 1.25em; margin-top: 1em; }
+.cave-md h2 { font-size: 1.1em;  margin-top: 0.9em; }
+.cave-md h3 { font-size: 1em;    margin-top: 0.75em; }
+.cave-md h4 { font-size: 0.9em;  margin-top: 0.6em; }
+
+/* ── Paragraphs / inline ─────────────────────────────────────────────────── */
+.cave-md p { margin: 0; }
+.cave-md strong { font-weight: 600; }
+.cave-md em     { font-style: italic; }
+.cave-md del    { text-decoration: line-through; color: var(--text-muted); }
+
+.cave-md a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.12s ease;
+}
+.cave-md a:hover { color: var(--text-primary); }
+
+/* ── Inline code — soft violet pill ─────────────────────────────────────── */
+.cave-md :not(pre) > code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 12%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── Code block outer wrapper ────────────────────────────────────────────── */
+.cave-code-wrap {
+  position: relative;
+  border-radius: 8px;
+  border: 1px solid var(--border-hairline);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  overflow: hidden;
+  font-size: 12px;
+  margin: 0.5em 0;
+}
+
+/* ── Code block header: lang label + optional filename + copy btn ─────────  */
+.cave-code-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.65em;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-hairline);
+  min-height: 26px;
+}
+
+.cave-code-lang {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+  color: oklch(0.65 0.18 280 / 70%);
+  text-transform: lowercase;
+  flex-shrink: 0;
+}
+
+.cave-code-filename {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Shiki pre + code ────────────────────────────────────────────────────── */
+.cave-code-wrap pre {
+  margin: 0;
+  border-radius: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.65 0.18 280 / 25%) transparent;
+  padding: 0.75em 0;
+}
+
+.cave-code-wrap pre::-webkit-scrollbar { height: 4px; }
+.cave-code-wrap pre::-webkit-scrollbar-track { background: transparent; }
+.cave-code-wrap pre::-webkit-scrollbar-thumb {
+  background: oklch(0.65 0.18 280 / 25%);
+  border-radius: 2px;
+}
+
+.cave-code-wrap pre code {
+  display: block;
+  background: transparent !important;
+  border: none !important;
+  padding: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* ── Line rows ───────────────────────────────────────────────────────────── */
+.cave-line {
+  display: flex;
+  align-items: baseline;
+  padding: 0 1em;
+  min-height: 1.55em;
+}
+
+/* ── Line numbers ────────────────────────────────────────────────────────── */
+.cave-ln {
+  flex-shrink: 0;
+  width: 2.4em;
+  padding-right: 0.75em;
+  color: oklch(0.55 0.1 280 / 40%);
+  font-size: 10px;
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── Diff gutter strips ──────────────────────────────────────────────────── */
+.cave-diff-add {
+  background: oklch(0.6 0.15 170 / 10%);
+  border-left: 2px solid oklch(0.6 0.15 170 / 60%);
+  padding-left: calc(1em - 2px);
+}
+
+.cave-diff-del {
+  background: oklch(0.55 0.2 15 / 12%);
+  border-left: 2px solid oklch(0.55 0.2 15 / 60%);
+  padding-left: calc(1em - 2px);
+}
+
+/* ── Blockquote ──────────────────────────────────────────────────────────── */
+.cave-md blockquote {
+  border-left: 2px solid var(--border-strong);
+  padding-left: 0.9em;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ── Lists ───────────────────────────────────────────────────────────────── */
+.cave-md ul, .cave-md ol { padding-left: 1.3em; }
+.cave-md ul { list-style-type: disc; }
+.cave-md ol { list-style-type: decimal; }
+.cave-md li + li { margin-top: 0.25em; }
+.cave-md li > p  { margin: 0; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.cave-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cave-md th,
+.cave-md td {
+  padding: 0.35em 0.65em;
+  border: 1px solid var(--border-hairline);
+  text-align: left;
+}
+.cave-md th {
+  font-weight: 600;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+/* ── HR ──────────────────────────────────────────────────────────────────── */
+.cave-md hr {
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  margin: 1em 0;
+}
+
+/* ── Copy button ─────────────────────────────────────────────────────────── */
+.cave-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  padding: 0.2em 0.55em;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.1s ease;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* Show inside code header on wrap hover */
+.cave-code-wrap:hover .cave-copy-btn,
+.group:hover .cave-copy-btn {
+  opacity: 1;
+}
+
+.cave-copy-btn--confirmed {
+  opacity: 1 !important;
+  color: oklch(0.6 0.15 170);
+  transition: opacity 0.15s ease, color 0.2s ease;
+}
+
+.cave-copy-btn:hover { color: var(--text-primary); }
+.cave-copy-btn:focus-visible { opacity: 1; }
+
+/* Copy button inside code header — always push to right */
+.cave-code-header .cave-copy-btn {
+  margin-left: auto;
+}
+
+/* Bubble-level copy message button — top-right of assistant bubble */
+.cave-copy-btn-bubble {
+  position: absolute;
+  top: 0.3em;
+  right: 0.4em;
+}
