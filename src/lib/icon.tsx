@@ -60,6 +60,10 @@ export const ICON_NAMES = [
   "ph:clock",
   "ph:globe",
   "ph:graph",
+  "ph:squares-four",
+  "ph:folder",
+  "ph:folder-open",
+  "ph:calendar-blank",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SidebarFamiliars } from "@/components/sidebar-familiars";
+import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { DaemonBar } from "@/components/daemon-bar";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
@@ -13,7 +13,7 @@ import { ValsInboxView } from "@/components/vals-inbox-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
-import { Shell, ShellNav, ShellNavHeader, type ShellNavItem } from "@/components/shell";
+import { Shell } from "@/components/shell";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
 import { BottomTerminal } from "@/components/bottom-terminal";
@@ -510,131 +510,25 @@ export function Workspace() {
       (i.status === "pending" && i.kind === "response-needed"),
   ).length;
 
-  const navSections = [
-    {
-      items: [
-        {
-          id: "search",
-          label: "Search…",
-          icon: "ph:magnifying-glass" as const,
-          kbd: "⌘K",
-          onClick: () => setPaletteOpen(true),
-        },
-        {
-          id: "new",
-          label: "New chat",
-          icon: "ph:note-pencil" as const,
-          onClick: () => {
-            setMode("chats");
-            setTimeout(() => routerRef.current?.newChat(), 0);
-          },
-        },
-        {
-          id: "add",
-          label: "Add…",
-          icon: "ph:plus" as const,
-          onClick: () => setAddChooserOpen(true),
-        },
-      ] as ShellNavItem[],
-    },
-    {
-      label: "Workspace",
-      items: [
-        {
-          id: "chats",
-          label: "Chats",
-          icon: "ph:chat-circle-dots" as const,
-          active: mode === "chats",
-          onClick: () => setMode("chats"),
-        },
-        {
-          id: "inbox",
-          label: "Inbox",
-          icon: "ph:tray" as const,
-          active: mode === "inbox",
-          onClick: () => setMode("inbox"),
-          kbd: inboxBadgeCount > 0 ? String(inboxBadgeCount) : undefined,
-        },
-        {
-          id: "vals-inbox",
-          label: "Val's Inbox",
-          icon: "ph:bell-fill" as const,
-          active: mode === "vals-inbox",
-          onClick: () => setMode("vals-inbox"),
-        },
-        {
-          id: "board",
-          label: "Board",
-          icon: "ph:kanban" as const,
-          active: mode === "board",
-          onClick: () => setMode("board"),
-        },
-        {
-          id: "plugins",
-          label: "Plugins",
-          icon: "ph:plug" as const,
-          active: mode === "plugins",
-          onClick: () => setMode("plugins"),
-        },
-        {
-          id: "browser",
-          label: "Browser",
-          icon: "ph:globe" as const,
-          active: mode === "browser",
-          onClick: () => setMode("browser"),
-        },
-        {
-          id: "schedules",
-          label: "Schedules",
-          icon: "ph:clock" as const,
-          active: mode === "schedules",
-          onClick: () => setMode("schedules"),
-        },
-        {
-          id: "calls",
-          label: "Calls",
-          icon: "ph:graph" as const,
-          active: mode === "calls",
-          onClick: () => setMode("calls"),
-        },
-        {
-          id: "comux",
-          label: "Comux",
-          icon: "ph:squares-four" as const,
-          active: mode === "comux",
-          onClick: () => setMode("comux"),
-        },
-      ] as ShellNavItem[],
-    },
-    {
-      label: "Familiars",
-      items: [] as ShellNavItem[],
-      customContent: (
-        <SidebarFamiliars
-          familiars={familiars}
-          activeId={activeId}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelect={(id) => {
-            setActiveId(id);
-            setMode("chats");
-          }}
-          error={familiarsError}
-        />
-      ),
-    },
-    {
-      label: "Configure",
-      items: [
-        {
-          id: "settings",
-          label: "Settings",
-          icon: "ph:gear-six" as const,
-          onClick: openOnboarding,
-        },
-      ] as ShellNavItem[],
-    },
-  ];
+  const sidebar = (
+    <SidebarMinimal
+      mode={mode}
+      sessions={sessions}
+      activeSessionId={routerRef.current?.currentSessionId() ?? null}
+      inboxBadgeCount={inboxBadgeCount}
+      onNewChat={() => {
+        setMode("chats");
+        setTimeout(() => routerRef.current?.newChat(), 0);
+      }}
+      onOpenSearch={() => setPaletteOpen(true)}
+      onModeChange={(m) => setMode(m as Mode)}
+      onOpenSession={(id) => {
+        setMode("chats");
+        setTimeout(() => routerRef.current?.openSession(id), 0);
+      }}
+      onOpenSettings={openOnboarding}
+    />
+  );
 
   const list = undefined;
 
@@ -731,21 +625,22 @@ export function Workspace() {
             }}
           />
         }
-        nav={
-          <ShellNav
-            header={<ShellNavHeader initial="C" label="CovenCave" />}
-            sections={navSections}
-          />
-        }
+        nav={sidebar}
         list={list}
         detail={detail}
         agent={
           <AgentPanel
             ref={routerRef}
             familiar={active}
+            familiars={familiars}
+            activeId={activeId}
             sessions={sessions}
             daemonRunning={daemonRunning}
             onSessionStarted={loadSessions}
+            onFamiliarSelect={(id) => {
+              setActiveId(id);
+              setMode("chats");
+            }}
             onSlashFromChat={(command, args) => {
               onPaletteIntent({ kind: "slash", command, args });
               return true;
