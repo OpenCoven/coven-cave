@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble } from "@/components/message-bubble";
+import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
@@ -700,13 +700,13 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           {tool.input ? (
             <div>
               <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">input</div>
-              <pre className="whitespace-pre-wrap text-[var(--text-secondary)]">{tool.input}</pre>
+              <SyntaxBlock text={tool.input} />
             </div>
           ) : null}
           {tool.output ? (
             <div>
               <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">output</div>
-              <pre className="whitespace-pre-wrap text-[var(--text-secondary)]">{tool.output}</pre>
+              <SyntaxBlock text={tool.output} />
             </div>
           ) : null}
         </div>

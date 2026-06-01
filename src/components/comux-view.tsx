@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
+import { SyntaxBlock } from "@/components/message-bubble";
 
 type ComuxTab = "comux" | "project";
 
@@ -244,9 +245,11 @@ export function ComuxView() {
                 {previewLoading ? (
                   <p className="text-xs text-[var(--text-muted)]">Loading...</p>
                 ) : (
-                  <pre className="whitespace-pre-wrap break-words text-[12px] leading-relaxed font-mono text-[var(--text-secondary)]">
-                    {previewContent}
-                  </pre>
+                  <SyntaxBlock
+                    text={previewContent ?? ""}
+                    lang={previewPath?.split(".").pop()}
+                    className="leading-relaxed"
+                  />
                 )}
               </>
             ) : (

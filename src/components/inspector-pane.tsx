@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
+import { SyntaxBlock } from "@/components/message-bubble";
 
 type Tab = "memory" | "capabilities" | "inbox";
 
@@ -388,9 +389,10 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
           </button>
         </div>
 
-        <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-3 py-3 font-mono text-[11px] leading-relaxed text-[var(--text-primary)]">
-          {openFile?.text ?? "loading…"}
-        </pre>
+        <SyntaxBlock
+          text={openFile?.text ?? "loading…"}
+          className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[11px]"
+        />
       </div>
     );
   }

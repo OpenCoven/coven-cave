@@ -159,6 +159,71 @@ async function renderCodeBlock(
   return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}</div>`;
 }
 
+// ---------------------------------------------------------------------------
+// SyntaxBlock — exported for tool I/O and other raw-code surfaces
+// ---------------------------------------------------------------------------
+
+/**
+ * Detects the best language for auto-highlighting tool I/O:
+ * - valid JSON → "json"
+ * - looks like shell output → "bash"
+ * - looks like a diff → "diff"
+ * - otherwise → "text"
+ */
+function autoDetectLang(text: string): string {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try { JSON.parse(text); return "json"; } catch { /* not json */ }
+  }
+  if (/^(diff --git|--- a\/|\+\+\+ b\/)/.test(trimmed)) return "diff";
+  if (/^(#!\/(bin|usr)\/|\$\s|>>>\s)/.test(trimmed)) return "bash";
+  return "text";
+}
+
+type SyntaxBlockProps = {
+  /** Raw text content to highlight */
+  text: string;
+  /** Override language detection */
+  lang?: string;
+  /** Additional className on the outer wrapper */
+  className?: string;
+};
+
+/**
+ * Drop-in replacement for `<pre>` in tool I/O blocks, comux output, and
+ * inspector pane. Uses the same Shiki singleton as MessageBubble, so the
+ * highlighter is only initialised once per session.
+ */
+export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
+  const [html, setHtml] = useState<string | null>(null);
+  const resolvedLang = lang ?? autoDetectLang(text);
+
+  useEffect(() => {
+    if (!text) return;
+    let cancelled = false;
+    void renderCodeBlock(text, resolvedLang).then((h) => {
+      if (!cancelled) setHtml(h);
+    });
+    return () => { cancelled = true; };
+  }, [text, resolvedLang]);
+
+  if (!html) {
+    return (
+      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+        {text}
+      </pre>
+    );
+  }
+
+  return (
+    <div
+      className={`cave-syntax-block text-[12px] ${className ?? ""}`}
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

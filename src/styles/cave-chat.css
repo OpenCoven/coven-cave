@@ -240,3 +240,20 @@
   top: 0.3em;
   right: 0.4em;
 }
+
+/* ── SyntaxBlock (auto-highlighted raw code in tool I/O, file preview, inspector) ── */
+.cave-syntax-block .cave-code-wrap {
+  /* No outer border/radius — it's already inside a container */
+  border: none;
+  border-radius: 4px;
+}
+
+.cave-syntax-block .cave-code-header {
+  /* Slightly smaller header in tool I/O context */
+  padding: 2px 8px;
+}
+
+.cave-syntax-block pre {
+  /* Inherit container font-size */
+  font-size: inherit;
+}
