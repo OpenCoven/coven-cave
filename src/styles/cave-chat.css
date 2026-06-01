@@ -1,89 +1,247 @@
-/* cave-chat.css — Markdown styles for Cave chat bubbles.
- * Scoped to .cave-md so Shiki + MD styles don't bleed into app chrome.
- * Uses only existing CSS custom properties; no new colors.
+/* cave-chat.css — Markdown + Shiki styles for Cave chat bubbles.
+ * Scoped to .cave-md so styles don't bleed into app chrome.
+ * Tokens reference globals.css custom properties only.
  */
 
-/* ── Base prose ──────────────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BASE PROSE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md {
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.7;
   color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
 }
 
-.cave-md > * + * {
-  margin-top: 0.65em;
-}
+.cave-md > * + * { margin-top: 0.7em; }
+.cave-md > *:first-child { margin-top: 0; }
 
-/* ── Headings ────────────────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HEADINGS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md h1,
 .cave-md h2,
 .cave-md h3,
 .cave-md h4 {
-  font-weight: 600;
-  line-height: 1.3;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
+  margin-top: 1.1em;
 }
-.cave-md h1 { font-size: 1.25em; margin-top: 1em; }
-.cave-md h2 { font-size: 1.1em;  margin-top: 0.9em; }
-.cave-md h3 { font-size: 1em;    margin-top: 0.75em; }
-.cave-md h4 { font-size: 0.9em;  margin-top: 0.6em; }
 
-/* ── Paragraphs / inline ─────────────────────────────────────────────────── */
+.cave-md h1 {
+  font-size: 1.22em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.cave-md h2 {
+  font-size: 1.08em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid oklch(1 0 0 / 4%);
+}
+.cave-md h3 { font-size: 0.97em; }
+.cave-md h4 { font-size: 0.9em; color: var(--text-secondary); font-weight: 600; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PARAGRAPHS & INLINE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md p { margin: 0; }
-.cave-md strong { font-weight: 600; }
-.cave-md em     { font-style: italic; }
-.cave-md del    { text-decoration: line-through; color: var(--text-muted); }
+.cave-md strong { font-weight: 650; color: var(--text-primary); }
+.cave-md em     { font-style: italic; color: var(--text-secondary); }
+.cave-md del    { text-decoration: line-through; color: var(--text-muted); opacity: 0.7; }
 
 .cave-md a {
-  color: var(--text-secondary);
+  color: var(--accent-presence-soft);
   text-decoration: underline;
   text-underline-offset: 2px;
-  transition: color 0.12s ease;
+  text-decoration-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  transition: color 0.12s, text-decoration-color 0.12s;
 }
-.cave-md a:hover { color: var(--text-primary); }
+.cave-md a:hover {
+  color: var(--accent-presence);
+  text-decoration-color: var(--accent-presence);
+}
 
-/* ── Inline code — soft violet pill ─────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   INLINE CODE — soft lavender pill
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md :not(pre) > code {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.82em;
-  padding: 0.15em 0.45em;
-  border-radius: 4px;
-  background: color-mix(in oklab, oklch(0.65 0.18 280) 12%, transparent);
-  color: var(--text-primary);
+  font-size: 0.8em;
+  padding: 0.18em 0.48em;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: color-mix(in oklch, var(--accent-presence) 85%, var(--text-primary));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  white-space: nowrap;
 }
 
-/* ── Code block outer wrapper ────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BLOCKQUOTE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md blockquote {
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  margin-left: 0;
+  padding: 0.25em 0 0.25em 0.9em;
+  color: var(--text-secondary);
+  font-style: italic;
+  background: color-mix(in oklch, var(--accent-presence) 4%, transparent);
+  border-radius: 0 5px 5px 0;
+}
+.cave-md blockquote p { color: inherit; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LISTS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md ul,
+.cave-md ol {
+  padding-left: 1.4em;
+  margin: 0;
+}
+.cave-md ul { list-style-type: disc; }
+.cave-md ol { list-style-type: decimal; }
+
+.cave-md li { margin-top: 0.28em; }
+.cave-md li:first-child { margin-top: 0; }
+.cave-md li > p { margin: 0; }
+
+.cave-md li > ul,
+.cave-md li > ol { margin-top: 0.2em; }
+
+.cave-md ul > li::marker {
+  color: color-mix(in oklch, var(--accent-presence) 55%, var(--text-muted));
+}
+.cave-md ol > li::marker {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+/* Task list */
+.cave-md li.task-list-item {
+  list-style: none;
+  margin-left: -1em;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+}
+.cave-md li.task-list-item input[type="checkbox"] {
+  accent-color: var(--accent-presence);
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  cursor: default;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TABLES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+}
+.cave-md th,
+.cave-md td {
+  padding: 0.38em 0.75em;
+  border-bottom: 1px solid var(--border-hairline);
+  border-right: 1px solid var(--border-hairline);
+  text-align: left;
+  vertical-align: top;
+}
+.cave-md th:last-child,
+.cave-md td:last-child { border-right: none; }
+.cave-md tr:last-child td { border-bottom: none; }
+
+.cave-md th {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  color: var(--text-secondary);
+}
+.cave-md tr:nth-child(even) td { background: oklch(1 0 0 / 2%); }
+.cave-md tr:hover td {
+  background: oklch(1 0 0 / 4%);
+  transition: background 0.1s;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   HORIZONTAL RULE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline)) 20%,
+    color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline)) 80%,
+    transparent
+  );
+  margin: 1.2em 0;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE BLOCK OUTER WRAPPER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-code-wrap {
   position: relative;
-  border-radius: 8px;
+  border-radius: 9px;
   border: 1px solid var(--border-hairline);
-  box-shadow: inset 0 0 0 1px var(--border-hairline);
+  background: oklch(0.1 0.01 280 / 60%);
+  box-shadow:
+    0 1px 3px oklch(0 0 0 / 30%),
+    inset 0 1px 0 oklch(1 0 0 / 4%);
   overflow: hidden;
   font-size: 12px;
-  margin: 0.5em 0;
+  margin: 0.6em 0;
 }
 
-/* ── Code block header: lang label + optional filename + copy btn ─────────  */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CODE BLOCK HEADER
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-code-header {
   display: flex;
   align-items: center;
   gap: 0.5em;
-  padding: 0.3em 0.65em;
-  background: var(--bg-raised);
+  padding: 0.35em 0.75em;
+  background: oklch(0.14 0.015 280 / 70%);
   border-bottom: 1px solid var(--border-hairline);
-  min-height: 26px;
+  min-height: 28px;
+  backdrop-filter: blur(4px);
+}
+
+/* decorative traffic-light dots */
+.cave-code-header::before {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: color-mix(in oklch, var(--accent-presence) 40%, oklch(0.4 0 0));
+  box-shadow:
+    16px 0 0 color-mix(in oklch, oklch(0.75 0.18 60) 40%, oklch(0.4 0 0)),
+    32px 0 0 color-mix(in oklch, oklch(0.65 0.18 170) 40%, oklch(0.4 0 0));
+  margin-right: 8px;
+  opacity: 0.65;
 }
 
 .cave-code-lang {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10px;
-  font-variant: small-caps;
-  letter-spacing: 0.05em;
-  color: oklch(0.65 0.18 280 / 70%);
-  text-transform: lowercase;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--accent-presence) 80%, var(--text-muted));
   flex-shrink: 0;
+  opacity: 0.85;
 }
 
 .cave-code-filename {
@@ -94,22 +252,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  opacity: 0.7;
 }
 
-/* ── Shiki pre + code ────────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SHIKI PRE + CODE
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-code-wrap pre {
   margin: 0;
   border-radius: 0;
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: oklch(0.65 0.18 280 / 25%) transparent;
-  padding: 0.75em 0;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+  padding: 0.8em 0;
+  background: transparent !important;
 }
 
 .cave-code-wrap pre::-webkit-scrollbar { height: 4px; }
 .cave-code-wrap pre::-webkit-scrollbar-track { background: transparent; }
 .cave-code-wrap pre::-webkit-scrollbar-thumb {
-  background: oklch(0.65 0.18 280 / 25%);
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
   border-radius: 2px;
 }
 
@@ -120,140 +282,100 @@
   padding: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
-/* ── Line rows ───────────────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LINE ROWS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-line {
   display: flex;
   align-items: baseline;
   padding: 0 1em;
-  min-height: 1.55em;
+  min-height: 1.6em;
+  transition: background 0.08s;
 }
+.cave-line:hover { background: oklch(1 0 0 / 2.5%); }
 
-/* ── Line numbers ────────────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   LINE NUMBERS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-ln {
   flex-shrink: 0;
-  width: 2.4em;
-  padding-right: 0.75em;
-  color: oklch(0.55 0.1 280 / 40%);
+  width: 2.6em;
+  padding-right: 0.8em;
+  color: color-mix(in oklch, var(--accent-presence) 28%, oklch(0.5 0 0 / 50%));
   font-size: 10px;
   text-align: right;
   user-select: none;
   pointer-events: none;
 }
 
-/* ── Diff gutter strips ──────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DIFF GUTTER STRIPS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-diff-add {
   background: oklch(0.6 0.15 170 / 10%);
-  border-left: 2px solid oklch(0.6 0.15 170 / 60%);
+  border-left: 2px solid oklch(0.6 0.15 170 / 55%);
   padding-left: calc(1em - 2px);
 }
-
 .cave-diff-del {
   background: oklch(0.55 0.2 15 / 12%);
-  border-left: 2px solid oklch(0.55 0.2 15 / 60%);
+  border-left: 2px solid oklch(0.55 0.2 15 / 55%);
   padding-left: calc(1em - 2px);
 }
 
-/* ── Blockquote ──────────────────────────────────────────────────────────── */
-.cave-md blockquote {
-  border-left: 2px solid var(--border-strong);
-  padding-left: 0.9em;
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
-/* ── Lists ───────────────────────────────────────────────────────────────── */
-.cave-md ul, .cave-md ol { padding-left: 1.3em; }
-.cave-md ul { list-style-type: disc; }
-.cave-md ol { list-style-type: decimal; }
-.cave-md li + li { margin-top: 0.25em; }
-.cave-md li > p  { margin: 0; }
-
-/* ── Tables ──────────────────────────────────────────────────────────────── */
-.cave-md table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.cave-md th,
-.cave-md td {
-  padding: 0.35em 0.65em;
-  border: 1px solid var(--border-hairline);
-  text-align: left;
-}
-.cave-md th {
-  font-weight: 600;
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-}
-
-/* ── HR ──────────────────────────────────────────────────────────────────── */
-.cave-md hr {
-  border: none;
-  border-top: 1px solid var(--border-hairline);
-  margin: 1em 0;
-}
-
-/* ── Copy button ─────────────────────────────────────────────────────────── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   COPY BUTTON
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-copy-btn {
   display: inline-flex;
   align-items: center;
   font-size: 10px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  padding: 0.2em 0.55em;
-  border-radius: 4px;
+  padding: 0.2em 0.6em;
+  border-radius: 5px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-raised);
+  background: oklch(0.18 0.01 280 / 60%);
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, color 0.1s ease;
+  transition: opacity 0.15s, color 0.1s, background 0.1s;
   white-space: nowrap;
   line-height: 1.4;
+  backdrop-filter: blur(4px);
 }
 
-/* Show inside code header on wrap hover */
 .cave-code-wrap:hover .cave-copy-btn,
-.group:hover .cave-copy-btn {
-  opacity: 1;
-}
+.group:hover .cave-copy-btn { opacity: 1; }
 
 .cave-copy-btn--confirmed {
   opacity: 1 !important;
-  color: oklch(0.6 0.15 170);
-  transition: opacity 0.15s ease, color 0.2s ease;
+  color: oklch(0.65 0.15 170);
 }
 
-.cave-copy-btn:hover { color: var(--text-primary); }
+.cave-copy-btn:hover {
+  color: var(--text-primary);
+  background: oklch(0.22 0.015 280 / 70%);
+}
 .cave-copy-btn:focus-visible { opacity: 1; }
 
-/* Copy button inside code header — always push to right */
-.cave-code-header .cave-copy-btn {
-  margin-left: auto;
-}
+/* push copy btn to right inside header */
+.cave-code-header .cave-copy-btn { margin-left: auto; }
 
-/* Bubble-level copy message button — top-right of assistant bubble */
+/* bubble-level copy — top-right corner */
 .cave-copy-btn-bubble {
   position: absolute;
-  top: 0.3em;
-  right: 0.4em;
+  top: 0.35em;
+  right: 0.45em;
 }
 
-/* ── SyntaxBlock (auto-highlighted raw code in tool I/O, file preview, inspector) ── */
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SYNTAX BLOCK (tool I/O, file preview, inspector pane)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-syntax-block .cave-code-wrap {
-  /* No outer border/radius — it's already inside a container */
-  border: none;
-  border-radius: 4px;
+  border-radius: 6px;
+  margin: 0;
 }
-
-.cave-syntax-block .cave-code-header {
-  /* Slightly smaller header in tool I/O context */
-  padding: 2px 8px;
-}
-
-.cave-syntax-block pre {
-  /* Inherit container font-size */
-  font-size: inherit;
-}
+.cave-syntax-block .cave-code-header { padding: 3px 10px; min-height: 24px; }
+.cave-syntax-block pre { font-size: inherit; }
