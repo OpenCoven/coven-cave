@@ -10,16 +10,43 @@ use tauri::{
     Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
-/// Surface a fatal startup error to the user via osascript (Cocoa) so they see
-/// something instead of a silent abort(). Best-effort; ignored on failure.
+/// Surface a fatal startup error to the user. Platform-specific: macOS uses
+/// osascript (Cocoa alert), Windows writes to a temp file and opens Notepad,
+/// Linux tries zenity/kdialog. Best-effort; ignored on failure.
 fn show_fatal_dialog(msg: &str) {
-    let script = format!(
-        "display alert \"CovenCave failed to start\" message \"{}\" as critical",
-        msg.replace('\\', "\\\\").replace('"', "\\\"")
-    );
-    let _ = std::process::Command::new("/usr/bin/osascript")
-        .args(["-e", &script])
-        .output();
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "display alert \"CovenCave failed to start\" message \"{}\" as critical",
+            msg.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        let _ = std::process::Command::new("/usr/bin/osascript")
+            .args(["-e", &script])
+            .output();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Write error to a temp file and open it in Notepad — reliable and
+        // doesn't require any additional dependencies (e.g. winapi crate).
+        let temp = std::env::var("TEMP").unwrap_or_else(|_| "C:\\Temp".into());
+        let path = format!("{}\\CovenCave-error.txt", temp);
+        let _ = std::fs::write(&path, msg);
+        let _ = std::process::Command::new("notepad.exe").arg(&path).spawn();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        // Try zenity (GNOME) then kdialog (KDE); fall back to stderr only.
+        let shown = std::process::Command::new("zenity")
+            .args(["--error", "--text", msg])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !shown {
+            let _ = std::process::Command::new("kdialog")
+                .args(["--error", msg])
+                .output();
+        }
+    }
 }
 
 /// Show the dialog and exit the process cleanly. Returning Err from setup()
@@ -39,109 +66,214 @@ fn fatal_exit(msg: &str) -> ! {
 /// but anything that needs writable state (or that the user expects to be
 /// "installed") breaks. Surface a clear "Move to Applications" prompt instead
 /// of silently running translocated.
+///
+/// On non-macOS platforms this is a no-op.
 fn check_app_translocation() {
-    let Ok(exe) = std::env::current_exe() else { return };
-    let path = exe.to_string_lossy().to_string();
-    if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
-        return;
+    #[cfg(target_os = "macos")]
+    {
+        let Ok(exe) = std::env::current_exe() else { return };
+        let path = exe.to_string_lossy().to_string();
+        if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
+            return;
+        }
+        let msg = format!(
+            "CovenCave is running from a read-only quarantine path:\n\n{}\n\nTo install properly, quit, then drag CovenCave.app into your /Applications folder and launch it from there.",
+            path
+        );
+        show_fatal_dialog(&msg);
+        std::process::exit(1);
     }
-    let msg = format!(
-        "CovenCave is running from a read-only quarantine path:\n\n{}\n\nTo install properly, quit, then drag CovenCave.app into your /Applications folder and launch it from there.",
-        path
-    );
-    show_fatal_dialog(&msg);
-    std::process::exit(1);
 }
 
-/// Find a usable `node` binary. macOS GUI launches do NOT inherit the user's
-/// shell PATH (`/usr/bin:/bin:/usr/sbin:/sbin` only), so a bare
-/// `Command::new("node")` will fail when the user launches Cave from the
-/// Finder. We probe well-known install locations + a $HOME/.nvm scan + a
-/// last-ditch `which` invocation under a login shell.
+/// Find a usable `node` binary. GUI launches often do NOT inherit the user's
+/// full shell PATH, so a bare `Command::new("node")` will fail. We probe
+/// well-known install locations per platform, plus a last-ditch shell/where
+/// invocation.
 fn find_node() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-
-    // Prefer nvm — its installs are the most common dev managed-version layout
-    // and it tends to lag a step behind the bleeding edge that Homebrew ships,
-    // which avoids native-module ABI mismatches with whatever the developer
-    // used to build CovenCave's bundled node_modules.
-    let nvm_root = PathBuf::from(format!("{}/.nvm/versions/node", home));
-    if let Ok(entries) = std::fs::read_dir(&nvm_root) {
-        let mut versions: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.is_dir())
-            .collect();
-        versions.sort(); // lexicographic — good enough for v20 < v24 etc.
-        if let Some(latest) = versions.into_iter().rev().next() {
-            let node = latest.join("bin").join("node");
-            if node.exists() {
-                return Some(node);
-            }
-        }
-    }
-
-    // Other fixed install locations, in order of likelihood
-    let candidates = [
-        PathBuf::from(format!("{}/.volta/bin/node", home)),
-        PathBuf::from(format!("{}/.local/bin/node", home)),
-        PathBuf::from(format!("{}/.bun/bin/node", home)),
-        PathBuf::from("/opt/homebrew/bin/node"),
-        PathBuf::from("/usr/local/bin/node"),
-    ];
-    for c in candidates.iter() {
-        if c.exists() {
-            return Some(c.clone());
-        }
-    }
-
-    // Last ditch: ask a login shell where node lives
-    if let Ok(out) = Command::new("/bin/zsh")
-        .args(["-lic", "command -v node"])
-        .output()
+    #[cfg(target_os = "windows")]
     {
-        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !path.is_empty() {
-            let pb = PathBuf::from(path);
-            if pb.exists() {
-                return Some(pb);
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+
+        // nvm-windows stores versions under %APPDATA%\nvm\v<version>\node.exe
+        let nvm_root =
+            PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("nvm");
+        if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            versions.sort(); // lexicographic; good enough for v20 < v24, etc.
+            if let Some(latest) = versions.into_iter().rev().next() {
+                let node = latest.join("node.exe");
+                if node.exists() {
+                    return Some(node);
+                }
             }
         }
+
+        // Standard / tool-manager install locations
+        let candidates = [
+            PathBuf::from(
+                std::env::var("ProgramFiles")
+                    .unwrap_or_else(|_| "C:\\Program Files".into()),
+            )
+            .join("nodejs")
+            .join("node.exe"),
+            PathBuf::from(
+                std::env::var("ProgramFiles(x86)")
+                    .unwrap_or_else(|_| "C:\\Program Files (x86)".into()),
+            )
+            .join("nodejs")
+            .join("node.exe"),
+            PathBuf::from(format!("{}\\.volta\\bin\\node.exe", home)),
+            PathBuf::from(format!("{}\\.bun\\bin\\node.exe", home)),
+        ];
+        for c in candidates.iter() {
+            if c.exists() {
+                return Some(c.clone());
+            }
+        }
+
+        // Last ditch: where.exe (Windows equivalent of `which`)
+        if let Ok(out) = std::process::Command::new("where.exe").arg("node").output() {
+            let path = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !path.is_empty() {
+                let pb = PathBuf::from(&path);
+                if pb.exists() {
+                    return Some(pb);
+                }
+            }
+        }
+
+        None
     }
 
-    None
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").ok()?;
+
+        // Prefer nvm — its installs are the most common dev managed-version
+        // layout and it tends to lag a step behind the bleeding edge that
+        // Homebrew ships, which avoids native-module ABI mismatches with
+        // whatever the developer used to build CovenCave's bundled
+        // node_modules.
+        let nvm_root = PathBuf::from(format!("{}/.nvm/versions/node", home));
+        if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            versions.sort();
+            if let Some(latest) = versions.into_iter().rev().next() {
+                let node = latest.join("bin").join("node");
+                if node.exists() {
+                    return Some(node);
+                }
+            }
+        }
+
+        // Other fixed install locations, in order of likelihood
+        let candidates = [
+            PathBuf::from(format!("{}/.volta/bin/node", home)),
+            PathBuf::from(format!("{}/.local/bin/node", home)),
+            PathBuf::from(format!("{}/.bun/bin/node", home)),
+            PathBuf::from("/opt/homebrew/bin/node"),
+            PathBuf::from("/usr/local/bin/node"),
+        ];
+        for c in candidates.iter() {
+            if c.exists() {
+                return Some(c.clone());
+            }
+        }
+
+        // Last ditch: ask a login shell where node lives
+        if let Ok(out) = Command::new("/bin/zsh")
+            .args(["-lic", "command -v node"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !path.is_empty() {
+                let pb = PathBuf::from(path);
+                if pb.exists() {
+                    return Some(pb);
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Find the `coven` CLI on disk so API routes spawned from the sidecar can
-/// reach it. Same GUI-launch PATH problem as `find_node`. Returns the directory
-/// containing the binary so callers can prepend it to PATH.
+/// reach it. Same GUI-launch PATH problem as `find_node`. Returns the full
+/// path to the binary so callers can prepend its parent directory to PATH.
 fn find_coven() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok()?;
-    let candidates = [
-        PathBuf::from(format!("{}/.cargo/bin/coven", home)),
-        PathBuf::from(format!("{}/.local/bin/coven", home)),
-        PathBuf::from(format!("{}/.bun/bin/coven", home)),
-        PathBuf::from("/opt/homebrew/bin/coven"),
-        PathBuf::from("/usr/local/bin/coven"),
-    ];
-    for c in candidates.iter() {
-        if c.exists() {
-            return Some(c.clone());
-        }
-    }
-    if let Ok(out) = Command::new("/bin/zsh")
-        .args(["-lic", "command -v coven"])
-        .output()
+    #[cfg(target_os = "windows")]
     {
-        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !path.is_empty() {
-            let pb = PathBuf::from(path);
-            if pb.exists() {
-                return Some(pb);
+        let home = std::env::var("USERPROFILE").unwrap_or_default();
+        let candidates = [
+            PathBuf::from(format!("{}\\.cargo\\bin\\coven.exe", home)),
+            PathBuf::from(format!("{}\\.bun\\bin\\coven.exe", home)),
+            PathBuf::from(format!("{}\\.volta\\bin\\coven.exe", home)),
+        ];
+        for c in candidates.iter() {
+            if c.exists() {
+                return Some(c.clone());
             }
         }
+        if let Ok(out) = std::process::Command::new("where.exe").arg("coven").output() {
+            let path = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if !path.is_empty() {
+                let pb = PathBuf::from(&path);
+                if pb.exists() {
+                    return Some(pb);
+                }
+            }
+        }
+        None
     }
-    None
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").ok()?;
+        let candidates = [
+            PathBuf::from(format!("{}/.cargo/bin/coven", home)),
+            PathBuf::from(format!("{}/.local/bin/coven", home)),
+            PathBuf::from(format!("{}/.bun/bin/coven", home)),
+            PathBuf::from("/opt/homebrew/bin/coven"),
+            PathBuf::from("/usr/local/bin/coven"),
+        ];
+        for c in candidates.iter() {
+            if c.exists() {
+                return Some(c.clone());
+            }
+        }
+        if let Ok(out) = Command::new("/bin/zsh")
+            .args(["-lic", "command -v coven"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !path.is_empty() {
+                let pb = PathBuf::from(path);
+                if pb.exists() {
+                    return Some(pb);
+                }
+            }
+        }
+        None
+    }
 }
 
 struct SidecarState(Mutex<Option<Child>>);
@@ -225,17 +357,39 @@ pub fn run() {
                 Some(p) => p,
                 None => fatal_exit(
                     "Could not find a `node` binary. Install Node.js from \
-                     https://nodejs.org or run `brew install node` and re-launch CovenCave.",
+                     https://nodejs.org and re-launch CovenCave.",
                 ),
             };
             log::info!("[cave] using node at {}", node.display());
 
             // Capture sidecar logs so we can show what went wrong if it never
-            // becomes ready. Goes to ~/Library/Logs/CovenCave/sidecar.log on
-            // macOS.
-            let log_dir = std::env::var("HOME")
-                .map(|h| PathBuf::from(h).join("Library/Logs/CovenCave"))
-                .unwrap_or_else(|_| std::env::temp_dir());
+            // becomes ready. Platform-specific log directory:
+            //   macOS:   ~/Library/Logs/CovenCave/sidecar.log
+            //   Windows: %APPDATA%\CovenCave\logs\sidecar.log
+            //   Linux:   ~/.local/share/CovenCave/logs/sidecar.log
+            let log_dir = {
+                #[cfg(target_os = "macos")]
+                {
+                    std::env::var("HOME")
+                        .map(|h| PathBuf::from(h).join("Library/Logs/CovenCave"))
+                        .unwrap_or_else(|_| std::env::temp_dir())
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    PathBuf::from(
+                        std::env::var("APPDATA")
+                            .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into()),
+                    )
+                    .join("CovenCave")
+                    .join("logs")
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                {
+                    std::env::var("HOME")
+                        .map(|h| PathBuf::from(h).join(".local/share/CovenCave/logs"))
+                        .unwrap_or_else(|_| std::env::temp_dir())
+                }
+            };
             let _ = std::fs::create_dir_all(&log_dir);
             let log_path = log_dir.join("sidecar.log");
             log::info!("[cave] sidecar log → {}", log_path.display());
@@ -251,20 +405,28 @@ pub fn run() {
                 .parent()
                 .ok_or("server_js has no parent dir")?;
 
-            // macOS GUI launches inherit a stripped PATH. Prepend the
+            // GUI launches often inherit a stripped PATH. Prepend the
             // directories holding `node` and `coven` so the sidecar's API
             // routes can spawn them by name. Missing `coven` is non-fatal —
             // onboarding surfaces it.
-            let mut augmented_path =
-                std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into());
+            //
+            // PATH separator is ':' on Unix and ';' on Windows.
+            let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+            let default_path = if cfg!(target_os = "windows") {
+                std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
+            } else {
+                std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
+            };
+            let mut augmented_path = default_path;
             if let Some(dir) = node.parent() {
-                augmented_path = format!("{}:{}", dir.display(), augmented_path);
+                augmented_path = format!("{}{}{}", dir.display(), path_sep, augmented_path);
             }
             match find_coven() {
                 Some(coven) => {
                     log::info!("[cave] using coven at {}", coven.display());
                     if let Some(dir) = coven.parent() {
-                        augmented_path = format!("{}:{}", dir.display(), augmented_path);
+                        augmented_path =
+                            format!("{}{}{}", dir.display(), path_sep, augmented_path);
                     }
                 }
                 None => log::warn!(
@@ -338,20 +500,22 @@ pub fn run() {
             .inner_size(1320.0, 820.0)
             .min_inner_size(960.0, 600.0)
             .resizable(true)
-            // Required for HTML5 drag-and-drop (Coven Board card moves) to work
-            // in the webview — otherwise Tauri's OS-level file-drop handler
-            // intercepts dragenter/dragover/drop before the DOM sees them.
+            // Required for HTML5 drag-and-drop (Coven Board card moves) to
+            // work in the webview — otherwise Tauri's OS-level file-drop
+            // handler intercepts dragenter/dragover/drop before the DOM sees
+            // them.
             .disable_drag_drop_handler()
             .build()
             {
                 fatal_exit(&format!("failed to build main window: {}", e));
             }
 
-            // Status bar tray menu — quick access to inbox + reminder creation
-            // when CovenCave is in the background. Menu actions either bring
-            // the main window forward or emit a `tray:*` event the WebView
-            // listens for.
-            let open_inbox = MenuItem::with_id(app, "open_inbox", "Open Inbox", true, None::<&str>)?;
+            // Status bar / system-tray menu — quick access to inbox + reminder
+            // creation when CovenCave is in the background. Menu actions either
+            // bring the main window forward or emit a `tray:*` event the
+            // WebView listens for.
+            let open_inbox =
+                MenuItem::with_id(app, "open_inbox", "Open Inbox", true, None::<&str>)?;
             let new_reminder = MenuItem::with_id(
                 app,
                 "new_reminder",
@@ -359,17 +523,27 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
-            let show_app = MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
+            let show_app =
+                MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quit CovenCave", true, None::<&str>)?;
             let tray_menu = Menu::with_items(
                 app,
-                &[&open_inbox, &new_reminder, &separator, &show_app, &separator, &quit],
+                &[
+                    &open_inbox,
+                    &new_reminder,
+                    &separator,
+                    &show_app,
+                    &separator,
+                    &quit,
+                ],
             )?;
 
-            let _tray = TrayIconBuilder::with_id("cave-tray")
+            // `icon_as_template(true)` is a macOS-only concept (renders the
+            // icon as a template image so the system can adapt it to dark/light
+            // menu bar). On other platforms the call doesn't exist — guard it.
+            let tray_builder = TrayIconBuilder::with_id("cave-tray")
                 .icon(app.default_window_icon().cloned().expect("default icon present"))
-                .icon_as_template(true)
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("CovenCave")
@@ -411,8 +585,14 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                })
-                .build(app)?;
+                });
+
+            // Apply macOS-only template flag after building the rest of the
+            // chain so the non-macOS branch compiles cleanly.
+            #[cfg(target_os = "macos")]
+            let tray_builder = tray_builder.icon_as_template(true);
+
+            let _tray = tray_builder.build(app)?;
 
             Ok(())
         })

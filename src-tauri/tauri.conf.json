@@ -19,7 +19,8 @@
     "active": true,
     "targets": [
       "dmg",
-      "app"
+      "app",
+      "msi"
     ],
     "resources": [
       "resources/server/**/*"
