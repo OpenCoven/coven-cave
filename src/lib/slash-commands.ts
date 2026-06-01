@@ -39,6 +39,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/inbox", hint: "Inbox", description: "Open the notifications & reminders inbox.", section: "view" },
   { name: "/remind", hint: "new reminder", description: "Create a reminder. Try “/remind in 30m check the build”.", argPlaceholder: "when + text", section: "view" },
 
+  { name: "/comux", hint: "Comux", description: "Open the Comux terminal multiplexer view.", section: "view" },
+  { name: "/toggle-agent", hint: "\u2318J", description: "Toggle the Familiar Chat side panel.", section: "view" },
+
   // Launch
   { name: "/run", hint: "run task", description: "Run a task through the active familiar's harness.", argPlaceholder: "task…", section: "launch" },
   { name: "/codex", hint: "codex harness", description: "Run a task through Codex regardless of active familiar.", argPlaceholder: "task…", section: "launch" },

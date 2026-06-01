@@ -21,13 +21,14 @@ import { BottomTerminal } from "@/components/bottom-terminal";
 import { BrowserPane } from "@/components/browser-pane";
 import { SchedulesView } from "@/components/schedules-view";
 import { CallsView } from "@/components/calls-view";
+import { ComuxView } from "@/components/comux-view";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules" | "calls";
+type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules" | "calls" | "comux";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -393,6 +394,9 @@ export function Workspace() {
         case "/palette":
           setPaletteOpen(true);
           return;
+        case "/comux":
+          setMode("comux");
+          return;
         case "/quit":
           setMode("chats");
           routerRef.current?.goToList();
@@ -594,6 +598,13 @@ export function Workspace() {
           active: mode === "calls",
           onClick: () => setMode("calls"),
         },
+        {
+          id: "comux",
+          label: "Comux",
+          icon: "ph:squares-four" as const,
+          active: mode === "comux",
+          onClick: () => setMode("comux"),
+        },
       ] as ShellNavItem[],
     },
     {
@@ -691,6 +702,8 @@ export function Workspace() {
       <SchedulesView familiars={familiars} />
     ) : mode === "calls" ? (
       <CallsView familiars={familiars} />
+    ) : mode === "comux" ? (
+      <ComuxView />
     ) : (
       <PluginsView
         onOpenChat={() => {
@@ -737,20 +750,18 @@ export function Workspace() {
         list={list}
         detail={detail}
         agent={
-          mode === "chats" ? undefined : (
-            <AgentPanel
-              ref={routerRef}
-              familiar={active}
-              sessions={sessions}
-              daemonRunning={daemonRunning}
-              onSessionStarted={loadSessions}
-              onSlashFromChat={(command, args) => {
-                onPaletteIntent({ kind: "slash", command, args });
-                return true;
-              }}
-              onOpenOnboarding={openOnboarding}
-            />
-          )
+          <AgentPanel
+            ref={routerRef}
+            familiar={active}
+            sessions={sessions}
+            daemonRunning={daemonRunning}
+            onSessionStarted={loadSessions}
+            onSlashFromChat={(command, args) => {
+              onPaletteIntent({ kind: "slash", command, args });
+              return true;
+            }}
+            onOpenOnboarding={openOnboarding}
+          />
         }
         bottom={<BottomTerminal threadId="cave.bottom.main" />}
       />
