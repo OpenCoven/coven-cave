@@ -111,7 +111,7 @@ jobs:
         if: matrix.platform == 'macos-latest'
         run: |
           KEY_PATH="$RUNNER_TEMP/apple_api_key.p8"
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$KEY_PATH"
           chmod 600 "$KEY_PATH"
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
         env:
