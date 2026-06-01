@@ -530,6 +530,59 @@ body {
   color: var(--text-muted);
 }
 
+/* ---- Lifecycle badge (card state machine) ------------------ */
+.ui-lifecycle-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+}
+
+.ui-lifecycle-badge[data-lifecycle="running"] {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.ui-lifecycle-badge[data-lifecycle="completed"] {
+  color: var(--text-muted);
+}
+.ui-lifecycle-badge[data-lifecycle="failed"] {
+  color: #f4b8b8;
+  border-color: color-mix(in oklch, #f4b8b8 30%, var(--border-hairline));
+}
+.ui-lifecycle-badge[data-lifecycle="cancelled"] {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.ui-lifecycle-badge[data-lifecycle="review"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, var(--border-hairline));
+}
+
+.ui-lifecycle-badge[data-needs-human="true"] {
+  color: #f4b8b8;
+  border-color: color-mix(in oklch, #f4b8b8 40%, var(--border-hairline));
+}
+
+.ui-lifecycle-needs-human {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in oklch, #f4b8b8 18%, transparent);
+  color: #f4b8b8;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
 /* ---- Chooser list buttons (three-option chooser) ----------- */
 .ui-chooser-list {
   display: flex;
