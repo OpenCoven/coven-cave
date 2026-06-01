@@ -196,8 +196,10 @@ export function HomeComposer({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ familiarId: fid, prompt }),
           });
-          if (!res.ok && !res.body) {
-            const err = (await res.json().catch(() => ({ error: "send failed" }))) as { error?: string };
+          if (!res.ok) {
+            const err = (await res
+              .json()
+              .catch(() => ({ error: "send failed" }))) as { error?: string };
             onToast(err.error ?? "Chat send failed.");
             break;
           }
