@@ -120,7 +120,7 @@ body {
    ============================================================ */
 
 .shell-root {
-  width: 100vw;
+  width: 100%;
   background: var(--bg-base);
   color: var(--text-primary);
 }

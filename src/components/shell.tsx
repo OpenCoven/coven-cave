@@ -25,11 +25,19 @@ const BOTTOM_GROUP_ID = "cave.shell.bottom.v1";
 const shellStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(key);
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
   },
   setItem(key: string, value: string): void {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(key, value);
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      /* ignore — strict privacy mode or storage quota */
+    }
   },
 };
 
@@ -127,7 +135,7 @@ export function Shell({
 
   if (!mounted) {
     return (
-      <div className="flex h-screen w-screen flex-col">
+      <div className="flex h-full w-full flex-col">
         {topBar}
         <div className="shell-root flex-1 min-h-0" />
       </div>
@@ -195,7 +203,7 @@ export function Shell({
   );
 
   return (
-    <div className="flex h-screen w-screen flex-col">
+    <div className="flex h-full w-full flex-col">
       {topBar}
       {hasBottom ? (
         <Group
