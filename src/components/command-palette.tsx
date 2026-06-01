@@ -58,7 +58,8 @@ type Row =
   | { id: string; kind: "card"; card: Card; familiar: Familiar | null }
   | { id: string; kind: "coven-memory"; entry: CovenMemoryEntry; familiar: Familiar | null }
   | { id: string; kind: "fs-memory"; entry: FsMemoryEntry }
-  | { id: string; kind: "command"; name: string; hint: string; intent: PaletteIntent };
+  | { id: string; kind: "command"; name: string; hint: string; intent: PaletteIntent }
+  | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void };
 
 const RESULT_LIMITS = {
   familiar: 6,
@@ -217,6 +218,27 @@ export function CommandPalette({
         intent: { kind: "slash", command: c.name },
       }));
 
+    const shortcutRows: Row[] = [];
+    const toggleLabel = "Toggle Familiar Chat";
+    if (!q || toggleLabel.toLowerCase().includes(q) || "⌘j".includes(q)) {
+      shortcutRows.push({
+        id: "shortcut:toggle-agent",
+        kind: "shortcut",
+        label: toggleLabel,
+        shortcut: "⌘J",
+        action: () => {
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "j",
+              code: "KeyJ",
+              metaKey: true,
+              bubbles: true,
+            }),
+          );
+        },
+      });
+    }
+
     return [
       ...familiarRows,
       ...sessionRows,
@@ -224,6 +246,7 @@ export function CommandPalette({
       ...covenMemoryRows,
       ...fsMemoryRows,
       ...cmdRows,
+      ...shortcutRows,
     ];
   }, [familiars, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId]);
 
@@ -248,6 +271,8 @@ export function CommandPalette({
       onIntent({ kind: "open-memory-file", path: row.entry.path });
     } else if (row.kind === "fs-memory") {
       onIntent({ kind: "open-memory-file", path: row.entry.fullPath });
+    } else if (row.kind === "shortcut") {
+      row.action();
     } else {
       onIntent(row.intent);
     }
@@ -372,6 +397,12 @@ export function CommandPalette({
                       <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
                       <span className="flex-1 text-[var(--text-muted)]">{platformizeHint(row.hint, keys)}</span>
                       <span className="text-[10px] text-[var(--text-muted)]">run</span>
+                    </>
+                  ) : null}
+                  {row.kind === "shortcut" ? (
+                    <>
+                      <span className="flex-1 text-[var(--text-primary)]">{row.label}</span>
+                      <span className="font-mono text-[10px] text-[var(--text-muted)]">{platformizeHint(row.shortcut, keys)}</span>
                     </>
                   ) : null}
                 </button>
