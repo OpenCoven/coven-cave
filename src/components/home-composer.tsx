@@ -400,8 +400,7 @@ export function HomeComposer({
               {sending ? (
                 <span className="hc-spinner" />
               ) : (
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                  <path d="M8 2l6 6H9v6H7V8H2l6-6z" />
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 </svg>
               )}
             </button>
