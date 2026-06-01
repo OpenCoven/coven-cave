@@ -66,6 +66,38 @@ if [ -d "$STATIC" ]; then
   cp -a "$STATIC/." "$DEST/.next/static/"
 fi
 
+# Next.js + pnpm also drops symlinks under .next/node_modules/ that point at
+# ../../node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> (e.g. shiki,
+# oniguruma-to-es). After we swap in the npm-flat top-level node_modules
+# above, those symlinks dangle, and Tauri's resource glob rejects the bundle
+# with `resource path doesn't exist`. Resolve each into a real directory.
+if [ -d "$DEST/.next/node_modules" ]; then
+  echo "==> resolving dangling pnpm symlinks in .next/node_modules"
+  while IFS= read -r link; do
+    target="$(readlink "$link" 2>/dev/null || true)"
+    [ -z "$target" ] && continue
+    resolved_target="$(cd "$(dirname "$link")" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd)/$(basename "$target")"
+    if [ -n "$resolved_target" ] && [ -e "$resolved_target" ]; then
+      continue
+    fi
+    # Strip the trailing -<16hex> webpack-content-hash suffix
+    pkg="$(basename "$link" | sed -E 's/-[a-f0-9]{16}$//')"
+    src=""
+    if [ -d "$NPM_STAGE/node_modules/$pkg" ]; then
+      src="$NPM_STAGE/node_modules/$pkg"
+    elif [ -d "$ROOT/node_modules/$pkg" ]; then
+      src="$ROOT/node_modules/$pkg"
+    fi
+    if [ -n "$src" ] && [ -d "$src" ]; then
+      rm -f "$link"
+      cp -aL "$src" "$link"
+      echo "    resolved $(basename "$link") ← $pkg"
+    else
+      echo "    ! could not resolve $(basename "$link") (pkg=$pkg)" >&2
+    fi
+  done < <(find "$DEST/.next/node_modules" -mindepth 1 -maxdepth 1 -type l)
+fi
+
 if [ -d "$PUBLIC" ]; then
   mkdir -p "$DEST/public"
   echo "==> copying public/ → $DEST/public"
