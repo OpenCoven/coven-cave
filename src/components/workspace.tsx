@@ -10,6 +10,7 @@ import { BoardView } from "@/components/board-view";
 import { PluginsView } from "@/components/plugins-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxView } from "@/components/inbox-view";
+import { ValsInboxView } from "@/components/vals-inbox-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
@@ -21,7 +22,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-type Mode = "chats" | "board" | "plugins" | "inbox";
+type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -539,6 +540,13 @@ export function Workspace() {
           kbd: inboxBadgeCount > 0 ? String(inboxBadgeCount) : undefined,
         },
         {
+          id: "vals-inbox",
+          label: "Val's Inbox",
+          icon: "ph:bell-fill" as const,
+          active: mode === "vals-inbox",
+          onClick: () => setMode("vals-inbox"),
+        },
+        {
           id: "board",
           label: "Board",
           icon: "ph:kanban" as const,
@@ -630,6 +638,17 @@ export function Workspace() {
           if (familiarId) setActiveId(familiarId);
           setMode("chats");
           setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+        }}
+      />
+    ) : mode === "vals-inbox" ? (
+      <ValsInboxView
+        onOpenSource={(item) => {
+          if (item.sourceSessionKey) {
+            setMode("chats");
+            setTimeout(() => routerRef.current?.openSession(item.sourceSessionKey!), 0);
+          } else if (item.sourceUrl) {
+            window.open(item.sourceUrl, "_blank", "noopener");
+          }
         }}
       />
     ) : (

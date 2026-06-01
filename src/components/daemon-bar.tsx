@@ -6,7 +6,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { NotificationBell } from "@/components/notification-bell";
 
-export type Mode = "chats" | "board" | "inbox" | "plugins";
+export type Mode = "chats" | "board" | "inbox" | "plugins" | "vals-inbox";
 
 type Props = {
   mode: Mode;
@@ -26,6 +26,7 @@ const MODE_LABEL: Record<Mode, string> = {
   board: "Board",
   inbox: "Inbox",
   plugins: "Plugins",
+  "vals-inbox": "Val's Inbox",
 };
 
 export function DaemonBar({
@@ -68,7 +69,7 @@ export function DaemonBar({
       <div className="flex items-center gap-3">
         <span className="font-semibold tracking-tight">CovenCave</span>
         <nav className="flex items-center gap-0.5">
-          {(["chats", "board", "inbox", "plugins"] as const).map((m) => {
+          {(["chats", "board", "inbox", "vals-inbox", "plugins"] as const).map((m) => {
             const active = mode === m;
             const label =
               m === "inbox" && inboxBadgeCount > 0
