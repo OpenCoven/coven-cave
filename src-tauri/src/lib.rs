@@ -1,5 +1,5 @@
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -299,6 +299,47 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+#[cfg(target_os = "windows")]
+fn node_arg_path(path: &Path) -> PathBuf {
+    let raw = path.as_os_str().to_string_lossy();
+    if let Some(stripped) = raw.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{}", stripped));
+    }
+    if let Some(stripped) = raw.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+    path.to_path_buf()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn node_arg_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn node_arg_path_strips_windows_extended_prefix() {
+        let path = PathBuf::from(r"\\?\C:\Program Files\CovenCave\resources\server\server.js");
+
+        assert_eq!(
+            node_arg_path(&path),
+            PathBuf::from(r"C:\Program Files\CovenCave\resources\server\server.js")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn node_arg_path_preserves_regular_windows_paths() {
+        let path = PathBuf::from(r"C:\Program Files\CovenCave\resources\server");
+
+        assert_eq!(node_arg_path(&path), path);
+    }
+}
+
 mod browser;
 mod pty;
 
@@ -404,6 +445,8 @@ pub fn run() {
             let server_dir = server_js
                 .parent()
                 .ok_or("server_js has no parent dir")?;
+            let server_js_arg = node_arg_path(&server_js);
+            let server_dir_arg = node_arg_path(server_dir);
 
             // GUI launches often inherit a stripped PATH. Prepend the
             // directories holding `node` and `coven` so the sidecar's API
@@ -435,8 +478,8 @@ pub fn run() {
             }
 
             let mut cmd = Command::new(&node);
-            cmd.arg(&server_js)
-                .current_dir(server_dir)
+            cmd.arg(&server_js_arg)
+                .current_dir(&server_dir_arg)
                 .env("PATH", &augmented_path)
                 .env("PORT", port.to_string())
                 .env("HOSTNAME", "127.0.0.1")
