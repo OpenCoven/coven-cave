@@ -2,7 +2,7 @@
 
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useEffect, useMemo, useState } from "react";
-import { computePresence } from "@/lib/presence";
+import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
@@ -61,6 +61,20 @@ export function FamiliarRail({
     ? harnesses.find((h) => h.id === current.harness) ?? null
     : null;
 
+  // Compute presence for the currently selected familiar so the configurator
+  // panel can show session-derived status instead of the raw daemon string.
+  const currentPresence = current
+    ? computePresence({
+        familiar: current,
+        sessions,
+        needsReply: responseNeeded.has(current.id),
+        harnessInstalled: current.harness
+          ? harnesses.find((h) => h.id === current.harness)?.installed
+          : undefined,
+        isRemoteHarness: current.harness ? REMOTE_HARNESSES.has(current.harness) : false,
+      })
+    : null;
+
   const liveCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const s of sessions) {
@@ -116,11 +130,13 @@ export function FamiliarRail({
           const harnessInstalled = f.harness
             ? harnesses.find((h) => h.id === f.harness)?.installed
             : undefined;
+          const isRemoteHarness = f.harness ? REMOTE_HARNESSES.has(f.harness) : false;
           const presence = computePresence({
             familiar: f,
             sessions,
             needsReply,
             harnessInstalled,
+            isRemoteHarness,
           });
           return (
             <li key={f.id}>
@@ -225,8 +241,14 @@ export function FamiliarRail({
             <dd className="font-mono truncate" title={current.model}>
               {current.model ?? "—"}
             </dd>
-            <dt className="text-muted-foreground">Status</dt>
-            <dd className="font-mono">{current.status ?? "—"}</dd>
+            <dt className="text-muted-foreground">Presence</dt>
+            <dd className="font-mono">
+              {currentPresence ? (
+                <span className={`rounded px-1.5 py-px text-[9px] font-bold uppercase tracking-widest ${currentPresence.pill}`}>
+                  {currentPresence.label}
+                </span>
+              ) : "—"}
+            </dd>
             <dt className="text-muted-foreground">Sessions</dt>
             <dd className="font-mono">{liveCounts.get(current.id) ?? 0} live</dd>
             <dt className="text-muted-foreground">Memory</dt>

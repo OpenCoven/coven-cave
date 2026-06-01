@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 
+type PruneState = { idle: true } | { counting: true } | { count: number } | { pruning: true } | { pruned: number } | { error: string };
 type Step = { ok: boolean; detail?: string; hint?: string };
 
 type OnboardingStatus = {
@@ -54,6 +55,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
   const [pickedTemplate, setPickedTemplate] = useState<string | null>(null);
+  const [prune, setPrune] = useState<PruneState>({ idle: true });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -273,6 +275,94 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             </li>
           ))}
         </ol>
+
+        {/* Maintenance */}
+        <div className="mt-6 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+            Maintenance
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-[var(--text-secondary)]">
+              {"idle" in prune ? (
+                "Prune stale sessions (completed / failed / killed, older than 24 h)."
+              ) : "counting" in prune ? (
+                "Counting stale sessions…"
+              ) : "count" in prune ? (
+                `Found ${prune.count} stale session${prune.count === 1 ? "" : "s"}. Confirm to delete.`
+              ) : "pruning" in prune ? (
+                "Pruning…"
+              ) : "pruned" in prune ? (
+                `Done. ${prune.pruned} session${prune.pruned === 1 ? "" : "s"} removed.`
+              ) : "error" in prune ? (
+                <span className="text-rose-300">{prune.error}</span>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 gap-2">
+              {("idle" in prune || "pruned" in prune || "error" in prune) ? (
+                <button
+                  onClick={async () => {
+                    setPrune({ counting: true });
+                    try {
+                      const res = await fetch("/api/sessions/prune", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ dryRun: true }),
+                      });
+                      const json = await res.json() as { ok: boolean; wouldPrune?: number; error?: string };
+                      if (json.ok) {
+                        setPrune({ count: json.wouldPrune ?? 0 });
+                      } else {
+                        setPrune({ error: json.error ?? "dry-run failed" });
+                      }
+                    } catch (err) {
+                      setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
+                    }
+                  }}
+                  className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                >
+                  Check
+                </button>
+              ) : null}
+              {"count" in prune ? (
+                <>
+                  <button
+                    onClick={() => setPrune({ idle: true })}
+                    className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                  >
+                    Cancel
+                  </button>
+                  {prune.count > 0 ? (
+                    <button
+                      onClick={async () => {
+                        setPrune({ pruning: true });
+                        try {
+                          const res = await fetch("/api/sessions/prune", {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ dryRun: false }),
+                          });
+                          const json = await res.json() as { ok: boolean; pruned?: number; error?: string };
+                          if (json.ok) {
+                            setPrune({ pruned: json.pruned ?? 0 });
+                          } else {
+                            setPrune({ error: json.error ?? "prune failed" });
+                          }
+                        } catch (err) {
+                          setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
+                        }
+                      }}
+                      className="rounded bg-rose-600/80 px-2.5 py-1 text-[11px] text-white hover:bg-rose-500"
+                    >
+                      Delete {prune.count}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-[var(--text-muted)]">Nothing to prune.</span>
+                  )}
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
 
         <div className="mt-6 flex items-center justify-between">
           <button

@@ -6,6 +6,7 @@ export type PresenceState =
   | "dreaming"
   | "idle"
   | "offline"
+  | "remote"
   | "failed"
   | "missing";
 
@@ -18,12 +19,21 @@ export type Presence = {
   dot: string;
 };
 
+/**
+ * Harness IDs that indicate a familiar lives in a remote lane (e.g. Telegram
+ * via OpenClaw) and has no local daemon session. These should read as
+ * "remote" rather than "offline" — the familiar is reachable, just not via
+ * the local Coven daemon.
+ */
+export const REMOTE_HARNESSES = new Set(["openclaw", "telegram", "signal", "whatsapp"]);
+
 const PRESETS: Record<PresenceState, Pick<Presence, "label" | "pill" | "dot">> = {
   focused: { label: "focused", pill: "bg-emerald-500/15 text-emerald-300", dot: "bg-emerald-400" },
   blocked: { label: "needs reply", pill: "bg-amber-500/20 text-amber-200", dot: "bg-amber-400" },
   dreaming: { label: "dreaming", pill: "bg-purple-500/15 text-purple-200", dot: "bg-purple-400" },
   failed: { label: "failed", pill: "bg-rose-500/20 text-rose-200", dot: "bg-rose-400" },
   offline: { label: "offline", pill: "bg-zinc-700/40 text-zinc-400", dot: "bg-zinc-600" },
+  remote:  { label: "remote",  pill: "bg-sky-900/40 text-sky-400",  dot: "bg-sky-600" },
   missing: { label: "missing", pill: "bg-rose-700/30 text-rose-200", dot: "bg-rose-500" },
   idle: { label: "idle", pill: "bg-zinc-800 text-zinc-400", dot: "bg-zinc-600" },
 };
@@ -33,6 +43,8 @@ type Args = {
   sessions: SessionRow[];
   needsReply: boolean;
   harnessInstalled?: boolean;
+  /** True when the harness is installed locally. Remote-only harnesses pass false here. */
+  isRemoteHarness?: boolean;
 };
 
 const DREAM_WINDOW_HOURS = 24;
@@ -58,7 +70,7 @@ function freshMinutes(raw?: string): number | null {
   }
 }
 
-export function computePresence({ familiar, sessions, needsReply, harnessInstalled }: Args): Presence {
+export function computePresence({ familiar, sessions, needsReply, harnessInstalled, isRemoteHarness }: Args): Presence {
   const mine = sessions.filter((s) => s.familiarId === familiar.id);
   const running = mine.some((s) => s.status === "running");
   const recentlyFailed = mine
@@ -75,6 +87,13 @@ export function computePresence({ familiar, sessions, needsReply, harnessInstall
   const dreamMinutes = freshMinutes(familiar.memory_freshness);
   const dreaming =
     dreamMinutes != null && dreamMinutes < DREAM_WINDOW_HOURS * 60 && !running && !needsReply;
+
+  // Remote-only harnesses (openclaw/Telegram lanes) are never "offline" —
+  // they simply have no local daemon session. Show "remote" instead.
+  if (isRemoteHarness) {
+    if (needsReply) return { state: "blocked", ...PRESETS.blocked };
+    return { state: "remote", ...PRESETS.remote };
+  }
 
   if (harnessInstalled === false) return { state: "missing", ...PRESETS.missing };
   if (needsReply) return { state: "blocked", ...PRESETS.blocked };

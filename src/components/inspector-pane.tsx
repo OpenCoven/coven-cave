@@ -237,6 +237,7 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
   const [mode, setMode] = useState<"coven" | "files">("coven");
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
+  const [covenLoaded, setCovenLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [openPath, setOpenPath] = useState<string | null>(null);
@@ -248,9 +249,21 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
       try {
         const res = await fetch("/api/coven-memory", { cache: "no-store" });
         const json = await res.json();
-        if (json.ok) setCovenEntries(json.entries ?? []);
+        if (json.ok) {
+          const fetched: CovenMemoryEntry[] = json.entries ?? [];
+          setCovenEntries(fetched);
+          // Auto-switch to "files" tab when daemon returns no memory entries
+          // so users see something useful rather than a blank coven pane.
+          if (fetched.length === 0) setMode("files");
+        } else {
+          // Daemon memory endpoint unavailable — fall through to file browser.
+          setMode("files");
+        }
       } catch {
-        /* keep empty — files mode still works */
+        // Network or daemon error — fall through to file browser.
+        setMode("files");
+      } finally {
+        setCovenLoaded(true);
       }
     })();
   }, []);
@@ -405,9 +418,24 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
         <ul className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
           {covenFiltered.length === 0 ? (
             <li className="px-2 py-4 text-center text-[var(--text-muted)]">
-              {familiar
-                ? `No coven memory entries for ${familiar.display_name} yet.`
-                : "No coven memory entries yet."}
+              {!covenLoaded ? (
+                "Loading…"
+              ) : covenEntries.length === 0 ? (
+                <span>
+                  Coven memory API returned nothing.
+                  <br />
+                  <button
+                    onClick={() => setMode("files")}
+                    className="mt-1 text-purple-300 hover:text-purple-200 underline"
+                  >
+                    Browse memory files →
+                  </button>
+                </span>
+              ) : familiar ? (
+                `No coven memory entries for ${familiar.display_name} yet.`
+              ) : (
+                "No coven memory entries yet."
+              )}
             </li>
           ) : null}
           {covenFiltered.map((e) => (
