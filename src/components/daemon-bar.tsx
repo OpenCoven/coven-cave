@@ -5,6 +5,7 @@ import type { DaemonStatus, Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { NotificationBell } from "@/components/notification-bell";
+import { HealthStrip } from "@/components/health-strip";
 
 export type Mode = "chats" | "board" | "inbox" | "plugins";
 
@@ -91,7 +92,8 @@ export function DaemonBar({
         </nav>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <HealthStrip familiars={familiars} />
         {onOpenInbox && inboxPrefs && onPrefsChanged ? (
           <NotificationBell
             items={inboxItems}
