@@ -23,7 +23,7 @@ async function loadTauri(): Promise<TauriBridge | null> {
   return { invoke };
 }
 
-const DEFAULT_URL = "https://covenmeow.com";
+const DEFAULT_URL = "https://opencoven.ai";
 
 export function BrowserPane({ label = "default" }: { label?: string }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -108,7 +108,21 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
       next = `https://${next}`;
     }
     setUrl(next);
+    setPendingUrl(next);
+    // Briefly shove the native webview off-screen so the address bar can
+    // re-take focus. Without this, the native child webview captures
+    // keyboard input even after the JS form submits.
+    if (bridge) {
+      void bridge.invoke("browser_hide", { label });
+      // Re-position after a tick — the useEffect on `url` will re-navigate.
+    }
   };
+
+  // Keep address bar text synced with the actual URL when it changes
+  // (programmatic nav, initial load, etc).
+  useEffect(() => {
+    setPendingUrl(url);
+  }, [url]);
 
   return (
     <div className="flex h-full flex-col bg-[--bg-base]">

@@ -127,7 +127,15 @@ pub fn browser_navigate(
             .set_size(LogicalSize::new(w.max(1.0), h.max(1.0)))
             .map_err(|e| e.to_string())?;
         let parsed_url = Url::parse(&url).map_err(|e| e.to_string())?;
-        webview.navigate(parsed_url).map_err(|e| e.to_string())?;
+        // Belt-and-suspenders: webview.navigate() can no-op on already-loaded
+        // child webviews in some Tauri 2 builds. Fall back to eval-based nav
+        // if navigate returns an error, which also fires the page-load event.
+        if let Err(_e) = webview.navigate(parsed_url.clone()) {
+            let escaped = parsed_url.to_string().replace('"', "%22");
+            webview
+                .eval(&format!("window.location.href = \"{}\";", escaped))
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
