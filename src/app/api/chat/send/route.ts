@@ -237,6 +237,9 @@ export async function POST(req: Request) {
               session_id?: string;
               duration_ms?: number;
               is_error?: boolean;
+              message?: {
+                content?: Array<{ type?: string; text?: string }>;
+              };
             };
             if (ev.session_id && !sessionId) {
               sessionId = ev.session_id;
@@ -244,6 +247,16 @@ export async function POST(req: Request) {
             }
             if (ev.type === "result") {
               result = { duration_ms: ev.duration_ms, is_error: ev.is_error };
+            } else if (ev.type === "assistant" && ev.message?.content) {
+              // Claude stream-json wraps assistant text inside a message envelope.
+              // Extract every text chunk and surface it as an assistant_chunk so
+              // the chat bubble renders.
+              for (const block of ev.message.content) {
+                if (block.type === "text" && block.text) {
+                  assistantText += block.text;
+                  push({ kind: "assistant_chunk", text: block.text });
+                }
+              }
             }
             return;
           } catch {
