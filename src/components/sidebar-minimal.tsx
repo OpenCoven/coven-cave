@@ -190,7 +190,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   const recents = useMemo(
     () =>
       sessions
-        .filter((s) => !s.archived_at)
+        .filter((s) => !s.archived_at && (!s.origin || s.origin === "chat"))
         .sort((a, b) => {
           const ta = a.updated_at || a.created_at;
           const tb = b.updated_at || b.created_at;
