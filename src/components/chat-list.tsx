@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
@@ -11,7 +11,7 @@ type Props = {
   sessions: SessionRow[];
   daemonRunning?: boolean;
   onOpen: (sessionId: string) => void;
-  onNewChat: () => void;
+  onNewChat: (projectRoot?: string) => void;
 };
 
 function age(iso: string): string {
@@ -25,11 +25,18 @@ function age(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** Show only the last two path segments — enough to identify the project. */
+/** Repo name — last non-empty path segment. */
+function repoName(p: string): string {
+  if (!p) return "";
+  const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
+
+/** Two-segment short path for subtle secondary label. */
 function shortPath(p: string): string {
   if (!p) return "";
   const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts.slice(-2).join("/");
+  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : parts.join("/");
 }
 
 const STATUS_STYLES: Record<string, { dot: string; label: string; text: string }> = {
@@ -44,10 +51,48 @@ function statusStyle(s: string) {
   return STATUS_STYLES[s] ?? STATUS_STYLES.completed;
 }
 
+// ── Persisted collapse state ─────────────────────────────────────────────────
+
+const LS_KEY = "cave:chat-list:collapsed";
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsed(set: Set<string>) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify([...set]));
+  } catch { /* storage full / SSR */ }
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat }: Props) {
   const [busyTuiId, setBusyTuiId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const keys = useKeySymbols();
+
+  // Hydrate collapse state from localStorage after mount.
+  useEffect(() => { setCollapsed(loadCollapsed()); }, []);
+
+  const toggleCollapse = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      saveCollapsed(next);
+      return next;
+    });
+  };
+
+  // ── Data: filter → group ──────────────────────────────────────────────────
 
   const mine = useMemo(() => {
     const DEAD = new Set(["killed", "orphaned", "stopped", "archived"]);
@@ -55,6 +100,41 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
       .filter((s) => s.familiarId === familiar.id && !DEAD.has(s.status))
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
   }, [sessions, familiar.id]);
+
+  // Group by project_root. Sessions with no root go into the "general" bucket.
+  const { projectGroups, general } = useMemo(() => {
+    const map = new Map<string, SessionRow[]>();
+    const noProject: SessionRow[] = [];
+
+    for (const s of mine) {
+      const root = s.project_root?.trim() ?? "";
+      if (!root) {
+        noProject.push(s);
+      } else {
+        const existing = map.get(root) ?? [];
+        existing.push(s);
+        map.set(root, existing);
+      }
+    }
+
+    // Sort groups by most recent session activity.
+    const groups = [...map.entries()]
+      .map(([root, rows]) => ({
+        root,
+        name: repoName(root),
+        path: shortPath(root),
+        rows,
+        latestAt: rows[0]?.updated_at ?? "",
+        hasRunning: rows.some((r) => r.status === "running"),
+      }))
+      .sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1));
+
+    return { projectGroups: groups, general: noProject };
+  }, [mine]);
+
+  const hasAny = mine.length > 0;
+
+  // ── TUI launcher ─────────────────────────────────────────────────────────
 
   const openInTui = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
@@ -75,19 +155,16 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
     }
   };
 
-  const running = mine.filter((s) => s.status === "running");
-  const idle    = mine.filter((s) => s.status !== "running");
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* ── Header ── */}
       <header className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5 text-[11px]">
-        {/* Agent name + harness */}
         <span className="font-semibold text-[var(--text-primary)]">{familiar.display_name}</span>
         <span className="text-[var(--text-muted)]">·</span>
         <span className="font-mono text-[var(--text-muted)]">{familiar.harness ?? "codex"}</span>
 
-        {/* Daemon pill */}
         <span
           className={`ml-1 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
             daemonRunning
@@ -99,16 +176,14 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
           {daemonRunning ? "daemon running" : "daemon offline"}
         </span>
 
-        {/* Chat count */}
         {mine.length > 0 && (
           <span className="rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
             {mine.length} {mine.length === 1 ? "chat" : "chats"}
           </span>
         )}
 
-        {/* New chat CTA */}
         <button
-          onClick={onNewChat}
+          onClick={() => onNewChat()}
           className="ml-auto flex items-center gap-1 rounded-full bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-80 active:scale-95"
         >
           <span className="text-base leading-none">+</span> New chat
@@ -124,7 +199,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
 
       {/* ── Body ── */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {mine.length === 0 ? (
+        {!hasAny ? (
           /* Empty state */
           <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 text-2xl">
@@ -149,37 +224,134 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
               </p>
             </div>
             <button
-              onClick={onNewChat}
+              onClick={() => onNewChat()}
               className="rounded-full bg-[var(--accent-presence)] px-5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
             >
               + New chat
             </button>
           </div>
         ) : (
-          <div className="px-4 py-4">
-            {/* ── Active section ── */}
-            {running.length > 0 && (
-              <div className="mb-4">
-                <p className="mb-1.5 px-1 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Active</p>
-                <ChatRows rows={running} onOpen={onOpen} busyTuiId={busyTuiId} openInTui={openInTui} />
-              </div>
-            )}
+          <div className="px-3 py-3 flex flex-col gap-4">
 
-            {/* ── Recent section ── */}
-            {idle.length > 0 && (
+            {/* ── Project groups ── */}
+            {projectGroups.map((group) => {
+              const isCollapsed = collapsed.has(group.root);
+              const running = group.rows.filter((s) => s.status === "running");
+              const idle    = group.rows.filter((s) => s.status !== "running");
+
+              return (
+                <div key={group.root}>
+                  {/* Group header */}
+                  <div className="group/hdr mb-1.5 flex items-center gap-1.5 px-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapse(group.root)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    >
+                      <Icon
+                        name="ph:caret-right-bold"
+                        width={10}
+                        className={`shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${isCollapsed ? "" : "rotate-90"}`}
+                      />
+                      <Icon name="ph:folder" width={13} className="shrink-0 text-[var(--text-muted)]" />
+                      <span className="truncate text-[11px] font-semibold text-[var(--text-secondary)]">
+                        {group.name}
+                      </span>
+                      {group.hasRunning && (
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" />
+                      )}
+                      <span className="ml-1 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]">
+                        {group.rows.length}
+                      </span>
+                    </button>
+
+                    {/* New chat in project — revealed on hover */}
+                    <button
+                      type="button"
+                      onClick={() => onNewChat(group.root)}
+                      title={`New chat in ${group.name}`}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--accent-presence)] group-hover/hdr:opacity-100"
+                    >
+                      + new
+                    </button>
+                  </div>
+
+                  {/* Rows */}
+                  {!isCollapsed && (
+                    <div className="flex flex-col gap-2">
+                      {running.length > 0 && (
+                        <ChatRows
+                          rows={running}
+                          onOpen={onOpen}
+                          busyTuiId={busyTuiId}
+                          openInTui={openInTui}
+                          hideProjectPath
+                        />
+                      )}
+                      {idle.length > 0 && (
+                        <ChatRows
+                          rows={idle}
+                          onOpen={onOpen}
+                          busyTuiId={busyTuiId}
+                          openInTui={openInTui}
+                          hideProjectPath
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* ── General (no project) ── */}
+            {general.length > 0 && (
               <div>
-                {running.length > 0 && (
-                  <p className="mb-1.5 px-1 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Recent</p>
+                <div className="group/hdr mb-1.5 flex items-center gap-1.5 px-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleCollapse("__general__")}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  >
+                    <Icon
+                      name="ph:caret-right-bold"
+                      width={10}
+                      className={`shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${collapsed.has("__general__") ? "" : "rotate-90"}`}
+                    />
+                    <Icon name="ph:chat-circle-dots" width={13} className="shrink-0 text-[var(--text-muted)]" />
+                    <span className="truncate text-[11px] font-semibold text-[var(--text-secondary)]">
+                      General
+                    </span>
+                    <span className="ml-1 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[9px] text-[var(--text-muted)]">
+                      {general.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onNewChat()}
+                    title="New general chat"
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--accent-presence)] group-hover/hdr:opacity-100"
+                  >
+                    + new
+                  </button>
+                </div>
+
+                {!collapsed.has("__general__") && (
+                  <ChatRows
+                    rows={general}
+                    onOpen={onOpen}
+                    busyTuiId={busyTuiId}
+                    openInTui={openInTui}
+                    hideProjectPath={false}
+                  />
                 )}
-                <ChatRows rows={idle} onOpen={onOpen} busyTuiId={busyTuiId} openInTui={openInTui} />
               </div>
             )}
 
-            {/* ── Start something new nudge (sparse lists) ── */}
+            {/* Sparse nudge */}
             {mine.length <= 3 && (
               <button
-                onClick={onNewChat}
-                className="mt-4 w-full rounded-xl border border-dashed border-[var(--border-hairline)] py-3 text-[12px] text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
+                onClick={() => onNewChat()}
+                className="w-full rounded-xl border border-dashed border-[var(--border-hairline)] py-3 text-[12px] text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
               >
                 + start a new conversation
               </button>
@@ -196,15 +368,17 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   );
 }
 
-/* ── Row sub-component ── */
+// ── Row sub-component ────────────────────────────────────────────────────────
+
 type RowProps = {
   rows: SessionRow[];
   onOpen: (id: string) => void;
   busyTuiId: string | null;
   openInTui: (e: React.MouseEvent, id: string) => void;
+  hideProjectPath?: boolean;
 };
 
-function ChatRows({ rows, onOpen, busyTuiId, openInTui }: RowProps) {
+function ChatRows({ rows, onOpen, busyTuiId, openInTui, hideProjectPath }: RowProps) {
   return (
     <ul className="overflow-hidden rounded-xl border border-[var(--border-hairline)] divide-y divide-[var(--border-hairline)]">
       {rows.map((s) => {
@@ -231,7 +405,7 @@ function ChatRows({ rows, onOpen, busyTuiId, openInTui }: RowProps) {
                 </span>
                 <span className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
                   <span className={`font-mono ${st.text}`}>{st.label}</span>
-                  {s.project_root && (
+                  {!hideProjectPath && s.project_root && (
                     <>
                       <span>·</span>
                       <span className="truncate font-mono">{shortPath(s.project_root)}</span>

@@ -7,7 +7,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null };
+  | { kind: "chat"; sessionId: string | null; projectRoot?: string };
 
 type Props = {
   familiar: Familiar | null;
@@ -80,7 +80,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessions={sessions}
         daemonRunning={daemonRunning}
         onOpen={(sessionId) => setView({ kind: "chat", sessionId })}
-        onNewChat={() => setView({ kind: "chat", sessionId: null })}
+        onNewChat={(projectRoot) => setView({ kind: "chat", sessionId: null, projectRoot })}
       />
     );
   }
@@ -90,6 +90,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       ref={viewHandle}
       familiar={familiar}
       sessionId={view.sessionId}
+      projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
       daemonRunning={daemonRunning}
       onBack={() => setView({ kind: "list" })}
       onSessionStarted={(sid) => {

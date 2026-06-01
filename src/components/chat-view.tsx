@@ -32,6 +32,7 @@ type Turn = {
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
+  projectRoot?: string;
   daemonRunning?: boolean;
   onSessionStarted?: (sessionId: string) => void;
   onBack?: () => void;
@@ -93,7 +94,7 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
 }
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, onSessionStarted, onSlashCommand, onOpenOnboarding },
+  { familiar, sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -270,6 +271,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiarId: familiar.id,
           prompt: text,
           sessionId: currentSessionRef.current,
+          ...(projectRoot && !currentSessionRef.current ? { projectRoot } : {}),
         }),
         signal: controller.signal,
       });
