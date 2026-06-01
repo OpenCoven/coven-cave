@@ -2,27 +2,49 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 
+import {
+  DEFAULT_MAX_RETRIES,
+  type Card,
+  type CardLifecycle,
+  type CardPriority,
+  type CardStatus,
+} from "@/lib/cave-board-types";
+
+export {
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_TIMEOUT_MS,
+  LIFECYCLES,
+  PRIORITIES,
+  STATUSES,
+  type Card,
+  type CardLifecycle,
+  type CardPriority,
+  type CardStatus,
+} from "@/lib/cave-board-types";
+
 const BOARD_PATH = path.join(homedir(), ".coven", "cave-board.json");
 
-export type CardStatus = "inbox" | "running" | "review";
-export type CardPriority = "low" | "medium" | "high" | "urgent";
+/**
+ * Old cards predate the lifecycle machine. Map their column `status` to the
+ * closest lifecycle state so visuals look sane the first time a user opens
+ * the Board after upgrading.
+ */
+function inferLifecycle(status: CardStatus): CardLifecycle {
+  if (status === "running") return "running";
+  if (status === "review") return "review";
+  return "queued";
+}
 
-export type Card = {
-  id: string;
-  title: string;
-  notes: string;
-  status: CardStatus;
-  priority: CardPriority;
-  familiarId: string | null;
-  sessionId: string | null;
-  labels: string[];
-  template?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export const STATUSES: CardStatus[] = ["inbox", "running", "review"];
-export const PRIORITIES: CardPriority[] = ["urgent", "high", "medium", "low"];
+function backfillCard(c: Card | (Omit<Card, "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"> & Partial<Pick<Card, "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries">>)): Card {
+  const inferred = inferLifecycle(c.status);
+  return {
+    ...c,
+    lifecycle: c.lifecycle ?? inferred,
+    lifecycleAt: c.lifecycleAt ?? c.updatedAt,
+    retryCount: c.retryCount ?? 0,
+    maxRetries: c.maxRetries ?? DEFAULT_MAX_RETRIES,
+  } as Card;
+}
 
 type BoardFile = {
   version: number;
@@ -39,9 +61,10 @@ export async function loadBoard(): Promise<BoardFile> {
   try {
     const raw = await readFile(BOARD_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<BoardFile>;
+    const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
     return {
       version: parsed.version ?? 1,
-      cards: Array.isArray(parsed.cards) ? parsed.cards : [],
+      cards: rawCards.map((c) => backfillCard(c as Card)),
     };
   } catch {
     return EMPTY;
@@ -67,11 +90,12 @@ export type NewCardInput = {
 export async function createCard(input: NewCardInput): Promise<Card> {
   const board = await loadBoard();
   const now = new Date().toISOString();
+  const status: CardStatus = input.status ?? "inbox";
   const card: Card = {
     id: crypto.randomUUID(),
     title: input.title.trim(),
     notes: (input.notes ?? "").trim(),
-    status: input.status ?? "inbox",
+    status,
     priority: input.priority ?? "medium",
     familiarId: input.familiarId ?? null,
     sessionId: input.sessionId ?? null,
@@ -79,6 +103,10 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     template: input.template ?? null,
     createdAt: now,
     updatedAt: now,
+    lifecycle: inferLifecycle(status),
+    lifecycleAt: now,
+    retryCount: 0,
+    maxRetries: DEFAULT_MAX_RETRIES,
   };
   board.cards.push(card);
   await saveBoard(board);
@@ -103,6 +131,89 @@ export async function updateCard(
       ? patch.labels.map((l) => l.trim()).filter(Boolean)
       : current.labels,
   };
+  board.cards[idx] = next;
+  await saveBoard(board);
+  return next;
+}
+
+/**
+ * Move a card through the lifecycle state machine. Encapsulates the rules
+ * we don't want call sites to forget — most importantly that `failed`
+ * without remaining retries auto-rolls the card back to the Inbox column
+ * with a `needs human` flag.
+ *
+ * Transitions enforced:
+ *   queued      → dispatched | cancelled
+ *   dispatched  → running | failed | cancelled
+ *   running     → review | completed | failed | cancelled
+ *   review      → completed | failed
+ *   completed   → (terminal)
+ *   failed      → queued (retry) | cancelled  (auto-rollback handles needsHuman)
+ *   cancelled   → queued
+ *
+ * `retry: true` on a failed→queued transition increments retryCount.
+ */
+const VALID_NEXT: Record<CardLifecycle, CardLifecycle[]> = {
+  queued: ["dispatched", "cancelled"],
+  dispatched: ["running", "failed", "cancelled"],
+  running: ["review", "completed", "failed", "cancelled"],
+  review: ["completed", "failed"],
+  completed: [],
+  failed: ["queued", "cancelled"],
+  cancelled: ["queued"],
+};
+
+export type TransitionInput = {
+  to: CardLifecycle;
+  reason?: string;
+  retry?: boolean;
+};
+
+export async function transitionCard(
+  id: string,
+  { to, reason, retry }: TransitionInput,
+): Promise<Card | null> {
+  const board = await loadBoard();
+  const idx = board.cards.findIndex((c) => c.id === id);
+  if (idx < 0) return null;
+  const current = board.cards[idx];
+  if (!VALID_NEXT[current.lifecycle]?.includes(to)) {
+    throw new Error(`invalid transition: ${current.lifecycle} → ${to}`);
+  }
+  const now = new Date().toISOString();
+  const next: Card = {
+    ...current,
+    lifecycle: to,
+    lifecycleAt: now,
+    lifecycleReason: reason ?? undefined,
+    updatedAt: now,
+  };
+
+  // Column-status fallouts of lifecycle transitions:
+  if (to === "running") {
+    next.status = "running";
+    next.runningSince = now;
+    next.needsHuman = false;
+  } else if (to === "review") {
+    next.status = "review";
+  } else if (to === "completed") {
+    next.status = "review"; // stay in Review column; lifecycle distinguishes
+  } else if (to === "failed") {
+    const exhausted = current.retryCount >= current.maxRetries;
+    if (exhausted) {
+      // Auto-rollback: failed without remaining retries → back to Inbox
+      // with `needs human` flag. Spec section 3 (rollback behavior).
+      next.status = "inbox";
+      next.needsHuman = true;
+    }
+  } else if (to === "queued" && retry) {
+    next.retryCount = current.retryCount + 1;
+    next.status = "inbox";
+    next.needsHuman = false;
+  } else if (to === "cancelled") {
+    next.needsHuman = false;
+  }
+
   board.cards[idx] = next;
   await saveBoard(board);
   return next;

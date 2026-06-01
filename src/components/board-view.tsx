@@ -6,23 +6,17 @@ import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { TemplateCardGrid } from "@/components/ui/template-card-grid";
 import { OriginChip } from "@/components/ui/origin-chip";
-
-type CardStatus = "inbox" | "running" | "review";
-type CardPriority = "low" | "medium" | "high" | "urgent";
-
-type Card = {
-  id: string;
-  title: string;
-  notes: string;
-  status: CardStatus;
-  priority: CardPriority;
-  familiarId: string | null;
-  sessionId: string | null;
-  labels: string[];
-  template?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+import {
+  LifecycleBadge,
+  formatTimeoutBadge,
+} from "@/components/ui/lifecycle-badge";
+import {
+  DEFAULT_TIMEOUT_MS,
+  type Card,
+  type CardLifecycle,
+  type CardPriority,
+  type CardStatus,
+} from "@/lib/cave-board-types";
 
 const COLUMNS: { id: CardStatus; label: string }[] = [
   { id: "inbox", label: "Inbox" },
@@ -121,6 +115,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     });
     const json = await res.json();
     if (!json.ok) await load(); // reconcile on failure
+  };
+
+  const replaceCard = (next: Card) => {
+    setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)));
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -335,6 +333,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
                       onDragEnd={handleDragEnd}
                       onPatch={(patch) => patchCard(card.id, patch)}
                       onDelete={() => removeCard(card.id)}
+                      onCardReplaced={replaceCard}
                       onJumpToSession={onJumpToSession}
                     />
                   ))}
@@ -368,6 +367,7 @@ function CardItem({
   onDragEnd,
   onPatch,
   onDelete,
+  onCardReplaced,
   onJumpToSession,
 }: {
   card: Card;
@@ -378,6 +378,7 @@ function CardItem({
   onDragEnd?: () => void;
   onPatch: (patch: Partial<Card>) => void;
   onDelete: () => void;
+  onCardReplaced: (card: Card) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -416,18 +417,28 @@ function CardItem({
         </span>
       </div>
 
-      {card.labels.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {card.labels.map((l) => (
-            <span
-              key={l}
-              className="rounded border border-border bg-card px-1.5 py-px text-[10px] text-foreground"
-            >
-              {l}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+        {card.lifecycle === "running" ? (
+          <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />
+        ) : null}
+        {card.retryCount > 0 ? (
+          <span
+            className="rounded border border-border bg-card px-1.5 py-px text-[10px] uppercase tracking-widest text-muted-foreground"
+            title="Times this card was retried after failure"
+          >
+            retry {card.retryCount}/{card.maxRetries}
+          </span>
+        ) : null}
+        {card.labels.map((l) => (
+          <span
+            key={l}
+            className="rounded border border-border bg-card px-1.5 py-px text-[10px] text-foreground"
+          >
+            {l}
+          </span>
+        ))}
+      </div>
 
       <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
         {familiar ? (
@@ -532,6 +543,13 @@ function CardItem({
               </select>
             </Mini>
           </div>
+          {card.lifecycleReason ? (
+            <p className="rounded border border-border bg-background px-2 py-1 text-[10px] text-muted-foreground">
+              <span className="uppercase tracking-widest text-[9px]">reason</span>{" "}
+              {card.lifecycleReason}
+            </p>
+          ) : null}
+          <LifecycleActions card={card} onChanged={onCardReplaced} />
           <div className="flex justify-end">
             <button
               onClick={() => {
@@ -547,6 +565,127 @@ function CardItem({
     </li>
   );
 }
+
+/** Live-updating "running 47m of 2h" badge — ticks once per minute. */
+function TimeoutBadge({
+  runningSince,
+  timeoutMs,
+}: {
+  runningSince: string | undefined;
+  timeoutMs: number | undefined;
+}) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const text = formatTimeoutBadge(runningSince, timeoutMs, DEFAULT_TIMEOUT_MS);
+  if (!text) return null;
+  const elapsed = runningSince ? Date.now() - new Date(runningSince).getTime() : 0;
+  const limit = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const overLimit = elapsed > limit;
+  return (
+    <span
+      title={overLimit ? "Running past timeout — needs attention" : text}
+      className={`rounded border px-1.5 py-px text-[10px] uppercase tracking-widest ${
+        overLimit
+          ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+          : "border-border bg-card text-muted-foreground"
+      }`}
+    >
+      {text}
+    </span>
+  );
+}
+
+/**
+ * Lifecycle transition buttons. Only renders moves valid from the current
+ * state so reviewers don't have to remember the machine in their head.
+ */
+function LifecycleActions({
+  card,
+  onChanged,
+}: {
+  card: Card;
+  onChanged: (card: Card) => void;
+}) {
+  const [busy, setBusy] = useState<CardLifecycle | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const moves = NEXT_MOVES[card.lifecycle];
+  if (!moves || moves.length === 0) return null;
+  const transition = async (to: CardLifecycle, retry?: boolean) => {
+    setBusy(to);
+    setError(null);
+    try {
+      const res = await fetch(`/api/board/${card.id}/lifecycle`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ to, retry }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        setError(json.error ?? "transition failed");
+        return;
+      }
+      onChanged(json.card as Card);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "transition failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div>
+      <div className="mb-1 text-[9px] uppercase tracking-widest text-muted-foreground">
+        Advance lifecycle
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {moves.map((m) => (
+          <button
+            key={`${m.to}-${m.retry ? "retry" : "go"}`}
+            onClick={() => void transition(m.to, m.retry)}
+            disabled={busy !== null}
+            className="rounded border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-widest text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            {busy === m.to ? "…" : m.label}
+          </button>
+        ))}
+      </div>
+      {error ? (
+        <p className="mt-1 text-[10px] text-rose-300">{error}</p>
+      ) : null}
+    </div>
+  );
+}
+
+type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
+const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
+  queued: [
+    { to: "dispatched", label: "dispatch" },
+    { to: "cancelled", label: "cancel" },
+  ],
+  dispatched: [
+    { to: "running", label: "running" },
+    { to: "failed", label: "fail" },
+    { to: "cancelled", label: "cancel" },
+  ],
+  running: [
+    { to: "review", label: "review" },
+    { to: "completed", label: "complete" },
+    { to: "failed", label: "fail" },
+    { to: "cancelled", label: "cancel" },
+  ],
+  review: [
+    { to: "completed", label: "complete" },
+    { to: "failed", label: "fail" },
+  ],
+  completed: [],
+  failed: [
+    { to: "queued", label: "retry", retry: true },
+    { to: "cancelled", label: "cancel" },
+  ],
+  cancelled: [{ to: "queued", label: "re-queue" }],
+};
 
 function Mini({ label, children }: { label: string; children: React.ReactNode }) {
   return (
