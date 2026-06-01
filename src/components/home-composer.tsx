@@ -324,8 +324,9 @@ export function HomeComposer({
         <div className="home-composer-chips">
           {/* Familiar chip */}
           <div className="hc-chip-group">
-            <label className="hc-chip-label">With</label>
+            <label className="hc-chip-label" htmlFor="hc-familiar-select">With</label>
             <select
+              id="hc-familiar-select"
               className="hc-chip-select"
               value={familiarId ?? ""}
               onChange={(e) => setFamiliarId(e.target.value || null)}
