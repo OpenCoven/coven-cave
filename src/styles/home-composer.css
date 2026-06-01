@@ -1,0 +1,281 @@
+/* home-composer.css — universal intent surface styles.
+ * Uses existing --bg-*, --text-*, --border-* custom properties.
+ * Mood C accent via oklab color-mix (no new tokens introduced).
+ */
+
+/* ── Root layout ─────────────────────────────────────────────────────────── */
+.home-composer-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+  padding: 48px 32px 64px;
+  gap: 28px;
+  overflow-y: auto;
+}
+
+/* ── Headline ────────────────────────────────────────────────────────────── */
+.home-composer-headline {
+  font-family: var(--font-fredoka, "Fredoka", system-ui, sans-serif);
+  font-weight: 600;
+  font-size: clamp(24px, 4vw, 40px);
+  line-height: 1.15;
+  text-align: center;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* ── Composer card ───────────────────────────────────────────────────────── */
+.home-composer-card {
+  width: 100%;
+  max-width: 640px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+}
+
+/* ── Context chips ───────────────────────────────────────────────────────── */
+.home-composer-chips {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--border-hairline);
+  flex-wrap: wrap;
+}
+
+.hc-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hc-chip-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.hc-chip-select {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 10%, var(--bg-base));
+  border: 1px solid color-mix(in oklab, oklch(0.65 0.18 280) 28%, transparent);
+  border-radius: 8px;
+  padding: 3px 8px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.hc-chip-select:focus {
+  border-color: oklch(0.65 0.18 280);
+}
+
+/* Destination pills */
+.hc-destination-pills {
+  display: flex;
+  gap: 4px;
+}
+
+.hc-dest-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+  white-space: nowrap;
+}
+
+.hc-dest-pill:hover {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.hc-dest-pill--active {
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 15%, transparent);
+  border-color: oklch(0.65 0.18 280 / 60%);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Workspace chip */
+.hc-chip-workspace {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.hc-chip-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hc-chip-role {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: oklch(0.65 0.18 280);
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 12%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ── Textarea ────────────────────────────────────────────────────────────── */
+.hc-composer-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.hc-textarea {
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.55;
+  padding: 14px 14px 8px;
+  font-family: inherit;
+  min-height: 64px;
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+.hc-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.hc-textarea:disabled {
+  opacity: 0.5;
+}
+
+/* Footer row */
+.hc-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px 10px 14px;
+  gap: 8px;
+}
+
+.hc-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  user-select: none;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.hc-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: none;
+  background: oklch(0.65 0.18 280);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.1s ease, background 0.1s ease;
+}
+
+.hc-send-btn:hover:not(:disabled) {
+  background: oklch(0.7 0.18 280);
+}
+
+.hc-send-btn--empty,
+.hc-send-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.hc-send-btn--sending {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Spinner */
+.hc-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: hc-spin 0.6s linear infinite;
+}
+
+@keyframes hc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Suggestions ─────────────────────────────────────────────────────────── */
+.home-composer-suggestions {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hc-suggestions-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.hc-suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hc-suggestion-pill {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hc-suggestion-pill:hover {
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 8%, var(--bg-raised));
+  border-color: color-mix(in oklab, oklch(0.65 0.18 280) 30%, transparent);
+  color: var(--text-primary);
+}
