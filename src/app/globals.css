@@ -127,7 +127,8 @@ body {
 .shell-nav-panel,
 .shell-list-panel,
 .shell-detail-panel,
-.shell-agent-panel {
+.shell-agent-panel,
+.shell-bottom-panel {
   height: 100%;
   min-width: 0;
   overflow: hidden;
@@ -137,7 +138,8 @@ body {
 .shell-nav-panel > .shell-nav,
 .shell-list-panel > .shell-list,
 .shell-detail-panel > .shell-detail,
-.shell-agent-panel > .shell-agent {
+.shell-agent-panel > .shell-agent,
+.shell-bottom-panel > .shell-bottom {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
@@ -149,6 +151,32 @@ body {
   height: 100%;
   background: var(--bg-base);
   overflow: hidden;
+}
+
+.shell-bottom {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+  border-top: 1px solid var(--border-hairline);
+  overflow: hidden;
+}
+
+.shell-separator-h {
+  flex: 0 0 1px;
+  background: transparent;
+  cursor: row-resize;
+  position: relative;
+  transition: background-color 0.12s ease;
+}
+.shell-separator-h::before {
+  content: "";
+  position: absolute;
+  inset: -3px 0;
+}
+.shell-separator-h:hover,
+.shell-separator-h:active {
+  background: var(--accent-presence);
 }
 
 /* Separator — 1px hairline with a slightly wider hit area, lavender on

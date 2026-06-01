@@ -10,31 +10,18 @@ import {
 } from "react-resizable-panels";
 import { Icon, type IconName } from "@/lib/icon";
 
-// Shell — the three-pane app chrome introduced by issue #14.
+// Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
+// optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
 //
-// Layout (react-resizable-panels horizontal Group):
-//   ┌────────┬─────────────┬──────────────────────────┐
-//   │  app   │   context   │                          │
-//   │  nav   │   list      │      detail pane         │
-//   │ 240px  │  ~260px     │         (flex)           │
-//   └────────┴─────────────┴──────────────────────────┘
-//
-// `list` is optional — pass `list={null}` for a two-pane layout
-// (used by full-bleed modes like /mockup-style settings).
-//
-// Resize: drag separators. Widths persist to localStorage under
-//   cave.shell.widths.v1            (three-pane)
-//   cave.shell.widths.v1.two-pane   (two-pane)
-//
-// Collapse:
-//   ⌘B  toggles the nav pane
-//   ⌘\  toggles the list pane (three-pane only)
+// Keyboard:
+//   ⌘B   toggle nav
+//   ⌘\   toggle list
+//   ⌘J   toggle agent
+//   ⌃`   toggle bottom terminal
 
 const SHELL_GROUP_ID = "cave.shell.widths.v1";
+const BOTTOM_GROUP_ID = "cave.shell.bottom.v1";
 
-// SSR-safe localStorage wrapper. react-resizable-panels reads storage
-// during render via useDefaultLayout, so we cannot rely on a `typeof
-// window` guard at the call site alone.
 const shellStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
@@ -72,26 +59,26 @@ export function Shell({
   list,
   detail,
   agent,
+  bottom,
   topBar,
 }: {
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
-  /** Optional right-side agent pane (live chat with active familiar). */
   agent?: ReactNode;
+  bottom?: ReactNode;
   topBar?: ReactNode;
 }) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const agentRef = useRef<PanelImperativeHandle | null>(null);
-  // Persisted widths come from localStorage on client only; render a
-  // layout-free placeholder on server + first client paint to keep the
-  // hydration tree matching, then mount the real Group.
+  const bottomRef = useRef<PanelImperativeHandle | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
   const twoPane = !list;
   const hasAgent = !!agent;
+  const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
@@ -122,9 +109,20 @@ export function Shell({
         togglePanel(agentRef.current);
       }
     };
+    const bottomToggle = (e: KeyboardEvent) => {
+      if (!hasBottom) return;
+      if (e.ctrlKey && e.key === "`") {
+        e.preventDefault();
+        togglePanel(bottomRef.current);
+      }
+    };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [twoPane, hasAgent]);
+    window.addEventListener("keydown", bottomToggle);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("keydown", bottomToggle);
+    };
+  }, [twoPane, hasAgent, hasBottom]);
 
   if (!mounted) {
     return (
@@ -135,66 +133,95 @@ export function Shell({
     );
   }
 
+  const horizontalGroup = (
+    <Group
+      className="shell-root flex-1 min-h-0"
+      orientation="horizontal"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
+    >
+      <Panel
+        id="nav"
+        className="shell-nav-panel"
+        defaultSize="240px"
+        minSize="200px"
+        maxSize="360px"
+        collapsible
+        collapsedSize={0}
+        panelRef={navRef}
+      >
+        <aside className="shell-nav">{nav}</aside>
+      </Panel>
+      <Separator className="shell-separator" />
+      {!twoPane && (
+        <>
+          <Panel
+            id="list"
+            className="shell-list-panel"
+            defaultSize="260px"
+            minSize="220px"
+            maxSize="480px"
+            collapsible
+            collapsedSize={0}
+            panelRef={listRef}
+          >
+            <aside className="shell-list">{list}</aside>
+          </Panel>
+          <Separator className="shell-separator" />
+        </>
+      )}
+      <Panel id="detail" className="shell-detail-panel">
+        <main className="shell-detail">{detail}</main>
+      </Panel>
+      {hasAgent && (
+        <>
+          <Separator className="shell-separator" />
+          <Panel
+            id="agent"
+            className="shell-agent-panel"
+            defaultSize="380px"
+            minSize="300px"
+            maxSize="560px"
+            collapsible
+            collapsedSize={0}
+            panelRef={agentRef}
+          >
+            <aside className="shell-agent">{agent}</aside>
+          </Panel>
+        </>
+      )}
+    </Group>
+  );
+
   return (
     <div className="flex h-screen w-screen flex-col">
       {topBar}
-      <Group
-        className="shell-root flex-1 min-h-0"
-        orientation="horizontal"
-        defaultLayout={defaultLayout}
-        onLayoutChanged={onLayoutChanged}
-      >
-        <Panel
-          id="nav"
-          className="shell-nav-panel"
-          defaultSize="240px"
-          minSize="200px"
-          maxSize="360px"
-          collapsible
-          collapsedSize={0}
-          panelRef={navRef}
+      {hasBottom ? (
+        <Group
+          className="flex-1 min-h-0"
+          orientation="vertical"
+          id={BOTTOM_GROUP_ID}
         >
-          <aside className="shell-nav">{nav}</aside>
-        </Panel>
-        <Separator className="shell-separator" />
-        {!twoPane && (
-          <>
-            <Panel
-              id="list"
-              className="shell-list-panel"
-              defaultSize="260px"
-              minSize="220px"
-              maxSize="480px"
-              collapsible
-              collapsedSize={0}
-              panelRef={listRef}
-            >
-              <aside className="shell-list">{list}</aside>
-            </Panel>
-            <Separator className="shell-separator" />
-          </>
-        )}
-        <Panel id="detail" className="shell-detail-panel">
-          <main className="shell-detail">{detail}</main>
-        </Panel>
-        {hasAgent && (
-          <>
-            <Separator className="shell-separator" />
-            <Panel
-              id="agent"
-              className="shell-agent-panel"
-              defaultSize="380px"
-              minSize="300px"
-              maxSize="560px"
-              collapsible
-              collapsedSize={0}
-              panelRef={agentRef}
-            >
-              <aside className="shell-agent">{agent}</aside>
-            </Panel>
-          </>
-        )}
-      </Group>
+          <Panel id="main" minSize="40%">
+            {horizontalGroup}
+          </Panel>
+          <Separator className="shell-separator-h" />
+          <Panel
+            id="bottom"
+            className="shell-bottom-panel"
+            defaultSize="240px"
+            minSize="120px"
+            maxSize="60%"
+            collapsible
+            collapsedSize={0}
+            panelRef={bottomRef}
+          >
+            <section className="shell-bottom">{bottom}</section>
+          </Panel>
+        </Group>
+      ) : (
+        horizontalGroup
+      )}
     </div>
   );
 }

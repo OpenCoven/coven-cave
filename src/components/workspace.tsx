@@ -17,6 +17,7 @@ import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, ShellNav, ShellNavHeader, type ShellNavItem } from "@/components/shell";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
+import { BottomTerminal } from "@/components/bottom-terminal";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -712,6 +713,7 @@ export function Workspace() {
             />
           )
         }
+        bottom={<BottomTerminal threadId="cave.bottom.main" />}
       />
 
       <CommandPalette

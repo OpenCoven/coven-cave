@@ -167,9 +167,18 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+mod pty;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            pty::pty_start,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_stop,
+            pty::pty_list,
+        ])
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
             if cfg!(debug_assertions) {
