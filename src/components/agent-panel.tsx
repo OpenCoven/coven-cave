@@ -22,16 +22,16 @@ function FamiliarStrip({
   activeId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const overrides = useGlyphOverrides();
+
   if (familiars.length === 0) return null;
 
   return (
     <div className="familiar-strip">
       {familiars.map((f) => {
-        const glyph = resolveFamiliarGlyph(f, {});
+        const glyph = resolveFamiliarGlyph(f, overrides);
         const isActive = f.id === activeId;
         return (
-          <button
-            key={f.id}
             type="button"
             title={`${f.display_name}${f.role ? ` · ${f.role}` : ""}`}
             aria-label={f.display_name}
