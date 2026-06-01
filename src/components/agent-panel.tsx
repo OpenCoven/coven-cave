@@ -32,6 +32,8 @@ function FamiliarStrip({
         const glyph = resolveFamiliarGlyph(f, overrides);
         const isActive = f.id === activeId;
         return (
+          <button
+            key={f.id}
             type="button"
             title={`${f.display_name}${f.role ? ` · ${f.role}` : ""}`}
             aria-label={f.display_name}
