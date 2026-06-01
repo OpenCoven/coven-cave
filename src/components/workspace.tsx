@@ -290,9 +290,8 @@ export function Workspace() {
   }, []);
 
   const pushToast = useCallback((title: string) => {
-    const id = `adhoc-${Date.now()}`;
+    const id = `eph:adhoc-${Date.now()}`;
     setToasts((prev) => [...prev, { id, title }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
   }, []);
 
   const dismissToast = useCallback((id: string) => {
