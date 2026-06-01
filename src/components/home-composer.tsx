@@ -229,7 +229,7 @@ export function HomeComposer({
           }
           if (sessionId) {
             setText("");
-            onNavigateToChat(sessionId, familiarId ?? familiars[0]?.id ?? "");
+            onNavigateToChat(sessionId, fid);
           } else {
             onToast("Chat started but session ID not received — check Chats.");
             setText("");
