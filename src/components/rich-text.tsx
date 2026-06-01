@@ -27,7 +27,7 @@ export function RichText({ text }: { text: string }) {
     nodes.push(
       <code
         key={key++}
-        className="rounded bg-[--bg-raised]/80 px-1.5 py-0.5 font-mono text-[12px] text-[--text-primary]"
+        className="rounded bg-[var(--bg-raised)]/80 px-1.5 py-0.5 font-mono text-[12px] text-[var(--text-primary)]"
       >
         {code}
       </code>,

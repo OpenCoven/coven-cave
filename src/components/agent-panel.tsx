@@ -24,13 +24,13 @@ export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPane
 ) {
   if (!props.familiar) {
     return (
-      <div className="flex h-full flex-col items-center justify-center px-6 text-center text-[12px] text-[--text-muted]">
-        <p className="text-[--text-secondary]">Pick a familiar from the rail.</p>
+      <div className="flex h-full flex-col items-center justify-center px-6 text-center text-[12px] text-[var(--text-muted)]">
+        <p className="text-[var(--text-secondary)]">Pick a familiar from the rail.</p>
         <p className="mt-1">Their live chat lives here.</p>
         <button
           type="button"
           onClick={props.onOpenOnboarding}
-          className="mt-4 rounded-md border border-[--border-hairline] bg-[--bg-raised] px-3 py-1 text-[11px] text-[--text-primary] hover:bg-[--bg-raised]/80"
+          className="mt-4 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80"
         >
           Open setup
         </button>

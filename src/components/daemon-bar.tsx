@@ -66,7 +66,7 @@ export function DaemonBar({
   }, [onRunningChange]);
 
   return (
-    <header className="flex items-center justify-between border-b border-[--border-hairline] bg-[--bg-raised]/60 px-3 py-1.5 text-xs">
+    <header className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-xs">
       <div className="flex items-center gap-3">
         <span className="font-semibold tracking-tight">CovenCave</span>
         <nav className="flex items-center gap-0.5">
@@ -82,8 +82,8 @@ export function DaemonBar({
                 onClick={() => onModeChange(m)}
                 className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
                   active
-                    ? "bg-[--bg-raised] text-[--text-primary]"
-                    : "text-[--text-secondary] hover:bg-[--bg-raised] hover:text-[--text-primary]"
+                    ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                 }`}
               >
                 {label}

@@ -154,7 +154,7 @@ export function BottomTerminal({ threadId }: { threadId: string }) {
 
   if (unavailable) {
     return (
-      <div className="flex h-full items-center justify-center text-[11px] text-[--text-muted]">
+      <div className="flex h-full items-center justify-center text-[11px] text-[var(--text-muted)]">
         Terminal is only available inside the CovenCave desktop app.
       </div>
     );

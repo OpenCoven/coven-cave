@@ -138,19 +138,19 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…",
         action: s?.covenCli.ok ? null : (
           <div className="mt-2 space-y-2">
-            <div className="flex items-center gap-2 rounded-md border border-[--border-hairline] bg-[--bg-base] px-3 py-2 font-mono text-[12px] text-[--text-primary]">
-              <span className="text-[--text-muted]">$</span>
+            <div className="flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+              <span className="text-[var(--text-muted)]">$</span>
               <code className="flex-1">{installCmd}</code>
               <button
                 onClick={copyInstall}
-                className="rounded border border-[--border-hairline] px-2 py-0.5 text-[11px] text-[--text-secondary] hover:bg-[--bg-raised]"
+                className="rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               >
                 copy
               </button>
             </div>
-            <p className="text-[11px] text-[--text-muted]">
+            <p className="text-[11px] text-[var(--text-muted)]">
               Or see{" "}
-              <span className="font-mono text-[--text-secondary]">github.com/OpenCoven/coven</span>{" "}
+              <span className="font-mono text-[var(--text-secondary)]">github.com/OpenCoven/coven</span>{" "}
               for other install paths. Re-checks every 2s.
             </p>
           </div>
@@ -165,7 +165,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <button
             onClick={scaffoldOnly}
             disabled={picking === "scaffold"}
-            className="mt-2 rounded-md border border-[--border-hairline] bg-[--bg-raised] px-3 py-1.5 text-[12px] text-[--text-primary] hover:bg-[--bg-raised] disabled:opacity-50"
+            className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
           >
             {picking === "scaffold" ? "creating…" : "Create ~/.coven"}
           </button>
@@ -188,11 +188,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   className={`rounded-lg border bg-gradient-to-br p-3 text-left transition disabled:opacity-50 ${
                     active
                       ? `${tmpl.accent} ring-1 ring-white/20`
-                      : "border-[--border-hairline] from-[--bg-raised]/40 to-[--bg-raised]/10 hover:border-[--border-strong]"
+                      : "border-[var(--border-hairline)] from-[var(--bg-raised)]/40 to-[var(--bg-raised)]/10 hover:border-[var(--border-strong)]"
                   }`}
                 >
-                  <div className="text-[13px] font-medium text-[--text-primary]">{tmpl.label}</div>
-                  <div className="mt-0.5 text-[11px] text-[--text-secondary]">{tmpl.blurb}</div>
+                  <div className="text-[13px] font-medium text-[var(--text-primary)]">{tmpl.label}</div>
+                  <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{tmpl.blurb}</div>
                   {active ? (
                     <div className="mt-1.5 flex items-center gap-1 font-mono text-[10px] text-emerald-300">
                       <Icon name="ph:check-bold" />
@@ -214,7 +214,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <button
             onClick={startDaemon}
             disabled={startingDaemon || !s?.covenCli.ok}
-            className="mt-2 rounded-md border border-[--border-hairline] bg-[--bg-raised] px-3 py-1.5 text-[12px] text-[--text-primary] hover:bg-[--bg-raised] disabled:opacity-50"
+            className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
             title={!s?.covenCli.ok ? "Install coven CLI first" : "Run `coven daemon start`"}
           >
             {startingDaemon ? "starting…" : "Start daemon"}
@@ -234,12 +234,12 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[--bg-base]/95 backdrop-blur-sm">
-      <div className="w-[540px] max-w-[94vw] max-h-[92vh] overflow-y-auto rounded-2xl border border-[--border-hairline] bg-[--bg-base] p-7 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/95 backdrop-blur-sm">
+      <div className="w-[540px] max-w-[94vw] max-h-[92vh] overflow-y-auto rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-7 shadow-2xl">
         <div className="mb-5">
           <div className="text-[11px] uppercase tracking-wider text-purple-300/80">Welcome</div>
-          <h1 className="mt-1 text-xl font-semibold text-[--text-primary]">Let's wake your Coven.</h1>
-          <p className="mt-1 text-[13px] text-[--text-secondary]">
+          <h1 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">Let's wake your Coven.</h1>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
             Five quick checks. Cave handles what it can; you handle the rest. Status refreshes automatically.
           </p>
         </div>
@@ -249,7 +249,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <li
               key={s.key}
               className={`rounded-xl border p-4 transition-colors ${
-                s.ok ? "border-emerald-700/40 bg-emerald-950/15" : "border-[--border-hairline] bg-[--bg-raised]/30"
+                s.ok ? "border-emerald-700/40 bg-emerald-950/15" : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/30"
               }`}
             >
               <div className="flex items-start gap-3">
@@ -257,16 +257,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[12px] font-medium ${
                     s.ok
                       ? "border-emerald-600 bg-emerald-600/20 text-emerald-300"
-                      : "border-[--border-strong] bg-[--bg-raised] text-[--text-secondary]"
+                      : "border-[var(--border-strong)] bg-[var(--bg-raised)] text-[var(--text-secondary)]"
                   }`}
                 >
                   {s.ok ? <Icon name="ph:check-bold" /> : i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-[--text-primary]">{s.title}</span>
+                    <span className="text-[13px] font-medium text-[var(--text-primary)]">{s.title}</span>
                   </div>
-                  <div className="mt-0.5 text-[11px] text-[--text-muted] truncate">{s.detail}</div>
+                  <div className="mt-0.5 text-[11px] text-[var(--text-muted)] truncate">{s.detail}</div>
                   {s.action}
                 </div>
               </div>
@@ -284,7 +284,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               }
               onDismiss();
             }}
-            className="text-[11px] text-[--text-muted] hover:text-[--text-secondary]"
+            className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
             Skip for now
           </button>
@@ -296,7 +296,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               Open Cave →
             </button>
           ) : (
-            <span className="text-[11px] text-[--text-muted]">
+            <span className="text-[11px] text-[var(--text-muted)]">
               {Object.values(status?.steps ?? {}).filter((s) => s.ok).length}/5 ready
             </span>
           )}

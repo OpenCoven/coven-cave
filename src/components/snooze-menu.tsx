@@ -39,8 +39,8 @@ export function SnoozeMenu({ onSnooze, className, size = "sm" }: Props) {
 
   const btnCls =
     size === "xs"
-      ? "rounded border border-[--border-hairline] bg-[--bg-raised] px-1.5 py-0.5 text-[10px] text-[--text-secondary] hover:bg-[--bg-raised]"
-      : "rounded border border-[--border-strong] px-2 py-0.5 text-[10px] text-[--text-secondary] hover:bg-[--bg-raised]";
+      ? "rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+      : "rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]";
 
   return (
     <div ref={wrapRef} className={`relative ${className ?? ""}`}>
@@ -48,7 +48,7 @@ export function SnoozeMenu({ onSnooze, className, size = "sm" }: Props) {
         Snooze ▾
       </button>
       {open ? (
-        <div className="absolute bottom-full left-0 z-50 mb-1 w-32 overflow-hidden rounded-md border border-[--border-strong] bg-[--bg-raised] shadow-xl">
+        <div className="absolute bottom-full left-0 z-50 mb-1 w-32 overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-xl">
           {OPTIONS.map((o) => (
             <button
               key={o.label}
@@ -56,7 +56,7 @@ export function SnoozeMenu({ onSnooze, className, size = "sm" }: Props) {
                 setOpen(false);
                 onSnooze(o.resolve());
               }}
-              className="block w-full px-2 py-1 text-left text-[11px] text-[--text-primary] hover:bg-[--bg-raised]"
+              className="block w-full px-2 py-1 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
             >
               {o.label}
             </button>

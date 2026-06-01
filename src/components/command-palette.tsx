@@ -277,7 +277,7 @@ export function CommandPalette({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[--border-hairline] bg-[--bg-base] shadow-2xl"
+        className="mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
       >
         <input
           ref={inputRef}
@@ -288,11 +288,11 @@ export function CommandPalette({
           }}
           onKeyDown={onComposerKey}
           placeholder="Search familiars · chats · cards · memory · commands…"
-          className="w-full border-b border-[--border-hairline] bg-transparent px-4 py-3 text-sm text-[--text-primary] outline-none placeholder:text-[--text-muted]"
+          className="w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />
         <ul className="max-h-[60vh] overflow-y-auto py-1">
           {rows.length === 0 ? (
-            <li className="px-4 py-6 text-center text-xs text-[--text-muted]">No matches.</li>
+            <li className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">No matches.</li>
           ) : null}
           {rows.map((row, i) => {
             const active = i === activeIdx;
@@ -302,76 +302,76 @@ export function CommandPalette({
                   onMouseEnter={() => setActiveIdx(i)}
                   onClick={() => fire(row)}
                   className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${
-                    active ? "bg-[--bg-raised]/60" : "hover:bg-[--bg-raised]/50"
+                    active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
                   }`}
                 >
                   {row.kind === "familiar" ? (
                     <>
                       <span className="flex flex-1 flex-col">
-                        <span className="text-[--text-primary]">{row.familiar.display_name}</span>
-                        <span className="text-[10px] uppercase tracking-widest text-[--text-muted]">
+                        <span className="text-[var(--text-primary)]">{row.familiar.display_name}</span>
+                        <span className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
                           {row.familiar.role}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[--text-muted]">switch</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">switch</span>
                     </>
                   ) : null}
                   {row.kind === "session" ? (
                     <>
-                      <Icon name="ph:chat-circle-dots-bold" className="text-[--text-secondary]" width="1.1rem" height="1.1rem" />
+                      <Icon name="ph:chat-circle-dots-bold" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[--text-primary]">
+                        <span className="truncate text-[var(--text-primary)]">
                           {row.session.title || "(untitled chat)"}
                         </span>
-                        <span className="truncate text-[10px] text-[--text-muted]">
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
                           {row.familiar?.display_name ?? row.session.familiarId} ·{" "}
                           {row.session.harness}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[--text-muted]">open</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">open</span>
                     </>
                   ) : null}
                   {row.kind === "card" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[--text-primary]">{row.card.title}</span>
-                        <span className="truncate text-[10px] text-[--text-muted]">
+                        <span className="truncate text-[var(--text-primary)]">{row.card.title}</span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
                           {row.card.status} · {row.card.priority}
                           {row.familiar ? ` · ${row.familiar.display_name}` : ""}
                           {row.card.labels.length ? ` · ${row.card.labels.join(", ")}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[--text-muted]">card</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">card</span>
                     </>
                   ) : null}
                   {row.kind === "coven-memory" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[--text-primary]">{row.entry.title}</span>
-                        <span className="truncate text-[10px] text-[--text-muted]">
+                        <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
                           {row.entry.familiar_id} · {row.entry.updated_at}
                           {row.entry.excerpt ? ` · ${row.entry.excerpt.slice(0, 70)}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[--text-muted]">memory</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">memory</span>
                     </>
                   ) : null}
                   {row.kind === "fs-memory" ? (
                     <>
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[--text-primary]">{row.entry.relPath}</span>
-                        <span className="truncate text-[10px] text-[--text-muted]">
+                        <span className="truncate text-[var(--text-primary)]">{row.entry.relPath}</span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
                           {row.entry.rootLabel}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[--text-muted]">file</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">file</span>
                     </>
                   ) : null}
                   {row.kind === "command" ? (
                     <>
-                      <span className="font-mono text-[--text-secondary]">{row.name}</span>
-                      <span className="flex-1 text-[--text-muted]">{platformizeHint(row.hint, keys)}</span>
-                      <span className="text-[10px] text-[--text-muted]">run</span>
+                      <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
+                      <span className="flex-1 text-[var(--text-muted)]">{platformizeHint(row.hint, keys)}</span>
+                      <span className="text-[10px] text-[var(--text-muted)]">run</span>
                     </>
                   ) : null}
                 </button>
@@ -379,7 +379,7 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="flex items-center justify-between border-t border-[--border-hairline] px-4 py-2 text-[10px] text-[--text-muted]">
+        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
           <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
           <span>{keys.mod}K</span>
         </div>

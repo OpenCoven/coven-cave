@@ -62,17 +62,17 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   const projectName = PROJECT_ROOT.split("/").slice(-2).join("/");
 
   return (
-    <section className="flex h-full flex-col bg-[--bg-base] text-[--text-primary]">
-      <header className="flex items-center gap-2 border-b border-[--border-hairline] px-5 py-2.5 text-[11px] text-[--text-secondary]">
+    <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+      <header className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-2.5 text-[11px] text-[var(--text-secondary)]">
         <span className="flex items-center gap-1.5">
-          <span className="font-medium text-[--text-primary]">{familiar.display_name}</span>
+          <span className="font-medium text-[var(--text-primary)]">{familiar.display_name}</span>
         </span>
-        <span className="text-[--text-muted]">·</span>
-        <span className="font-mono text-[--text-muted]">{familiar.harness ?? "codex"}</span>
-        <span className="text-[--text-muted]">·</span>
-        <span className="truncate font-mono text-[--text-muted]">{projectName}</span>
-        <span className="text-[--text-muted]">·</span>
-        <span className="text-[--text-muted]">
+        <span className="text-[var(--text-muted)]">·</span>
+        <span className="font-mono text-[var(--text-muted)]">{familiar.harness ?? "codex"}</span>
+        <span className="text-[var(--text-muted)]">·</span>
+        <span className="truncate font-mono text-[var(--text-muted)]">{projectName}</span>
+        <span className="text-[var(--text-muted)]">·</span>
+        <span className="text-[var(--text-muted)]">
           daemon{" "}
           <span className={daemonRunning ? "text-emerald-400" : "text-rose-400"}>
             {daemonRunning ? "running" : "offline"}
@@ -81,7 +81,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
         <span className="ml-auto flex items-center gap-2">
           <button
             onClick={onNewChat}
-            className="rounded-full bg-[--accent-presence] px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-[--accent-presence-soft]"
+            className="rounded-full bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-[var(--accent-presence-soft)]"
           >
             + New chat
           </button>
@@ -96,33 +96,33 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
         <div className="mx-auto max-w-3xl">
-          <h2 className="mb-4 text-xs uppercase tracking-widest text-[--text-muted]">
+          <h2 className="mb-4 text-xs uppercase tracking-widest text-[var(--text-muted)]">
             Chats with {familiar.display_name}
           </h2>
 
           {mine.length === 0 ? (
-            <div className="rounded-2xl border border-[--border-hairline] bg-[--bg-raised]/40 px-5 py-10 text-center">
-              <p className="text-sm text-[--text-secondary]">No chats with {familiar.display_name} yet.</p>
-              <p className="mt-1 text-[12px] text-[--text-muted]">
+            <div className="rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-5 py-10 text-center">
+              <p className="text-sm text-[var(--text-secondary)]">No chats with {familiar.display_name} yet.</p>
+              <p className="mt-1 text-[12px] text-[var(--text-muted)]">
                 Runs on{" "}
-                <code className="rounded bg-[--bg-raised] px-1 py-0.5 font-mono text-[11px] text-[--text-secondary]">
+                <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px] text-[var(--text-secondary)]">
                   {familiar.harness}
                 </code>{" "}
                 with{" "}
-                <code className="rounded bg-[--bg-raised] px-1 py-0.5 font-mono text-[11px] text-[--text-secondary]">
+                <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px] text-[var(--text-secondary)]">
                   {familiar.model}
                 </code>
                 .
               </p>
               <button
                 onClick={onNewChat}
-                className="mt-5 rounded-full bg-[--accent-presence] px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[--accent-presence-soft]"
+                className="mt-5 rounded-full bg-[var(--accent-presence)] px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--accent-presence-soft)]"
               >
                 + New chat
               </button>
             </div>
           ) : (
-            <ul className="divide-y divide-[--border-hairline]">
+            <ul className="divide-y divide-[var(--border-hairline)]">
               {mine.map((s) => {
                 const running = s.status === "running";
                 return (
@@ -134,12 +134,12 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                       onKeyDown={(e) => {
                         if (e.key === "Enter") onOpen(s.id);
                       }}
-                      className="group flex cursor-pointer items-center gap-3 py-3 transition-colors hover:bg-[--bg-raised]/30"
+                      className="group flex cursor-pointer items-center gap-3 py-3 transition-colors hover:bg-[var(--bg-raised)]/30"
                     >
                       <Icon
                         name={running ? "ph:circle-fill" : "ph:circle"}
                         className={
-                          running ? "text-emerald-400 animate-pulse" : "text-[--text-muted]"
+                          running ? "text-emerald-400 animate-pulse" : "text-[var(--text-muted)]"
                         }
                         title={running ? "running" : "idle"}
                         width="0.6rem"
@@ -147,23 +147,23 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                       />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate text-sm text-[--text-primary]">
+                          <span className="truncate text-sm text-[var(--text-primary)]">
                             {s.title || "(untitled chat)"}
                           </span>
                           {s.origin ? <OriginChip origin={s.origin} /> : null}
                         </span>
-                        <span className="truncate text-[11px] text-[--text-muted]">
-                          <span className="font-mono text-[--text-secondary]">{s.harness}</span>
-                          <span className="mx-1.5 text-[--text-muted]">·</span>
+                        <span className="truncate text-[11px] text-[var(--text-muted)]">
+                          <span className="font-mono text-[var(--text-secondary)]">{s.harness}</span>
+                          <span className="mx-1.5 text-[var(--text-muted)]">·</span>
                           <span className="truncate">{s.project_root}</span>
                         </span>
                       </span>
-                      <span className="shrink-0 text-[11px] text-[--text-muted]">{age(s.updated_at)}</span>
+                      <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{age(s.updated_at)}</span>
                       <button
                         onClick={(e) => openInTui(e, s.id)}
                         disabled={busyTuiId === s.id}
                         title="Open this session in Coven Code TUI (external terminal)"
-                        className="shrink-0 rounded border border-[--border-hairline] px-2 py-0.5 text-[10px] text-[--text-secondary] opacity-0 transition-opacity hover:bg-[--bg-raised] group-hover:opacity-100 disabled:opacity-40"
+                        className="shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
                       >
                         {busyTuiId === s.id ? "…" : "tui"}
                       </button>
@@ -176,7 +176,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
         </div>
       </div>
 
-      <footer className="border-t border-[--border-hairline] px-5 py-2 text-[10px] text-[--text-muted]">
+      <footer className="border-t border-[var(--border-hairline)] px-5 py-2 text-[10px] text-[var(--text-muted)]">
         {keys.enter} open · {keys.mod}K palette · / commands in chat
       </footer>
     </section>
