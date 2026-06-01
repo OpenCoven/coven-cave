@@ -12,6 +12,7 @@ import {
   type SnoozePresetId,
   sortEscalations,
 } from "@/lib/vals-inbox-types";
+import { DEMO_MODE, DEMO_ESCALATIONS } from "@/lib/demo-seed";
 
 type Props = {
   onOpenSource?: (item: Escalation) => void;
@@ -71,13 +72,17 @@ export function ValsInboxView({ onOpenSource }: Props) {
       const res = await fetch("/api/vals-inbox", { cache: "no-store" });
       const json = await res.json();
       if (json.ok) {
-        setItems(json.items as Escalation[]);
+        const loaded = json.items as Escalation[];
+        // In demo mode, seed with demo items if the inbox is empty.
+        setItems(DEMO_MODE && loaded.length === 0 ? DEMO_ESCALATIONS : loaded);
         setError(null);
       } else {
-        setError(json.error ?? "load failed");
+        setItems(DEMO_MODE ? DEMO_ESCALATIONS : []);
+        setError(DEMO_MODE ? null : (json.error ?? "load failed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "load failed");
+      setItems(DEMO_MODE ? DEMO_ESCALATIONS : []);
+      setError(DEMO_MODE ? null : (err instanceof Error ? err.message : "load failed"));
     }
   }, []);
 

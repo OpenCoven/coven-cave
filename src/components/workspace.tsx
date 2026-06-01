@@ -21,6 +21,7 @@ import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
 type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox";
 
@@ -57,17 +58,25 @@ export function Workspace() {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) {
-        setFamiliars([]);
-        setFamiliarsError(json.error ?? "daemon offline");
+        const fallback = DEMO_MODE ? DEMO_FAMILIARS : [];
+        setFamiliars(fallback);
+        setFamiliarsError(DEMO_MODE ? null : (json.error ?? "daemon offline"));
+        if (DEMO_MODE) setActiveId((curr) => curr ?? fallback[0]?.id ?? null);
         return;
       }
       setFamiliarsError(null);
       const list = (json.familiars ?? []) as Familiar[];
-      setFamiliars(list);
-      setActiveId((curr) => curr ?? list[0]?.id ?? null);
+      // In demo mode, merge demo familiars for any ids not returned by daemon.
+      const merged = DEMO_MODE
+        ? [...list, ...DEMO_FAMILIARS.filter((d) => !list.find((l) => l.id === d.id))]
+        : list;
+      setFamiliars(merged);
+      setActiveId((curr) => curr ?? merged[0]?.id ?? null);
     } catch (err) {
-      setFamiliars([]);
-      setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+      const fallback = DEMO_MODE ? DEMO_FAMILIARS : [];
+      setFamiliars(fallback);
+      setFamiliarsError(DEMO_MODE ? null : (err instanceof Error ? err.message : "fetch failed"));
+      if (DEMO_MODE) setActiveId((curr) => curr ?? fallback[0]?.id ?? null);
     }
   }, []);
 

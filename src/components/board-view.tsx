@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { DEMO_MODE, DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { TemplateCardGrid } from "@/components/ui/template-card-grid";
@@ -56,13 +57,16 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       const res = await fetch("/api/board", { cache: "no-store" });
       const json = await res.json();
       if (json.ok) {
-        setCards(json.cards ?? []);
+        const loaded = json.cards as import("@/lib/cave-board-types").Card[];
+        setCards(DEMO_MODE && loaded.length === 0 ? DEMO_BOARD_CARDS : loaded);
         setError(null);
       } else {
-        setError(json.error ?? "load failed");
+        setCards(DEMO_MODE ? DEMO_BOARD_CARDS : []);
+        setError(DEMO_MODE ? null : (json.error ?? "load failed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "load failed");
+      setCards(DEMO_MODE ? DEMO_BOARD_CARDS : []);
+      setError(DEMO_MODE ? null : (err instanceof Error ? err.message : "load failed"));
     }
   }, []);
 
