@@ -68,30 +68,13 @@ export function DaemonBar({
 
   return (
     <header className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-xs">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <span className="font-semibold tracking-tight">CovenCave</span>
-        <nav className="flex items-center gap-0.5">
-          {(["chats", "board", "inbox", "vals-inbox", "plugins"] as const).map((m) => {
-            const active = mode === m;
-            const label =
-              m === "inbox" && inboxBadgeCount > 0
-                ? `${MODE_LABEL[m]} · ${inboxBadgeCount}`
-                : MODE_LABEL[m];
-            return (
-              <button
-                key={m}
-                onClick={() => onModeChange(m)}
-                className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                  active
-                    ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </nav>
+        <span className="text-[var(--text-muted)]">·</span>
+        <span className="text-[var(--text-secondary)] capitalize">
+          {MODE_LABEL[mode] ?? mode}
+          {mode === "inbox" && inboxBadgeCount > 0 ? ` · ${inboxBadgeCount}` : ""}
+        </span>
       </div>
 
       <div className="flex items-center gap-3">

@@ -124,7 +124,8 @@ export function HealthStrip({ familiars }: { familiars: Familiar[] }) {
       : daemon?.reason ?? "unreachable",
   });
 
-  const active = sessions.filter((s) => s.status !== "stopped" && s.status !== "archived");
+  const ACTIVE = new Set(["running", "idle", "created", "awaiting_input"]);
+  const active = sessions.filter((s) => ACTIVE.has(s.status));
   const MAX_VISIBLE = 8;
   const visible = active.slice(0, MAX_VISIBLE);
   for (const s of visible) {
