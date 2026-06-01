@@ -105,7 +105,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # Decode the App Store Connect API key so the explicit notarize step
-      # below can call xcrun notarytool directly (no --issuer needed).
+      # below can call xcrun notarytool with --key / --key-id / --issuer.
       - name: Stage Apple API key
         if: matrix.platform == 'macos-latest'
         run: |
@@ -120,9 +120,7 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing only — notarization is handled by the explicit step below
-          # so that we can call xcrun notarytool without --issuer (which is
-          # optional when the key ID unambiguously identifies the team).
+          # Signing only — notarization is handled by the explicit step below.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -137,9 +135,6 @@ jobs:
           args: ${{ matrix.args }}
 
       # Notarize the DMG with xcrun notarytool directly.
-      # We skip Tauri's built-in notarization path (above) because it
-      # requires --issuer which is team-specific and hard to keep in sync.
-      # xcrun notarytool infers the team from the key ID alone.
       - name: Notarize macOS DMG
         if: matrix.platform == 'macos-latest'
         shell: bash
@@ -154,11 +149,13 @@ jobs:
           xcrun notarytool submit "$DMG" \
             --key "$APPLE_API_KEY_PATH" \
             --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
             --wait
           echo "Stapling notarization ticket"
           xcrun stapler staple "$DMG"
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
       # Hard gate: fail the macOS leg if the produced DMG is not accepted
       # by Gatekeeper as a notarized Developer ID app.
