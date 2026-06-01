@@ -74,10 +74,8 @@ fi
 if [ -d "$DEST/.next/node_modules" ]; then
   echo "==> resolving dangling pnpm symlinks in .next/node_modules"
   while IFS= read -r link; do
-    target="$(readlink "$link" 2>/dev/null || true)"
-    [ -z "$target" ] && continue
-    resolved_target="$(cd "$(dirname "$link")" 2>/dev/null && cd "$(dirname "$target")" 2>/dev/null && pwd)/$(basename "$target")"
-    if [ -n "$resolved_target" ] && [ -e "$resolved_target" ]; then
+    # Only patch dangling symlinks (non-dangling ones are fine as-is).
+    if [ -e "$link" ]; then
       continue
     fi
     # Strip the trailing -<16hex> webpack-content-hash suffix
