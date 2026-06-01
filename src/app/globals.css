@@ -126,7 +126,8 @@ body {
    width and hand vertical layout to the inner aside/main. */
 .shell-nav-panel,
 .shell-list-panel,
-.shell-detail-panel {
+.shell-detail-panel,
+.shell-agent-panel {
   height: 100%;
   min-width: 0;
   overflow: hidden;
@@ -135,10 +136,19 @@ body {
 
 .shell-nav-panel > .shell-nav,
 .shell-list-panel > .shell-list,
-.shell-detail-panel > .shell-detail {
+.shell-detail-panel > .shell-detail,
+.shell-agent-panel > .shell-agent {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
+}
+
+.shell-agent {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+  overflow: hidden;
 }
 
 /* Separator — 1px hairline with a slightly wider hit area, lavender on

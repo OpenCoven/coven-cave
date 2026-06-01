@@ -16,7 +16,7 @@ import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-t
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, ShellNav, ShellNavHeader, type ShellNavItem } from "@/components/shell";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
-import { DockChat } from "@/components/ui/dock-chat";
+import { AgentPanel } from "@/components/agent-panel";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -696,6 +696,22 @@ export function Workspace() {
         }
         list={list}
         detail={detail}
+        agent={
+          mode === "chats" ? undefined : (
+            <AgentPanel
+              ref={routerRef}
+              familiar={active}
+              sessions={sessions}
+              daemonRunning={daemonRunning}
+              onSessionStarted={loadSessions}
+              onSlashFromChat={(command, args) => {
+                onPaletteIntent({ kind: "slash", command, args });
+                return true;
+              }}
+              onOpenOnboarding={openOnboarding}
+            />
+          )
+        }
       />
 
       <CommandPalette
@@ -780,12 +796,6 @@ export function Workspace() {
         }}
       />
 
-      <DockChat
-        onSubmit={() => {
-          setMode("chats");
-          setTimeout(() => routerRef.current?.newChat(), 0);
-        }}
-      />
     </>
   );
 }

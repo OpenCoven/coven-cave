@@ -71,15 +71,19 @@ export function Shell({
   nav,
   list,
   detail,
+  agent,
   topBar,
 }: {
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
+  /** Optional right-side agent pane (live chat with active familiar). */
+  agent?: ReactNode;
   topBar?: ReactNode;
 }) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
+  const agentRef = useRef<PanelImperativeHandle | null>(null);
   // Persisted widths come from localStorage on client only; render a
   // layout-free placeholder on server + first client paint to keep the
   // hydration tree matching, then mount the real Group.
@@ -87,8 +91,14 @@ export function Shell({
   useEffect(() => setMounted(true), []);
 
   const twoPane = !list;
-  const panelIds = twoPane ? ["nav", "detail"] : ["nav", "list", "detail"];
-  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID;
+  const hasAgent = !!agent;
+  const panelIds: string[] = ["nav"];
+  if (!twoPane) panelIds.push("list");
+  panelIds.push("detail");
+  if (hasAgent) panelIds.push("agent");
+  const groupId =
+    (twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID) +
+    (hasAgent ? ".agent" : "");
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -107,11 +117,14 @@ export function Shell({
       } else if (key === "\\" && !twoPane) {
         e.preventDefault();
         togglePanel(listRef.current);
+      } else if (key === "j" && hasAgent) {
+        e.preventDefault();
+        togglePanel(agentRef.current);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [twoPane]);
+  }, [twoPane, hasAgent]);
 
   if (!mounted) {
     return (
@@ -164,6 +177,23 @@ export function Shell({
         <Panel id="detail" className="shell-detail-panel">
           <main className="shell-detail">{detail}</main>
         </Panel>
+        {hasAgent && (
+          <>
+            <Separator className="shell-separator" />
+            <Panel
+              id="agent"
+              className="shell-agent-panel"
+              defaultSize="380px"
+              minSize="300px"
+              maxSize="560px"
+              collapsible
+              collapsedSize={0}
+              panelRef={agentRef}
+            >
+              <aside className="shell-agent">{agent}</aside>
+            </Panel>
+          </>
+        )}
       </Group>
     </div>
   );
