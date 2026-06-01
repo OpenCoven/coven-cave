@@ -11,6 +11,7 @@ import { PluginsView } from "@/components/plugins-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxView } from "@/components/inbox-view";
 import { ValsInboxView } from "@/components/vals-inbox-view";
+import { CovenLive } from "@/components/coven-live";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
@@ -23,7 +24,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox";
+type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "coven-live";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -526,6 +527,13 @@ export function Workspace() {
       label: "Workspace",
       items: [
         {
+          id: "coven-live",
+          label: "Coven",
+          icon: "ph:sparkle" as const,
+          active: mode === "coven-live",
+          onClick: () => setMode("coven-live"),
+        },
+        {
           id: "chats",
           label: "Chats",
           icon: "ph:chat-circle-dots" as const,
@@ -577,6 +585,7 @@ export function Workspace() {
   ];
 
   const list =
+    mode === "coven-live" ? null :
     mode === "chats" ? (
       <FamiliarRail
         familiars={familiars}
@@ -639,6 +648,13 @@ export function Workspace() {
           if (familiarId) setActiveId(familiarId);
           setMode("chats");
           setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+        }}
+      />
+    ) : mode === "coven-live" ? (
+      <CovenLive
+        onWakeFamiliar={() => {
+          setMode("chats");
+          setActiveId(familiars[0]?.id ?? null);
         }}
       />
     ) : mode === "vals-inbox" ? (
