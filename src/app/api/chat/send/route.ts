@@ -162,9 +162,20 @@ export async function POST(req: Request) {
   // Important: pass every flag BEFORE the prompt and add a `--` separator,
   // because `<PROMPT>...` is a variadic positional in coven's clap definition
   // and otherwise swallows trailing flags like `--stream-json` as raw text.
-  const args = ["run", binding.harness, "--stream-json"];
-  if (body.sessionId) args.push("--continue", body.sessionId);
-  args.push("--", body.prompt);
+  const buildArgs = (resumeSessionId: string | null): string[] => {
+    const a = ["run", binding.harness, "--stream-json"];
+    if (resumeSessionId) a.push("--continue", resumeSessionId);
+    a.push("--", body.prompt);
+    return a;
+  };
+  const args = buildArgs(body.sessionId ?? null);
+
+  // Codex returns this when --continue points at a thread whose rollout
+  // can no longer be found (common after auth switches, CODEX_HOME moves,
+  // or rollout DB cleanup). On match we transparently retry once without
+  // --continue so the chat starts a fresh thread instead of erroring.
+  const RESUME_ERR_RE =
+    /thread\/resume failed|no rollout found|code\s*-32600/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -182,14 +193,14 @@ export async function POST(req: Request) {
 
       push({ kind: "user", text: body.prompt });
 
-      let sessionId = body.sessionId ?? null;
-      const assistantFilter = new AssistantFilter();
+      let sessionId: string | null = body.sessionId ?? null;
+      let assistantFilter = new AssistantFilter();
       let assistantText = "";
       let jsonBuf = "";
       let result: { duration_ms?: number; is_error?: boolean } = {};
       // Per-tool start times so post_tool_use can compute durationMs and
       // associate output with the matching pre_tool_use event.
-      const toolStartTimes = new Map<string, { startedAt: number; id: string }>();
+      let toolStartTimes = new Map<string, { startedAt: number; id: string }>();
       let toolSeq = 0;
       const toolIdFor = (name: string): string => {
         const existing = toolStartTimes.get(name);
@@ -210,24 +221,13 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE = /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
 
-      const child = spawn(covenBin(), args, {
-        cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: covenSpawnEnv(),
-      });
-
-      // Client-side abort (cancel button) → kill the subprocess.
-      const onAbort = () => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          /* ignore */
-        }
-      };
-      req.signal.addEventListener("abort", onAbort, { once: true });
+      // Set to true when the harness reports its resume failed (rollout DB
+      // miss). Triggers a single transparent retry without --continue.
+      let resumeFailed = false;
 
       const handleLine = (line: string) => {
         if (!line) return;
+        if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = line.startsWith("{") && line.endsWith("}");
         if (isJson) {
           try {
@@ -309,114 +309,149 @@ export async function POST(req: Request) {
         }
       };
 
-      child.stdout.on("data", (data: Buffer) => {
-        jsonBuf += data.toString("utf8");
-        let idx;
-        while ((idx = jsonBuf.indexOf("\n")) >= 0) {
-          const line = jsonBuf.slice(0, idx);
-          jsonBuf = jsonBuf.slice(idx + 1);
-          handleLine(line);
-        }
-      });
-
-      child.stderr.on("data", (data: Buffer) => {
-        const text = stripAnsi(data.toString("utf8"));
-        for (const line of text.split(/\r?\n/)) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          stderrTail.push(trimmed);
-          if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
-        }
-      });
-
-      child.on("error", (err: NodeJS.ErrnoException) => {
-        if (err.code === "ENOENT") {
-          push({
-            kind: "error",
-            code: "ENOENT",
-            message:
-              "coven CLI not found on PATH. Open Setup to install it, then try again.",
+      const runAttempt = (spawnArgs: string[]): Promise<void> =>
+        new Promise((resolve) => {
+          const child = spawn(covenBin(), spawnArgs, {
+            cwd,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: covenSpawnEnv(),
           });
-        } else {
-          push({ kind: "error", message: err.message });
-        }
-        close();
-      });
 
-      child.on("close", async () => {
-        // Flush any remaining buffered output
-        if (jsonBuf) handleLine(jsonBuf);
-        const tail = assistantFilter.flush();
-        if (tail) {
-          assistantText += tail;
-          push({ kind: "assistant_chunk", text: tail });
-        }
-
-        // Empty-response diagnostic: when the harness reports done but never
-        // produced assistant text, the user otherwise sees a silent empty
-        // bubble. Synthesize a short explanation so they know what to do.
-        if (!assistantText.trim()) {
-          const harness = binding.harness;
-          const durMs = result.duration_ms;
-          const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
-          // Prefer real stderr; fall back to error-looking stdout lines for
-          // harnesses (codex) that route auth errors through stdout.
-          const tailSource = stderrTail.length ? stderrTail : stdoutErrTail;
-          const tailBlock = tailSource.length
-            ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
-            : "";
-          const diagnostic = result.is_error
-            ? `_The "${harness}" harness errored${durSuffix} and returned no text._${tailBlock || "\n\nNo error output captured. Try `/doctor` for diagnostics."}`
-            : `_The "${harness}" harness completed${durSuffix} but produced no output._\n\nUsually this means the CLI is installed but not authenticated to a provider. Try \`/doctor\`, re-run \`coven\`'s sign-in (\`codex login\` / Claude API key), or check the harness logs.${tailBlock}`;
-          assistantText = diagnostic;
-          result.is_error = true; // mark in the chat metadata so it tints amber
-          push({ kind: "assistant_chunk", text: diagnostic });
-        }
-
-        const finalSessionId = sessionId;
-        if (finalSessionId) {
-          await recordSessionFamiliar(finalSessionId, body.familiarId);
-          // Persist the turn
-          const existing = await loadConversation(finalSessionId);
-          const now = new Date().toISOString();
-          const userTurn: ChatTurn = {
-            id: crypto.randomUUID(),
-            role: "user",
-            text: body.prompt,
-            createdAt: now,
+          const onAbort = () => {
+            try {
+              child.kill("SIGTERM");
+            } catch {
+              /* ignore */
+            }
           };
-          const assistantTurn: ChatTurn = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            text: assistantText.trim(),
-            createdAt: new Date().toISOString(),
-            durationMs: result.duration_ms,
-            isError: result.is_error,
-          };
-          const conv = existing ?? {
-            sessionId: finalSessionId,
-            familiarId: body.familiarId,
-            harness: binding.harness,
-            title: body.prompt.slice(0, 60),
-            createdAt: now,
-            updatedAt: now,
-            turns: [],
-          };
-          conv.turns.push(userTurn, assistantTurn);
-          await saveConversation(conv);
-        }
+          req.signal.addEventListener("abort", onAbort, { once: true });
 
-        push({
-          kind: "done",
+          child.stdout.on("data", (data: Buffer) => {
+            jsonBuf += data.toString("utf8");
+            let idx;
+            while ((idx = jsonBuf.indexOf("\n")) >= 0) {
+              const line = jsonBuf.slice(0, idx);
+              jsonBuf = jsonBuf.slice(idx + 1);
+              handleLine(line);
+            }
+          });
+
+          child.stderr.on("data", (data: Buffer) => {
+            const text = stripAnsi(data.toString("utf8"));
+            if (RESUME_ERR_RE.test(text)) resumeFailed = true;
+            for (const line of text.split(/\r?\n/)) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              stderrTail.push(trimmed);
+              if (stderrTail.length > STDERR_KEEP) stderrTail.shift();
+            }
+          });
+
+          child.on("error", (err: NodeJS.ErrnoException) => {
+            if (err.code === "ENOENT") {
+              push({
+                kind: "error",
+                code: "ENOENT",
+                message:
+                  "coven CLI not found on PATH. Open Setup to install it, then try again.",
+              });
+            } else {
+              push({ kind: "error", message: err.message });
+            }
+            req.signal.removeEventListener("abort", onAbort);
+            resolve();
+            close();
+          });
+
+          child.on("close", () => {
+            if (jsonBuf) handleLine(jsonBuf);
+            const tail = assistantFilter.flush();
+            if (tail) {
+              assistantText += tail;
+              push({ kind: "assistant_chunk", text: tail });
+            }
+            req.signal.removeEventListener("abort", onAbort);
+            resolve();
+          });
+        });
+
+      // First attempt — uses --continue if body.sessionId was set.
+      await runAttempt(args);
+
+      // Transparent retry: if codex reported its rollout-resume failed and
+      // we had been resuming, start a fresh thread (no --continue) so the
+      // user's prompt still gets answered.
+      if (resumeFailed && body.sessionId) {
+        sessionId = null;
+        assistantFilter = new AssistantFilter();
+        assistantText = "";
+        jsonBuf = "";
+        result = {};
+        toolStartTimes = new Map();
+        toolSeq = 0;
+        resumeFailed = false;
+        await runAttempt(buildArgs(null));
+      }
+
+      // Empty-response diagnostic: when the harness reports done but never
+      // produced assistant text, the user otherwise sees a silent empty
+      // bubble. Synthesize a short explanation so they know what to do.
+      if (!assistantText.trim()) {
+        const harness = binding.harness;
+        const durMs = result.duration_ms;
+        const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
+        const tailSource = stderrTail.length ? stderrTail : stdoutErrTail;
+        const tailBlock = tailSource.length
+          ? `\n\n\`\`\`\n${tailSource.slice(-5).join("\n")}\n\`\`\``
+          : "";
+        const diagnostic = result.is_error
+          ? `_The "${harness}" harness errored${durSuffix} and returned no text._${tailBlock || "\n\nNo error output captured. Try `/doctor` for diagnostics."}`
+          : `_The "${harness}" harness completed${durSuffix} but produced no output._\n\nUsually this means the CLI is installed but not authenticated to a provider. Try \`/doctor\`, re-run \`coven\`'s sign-in (\`codex login\` / Claude API key), or check the harness logs.${tailBlock}`;
+        assistantText = diagnostic;
+        result.is_error = true;
+        push({ kind: "assistant_chunk", text: diagnostic });
+      }
+
+      const finalSessionId = sessionId;
+      if (finalSessionId) {
+        await recordSessionFamiliar(finalSessionId, body.familiarId);
+        const existing = await loadConversation(finalSessionId);
+        const now = new Date().toISOString();
+        const userTurn: ChatTurn = {
+          id: crypto.randomUUID(),
+          role: "user",
+          text: body.prompt,
+          createdAt: now,
+        };
+        const assistantTurn: ChatTurn = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          text: assistantText.trim(),
+          createdAt: new Date().toISOString(),
           durationMs: result.duration_ms,
           isError: result.is_error,
-          sessionId: finalSessionId ?? undefined,
-        });
-        // Tiny grace period so the last frame is flushed
-        await sleep(20);
-        req.signal.removeEventListener("abort", onAbort);
-        close();
+        };
+        const conv = existing ?? {
+          sessionId: finalSessionId,
+          familiarId: body.familiarId,
+          harness: binding.harness,
+          title: body.prompt.slice(0, 60),
+          createdAt: now,
+          updatedAt: now,
+          turns: [],
+        };
+        conv.turns.push(userTurn, assistantTurn);
+        await saveConversation(conv);
+      }
+
+      push({
+        kind: "done",
+        durationMs: result.duration_ms,
+        isError: result.is_error,
+        sessionId: finalSessionId ?? undefined,
       });
+      await sleep(20);
+      close();
     },
   });
 
