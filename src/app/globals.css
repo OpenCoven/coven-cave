@@ -145,7 +145,7 @@ body {
    hover/active to match the Mood C accent. */
 .shell-separator {
   flex: 0 0 1px;
-  background: var(--border-hairline);
+  background: transparent;
   cursor: col-resize;
   position: relative;
   transition: background-color 0.12s ease;
