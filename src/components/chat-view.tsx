@@ -3,6 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
+import { MessageBubble } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
@@ -599,27 +600,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 });
 
 function TurnRow({ turn }: { turn: Turn }) {
-  if (turn.role === "system") {
+  if (turn.role === "system" || turn.role === "user") {
     return (
-      <div>
-        <div className="rounded-xl border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
-          {turn.text}
-        </div>
-        <div className="mt-1 text-right text-[10px] text-[var(--text-muted)]">{fmtTime(turn.createdAt)}</div>
-      </div>
+      <MessageBubble
+        role={turn.role}
+        content={turn.text}
+        timestamp={turn.createdAt}
+        pending={turn.pending}
+      />
     );
   }
-  if (turn.role === "user") {
-    return (
-      <div className="flex flex-col items-end">
-        <div className="max-w-[80%] rounded-2xl bg-[var(--bg-raised)]/70 px-4 py-2.5 text-[14px] leading-relaxed text-[var(--text-primary)]">
-          <RichText text={turn.text} />
-        </div>
-        <div className="mt-1 text-[10px] text-[var(--text-muted)]">{fmtTime(turn.createdAt)}</div>
-      </div>
-    );
-  }
-  // Assistant — plain, no bubble
+  // Assistant — preserve tool blocks + reasoning collapsible above the bubble
   const duration = fmtDuration(turn.durationMs);
   const { visible, reasoning } = splitReasoning(turn.text);
   const tools = turn.tools ?? [];
@@ -633,21 +624,19 @@ function TurnRow({ turn }: { turn: Turn }) {
         </div>
       ) : null}
       {reasoning ? <ReasoningBlock text={reasoning} /> : null}
-      <div className={turn.error ? "text-amber-200" : ""}>
-        <RichText text={visible || (turn.pending ? "…" : "")} />
-        {turn.pending && visible ? (
-          <span className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
-        ) : null}
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-        <span>{fmtTime(turn.createdAt)}</span>
-        {duration && !turn.pending ? (
-          <>
-            <span className="text-[var(--text-muted)]">·</span>
-            <span>worked for {duration}</span>
-          </>
-        ) : null}
-      </div>
+      <MessageBubble
+        role="assistant"
+        content={visible || (turn.pending ? "…" : "")}
+        timestamp={turn.createdAt}
+        pending={turn.pending}
+        isError={turn.error}
+      />
+      {duration && !turn.pending ? (
+        <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+          <span className="text-[var(--text-muted)]">·</span>
+          <span>worked for {duration}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

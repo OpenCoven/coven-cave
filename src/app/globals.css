@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
+@import "../styles/cave-chat.css";
 
 /* ============================================================
    Coven aesthetic tokens (Mood C — foundation, issue #14)
