@@ -494,6 +494,42 @@ body {
   justify-content: center;
 }
 
+/* ---- Origin chip (provenance for a session/card) ----------- */
+.ui-origin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ui-origin-chip[data-origin="call"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+
+.ui-origin-chip[data-origin="cron"],
+.ui-origin-chip[data-origin="heartbeat"] {
+  color: var(--text-secondary);
+}
+
+.ui-origin-chip-label {
+  text-transform: lowercase;
+}
+
+.ui-origin-chip-suffix {
+  color: var(--text-muted);
+}
+
 /* ---- Chooser list buttons (three-option chooser) ----------- */
 .ui-chooser-list {
   display: flex;

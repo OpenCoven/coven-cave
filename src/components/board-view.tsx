@@ -5,6 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { TemplateCardGrid } from "@/components/ui/template-card-grid";
+import { OriginChip } from "@/components/ui/origin-chip";
 
 type CardStatus = "inbox" | "running" | "review";
 type CardPriority = "low" | "medium" | "high" | "urgent";
@@ -437,23 +438,30 @@ function CardItem({
           <span>unassigned</span>
         )}
         {session ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onJumpToSession?.(session.id, session.familiarId ?? null);
-            }}
-            title={`Open session: ${session.title || "(untitled)"}`}
-            className="ml-auto rounded border border-border bg-card px-1.5 py-px text-foreground transition-colors hover:bg-muted"
-          >
-            <span className="inline-flex items-center gap-1">
-              {session.status === "running" ? (
-                <Icon name="ph:circle-fill" width="0.5rem" height="0.5rem" />
-              ) : session.status === "failed" ? (
-                <Icon name="ph:x-circle-fill" width="0.7rem" height="0.7rem" />
-              ) : null}
-              open
-            </span>
-          </button>
+          <>
+            {session.origin ? (
+              <span className="ml-auto">
+                <OriginChip origin={session.origin} iconOnly />
+              </span>
+            ) : null}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onJumpToSession?.(session.id, session.familiarId ?? null);
+              }}
+              title={`Open session: ${session.title || "(untitled)"}`}
+              className={`${session.origin ? "" : "ml-auto"} rounded border border-border bg-card px-1.5 py-px text-foreground transition-colors hover:bg-muted`}
+            >
+              <span className="inline-flex items-center gap-1">
+                {session.status === "running" ? (
+                  <Icon name="ph:circle-fill" width="0.5rem" height="0.5rem" />
+                ) : session.status === "failed" ? (
+                  <Icon name="ph:x-circle-fill" width="0.7rem" height="0.7rem" />
+                ) : null}
+                open
+              </span>
+            </button>
+          </>
         ) : null}
       </div>
 
