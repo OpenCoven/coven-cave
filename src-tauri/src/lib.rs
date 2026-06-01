@@ -167,6 +167,7 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+mod browser;
 mod pty;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -178,6 +179,11 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_stop,
             pty::pty_list,
+            browser::browser_navigate,
+            browser::browser_set_bounds,
+            browser::browser_hide,
+            browser::browser_hide_all_except,
+            browser::browser_close,
         ])
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {

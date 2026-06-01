@@ -18,13 +18,14 @@ import { Shell, ShellNav, ShellNavHeader, type ShellNavItem } from "@/components
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
 import { BottomTerminal } from "@/components/bottom-terminal";
+import { BrowserPane } from "@/components/browser-pane";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox";
+type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -570,6 +571,13 @@ export function Workspace() {
           active: mode === "plugins",
           onClick: () => setMode("plugins"),
         },
+        {
+          id: "browser",
+          label: "Browser",
+          icon: "ph:globe" as const,
+          active: mode === "browser",
+          onClick: () => setMode("browser"),
+        },
       ] as ShellNavItem[],
     },
     {
@@ -661,6 +669,8 @@ export function Workspace() {
           }
         }}
       />
+    ) : mode === "browser" ? (
+      <BrowserPane label="default" />
     ) : (
       <PluginsView
         onOpenChat={() => {
