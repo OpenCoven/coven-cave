@@ -20,13 +20,14 @@ import { AgentPanel } from "@/components/agent-panel";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { BrowserPane } from "@/components/browser-pane";
 import { SchedulesView } from "@/components/schedules-view";
+import { CallsView } from "@/components/calls-view";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules";
+type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules" | "calls";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -586,6 +587,13 @@ export function Workspace() {
           active: mode === "schedules",
           onClick: () => setMode("schedules"),
         },
+        {
+          id: "calls",
+          label: "Calls",
+          icon: "ph:graph" as const,
+          active: mode === "calls",
+          onClick: () => setMode("calls"),
+        },
       ] as ShellNavItem[],
     },
     {
@@ -681,6 +689,8 @@ export function Workspace() {
       <BrowserPane label="default" />
     ) : mode === "schedules" ? (
       <SchedulesView familiars={familiars} />
+    ) : mode === "calls" ? (
+      <CallsView familiars={familiars} />
     ) : (
       <PluginsView
         onOpenChat={() => {
