@@ -42,6 +42,7 @@ function togglePanel(panel: PanelImperativeHandle | null) {
 export type ShellNavSection = {
   label?: string;
   items: ShellNavItem[];
+  customContent?: ReactNode;
 };
 
 export type ShellNavItem = {
@@ -241,7 +242,7 @@ export function ShellNav({
           {section.label && (
             <div className="shell-nav-eyebrow">{section.label}</div>
           )}
-          {section.items.map((item) => (
+          {section.customContent ?? section.items.map((item) => (
             <ShellNavButton key={item.id} item={item} />
           ))}
         </div>

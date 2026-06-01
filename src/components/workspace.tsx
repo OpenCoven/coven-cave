@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FamiliarRail } from "@/components/familiar-rail";
+import { SidebarFamiliars } from "@/components/sidebar-familiars";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
-import { InspectorPane } from "@/components/inspector-pane";
 import { DaemonBar } from "@/components/daemon-bar";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
@@ -608,6 +607,23 @@ export function Workspace() {
       ] as ShellNavItem[],
     },
     {
+      label: "Familiars",
+      items: [] as ShellNavItem[],
+      customContent: (
+        <SidebarFamiliars
+          familiars={familiars}
+          activeId={activeId}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
+          onSelect={(id) => {
+            setActiveId(id);
+            setMode("chats");
+          }}
+          error={familiarsError}
+        />
+      ),
+    },
+    {
       label: "Configure",
       items: [
         {
@@ -620,48 +636,22 @@ export function Workspace() {
     },
   ];
 
-  const list =
-    mode === "chats" ? (
-      <FamiliarRail
-        familiars={familiars}
-        activeId={activeId}
-        onSelect={setActiveId}
-        onEditGlyph={(f) => setGlyphPickerFor(f)}
-        error={familiarsError}
-        sessions={sessions}
-        responseNeeded={responseNeeded}
-        onOpenOnboarding={openOnboarding}
-      />
-    ) : undefined;
+  const list = undefined;
 
   const detail =
     mode === "chats" ? (
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 min-w-0">
-          <ChatRouter
-            ref={routerRef}
-            familiar={active}
-            sessions={sessions}
-            daemonRunning={daemonRunning}
-            onSessionStarted={loadSessions}
-            onSlashFromChat={(command, args) => {
-              onPaletteIntent({ kind: "slash", command, args });
-              return true;
-            }}
-            onOpenOnboarding={openOnboarding}
-          />
-        </div>
-        <aside
-          className="hidden lg:flex flex-col w-[320px] shrink-0 overflow-y-auto"
-          style={{ borderLeft: "1px solid var(--border-hairline)" }}
-        >
-          <InspectorPane
-            familiar={active}
-            inboxItems={inboxItemsWithEphemeral}
-            onOpenInbox={() => setMode("inbox")}
-          />
-        </aside>
-      </div>
+      <ChatRouter
+        ref={routerRef}
+        familiar={active}
+        sessions={sessions}
+        daemonRunning={daemonRunning}
+        onSessionStarted={loadSessions}
+        onSlashFromChat={(command, args) => {
+          onPaletteIntent({ kind: "slash", command, args });
+          return true;
+        }}
+        onOpenOnboarding={openOnboarding}
+      />
     ) : mode === "board" ? (
       <BoardView
         familiars={familiars}
