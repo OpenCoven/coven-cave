@@ -4,6 +4,7 @@ import { forwardRef } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
