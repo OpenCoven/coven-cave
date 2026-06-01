@@ -58,7 +58,7 @@ export function FamiliarGlyph({ glyph, size = "md", className, title }: Props) {
   ensureRegistered();
   return (
     <span
-      className={className ?? "inline-flex items-center justify-center text-zinc-200"}
+      className={className ?? "inline-flex items-center justify-center text-[--text-primary]"}
       title={title}
     >
       <IconifyIcon

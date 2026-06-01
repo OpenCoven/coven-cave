@@ -39,26 +39,26 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="pointer-events-auto rounded-xl border border-zinc-700 bg-zinc-900 p-3 shadow-2xl"
+          className="pointer-events-auto rounded-xl border border-[--border-strong] bg-[--bg-raised] p-3 shadow-2xl"
         >
           <div className="mb-1 flex items-start gap-2">
             <Icon name="ph:alarm-fill" className="mt-0.5 shrink-0 text-amber-300" />
-            <span className="flex-1 text-sm font-medium text-zinc-100">{t.title}</span>
+            <span className="flex-1 text-sm font-medium text-[--text-primary]">{t.title}</span>
             <button
               onClick={() => onDismiss(t.id)}
-              className="grid h-5 w-5 place-items-center text-zinc-500 hover:text-zinc-200"
+              className="grid h-5 w-5 place-items-center text-[--text-muted] hover:text-[--text-primary]"
               aria-label="Dismiss"
             >
               <Icon name="ph:x-bold" />
             </button>
           </div>
           {t.body ? (
-            <p className="mb-2 line-clamp-3 text-[11px] text-zinc-400">{t.body}</p>
+            <p className="mb-2 line-clamp-3 text-[11px] text-[--text-secondary]">{t.body}</p>
           ) : null}
           <div className="flex gap-1.5">
             <button
               onClick={() => onDismiss(t.id)}
-              className="rounded border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800"
+              className="rounded border border-[--border-strong] px-2 py-0.5 text-[10px] text-[--text-secondary] hover:bg-[--bg-raised]"
             >
               Dismiss
             </button>

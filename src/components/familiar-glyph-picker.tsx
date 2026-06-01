@@ -113,30 +113,30 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[--bg-base]/70 backdrop-blur-sm"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative flex h-[560px] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl"
+        className="relative flex h-[560px] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-[--border-hairline] bg-[--bg-base] shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-zinc-900 px-4 py-3">
+        <div className="flex items-center gap-3 border-b border-[--border-hairline] px-4 py-3">
           {currentGlyph ? (
-            <span className="grid h-9 w-9 place-items-center rounded-lg bg-zinc-900">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-[--bg-raised]">
               <GlyphView glyph={currentGlyph} size="md" />
             </span>
           ) : null}
           <div className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-sm font-medium text-zinc-100">
+            <span className="truncate text-sm font-medium text-[--text-primary]">
               {familiar.display_name}
             </span>
-            <span className="text-[11px] text-zinc-500">
+            <span className="text-[11px] text-[--text-muted]">
               {hovered?.name ?? "Pick an icon"}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="grid h-7 w-7 place-items-center rounded-md text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+            className="grid h-7 w-7 place-items-center rounded-md text-[--text-secondary] hover:bg-[--bg-raised] hover:text-[--text-primary]"
             aria-label="Close"
             title="Close (esc)"
           >
@@ -145,11 +145,11 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
         </div>
 
         {/* Search */}
-        <div className="border-b border-zinc-900 px-4 py-2.5">
+        <div className="border-b border-[--border-hairline] px-4 py-2.5">
           <div className="relative">
             <Icon
               name="ph:magnifying-glass-bold"
-              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[--text-muted]"
               width="0.9rem"
               height="0.9rem"
             />
@@ -159,15 +159,15 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search cat, wand, sparkle…"
-              className="w-full rounded-md border border-zinc-800 bg-zinc-900/50 py-1.5 pl-8 pr-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-700"
+              className="w-full rounded-md border border-[--border-hairline] bg-[--bg-raised]/50 py-1.5 pl-8 pr-3 text-sm text-[--text-primary] outline-none placeholder:text-[--text-muted] focus:border-[--border-strong]"
             />
           </div>
         </div>
 
         {/* Recent */}
         {recentEntries.length > 0 && !query.trim() ? (
-          <div className="border-b border-zinc-900 px-4 py-2.5">
-            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-zinc-600">
+          <div className="border-b border-[--border-hairline] px-4 py-2.5">
+            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[--text-muted]">
               Recent
             </div>
             <div className="flex flex-wrap gap-1">
@@ -191,7 +191,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
         ) : null}
 
         {/* Results count */}
-        <div className="flex items-center justify-between border-b border-zinc-900 px-4 py-1.5 text-[10px] text-zinc-500">
+        <div className="flex items-center justify-between border-b border-[--border-hairline] px-4 py-1.5 text-[10px] text-[--text-muted]">
           {query.trim() ? (
             <>
               <span>
@@ -201,7 +201,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
               </span>
               <button
                 onClick={() => setQuery("")}
-                className="text-zinc-400 hover:text-zinc-200"
+                className="text-[--text-secondary] hover:text-[--text-primary]"
               >
                 clear
               </button>
@@ -214,7 +214,7 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
         {/* Grid */}
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           {results.length === 0 ? (
-            <div className="grid h-full place-items-center text-sm text-zinc-500">
+            <div className="grid h-full place-items-center text-sm text-[--text-muted]">
               No matches.
             </div>
           ) : query.trim() ? (
@@ -236,15 +236,15 @@ export function FamiliarGlyphPicker({ open, familiar, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-zinc-900 px-4 py-2 text-[11px] text-zinc-500">
+        <div className="flex items-center justify-between border-t border-[--border-hairline] px-4 py-2 text-[11px] text-[--text-muted]">
           <button
             onClick={() => clearGlyphOverride(familiar.id)}
             disabled={!overrides[familiar.id]}
-            className="text-zinc-400 transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-700"
+            className="text-[--text-secondary] transition-colors hover:text-[--text-primary] disabled:cursor-not-allowed disabled:text-[--text-muted]"
           >
             reset to default
           </button>
-          <span className="font-mono text-zinc-600">esc to close</span>
+          <span className="font-mono text-[--text-muted]">esc to close</span>
         </div>
       </div>
     </div>
@@ -276,10 +276,10 @@ function GlyphButton({
       onMouseEnter={() => onHover(entry)}
       onMouseLeave={() => onHover(null)}
       title={entry.name}
-      className={`${cell} grid place-items-center rounded-md text-zinc-200 transition-colors ${
+      className={`${cell} grid place-items-center rounded-md text-[--text-primary] transition-colors ${
         active
           ? "bg-purple-600/30 ring-1 ring-purple-400"
-          : "hover:bg-zinc-800/70"
+          : "hover:bg-[--bg-raised]/70"
       }`}
     >
       <GlyphView glyph={glyph} size="sm" />
@@ -342,7 +342,7 @@ function CategorizedGrid({
         .filter((c) => byCategory.has(c))
         .map((c) => (
           <section key={c}>
-            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-zinc-600">
+            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[--text-muted]">
               {c}
             </div>
             <GlyphGrid

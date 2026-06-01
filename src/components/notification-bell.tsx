@@ -119,7 +119,7 @@ export function NotificationBell({
         className={`relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
           badgeCount > 0
             ? "border-amber-500/60 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
-            : "border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            : "border-[--border-hairline] text-[--text-secondary] hover:bg-[--bg-raised] hover:text-[--text-primary]"
         }`}
         title={`${badgeCount} unread`}
       >
@@ -133,15 +133,15 @@ export function NotificationBell({
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-50 mt-1 w-[360px] rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-          <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-            <span className="text-[10px] uppercase tracking-widest text-zinc-500">
+        <div className="absolute right-0 top-full z-50 mt-1 w-[360px] rounded-xl border border-[--border-hairline] bg-[--bg-base] shadow-2xl">
+          <div className="flex items-center justify-between border-b border-[--border-hairline] px-3 py-2">
+            <span className="text-[10px] uppercase tracking-widest text-[--text-muted]">
               Notifications
             </span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSettingsOpen((v) => !v)}
-                className="grid h-5 w-5 place-items-center text-zinc-400 hover:text-zinc-200"
+                className="grid h-5 w-5 place-items-center text-[--text-secondary] hover:text-[--text-primary]"
                 title="Notification settings"
                 aria-label="Notification settings"
               >
@@ -160,8 +160,8 @@ export function NotificationBell({
           </div>
 
           {settingsOpen ? (
-            <div className="border-b border-zinc-800 bg-zinc-900/40 p-3 text-[11px]">
-              <div className="mb-2 text-[10px] uppercase tracking-widest text-zinc-500">
+            <div className="border-b border-[--border-hairline] bg-[--bg-raised]/40 p-3 text-[11px]">
+              <div className="mb-2 text-[10px] uppercase tracking-widest text-[--text-muted]">
                 Sound
               </div>
               <div className="mb-3 flex flex-wrap gap-1">
@@ -187,7 +187,7 @@ export function NotificationBell({
                       className={`rounded border px-2 py-0.5 text-[10px] ${
                         active
                           ? "border-purple-500 bg-purple-500/20 text-purple-100"
-                          : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                          : "border-[--border-strong] text-[--text-secondary] hover:bg-[--bg-raised]"
                       }`}
                     >
                       {opt.label}
@@ -196,24 +196,24 @@ export function NotificationBell({
                 })}
               </div>
 
-              <div className="mb-1.5 text-[10px] uppercase tracking-widest text-zinc-500">
+              <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[--text-muted]">
                 Muted familiars
               </div>
               <ul className="max-h-32 space-y-0.5 overflow-y-auto">
                 {familiars.length === 0 ? (
-                  <li className="text-[10px] text-zinc-600">No familiars yet.</li>
+                  <li className="text-[10px] text-[--text-muted]">No familiars yet.</li>
                 ) : null}
                 {familiars.map((f) => {
                   const muted = prefs.mutedFamiliars.includes(f.id);
                   return (
                     <li key={f.id} className="flex items-center justify-between">
-                      <span className="truncate text-zinc-300">{f.display_name}</span>
+                      <span className="truncate text-[--text-secondary]">{f.display_name}</span>
                       <button
                         onClick={() => toggleMute(f.id)}
                         className={`rounded border px-1.5 py-0.5 text-[10px] ${
                           muted
                             ? "border-amber-600 bg-amber-500/15 text-amber-200"
-                            : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                            : "border-[--border-strong] text-[--text-secondary] hover:bg-[--bg-raised]"
                         }`}
                       >
                         {muted ? "muted" : "mute"}
@@ -226,14 +226,14 @@ export function NotificationBell({
           ) : null}
           <ul className="max-h-[420px] overflow-y-auto p-2 text-xs">
             {recent.length === 0 ? (
-              <li className="px-2 py-6 text-center text-[11px] text-zinc-600">
+              <li className="px-2 py-6 text-center text-[11px] text-[--text-muted]">
                 No notifications.
               </li>
             ) : null}
             {recent.map((it) => (
               <li
                 key={it.id}
-                className="mb-1 rounded-md border border-zinc-800 bg-zinc-900/40 p-2"
+                className="mb-1 rounded-md border border-[--border-hairline] bg-[--bg-raised]/40 p-2"
               >
                 <div className="flex items-start gap-2">
                   <Icon
@@ -244,18 +244,18 @@ export function NotificationBell({
                         ? "ph:magic-wand-fill"
                         : "ph:alarm-fill"
                     }
-                    className="mt-0.5 shrink-0 text-zinc-400"
+                    className="mt-0.5 shrink-0 text-[--text-secondary]"
                     width="0.95rem"
                     height="0.95rem"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-zinc-100">{it.title}</div>
+                    <div className="truncate text-[--text-primary]">{it.title}</div>
                     {it.body ? (
-                      <div className="mt-0.5 line-clamp-2 text-[10px] text-zinc-500">
+                      <div className="mt-0.5 line-clamp-2 text-[10px] text-[--text-muted]">
                         {it.body}
                       </div>
                     ) : null}
-                    <div className="mt-0.5 text-[9px] text-zinc-600">
+                    <div className="mt-0.5 text-[9px] text-[--text-muted]">
                       {it.status === "fired"
                         ? `fired ${relTime(it.firedAt)}`
                         : it.kind === "response-needed"
@@ -308,7 +308,7 @@ function BellBtn({
   return (
     <button
       onClick={onClick}
-      className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-zinc-800"
+      className="rounded border border-[--border-hairline] bg-[--bg-raised] px-1.5 py-0.5 text-[10px] text-[--text-secondary] hover:bg-[--bg-raised]"
     >
       {children}
     </button>

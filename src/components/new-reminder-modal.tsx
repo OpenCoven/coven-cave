@@ -204,18 +204,18 @@ export function NewReminderModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-[560px] max-w-[94vw] max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl"
+        className="w-[560px] max-w-[94vw] max-h-[90vh] overflow-y-auto rounded-2xl border border-[--border-hairline] bg-[--bg-base] p-6 shadow-2xl"
       >
         <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">New reminder</h2>
-            <p className="text-[12px] text-zinc-500">
+            <h2 className="text-lg font-semibold text-[--text-primary]">New reminder</h2>
+            <p className="text-[12px] text-[--text-muted]">
               Type a natural phrase like “in 30m” or pick a date.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-400 hover:bg-zinc-900"
+            className="grid h-7 w-7 place-items-center rounded border border-[--border-hairline] text-[--text-secondary] hover:bg-[--bg-raised]"
             aria-label="Close"
           >
             <Icon name="ph:x-bold" />
@@ -228,7 +228,7 @@ export function NewReminderModal({
             onChange={(e) => setTitle(e.target.value)}
             placeholder="check the deploy"
             autoFocus
-            className="w-full rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-purple-600"
+            className="w-full rounded-md border border-[--border-hairline] bg-[--bg-raised]/40 px-3 py-2 text-sm text-[--text-primary] outline-none placeholder:text-[--text-muted] focus:border-purple-600"
           />
         </Field>
 
@@ -240,13 +240,13 @@ export function NewReminderModal({
               if (e.target.value.trim()) setManualFireAt("");
             }}
             placeholder="in 30m · in 2h · today 17:30 · tomorrow 9am"
-            className={`w-full rounded-md border bg-zinc-900/40 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 ${
+            className={`w-full rounded-md border bg-[--bg-raised]/40 px-3 py-2 text-sm text-[--text-primary] outline-none placeholder:text-[--text-muted] ${
               whenText && !parsed
                 ? "border-amber-600/60"
-                : "border-zinc-800 focus:border-purple-600"
+                : "border-[--border-hairline] focus:border-purple-600"
             }`}
           />
-          <div className="mt-1 flex items-center justify-between text-[10px] text-zinc-500">
+          <div className="mt-1 flex items-center justify-between text-[10px] text-[--text-muted]">
             <span>
               {whenText && !parsed
                 ? "Couldn't parse — try “in 30m”, “today 9pm”, or use the picker below."
@@ -266,7 +266,7 @@ export function NewReminderModal({
               if (e.target.value) setWhenText("");
             }}
             min={toLocalInput(new Date().toISOString())}
-            className="w-full rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-purple-600"
+            className="w-full rounded-md border border-[--border-hairline] bg-[--bg-raised]/40 px-3 py-2 text-sm text-[--text-primary] outline-none focus:border-purple-600"
           />
         </Field>
 
@@ -299,13 +299,13 @@ export function NewReminderModal({
               value={cronExpr}
               onChange={(e) => setCronExpr(e.target.value)}
               placeholder="*/15 * * * *"
-              className={`w-full rounded-md border bg-zinc-900/40 px-3 py-2 font-mono text-sm text-zinc-100 outline-none placeholder:text-zinc-600 ${
+              className={`w-full rounded-md border bg-[--bg-raised]/40 px-3 py-2 font-mono text-sm text-[--text-primary] outline-none placeholder:text-[--text-muted] ${
                 cronExpr && !cronFields
                   ? "border-amber-600/60"
-                  : "border-zinc-800 focus:border-purple-600"
+                  : "border-[--border-hairline] focus:border-purple-600"
               }`}
             />
-            <div className="mt-1 text-[10px] text-zinc-500">
+            <div className="mt-1 text-[10px] text-[--text-muted]">
               {cronExpr && !cronFields
                 ? "Invalid cron expression."
                 : cronNextFire
@@ -337,7 +337,7 @@ export function NewReminderModal({
           </button>
           <button
             onClick={onClose}
-            className="rounded-md border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+            className="rounded-md border border-[--border-hairline] bg-[--bg-raised] px-4 py-1.5 text-sm text-[--text-primary] hover:bg-[--bg-raised]"
           >
             Cancel
           </button>
@@ -350,7 +350,7 @@ export function NewReminderModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="mb-4 block">
-      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-zinc-500">
+      <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[--text-muted]">
         {label}
       </div>
       {children}
@@ -372,15 +372,15 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2 pr-8 text-sm text-zinc-100 outline-none focus:border-purple-600"
+        className="w-full appearance-none rounded-md border border-[--border-hairline] bg-[--bg-raised]/40 px-3 py-2 pr-8 text-sm text-[--text-primary] outline-none focus:border-purple-600"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-zinc-900">
+          <option key={o.value} value={o.value} className="bg-[--bg-raised]">
             {o.label}
           </option>
         ))}
       </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500">
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[--text-muted]">
         ▾
       </span>
     </div>

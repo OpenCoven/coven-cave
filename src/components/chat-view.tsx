@@ -473,20 +473,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 
   return (
-    <section className="flex h-full flex-col bg-zinc-950 text-zinc-200">
+    <section className="flex h-full flex-col bg-[--bg-base] text-[--text-primary]">
       {/* Transcript */}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="space-y-6">
           {turns.length === 0 ? (
-            <div className="py-14 text-center text-sm text-zinc-500">
-              <p className="text-zinc-300">Chat with {familiar.display_name}.</p>
-              <p className="mt-1 text-zinc-500">
+            <div className="py-14 text-center text-sm text-[--text-muted]">
+              <p className="text-[--text-secondary]">Chat with {familiar.display_name}.</p>
+              <p className="mt-1 text-[--text-muted]">
                 Runs on{" "}
-                <code className="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[12px] text-zinc-300">
+                <code className="rounded bg-[--bg-raised] px-1 py-0.5 font-mono text-[12px] text-[--text-secondary]">
                   {familiar.harness}
                 </code>{" "}
                 via the{" "}
-                <code className="rounded bg-zinc-900 px-1 py-0.5 font-mono text-[12px] text-zinc-300">
+                <code className="rounded bg-[--bg-raised] px-1 py-0.5 font-mono text-[12px] text-[--text-secondary]">
                   coven
                 </code>{" "}
                 CLI. {keys.mod}K to jump · / for commands.
@@ -510,7 +510,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <footer className="px-6 pb-5 pt-2">
         <div className="relative">
           {slashSuggestions.length > 0 ? (
-            <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-xl">
+            <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[--border-hairline] bg-[--bg-base] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1">
                 {slashSuggestions.map((cmd, i) => {
                   const active = i === slashIdx;
@@ -523,15 +523,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           inputRef.current?.focus();
                         }}
                         className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-zinc-800/60" : "hover:bg-zinc-900/50"
+                          active ? "bg-[--bg-raised]/60" : "hover:bg-[--bg-raised]/50"
                         }`}
                       >
-                        <span className="font-mono text-zinc-200">{cmd.name}</span>
-                        <span className="flex-1 truncate text-xs text-zinc-500">
+                        <span className="font-mono text-[--text-primary]">{cmd.name}</span>
+                        <span className="flex-1 truncate text-xs text-[--text-muted]">
                           {cmd.description}
                         </span>
                         {cmd.argPlaceholder ? (
-                          <span className="font-mono text-[10px] text-zinc-600">
+                          <span className="font-mono text-[10px] text-[--text-muted]">
                             {cmd.argPlaceholder}
                           </span>
                         ) : null}
@@ -540,13 +540,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
               </ul>
-              <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] text-zinc-500">
+              <div className="border-t border-[--border-hairline] px-3 py-1.5 text-[10px] text-[--text-muted]">
                 {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 shadow-lg">
+          <div className="rounded-2xl border border-[--border-hairline] bg-[--bg-raised]/50 shadow-lg">
             <textarea
               ref={inputRef}
               value={input}
@@ -554,22 +554,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onKeyDown={onComposerKey}
               placeholder={busy ? "Streaming… (esc to cancel)" : "Ask for follow-up changes"}
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+              className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-sm text-[--text-primary] outline-none placeholder:text-[--text-muted]"
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
-              <div className="flex items-center gap-1 text-zinc-500">
+              <div className="flex items-center gap-1 text-[--text-muted]">
                 <button
-                  className="grid h-7 w-7 place-items-center rounded-full border border-zinc-800 hover:bg-zinc-800"
+                  className="grid h-7 w-7 place-items-center rounded-full border border-[--border-hairline] hover:bg-[--bg-raised]"
                   title="Attach (coming soon)"
                   disabled
                 >
                   +
                 </button>
               </div>
-              <div className="flex items-center gap-2 text-zinc-500">
-                <span className="flex items-center gap-1 rounded-full border border-zinc-800 px-2 py-1 text-[11px]">
+              <div className="flex items-center gap-2 text-[--text-muted]">
+                <span className="flex items-center gap-1 rounded-full border border-[--border-hairline] px-2 py-1 text-[11px]">
                   <span className="text-purple-300">◆</span>
-                  <span className="font-mono text-zinc-300">{familiar.model ?? "—"}</span>
+                  <span className="font-mono text-[--text-secondary]">{familiar.model ?? "—"}</span>
                 </span>
                 {busy ? (
                   <button
@@ -602,20 +602,20 @@ function TurnRow({ turn }: { turn: Turn }) {
   if (turn.role === "system") {
     return (
       <div>
-        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-zinc-400 whitespace-pre-wrap">
+        <div className="rounded-xl border border-[--border-hairline]/60 bg-[--bg-raised]/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-[--text-secondary] whitespace-pre-wrap">
           {turn.text}
         </div>
-        <div className="mt-1 text-right text-[10px] text-zinc-600">{fmtTime(turn.createdAt)}</div>
+        <div className="mt-1 text-right text-[10px] text-[--text-muted]">{fmtTime(turn.createdAt)}</div>
       </div>
     );
   }
   if (turn.role === "user") {
     return (
       <div className="flex flex-col items-end">
-        <div className="max-w-[80%] rounded-2xl bg-zinc-800/70 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+        <div className="max-w-[80%] rounded-2xl bg-[--bg-raised]/70 px-4 py-2.5 text-[14px] leading-relaxed text-[--text-primary]">
           <RichText text={turn.text} />
         </div>
-        <div className="mt-1 text-[10px] text-zinc-600">{fmtTime(turn.createdAt)}</div>
+        <div className="mt-1 text-[10px] text-[--text-muted]">{fmtTime(turn.createdAt)}</div>
       </div>
     );
   }
@@ -624,7 +624,7 @@ function TurnRow({ turn }: { turn: Turn }) {
   const { visible, reasoning } = splitReasoning(turn.text);
   const tools = turn.tools ?? [];
   return (
-    <div className="text-[14px] leading-relaxed text-zinc-200">
+    <div className="text-[14px] leading-relaxed text-[--text-primary]">
       {tools.length > 0 ? (
         <div className="mb-3 space-y-1.5">
           {tools.map((t) => (
@@ -636,14 +636,14 @@ function TurnRow({ turn }: { turn: Turn }) {
       <div className={turn.error ? "text-amber-200" : ""}>
         <RichText text={visible || (turn.pending ? "…" : "")} />
         {turn.pending && visible ? (
-          <span className="ml-1 inline-block animate-pulse text-zinc-400">▌</span>
+          <span className="ml-1 inline-block animate-pulse text-[--text-secondary]">▌</span>
         ) : null}
       </div>
-      <div className="mt-1 flex items-center gap-2 text-[10px] text-zinc-600">
+      <div className="mt-1 flex items-center gap-2 text-[10px] text-[--text-muted]">
         <span>{fmtTime(turn.createdAt)}</span>
         {duration && !turn.pending ? (
           <>
-            <span className="text-zinc-700">·</span>
+            <span className="text-[--text-muted]">·</span>
             <span>worked for {duration}</span>
           </>
         ) : null}
@@ -656,10 +656,10 @@ function ReasoningBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   const lineCount = text.split("\n").length;
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-zinc-800/70 bg-zinc-900/30 text-[12px]">
+    <div className="mb-3 overflow-hidden rounded-lg border border-[--border-hairline]/70 bg-[--bg-raised]/30 text-[12px]">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-zinc-400 transition-colors hover:bg-zinc-900/60"
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[--text-secondary] transition-colors hover:bg-[--bg-raised]/60"
       >
         <Icon
           name="ph:caret-right-bold"
@@ -667,11 +667,11 @@ function ReasoningBlock({ text }: { text: string }) {
           height="0.7rem"
           className={`transition-transform ${open ? "rotate-90" : ""}`}
         />
-        <span className="text-zinc-300">reasoning</span>
-        <span className="text-zinc-600">· {lineCount} line{lineCount === 1 ? "" : "s"}</span>
+        <span className="text-[--text-secondary]">reasoning</span>
+        <span className="text-[--text-muted]">· {lineCount} line{lineCount === 1 ? "" : "s"}</span>
       </button>
       {open ? (
-        <div className="border-t border-zinc-800/70 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-zinc-400">
+        <div className="border-t border-[--border-hairline]/70 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-[--text-secondary]">
           {text}
         </div>
       ) : null}
@@ -690,41 +690,41 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   const hasBody = !!(tool.input || tool.output);
   const dur = fmtDuration(tool.durationMs);
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-800/70 bg-zinc-900/30 text-[12px]">
+    <div className="overflow-hidden rounded-lg border border-[--border-hairline]/70 bg-[--bg-raised]/30 text-[12px]">
       <button
         onClick={() => hasBody && setOpen((v) => !v)}
         disabled={!hasBody}
         className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
-          hasBody ? "transition-colors hover:bg-zinc-900/60" : "cursor-default"
+          hasBody ? "transition-colors hover:bg-[--bg-raised]/60" : "cursor-default"
         }`}
       >
         <Icon
           name="ph:caret-right-bold"
           width="0.7rem"
           height="0.7rem"
-          className={`text-zinc-600 transition-transform ${open ? "rotate-90" : ""} ${
+          className={`text-[--text-muted] transition-transform ${open ? "rotate-90" : ""} ${
             hasBody ? "" : "opacity-30"
           }`}
         />
         <Icon name="ph:wrench-bold" width="0.85rem" height="0.85rem" className="text-purple-300" />
-        <span className="font-mono text-zinc-200">{tool.name}</span>
+        <span className="font-mono text-[--text-primary]">{tool.name}</span>
         <span className={`ml-auto h-1.5 w-1.5 rounded-full ${statusDot}`} />
         {dur && tool.status !== "running" ? (
-          <span className="font-mono text-zinc-500">{dur}</span>
+          <span className="font-mono text-[--text-muted]">{dur}</span>
         ) : null}
       </button>
       {open && hasBody ? (
-        <div className="space-y-2 border-t border-zinc-800/70 px-3 py-2 font-mono text-[12px] leading-relaxed">
+        <div className="space-y-2 border-t border-[--border-hairline]/70 px-3 py-2 font-mono text-[12px] leading-relaxed">
           {tool.input ? (
             <div>
-              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">input</div>
-              <pre className="whitespace-pre-wrap text-zinc-300">{tool.input}</pre>
+              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[--text-muted]">input</div>
+              <pre className="whitespace-pre-wrap text-[--text-secondary]">{tool.input}</pre>
             </div>
           ) : null}
           {tool.output ? (
             <div>
-              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">output</div>
-              <pre className="whitespace-pre-wrap text-zinc-400">{tool.output}</pre>
+              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[--text-muted]">output</div>
+              <pre className="whitespace-pre-wrap text-[--text-secondary]">{tool.output}</pre>
             </div>
           ) : null}
         </div>

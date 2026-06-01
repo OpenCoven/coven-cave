@@ -59,12 +59,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   if (!familiar) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-3 bg-zinc-950 text-sm text-zinc-500">
+      <section className="flex h-full flex-col items-center justify-center gap-3 bg-[--bg-base] text-sm text-[--text-muted]">
         <p>Pick a familiar from the rail to start chatting.</p>
         {onOpenOnboarding ? (
           <button
             onClick={onOpenOnboarding}
-            className="rounded-md border border-zinc-800 bg-zinc-900 px-3 py-1 text-[12px] text-zinc-200 hover:bg-zinc-800"
+            className="rounded-md border border-[--border-hairline] bg-[--bg-raised] px-3 py-1 text-[12px] text-[--text-primary] hover:bg-[--bg-raised]"
           >
             Open setup
           </button>
