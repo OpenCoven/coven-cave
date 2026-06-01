@@ -21,13 +21,14 @@ import { BrowserPane } from "@/components/browser-pane";
 import { SchedulesView } from "@/components/schedules-view";
 import { CallsView } from "@/components/calls-view";
 import { ComuxView } from "@/components/comux-view";
+import { HomeComposer } from "@/components/home-composer";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules" | "calls" | "comux";
+type Mode = "home" | "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules" | "calls" | "comux";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -38,7 +39,7 @@ export function Workspace() {
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [mode, setMode] = useState<Mode>("chats");
+  const [mode, setMode] = useState<Mode>("home");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [inboxPrefs, setInboxPrefs] = useState<InboxPrefs>({
@@ -288,6 +289,11 @@ export function Workspace() {
     setReminderModalOpen(true);
   }, []);
 
+  const pushToast = useCallback((title: string) => {
+    const id = `eph:adhoc-${Date.now()}`;
+    setToasts((prev) => [...prev, { id, title }]);
+  }, []);
+
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
     // Persist dismissal for real items. Skip synthetic ids (missed-batches,
@@ -533,7 +539,21 @@ export function Workspace() {
   const list = undefined;
 
   const detail =
-    mode === "chats" ? (
+    mode === "home" ? (
+      <HomeComposer
+        familiars={familiars}
+        activeFamiliarId={activeId}
+        sessions={sessions}
+        onNavigateToChat={(sessionId, fid) => {
+          setActiveId(fid);
+          setMode("chats");
+          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+        }}
+        onNavigateToBoard={() => setMode("board")}
+        onNavigateToInbox={() => setMode("inbox")}
+        onToast={pushToast}
+      />
+    ) : mode === "chats" ? (
       <ChatRouter
         ref={routerRef}
         familiar={active}
