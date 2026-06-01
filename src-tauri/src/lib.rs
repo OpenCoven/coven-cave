@@ -333,6 +333,17 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
+    fn node_arg_path_converts_verbatim_unc_to_normal_unc() {
+        let path = PathBuf::from(r"\\?\UNC\server\share\resources\server\server.js");
+
+        assert_eq!(
+            node_arg_path(&path),
+            PathBuf::from(r"\\server\share\resources\server\server.js")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
     fn node_arg_path_preserves_regular_windows_paths() {
         let path = PathBuf::from(r"C:\Program Files\CovenCave\resources\server");
 
