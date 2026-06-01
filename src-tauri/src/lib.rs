@@ -349,6 +349,7 @@ mod tests {
 
         assert_eq!(node_arg_path(&path), path);
     }
+}
 
 mod browser;
 mod pty;
