@@ -35,9 +35,11 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   const keys = useKeySymbols();
 
   const mine = useMemo(() => {
-    const ACTIVE = new Set(["running", "idle", "created", "awaiting_input"]);
+    // Hide only truly dead sessions. Completed + failed are conversation
+    // history users want to see and resume.
+    const DEAD = new Set(["killed", "orphaned", "stopped", "archived"]);
     return sessions
-      .filter((s) => s.familiarId === familiar.id && ACTIVE.has(s.status))
+      .filter((s) => s.familiarId === familiar.id && !DEAD.has(s.status))
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
   }, [sessions, familiar.id]);
 
