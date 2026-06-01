@@ -19,13 +19,14 @@ import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal"
 import { AgentPanel } from "@/components/agent-panel";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { BrowserPane } from "@/components/browser-pane";
+import { SchedulesView } from "@/components/schedules-view";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser";
+type Mode = "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "browser" | "schedules";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -578,6 +579,13 @@ export function Workspace() {
           active: mode === "browser",
           onClick: () => setMode("browser"),
         },
+        {
+          id: "schedules",
+          label: "Schedules",
+          icon: "ph:clock" as const,
+          active: mode === "schedules",
+          onClick: () => setMode("schedules"),
+        },
       ] as ShellNavItem[],
     },
     {
@@ -671,6 +679,8 @@ export function Workspace() {
       />
     ) : mode === "browser" ? (
       <BrowserPane label="default" />
+    ) : mode === "schedules" ? (
+      <SchedulesView familiars={familiars} />
     ) : (
       <PluginsView
         onOpenChat={() => {
