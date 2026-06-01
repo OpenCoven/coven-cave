@@ -168,15 +168,12 @@ export function useGlyphOverrides(): OverrideMap {
   return useSyncExternalStore(subscribe, getOverrides, getOverrides);
 }
 
+const EMPTY_RECENT: readonly string[] = Object.freeze([]);
+const getRecentServer = () => EMPTY_RECENT as string[];
+
 /** React hook: recents list. Re-renders on any mutation. */
 export function useRecentGlyphs(): string[] {
-  // useSyncExternalStore needs server snapshot too; recents are empty on SSR.
-  const sub = (fn: () => void) => subscribe(fn);
-  const get = () => getRecent();
-  const getServer = () => [] as string[];
-  // useSyncExternalStore is imported above; calling it directly here keeps the
-  // hook self-contained without exposing the subscribe/snapshot signatures.
-  return useSyncExternalStore(sub, get, getServer);
+  return useSyncExternalStore(subscribe, getRecent, getRecentServer);
 }
 
 /**
