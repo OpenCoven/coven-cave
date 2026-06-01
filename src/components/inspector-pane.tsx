@@ -4,7 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 
-type Tab = "memory" | "tools" | "inbox";
+type Tab = "memory" | "capabilities" | "inbox";
+
+type Harness = {
+  id: string;
+  label: string;
+  binary: string;
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+};
+
+type CapSectionState = {
+  open: boolean;
+};
 
 type MemoryEntry = {
   root: string;
@@ -43,7 +56,7 @@ type Props = {
 
 const TAB_LABEL: Record<Tab, string> = {
   memory: "Memory",
-  tools: "Tools",
+  capabilities: "Capabilities",
   inbox: "Inbox",
 };
 
@@ -81,7 +94,7 @@ export function InspectorPane({ familiar, inboxItems = [], onOpenInbox }: Props)
   return (
     <aside className="flex h-full flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40">
       <nav className="flex border-b border-[var(--border-hairline)] text-[11px]">
-        {(["memory", "tools", "inbox"] as const).map((t) => (
+        {(["memory", "capabilities", "inbox"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -103,7 +116,7 @@ export function InspectorPane({ familiar, inboxItems = [], onOpenInbox }: Props)
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "memory" ? <MemoryTab familiar={familiar} /> : null}
-        {tab === "tools" ? <ToolsTab /> : null}
+        {tab === "capabilities" ? <CapabilitiesTab familiar={familiar} /> : null}
         {tab === "inbox" ? (
           <InboxTab
             familiar={familiar}
@@ -508,66 +521,191 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
 
 /* ---------- Tools tab ---------- */
 
-function ToolsTab() {
+/* ---------- Capabilities tab ----------
+ *
+ * What this familiar has access to right now: skills, tools (via harness),
+ * MCP servers, hooks. Issue #19. Reads existing daemon endpoints +
+ * package metadata — no new state, no edits (config concern).
+ */
+function CapabilitiesTab({ familiar }: { familiar: Familiar | null }) {
   const [skills, setSkills] = useState<Skill[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [harnesses, setHarnesses] = useState<Harness[]>([]);
+  const [harnessesError, setHarnessesError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
         const res = await fetch("/api/skills", { cache: "no-store" });
         const json = await res.json();
-        if (!json.ok) {
-          setError(json.error ?? "skills load failed");
-          return;
-        }
-        setSkills(json.skills ?? []);
+        if (!json.ok) setSkillsError(json.error ?? "skills unavailable");
+        else setSkills(json.skills ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "fetch failed");
+        setSkillsError(err instanceof Error ? err.message : "fetch failed");
+      }
+    })();
+    void (async () => {
+      try {
+        const res = await fetch("/api/harnesses", { cache: "no-store" });
+        const json = await res.json();
+        if (!json.ok) setHarnessesError(json.error ?? "harnesses unavailable");
+        else setHarnesses(json.harnesses ?? []);
+      } catch (err) {
+        setHarnessesError(err instanceof Error ? err.message : "fetch failed");
       }
     })();
   }, []);
 
-  if (error) {
-    return <p className="p-4 text-xs text-amber-300">Skills unavailable: {error}</p>;
-  }
+  const harness = familiar?.harness
+    ? harnesses.find((h) => h.id === familiar.harness) ?? null
+    : null;
 
-  if (skills.length === 0) {
-    return <p className="p-4 text-xs text-[var(--text-muted)]">No skills registered with the daemon yet.</p>;
+  if (!familiar) {
+    return (
+      <p className="p-4 text-xs text-[var(--text-muted)]">
+        Select a familiar to see its capabilities.
+      </p>
+    );
   }
 
   return (
-    <ul className="space-y-2 p-2 text-xs">
-      {skills.map((s) => (
-        <li
-          key={s.id}
-          className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-2"
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-semibold text-[var(--text-primary)]">{s.name}</span>
-            {s.category ? (
-              <span className="rounded bg-purple-600/30 px-1.5 py-0.5 text-[10px] text-purple-200">
-                {s.category}
-              </span>
-            ) : null}
-          </div>
-          {s.description ? (
-            <p className="mt-1 text-[11px] leading-snug text-[var(--text-secondary)]">{s.description}</p>
-          ) : null}
-          {s.tags && s.tags.length ? (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {s.tags.map((t) => (
-                <span
-                  key={t}
-                  className="rounded bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]"
-                >
-                  {t}
+    <div className="flex flex-col gap-3 p-3 text-xs">
+      <CapSection
+        title="Skills"
+        scope={skillsError ? `error: ${skillsError}` : `${skills.length} attached`}
+        empty={!skillsError && skills.length === 0}
+        emptyText={`No skills attached to ${familiar.display_name}.`}
+      >
+        <ul className="space-y-1.5">
+          {skills.map((s) => (
+            <li
+              key={s.id}
+              className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                <span className="rounded bg-[var(--bg-raised)] px-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                  {scopeFor(s.owner)}
                 </span>
-              ))}
-            </div>
+              </div>
+              {s.description ? (
+                <p className="mt-1 text-[var(--text-secondary)]">{s.description}</p>
+              ) : null}
+              {s.tags && s.tags.length > 0 ? (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {s.tags.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded bg-purple-600/20 px-1 text-[10px] text-purple-200"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </CapSection>
+
+      <CapSection
+        title="Tools"
+        scope={
+          harnessesError
+            ? `error: ${harnessesError}`
+            : harness
+              ? `${harness.label} ${harness.version ?? "(version unknown)"}`
+              : `harness "${familiar.harness ?? "—"}" not installed`
+        }
+        empty={!harness || !harness.installed}
+        emptyText={
+          harness
+            ? `${harness.label} CLI not on PATH.`
+            : "No harness bound — set one in Settings."
+        }
+      >
+        <ul className="space-y-1">
+          {harness ? (
+            <>
+              <CapRow label="binary" value={harness.binary} />
+              <CapRow label="path" value={harness.path ?? "—"} mono />
+              <CapRow label="version" value={harness.version ?? "—"} />
+              <CapRow label="model" value={familiar.model ?? "—"} />
+            </>
           ) : null}
-        </li>
-      ))}
-    </ul>
+        </ul>
+      </CapSection>
+
+      <CapSection
+        title="MCP servers"
+        scope="discovered via harness"
+        empty
+        emptyText="No MCP server inventory exposed by the daemon yet."
+      />
+
+      <CapSection
+        title="Hooks"
+        scope="registered hook events"
+        empty
+        emptyText="No hook inventory exposed by the daemon yet."
+      />
+    </div>
   );
 }
+
+function CapSection({
+  title,
+  scope,
+  empty,
+  emptyText,
+  children,
+}: {
+  title: string;
+  scope?: string;
+  empty?: boolean;
+  emptyText?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <section>
+      <header className="mb-1.5 flex items-baseline justify-between">
+        <h3 className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+          {title}
+        </h3>
+        {scope ? (
+          <span className="text-[10px] text-[var(--text-muted)]">{scope}</span>
+        ) : null}
+      </header>
+      {empty ? (
+        <p className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-2 text-[var(--text-muted)]">
+          {emptyText ?? "Nothing here."}
+        </p>
+      ) : (
+        children
+      )}
+    </section>
+  );
+}
+
+function CapRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <li className="flex items-baseline justify-between gap-2">
+      <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+        {label}
+      </span>
+      <span
+        className={`truncate text-[var(--text-primary)] ${mono ? "font-mono text-[11px]" : ""}`}
+      >
+        {value}
+      </span>
+    </li>
+  );
+}
+
+function scopeFor(owner: string | undefined): string {
+  if (!owner) return "workspace";
+  if (owner.startsWith("familiar:")) return "familiar-bound";
+  if (owner === "local" || owner === "user") return "local";
+  return owner;
+}
+
