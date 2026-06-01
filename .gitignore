@@ -65,3 +65,6 @@ id_dsa
 secrets/
 credentials/
 .netrc
+
+# Git worktrees
+.worktrees/
