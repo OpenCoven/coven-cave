@@ -20,6 +20,8 @@ import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow } from "@/lib/types";
 
+type GroupMode = "familiar" | "project";
+
 // ---------------------------------------------------------------------------
 // Relative timestamp
 // ---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ function shortRelTime(iso: string | undefined): string {
 // Types
 // ---------------------------------------------------------------------------
 
-export type FolderMode = "board" | "inbox" | "vals-inbox" | "browser" | "comux" | "schedules" | "calls";
+export type FolderMode = "board" | "inbox" | "vals-inbox" | "browser" | "comux" | "calls";
 
 export type SidebarMinimalProps = {
   mode: string;
@@ -114,7 +116,7 @@ const FOLDER_MODES: Array<{
   { id: "inbox",      label: "Inbox",       iconName: "ph:tray",
     badge: (p) => p.inboxBadgeCount && p.inboxBadgeCount > 0 ? String(p.inboxBadgeCount) : undefined },
   { id: "vals-inbox", label: "Val's Inbox", iconName: "ph:bell-fill" },
-  { id: "schedules",  label: "Schedules",   iconName: "ph:clock" },
+  { id: "calls",      label: "Coven Calls", iconName: "ph:graph" },
   { id: "browser",    label: "Browser",     iconName: "ph:globe" },
   { id: "comux",      label: "Coven Code",   iconName: "ph:squares-four" },
 ];
@@ -264,9 +266,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           onClick={() => onModeChange("plugins")}
         />
         <ActionRow
-          icon={<Icon name="ph:calendar-blank" width={14} />}
+          icon={<Icon name="ph:clock" width={14} />}
           label="Automations"
-          onClick={() => onModeChange("calls")}
+          onClick={() => onModeChange("schedules")}
         />
       </div>
 

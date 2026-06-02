@@ -30,8 +30,8 @@ const MODE_LABEL: Record<Mode, string> = {
   plugins: "Plugins",
   "vals-inbox": "Val's Inbox",
   browser: "Browser",
-  schedules: "Schedules",
-  calls: "Calls",
+  schedules: "Automations",
+  calls: "Coven Calls",
   comux: "Coven Code",
 };
 
