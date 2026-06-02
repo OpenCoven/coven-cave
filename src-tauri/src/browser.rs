@@ -67,7 +67,9 @@ fn ensure_browser(
     let parsed_url = Url::parse(url).map_err(|e| e.to_string())?;
     let browser_label = label.to_string();
     let app_for_load = app.clone();
-    let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed_url)).on_page_load(
+    let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed_url))
+        .background_color(tauri::webview::Color(12, 12, 14, 255)) // dark bg — no white flash
+        .on_page_load(
         move |webview, payload| {
             let phase = match payload.event() {
                 PageLoadEvent::Started => "started",

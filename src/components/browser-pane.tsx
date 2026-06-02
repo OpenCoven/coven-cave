@@ -367,7 +367,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-[--bg-base]">
+    <div className="flex h-full flex-col" style={{ background: "#0c0c0e" }}>
       {/* ── Tab strip ─────────────────────────────────────────────── */}
       <div className="browser-tab-strip flex items-center gap-0.5 border-b border-[--border-hairline] bg-[--bg-sunken]/60 px-2 pt-1.5 pb-0 overflow-x-auto">
         {tabs.map((tab) => {
@@ -488,7 +488,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
       )}
 
       {/* ── Viewport (webview overlay target) ─────────────────────── */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden" style={{ background: "#0c0c0e" }}>
         {unavailable ? (
           <iframe
             src={activeUrl}
