@@ -325,6 +325,17 @@ export function Workspace() {
     }
   }, []);
 
+  const toggleAgentPanel = useCallback(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "j",
+        code: "KeyJ",
+        metaKey: true,
+        bubbles: true,
+      }),
+    );
+  }, []);
+
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
       setActiveId(intent.familiarId);
@@ -401,6 +412,9 @@ export function Workspace() {
           return;
         case "/comux":
           setMode("comux");
+          return;
+        case "/toggle-agent":
+          toggleAgentPanel();
           return;
         case "/quit":
           setMode("chats");
@@ -652,24 +666,26 @@ export function Workspace() {
         list={list}
         detail={detail}
         agent={
-          <AgentPanel
-            ref={routerRef}
-            familiar={active}
-            familiars={familiars}
-            activeId={activeId}
-            sessions={sessions}
-            daemonRunning={daemonRunning}
-            onSessionStarted={loadSessions}
-            onFamiliarSelect={(id) => {
-              setActiveId(id);
-              setMode("chats");
-            }}
-            onSlashFromChat={(command, args) => {
-              onPaletteIntent({ kind: "slash", command, args });
-              return true;
-            }}
-            onOpenOnboarding={openOnboarding}
-          />
+          mode === "chats" ? undefined : (
+            <AgentPanel
+              ref={routerRef}
+              familiar={active}
+              familiars={familiars}
+              activeId={activeId}
+              sessions={sessions}
+              daemonRunning={daemonRunning}
+              onSessionStarted={loadSessions}
+              onFamiliarSelect={(id) => {
+                setActiveId(id);
+                setMode("chats");
+              }}
+              onSlashFromChat={(command, args) => {
+                onPaletteIntent({ kind: "slash", command, args });
+                return true;
+              }}
+              onOpenOnboarding={openOnboarding}
+            />
+          )
         }
         bottom={<BottomTerminal threadId="cave.bottom.main" />}
       />
