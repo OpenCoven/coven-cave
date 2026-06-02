@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import { join as joinPath } from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import { bindingFor, loadConfig, recordSessionFamiliar } from "@/lib/cave-config";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
@@ -131,6 +132,18 @@ async function resolveCwd(requested?: string): Promise<string> {
   return homedir();
 }
 
+/** Resolve the familiar's OpenClaw workspace dir (~/.openclaw/workspace/<id>).
+ *  Falls back to undefined if the dir doesn't exist so callers can skip --cwd.
+ */
+async function resolveFamiliarWorkspace(familiarId: string): Promise<string | undefined> {
+  const candidate = joinPath(homedir(), ".openclaw", "workspace", familiarId);
+  try {
+    const s = await stat(candidate);
+    if (s.isDirectory()) return candidate;
+  } catch { /* not found */ }
+  return undefined;
+}
+
 function sse(event: StreamEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
@@ -155,6 +168,14 @@ export async function POST(req: Request) {
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
   const cwd = await resolveCwd(body.projectRoot);
+  // Resolve familiar workspace for identity context. When a project root is
+  // explicitly set, the harness boots there (and should have the familiar's
+  // AGENTS.md injected separately). When there's no project root, boot in the
+  // familiar's own workspace so Codex/Claude picks up AGENTS.md / SOUL.md /
+  // IDENTITY.md and responds as the familiar instead of as "Codex".
+  const familiarWorkspace = !body.projectRoot
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
 
   // coven run only knows codex|claude today. Other harnesses (openclaw,
   // copilot, opencode, gemini, hermes, …) are surfaced in /api/harnesses
@@ -178,6 +199,9 @@ export async function POST(req: Request) {
   const buildArgs = (resumeSessionId: string | null): string[] => {
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
+    // Boot in the familiar's workspace so the harness reads AGENTS.md /
+    // SOUL.md / IDENTITY.md and responds as the familiar, not as "Codex".
+    if (familiarWorkspace) a.push("--cwd", familiarWorkspace);
     a.push("--", body.prompt);
     return a;
   };
