@@ -17,6 +17,8 @@ import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow } from "@/lib/types";
 
+type GroupMode = "familiar" | "project";
+
 // ---------------------------------------------------------------------------
 // Relative timestamp helpers
 // ---------------------------------------------------------------------------
