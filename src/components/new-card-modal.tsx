@@ -5,7 +5,6 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { Modal } from "@/components/ui/modal";
 import { PropertyPill } from "@/components/ui/property-pill";
 
-const TEMPLATES = ["Bugfix", "Docs", "Release", "PR review", "Plugin"];
 const STATUSES: CardStatus[] = ["inbox", "running", "review"];
 const PRIORITIES: CardPriority[] = ["urgent", "high", "medium", "low"];
 
@@ -20,7 +19,7 @@ export type NewCardDraft = {
   familiarId: string | null;
   sessionId: string | null;
   labels: string[];
-  template: string | null;
+  template: null;
 };
 
 type Props = {
@@ -49,7 +48,6 @@ export function NewCardModal({
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [labels, setLabels] = useState("");
-  const [template, setTemplate] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +60,6 @@ export function NewCardModal({
     setFamiliarId(defaultFamiliarId);
     setSessionId(null);
     setLabels("");
-    setTemplate(null);
     setError(null);
   }, [open, defaultStatus, defaultFamiliarId]);
 
@@ -86,7 +83,7 @@ export function NewCardModal({
           .split(/[,\s]+/)
           .map((s) => s.trim())
           .filter(Boolean),
-        template,
+        template: null,
       });
       onClose();
     } catch (err) {
@@ -149,28 +146,6 @@ export function NewCardModal({
         </>
       }
     >
-      <div className="mb-5 flex flex-wrap gap-2">
-        {TEMPLATES.map((t) => {
-          const active = template === t;
-          return (
-            <button
-              key={t}
-              onClick={() => {
-                setTemplate(active ? null : t);
-                if (!active && !title.trim()) setTitle(`${t}: `);
-              }}
-              className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-                active
-                  ? "border-border-strong bg-muted text-foreground"
-                  : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              {t}
-            </button>
-          );
-        })}
-      </div>
-
       <Field label="Title">
         <input
           value={title}
