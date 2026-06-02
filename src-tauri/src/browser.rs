@@ -68,7 +68,7 @@ fn ensure_browser(
     let browser_label = label.to_string();
     let app_for_load = app.clone();
     let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed_url)).on_page_load(
-        move |_webview, payload| {
+        move |webview, payload| {
             let phase = match payload.event() {
                 PageLoadEvent::Started => "started",
                 PageLoadEvent::Finished => "finished",
@@ -81,6 +81,37 @@ fn ensure_browser(
                     phase: phase.to_string(),
                 },
             );
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                let label_json = serde_json::to_string(&browser_label)
+                    .unwrap_or_else(|_| "null".to_string());
+                let script = format!(
+                    r#"(function(browserLabel) {{
+                      try {{
+                        var emit = function(name, payload) {{
+                          if (window.__TAURI__ && window.__TAURI__.event) {{
+                            window.__TAURI__.event.emit(name, payload);
+                          }}
+                        }};
+                        var title = document.title || location.hostname || location.href;
+                        emit("browser:title", {{ label: browserLabel, title: title, url: location.href }});
+                        if (!window.__CAVE_BROWSER_INSTALLED__) {{
+                          window.__CAVE_BROWSER_INSTALLED__ = true;
+                          window.addEventListener("keydown", function(event) {{
+                            try {{
+                              if ((event.metaKey || event.ctrlKey) && event.key && event.key.toLowerCase() === "t") {{
+                                event.preventDefault();
+                                event.stopPropagation();
+                                emit("browser:shortcut-new-tab", {{ label: browserLabel, url: location.href }});
+                              }}
+                            }} catch (_) {{}}
+                          }}, true);
+                        }}
+                      }} catch (_) {{}}
+                    }})({})"#,
+                    label_json
+                );
+                let _ = webview.eval(&script);
+            }
         },
     );
 
@@ -188,6 +219,15 @@ pub fn browser_close(app: AppHandle, label: Option<String>) -> Result<(), String
     let label = safe_browser_label(label);
     if let Some(webview) = app.get_webview(&label) {
         webview.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn browser_reload(app: AppHandle, label: Option<String>) -> Result<(), String> {
+    let label = safe_browser_label(label);
+    if let Some(webview) = app.get_webview(&label) {
+        webview.reload().map_err(|e| e.to_string())?;
     }
     Ok(())
 }

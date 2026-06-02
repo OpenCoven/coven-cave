@@ -328,6 +328,7 @@ pub fn run() {
             browser::browser_hide,
             browser::browser_hide_all_except,
             browser::browser_close,
+            browser::browser_reload,
             shell_open,
         ])
         .manage(SidecarState(Mutex::new(None)))

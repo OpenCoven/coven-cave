@@ -617,8 +617,6 @@ export function Workspace() {
           }
         }}
       />
-    ) : mode === "browser" ? (
-      <BrowserPane label="default" />
     ) : mode === "schedules" ? (
       <SchedulesView familiars={familiars} />
     ) : mode === "calls" ? (
@@ -665,28 +663,7 @@ export function Workspace() {
         nav={sidebar}
         list={list}
         detail={detail}
-        agent={
-          mode === "chats" ? undefined : (
-            <AgentPanel
-              ref={routerRef}
-              familiar={active}
-              familiars={familiars}
-              activeId={activeId}
-              sessions={sessions}
-              daemonRunning={daemonRunning}
-              onSessionStarted={loadSessions}
-              onFamiliarSelect={(id) => {
-                setActiveId(id);
-                setMode("chats");
-              }}
-              onSlashFromChat={(command, args) => {
-                onPaletteIntent({ kind: "slash", command, args });
-                return true;
-              }}
-              onOpenOnboarding={openOnboarding}
-            />
-          )
-        }
+        agent={<BrowserPane label="default" />}
         bottom={<BottomTerminal threadId="cave.bottom.main" />}
       />
 

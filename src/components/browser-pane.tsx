@@ -64,7 +64,8 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   // stays in sync when the user clicks links inside the browser.
   useEffect(() => {
     if (!bridge) return;
-    let unlisten: (() => void) | null = null;
+    let unlistenLoad: (() => void) | null = null;
+    let unlistenTitle: (() => void) | null = null;
     void bridge.listen<{ label: string; url: string; phase: string }>(
       "browser:page-load",
       (e) => {
@@ -84,8 +85,16 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
           historyIdxRef.current = historyRef.current.length - 1;
         }
       },
-    ).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
+    ).then((fn) => { unlistenLoad = fn; });
+    void bridge.listen<{ label: string; title: string; url: string }>(
+      "browser:title",
+      (e) => {
+        const { label: evLabel, url: evUrl } = e.payload;
+        if (evLabel !== `cave-browser-${label}`) return;
+        setAddressBar(evUrl);
+      },
+    ).then((fn) => { unlistenTitle = fn; });
+    return () => { unlistenLoad?.(); unlistenTitle?.(); };
   }, [bridge, label]);
 
   // Keep the native webview's bounds in sync with the placeholder div.
@@ -99,6 +108,12 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         const rect = surface.getBoundingClientRect();
+        // Panel collapsed (⌘J) — move webview offscreen instead of
+        // setting 0-size bounds which can cause a visible flash.
+        if (rect.width <= 1 || rect.height <= 1) {
+          void bridge.invoke("browser_hide", { label });
+          return;
+        }
         void bridge.invoke("browser_set_bounds", {
           label,
           x: rect.left,
@@ -201,10 +216,11 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
         <button
           type="button"
           onClick={() => {
-            if (loading) {
-              // TODO: expose browser_stop command; for now just re-navigate
+            if (bridge) {
+              void bridge.invoke("browser_reload", { label });
+            } else {
+              navigateTo(url);
             }
-            navigateTo(url);
           }}
           className="grid h-7 w-7 place-items-center rounded text-[--text-secondary] hover:bg-[--bg-raised] hover:text-[--text-primary]"
           title={loading ? "Stop" : "Reload"}
