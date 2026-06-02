@@ -17,6 +17,8 @@ import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow } from "@/lib/types";
 
+type GroupMode = "familiar" | "project";
+
 // ---------------------------------------------------------------------------
 // Relative timestamp helpers
 // ---------------------------------------------------------------------------
@@ -47,6 +49,10 @@ function shortRelTime(iso: string | undefined): string {
     return `${Math.round(days / 30)}mo`;
   } catch { return ""; }
 }
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export type FolderMode = "board" | "inbox" | "vals-inbox" | "browser" | "comux" | "calls";
 
