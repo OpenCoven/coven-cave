@@ -67,10 +67,11 @@ export async function GET(req: Request) {
 
   const res = await callDaemon<CapabilitiesResponse>({ path });
   if (!res.ok || !res.data) {
+    const isOffline = res.status === 0 || (res.error != null && /(ENOENT|ECONNREFUSED|ETIMEDOUT|socket|connect)/i.test(res.error));
     return NextResponse.json(
       {
         ok: false,
-        error: res.error ?? `daemon http ${res.status}`,
+        error: isOffline ? 'daemon offline' : (res.error ?? `daemon http ${res.status}`),
         coven_skills: [],
         harness_capabilities: [],
         scanned_at: new Date().toISOString(),

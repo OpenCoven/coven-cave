@@ -81,6 +81,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
   const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
+  const [capabilitiesRefresh, setCapabilitiesRefresh] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const createRef = useRef<HTMLDivElement | null>(null);
 
@@ -130,7 +131,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
       let cancelled = false;
       void (async () => {
         try {
-          const res = await fetch("/api/capabilities", { cache: "no-store" });
+          const res = await fetch(`/api/capabilities${capabilitiesRefresh ? '?refresh=1' : ''}`, { cache: "no-store" });
           const json = await res.json();
           if (!cancelled) {
             if (json.ok) {
@@ -143,7 +144,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
         } catch (err) {
           if (!cancelled) setCapabilitiesError(err instanceof Error ? err.message : "fetch failed");
         } finally {
-          if (!cancelled) setCapabilitiesLoaded(true);
+          if (!cancelled) { setCapabilitiesLoaded(true); setCapabilitiesRefresh(false); }
         }
       })();
       return () => {
@@ -301,7 +302,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
             ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} />
             ) : (
-              <CapabilitiesView items={capabilities} loaded={capabilitiesLoaded} error={capabilitiesError} onRefresh={() => setCapabilitiesLoaded(false)} />
+              <CapabilitiesView items={capabilities.filter(c => !query || c.harness_id.toLowerCase().includes(query.toLowerCase()))} loaded={capabilitiesLoaded} error={capabilitiesError} onRefresh={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }} />
             )}
           </section>
         </div>
