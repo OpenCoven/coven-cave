@@ -161,6 +161,44 @@ body {
   overflow: hidden;
 }
 
+/* Right-rail toggle tab — Dia/Linear-style vertical pill */
+.shell-agent-tab {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 5px;
+  border-radius: 8px 0 0 8px;
+  border: 1px solid var(--border-hairline);
+  border-right: none;
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+.shell-agent-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg-base);
+}
+.shell-agent-tab-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.shell-agent-tab-chevron {
+  opacity: 0.5;
+}
+
 .shell-bottom {
   display: flex;
   flex-direction: column;
