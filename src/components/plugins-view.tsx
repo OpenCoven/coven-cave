@@ -4,8 +4,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 
-type Tab = "plugins" | "skills";
+type Tab = "plugins" | "skills" | "capabilities";
 type FilterChip = "curated" | "shared" | "created" | "more";
+
+// ── Capability types (mirrors /api/capabilities) ──────────────────────────
+type GlobalInstructions = {
+  present: boolean;
+  path?: string;
+  byte_count?: number;
+};
+type HarnessCapSkill = { id: string; name: string; description?: string; path: string };
+type HarnessCapPlugin = { id: string; name: string; kind: string; enabled: boolean; command?: string; args?: string[] };
+type CapWarning = { kind: string; path: string; message: string };
+type HarnessCapabilityManifest = {
+  harness_id: string;
+  scanned_at: string;
+  global_instructions: GlobalInstructions;
+  skills: HarnessCapSkill[];
+  plugins: HarnessCapPlugin[];
+  warnings: CapWarning[];
+};
+// ───────────────────────────────────────────────────────────────────────────
 
 type HarnessReport = {
   id: string;
@@ -59,6 +78,9 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
+  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
+  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const createRef = useRef<HTMLDivElement | null>(null);
 
@@ -104,7 +126,31 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
         cancelled = true;
       };
     }
-  }, [tab, harnessesLoaded, skillsLoaded]);
+    if (tab === "capabilities" && !capabilitiesLoaded) {
+      let cancelled = false;
+      void (async () => {
+        try {
+          const res = await fetch("/api/capabilities", { cache: "no-store" });
+          const json = await res.json();
+          if (!cancelled) {
+            if (json.ok) {
+              setCapabilities(json.harness_capabilities ?? []);
+              setCapabilitiesError(null);
+            } else {
+              setCapabilitiesError(json.error ?? "daemon offline");
+            }
+          }
+        } catch (err) {
+          if (!cancelled) setCapabilitiesError(err instanceof Error ? err.message : "fetch failed");
+        } finally {
+          if (!cancelled) setCapabilitiesLoaded(true);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [tab, harnessesLoaded, skillsLoaded, capabilitiesLoaded]);
 
   const filteredHarnesses = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -133,7 +179,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
       {/* Top tab strip */}
       <header className="flex items-center justify-between border-b border-border px-5 py-3">
         <div className="flex items-center gap-5 text-[13px]">
-          {(["plugins", "skills"] as const).map((t) => (
+          {(["plugins", "skills", "capabilities"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -240,7 +286,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={tab === "plugins" ? "Search plugins" : "Search skills"}
+                placeholder={tab === "plugins" ? "Search plugins" : tab === "skills" ? "Search skills" : "Search capabilities"}
                 className="w-56 rounded-md border border-border bg-card py-1.5 pl-7 pr-3 text-[12px] text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-border-strong"
               />
             </div>
@@ -252,8 +298,10 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
 
             {tab === "plugins" ? (
               <PluginGrid items={filteredHarnesses} loaded={harnessesLoaded} onOpenChat={onOpenChat} />
-            ) : (
+            ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} />
+            ) : (
+              <CapabilitiesView items={capabilities} loaded={capabilitiesLoaded} error={capabilitiesError} onRefresh={() => setCapabilitiesLoaded(false)} />
             )}
           </section>
         </div>
@@ -508,6 +556,185 @@ function CreateDropdown({
           </span>
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── CapabilitiesView ────────────────────────────────────────────────────────
+
+function CapabilitiesView({
+  items,
+  loaded,
+  error,
+  onRefresh,
+}: {
+  items: HarnessCapabilityManifest[];
+  loaded: boolean;
+  error: string | null;
+  onRefresh: () => void;
+}) {
+  if (!loaded) return <GridSkeleton />;
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-border bg-card px-5 py-6">
+        <p className="mb-3 text-[13px] text-muted-foreground">
+          {error === "daemon offline"
+            ? "Coven daemon is offline — harness capabilities require a running daemon."
+            : `Could not load capabilities: ${error}`}
+        </p>
+        <button
+          onClick={onRefresh}
+          className="rounded-md border border-border bg-card px-3 py-1.5 text-[12px] text-foreground hover:bg-muted"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+        No harness capabilities found. Install Codex or Claude Code and restart the daemon.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {items.map((manifest) => (
+        <HarnessCapabilityCard key={manifest.harness_id} manifest={manifest} />
+      ))}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={onRefresh}
+          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <Icon name="ph:arrows-clockwise-bold" width="0.75rem" />
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManifest }) {
+  const label = manifest.harness_id === "codex" ? "Codex" : manifest.harness_id === "claude" ? "Claude Code" : manifest.harness_id;
+  const initial = label[0]?.toUpperCase() ?? "?";
+  const totalItems =
+    (manifest.global_instructions.present ? 1 : 0) +
+    manifest.skills.length +
+    manifest.plugins.length;
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[13px] font-semibold text-foreground">
+          {initial}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-foreground">{label}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {totalItems === 0 ? "No config found" : `${totalItems} item${totalItems === 1 ? "" : "s"} configured`}
+          </p>
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {new Date(manifest.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
+
+      {/* Body */}
+      <div className="divide-y divide-border">
+        {/* Global instructions */}
+        {manifest.global_instructions.present ? (
+          <div className="flex items-start gap-3 px-4 py-3">
+            <Icon name="ph:note-pencil" className="mt-0.5 shrink-0 text-muted-foreground" width="0.85rem" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-medium text-foreground">Global instructions</p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {manifest.global_instructions.path?.replace(/^\/Users\/[^/]+/, "~") ?? "—"}
+              </p>
+              {manifest.global_instructions.byte_count !== undefined && (
+                <p className="text-[10px] text-muted-foreground">
+                  {(manifest.global_instructions.byte_count / 1024).toFixed(1)} KB
+                </p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 px-4 py-3 text-[12px] text-muted-foreground">
+            <Icon name="ph:note-pencil" className="shrink-0" width="0.85rem" />
+            <span>No global instructions file found</span>
+          </div>
+        )}
+
+        {/* Skills (automations) */}
+        {manifest.skills.length > 0 ? (
+          <div className="px-4 py-3">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              Automations / skills · {manifest.skills.length}
+            </p>
+            <ul className="space-y-1.5">
+              {manifest.skills.map((s) => (
+                <li key={s.id} className="flex items-start gap-2">
+                  <Icon name="ph:sparkle" className="mt-0.5 shrink-0 text-muted-foreground" width="0.75rem" />
+                  <div className="min-w-0">
+                    <p className="text-[12px] text-foreground">{s.name}</p>
+                    {s.description && (
+                      <p className="text-[11px] text-muted-foreground">{s.description}</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Plugins (MCP etc) */}
+        {manifest.plugins.length > 0 ? (
+          <div className="px-4 py-3">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              Plugins · {manifest.plugins.length}
+            </p>
+            <ul className="space-y-1.5">
+              {manifest.plugins.map((p) => (
+                <li key={p.id} className="flex items-start gap-2">
+                  <Icon name="ph:plug" className="mt-0.5 shrink-0 text-muted-foreground" width="0.75rem" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[12px] text-foreground">{p.name}</p>
+                      <span className="rounded-full bg-muted px-1.5 py-px text-[9px] text-muted-foreground uppercase tracking-wide">
+                        {p.kind}
+                      </span>
+                      {!p.enabled && (
+                        <span className="rounded-full bg-muted px-1.5 py-px text-[9px] text-muted-foreground">disabled</span>
+                      )}
+                    </div>
+                    {p.command && (
+                      <p className="truncate text-[11px] text-muted-foreground font-mono">
+                        {p.command} {p.args?.join(" ")}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Warnings */}
+        {manifest.warnings.length > 0 ? (
+          <div className="px-4 py-3">
+            {manifest.warnings.map((w, i) => (
+              <p key={i} className="text-[11px] text-muted-foreground">
+                ⚠ {w.message}
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
