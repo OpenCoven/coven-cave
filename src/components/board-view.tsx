@@ -5,7 +5,6 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
-import { TemplateCardGrid } from "@/components/ui/template-card-grid";
 import { OriginChip } from "@/components/ui/origin-chip";
 import {
   LifecycleBadge,
@@ -250,31 +249,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       ) : null}
 
       {cards.length === 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-12">
-          <div className="mx-auto w-full max-w-[720px]">
-            <TemplateCardGrid
-              headline="No cards yet"
-              subtitle="Queue work for a familiar with a starter template, or start from scratch."
-              columns={3}
-              templates={[
-                { id: "bugfix", icon: "ph:wrench-bold", title: "Bugfix", description: "Track down and fix a defect." },
-                { id: "docs", icon: "ph:note-pencil", title: "Docs", description: "Write or update documentation." },
-                { id: "release", icon: "ph:sparkle", title: "Release", description: "Cut, sign, and publish a release." },
-                { id: "pr-review", icon: "ph:check-bold", title: "PR review", description: "Hand off a PR to a familiar to review." },
-                { id: "plugin", icon: "ph:plug", title: "Plugin", description: "Wire up or test a harness plugin." },
-                { id: "tidy", icon: "ph:magic-wand-fill", title: "Tidy", description: "Repo hygiene or refactor." },
-              ]}
-              onPick={() => {
-                setModalDefaultStatus("inbox");
-                setModalOpen(true);
-              }}
-              startFromScratchLabel="Start from scratch"
-              onStartFromScratch={() => {
-                setModalDefaultStatus("inbox");
-                setModalOpen(true);
-              }}
-            />
-          </div>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-5 py-12">
+          <p className="text-[13px] text-muted-foreground">No cards yet.</p>
+          <button
+            onClick={() => {
+              setModalDefaultStatus("inbox");
+              setModalOpen(true);
+            }}
+            className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            + New card
+          </button>
         </div>
       ) : (
       <div className="min-h-0 flex-1 overflow-hidden">
