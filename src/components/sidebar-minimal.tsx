@@ -5,12 +5,9 @@
  *
  * Layout (top → bottom):
  *   1. 4 primary actions  (New chat / Search / Plugins / Automations)
- *   2. 5 folder mode rows (Board / Inbox / Val's Inbox / Browser / Comux)
- *   3. Flat recent-chats list with relative timestamps
- *   4. Familiar switcher strip (above settings)
- *   5. Gear settings row (bottom, pinned)
- *
- * Settings gear opens the onboarding overlay.
+ *   2. Folder mode rows   (Board / Inbox / Val's Inbox / Browser / Comux / Coven Calls)
+ *   3. Familiar sections  (each familiar = header row + session list; no emoji row)
+ *   4. Settings gear (pinned bottom)
  */
 
 import { useMemo, useState } from "react";
@@ -21,7 +18,7 @@ import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// Relative timestamp
+// Relative timestamp helpers
 // ---------------------------------------------------------------------------
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto", style: "narrow" });
@@ -30,19 +27,19 @@ function relTime(iso: string | undefined): string {
   if (!iso) return "";
   try {
     const diffSec = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (diffSec < 60)  return rtf.format(-Math.round(diffSec),       "second");
-    if (diffSec < 3600) return rtf.format(-Math.round(diffSec / 60),  "minute");
+    if (diffSec < 60)    return rtf.format(-Math.round(diffSec),        "second");
+    if (diffSec < 3600)  return rtf.format(-Math.round(diffSec / 60),   "minute");
     if (diffSec < 86400) return rtf.format(-Math.round(diffSec / 3600), "hour");
     return rtf.format(-Math.round(diffSec / 86400), "day");
   } catch { return ""; }
 }
 
-// Short label: "1mo", "5h", "13m"
+// Short label: "5h", "13m", "2d"
 function shortRelTime(iso: string | undefined): string {
   if (!iso) return "";
   try {
     const diffSec = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (diffSec < 60)   return `${Math.round(diffSec)}s`;
+    if (diffSec < 60)    return `${Math.round(diffSec)}s`;
     if (diffSec < 3600)  return `${Math.round(diffSec / 60)}m`;
     if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h`;
     const days = Math.round(diffSec / 86400);
@@ -73,7 +70,7 @@ export type SidebarMinimalProps = {
 };
 
 // ---------------------------------------------------------------------------
-// Action button (top 4)
+// Action button (top group)
 // ---------------------------------------------------------------------------
 
 function ActionRow({
@@ -88,11 +85,7 @@ function ActionRow({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className="sidebar-action-row"
-      onClick={onClick}
-    >
+    <button type="button" className="sidebar-action-row" onClick={onClick}>
       <span className="sidebar-action-icon">{icon}</span>
       <span className="sidebar-action-label">{label}</span>
       {kbd && <span className="sidebar-action-kbd">{kbd}</span>}
@@ -116,7 +109,7 @@ const FOLDER_MODES: Array<{
   { id: "vals-inbox", label: "Val's Inbox", iconName: "ph:bell-fill" },
   { id: "calls",      label: "Coven Calls", iconName: "ph:graph" },
   { id: "browser",    label: "Browser",     iconName: "ph:globe" },
-  { id: "comux",      label: "Coven Code",   iconName: "ph:squares-four" },
+  { id: "comux",      label: "Coven Code",  iconName: "ph:squares-four" },
 ];
 
 function FolderRow({
@@ -148,10 +141,10 @@ function FolderRow({
 }
 
 // ---------------------------------------------------------------------------
-// Recent chat row
+// Session row (inside familiar section)
 // ---------------------------------------------------------------------------
 
-function RecentRow({
+function SessionRow({
   session,
   active,
   onClick,
@@ -162,57 +155,94 @@ function RecentRow({
 }) {
   const ts = shortRelTime(session.updated_at || session.created_at);
   const title = session.title || "Untitled";
-
   return (
     <button
       type="button"
       title={title}
-      className={`sidebar-recent-row${active ? " sidebar-recent-row--active" : ""}`}
+      className={`sidebar-session-row${active ? " sidebar-session-row--active" : ""}`}
       onClick={onClick}
     >
-      <span className="sidebar-recent-title">{title}</span>
-      {ts && <span className="sidebar-recent-ts">{ts}</span>}
+      <span className="sidebar-session-title">{title}</span>
+      {ts && <span className="sidebar-session-ts">{ts}</span>}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Familiar section: header + collapsible session list
+// ---------------------------------------------------------------------------
+
+function FamiliarSection({
+  familiar,
+  sessions,
+  activeSessionId,
+  onOpenSession,
+  onModeChange,
+  defaultOpen,
+}: {
+  familiar: Familiar;
+  sessions: SessionRow[];
+  activeSessionId?: string | null;
+  onOpenSession: (id: string) => void;
+  onModeChange: (mode: string) => void;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const overrides = useGlyphOverrides();
+  const glyph = resolveFamiliarGlyph(familiar, overrides);
+
+  return (
+    <div className="sidebar-familiar-section">
+      {/* Section header — click to toggle */}
+      <button
+        type="button"
+        className="sidebar-familiar-header"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className="sidebar-familiar-header-glyph">
+          <FamiliarGlyph glyph={glyph} size="sm" />
+        </span>
+        <span className="sidebar-familiar-header-name">{familiar.display_name}</span>
+        <span className="sidebar-familiar-header-meta">
+          {sessions.length > 0 && (
+            <span className="sidebar-familiar-header-count">{sessions.length}</span>
+          )}
+          <Icon
+            name={open ? "ph:caret-down" : "ph:caret-right"}
+            width={10}
+            className="sidebar-familiar-header-chevron"
+          />
+        </span>
+      </button>
+
+      {/* Session list */}
+      {open && (
+        <div className="sidebar-familiar-sessions">
+          {sessions.length === 0 ? (
+            <div className="sidebar-familiar-sessions-empty">No sessions</div>
+          ) : (
+            sessions.map((s) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                active={s.id === activeSessionId}
+                onClick={() => {
+                  onModeChange("chats");
+                  onOpenSession(s.id);
+                }}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
 // SidebarMinimal
 // ---------------------------------------------------------------------------
-
-function NavFamiliarStrip({
-  familiars,
-  activeId,
-  onSelect,
-}: {
-  familiars: Familiar[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const overrides = useGlyphOverrides();
-  if (familiars.length === 0) return null;
-  return (
-    <div className="sidebar-familiar-strip">
-      {familiars.map((f) => {
-        const glyph = resolveFamiliarGlyph(f, overrides);
-        const isActive = f.id === activeId;
-        return (
-          <button
-            key={f.id}
-            type="button"
-            title={`${f.display_name}${f.role ? ` · ${f.role}` : ""}`}
-            aria-label={f.display_name}
-            aria-pressed={isActive}
-            onClick={() => onSelect(f.id)}
-            className={`sidebar-familiar-btn${isActive ? " sidebar-familiar-btn--active" : ""}`}
-          >
-            <FamiliarGlyph glyph={glyph} size="sm" />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
@@ -229,8 +259,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onOpenSettings,
   } = props;
 
-  // Only show chat-origin sessions in recents; limit to 40
-  const recents = useMemo(
+  // Chat sessions newest-first
+  const chatSessions = useMemo(
     () =>
       sessions
         .filter((s) => !s.archived_at && (!s.origin || s.origin === "chat"))
@@ -238,14 +268,40 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           const ta = a.updated_at || a.created_at;
           const tb = b.updated_at || b.created_at;
           return tb.localeCompare(ta);
-        })
-        .slice(0, 40),
+        }),
     [sessions],
   );
 
+  // Map: familiarId → sorted sessions for that familiar (max 20 shown)
+  const sessionsByFamiliar = useMemo(() => {
+    const map: Record<string, SessionRow[]> = {};
+    for (const f of familiars) map[f.id] = [];
+    for (const s of chatSessions) {
+      if (s.familiarId && map[s.familiarId]) {
+        map[s.familiarId].push(s);
+      }
+    }
+    // Each familiar's list is already sorted (chatSessions is sorted)
+    for (const id of Object.keys(map)) map[id] = map[id].slice(0, 20);
+    return map;
+  }, [chatSessions, familiars]);
+
+  // Sessions with no familiar → "Unassigned" bucket
+  const unassignedSessions = useMemo(
+    () => chatSessions.filter((s) => !s.familiarId).slice(0, 20),
+    [chatSessions],
+  );
+
+  // Which familiar section should start open (the one owning the active session)
+  const defaultOpenId = useMemo(() => {
+    if (!activeSessionId) return null;
+    const active = chatSessions.find((s) => s.id === activeSessionId);
+    return active?.familiarId ?? null;
+  }, [chatSessions, activeSessionId]);
+
   return (
     <nav className="sidebar-minimal">
-      {/* ── 4 primary actions ─────────────────────────────────── */}
+      {/* ── Primary actions ───────────────────────────────────── */}
       <div className="sidebar-actions">
         <ActionRow
           icon={<Icon name="ph:note-pencil" width={14} />}
@@ -285,38 +341,45 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         ))}
       </div>
 
-      {/* ── Flat recents list ─────────────────────────────────── */}
-      <div className="sidebar-recents-header">Recent</div>
-      <div className="sidebar-recents">
-        {recents.length === 0 ? (
-          <div className="sidebar-recents-empty">No recent chats</div>
-        ) : (
-          recents.map((s) => (
-            <RecentRow
-              key={s.id}
-              session={s}
-              active={s.id === activeSessionId}
-              onClick={() => {
-                onModeChange("chats");
-                onOpenSession(s.id);
-              }}
-            />
-          ))
+      {/* ── Familiar sections ─────────────────────────────────── */}
+      <div className="sidebar-familiar-list">
+        {familiars.map((f) => (
+          <FamiliarSection
+            key={f.id}
+            familiar={f}
+            sessions={sessionsByFamiliar[f.id] ?? []}
+            activeSessionId={activeSessionId}
+            onOpenSession={onOpenSession}
+            onModeChange={onModeChange}
+            defaultOpen={f.id === defaultOpenId}
+          />
+        ))}
+
+        {/* Unassigned sessions */}
+        {unassignedSessions.length > 0 && (
+          <div className="sidebar-familiar-section sidebar-familiar-section--unassigned">
+            <div className="sidebar-familiar-header sidebar-familiar-header--plain">
+              <span className="sidebar-familiar-header-name">Other</span>
+              <span className="sidebar-familiar-header-count">{unassignedSessions.length}</span>
+            </div>
+            <div className="sidebar-familiar-sessions">
+              {unassignedSessions.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  active={s.id === activeSessionId}
+                  onClick={() => {
+                    onModeChange("chats");
+                    onOpenSession(s.id);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
-      {/* ── Familiar switcher (above settings) ──────────────── */}
-      {familiars.length > 0 && onFamiliarSelect && (
-        <div className="sidebar-familiar-section">
-          <NavFamiliarStrip
-            familiars={familiars}
-            activeId={activeId}
-            onSelect={onFamiliarSelect}
-          />
-        </div>
-      )}
-
-      {/* ── Settings gear (bottom) ────────────────────────────── */}
+      {/* ── Settings gear (pinned bottom) ─────────────────────── */}
       <div className="sidebar-bottom">
         <button
           type="button"

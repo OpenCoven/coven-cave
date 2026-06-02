@@ -273,41 +273,245 @@
   background: color-mix(in oklab, oklch(0.65 0.18 280) 12%, var(--bg-raised));
 }
 
-/* ── Sidebar familiar strip (left nav) ─────────────────────────────────── */
+/* ── Familiars section (left nav, replaces emoji strip) ─────────────────── */
 .sidebar-familiar-section {
   flex-shrink: 0;
   border-top: 1px solid var(--border-hairline);
-  padding: 6px 8px;
+  padding: 4px 6px 2px;
 }
 
-.sidebar-familiar-strip {
+.sidebar-familiar-section-label {
+  padding: 5px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.sidebar-familiar-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+  width: 100%;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
-.sidebar-familiar-btn {
+.sidebar-familiar-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-familiar-row--active {
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 10%, transparent);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.sidebar-familiar-row-glyph {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1.5px solid transparent;
-  background: var(--bg-raised);
-  cursor: pointer;
+  opacity: 0.8;
+}
+
+.sidebar-familiar-row--active .sidebar-familiar-row-glyph,
+.sidebar-familiar-row:hover .sidebar-familiar-row-glyph {
+  opacity: 1;
+}
+
+.sidebar-familiar-row-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sidebar-familiar-row-count {
   flex-shrink: 0;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.sidebar-familiar-row--active .sidebar-familiar-row-count {
+  color: oklch(0.75 0.12 280);
+  opacity: 1;
+}
+
+/* ── Familiar sections (accordion) ──────────────────────────────────────── */
+.sidebar-familiar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+.sidebar-familiar-list::-webkit-scrollbar { width: 3px; }
+.sidebar-familiar-list::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 2px;
+}
+
+/* Each familiar block */
+.sidebar-familiar-section {
+  flex-shrink: 0;
+  /* override: remove the old border-top/padding from the old section rule */
+  border-top: none;
   padding: 0;
 }
 
-.sidebar-familiar-btn:hover {
-  border-color: var(--border-strong);
+.sidebar-familiar-section + .sidebar-familiar-section {
+  border-top: 1px solid var(--border-hairline);
 }
 
-.sidebar-familiar-btn--active {
-  border-color: oklch(0.65 0.18 280);
-  box-shadow: 0 0 0 1px oklch(0.65 0.18 280 / 35%);
-  background: color-mix(in oklab, oklch(0.65 0.18 280) 12%, var(--bg-raised));
+/* Header row: glyph + name + count + chevron */
+.sidebar-familiar-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 5px 10px 5px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.sidebar-familiar-header:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-familiar-header--plain {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.sidebar-familiar-header-glyph {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.sidebar-familiar-header:hover .sidebar-familiar-header-glyph {
+  opacity: 1;
+}
+
+.sidebar-familiar-header-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sidebar-familiar-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sidebar-familiar-header-count {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.sidebar-familiar-header-chevron {
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: opacity 0.1s ease;
+}
+
+.sidebar-familiar-header:hover .sidebar-familiar-header-chevron {
+  opacity: 0.8;
+}
+
+/* Session list under a familiar */
+.sidebar-familiar-sessions {
+  padding: 1px 6px 6px 12px;
+}
+
+.sidebar-familiar-sessions-empty {
+  padding: 3px 8px 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Individual session row inside familiar section */
+.sidebar-session-row {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+  min-width: 0;
+}
+
+.sidebar-session-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-session-row--active {
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 10%, transparent);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.sidebar-session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sidebar-session-ts {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
