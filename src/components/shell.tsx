@@ -26,7 +26,22 @@ const shellStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
     try {
-      return window.localStorage.getItem(key);
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        // Guard: clear corrupted layouts where detail panel (id="detail") is ≤5%.
+        try {
+          const parsed = JSON.parse(raw) as Record<string, { layout?: number[] }>;
+          for (const entry of Object.values(parsed)) {
+            if (!Array.isArray(entry?.layout)) continue;
+            // detail is last non-bottom panel; if any panel is suspiciously ≤2%, nuke the layout.
+            if (entry.layout.some((v, i) => i > 0 && v <= 2)) {
+              window.localStorage.removeItem(key);
+              return null;
+            }
+          }
+        } catch { /* not JSON layout, pass through */ }
+      }
+      return raw;
     } catch {
       return null;
     }
@@ -152,9 +167,9 @@ export function Shell({
       <Panel
         id="nav"
         className="shell-nav-panel"
-        defaultSize="240px"
-        minSize="200px"
-        maxSize="360px"
+        defaultSize="17%"
+        minSize="14%"
+        maxSize="25%"
         collapsible
         collapsedSize={0}
         panelRef={navRef}
@@ -167,9 +182,9 @@ export function Shell({
           <Panel
             id="list"
             className="shell-list-panel"
-            defaultSize="260px"
-            minSize="220px"
-            maxSize="480px"
+            defaultSize="18%"
+            minSize="15%"
+            maxSize="33%"
             collapsible
             collapsedSize={0}
             panelRef={listRef}
@@ -188,9 +203,9 @@ export function Shell({
           <Panel
             id="agent"
             className="shell-agent-panel"
-            defaultSize="380px"
-            minSize="300px"
-            maxSize="560px"
+            defaultSize="26%"
+            minSize="20%"
+            maxSize="38%"
             collapsible
             collapsedSize={0}
             panelRef={agentRef}
@@ -219,7 +234,7 @@ export function Shell({
             id="bottom"
             className="shell-bottom-panel"
             defaultSize="0"
-            minSize="120px"
+            minSize="8%"
             maxSize="60%"
             collapsible
             collapsedSize={0}
