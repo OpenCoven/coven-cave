@@ -239,18 +239,22 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   // ── Navigate active tab when URL changes ─────────────────────────
   useEffect(() => {
     if (!bridge || !activeTab) return;
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    const rect = surface.getBoundingClientRect();
-    if (rect.width <= 1 || rect.height <= 1) return;
-    setLoading(true);
-    void bridge.invoke("browser_navigate", {
-      label: tabLabel(activeTab.id),
-      url: activeTab.url,
-      x: rect.left, y: rect.top,
-      w: rect.width, h: rect.height,
-    });
-    setAddressBar(activeTab.url);
+    // Small delay to let panel layout fully settle before reading bounds
+    const timer = setTimeout(() => {
+      const surface = surfaceRef.current;
+      if (!surface) return;
+      const rect = surface.getBoundingClientRect();
+      if (rect.width <= 1 || rect.height <= 1) return;
+      setLoading(true);
+      void bridge.invoke("browser_navigate", {
+        label: tabLabel(activeTab.id),
+        url: activeTab.url,
+        x: rect.left, y: rect.top,
+        w: rect.width, h: rect.height,
+      });
+      setAddressBar(activeTab.url);
+    }, 80);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge, activeTab?.url, activeTab?.id]);
 
