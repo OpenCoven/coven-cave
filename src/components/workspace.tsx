@@ -583,7 +583,7 @@ export function Workspace() {
       onOpenSearch={() => setPaletteOpen(true)}
       onModeChange={(m) => {
         if (m === "browser") {
-          setMode("browser");
+          shellRef.current?.openAgent();
           return;
         }
         setMode(m as Mode);
@@ -722,7 +722,7 @@ export function Workspace() {
         nav={sidebar}
         list={list}
         detail={detail}
-        agent={mode === "browser" ? undefined : <BrowserPane label="default" />}
+        agent={<BrowserPane label="default" />}
         agentLabel="Browser"
         agentIcon="ph:globe"
         bottom={<BottomTerminal threadId="cave.bottom.main" />}
