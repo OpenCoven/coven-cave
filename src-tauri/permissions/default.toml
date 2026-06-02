@@ -1,0 +1,10 @@
+[default]
+description = "Default permissions for CovenCave app commands."
+permissions = [
+  "allow-pty-start",
+  "allow-pty-write",
+  "allow-pty-resize",
+  "allow-pty-stop",
+  "allow-pty-list",
+  "allow-shell-open",
+]
