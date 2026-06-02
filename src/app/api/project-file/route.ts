@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 const MAX_SIZE = 512 * 1024; // 512KB
-
-const ALLOWED_PREFIXES = [
-  path.join(os.homedir(), "Documents", "GitHub"),
-  os.homedir(),
-];
 
 const TEXT_EXTENSIONS = new Set([
   ".ts",
@@ -52,11 +47,6 @@ const TEXT_EXTENSIONS = new Set([
   ".lua",
 ]);
 
-function isAllowed(p: string): boolean {
-  const resolved = path.resolve(p);
-  return ALLOWED_PREFIXES.some((prefix) => resolved.startsWith(prefix));
-}
-
 export async function GET(req: NextRequest) {
   const filePath = req.nextUrl.searchParams.get("path");
   if (!filePath) {
@@ -66,8 +56,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const resolved = path.resolve(filePath);
-  if (!isAllowed(resolved)) {
+  const resolved = resolveAllowedProjectPath(filePath);
+  if (!resolved) {
     return NextResponse.json(
       { ok: false, error: "path not allowed" },
       { status: 403 },

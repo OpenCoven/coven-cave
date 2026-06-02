@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 type TreeEntry = {
   name: string;
@@ -20,16 +20,6 @@ const SKIP = new Set([
   "out",
   ".DS_Store",
 ]);
-
-const ALLOWED_PREFIXES = [
-  path.join(os.homedir(), "Documents", "GitHub"),
-  os.homedir(),
-];
-
-function isAllowed(p: string): boolean {
-  const resolved = path.resolve(p);
-  return ALLOWED_PREFIXES.some((prefix) => resolved.startsWith(prefix));
-}
 
 function readTree(root: string, depth: number): TreeEntry[] {
   if (depth < 0) return [];
@@ -66,13 +56,14 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   }
-  if (!isAllowed(root)) {
+  const allowedRoot = resolveAllowedProjectPath(root);
+  if (!allowedRoot) {
     return NextResponse.json(
       { ok: false, error: "path not allowed" },
       { status: 403 },
     );
   }
   const depth = Math.min(Math.max(parseInt(depthStr ?? "1", 10) || 1, 0), 4);
-  const entries = readTree(root, depth);
+  const entries = readTree(allowedRoot, depth);
   return NextResponse.json({ ok: true, entries });
 }

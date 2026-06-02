@@ -46,7 +46,7 @@ function resolveRoot(): string {
     const env = process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
     if (env) return env;
   }
-  return "/Users/buns/Documents/GitHub/OpenCoven/coven-cave";
+  return "";
 }
 
 export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
@@ -64,9 +64,20 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         const wp =
           (json.workspacePath as string | undefined) ??
           (json.projectRoot as string | undefined);
-        if (wp && typeof wp === "string") setRoot(wp);
+        if (wp && typeof wp === "string") {
+          const tree = await fetchTree(wp, 2);
+          setRoot(wp);
+          setEntries(tree);
+          setLoading(false);
+          return;
+        }
       } catch {
         /* use default */
+      }
+      if (!root) {
+        setEntries([]);
+        setLoading(false);
+        return;
       }
       const tree = await fetchTree(root, 2);
       setEntries(tree);
