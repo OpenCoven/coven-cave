@@ -19,7 +19,7 @@ export type NewCardDraft = {
   familiarId: string | null;
   sessionId: string | null;
   labels: string[];
-  template?: null;
+  template: null;
 };
 
 type Props = {
