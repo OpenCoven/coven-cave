@@ -144,7 +144,7 @@ function FolderRow({
 // Session row (inside familiar section)
 // ---------------------------------------------------------------------------
 
-function SessionRow({
+function SessionItem({
   session,
   active,
   onClick,
@@ -158,7 +158,7 @@ function SessionRow({
   return (
     <button
       type="button"
-      title={title}
+      title={relTime(session.updated_at || session.created_at) || title}
       className={`sidebar-session-row${active ? " sidebar-session-row--active" : ""}`}
       onClick={onClick}
     >
@@ -223,7 +223,7 @@ function FamiliarSection({
             <div className="sidebar-familiar-sessions-empty">No sessions</div>
           ) : (
             sessions.map((s) => (
-              <SessionRow
+              <SessionItem
                 key={s.id}
                 session={s}
                 active={s.id === activeSessionId}
@@ -287,9 +287,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   }, [chatSessions, familiars]);
 
   // Sessions with no familiar → "Unassigned" bucket
+  // Exclude sessions already shown under a familiar to avoid double-counting
   const unassignedSessions = useMemo(
-    () => chatSessions.filter((s) => !s.familiarId).slice(0, 20),
-    [chatSessions],
+    () => chatSessions.filter((s) => !s.familiarId || !sessionsByFamiliar[s.familiarId]).slice(0, 20),
+    [chatSessions, sessionsByFamiliar],
   );
 
   // Which familiar section should start open (the one owning the active session)
@@ -364,7 +365,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             </div>
             <div className="sidebar-familiar-sessions">
               {unassignedSessions.map((s) => (
-                <SessionRow
+                <SessionItem
                   key={s.id}
                   session={s}
                   active={s.id === activeSessionId}

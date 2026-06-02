@@ -274,11 +274,7 @@
 }
 
 /* ── Familiars section (left nav, replaces emoji strip) ─────────────────── */
-.sidebar-familiar-section {
-  flex-shrink: 0;
-  border-top: 1px solid var(--border-hairline);
-  padding: 4px 6px 2px;
-}
+/* duplicate .sidebar-familiar-section rule removed; see line 372 for canonical rule */
 
 .sidebar-familiar-section-label {
   padding: 5px 8px 2px;
