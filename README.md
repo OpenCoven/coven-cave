@@ -6,6 +6,13 @@ Cave is the native workspace for [OpenCoven](https://github.com/OpenCoven/coven)
 
 A familiar isn't a chat window. It has a name, a purpose, a memory, a toolset, and a place in your day. Cave is where that lives.
 
+## Screenshots
+
+<!-- Cave desktop interface -->
+![Cave — Shell view](screenshots/shell.png)
+![Cave — Chat view](screenshots/chat.png)
+![Cave — Terminal](screenshots/terminal.png)
+
 ## What it is
 
 - A Tauri 2 desktop app (macOS / Windows / Linux)
@@ -95,3 +102,12 @@ top-level pointer. Same offer as the rest of the Coven.
 ---
 
 _The Coven lives in the Cave._
+
+## Release standard
+
+Every release ships with:
+- A comprehensive changelog describing features, fixes, and install instructions
+- Screenshots updated to reflect the current UI
+- SHA256 checksums for all artifacts
+
+See [Releases](https://github.com/OpenCoven/coven-cave/releases) for the full history.
