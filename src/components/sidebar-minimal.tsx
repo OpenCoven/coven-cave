@@ -48,6 +48,10 @@ function shortRelTime(iso: string | undefined): string {
   } catch { return ""; }
 }
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export type FolderMode = "board" | "inbox" | "vals-inbox" | "browser" | "comux" | "calls";
 
 export type SidebarMinimalProps = {

@@ -129,7 +129,7 @@ export function SchedulesView({ familiars }: Props) {
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)]">
       <header className="border-b border-[var(--border-hairline)] px-5 py-3">
-        <h1 className="text-sm font-medium text-[var(--text-primary)]">Schedules</h1>
+        <h1 className="text-sm font-medium text-[var(--text-primary)]">Automations</h1>
         <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
           Every recurring item, with next fire and last run.
         </p>
