@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-pty-start"
+description = "Allows starting a PTY session."
+commands.allow = ["pty_start"]
+
+[[permission]]
+identifier = "allow-pty-write"
+description = "Allows writing bytes to a PTY session."
+commands.allow = ["pty_write"]
+
+[[permission]]
+identifier = "allow-pty-resize"
+description = "Allows resizing a PTY session."
+commands.allow = ["pty_resize"]
+
+[[permission]]
+identifier = "allow-pty-stop"
+description = "Allows stopping a PTY session."
+commands.allow = ["pty_stop"]
+
+[[permission]]
+identifier = "allow-pty-list"
+description = "Allows listing active PTY sessions."
+commands.allow = ["pty_list"]
+
+[[permission]]
+identifier = "allow-shell-open"
+description = "Allows opening a URL in the system browser."
+commands.allow = ["shell_open"]
