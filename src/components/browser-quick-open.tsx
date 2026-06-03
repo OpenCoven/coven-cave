@@ -75,6 +75,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
+      if (filtered.length === 0) return;
       e.preventDefault();
       setHighlightIdx((i) => Math.min(i + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
