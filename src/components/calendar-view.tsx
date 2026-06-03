@@ -200,6 +200,99 @@ function AgendaView({
   );
 }
 
+// ─── TimeGrid ─────────────────────────────────────────────────────────────────
+
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
+const HOUR_HEIGHT = 56;
+
+function TimeGrid({
+  columns,
+  onOpenItem,
+}: {
+  columns: { label: string; date: Date; isToday: boolean; items: InboxItem[] }[];
+  onOpenItem?: (item: InboxItem) => void;
+}) {
+  const nowRef = useRef<HTMLDivElement>(null);
+  const today = new Date();
+
+  useEffect(() => {
+    nowRef.current?.scrollIntoView({ block: "center" });
+  }, []);
+
+  function itemTop(item: InboxItem): number {
+    const d = itemDate(item);
+    if (!d) return 0;
+    return (d.getHours() + d.getMinutes() / 60) * HOUR_HEIGHT;
+  }
+
+  const totalHeight = 24 * HOUR_HEIGHT;
+  const nowMinutes = today.getHours() * 60 + today.getMinutes();
+  const nowTop = (nowMinutes / 60) * HOUR_HEIGHT;
+
+  return (
+    <div className="flex flex-1 overflow-auto">
+      {/* Time axis */}
+      <div className="shrink-0 w-12 border-r border-[var(--border-subtle)] relative" style={{ height: totalHeight }}>
+        {HOURS.map((h) => (
+          <div
+            key={h}
+            className="absolute right-2 text-[9px] text-[var(--text-muted)] -translate-y-1/2"
+            style={{ top: h * HOUR_HEIGHT }}
+          >
+            {h === 0 ? "" : `${h}:00`}
+          </div>
+        ))}
+      </div>
+
+      {/* Columns */}
+      <div className="flex flex-1 divide-x divide-[var(--border-subtle)]">
+        {columns.map((col, ci) => (
+          <div key={ci} className="flex-1 relative min-w-[80px]" style={{ height: totalHeight }}>
+            {/* Hour lines */}
+            {HOURS.map((h) => (
+              <div
+                key={h}
+                className="absolute left-0 right-0 border-t border-[var(--border-hairline)]"
+                style={{ top: h * HOUR_HEIGHT }}
+              />
+            ))}
+
+            {/* Current time indicator (today's column only) */}
+            {col.isToday && (
+              <div
+                ref={nowRef}
+                className="absolute left-0 right-0 flex items-center z-10"
+                style={{ top: nowTop }}
+              >
+                <div className="h-2 w-2 rounded-full bg-[var(--accent-presence)] -ml-1 shrink-0" />
+                <div className="flex-1 h-px bg-[var(--accent-presence)]" />
+              </div>
+            )}
+
+            {/* Items */}
+            {col.items
+              .filter((it) => itemDate(it) !== null)
+              .map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => onOpenItem?.(item)}
+                  className="absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[10px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors overflow-hidden"
+                  style={{
+                    top: itemTop(item) + 1,
+                    minHeight: 20,
+                  }}
+                >
+                  <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${urgencyColor(item)}`} />
+                  <span className="truncate">{item.title}</span>
+                </button>
+              ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Day view ─────────────────────────────────────────────────────────────────
 
 function DayView({
