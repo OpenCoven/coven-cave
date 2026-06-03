@@ -381,6 +381,7 @@
 .cave-syntax-block pre { font-size: inherit; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<<<<<<< HEAD
    BUBBLE VARIANTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
@@ -416,4 +417,91 @@
 /* Assistant bubble — transparent, full width */
 .cave-bubble-assistant {
   width: 100%;
+=======
+   SYSTEM TURN — terminal chrome
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.cave-bubble-system {
+  border-radius: 9px;
+  border: 1px solid var(--border-hairline);
+  background: oklch(0.1 0.01 280 / 60%);
+  box-shadow:
+    0 1px 3px oklch(0 0 0 / 30%),
+    inset 0 1px 0 oklch(1 0 0 / 4%);
+  overflow: hidden;
+}
+
+.cave-bubble-system-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.3em 0.75em;
+  background: oklch(0.14 0.015 280 / 70%);
+  border-bottom: 1px solid var(--border-hairline);
+  min-height: 26px;
+  backdrop-filter: blur(4px);
+}
+
+.cave-bubble-system-sigil {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: color-mix(in oklch, var(--accent-presence) 70%, var(--text-muted));
+  flex-shrink: 0;
+}
+
+.cave-bubble-system-label {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-bubble-system-label--dim {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.cave-bubble-system-body {
+  margin: 0;
+  padding: 0.7em 1em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: none;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GROUPED TIMESTAMPS — hidden by default, reveal on long-hover
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.cave-bubble-timestamp {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.2s ease, max-height 0.2s ease;
+}
+
+.cave-bubble-timestamp--visible {
+  opacity: 1;
+  max-height: 20px;
+}
+
+.cave-bubble-timestamp--right {
+  text-align: right;
+>>>>>>> d4ca5e4 (feat(chat): Task 4 — timestamp grouping with hover-reveal)
 }
