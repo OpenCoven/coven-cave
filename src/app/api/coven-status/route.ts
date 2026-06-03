@@ -7,7 +7,7 @@
 // status board.
 
 import { NextResponse } from "next/server";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { callDaemon } from "@/lib/coven-daemon";
