@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import type { ForwardedRef } from "react";
+import { forwardRef } from "react";
 import {
   Group,
   Panel,
@@ -78,11 +80,19 @@ export type ShellNavItem = {
   presence?: "active" | "idle";
 };
 
-export function Shell({
+export type ShellHandle = {
+  openAgent: () => void;
+  closeAgent: () => void;
+  toggleAgent: () => void;
+};
+
+function ShellInner({
   nav,
   list,
   detail,
   agent,
+  agentLabel,
+  agentIcon,
   bottom,
   topBar,
 }: {
@@ -90,15 +100,35 @@ export function Shell({
   list?: ReactNode;
   detail: ReactNode;
   agent?: ReactNode;
+  agentLabel?: string;
+  agentIcon?: IconName;
   bottom?: ReactNode;
   topBar?: ReactNode;
-}) {
+}, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const agentRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  useImperativeHandle(ref, () => ({
+    openAgent: () => {
+      agentRef.current?.expand();
+      setAgentOpen(true);
+    },
+    closeAgent: () => {
+      agentRef.current?.collapse();
+      setAgentOpen(false);
+    },
+    toggleAgent: () => {
+      const panel = agentRef.current;
+      if (!panel) return;
+      if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
+      else { panel.collapse(); setAgentOpen(false); }
+    },
+  }), []);
 
   const twoPane = !list;
   const hasAgent = !!agent;
@@ -129,9 +159,17 @@ export function Shell({
         e.preventDefault();
         togglePanel(listRef.current);
       } else if (key === "j" && hasAgent) {
-        e.preventDefault();
-        togglePanel(agentRef.current);
-      }
+          e.preventDefault();
+          const panel = agentRef.current;
+          if (!panel) return;
+          if (panel.isCollapsed()) {
+            panel.expand();
+            setAgentOpen(true);
+          } else {
+            panel.collapse();
+            setAgentOpen(false);
+          }
+        }
     };
     const bottomToggle = (e: KeyboardEvent) => {
       if (!hasBottom) return;
@@ -203,52 +241,83 @@ export function Shell({
           <Panel
             id="agent"
             className="shell-agent-panel"
-            defaultSize="26%"
+            defaultSize={"0%"}
             minSize="20%"
             maxSize="38%"
             collapsible
             collapsedSize={0}
             panelRef={agentRef}
           >
-            <aside className="shell-agent">{agent}</aside>
+            <aside className="shell-agent">{agentOpen ? agent : null}</aside>
           </Panel>
         </>
       )}
     </Group>
   );
 
+  // Right-rail toggle tab (Dia/Linear-style vertical pill)
+  const agentTab = hasAgent ? (
+    <button
+      className="shell-agent-tab"
+      aria-label={agentOpen ? `Close ${agentLabel ?? "Browser"}` : `Open ${agentLabel ?? "Browser"}`}
+      title={`${agentLabel ?? "Browser"} (⌘J)`}
+      onClick={() => {
+        const panel = agentRef.current;
+        if (!panel) return;
+        if (panel.isCollapsed()) {
+          panel.expand();
+          setAgentOpen(true);
+        } else {
+          panel.collapse();
+          setAgentOpen(false);
+        }
+      }}
+    >
+      <Icon name={agentIcon ?? "ph:globe"} width={14} height={14} />
+      <span className="shell-agent-tab-label">{agentLabel ?? "Browser"}</span>
+      <span style={{ transform: agentOpen ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s", display: "flex" }}>
+        <Icon name="ph:caret-right" width={10} height={10} className="shell-agent-tab-chevron" />
+      </span>
+    </button>
+  ) : null;
+
   return (
     <div className="flex h-full w-full flex-col">
       {topBar}
-      {hasBottom ? (
-        <Group
-          className="flex-1 min-h-0"
-          orientation="vertical"
-          id={BOTTOM_GROUP_ID}
-        >
-          <Panel id="main" minSize="40%">
-            {horizontalGroup}
-          </Panel>
-          <Separator className="shell-separator-h" />
-          <Panel
-            id="bottom"
-            className="shell-bottom-panel"
-            defaultSize="0"
-            minSize="8%"
-            maxSize="60%"
-            collapsible
-            collapsedSize={0}
-            panelRef={bottomRef}
+      <div className="flex flex-1 min-h-0 relative">
+        {hasBottom ? (
+          <Group
+            className="flex-1 min-h-0"
+            orientation="vertical"
+            id={BOTTOM_GROUP_ID}
           >
-            <section className="shell-bottom">{bottom}</section>
-          </Panel>
-        </Group>
-      ) : (
-        horizontalGroup
-      )}
+            <Panel id="main" minSize="40%">
+              {horizontalGroup}
+            </Panel>
+            <Separator className="shell-separator-h" />
+            <Panel
+              id="bottom"
+              className="shell-bottom-panel"
+              defaultSize="0"
+              minSize="8%"
+              maxSize="60%"
+              collapsible
+              collapsedSize={0}
+              panelRef={bottomRef}
+            >
+              <section className="shell-bottom">{bottom}</section>
+            </Panel>
+          </Group>
+        ) : (
+          horizontalGroup
+        )}
+        {agentTab}
+      </div>
     </div>
   );
 }
+
+export const Shell = forwardRef<ShellHandle, Parameters<typeof ShellInner>[0]>(ShellInner);
 
 export function ShellNav({
   header,
