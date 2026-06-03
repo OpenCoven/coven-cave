@@ -510,6 +510,19 @@ pub fn run() {
                 .env("HOSTNAME", "127.0.0.1")
                 .env("NODE_ENV", "production")
                 .env("COVEN_CAVE_BUNDLE", "1");
+
+            // Inject the openclaw workspace root so the Next.js project-tree
+            // and project-file API routes allow paths under ~/.openclaw in the
+            // packaged app (where process.cwd() is the bundle dir, not the
+            // user's workspace).
+            if let Some(home) = std::env::var("HOME")
+                .ok()
+                .or_else(|| std::env::var("USERPROFILE").ok())
+            {
+                let workspace_root = format!("{}/.openclaw", home);
+                cmd.env("WORKSPACE_ROOT", &workspace_root);
+                log::info!("[cave] sidecar WORKSPACE_ROOT -> {}", workspace_root);
+            }
             if let Some(out) = stdout_log {
                 cmd.stdout(Stdio::from(out));
             } else {
