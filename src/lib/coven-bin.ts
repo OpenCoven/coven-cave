@@ -96,6 +96,21 @@ function loginShellPath(): string | null {
 export function covenBin(): string {
   if (cachedBin) return cachedBin;
 
+  // Explicit override always wins. Useful for local dev when a checkout-built
+  // ~/.cargo/bin/coven is newer than the npm-bundled one in ~/.nvm/.../bin.
+  const envBin = process.env.COVEN_BIN;
+  if (envBin) {
+    try {
+      const st = statSync(envBin);
+      if (st.isFile() || st.isSymbolicLink()) {
+        cachedBin = envBin;
+        return cachedBin;
+      }
+    } catch {
+      /* fall through to discovery */
+    }
+  }
+
   for (const dir of candidateDirs()) {
     const candidate = path.join(dir, "coven");
     try {

@@ -201,9 +201,13 @@ export async function POST(req: Request) {
   const buildArgs = (resumeSessionId: string | null): string[] => {
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
-    // Boot in the familiar's workspace so the harness reads AGENTS.md /
-    // SOUL.md / IDENTITY.md and responds as the familiar, not as "Codex".
-    if (familiarWorkspace) a.push("--cwd", familiarWorkspace);
+    // Inject identity preamble. coven-cli renders this as a [Identity: ...]
+    // bracketed prefix for harnesses without a --system-prompt flag (Codex)
+    // or via --system-prompt for those that do (Claude). Without this,
+    // the harness answers as "Codex"/"Claude" instead of as the familiar.
+    if (/^[a-z0-9_-]+$/i.test(body.familiarId)) {
+      a.push("--familiar", body.familiarId);
+    }
     a.push("--", body.prompt);
     return a;
   };
@@ -353,7 +357,12 @@ export async function POST(req: Request) {
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
           const child = spawn(covenBin(), spawnArgs, {
-            cwd,
+            // Spawn IN the familiar's workspace when no project root was
+            // supplied, so coven's project-root resolver picks that dir as
+            // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+            // from the familiar's home. When a project root IS supplied,
+            // honor that instead.
+            cwd: familiarWorkspace ?? cwd,
             stdio: ["ignore", "pipe", "pipe"],
             env: covenSpawnEnv(),
           });
