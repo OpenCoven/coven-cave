@@ -30,6 +30,7 @@ import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { Icon, type IconName } from "@/lib/icon";
+import { CovenFloorMini } from "@/components/coven-floor-mini";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -324,6 +325,9 @@ export function HomeComposer({
       <h1 className="home-composer-headline">
         What&apos;s the Coven up to?
       </h1>
+
+      {/* Coven Floor mini — ambient familiar status */}
+      <CovenFloorMini onSelectFamiliar={(id) => setFamiliarId(id)} />
 
       {/* Composer card */}
       <div className="home-composer-card">

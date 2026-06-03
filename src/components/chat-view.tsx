@@ -93,6 +93,104 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
   };
 }
 
+// ── ChatEmptyState ────────────────────────────────────────────────────────────
+// Shown when a chat session has no turns yet. Gives the user clear affordance
+// to start a conversation rather than staring at a blank pane.
+
+const STARTER_PROMPTS = [
+  "What are you working on?",
+  "Summarise recent work",
+  "Help me plan something",
+  "Run a quick task",
+];
+
+function ChatEmptyState({
+  familiar,
+  modKey,
+  onPrompt,
+}: {
+  familiar: Familiar;
+  modKey: string;
+  onPrompt?: (text: string) => void;
+}) {
+  const glyph = familiar.display_name?.[0]?.toUpperCase() ?? "?";
+
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-6 select-none">
+      {/* Avatar ring */}
+      <div
+        className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl text-2xl font-semibold shadow-lg"
+        style={{
+          background: "linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          color: "rgba(255,255,255,0.7)",
+        }}
+        aria-hidden
+      >
+        {glyph}
+      </div>
+
+      {/* Name + tagline */}
+      <h2 className="mb-1 text-base font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
+        {familiar.display_name}
+      </h2>
+      <p className="mb-6 text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+        Runs on{" "}
+        <code
+          className="rounded px-1 py-0.5 font-mono text-[11px]"
+          style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
+        >
+          {familiar.harness}
+        </code>
+        {" "}· type{" "}
+        <kbd
+          className="rounded px-1 py-0.5 font-mono text-[11px]"
+          style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
+        >
+          /
+        </kbd>
+        {" "}for commands
+      </p>
+
+      {/* Starter prompt chips */}
+      {onPrompt && (
+        <div className="flex flex-wrap justify-center gap-2">
+          {STARTER_PROMPTS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onPrompt(p)}
+              className="rounded-full px-3 py-1.5 text-[12px] transition-colors"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.07)",
+                color: "rgba(255,255,255,0.5)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.09)";
+                (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.75)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)";
+                (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.5)";
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Keyboard hint */}
+      <p className="mt-8 text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+        {modKey}↵ to send
+      </p>
+    </div>
+  );
+}
+
+// ── ChatView ──────────────────────────────────────────────────────────────────
+
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   { familiar, sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
   ref,
@@ -474,20 +572,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="space-y-6">
           {turns.length === 0 ? (
-            <div className="py-14 text-center text-sm text-[var(--text-muted)]">
-              <p className="text-[var(--text-secondary)]">Chat with {familiar.display_name}.</p>
-              <p className="mt-1 text-[var(--text-muted)]">
-                Runs on{" "}
-                <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[12px] text-[var(--text-secondary)]">
-                  {familiar.harness}
-                </code>{" "}
-                via the{" "}
-                <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[12px] text-[var(--text-secondary)]">
-                  coven
-                </code>{" "}
-                CLI. {keys.mod}K to jump · / for commands.
-              </p>
-            </div>
+            <ChatEmptyState familiar={familiar} modKey={keys.mod} />
           ) : null}
           {turns.map((t) => (
             <TurnRow key={t.id} turn={t} />
