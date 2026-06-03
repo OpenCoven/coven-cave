@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
@@ -432,6 +432,28 @@ function MonthView({
 export function CalendarView({ items, familiars, onOpenItem }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      // Don't fire when focus is inside input/textarea/select
+      const tag = (e.target as HTMLElement).tagName.toLowerCase();
+      if (["input", "textarea", "select"].includes(tag)) return;
+      switch (e.key) {
+        case "ArrowLeft":  e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": e.preventDefault(); navigate(1);  break;
+        case "t": case "T": setAnchor(new Date()); break;
+        case "d": case "D": setViewMode("day");    break;
+        case "w": case "W": setViewMode("week");   break;
+        case "m": case "M": setViewMode("month");  break;
+        case "a": case "A": setViewMode("agenda"); break;
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [viewMode]); // re-bind when viewMode changes so navigate() closure is current
 
   function navigate(dir: -1 | 1) {
     setAnchor((prev) => {
@@ -471,7 +493,7 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[var(--bg-base)]">
+    <div ref={containerRef} className="flex flex-col h-full bg-[var(--bg-base)]">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-subtle)] shrink-0">
         {/* Nav arrows */}
@@ -503,6 +525,11 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
         {/* Item count */}
         <span className="text-[11px] text-[var(--text-muted)]">
           {items.filter((i) => i.status === "pending").length} pending
+        </span>
+
+        {/* Keyboard hint */}
+        <span className="text-[10px] text-[var(--text-muted)] hidden md:block">
+          ← → navigate · T today · D W M A views
         </span>
 
         {/* View mode toggle */}
