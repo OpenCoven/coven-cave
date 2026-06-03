@@ -473,6 +473,8 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
           aria-label="Previous"
           className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] transition-colors"
         >
+          <Icon name="ph:arrow-left-bold" width={12} />
+        </button>
         <button
           onClick={() => setAnchor(new Date())}
           className="rounded-md border border-[var(--border-subtle)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
