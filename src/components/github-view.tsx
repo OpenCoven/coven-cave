@@ -240,7 +240,7 @@ export function GitHubView({ onOpenSession }: Props) {
                           <>
                             <span className="text-[var(--text-muted)]">·</span>
                             <a
-                              href={task.prUrl}
+href={task.prUrl ?? `https://github.com/${task.repo}/pull/${task.prNumber!}`}
                               target="_blank"
                               rel="noreferrer"
                               onClick={(e) => e.stopPropagation()}
