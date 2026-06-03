@@ -37,10 +37,11 @@ export function CallsView({ familiars }: Props) {
   }, []);
 
   useEffect(() => {
+    if (tab !== "delegations") return;
     void load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, tab]);
 
   const famById = useMemo(() => {
     const m = new Map<string, Familiar>();

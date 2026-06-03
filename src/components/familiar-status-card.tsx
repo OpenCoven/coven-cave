@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { parseGlyphString } from "@/lib/familiar-glyph";
 import type { FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
 
@@ -82,8 +84,10 @@ export function FamiliarStatusCard({ card, expanded, onToggle }: Props) {
     return [...running, ...rest].slice(0, 8);
   }, [card.sessions, expanded]);
 
-  const glyphIsPhosphor = card.glyph.startsWith("ph:");
-  const glyphChar = glyphIsPhosphor ? card.displayName.charAt(0).toUpperCase() : card.glyph;
+  const glyph = parseGlyphString(card.glyph) ?? {
+    kind: "emoji" as const,
+    char: card.displayName.charAt(0).toUpperCase(),
+  };
 
   const badgeText =
     card.runningCount > 0
@@ -119,7 +123,7 @@ export function FamiliarStatusCard({ card, expanded, onToggle }: Props) {
           }}
           aria-hidden
         >
-          {glyphChar}
+          <FamiliarGlyph glyph={glyph} size="md" className="inline-flex items-center justify-center" />
         </span>
 
         {/* Name + task */}

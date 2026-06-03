@@ -1,6 +1,5 @@
 // /api/coven-status — aggregates familiar activity from the OpenClaw session
-// index files at ~/.openclaw/agents/<id>/sessions/*.jsonl and the familiars
-// list from the coven daemon.
+// index files at ~/.openclaw/agents/<id>/sessions/*.jsonl.
 //
 // Returns a CovenStatusResponse: one FamiliarCard per familiar with derived
 // status, session summaries, and task label. Designed for the Coven Floor
@@ -10,7 +9,6 @@ import { NextResponse } from "next/server";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
-import { callDaemon } from "@/lib/coven-daemon";
 import {
   deriveStatus,
   type CovenStatusResponse,
@@ -19,16 +17,6 @@ import {
 } from "@/lib/coven-status-types";
 
 export const dynamic = "force-dynamic";
-
-// ── Familiar metadata from daemon ────────────────────────────────────────────
-
-type DaemonFamiliar = {
-  id: string;
-  display_name: string;
-  role: string;
-  emoji?: string;
-  icon?: string;
-};
 
 // ── Session file parsing ──────────────────────────────────────────────────────
 
@@ -242,25 +230,27 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
 export async function GET() {
   const now = Date.now();
 
-  // Load familiars from daemon (non-fatal if daemon is down)
-  const daemonRes = await callDaemon<DaemonFamiliar[]>({
-    path: "/api/v1/familiars",
-    timeoutMs: 3000,
-  });
+  // Build familiar ids from local agent directories plus known defaults.
+  const agentsRoot = path.join(homedir(), ".openclaw", "agents");
+  let diskIds: string[] = [];
+  try {
+    const entries = await readdir(agentsRoot, { withFileTypes: true });
+    diskIds = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    // ignore
+  }
 
-  // Fall back to a known set of familiar ids if daemon is unreachable
   const knownIds = ["kitty", "cody", "sage", "charm", "astra", "echo", "nova"];
-  const daemonFamiliars: DaemonFamiliar[] = daemonRes.ok && daemonRes.data
-    ? daemonRes.data
-    : knownIds.map((id) => ({
-        id,
-        display_name: id.charAt(0).toUpperCase() + id.slice(1),
-        role: "familiar",
-      }));
+  const familiarIds = Array.from(new Set([...diskIds, ...knownIds]));
+  const familiarMeta = familiarIds.map((id) => ({
+    id,
+    display_name: id.charAt(0).toUpperCase() + id.slice(1),
+    role: "familiar",
+  }));
 
   // Scan sessions for each familiar in parallel
   const cards: FamiliarCard[] = await Promise.all(
-    daemonFamiliars.map(async (f): Promise<FamiliarCard> => {
+    familiarMeta.map(async (f): Promise<FamiliarCard> => {
       const sessions = await scanAgentSessions(f.id, now);
 
       const status = deriveStatus(sessions, now);
@@ -279,7 +269,7 @@ export async function GET() {
         id: f.id,
         displayName: f.display_name,
         role: f.role,
-        glyph: f.icon ?? f.emoji ?? f.display_name.charAt(0).toUpperCase(),
+        glyph: f.display_name.charAt(0).toUpperCase(),
         status,
         lastActiveAt,
         currentTask,
