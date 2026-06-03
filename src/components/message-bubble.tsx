@@ -426,9 +426,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
           </div>
           <pre className="cave-bubble-system-body">{content}</pre>
         </div>
-        <div className="mt-1 text-right text-[11px] text-[var(--text-muted)]">
-          {fmtBubbleTime(timestamp)}
-        </div>
+{shouldShowTs && timestamp ? (
+  <div className="mt-1 text-right text-[11px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
+) : null}
       </div>
     );
   }
