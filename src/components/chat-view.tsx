@@ -129,7 +129,7 @@ function ChatEmptyState({
         }}
         aria-hidden
       >
-        <FamiliarGlyph glyph={glyph} size="lg" />
+        <FamiliarGlyph glyph={glyph} size="lg" className="inline-flex items-center justify-center" />
       </div>
 
       {/* Name + tagline */}
