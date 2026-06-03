@@ -89,6 +89,7 @@ export function DaemonBar({
             items={inboxItems}
             familiars={familiars}
             prefs={inboxPrefs}
+            badgeCount={inboxBadgeCount}
             onOpenInbox={onOpenInbox}
             onOpenItem={onOpenInboxItem}
             onPrefsChanged={onPrefsChanged}

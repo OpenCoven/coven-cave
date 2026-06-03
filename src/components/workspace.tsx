@@ -682,7 +682,7 @@ export function Workspace() {
             onModeChange={setMode}
             inboxBadgeCount={inboxBadgeCount}
             onRunningChange={setDaemonRunning}
-            inboxItems={inboxItemsWithEphemeral}
+            inboxItems={[]}
             inboxPrefs={inboxPrefs}
             familiars={familiars}
             onPrefsChanged={refreshPrefs}

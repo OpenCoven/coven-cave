@@ -10,6 +10,7 @@ type Props = {
   items: InboxItem[];
   familiars: Familiar[];
   prefs: InboxPrefs;
+  badgeCount?: number;
   onOpenInbox: () => void;
   onOpenItem?: (item: InboxItem) => void;
   onPrefsChanged: () => void;
@@ -30,6 +31,7 @@ export function NotificationBell({
   items,
   familiars,
   prefs,
+  badgeCount,
   onOpenInbox,
   onOpenItem,
   onPrefsChanged,
@@ -82,13 +84,14 @@ export function NotificationBell({
     return [...ephemeral, ...firedSorted].slice(0, 10);
   }, [items]);
 
-  const badgeCount = useMemo(() => {
+  const derivedBadgeCount = useMemo(() => {
     return items.filter(
       (i) =>
         i.status === "fired" ||
         (i.status === "pending" && i.kind === "response-needed"),
     ).length;
   }, [items]);
+  const displayBadgeCount = badgeCount ?? derivedBadgeCount;
 
   // Close on outside click.
   useEffect(() => {
@@ -117,17 +120,17 @@ export function NotificationBell({
       <button
         onClick={() => setOpen((v) => !v)}
         className={`relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
-          badgeCount > 0
+          displayBadgeCount > 0
             ? "border-amber-500/60 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
             : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         }`}
-        title={`${badgeCount} unread`}
+        title={`${displayBadgeCount} unread`}
       >
         <Icon name="ph:bell-fill" aria-label="Notifications" />
 
-        {badgeCount > 0 ? (
+        {displayBadgeCount > 0 ? (
           <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white">
-            {badgeCount > 9 ? "9+" : badgeCount}
+            {displayBadgeCount > 9 ? "9+" : displayBadgeCount}
           </span>
         ) : null}
       </button>
