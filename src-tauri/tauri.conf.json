@@ -11,8 +11,17 @@
   },
   "app": {
     "windows": [],
+    "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": null,
+      "dangerousRemoteDomainIpcAccess": [
+        {
+          "domain": "localhost",
+          "windows": ["main"],
+          "plugins": [],
+          "enableTauriAPI": true
+        }
+      ]
     }
   },
   "bundle": {
