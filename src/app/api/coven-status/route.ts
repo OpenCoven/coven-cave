@@ -205,14 +205,19 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
         }
       }
 
-      // Last seen from mtime
-      const mtimeISO = new Date(s.mtimeMs).toISOString();
+      // Prefer the latest event timestamp we observed in the trajectory, but
+      // never go older than the session file mtime.
+      const lastEventMs = Date.parse(lastTs);
+      const updatedAtMs = Number.isFinite(lastEventMs)
+        ? Math.max(lastEventMs, s.mtimeMs)
+        : s.mtimeMs;
+      const updatedAt = new Date(updatedAtMs).toISOString();
 
       summaries.push({
         id: header.id,
         label: label || header.id.slice(0, 8),
         status,
-        updatedAt: mtimeISO,
+        updatedAt,
         runtimeMs,
         isSubagent,
         parentId,
