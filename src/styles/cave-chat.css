@@ -379,3 +379,41 @@
 }
 .cave-syntax-block .cave-code-header { padding: 3px 10px; min-height: 24px; }
 .cave-syntax-block pre { font-size: inherit; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   BUBBLE VARIANTS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+/* User bubble — lavender accent, right-aligned */
+.cave-bubble-user {
+  background: var(--accent-presence);
+  color: oklch(0.98 0 0);
+  border-radius: 18px 18px 4px 18px;
+  padding: 10px 14px;
+  max-width: min(80%, 520px);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  box-shadow:
+    0 1px 3px oklch(0 0 0 / 25%),
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 80%, transparent);
+  -webkit-font-smoothing: antialiased;
+}
+
+.cave-bubble-user a {
+  color: oklch(0.98 0 0);
+  text-decoration-color: oklch(0.98 0 0 / 50%);
+}
+.cave-bubble-user a:hover {
+  text-decoration-color: oklch(0.98 0 0);
+}
+
+.cave-bubble-user :not(pre) > code {
+  background: oklch(0 0 0 / 18%);
+  color: oklch(0.98 0 0);
+  border-color: oklch(0 0 0 / 12%);
+}
+
+/* Assistant bubble — transparent, full width */
+.cave-bubble-assistant {
+  width: 100%;
+}

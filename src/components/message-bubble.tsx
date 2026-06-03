@@ -427,11 +427,11 @@ export function MessageBubble({ role, content, timestamp, pending, isError }: Me
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <div className="relative max-w-[80%] rounded-2xl bg-[var(--bg-raised)]/70 px-4 py-2.5">
+        <div className="relative cave-bubble-user">
           <MarkdownContent text={content} pending={pending} />
           {hovered && !pending && <CopyBubble text={content} />}
         </div>
-        <div className="mt-1 text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
+        <div className="mt-1 text-[11px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
       </div>
     );
   }
@@ -439,7 +439,7 @@ export function MessageBubble({ role, content, timestamp, pending, isError }: Me
   // Assistant
   return (
     <div
-      className="group relative"
+      className="group relative cave-bubble-assistant"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
