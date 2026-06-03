@@ -1,28 +1,36 @@
 name: Release
 
-# Builds and uploads Cave artifacts for all three platforms.
+# Builds all three Cave artifacts and uploads them to the GitHub Release
+# matching the pushed tag:
 #
-# NOTARIZATION NOTE: xcrun notarytool is crashing (exit 133 / Trace/BPT trap)
-# on all current GitHub macOS runners (macos-14 and macos-15) due to an Apple
-# bug in Xcode 15.x / 16.x. The macOS job therefore builds a signed .app and
-# DMG without notarization. The canonical notarized macOS release is produced
-# locally via:
+#   - macOS (DMG) — signed with the Soul Protocol LLC Developer ID and
+#     notarized via the App Store Connect API. The workflow refuses to
+#     upload an un-notarized DMG: a verification step runs `spctl` after
+#     the build and fails the job if Gatekeeper does not accept it.
+#   - Linux (AppImage) — unsigned.
+#   - Windows (MSI) — unsigned (users see SmartScreen on first run; we'll
+#     wire WINDOWS_CERTIFICATE secrets when we buy a code-signing cert).
 #
-#   bash scripts/release.sh <version>
+# Trigger: push a tag matching `v*` (e.g. `git tag -s v0.0.16 && git push
+# origin v0.0.16`).
 #
-# and then uploaded to the GitHub Release with:
+# Required repository secrets for the macOS job:
+#   APPLE_CERTIFICATE          base64-encoded .p12 export of the Developer
+#                              ID Application certificate.
+#   APPLE_CERTIFICATE_PASSWORD password set when exporting the .p12.
+#   APPLE_SIGNING_IDENTITY     the identity codesign should use, e.g.
+#                              "Developer ID Application: Soul Protocol LLC
+#                              (9LR8Z8UQ9X)" or the SHA1 hash. The local
+#                              release.sh uses the SHA1 because there are
+#                              two identities sharing the display name.
+#   APPLE_API_ISSUER           the App Store Connect API issuer UUID.
+#   APPLE_API_KEY              the API key id (e.g. 3822D8Z5XFI0).
+#   APPLE_API_KEY_BASE64       base64-encoded contents of the AuthKey_*.p8
+#                              private key.
 #
-#   gh release upload v<version> release/CovenCave-v<version>.dmg --clobber
-#
-# Artifacts produced by CI:
-#   - macOS: signed .app + DMG (not notarized — see above)
-#   - Linux: AppImage (unsigned)
-#   - Windows: MSI (unsigned)
-#
-# Required secrets for macOS signing:
-#   APPLE_CERTIFICATE          base64-encoded .p12
-#   APPLE_CERTIFICATE_PASSWORD .p12 export password
-#   APPLE_SIGNING_IDENTITY     codesign identity (display name or SHA1)
+# scripts/release.sh remains useful for local iteration (faster than a CI
+# round-trip when you're tuning the bundle), but the canonical release
+# path is now the tag-push.
 
 on:
   push:
@@ -48,9 +56,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-14
-            label: macOS (DMG, signed)
-            args: "--bundles dmg,app"
+          - platform: macos-latest
+            label: macOS (DMG, signed + notarized)
+            args: "--bundles dmg"
           - platform: ubuntu-22.04
             label: Linux (AppImage)
             args: "--bundles appimage"
@@ -96,15 +104,31 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Decode the App Store Connect API key onto the runner so tauri-action
+      # can pass it to `xcrun notarytool`. The path is exported into the env
+      # for the build step. Runs only on the macOS leg.
+      - name: Stage Apple API key
+        if: matrix.platform == 'macos-latest'
+        run: |
+          KEY_PATH="$RUNNER_TEMP/apple_api_key.p8"
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+
       - name: Build with tauri-action
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing only — notarization intentionally omitted (notarytool
-          # crashes on all current GitHub runners; see header comment above).
+          # Apple signing + notarization (macOS only; secrets are simply
+          # empty strings on Linux/Windows runners and tauri-action skips
+          # the signing/notarization path when no cert is present).
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: "CovenCave ${{ github.event.inputs.tag || github.ref_name }}"
@@ -113,10 +137,31 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
-      - name: Verify macOS signing
-        if: matrix.platform == 'macos-14'
+      # Hard gate: fail the macOS leg if the produced DMG is not accepted
+      # by Gatekeeper as a notarized Developer ID app. This is what makes
+      # "require notarization" a build-time invariant rather than a
+      # convention. Without this, a misconfigured secret would silently
+      # ship an unsigned DMG, which is exactly what regressed
+      # v0.0.13–v0.0.15.
+      - name: Verify macOS DMG is notarized
+        if: matrix.platform == 'macos-latest'
+        shell: bash
         run: |
-          APP=$(find src-tauri/target/release/bundle/macos -name "CovenCave.app" -type d | head -n1)
-          [ -n "$APP" ] || { echo "::error::CovenCave.app not found"; exit 1; }
-          codesign -vvv "$APP" 2>&1 | tail -5
-          echo "Signed OK: $APP"
+          set -euo pipefail
+          DMG=$(find src-tauri/target -name "CovenCave*.dmg" -type f | head -n1)
+          if [ -z "$DMG" ]; then
+            echo "::error::No DMG produced by tauri-action"
+            exit 1
+          fi
+          echo "Verifying $DMG"
+          if ! spctl -a -t open --context context:primary-signature -vv "$DMG" 2>&1 | tee /tmp/spctl.out | grep -q "accepted"; then
+            echo "::error::DMG is not accepted by Gatekeeper. Output:"
+            cat /tmp/spctl.out
+            exit 1
+          fi
+          if ! grep -q "Notarized Developer ID" /tmp/spctl.out; then
+            echo "::error::DMG is signed but NOT notarized. Output:"
+            cat /tmp/spctl.out
+            exit 1
+          fi
+          echo "OK: $(grep 'origin=' /tmp/spctl.out)"
