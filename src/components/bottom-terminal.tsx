@@ -44,7 +44,6 @@ export function BottomTerminal({
   const log = (...a: unknown[]) => {
     console.info(`[BottomTerminal:${threadId}]`, ...a);
     try {
-      // @ts-expect-error Tauri injects this
       const inv = (typeof window !== "undefined" ? window : ({} as any))
         .__TAURI_INTERNALS__?.invoke;
       if (typeof inv === "function") {
