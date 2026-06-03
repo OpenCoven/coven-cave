@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Icon } from "@/lib/icon";
+import { BrowserQuickOpen } from "@/components/browser-quick-open";
 
 // Browser pane — uses Tauri's child WebviewBuilder under the hood. A real
 // Chromium webview is overlaid on top of the placeholder <div> below; we
@@ -113,6 +114,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   const [tabTitles, setTabTitles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [addressBar, setAddressBar] = useState<string>(HOME_URL);
+  const [quickOpen, setQuickOpen] = useState(false);
 
   // History per-tab
   const historyRef = useRef<Record<string, { stack: string[]; idx: number }>>({});
@@ -376,6 +378,17 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
     setAddressBar(next);
   };
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setQuickOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="flex h-full flex-row" style={{ background: "#0c0c0e" }}>
       {/* ── Vertical tab rail ─────────────────────────────────────── */}
@@ -522,6 +535,14 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
 
       {/* ── Viewport (webview overlay target) ─────────────────────── */}
       <div className="relative flex-1 overflow-hidden" style={{ background: "#0c0c0e" }}>
+        {quickOpen && (
+          <BrowserQuickOpen
+            tabs={tabs}
+            activeId={activeTabId}
+            onSelect={switchTab}
+            onClose={() => setQuickOpen(false)}
+          />
+        )}
         {unavailable ? (
           <iframe
             src={activeUrl}

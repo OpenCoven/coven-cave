@@ -36,7 +36,8 @@ function favicon(tab: BrowserTab): string {
   if (tab.kind === "localhost") return "⚡";
   try {
     const u = new URL(tab.url);
-    return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=16`;
+    if (u.protocol === "http:" || u.protocol === "https:") return `${u.origin}/favicon.ico`;
+    return "🌐";
   } catch {
     return "🌐";
   }
