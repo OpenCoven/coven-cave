@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:app": "bash scripts/dev-app.sh",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "start": "next start"
