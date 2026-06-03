@@ -4,17 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { aggregateEdges, type CallEdge, type CovenCall } from "@/lib/coven-calls-types";
 import { DelegationCard } from "@/components/delegation-card";
+import { CovenFloor } from "@/components/coven-floor";
 
-// Coven Calls view (issue #21) — read-only delegation timeline + a
-// simple circular-layout graph showing who called whom across the
-// current call log. Daemon-side delegation events are forthcoming;
-// until then this lights up an empty state.
+// Coven Calls view — two tabs:
+//   1. "The Floor" — live familiar status board (Coven Floor)
+//   2. "Delegations" — delegation timeline + call graph (original view)
+
+type Tab = "floor" | "delegations";
 
 type Props = {
   familiars: Familiar[];
 };
 
 export function CallsView({ familiars }: Props) {
+  const [tab, setTab] = useState<Tab>("floor");
   const [calls, setCalls] = useState<CovenCall[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,10 +37,11 @@ export function CallsView({ familiars }: Props) {
   }, []);
 
   useEffect(() => {
+    if (tab !== "delegations") return;
     void load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, tab]);
 
   const famById = useMemo(() => {
     const m = new Map<string, Familiar>();
@@ -49,26 +53,52 @@ export function CallsView({ familiars }: Props) {
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)]">
+      {/* Top-level header + tab bar */}
       <header className="border-b border-[var(--border-hairline)] px-5 py-3">
         <h1 className="text-sm font-medium text-[var(--text-primary)]">
           Coven Calls
         </h1>
-        <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-          Delegation timeline + who-called-whom across familiars.
-        </p>
+        {/* Tab bar */}
+        <div className="mt-2 flex gap-1">
+          {([
+            ["floor", "The Floor"] as const,
+            ["delegations", "Delegations"] as const,
+          ] as [Tab, string][]).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={[
+                "rounded-lg px-3 py-1 text-[11px] font-medium transition-colors",
+                tab === id
+                  ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+              ].join(" ")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </header>
 
-      {error ? (
-        <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-1.5 text-[11px] text-amber-200">
-          {error}
+      {/* Tab content */}
+      {tab === "floor" ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <CovenFloor />
         </div>
-      ) : null}
+      ) : (
+        <>
+          {error ? (
+            <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-1.5 text-[11px] text-amber-200">
+              {error}
+            </div>
+          ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto px-5 py-4 lg:grid-cols-[1fr_360px]">
-        <section className="min-w-0">
-          <h2 className="mb-2 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
-            Recent delegations
-          </h2>
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto px-5 py-4 lg:grid-cols-[1fr_360px]">
+            <section className="min-w-0">
+              <h2 className="mb-2 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+                Recent delegations
+              </h2>
           {calls.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-5 py-10 text-center text-sm text-[var(--text-secondary)]">
               No coven calls yet. The daemon will emit a delegation event
@@ -100,6 +130,8 @@ export function CallsView({ familiars }: Props) {
           />
         </aside>
       </div>
+        </>
+      )}
     </section>
   );
 }
