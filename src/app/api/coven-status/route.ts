@@ -78,7 +78,15 @@ async function headLines(filePath: string, maxBytes = 4096): Promise<string[]> {
  * last 24 hours.
  */
 async function scanAgentSessions(agentId: string, now: number): Promise<SessionSummary[]> {
-  const sessionsDir = path.join(homedir(), ".openclaw", "agents", agentId, "sessions");
+  const agentsRoot = path.join(homedir(), ".openclaw", "agents");
+  const sessionsDir = path.join(agentsRoot, agentId, "sessions");
+
+  const resolved = path.resolve(sessionsDir);
+  const rootResolved = path.resolve(agentsRoot);
+  if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) {
+    return [];
+  }
+
   let entries: string[];
   try {
     entries = await readdir(sessionsDir);
