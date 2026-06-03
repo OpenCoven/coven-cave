@@ -66,20 +66,22 @@ const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 export function deriveStatus(sessions: SessionSummary[], now: number): FamiliarStatus {
-  const recent24 = sessions.filter(
-    (s) => now - new Date(s.updatedAt).getTime() < TWENTY_FOUR_HOURS_MS,
-  );
+  const recent24 = sessions.filter((s) => {
+    const t = Date.parse(s.updatedAt);
+    return Number.isFinite(t) && now - t < TWENTY_FOUR_HOURS_MS;
+  });
 
-  const running = recent24.some((s) => s.status === "running");
-  if (running) return "active";
+  if (recent24.some((s) => s.status === "running")) return "active";
 
-  const recent6 = recent24.filter(
-    (s) => now - new Date(s.updatedAt).getTime() < SIX_HOURS_MS,
-  );
-  const stuck = recent6.some((s) => s.status === "failed" || s.status === "timeout");
-  if (stuck) return "stuck";
+  const recent6 = recent24.filter((s) => {
+    const t = Date.parse(s.updatedAt);
+    return now - t < SIX_HOURS_MS;
+  });
 
-  if (recent6.some((s) => s.status === "done" || s.status === "completed")) return "idle";
+  if (recent6.some((s) => s.status === "failed" || s.status === "timeout")) return "stuck";
+
+  // Any non-running, non-stuck activity within the last 6h counts as "idle".
+  if (recent6.length > 0) return "idle";
 
   return "quiet";
 }
