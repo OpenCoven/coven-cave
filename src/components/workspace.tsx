@@ -666,7 +666,19 @@ export function Workspace() {
     ) : mode === "comux" ? (
       <ComuxView />
     ) : mode === "calendar" ? (
-      <CalendarView items={inboxItems} familiars={familiars} />
+      <CalendarView
+        items={inboxItems}
+        familiars={familiars}
+        onOpenItem={(item) => {
+          if (item.sessionId) {
+            if (item.familiarId) setActiveId(item.familiarId);
+            setMode("chats");
+            setTimeout(() => routerRef.current?.openSession(item.sessionId!), 0);
+          } else {
+            setMode("inbox");
+          }
+        }}
+      />
     ) : (
       <PluginsView
         onOpenChat={() => {
