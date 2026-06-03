@@ -275,7 +275,7 @@ function WeekView({
   }, [items, days]);
 
   return (
-    <div className="grid grid-cols-7 flex-1 overflow-hidden divide-x divide-[var(--border-subtle)]">
+    <div className="grid grid-cols-7 flex-1 overflow-auto min-w-[360px] divide-x divide-[var(--border-subtle)]">
       {days.map((day, i) => {
         const dayItems = byDay.get(i) ?? [];
         const isToday = isSameDay(day, today);
@@ -407,9 +407,16 @@ function MonthView({
                   </button>
                 ))}
                 {dayItems.length > 3 && (
-                  <span className="text-[9px] text-[var(--text-muted)] px-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDayClick?.(day);
+                    }}
+                    className="text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left"
+                    title={`${dayItems.length - 3} more items — click to see all`}
+                  >
                     +{dayItems.length - 3} more
-                  </span>
+                  </button>
                 )}
               </div>
             </div>
