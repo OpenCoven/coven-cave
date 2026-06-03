@@ -397,7 +397,11 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   return (
     <div ref={paneRef} className="flex h-full flex-row" style={{ background: "#0c0c0e" }}>
       {/* ── Vertical tab rail ─────────────────────────────────────── */}
-      <div className="browser-tab-rail flex flex-col items-center border-r border-[--border-hairline] bg-[#080809] py-1.5" style={{ width: 48, minWidth: 48 }}>
+      {/* No right border — a `--border-hairline` (5% white) on the dark
+         #0c0c0e viewport reads as a bright vertical line at the rail/page
+         seam. The rail's darker `bg-[#080809]` already provides enough
+         contrast against the viewport for visual separation. */}
+      <div className="browser-tab-rail flex flex-col items-center bg-[#080809] py-1.5" style={{ width: 48, minWidth: 48 }}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
@@ -552,7 +556,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
           <iframe
             src={activeUrl}
             title="Browser"
-            className="absolute inset-0 h-full w-full border-0 bg-white"
+            className="absolute inset-0 h-full w-full border-0 bg-[#0c0c0e]"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation"
           />
         ) : (
