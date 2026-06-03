@@ -55,6 +55,27 @@ export function ComuxView() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const treeRef = useRef<ProjectTreeHandle | null>(null);
 
+  // Daemon project root — forwarded to BottomTerminal so terminals open in
+  // the right CWD instead of the app bundle dir.
+  const [projectRoot, setProjectRoot] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/daemon/status", { cache: "no-store" });
+        const json = (await res.json()) as Record<string, unknown>;
+        const root =
+          (json.workspacePath as string | undefined) ??
+          (json.projectRoot as string | undefined);
+        if (root && typeof root === "string") {
+          setProjectRoot(root);
+        }
+      } catch {
+        // non-fatal — terminal will open in default shell dir
+      }
+    })();
+  }, []);
+
   // Persist tab choice
   useEffect(() => {
     window.localStorage.setItem(STORAGE_TAB, tab);
@@ -227,7 +248,11 @@ export function ComuxView() {
                     pointerEvents: i === currentIdx ? "auto" : "none",
                   }}
                 >
-                  <BottomTerminal threadId={`cave.comux.${s.id}`} active={i === currentIdx} />
+                  <BottomTerminal
+                    threadId={`cave.comux.${s.id}`}
+                    active={i === currentIdx}
+                    projectRoot={projectRoot}
+                  />
                 </div>
               ))
             )}
