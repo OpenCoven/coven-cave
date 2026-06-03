@@ -450,7 +450,7 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 .cave-bubble-timestamp {
-  margin-top: 3px;
+  margin-top: 0;
   font-size: 11px;
   color: var(--text-muted);
   opacity: 0;
@@ -462,8 +462,17 @@
 .cave-bubble-timestamp--visible {
   opacity: 1;
   max-height: 20px;
+  margin-top: 3px;
 }
 
 .cave-bubble-timestamp--right {
   text-align: right;
+}
+
+@media (hover: none) {
+  .cave-bubble-timestamp {
+    opacity: 1;
+    max-height: 20px;
+    margin-top: 3px;
+  }
 }
