@@ -136,6 +136,8 @@ async function resolveCwd(requested?: string): Promise<string> {
  *  Falls back to undefined if the dir doesn't exist so callers can skip --cwd.
  */
 async function resolveFamiliarWorkspace(familiarId: string): Promise<string | undefined> {
+  // Guard against path traversal: familiar IDs should be simple slugs.
+  if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
   const candidate = joinPath(homedir(), ".openclaw", "workspace", familiarId);
   try {
     const s = await stat(candidate);
