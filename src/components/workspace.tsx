@@ -7,6 +7,7 @@ import { DaemonBar } from "@/components/daemon-bar";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
 import { PluginsView } from "@/components/plugins-view";
+import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
@@ -27,7 +28,7 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "home" | "chats" | "board" | "plugins" | "inbox" | "browser" | "schedules" | "calls" | "comux";
+type Mode = "home" | "chats" | "board" | "plugins" | "inbox" | "browser" | "schedules" | "calls" | "comux" | "calendar";
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -664,6 +665,8 @@ export function Workspace() {
       <BrowserPane label="main" />
     ) : mode === "comux" ? (
       <ComuxView />
+    ) : mode === "calendar" ? (
+      <CalendarView items={inboxItems} familiars={familiars} />
     ) : (
       <PluginsView
         onOpenChat={() => {

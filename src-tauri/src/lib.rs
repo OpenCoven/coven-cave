@@ -366,6 +366,20 @@ fn shell_open(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn webview_probe_report(report: String) -> Result<(), String> {
+    let path = std::env::temp_dir().join("covencave-webview-probe.log");
+    use std::io::Write as _;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    let _ = writeln!(f, "{}", report);
+    log::info!("[webview-probe] {}", report);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -376,6 +390,7 @@ pub fn run() {
             pty::pty_stop,
             pty::pty_list,
             pty::pty_diagnose,
+            webview_probe_report,
             browser::browser_navigate,
             browser::browser_set_bounds,
             browser::browser_hide,

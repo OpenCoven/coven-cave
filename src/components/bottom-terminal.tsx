@@ -41,8 +41,28 @@ export function BottomTerminal({
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const log = (...a: unknown[]) =>
+  const log = (...a: unknown[]) => {
     console.info(`[BottomTerminal:${threadId}]`, ...a);
+    try {
+      // @ts-expect-error Tauri injects this
+      const inv = (typeof window !== "undefined" ? window : ({} as any))
+        .__TAURI_INTERNALS__?.invoke;
+      if (typeof inv === "function") {
+        inv("webview_probe_report", {
+          report: JSON.stringify({
+            kind: "bottom-terminal-log",
+            threadId,
+            msg: a
+              .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+              .join(" "),
+            ts: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+      }
+    } catch { /* ignore */ }
+  };
+  // Also forward every BottomTerminal log line back to Rust so we can read
+  // them in the tauri-dev stderr without needing WebView devtools.
 
   // Re-fit + refocus whenever this terminal becomes the active tab.
   useEffect(() => {
