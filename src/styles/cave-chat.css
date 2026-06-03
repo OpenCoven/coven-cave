@@ -386,7 +386,7 @@
 
 /* User bubble — lavender accent, right-aligned */
 .cave-bubble-user {
-  background: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 70%, var(--bg-base));
   color: oklch(0.98 0 0);
   border-radius: 18px 18px 4px 18px;
   padding: 10px 14px;
