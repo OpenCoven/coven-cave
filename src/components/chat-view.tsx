@@ -115,7 +115,7 @@ function ChatEmptyState({
   modKey: string;
   onPrompt?: (text: string) => void;
 }) {
-  const glyph = parseGlyphString(familiar.icon ?? familiar.emoji) ?? DEFAULT_FAMILIAR_GLYPH;
+  const glyph = parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? DEFAULT_FAMILIAR_GLYPH;
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 select-none">
