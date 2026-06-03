@@ -40,6 +40,10 @@ export function BottomTerminal({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  // Keep a ref to projectRoot so the PTY-start effect always reads the latest
+  // value, even when it arrives asynchronously after initial mount.
+  const projectRootRef = useRef<string | undefined>(projectRoot);
+  useEffect(() => { projectRootRef.current = projectRoot; }, [projectRoot]);
   const [unavailable, setUnavailable] = useState(false);
   const log = (...a: unknown[]) => {
     console.info(`[BottomTerminal:${threadId}]`, ...a);
@@ -130,7 +134,6 @@ export function BottomTerminal({
         bytes: number[];
       }>("pty:data", (e) => {
         if (e.payload.thread_id !== threadId) return;
-        log("pty:data", e.payload.bytes.length, "bytes");
         term.write(new Uint8Array(e.payload.bytes));
       });
       const unlistenExit = await bridge.listen<{
@@ -149,7 +152,6 @@ export function BottomTerminal({
       // param names must match the Rust fn signature exactly.
       const onDataDispose = term.onData((data) => {
         if (stopped) return;
-        log("onData → pty_write", data.length, "chars");
         void bridge.invoke("pty_write", {
           thread_id: threadId,
           bytes: Array.from(new TextEncoder().encode(data)),
@@ -162,12 +164,12 @@ export function BottomTerminal({
       });
       log("pty_list →", running);
       if (!running.includes(threadId)) {
-        log("pty_start: invoking with projectRoot=", projectRoot);
+        log("pty_start: invoking with projectRoot=", projectRootRef.current);
         try {
           await bridge.invoke("pty_start", {
             options: {
               thread_id: threadId,
-              project_root: projectRoot ?? null,
+              project_root: projectRootRef.current ?? null,
               cols: term.cols,
               rows: term.rows,
             },

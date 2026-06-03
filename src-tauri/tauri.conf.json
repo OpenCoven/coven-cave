@@ -17,7 +17,17 @@
       "dangerousRemoteDomainIpcAccess": [
         {
           "domain": "localhost",
-          "windows": ["main"],
+          "windows": [
+            "main"
+          ],
+          "plugins": [],
+          "enableTauriAPI": true
+        },
+        {
+          "domain": "127.0.0.1",
+          "windows": [
+            "main"
+          ],
           "plugins": [],
           "enableTauriAPI": true
         }
