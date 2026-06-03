@@ -97,6 +97,20 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
 
   const hasAny = mine.length > 0;
 
+  // ── Grouped by project_root ──────────────────────────────────────────────
+
+  const grouped = useMemo(() => {
+    // Build ordered groups: sessions with a project_root grouped together,
+    // remaining (no project) collected into a null group at the end.
+    const map = new Map<string | null, SessionRow[]>();
+    for (const s of filtered) {
+      const key = s.project_root ?? null;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    }
+    return map;
+  }, [filtered]);
+
   // ── TUI launcher ─────────────────────────────────────────────────────────
 
   const openInTui = async (e: React.MouseEvent, sessionId: string) => {
@@ -244,13 +258,36 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
           </div>
         ) : (
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {filtered.map((s) => {
-              const st = statusStyle(s.status);
-              const project = repoName(s.project_root ?? "");
-              const isActive = activeId === s.id;
+            {Array.from(grouped.entries()).map(([projectRoot, rows]) => (
+              <li key={projectRoot ?? "__none__"}>
+                {/* Project group header */}
+                {projectRoot !== null && (
+                  <div className="group relative flex items-center gap-1.5 px-4 py-1.5 bg-[var(--bg-raised)]/30 border-b border-[var(--border-hairline)]">
+                    <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-muted)]" />
+                    <span className="truncate text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                      {repoName(projectRoot)}
+                    </span>
+                    <button
+                      className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNewChat(projectRoot);
+                      }}
+                      title={`New chat in ${repoName(projectRoot)}`}
+                      aria-label={`New chat in ${repoName(projectRoot)}`}
+                    >
+                      <Icon name="ph:plus" width="0.7rem" height="0.7rem" />
+                    </button>
+                  </div>
+                )}
+                <ul className="divide-y divide-[var(--border-hairline)]">
+                {rows.map((s) => {
+                  const st = statusStyle(s.status);
+                  const project = repoName(s.project_root ?? "");
+                  const isActive = activeId === s.id;
 
-              return (
-                <li key={s.id}>
+                  return (
+                    <li key={s.id}>
                   <div
                     role="button"
                     tabIndex={0}
@@ -330,10 +367,13 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                     >
                       {busyTuiId === s.id ? "…" : "tui →"}
                     </button>
-                  </div>
-                </li>
-              );
-            })}
+                    </div>
+                  </li>
+                  );
+                })}
+                </ul>
+              </li>
+            ))}
           </ul>
         )}
       </div>

@@ -246,7 +246,8 @@ function ShellInner({
             maxSize="38%"
             collapsible
             collapsedSize={0}
-            panelRef={agentRef}
+            onExpand={() => setAgentOpen(true)}
+            onCollapse={() => setAgentOpen(false)}
           >
             <aside className="shell-agent">{agentOpen ? agent : null}</aside>
           </Panel>
