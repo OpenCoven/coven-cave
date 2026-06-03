@@ -116,6 +116,10 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   const [loading, setLoading] = useState(false);
   const [addressBar, setAddressBar] = useState<string>(HOME_URL);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [railHover, setRailHover] = useState(false);
+  // Rail expands on hover/focus and stays expanded while the quick-open
+  // palette is up so users can verify the active tab visually.
+  const railExpanded = railHover || quickOpen;
 
   // History per-tab
   const historyRef = useRef<Record<string, { stack: string[]; idx: number }>>({});
@@ -396,12 +400,45 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
 
   return (
     <div ref={paneRef} className="flex h-full flex-row" style={{ background: "#0c0c0e" }}>
-      {/* ── Vertical tab rail ─────────────────────────────────────── */}
-      {/* No right border — a `--border-hairline` (5% white) on the dark
-         #0c0c0e viewport reads as a bright vertical line at the rail/page
-         seam. The rail's darker `bg-[#080809]` already provides enough
-         contrast against the viewport for visual separation. */}
-      <div className="browser-tab-rail flex flex-col items-center bg-[#080809] py-1.5" style={{ width: 48, minWidth: 48 }}>
+      {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
+      {/* Collapsed by default to a 6px edge handle so the page gets the
+         full viewport width; expands to 48px on hover or keyboard focus.
+         No right border — the rail's #080809 already provides enough
+         contrast against #0c0c0e without a hairline.
+         Cmd+K (handled below) remains the primary tab-switcher. */}
+      <div
+        className={[
+          "browser-tab-rail group/rail relative flex flex-col items-center bg-[#080809] py-1.5",
+          "transition-[width] duration-150 ease-out",
+          "w-1.5 hover:w-12 focus-within:w-12",
+          railExpanded ? "!w-12" : "",
+        ].join(" ")}
+        style={{ minWidth: railExpanded ? 48 : 6 }}
+        onMouseEnter={() => setRailHover(true)}
+        onMouseLeave={() => setRailHover(false)}
+        aria-label="Browser tabs"
+      >
+        {/* Collapsed-state hint: a subtle vertical accent so the rail is
+            still discoverable when hidden. */}
+        <span
+          aria-hidden
+          className={[
+            "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-r-full bg-white/20",
+            "transition-opacity duration-150",
+            railExpanded ? "opacity-0" : "opacity-100",
+          ].join(" ")}
+          style={{ height: 18 }}
+        />
+        {/* Tabs only render their content when the rail is expanded so
+            collapsed-state mouse targets stay tiny and the page is not
+            visually crowded. The rail itself remains hoverable in both
+            states because the parent <div> keeps its full height. */}
+        <div
+          className={[
+            "flex w-full flex-1 flex-col items-center transition-opacity duration-150",
+            railExpanded ? "opacity-100" : "pointer-events-none opacity-0",
+          ].join(" ")}
+        >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
@@ -462,6 +499,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
         >
           <Icon name="ph:plus" width={13} />
         </button>
+        </div>{/* end rail content (collapsible) */}
       </div>
 
       {/* ── Main area (toolbar + viewport) ──────────────────────── */}
