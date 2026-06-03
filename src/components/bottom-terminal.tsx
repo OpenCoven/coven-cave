@@ -28,7 +28,15 @@ async function loadTauri(): Promise<TauriBridge | null> {
   return { invoke, listen };
 }
 
-export function BottomTerminal({ threadId, active = true }: { threadId: string; active?: boolean }) {
+export function BottomTerminal({
+  threadId,
+  active = true,
+  projectRoot,
+}: {
+  threadId: string;
+  active?: boolean;
+  projectRoot?: string;
+}) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -119,25 +127,25 @@ export function BottomTerminal({ threadId, active = true }: { threadId: string; 
         });
       });
 
-      try {
-        await bridge.invoke("pty_start", {
-          options: {
-            thread_id: threadId,
-            cols: term.cols,
-            rows: term.rows,
-          },
-        });
-        // Focus so keyboard input is routed to the terminal immediately.
-        term.focus();
-      } catch (err) {
-        // Already running for this id (eg. React strict-mode double effect) —
-        // just attach to the stream we already opened.
-        if (!String(err).includes("already running")) {
-          term.write(`\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`);
-        } else {
-          term.focus();
+      const running = await bridge.invoke<string[]>("pty_list");
+      if (!running.includes(threadId)) {
+        try {
+          await bridge.invoke("pty_start", {
+            options: {
+              thread_id: threadId,
+              project_root: projectRoot ?? null,
+              cols: term.cols,
+              rows: term.rows,
+            },
+          });
+        } catch (err) {
+          // Rare race: another mount beat us between pty_list and pty_start.
+          if (!String(err).includes("already running")) {
+            term.write(`\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`);
+          }
         }
       }
+      term.focus();
 
       const doResize = () => {
         try {
