@@ -251,7 +251,7 @@ export function GitHubView({ onOpenSession }: Props) {
                     {task.sessionId && onOpenSession ? (
                       <button
                         onClick={() => onOpenSession(task.sessionId!)}
-                        className="self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 group-hover:opacity-100 transition-all hover:bg-[var(--bg-raised)]"
+className="self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-all hover:bg-[var(--bg-raised)]"
                       >
                         watch →
                       </button>
