@@ -13,7 +13,7 @@ import { ValsInboxView } from "@/components/vals-inbox-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
-import { Shell } from "@/components/shell";
+import { Shell, type ShellHandle } from "@/components/shell";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
 import { BottomTerminal } from "@/components/bottom-terminal";
@@ -32,6 +32,7 @@ type Mode = "home" | "chats" | "board" | "plugins" | "inbox" | "vals-inbox" | "b
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
+  const shellRef = useRef<ShellHandle | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
@@ -544,7 +545,13 @@ export function Workspace() {
         setTimeout(() => routerRef.current?.newChat(), 0);
       }}
       onOpenSearch={() => setPaletteOpen(true)}
-      onModeChange={(m) => setMode(m as Mode)}
+      onModeChange={(m) => {
+        if (m === "browser") {
+          setMode("browser");
+          return;
+        }
+        setMode(m as Mode);
+      }}
       onOpenSession={(id) => {
         setMode("chats");
         setTimeout(() => routerRef.current?.openSession(id), 0);
@@ -621,6 +628,8 @@ export function Workspace() {
       <SchedulesView familiars={familiars} />
     ) : mode === "calls" ? (
       <CallsView familiars={familiars} />
+    ) : mode === "browser" ? (
+      <BrowserPane label="main" />
     ) : mode === "comux" ? (
       <ComuxView />
     ) : (
@@ -635,6 +644,7 @@ export function Workspace() {
   return (
     <>
       <Shell
+        ref={shellRef}
         topBar={
           <DaemonBar
             mode={mode}
@@ -663,7 +673,9 @@ export function Workspace() {
         nav={sidebar}
         list={list}
         detail={detail}
-        agent={<BrowserPane label="default" />}
+        agent={mode === "browser" ? undefined : <BrowserPane label="default" />}
+        agentLabel="Browser"
+        agentIcon="ph:globe"
         bottom={<BottomTerminal threadId="cave.bottom.main" />}
       />
 
