@@ -128,6 +128,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
           {query && (
             <button
               type="button"
+              aria-label="Clear search"
               onClick={() => { setQuery(""); setHighlightIdx(0); inputRef.current?.focus(); }}
               className="text-xs"
               style={{ color: "rgba(255,255,255,0.3)" }}
