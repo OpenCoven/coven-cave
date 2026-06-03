@@ -155,9 +155,17 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
           }
           if (ev.type === "session.ended") {
             status = "done";
-            if (ev.data?.label) label = ev.data.label;
+            const task = ev.data?.taskName?.trim();
+            const lbl = ev.data?.label?.trim();
+            if (task) label = task;
+            else if (lbl) label = lbl;
           }
           if (ev.type === "run.completed") {
+            const task = ev.data?.taskName?.trim();
+            const lbl = ev.data?.label?.trim();
+            if (task) label = task;
+            else if (lbl) label = lbl;
+
             const exitReason = ev.data?.exitReason ?? "";
             if (exitReason === "error" || exitReason === "exception") status = "failed";
             else if (exitReason === "timeout") status = "timeout";
