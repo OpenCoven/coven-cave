@@ -377,9 +377,9 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   };
 
   return (
-    <div className="flex h-full flex-col" style={{ background: "#0c0c0e" }}>
-      {/* ── Tab strip ─────────────────────────────────────────────── */}
-      <div className="browser-tab-strip flex items-center gap-0.5 border-b border-[--border-hairline] bg-[--bg-sunken]/60 px-2 pt-1.5 pb-0 overflow-x-auto">
+    <div className="flex h-full flex-row" style={{ background: "#0c0c0e" }}>
+      {/* ── Vertical tab rail ─────────────────────────────────────── */}
+      <div className="browser-tab-rail flex flex-col items-center border-r border-[--border-hairline] bg-[#080809] py-1.5" style={{ width: 48, minWidth: 48 }}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
@@ -396,39 +396,54 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
                   switchTab(tab.id);
                 }
               }}
+              title={tabTitles[tab.id] ?? tab.title ?? tab.url}
               className={[
-                "browser-tab group flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[11px] cursor-pointer select-none transition-colors",
+                "browser-tab group relative flex flex-col items-center justify-center gap-0.5 w-full cursor-pointer select-none transition-colors py-2.5",
                 isActive
-                  ? "border-[--border-hairline] bg-[--bg-base] text-[--fg-base] z-10"
-                  : "border-transparent bg-transparent text-[--fg-muted] hover:bg-[--bg-raised]/40 hover:text-[--fg-base]",
+                  ? "bg-[#14141a] text-[--fg-base]"
+                  : "text-[--fg-muted] hover:bg-[#0f0f13] hover:text-[--fg-base]",
               ].join(" ")}
             >
-              {isLocalhost && (
-                <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" title="Dev server" />
+              {/* Active indicator bar */}
+              {isActive && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-6 rounded-r-full bg-white/70" />
               )}
-              <span className="max-w-[90px] truncate">{title}</span>
+              {/* Favicon / indicator */}
+              <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] bg-[--bg-raised]/50">
+                {isLocalhost
+                  ? <span className="h-2 w-2 rounded-full bg-green-400" />
+                  : <span className="text-[9px] font-semibold leading-none text-[--fg-muted] uppercase">{title.slice(0,2)}</span>
+                }
+              </span>
+              {/* Label */}
+              <span className="w-[36px] truncate text-center text-[9px] leading-tight">{title}</span>
+              {/* Close on hover */}
               {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
                 <button
                   onClick={(e) => removeTab(tab.id, e)}
-                  className="opacity-0 group-hover:opacity-60 hover:!opacity-100 ml-0.5 text-[--fg-muted] transition-opacity"
+                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 text-[--fg-muted] transition-opacity"
                   title="Close tab"
                 >
-                  <Icon name="ph:x-bold" width={8} />
+                  <Icon name="ph:x-bold" width={7} />
                 </button>
               )}
             </div>
           );
         })}
+        {/* Spacer */}
+        <div className="flex-1" />
         {/* Pin current page */}
         <button
           onClick={pinCurrentPage}
-          className="ml-1 grid h-6 w-6 shrink-0 place-items-center rounded text-[--fg-muted] hover:bg-[--bg-raised] hover:text-[--fg-base] transition-colors"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded text-[--fg-muted] hover:bg-[--bg-raised] hover:text-[--fg-base] transition-colors"
           title="Pin current page as a tab"
         >
-          <Icon name="ph:plus" width={11} />
+          <Icon name="ph:plus" width={13} />
         </button>
       </div>
 
+      {/* ── Main area (toolbar + viewport) ──────────────────────── */}
+      <div className="flex flex-1 flex-col overflow-hidden">
       {/* ── Toolbar ───────────────────────────────────────────────── */}
       <header className="flex items-center gap-1 border-b border-[--border-hairline] bg-[--bg-raised]/40 px-2 py-1.5">
         {/* Back */}
@@ -518,6 +533,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
           <div ref={surfaceRef} className="absolute inset-0" />
         )}
       </div>
+      </div>{/* end main area */}
     </div>
   );
 }
