@@ -735,7 +735,7 @@ function TurnRow({ turn, familiar }: { turn: Turn; familiar: Familiar }) {
   const duration = fmtDuration(turn.durationMs);
   const { visible, reasoning } = splitReasoning(turn.text);
   const tools = turn.tools ?? [];
-  const glyph = parseGlyphString(familiar.icon ?? familiar.emoji) ?? DEFAULT_FAMILIAR_GLYPH;
+  const glyph = parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? DEFAULT_FAMILIAR_GLYPH;
 
   return (
     <div className="cave-turn-assistant">
