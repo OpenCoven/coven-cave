@@ -224,48 +224,6 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
-// ---------------------------------------------------------------------------
-
-export function MarkdownBlock({ text, className }: { text: string; className?: string }) {
-  const [html, setHtml] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!text) return;
-    let cancelled = false;
-    void mdToHtml(text).then((h) => {
-      if (cancelled) return;
-      const doc = new DOMParser().parseFromString(h, "text/html");
-      for (const el of Array.from(doc.querySelectorAll("script, iframe, object, embed, link, style"))) el.remove();
-      for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
-        for (const attr of Array.from(el.attributes)) {
-          if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-          if ((attr.name === "href" || attr.name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        }
-      }
-      setHtml(doc.body.innerHTML);
-    });
-    return () => { cancelled = true; };
-  }, [text]);
-
-  if (!html) {
-    return (
-      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
-        {text}
-      </pre>
-    );
-  }
-
-  return (
-    <div
-      className={`cave-md ${className ?? ""}`}
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -444,49 +402,20 @@ export type MessageBubbleProps = {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
-  showTimestamp?: boolean;
   pending?: boolean;
   isError?: boolean;
-  label?: string;
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, pending, isError }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
-  const [tsVisible, setTsVisible] = useState(false);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleMouseEnter = () => {
-    setHovered(true);
-    if (!showTimestamp) {
-      hoverTimer.current = setTimeout(() => setTsVisible(true), 600);
-    }
-  };
-  const handleMouseLeave = () => {
-    setHovered(false);
-    setTsVisible(false);
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-  };
-  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
-
-  const shouldShowTs = showTimestamp || tsVisible;
 
   if (role === "system") {
     return (
-      <div className="group" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
-        <div className="cave-bubble-system">
-          <div className="cave-bubble-system-header">
-            <span className="cave-bubble-system-sigil">$</span>
-            {label ? (
-              <span className="cave-bubble-system-label">{label}</span>
-            ) : (
-              <span className="cave-bubble-system-label cave-bubble-system-label--dim">system</span>
-            )}
-          </div>
-          <pre className="cave-bubble-system-body">{content}</pre>
+      <div>
+        <div className="rounded-xl border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
+          {content}
         </div>
-        <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
-          {fmtBubbleTime(timestamp)}
-        </div>
+        <div className="mt-1 text-right text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
       </div>
     );
   }
@@ -495,16 +424,14 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
     return (
       <div
         className="group flex flex-col items-end"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         <div className="relative cave-bubble-user">
           <MarkdownContent text={content} pending={pending} />
           {hovered && !pending && <CopyBubble text={content} />}
         </div>
-        <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
-          {fmtBubbleTime(timestamp)}
-        </div>
+        <div className="mt-1 text-[11px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
       </div>
     );
   }
@@ -513,16 +440,14 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   return (
     <div
       className="group relative cave-bubble-assistant"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <div className={isError ? "text-amber-200" : ""}>
         <MarkdownContent text={content} pending={pending} />
       </div>
       {hovered && !pending && content && <CopyBubble text={content} />}
-      <div className={`cave-bubble-timestamp${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
-        {fmtBubbleTime(timestamp)}
-      </div>
+      <div className="mt-1 text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
     </div>
   );
 }
