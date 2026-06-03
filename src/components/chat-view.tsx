@@ -595,9 +595,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               if (!t.createdAt) return false;
               if (!prev?.createdAt) return true;
               const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+              if (!Number.isFinite(gap)) return true;
               if (gap >= 10 * 60 * 1000) return true;
-              if (prev.role !== t.role) return false;
-              return false;
+              // Only suppress timestamps for consecutive same-role turns within 10 minutes.
+              return prev.role !== t.role;
             })();
             return (
               <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
