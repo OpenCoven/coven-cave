@@ -520,12 +520,113 @@ function MonthView({
   );
 }
 
+// ─── Item Detail Panel ───────────────────────────────────────────────────────
+
+function ItemDetailPanel({
+  item,
+  onClose,
+}: {
+  item: InboxItem;
+  onClose: () => void;
+}) {
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const SNOOZE_OPTIONS = [
+    { label: "1 hour",   ms: 60 * 60 * 1000 },
+    { label: "3 hours",  ms: 3 * 60 * 60 * 1000 },
+    { label: "Tomorrow", ms: 24 * 60 * 60 * 1000 },
+  ];
+  const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
+
+  return (
+    <div className="cave-cal-detail-panel">
+      <div className="cave-cal-detail-header">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[14px]" />
+          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            {item.title}
+          </span>
+        </div>
+        <button
+          onClick={onClose}
+          className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <Icon name="ph:x" width={14} />
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
+        {meta?.urgency && meta.urgency !== "normal" && (
+          <div className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
+            <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
+          </div>
+        )}
+        {(item.fireAt ?? item.firedAt) && (
+          <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+            <Icon name="ph:clock" width={12} />
+            <span>
+              {new Date((item.fireAt ?? item.firedAt)!).toLocaleString(undefined, {
+                weekday: "short", month: "short", day: "numeric",
+                hour: "numeric", minute: "2-digit",
+              })}
+            </span>
+          </div>
+        )}
+        {(item as unknown as { body?: string }).body && (
+          <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+            {(item as unknown as { body: string }).body}
+          </p>
+        )}
+      </div>
+
+      <div className="px-4 py-3 border-t border-[var(--border-subtle)] flex gap-2">
+        <button
+          onClick={onClose}
+          className="flex-1 rounded-md border border-[var(--border-subtle)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+        >
+          Dismiss
+        </button>
+        <div className="relative flex-1">
+          <button
+            onClick={() => setSnoozeOpen((v) => !v)}
+            className="w-full rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white hover:opacity-90 transition-opacity"
+          >
+            Snooze →
+          </button>
+          {snoozeOpen && (
+            <div className="absolute bottom-full right-0 mb-1 w-32 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-lg overflow-hidden z-10">
+              {SNOOZE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => { setSnoozeOpen(false); onClose(); }}
+                  className="w-full px-3 py-2 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] transition-colors"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
 export function CalendarView({ items, familiars, onOpenItem }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
+  const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedItem(null);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -586,7 +687,7 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
   ];
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-[var(--bg-base)]">
+    <div ref={containerRef} className="flex flex-col h-full bg-[var(--bg-base)] relative">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-subtle)] shrink-0">
         {/* Nav arrows */}
@@ -646,19 +747,19 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
       {/* View body */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {viewMode === "agenda" && (
-          <AgendaView items={items} anchor={anchor} onOpenItem={onOpenItem} />
+          <AgendaView items={items} anchor={anchor} onOpenItem={(item) => setSelectedItem(item)} />
         )}
         {viewMode === "day" && (
-          <DayView items={items} anchor={anchor} onOpenItem={onOpenItem} />
+          <DayView items={items} anchor={anchor} onOpenItem={(item) => setSelectedItem(item)} />
         )}
         {viewMode === "week" && (
-          <WeekView items={items} anchor={anchor} onOpenItem={onOpenItem} />
+          <WeekView items={items} anchor={anchor} onOpenItem={(item) => setSelectedItem(item)} />
         )}
         {viewMode === "month" && (
           <MonthView
             items={items}
             anchor={anchor}
-            onOpenItem={onOpenItem}
+            onOpenItem={(item) => setSelectedItem(item)}
             onDayClick={(day) => {
               setAnchor(day);
               setViewMode("day");
@@ -666,6 +767,12 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
           />
         )}
       </div>
+      {selectedItem && (
+        <ItemDetailPanel
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
     </div>
   );
 }
