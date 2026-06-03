@@ -951,3 +951,12 @@ body {
     linear-gradient(var(--muted), var(--muted)) padding-box,
     linear-gradient(120deg, var(--accent-presence), var(--accent-presence-soft)) border-box;
 }
+
+/* ── UX-004: Mode transition crossfade ──────────────────────────────────── */
+@keyframes cave-mode-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cave-mode-fade {
+  animation: cave-mode-in 120ms ease-out both;
+}

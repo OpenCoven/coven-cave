@@ -597,8 +597,9 @@ export function Workspace() {
 
   const list = undefined;
 
-  const detail =
-    mode === "home" ? (
+  const detail = (
+    <div key={mode} className="cave-mode-fade h-full">
+      {mode === "home" ? (
       <HomeComposer
         familiars={familiars}
         activeFamiliarId={activeId}
@@ -670,7 +671,9 @@ export function Workspace() {
           setTimeout(() => routerRef.current?.newChat(), 0);
         }}
       />
-    );
+    )}
+    </div>
+  );
 
   return (
     <>

@@ -679,6 +679,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 });
 
+// ── ThinkingIndicator ───────────────────────────────────────────────────────────
+// Shown when a familiar is pending but has emitted no text yet.
+// Renders three animated dots + elapsed wall-clock seconds.
+
+function ThinkingIndicator({ since }: { since: string }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = new Date(since).getTime();
+    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [since]);
+
+  return (
+    <div className="flex items-center gap-2 py-2 text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+      {/* Animated dots */}
+      <span className="flex items-center gap-0.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="inline-block h-1.5 w-1.5 rounded-full animate-bounce"
+            style={{
+              background: "rgba(255,255,255,0.35)",
+              animationDelay: `${i * 150}ms`,
+              animationDuration: "900ms",
+            }}
+          />
+        ))}
+      </span>
+      <span className="text-[11px] tabular-nums" style={{ color: "rgba(255,255,255,0.2)" }}>
+        {elapsed}s
+      </span>
+    </div>
+  );
+}
+
+// ── TurnRow ────────────────────────────────────────────────────────────────────
+
 function TurnRow({ turn }: { turn: Turn }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
@@ -697,20 +736,20 @@ function TurnRow({ turn }: { turn: Turn }) {
   return (
     <div className="text-[14px] leading-relaxed text-[var(--text-primary)]">
       {tools.length > 0 ? (
-        <div className="mb-3 space-y-1.5">
-          {tools.map((t) => (
-            <ToolBlock key={t.id} tool={t} />
-          ))}
-        </div>
+        <ToolGroup tools={tools} />
       ) : null}
       {reasoning ? <ReasoningBlock text={reasoning} /> : null}
-      <MessageBubble
-        role="assistant"
-        content={visible || (turn.pending ? "…" : "")}
-        timestamp={turn.createdAt}
-        pending={turn.pending}
-        isError={turn.error}
-      />
+      {turn.pending && !visible ? (
+        <ThinkingIndicator since={turn.createdAt} />
+      ) : (
+        <MessageBubble
+          role="assistant"
+          content={visible || (turn.pending ? "…" : "")}
+          timestamp={turn.createdAt}
+          pending={turn.pending}
+          isError={turn.error}
+        />
+      )}
       {duration && !turn.pending ? (
         <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
           <span className="text-[var(--text-muted)]">·</span>
@@ -747,6 +786,70 @@ function ReasoningBlock({ text }: { text: string }) {
     </div>
   );
 }
+
+// ── ToolGroup ──────────────────────────────────────────────────────────────────
+// When a turn has 3+ tool calls, collapse them under a summary row.
+// 1-2 tools always show expanded (they don't clutter).
+
+const TOOL_COLLAPSE_THRESHOLD = 3;
+
+function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+  const anyRunning = tools.some((t) => t.status === "running");
+  const anyError = tools.some((t) => t.status === "error");
+  const shouldCollapse = tools.length >= TOOL_COLLAPSE_THRESHOLD && !anyRunning;
+  const [open, setOpen] = useState(!shouldCollapse);
+
+  if (!shouldCollapse) {
+    return (
+      <div className="mb-3 space-y-1.5">
+        {tools.map((t) => <ToolBlock key={t.id} tool={t} />)}
+      </div>
+    );
+  }
+
+  const doneCount = tools.filter((t) => t.status === "ok").length;
+  const errCount  = tools.filter((t) => t.status === "error").length;
+  const summaryDot = anyError
+    ? "bg-rose-400"
+    : anyRunning
+    ? "bg-amber-400 animate-pulse"
+    : "bg-emerald-400";
+
+  const label = anyRunning
+    ? `${tools.length} tool calls running…`
+    : errCount > 0
+    ? `${tools.length} tool calls · ${errCount} error${errCount > 1 ? "s" : ""}`
+    : `${tools.length} tool calls · ${doneCount} done`;
+
+  return (
+    <div className="mb-3 overflow-hidden rounded-lg border border-[var(--border-hairline)]/70 bg-[var(--bg-raised)]/20 text-[12px]">
+      {/* Summary row */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--bg-raised)]/60"
+      >
+        <Icon
+          name="ph:caret-right-bold"
+          width="0.7rem"
+          height="0.7rem"
+          className={`text-[var(--text-muted)] transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        <Icon name="ph:wrench-bold" width="0.85rem" height="0.85rem" className="text-purple-300/70" />
+        <span className="text-[var(--text-secondary)]">{label}</span>
+        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${summaryDot}`} />
+      </button>
+      {/* Expanded tool list */}
+      {open ? (
+        <div className="space-y-1.5 border-t border-[var(--border-hairline)]/70 p-1.5">
+          {tools.map((t) => <ToolBlock key={t.id} tool={t} />)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── ToolBlock ──────────────────────────────────────────────────────────────────
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   const [open, setOpen] = useState(false);
