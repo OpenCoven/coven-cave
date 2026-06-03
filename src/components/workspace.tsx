@@ -28,7 +28,7 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type Mode = "home" | "chats" | "board" | "plugins" | "inbox" | "browser" | "schedules" | "calls" | "comux" | "github";
+type Mode = Parameters<typeof DaemonBar>[0]["mode"];
 
 export function Workspace() {
   const routerRef = useRef<ChatRouterHandle | null>(null);
