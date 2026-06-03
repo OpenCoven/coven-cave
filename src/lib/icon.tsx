@@ -79,6 +79,15 @@ export const ICON_NAMES = [
   "ph:pencil-simple",
   "ph:list-bullets",
   "ph:trash",
+  "ph:butterfly",
+  "ph:telegram-logo",
+  "ph:discord-logo",
+  "ph:tiktok-logo",
+  "ph:instagram-logo",
+  "ph:linkedin-logo",
+  "ph:twitter-logo",
+  "ph:sun",
+  "ph:bell",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "CovenCave",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "identifier": "ai.opencoven.cave",
   "build": {
     "frontendDist": "../src-tauri/frontend-stub",
@@ -11,8 +11,27 @@
   },
   "app": {
     "windows": [],
+    "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": null,
+      "dangerousRemoteDomainIpcAccess": [
+        {
+          "domain": "localhost",
+          "windows": [
+            "main"
+          ],
+          "plugins": [],
+          "enableTauriAPI": true
+        },
+        {
+          "domain": "127.0.0.1",
+          "windows": [
+            "main"
+          ],
+          "plugins": [],
+          "enableTauriAPI": true
+        }
+      ]
     }
   },
   "bundle": {

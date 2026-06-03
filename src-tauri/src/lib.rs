@@ -366,6 +366,35 @@ fn shell_open(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn webview_probe_report(report: String) -> Result<(), String> {
+    // Dev-only diagnostic hook. In release builds, keep this as a no-op to avoid
+    // creating a writable IPC sink for arbitrary/unbounded data.
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
+
+    // Prevent unbounded growth if something chatty forwards logs.
+    let report = if report.chars().count() > 16_384 {
+        let mut s: String = report.chars().take(16_384).collect();
+        s.push_str("…<truncated>");
+        s
+    } else {
+        report
+    };
+
+    let path = std::env::temp_dir().join("covencave-webview-probe.log");
+    use std::io::Write as _;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    writeln!(f, "{}", report).map_err(|e| e.to_string())?;
+    log::debug!("[webview-probe] {}", report);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -375,6 +404,8 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_stop,
             pty::pty_list,
+            pty::pty_diagnose,
+            webview_probe_report,
             browser::browser_navigate,
             browser::browser_set_bounds,
             browser::browser_hide,
@@ -388,7 +419,7 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
+                        .level(log::LevelFilter::Debug)
                         .build(),
                 )?;
             }

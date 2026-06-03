@@ -40,7 +40,32 @@ export function BottomTerminal({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  // Keep a ref to projectRoot so the PTY-start effect always reads the latest
+  // value, even when it arrives asynchronously after initial mount.
+  const projectRootRef = useRef<string | undefined>(projectRoot);
+  useEffect(() => { projectRootRef.current = projectRoot; }, [projectRoot]);
   const [unavailable, setUnavailable] = useState(false);
+  const log = (...a: unknown[]) => {
+    console.info(`[BottomTerminal:${threadId}]`, ...a);
+    try {
+      const inv = (typeof window !== "undefined" ? window : ({} as any))
+        .__TAURI_INTERNALS__?.invoke;
+      if (typeof inv === "function") {
+        inv("webview_probe_report", {
+          report: JSON.stringify({
+            kind: "bottom-terminal-log",
+            threadId,
+            msg: a
+              .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+              .join(" "),
+            ts: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+      }
+    } catch { /* ignore */ }
+  };
+  // Also forward every BottomTerminal log line back to Rust so we can read
+  // them in the tauri-dev stderr without needing WebView devtools.
 
   // Re-fit + refocus whenever this terminal becomes the active tab.
   useEffect(() => {
@@ -61,11 +86,14 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
+      log("mount: loading tauri bridge");
       const bridge = await loadTauri();
       if (!bridge) {
+        log("mount: no tauri bridge — running outside Cave; rendering placeholder");
         if (!disposed) setUnavailable(true);
         return;
       }
+      log("mount: tauri bridge ready");
 
       // Lazy-load xterm only on the client + only inside Tauri so SSR and
       // the in-browser dev path don't try to pull it in.
@@ -98,6 +126,7 @@ export function BottomTerminal({
       } catch {
         /* DOM not ready yet — first resize event will recover */
       }
+      log("xterm opened", { cols: term.cols, rows: term.rows });
 
       let stopped = false;
       const unlistenData = await bridge.listen<{
@@ -112,9 +141,11 @@ export function BottomTerminal({
         code: number | null;
       }>("pty:exit", (e) => {
         if (e.payload.thread_id !== threadId) return;
+        log("pty:exit", e.payload);
         stopped = true;
         term.write(`\r\n\x1b[2m[exit ${e.payload.code ?? 0}]\x1b[0m\r\n`);
       });
+      log("pty:data + pty:exit listeners registered");
 
       // Pipe user input back to the PTY.
       // NOTE: Tauri v2 invoke does NOT auto-convert camelCase → snake_case;
@@ -124,26 +155,37 @@ export function BottomTerminal({
         void bridge.invoke("pty_write", {
           thread_id: threadId,
           bytes: Array.from(new TextEncoder().encode(data)),
-        });
+        }).catch((err) => log("pty_write FAILED", err));
       });
 
-      const running = await bridge.invoke<string[]>("pty_list");
+      const running = await bridge.invoke<string[]>("pty_list").catch((err) => {
+        log("pty_list FAILED", err);
+        return [] as string[];
+      });
+      log("pty_list →", running);
       if (!running.includes(threadId)) {
+        log("pty_start: invoking with projectRoot=", projectRootRef.current);
         try {
           await bridge.invoke("pty_start", {
             options: {
               thread_id: threadId,
-              project_root: projectRoot ?? null,
+              project_root: projectRootRef.current ?? null,
               cols: term.cols,
               rows: term.rows,
             },
           });
+          log("pty_start: ok");
         } catch (err) {
           // Rare race: another mount beat us between pty_list and pty_start.
           if (!String(err).includes("already running")) {
+            log("pty_start FAILED", err);
             term.write(`\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`);
+          } else {
+            log("pty_start: already running for this id (ok)");
           }
         }
+      } else {
+        log("pty_start: skipped, already in pty_list");
       }
       term.focus();
 
