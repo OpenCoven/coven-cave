@@ -576,9 +576,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           {turns.length === 0 ? (
             <ChatEmptyState familiar={familiar} modKey={keys.mod} />
           ) : null}
-          {turns.map((t) => (
-            <TurnRow key={t.id} turn={t} familiar={familiar} />
-          ))}
+          {turns.map((t, i) => {
+            const prev = turns[i - 1];
+            const showTimestamp = (() => {
+              if (!t.createdAt) return false;
+              if (!prev?.createdAt) return true;
+              const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+              if (gap >= 10 * 60 * 1000) return true;
+              if (prev.role !== t.role) return false;
+              return false;
+            })();
+            return (
+              <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
+            );
+          })}
           <div ref={tailRef} />
         </div>
       </div>
@@ -720,13 +731,14 @@ function ThinkingIndicator({ since }: { since: string }) {
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
 
-function TurnRow({ turn, familiar }: { turn: Turn; familiar: Familiar }) {
+function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familiar: Familiar; showTimestamp?: boolean }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
       <MessageBubble
         role={turn.role}
         content={turn.text}
         timestamp={turn.createdAt}
+        showTimestamp={showTimestamp}
         pending={turn.pending}
       />
     );
@@ -757,6 +769,7 @@ function TurnRow({ turn, familiar }: { turn: Turn; familiar: Familiar }) {
             role="assistant"
             content={visible || (turn.pending ? "…" : "")}
             timestamp={turn.createdAt}
+            showTimestamp={showTimestamp}
             pending={turn.pending}
             isError={turn.error}
           />

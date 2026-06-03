@@ -402,20 +402,49 @@ export type MessageBubbleProps = {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
+  showTimestamp?: boolean;
   pending?: boolean;
   isError?: boolean;
+  label?: string;
 };
 
-export function MessageBubble({ role, content, timestamp, pending, isError }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
+  const [tsVisible, setTsVisible] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = () => {
+    setHovered(true);
+    if (!showTimestamp) {
+      hoverTimer.current = setTimeout(() => setTsVisible(true), 600);
+    }
+  };
+  const handleMouseLeave = () => {
+    setHovered(false);
+    setTsVisible(false);
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+  };
+  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
+
+  const shouldShowTs = showTimestamp || tsVisible;
 
   if (role === "system") {
     return (
-      <div>
-        <div className="rounded-xl border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
-          {content}
+      <div className="group" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+        <div className="cave-bubble-system">
+          <div className="cave-bubble-system-header">
+            <span className="cave-bubble-system-sigil">$</span>
+            {label ? (
+              <span className="cave-bubble-system-label">{label}</span>
+            ) : (
+              <span className="cave-bubble-system-label cave-bubble-system-label--dim">system</span>
+            )}
+          </div>
+          <pre className="cave-bubble-system-body">{content}</pre>
         </div>
-        <div className="mt-1 text-right text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
+        <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
+          {fmtBubbleTime(timestamp)}
+        </div>
       </div>
     );
   }
@@ -424,14 +453,16 @@ export function MessageBubble({ role, content, timestamp, pending, isError }: Me
     return (
       <div
         className="group flex flex-col items-end"
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         <div className="relative max-w-[80%] rounded-2xl bg-[var(--bg-raised)]/70 px-4 py-2.5">
           <MarkdownContent text={content} pending={pending} />
           {hovered && !pending && <CopyBubble text={content} />}
         </div>
-        <div className="mt-1 text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
+        <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
+          {fmtBubbleTime(timestamp)}
+        </div>
       </div>
     );
   }
@@ -440,14 +471,16 @@ export function MessageBubble({ role, content, timestamp, pending, isError }: Me
   return (
     <div
       className="group relative"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <div className={isError ? "text-amber-200" : ""}>
         <MarkdownContent text={content} pending={pending} />
       </div>
       {hovered && !pending && content && <CopyBubble text={content} />}
-      <div className="mt-1 text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
+      <div className={`cave-bubble-timestamp${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
+        {fmtBubbleTime(timestamp)}
+      </div>
     </div>
   );
 }
