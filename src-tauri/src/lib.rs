@@ -368,6 +368,21 @@ fn shell_open(url: String) -> Result<(), String> {
 
 #[tauri::command]
 fn webview_probe_report(report: String) -> Result<(), String> {
+    // Dev-only diagnostic hook. In release builds, keep this as a no-op to avoid
+    // creating a writable IPC sink for arbitrary/unbounded data.
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
+
+    // Prevent unbounded growth if something chatty forwards logs.
+    let report = if report.chars().count() > 16_384 {
+        let mut s: String = report.chars().take(16_384).collect();
+        s.push_str("…<truncated>");
+        s
+    } else {
+        report
+    };
+
     let path = std::env::temp_dir().join("covencave-webview-probe.log");
     use std::io::Write as _;
     let mut f = std::fs::OpenOptions::new()
@@ -375,8 +390,8 @@ fn webview_probe_report(report: String) -> Result<(), String> {
         .append(true)
         .open(&path)
         .map_err(|e| e.to_string())?;
-    let _ = writeln!(f, "{}", report);
-    log::info!("[webview-probe] {}", report);
+    writeln!(f, "{}", report).map_err(|e| e.to_string())?;
+    log::debug!("[webview-probe] {}", report);
     Ok(())
 }
 
