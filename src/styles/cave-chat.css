@@ -385,6 +385,7 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 /* User bubble — lavender accent, right-aligned */
+/* User bubble — lavender accent, right-aligned */
 .cave-bubble-user {
   background: var(--accent-presence);
   color: oklch(0.98 0 0);
@@ -397,6 +398,16 @@
     0 1px 3px oklch(0 0 0 / 25%),
     0 0 0 1px color-mix(in oklch, var(--accent-presence) 80%, transparent);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Ensure markdown body inherits the bubble text color (cave-md sets its own color by default). */
+.cave-bubble-user .cave-md { color: inherit; }
+.cave-bubble-user .cave-md h1,
+.cave-bubble-user .cave-md h2,
+.cave-bubble-user .cave-md h3,
+.cave-bubble-user .cave-md h4,
+.cave-bubble-user .cave-md strong {
+  color: inherit;
 }
 
 .cave-bubble-user a {
