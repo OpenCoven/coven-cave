@@ -402,20 +402,33 @@ export type MessageBubbleProps = {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
+  showTimestamp?: boolean;
   pending?: boolean;
   isError?: boolean;
+  label?: string;
 };
 
-export function MessageBubble({ role, content, timestamp, pending, isError }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false);
+  const shouldShowTs = showTimestamp;
 
   if (role === "system") {
     return (
-      <div>
-        <div className="rounded-xl border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/40 px-4 py-3 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
-          {content}
+      <div className="group">
+        <div className="cave-bubble-system">
+          <div className="cave-bubble-system-header">
+            <span className="cave-bubble-system-sigil">$</span>
+            {label ? (
+              <span className="cave-bubble-system-label">{label}</span>
+            ) : (
+              <span className="cave-bubble-system-label cave-bubble-system-label--dim">system</span>
+            )}
+          </div>
+          <pre className="cave-bubble-system-body">{content}</pre>
         </div>
-        <div className="mt-1 text-right text-[10px] text-[var(--text-muted)]">{fmtBubbleTime(timestamp)}</div>
+        <div className="mt-1 text-right text-[11px] text-[var(--text-muted)]">
+          {fmtBubbleTime(timestamp)}
+        </div>
       </div>
     );
   }
