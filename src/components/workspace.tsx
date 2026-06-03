@@ -547,7 +547,7 @@ export function Workspace() {
       onOpenSearch={() => setPaletteOpen(true)}
       onModeChange={(m) => {
         if (m === "browser") {
-          shellRef.current?.openAgent();
+          setMode("browser");
           return;
         }
         setMode(m as Mode);
@@ -628,6 +628,8 @@ export function Workspace() {
       <SchedulesView familiars={familiars} />
     ) : mode === "calls" ? (
       <CallsView familiars={familiars} />
+    ) : mode === "browser" ? (
+      <BrowserPane label="main" />
     ) : mode === "comux" ? (
       <ComuxView />
     ) : (
@@ -671,7 +673,7 @@ export function Workspace() {
         nav={sidebar}
         list={list}
         detail={detail}
-        agent={<BrowserPane label="default" />}
+        agent={mode === "browser" ? undefined : <BrowserPane label="default" />}
         agentLabel="Browser"
         agentIcon="ph:globe"
         bottom={<BottomTerminal threadId="cave.bottom.main" />}

@@ -299,7 +299,10 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   const switchTab = useCallback((id: string) => {
     setActiveTabId(id);
     const tab = tabs.find((t) => t.id === id);
-    if (tab) setAddressBar(tab.url);
+    if (tab) {
+      setAddressBar(tab.url);
+      historyRef.current[id] ??= { stack: [tab.url], idx: 0 };
+    }
     setLoading(false);
   }, [tabs]);
 
@@ -331,16 +334,23 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   // ── Per-tab navigation ────────────────────────────────────────────
   const navigateTo = (raw: string) => {
     const next = normalizeUrl(raw);
-    setTabs((prev) =>
-      prev.map((t) => t.id === activeTabId ? { ...t, url: next } : t)
+    const nextTabs = tabs.map((t) =>
+      t.id === activeTabId ? { ...t, url: next } : t,
     );
+    setTabs(nextTabs);
     setAddressBar(next);
-    if (activeTab?.kind === "pinned") {
-      // persist URL change for pinned tabs
-      savePinnedTabs(
-        tabs.map((t) => t.id === activeTabId ? { ...t, url: next } : t)
-          .filter((t) => t.kind === "pinned")
-      );
+
+    if (!bridge) {
+      const h = historyRef.current[activeTabId] ?? { stack: [activeUrl], idx: 0 };
+      if (h.stack[h.idx] !== next) {
+        const stack = [...h.stack.slice(0, h.idx + 1), next];
+        historyRef.current[activeTabId] = { stack, idx: stack.length - 1 };
+      }
+    }
+
+    const updatedActiveTab = nextTabs.find((t) => t.id === activeTabId);
+    if (updatedActiveTab?.kind === "pinned") {
+      savePinnedTabs(nextTabs.filter((t) => t.kind === "pinned"));
     }
   };
 
@@ -375,24 +385,24 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
           const isLocalhost = tab.kind === "localhost";
           return (
-<div
-  key={tab.id}
-  role="button"
-  tabIndex={0}
-  onClick={() => switchTab(tab.id)}
-  onKeyDown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      switchTab(tab.id);
-    }
-  }}
-  className={[
-    "browser-tab group flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[11px] cursor-pointer select-none transition-colors",
-    isActive
-      ? "border-[--border-hairline] bg-[--bg-base] text-[--fg-base] z-10"
-      : "border-transparent bg-transparent text-[--fg-muted] hover:bg-[--bg-raised]/40 hover:text-[--fg-base]",
-  ].join(" ")}
->
+            <div
+              key={tab.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => switchTab(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  switchTab(tab.id);
+                }
+              }}
+              className={[
+                "browser-tab group flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[11px] cursor-pointer select-none transition-colors",
+                isActive
+                  ? "border-[--border-hairline] bg-[--bg-base] text-[--fg-base] z-10"
+                  : "border-transparent bg-transparent text-[--fg-muted] hover:bg-[--bg-raised]/40 hover:text-[--fg-base]",
+              ].join(" ")}
+            >
               {isLocalhost && (
                 <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" title="Dev server" />
               )}
