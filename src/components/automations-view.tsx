@@ -141,7 +141,7 @@ export function AutomationsView({
           (it) =>
             it.status === "fired" ||
             it.status === "done" ||
-            it.status === "dismissed",
+            (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none")),
         )
         .sort((a, b) =>
           (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt),
