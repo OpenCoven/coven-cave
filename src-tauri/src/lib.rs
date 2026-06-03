@@ -375,6 +375,7 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_stop,
             pty::pty_list,
+            pty::pty_diagnose,
             browser::browser_navigate,
             browser::browser_set_bounds,
             browser::browser_hide,
@@ -388,7 +389,7 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
+                        .level(log::LevelFilter::Debug)
                         .build(),
                 )?;
             }

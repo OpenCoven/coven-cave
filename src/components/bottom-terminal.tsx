@@ -41,6 +41,8 @@ export function BottomTerminal({
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const log = (...a: unknown[]) =>
+    console.info(`[BottomTerminal:${threadId}]`, ...a);
 
   // Re-fit + refocus whenever this terminal becomes the active tab.
   useEffect(() => {
@@ -61,11 +63,14 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
+      log("mount: loading tauri bridge");
       const bridge = await loadTauri();
       if (!bridge) {
+        log("mount: no tauri bridge — running outside Cave; rendering placeholder");
         if (!disposed) setUnavailable(true);
         return;
       }
+      log("mount: tauri bridge ready");
 
       // Lazy-load xterm only on the client + only inside Tauri so SSR and
       // the in-browser dev path don't try to pull it in.
@@ -98,6 +103,7 @@ export function BottomTerminal({
       } catch {
         /* DOM not ready yet — first resize event will recover */
       }
+      log("xterm opened", { cols: term.cols, rows: term.rows });
 
       let stopped = false;
       const unlistenData = await bridge.listen<{
@@ -105,6 +111,7 @@ export function BottomTerminal({
         bytes: number[];
       }>("pty:data", (e) => {
         if (e.payload.thread_id !== threadId) return;
+        log("pty:data", e.payload.bytes.length, "bytes");
         term.write(new Uint8Array(e.payload.bytes));
       });
       const unlistenExit = await bridge.listen<{
@@ -112,23 +119,31 @@ export function BottomTerminal({
         code: number | null;
       }>("pty:exit", (e) => {
         if (e.payload.thread_id !== threadId) return;
+        log("pty:exit", e.payload);
         stopped = true;
         term.write(`\r\n\x1b[2m[exit ${e.payload.code ?? 0}]\x1b[0m\r\n`);
       });
+      log("pty:data + pty:exit listeners registered");
 
       // Pipe user input back to the PTY.
       // NOTE: Tauri v2 invoke does NOT auto-convert camelCase → snake_case;
       // param names must match the Rust fn signature exactly.
       const onDataDispose = term.onData((data) => {
         if (stopped) return;
+        log("onData → pty_write", data.length, "chars");
         void bridge.invoke("pty_write", {
           thread_id: threadId,
           bytes: Array.from(new TextEncoder().encode(data)),
-        });
+        }).catch((err) => log("pty_write FAILED", err));
       });
 
-      const running = await bridge.invoke<string[]>("pty_list");
+      const running = await bridge.invoke<string[]>("pty_list").catch((err) => {
+        log("pty_list FAILED", err);
+        return [] as string[];
+      });
+      log("pty_list →", running);
       if (!running.includes(threadId)) {
+        log("pty_start: invoking with projectRoot=", projectRoot);
         try {
           await bridge.invoke("pty_start", {
             options: {
@@ -138,12 +153,18 @@ export function BottomTerminal({
               rows: term.rows,
             },
           });
+          log("pty_start: ok");
         } catch (err) {
           // Rare race: another mount beat us between pty_list and pty_start.
           if (!String(err).includes("already running")) {
+            log("pty_start FAILED", err);
             term.write(`\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`);
+          } else {
+            log("pty_start: already running for this id (ok)");
           }
         }
+      } else {
+        log("pty_start: skipped, already in pty_list");
       }
       term.focus();
 
