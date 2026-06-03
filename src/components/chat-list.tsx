@@ -293,8 +293,15 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                         </span>
                       </span>
 
-                      {/* Row 2: session title (bold subject line) */}
-                      <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+                      {/* Row 2: session title (bold subject line)
+                           Running sessions get full white; others are slightly muted
+                           — mirrors the unread/read convention in email clients. */}
+                      <span className={[
+                        "truncate text-[13px] font-semibold",
+                        s.status === "running"
+                          ? "text-white"
+                          : "text-[var(--text-primary)]",
+                      ].join(" ")}>
                         {s.title || "(untitled chat)"}
                       </span>
 
