@@ -102,7 +102,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
       style={{ background: "transparent" }}
       onMouseDown={handleBackdrop}
     >
-      <div
+      <div role="dialog" aria-modal="true" aria-label="Tab quick open"
         className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl shadow-2xl"
         style={{
           background: "#131316",
