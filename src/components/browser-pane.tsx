@@ -375,16 +375,24 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
           const isLocalhost = tab.kind === "localhost";
           return (
-            <div
-              key={tab.id}
-              onClick={() => switchTab(tab.id)}
-              className={[
-                "browser-tab group flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[11px] cursor-pointer select-none transition-colors",
-                isActive
-                  ? "border-[--border-hairline] bg-[--bg-base] text-[--fg-base] z-10"
-                  : "border-transparent bg-transparent text-[--fg-muted] hover:bg-[--bg-raised]/40 hover:text-[--fg-base]",
-              ].join(" ")}
-            >
+<div
+  key={tab.id}
+  role="button"
+  tabIndex={0}
+  onClick={() => switchTab(tab.id)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      switchTab(tab.id);
+    }
+  }}
+  className={[
+    "browser-tab group flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 py-1 text-[11px] cursor-pointer select-none transition-colors",
+    isActive
+      ? "border-[--border-hairline] bg-[--bg-base] text-[--fg-base] z-10"
+      : "border-transparent bg-transparent text-[--fg-muted] hover:bg-[--bg-raised]/40 hover:text-[--fg-base]",
+  ].join(" ")}
+>
               {isLocalhost && (
                 <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" title="Dev server" />
               )}
