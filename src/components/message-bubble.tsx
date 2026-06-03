@@ -304,7 +304,7 @@ function wireCopyButtons(container: HTMLElement) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     btn.addEventListener("click", () => {
       navigator.clipboard.writeText(code).catch(() => undefined);
-      btn.textContent = "✓";
+      btn.textContent = "Copied";
       btn.classList.add("cave-copy-btn--confirmed");
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
@@ -389,7 +389,7 @@ function CopyBubble({ text }: { text: string }) {
       onClick={copy}
       className={`cave-copy-btn cave-copy-btn-bubble${copied ? " cave-copy-btn--confirmed" : ""}`}
     >
-      {copied ? "✓" : "Copy"}
+      {copied ? "Copied" : "Copy"}
     </button>
   );
 }

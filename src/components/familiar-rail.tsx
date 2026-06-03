@@ -6,6 +6,7 @@ import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { Icon } from "@/lib/icon";
 
 type HarnessReport = {
   id: string;
@@ -170,7 +171,9 @@ export function FamiliarRail({
                     glyph={resolveFamiliarGlyph(f, glyphOverrides)}
                     size="sm"
                   />
-                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md text-[10px] opacity-0 transition-opacity group-hover/glyph:opacity-100" aria-hidden>✏</span>
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-md opacity-0 transition-opacity group-hover/glyph:opacity-100" aria-hidden>
+                    <Icon name="ph:pencil-simple" width={11} />
+                  </span>
                 </span>
                 <span className="flex flex-1 flex-col min-w-0">
                   <span className="flex items-center gap-1.5 truncate">

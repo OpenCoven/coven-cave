@@ -72,6 +72,12 @@ export const ICON_NAMES = [
   "ph:puzzle-piece-bold",
   "ph:sparkle-bold",
   "ph:bell-bold",
+  "ph:phone",
+  "ph:warning-fill",
+  "ph:check",
+  "ph:copy",
+  "ph:pencil-simple",
+  "ph:list-bullets",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

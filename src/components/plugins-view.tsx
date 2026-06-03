@@ -729,8 +729,9 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
         {manifest.warnings.length > 0 ? (
           <div className="px-4 py-3">
             {manifest.warnings.map((w, i) => (
-              <p key={i} className="text-[11px] text-muted-foreground">
-                ⚠ {w.message}
+              <p key={i} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Icon name="ph:warning-fill" width={11} aria-hidden />
+                <span>{w.message}</span>
               </p>
             ))}
           </div>

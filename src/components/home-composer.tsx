@@ -29,6 +29,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { Icon, type IconName } from "@/lib/icon";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,12 +37,12 @@ import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 
 export type Destination = "chat" | "board" | "reminder" | "inbox" | "call";
 
-const DESTINATIONS: { id: Destination; label: string; emoji: string }[] = [
-  { id: "chat",     label: "Chat",     emoji: "💬" },
-  { id: "board",    label: "Board",    emoji: "📋" },
-  { id: "reminder", label: "Reminder", emoji: "⏰" },
-  { id: "inbox",    label: "Inbox",    emoji: "📥" },
-  { id: "call",     label: "Call",     emoji: "📞" },
+const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
+  { id: "chat",     label: "Chat",     icon: "ph:chat-circle-dots" },
+  { id: "board",    label: "Board",    icon: "ph:kanban" },
+  { id: "reminder", label: "Reminder", icon: "ph:alarm-fill" },
+  { id: "inbox",    label: "Inbox",    icon: "ph:tray" },
+  { id: "call",     label: "Call",     icon: "ph:phone" },
 ];
 
 type Props = {
@@ -365,7 +366,7 @@ export function HomeComposer({
                   onClick={() => setDestination(d.id)}
                   title={d.label}
                 >
-                  <span>{d.emoji}</span>
+                  <Icon name={d.icon} width={13} aria-hidden />
                   <span>{d.label}</span>
                 </button>
               ))}

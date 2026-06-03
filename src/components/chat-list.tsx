@@ -202,8 +202,8 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
         {!hasAny ? (
           /* Empty state */
           <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 text-2xl">
-              ✦
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 text-[var(--text-muted)]">
+              <Icon name="ph:sparkle" width={20} aria-hidden />
             </div>
             <div>
               <p className="text-sm font-medium text-[var(--text-secondary)]">No chats yet</p>
