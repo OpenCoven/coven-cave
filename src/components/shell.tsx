@@ -110,7 +110,6 @@ function ShellInner({
   const agentRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [agentOpen, setAgentOpen] = useState(false);
   useEffect(() => setMounted(true), []);
 
   useImperativeHandle(ref, () => ({
@@ -145,6 +144,16 @@ function ShellInner({
     id: groupId,
     panelIds,
     storage: shellStorage,
+  });
+
+  // Initialise agentOpen from persisted layout so the agent content renders
+  // immediately when layout is restored to an expanded state, rather than
+  // waiting for the first onResize callback.
+  const agentPanelIdx = panelIds.indexOf("agent");
+  const [agentOpen, setAgentOpen] = useState(() => {
+    if (agentPanelIdx < 0 || !defaultLayout) return false;
+    const pct = defaultLayout[agentPanelIdx];
+    return typeof pct === "number" && pct > 0;
   });
 
   useEffect(() => {
@@ -247,6 +256,7 @@ function ShellInner({
             collapsible
             collapsedSize={0}
             panelRef={agentRef}
+            onResize={(size) => setAgentOpen((size.asPercentage ?? 0) > 0)}
           >
             <aside className="shell-agent">{agentOpen ? agent : null}</aside>
           </Panel>

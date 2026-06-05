@@ -7,6 +7,8 @@ import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { parseGlyphString, DEFAULT_FAMILIAR_GLYPH } from "@/lib/familiar-glyph";
 
 type ToolEvent = {
   id: string;
@@ -113,21 +115,21 @@ function ChatEmptyState({
   modKey: string;
   onPrompt?: (text: string) => void;
 }) {
-  const glyph = familiar.display_name?.[0]?.toUpperCase() ?? "?";
+  const glyph = parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? DEFAULT_FAMILIAR_GLYPH;
 
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 select-none">
       {/* Avatar ring */}
       <div
-        className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl text-2xl font-semibold shadow-lg"
+        className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg"
         style={{
           background: "linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%)",
           border: "1px solid rgba(255,255,255,0.08)",
-          color: "rgba(255,255,255,0.7)",
+          color: "var(--accent-presence)",
         }}
         aria-hidden
       >
-        {glyph}
+        <FamiliarGlyph glyph={glyph} size="lg" className="inline-flex items-center justify-center" />
       </div>
 
       {/* Name + tagline */}
@@ -574,9 +576,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           {turns.length === 0 ? (
             <ChatEmptyState familiar={familiar} modKey={keys.mod} />
           ) : null}
-          {turns.map((t) => (
-            <TurnRow key={t.id} turn={t} />
-          ))}
+          {turns.map((t, i) => {
+            const prev = turns[i - 1];
+            const showTimestamp = (() => {
+              if (!t.createdAt) return false;
+              if (!prev?.createdAt) return true;
+              const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+              if (gap >= 10 * 60 * 1000) return true;
+              if (prev.role !== t.role) return false;
+              return false;
+            })();
+            return (
+              <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
+            );
+          })}
           <div ref={tailRef} />
         </div>
       </div>
@@ -718,13 +731,14 @@ function ThinkingIndicator({ since }: { since: string }) {
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
 
-function TurnRow({ turn }: { turn: Turn }) {
+function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familiar: Familiar; showTimestamp?: boolean }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
       <MessageBubble
         role={turn.role}
         content={turn.text}
         timestamp={turn.createdAt}
+        showTimestamp={showTimestamp}
         pending={turn.pending}
       />
     );
@@ -733,29 +747,40 @@ function TurnRow({ turn }: { turn: Turn }) {
   const duration = fmtDuration(turn.durationMs);
   const { visible, reasoning } = splitReasoning(turn.text);
   const tools = turn.tools ?? [];
+  const glyph = parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? DEFAULT_FAMILIAR_GLYPH;
+
   return (
-    <div className="text-[14px] leading-relaxed text-[var(--text-primary)]">
-      {tools.length > 0 ? (
-        <ToolGroup tools={tools} />
-      ) : null}
-      {reasoning ? <ReasoningBlock text={reasoning} /> : null}
-      {turn.pending && !visible ? (
-        <ThinkingIndicator since={turn.createdAt} />
-      ) : (
-        <MessageBubble
-          role="assistant"
-          content={visible || (turn.pending ? "…" : "")}
-          timestamp={turn.createdAt}
-          pending={turn.pending}
-          isError={turn.error}
-        />
-      )}
-      {duration && !turn.pending ? (
-        <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-          <span className="text-[var(--text-muted)]">·</span>
-          <span>worked for {duration}</span>
+    <div className="cave-turn-assistant">
+      {/* Avatar column */}
+      <div className="cave-turn-avatar" aria-hidden>
+        <div className="cave-turn-avatar-ring">
+          <FamiliarGlyph glyph={glyph} size="sm" />
         </div>
-      ) : null}
+      </div>
+
+      {/* Content column */}
+      <div className="cave-turn-content text-[14px] leading-relaxed text-[var(--text-primary)]">
+        {tools.length > 0 ? <ToolGroup tools={tools} /> : null}
+        {reasoning ? <ReasoningBlock text={reasoning} /> : null}
+        {turn.pending && !visible ? (
+          <ThinkingIndicator since={turn.createdAt} />
+        ) : (
+          <MessageBubble
+            role="assistant"
+            content={visible || (turn.pending ? "…" : "")}
+            timestamp={turn.createdAt}
+            showTimestamp={showTimestamp}
+            pending={turn.pending}
+            isError={turn.error}
+          />
+        )}
+        {duration && !turn.pending ? (
+          <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+            <span>·</span>
+            <span>worked for {duration}</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

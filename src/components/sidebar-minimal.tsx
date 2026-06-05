@@ -325,6 +325,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           label="Automations"
           onClick={() => onModeChange("schedules")}
         />
+        <ActionRow
+          icon={<Icon name="ph:calendar-blank" width={14} />}
+          label="Calendar"
+          onClick={() => onModeChange("calendar")}
+        />
       </div>
 
       {/* ── Folder mode rows ──────────────────────────────────── */}

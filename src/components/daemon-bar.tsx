@@ -7,7 +7,7 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { NotificationBell } from "@/components/notification-bell";
 import { HealthStrip } from "@/components/health-strip";
 
-export type Mode = "chats" | "board" | "inbox" | "plugins" | "browser" | "schedules" | "calls" | "comux" | "home" | "github";
+export type Mode = "chats" | "board" | "inbox" | "plugins" | "browser" | "schedules" | "calls" | "comux" | "home" | "github" | "calendar";
 
 type Props = {
   mode: Mode;
@@ -33,6 +33,7 @@ const MODE_LABEL: Record<Mode, string> = {
   calls: "Coven Calls",
   comux: "Coven Code",
   github: "GitHub",
+  calendar: "Calendar",
 };
 
 export function DaemonBar({

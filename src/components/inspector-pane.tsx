@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { SyntaxBlock } from "@/components/message-bubble";
+import { EvalLoopPanel } from "@/components/eval-loop-panel";
 
 type Tab = "memory" | "capabilities" | "inbox";
 
@@ -651,6 +652,20 @@ function CapabilitiesTab({ familiar }: { familiar: Familiar | null }) {
         empty
         emptyText="No hook inventory exposed by the daemon yet."
       />
+
+      {familiar ? (
+        <section>
+          <header className="mb-1.5 flex items-baseline justify-between">
+            <h3 className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+              Skill: eval-loop
+            </h3>
+          </header>
+          <EvalLoopPanel
+            familiarId={familiar.id}
+            familiarName={familiar.display_name}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

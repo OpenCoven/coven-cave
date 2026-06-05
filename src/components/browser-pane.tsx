@@ -4,6 +4,59 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Icon } from "@/lib/icon";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 
+// ── Favicon helpers (mirrors open-sesame FaviconService pattern) ──────────────
+// Primary: Google S2 API (works from renderer, no CORS)
+// Fallback: colored initial chip (mirrors ColoredInitialAvatar from open-sesame)
+
+function faviconUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname;
+    return `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+  } catch {
+    return "";
+  }
+}
+
+const INITIAL_COLORS = [
+  "#5b5bd6", "#7c3aed", "#db2777", "#ea580c",
+  "#16a34a", "#0891b2", "#4f46e5", "#0d9488",
+];
+
+function initialColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length];
+}
+
+function TabFavicon({ url, title, size = 20 }: { url: string; title: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const src = faviconUrl(url);
+  const initial = (title || url).trim().slice(0, 1).toUpperCase() || "?";
+  const color = initialColor(title || url);
+
+  if (!src || failed) {
+    return (
+      <span
+        className="flex shrink-0 items-center justify-center rounded-[5px] text-[10px] font-semibold text-white"
+        style={{ width: size, height: size, background: color }}
+      >
+        {initial}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt=""
+      width={size}
+      height={size}
+      className="rounded-[5px] object-contain"
+      style={{ imageRendering: "auto" }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 // Browser pane — uses Tauri's child WebviewBuilder under the hood. A real
 // Chromium webview is overlaid on top of the placeholder <div> below; we
 // track the div's viewport-relative bounds with a ResizeObserver and call
@@ -468,14 +521,14 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-6 rounded-r-full bg-white/70" />
               )}
               {/* Favicon / indicator */}
-              <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] bg-[--bg-raised]/50">
+              <span className="relative flex shrink-0 items-center justify-center">
                 {isLocalhost
                   ? <span className="h-2 w-2 rounded-full bg-green-400" />
-                  : <span className="text-[9px] font-semibold leading-none text-[--fg-muted] uppercase">{title.slice(0,2)}</span>
+                  : <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
                 }
               </span>
               {/* Label */}
-              <span className="w-[36px] truncate text-center text-[9px] leading-tight">{title}</span>
+              <span className="w-[44px] truncate text-center text-[9px] leading-tight">{title}</span>
               {/* Close on hover */}
               {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
                 <button

@@ -27,6 +27,7 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use log::{debug, info, warn};
 
 struct PtySession {
     #[allow(dead_code)]
@@ -90,6 +91,8 @@ pub struct PtyExitEvent {
 #[tauri::command]
 pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
     let thread_id = options.thread_id.clone();
+    info!("pty_start: thread_id={} project_root={:?} cols={:?} rows={:?}",
+        thread_id, options.project_root, options.cols, options.rows);
     let pending = PendingPtyStart::reserve(&thread_id)?;
 
     let pty_system = native_pty_system();
@@ -104,12 +107,14 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
 
     let command = options.command.unwrap_or_else(|| default_shell());
     let args = options.args.unwrap_or_else(|| default_shell_args());
+    info!("pty_start[{}]: spawning {} {:?}", thread_id, command, args);
     let mut cmd = CommandBuilder::new(&command);
     cmd.args(&args);
     if let Some(root) = &options.project_root {
         // Normalize bare Windows drive letters like "C:" → "C:\"
         // so portable-pty / Node's lstat doesn't hit EISDIR on the root.
         let normalized = normalize_cwd(root);
+        info!("pty_start[{}]: cwd={}", thread_id, normalized);
         cmd.cwd(&normalized);
     }
     // Sensible defaults so xterm.js renders unicode + truecolor; when launched
@@ -145,7 +150,16 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
     cmd.env_remove("NPM_CONFIG_PREFIX");
     cmd.env_remove("PREFIX");
 
-    let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let mut child = match pair.slave.spawn_command(cmd) {
+        Ok(c) => {
+            info!("pty_start[{}]: child spawned, pid={:?}", thread_id, c.process_id());
+            c
+        }
+        Err(e) => {
+            warn!("pty_start[{}]: spawn failed: {}", thread_id, e);
+            return Err(e.to_string());
+        }
+    };
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
@@ -166,11 +180,22 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
     let tid_read = thread_id.clone();
     let app_read = app.clone();
     thread::spawn(move || {
+        info!("pty_start[{}]: reader thread started", tid_read);
         let mut buf = [0u8; 8192];
+        let mut total = 0usize;
         loop {
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    info!("pty_start[{}]: reader EOF after {} bytes", tid_read, total);
+                    break;
+                }
+                Err(e) => {
+                    warn!("pty_start[{}]: reader error after {} bytes: {}", tid_read, total, e);
+                    break;
+                }
                 Ok(n) => {
+                    total = total.saturating_add(n);
+                    debug!("pty_start[{}]: emit pty:data {} bytes (total {})", tid_read, n, total);
                     let _ = app_read.emit(
                         "pty:data",
                         PtyDataEvent {
@@ -189,6 +214,7 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
     let app_wait = app;
     thread::spawn(move || {
         let code = child.wait().ok().and_then(|status| status.exit_code().try_into().ok());
+        warn!("pty_start[{}]: child exited code={:?}", tid_wait, code);
         SESSIONS.lock().remove(&tid_wait);
         let _ = app_wait.emit(
             "pty:exit",
@@ -204,12 +230,16 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
 
 #[tauri::command]
 pub fn pty_write(thread_id: String, bytes: Vec<u8>) -> Result<(), String> {
+    debug!("pty_write[{}]: {} bytes", thread_id, bytes.len());
     let writer = {
         let sessions = SESSIONS.lock();
         sessions
             .get(&thread_id)
             .map(|s| s.writer.clone())
-            .ok_or_else(|| format!("pty '{}' not found", thread_id))?
+            .ok_or_else(|| {
+                warn!("pty_write[{}]: session not found", thread_id);
+                format!("pty '{}' not found", thread_id)
+            })?
     };
     let mut w = writer.lock();
     w.write_all(&bytes).map_err(|e| e.to_string())?;
@@ -245,6 +275,57 @@ pub fn pty_stop(thread_id: String) {
 #[tauri::command]
 pub fn pty_list() -> Vec<String> {
     SESSIONS.lock().keys().cloned().collect()
+}
+
+/// Diagnostic: spawn a one-shot known-good PTY (`/bin/echo hello && exit`),
+/// read all output synchronously, and return what came back. Lets us prove
+/// the PTY plumbing works end-to-end without depending on the React layer
+/// or on any user shell config.
+#[tauri::command]
+pub fn pty_diagnose() -> Result<DiagnoseReport, String> {
+    info!("pty_diagnose: starting");
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| format!("openpty: {e}"))?;
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = CommandBuilder::new("cmd.exe");
+    #[cfg(target_os = "windows")]
+    cmd.args(["/C", "echo coven-cave-pty-ok"]);
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = CommandBuilder::new("/bin/sh");
+        c.args(["-c", "echo coven-cave-pty-ok"]);
+        c
+    };
+    cmd.env("PATH", augmented_path());
+    #[cfg(not(target_os = "windows"))]
+    cmd.env("TERM", "xterm-256color");
+
+    let mut child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn: {e}"))?;
+    let pid = child.process_id();
+    let mut reader = pair.master.try_clone_reader().map_err(|e| format!("reader: {e}"))?;
+    drop(pair.master);
+    drop(pair.slave);
+
+    let mut buf = Vec::with_capacity(256);
+    let _ = reader.read_to_end(&mut buf);
+    let exit = child.wait().ok().and_then(|s| s.exit_code().try_into().ok());
+
+    let output = String::from_utf8_lossy(&buf).to_string();
+    info!("pty_diagnose: pid={:?} exit={:?} bytes={} output={:?}",
+        pid, exit, buf.len(), output);
+    Ok(DiagnoseReport { pid, exit, bytes: buf.len(), output })
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiagnoseReport {
+    pub pid: Option<u32>,
+    pub exit: Option<i32>,
+    pub bytes: usize,
+    pub output: String,
 }
 
 /// Normalize a working directory path so portable-pty / Node's lstat

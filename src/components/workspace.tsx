@@ -7,6 +7,7 @@ import { DaemonBar } from "@/components/daemon-bar";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
 import { PluginsView } from "@/components/plugins-view";
+import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
@@ -673,6 +674,20 @@ export function Workspace() {
           setTimeout(() => routerRef.current?.openSession?.(sessionId), 0);
         }}
       />
+    ) : mode === "calendar" ? (
+      <CalendarView
+        items={inboxItems}
+        familiars={familiars}
+        onOpenItem={(item) => {
+          if (item.sessionId) {
+            if (item.familiarId) setActiveId(item.familiarId);
+            setMode("chats");
+            setTimeout(() => routerRef.current?.openSession(item.sessionId!), 0);
+          } else {
+            setMode("inbox");
+          }
+        }}
+      />
     ) : (
       <PluginsView
         onOpenChat={() => {
@@ -807,3 +822,4 @@ export function Workspace() {
     </>
   );
 }
+___BEGIN___COMMAND_DONE_MARKER___0
