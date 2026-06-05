@@ -21,7 +21,9 @@ require_file() {
   [ -f "$1" ] || { echo "Missing required file: $1" >&2; exit 1; }
 }
 require_value() {
-  [ -n "$1" ] || { echo "Missing required value: $2" >&2; exit 1; }
+  local value="$1"
+  local label="${2:-required value}"
+  [ -n "$value" ] || { echo "Missing required value: $label" >&2; exit 1; }
 }
 
 require_tool pnpm
