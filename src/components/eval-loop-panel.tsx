@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ function deltaColor(delta: number): string {
   return "text-[var(--text-muted)]";
 }
 
-const TRACK_ICON: Record<Track, string> = {
+const TRACK_ICON: Record<Track, IconName> = {
   synthesis: "ph:book-open-bold",
   prompt:    "ph:pencil-line-bold",
   memory:    "ph:brain-bold",

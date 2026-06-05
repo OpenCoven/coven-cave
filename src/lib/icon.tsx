@@ -89,6 +89,9 @@ export const ICON_NAMES = [
   "ph:twitter-logo",
   "ph:sun",
   "ph:bell",
+  "ph:book-open-bold",
+  "ph:pencil-line-bold",
+  "ph:brain-bold",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];
