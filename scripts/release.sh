@@ -10,14 +10,18 @@ DMG_PATH="$DMG_DIR/${APP_NAME}-v${VERSION}.dmg"
 # "Developer ID Application: Soul Protocol LLC (9LR8Z8UQ9X)" display name
 # and codesign refuses to disambiguate by name.
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-EE732DF3F48D7535561AF54D3FFFC4B44DAF3E7F}"
-NOTARY_KEY_FILE="${NOTARY_KEY_FILE:-$HOME/.appstoreconnect/private_keys/AuthKey_3822D8Z5XFI0.p8}"
-NOTARY_KEY_ID="${NOTARY_KEY_ID:-3822D8Z5XFI0}"
+NOTARY_KEY_FILE="${NOTARY_KEY_FILE:-${APPLE_API_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_3822D8Z5XFI0.p8}}"
+NOTARY_KEY_ID="${NOTARY_KEY_ID:-${APPLE_API_KEY:-3822D8Z5XFI0}}"
+NOTARY_ISSUER="${NOTARY_ISSUER:-${APPLE_API_ISSUER:-}}"
 
 require_tool() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required tool: $1" >&2; exit 1; }
 }
 require_file() {
   [ -f "$1" ] || { echo "Missing required file: $1" >&2; exit 1; }
+}
+require_value() {
+  [ -n "$1" ] || { echo "Missing required value: $2" >&2; exit 1; }
 }
 
 require_tool pnpm
@@ -27,6 +31,8 @@ require_tool hdiutil
 require_tool spctl
 require_tool shasum
 require_file "$NOTARY_KEY_FILE"
+require_value "$NOTARY_KEY_ID" "NOTARY_KEY_ID / APPLE_API_KEY"
+require_value "$NOTARY_ISSUER" "NOTARY_ISSUER / APPLE_API_ISSUER"
 
 echo "==> Building CovenCave v${VERSION}"
 rm -rf "$DMG_DIR"
@@ -86,6 +92,7 @@ echo "==> Submitting DMG for notarization"
 xcrun notarytool submit "$DMG_PATH" \
   --key "$NOTARY_KEY_FILE" \
   --key-id "$NOTARY_KEY_ID" \
+  --issuer "$NOTARY_ISSUER" \
   --wait
 
 echo "==> Stapling notarization ticket"

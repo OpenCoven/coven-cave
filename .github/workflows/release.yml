@@ -28,9 +28,9 @@ name: Release
 #   APPLE_API_KEY_BASE64       base64-encoded contents of the AuthKey_*.p8
 #                              private key.
 #
-# scripts/release.sh remains useful for local iteration (faster than a CI
-# round-trip when you're tuning the bundle), but the canonical release
-# path is now the tag-push.
+# The macOS leg intentionally uses scripts/release.sh instead of tauri-action
+# because it assembles + notarizes the DMG in a more reliable way for this
+# repository. Linux and Windows still ship via tauri-action on the tag-push.
 
 on:
   push:
@@ -104,9 +104,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Decode the App Store Connect API key onto the runner so tauri-action
-      # can pass it to `xcrun notarytool`. The path is exported into the env
-      # for the build step. Runs only on the macOS leg.
+      # Decode the App Store Connect API key onto the runner for the custom
+      # macOS release script. The path is exported into the env for later
+      # steps. Runs only on the macOS leg.
       - name: Stage Apple API key
         if: matrix.platform == 'macos-latest'
         run: |
@@ -117,7 +117,34 @@ jobs:
         env:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
 
+      - name: Import Apple signing certificate
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/apple_certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-macos
+
       - name: Build with tauri-action
+        if: matrix.platform != 'macos-latest'
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -137,6 +164,20 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+      - name: Build macOS DMG with custom release script
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          bash scripts/release.sh "$VERSION"
+
       # Hard gate: fail the macOS leg if the produced DMG is not accepted
       # by Gatekeeper as a notarized Developer ID app. This is what makes
       # "require notarization" a build-time invariant rather than a
@@ -148,9 +189,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DMG=$(find src-tauri/target -name "CovenCave*.dmg" -type f | head -n1)
+          DMG=$(find release src-tauri/target -name "CovenCave*.dmg" -type f 2>/dev/null | head -n1)
           if [ -z "$DMG" ]; then
-            echo "::error::No DMG produced by tauri-action"
+            echo "::error::No DMG produced by the macOS release build"
             exit 1
           fi
           echo "Verifying $DMG"
@@ -165,3 +206,10 @@ jobs:
             exit 1
           fi
           echo "OK: $(grep 'origin=' /tmp/spctl.out)"
+
+      - name: Upload macOS DMG to GitHub Release
+        if: matrix.platform == 'macos-latest'
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: release/CovenCave-v${{ env.RELEASE_VERSION }}.dmg
