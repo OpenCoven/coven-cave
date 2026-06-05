@@ -189,7 +189,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DMG=$(find release src-tauri/target -name "CovenCave*.dmg" -type f 2>/dev/null | head -n1)
+          DMG=""
+          if [ -d release ]; then
+            DMG=$(find release -name "CovenCave*.dmg" -type f | head -n1)
+          fi
+          if [ -z "$DMG" ]; then
+            DMG=$(find src-tauri/target -name "CovenCave*.dmg" -type f | head -n1)
+          fi
           if [ -z "$DMG" ]; then
             echo "::error::No DMG produced by the macOS release build"
             exit 1
