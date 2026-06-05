@@ -124,6 +124,7 @@ jobs:
           set -euo pipefail
           CERT_PATH="$RUNNER_TEMP/apple_certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -141,7 +142,6 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-macos
 
       - name: Build with tauri-action
         if: matrix.platform != 'macos-latest'
@@ -189,13 +189,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DMG=""
-          if [ -d release ]; then
-            DMG=$(find release -name "CovenCave*.dmg" -type f | head -n1)
-          fi
-          if [ -z "$DMG" ]; then
-            DMG=$(find src-tauri/target -name "CovenCave*.dmg" -type f | head -n1)
-          fi
+          DMG=$(find release -name "CovenCave*.dmg" -type f | head -n1)
           if [ -z "$DMG" ]; then
             echo "::error::No DMG produced by the macOS release build"
             exit 1
