@@ -16,6 +16,7 @@ export type SkillEntry = {
   applied_rate?: number;
   completion_rate?: number;
   fallback_rate?: number;
+  source?: string;
 };
 
 export type FamiliarForSkill = {

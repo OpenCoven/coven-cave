@@ -11,8 +11,11 @@ export function SkillCard({
   onClick: () => void;
 }) {
   const initial = (skill.name.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();
-  const meta =
-    [skill.owner, skill.category].filter(Boolean).join(" · ") || "Skill";
+  const meta = [
+    skill.owner && `by ${skill.owner}`,
+    skill.category,
+    skill.source === "local" && "local",
+  ].filter(Boolean).join(" · ") || "Skill";
 
   return (
     <button
