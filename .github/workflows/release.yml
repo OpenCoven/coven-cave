@@ -131,7 +131,8 @@ jobs:
           set -euo pipefail
           CERT_PATH="$RUNNER_TEMP/apple_certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          KEYCHAIN_TIMEOUT_SECONDS=21600
+          KEYCHAIN_TIMEOUT_HOURS=6
+          KEYCHAIN_TIMEOUT_SECONDS=$((KEYCHAIN_TIMEOUT_HOURS * 60 * 60))
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           if [ -z "$KEYCHAIN_PASSWORD" ]; then
             echo "::error::Failed to generate a temporary keychain password"
@@ -158,7 +159,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Build with tauri-action
-        if: matrix.platform != 'macos-latest'
+        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'windows-latest'
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
