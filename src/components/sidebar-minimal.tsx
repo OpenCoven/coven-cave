@@ -130,6 +130,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             type="button"
             className="sidebar-action-row sidebar-collapse-btn"
             title="Collapse sidebar (Cmd+B)"
+            aria-label="Collapse sidebar"
             onClick={onCollapse}
           >
             <span className="sidebar-action-icon">
