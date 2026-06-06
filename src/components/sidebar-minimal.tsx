@@ -160,7 +160,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           ))}
       </div>
 
-      {/* Add-ins section: GitHub · Library · Roles · Automations */}
+      {/* Add-ins section: GitHub · Library */}
       <div className="sidebar-folders sidebar-addins">
         <div className="sidebar-section-label">Add-ins</div>
         {visibleFolderModes
@@ -176,20 +176,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               onClick={() => onModeChange(fm.id)}
             />
           ))}
-        {UTILITY_MODES.filter((u) => u.id === "plugins" || u.id === "schedules").map((item) => (
-          <ActionRow
-            key={item.id}
-            icon={<Icon name={item.iconName} width={14} />}
-            label={item.label}
-            active={mode === item.id}
-            onClick={() => onModeChange(item.id)}
-          />
-        ))}
       </div>
 
-      {/* Utility footer: Calendar only */}
+      {/* Utility footer: Roles · Automations · Calendar */}
       <div className="sidebar-actions sidebar-actions--footer">
-        {UTILITY_MODES.filter((u) => u.id === "calendar").map((item) => (
+        {UTILITY_MODES.map((item) => (
           <ActionRow
             key={item.id}
             icon={<Icon name={item.iconName} width={14} />}
