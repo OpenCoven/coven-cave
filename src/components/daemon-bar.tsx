@@ -9,13 +9,12 @@ import { NotificationBell } from "@/components/notification-bell";
 import { Icon } from "@/lib/icon";
 
 export type Mode =
-  | "chats"
+  | "agents"
   | "board"
   | "inbox"
   | "plugins"
   | "browser"
   | "schedules"
-  | "calls"
   | "terminal"
   | "projects"
   | "home"
@@ -39,13 +38,12 @@ type Props = {
 
 const MODE_LABEL: Record<Mode, string> = {
   home: "Home",
-  chats: "Chats",
+  agents: "Agents",
   board: "Tasks",
   inbox: "Inbox",
   plugins: "Plugins",
   browser: "Browser",
   schedules: "Automations",
-  calls: "Coven Calls",
   terminal: "Terminal",
   projects: "Projects",
   github: "GitHub",

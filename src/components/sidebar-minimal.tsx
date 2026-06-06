@@ -4,8 +4,8 @@
  * SidebarMinimal -- the redesigned Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. Collapse toggle + New chat CTA
- *   2. App destinations (Chat / Inbox / Tasks -- Terminal / Browser -- Calls / GitHub)
+ *   1. New chat CTA
+ *   2. App destinations (Agents / Inbox / Tasks -- Terminal / Browser -- GitHub)
  *   3. Utility actions footer (Plugins / Automations / Calendar)
  */
 
@@ -14,13 +14,12 @@ import { Icon } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 
 export type FolderMode =
-  | "chats"
+  | "agents"
   | "board"
   | "inbox"
   | "terminal"
   | "projects"
   | "browser"
-  | "calls"
   | "github"
   | "library";
 
@@ -33,7 +32,6 @@ export type SidebarMinimalProps = {
   onOpenSearch: () => void;
   onModeChange: (mode: string) => void;
   onOpenSession: (id: string) => void;
-  onCollapse?: () => void;
 };
 
 const FOLDER_MODES: Array<{
@@ -44,7 +42,7 @@ const FOLDER_MODES: Array<{
   dividerBefore?: boolean;
 }> = [
   // Primary loop
-  { id: "chats",   label: "Chat",        iconName: "ph:chat-circle-dots" },
+  { id: "agents",  label: "Agents",      iconName: "ph:robot" },
   { id: "inbox",   label: "Inbox",       iconName: "ph:bell-fill",
     badge: (p) => p.inboxBadgeCount && p.inboxBadgeCount > 0 ? String(p.inboxBadgeCount) : undefined },
   { id: "board",   label: "Tasks",       iconName: "ph:kanban" },
@@ -52,8 +50,7 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal",   iconName: "ph:terminal-window", dividerBefore: true },
   { id: "browser",  label: "Browser",    iconName: "ph:globe" },
   // Integrations
-  { id: "calls",  label: "Coven Calls",  iconName: "ph:graph",       dividerBefore: true },
-  { id: "github", label: "GitHub",       iconName: "ph:github-logo" },
+  { id: "github", label: "GitHub",       iconName: "ph:github-logo", dividerBefore: true },
   // Knowledge
   { id: "library", label: "Library",      iconName: "ph:books",            dividerBefore: true },
 ];
@@ -122,25 +119,12 @@ function FolderRow({
 }
 
 export function SidebarMinimal(props: SidebarMinimalProps) {
-  const { mode, onNewChat, onModeChange, onCollapse } = props;
+  const { mode, onNewChat, onModeChange } = props;
 
   return (
     <nav className="sidebar-minimal">
-      {/* Header row: collapse btn + new chat */}
+      {/* Header action */}
       <div className="sidebar-actions">
-        {onCollapse && (
-          <button
-            type="button"
-            className="sidebar-action-row sidebar-collapse-btn"
-            title="Collapse sidebar (Cmd+B)"
-            aria-label="Collapse sidebar"
-            onClick={onCollapse}
-          >
-            <span className="sidebar-action-icon">
-              <Icon name="ph:sidebar-simple-fill" width={14} />
-            </span>
-          </button>
-        )}
         <ActionRow
           icon={<Icon name="ph:note-pencil" width={14} />}
           label="New chat"

@@ -9,20 +9,26 @@ const comuxView = await readFile(new URL("./comux-view.tsx", import.meta.url), "
 
 assert.match(
   sidebar,
+  /\{ id: "agents",\s+label: "Agents"/,
+  "Sidebar should expose Agents as the first-class familiar work destination",
+);
+
+assert.doesNotMatch(
+  sidebar,
   /\{ id: "chats",\s+label: "Chat"/,
-  "Sidebar should expose Chat as a first-class destination",
+  "Sidebar should no longer expose Chat as a separate top-level destination",
+);
+
+assert.doesNotMatch(
+  sidebar,
+  /\{ id: "calls",\s+label: "Coven Calls"/,
+  "Sidebar should fold the Floor and delegation graph into Agents instead of a separate Calls tab",
 );
 
 assert.match(
   sidebar,
   /\{ id: "terminal",\s+label: "Terminal"/,
   "Sidebar should expose Terminal as a first-class destination",
-);
-
-assert.match(
-  sidebar,
-  /\{ id: "projects",\s+label: "Projects"/,
-  "Sidebar should expose Projects as a first-class destination",
 );
 
 assert.doesNotMatch(
@@ -37,6 +43,12 @@ assert.doesNotMatch(
   "Sidebar should not render familiar/agent rows",
 );
 
+assert.doesNotMatch(
+  sidebar,
+  /Collapse sidebar|sidebar-collapse-btn|onCollapse/,
+  "Sidebar should not render its own collapse row; the shell nav tab is the single sidebar toggle",
+);
+
 assert.match(
   daemonBar,
   /terminal: "Terminal"/,
@@ -47,6 +59,18 @@ assert.match(
   daemonBar,
   /projects: "Projects"/,
   "Top bar should label Projects mode",
+);
+
+assert.match(
+  workspace,
+  /mode === "agents"[\s\S]*<AgentsView/,
+  "Workspace should route Agents to the integrated AgentsView",
+);
+
+assert.match(
+  workspace,
+  /import \{ AgentsView \} from "@\/components\/agents-view";/,
+  "Workspace should import the integrated AgentsView",
 );
 
 assert.match(

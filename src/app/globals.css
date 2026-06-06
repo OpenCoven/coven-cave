@@ -1002,6 +1002,3 @@ body {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.sidebar-collapse-btn {
-  flex-shrink: 0;
-}

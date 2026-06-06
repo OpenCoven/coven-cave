@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SidebarMinimal, FOLDER_MODES, UTILITY_MODES } from "@/components/sidebar-minimal";
 import { Icon } from "@/lib/icon";
-import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
+import type { ChatRouterHandle } from "@/components/chat-router";
 import { DaemonBar } from "@/components/daemon-bar";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
@@ -11,7 +11,6 @@ import { PluginsView } from "@/components/plugins-view";
 import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
-import { InspectorPane } from "@/components/inspector-pane";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
@@ -21,23 +20,22 @@ import { AgentPanel } from "@/components/agent-panel";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { BrowserPane } from "@/components/browser-pane";
 import { AutomationsView } from "@/components/automations-view";
-import { CallsView } from "@/components/calls-view";
 import { ComuxView } from "@/components/comux-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { HomeComposer } from "@/components/home-composer";
+import { AgentsView } from "@/components/agents-view";
 import { nativeNotify } from "@/lib/native-notify";
-import { SessionsView } from "@/components/sessions-view";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 
-type WorkspaceMode = Parameters<typeof DaemonBar>[0]["mode"] | "sessions";
+type WorkspaceMode = Parameters<typeof DaemonBar>[0]["mode"];
 
-// Narrow helper for DaemonBar (which doesn't know about "sessions")
+// Narrow helper for DaemonBar.
 function isDaemonMode(m: WorkspaceMode): m is Parameters<typeof DaemonBar>[0]["mode"] {
-  return m !== "sessions";
+  return !!m;
 }
 
 // Icon-only nav strip shown when the sidebar is collapsed
@@ -409,16 +407,44 @@ export function Workspace() {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
   }, []);
 
+  const openAgentSession = useCallback((sessionId: string, familiarId?: string | null) => {
+    if (familiarId) setActiveId(familiarId);
+    setMode("agents");
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("cave:agents-open-session", {
+          detail: { sessionId, familiarId },
+        }),
+      );
+    }, 0);
+  }, []);
+
+  const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
+    if (familiarId) setActiveId(familiarId);
+    setPendingProjectChatRoot(projectRoot ?? null);
+    setMode("agents");
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("cave:agents-new-chat", {
+          detail: { familiarId, projectRoot },
+        }),
+      );
+    }, 0);
+  }, []);
+
+  const showAgentChatList = useCallback(() => {
+    setMode("agents");
+    setTimeout(() => window.dispatchEvent(new CustomEvent("cave:agents-list")), 0);
+  }, []);
+
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
     if (toast.sessionId) {
-      if (toast.familiarId) setActiveId(toast.familiarId);
-      setMode("chats");
-      setTimeout(() => routerRef.current?.openSession(toast.sessionId!), 0);
+      openAgentSession(toast.sessionId, toast.familiarId);
     } else {
       setMode("inbox");
     }
-  }, []);
+  }, [openAgentSession]);
 
   const toggleAgentPanel = useCallback(() => {
     window.dispatchEvent(
@@ -434,22 +460,19 @@ export function Workspace() {
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
       setActiveId(intent.familiarId);
-      routerRef.current?.goToList();
+      showAgentChatList();
       return;
     }
     if (intent.kind === "open-session") {
-      if (intent.familiarId) setActiveId(intent.familiarId);
-      // Defer so familiar swap settles, then open session
-      setTimeout(() => routerRef.current?.openSession(intent.sessionId), 0);
+      openAgentSession(intent.sessionId, intent.familiarId);
       return;
     }
     if (intent.kind === "new-chat") {
-      if (intent.familiarId) setActiveId(intent.familiarId);
-      setTimeout(() => routerRef.current?.newChat(), 0);
+      startAgentChat(intent.familiarId);
       return;
     }
     if (intent.kind === "back-to-list") {
-      routerRef.current?.goToList();
+      showAgentChatList();
       return;
     }
     if (intent.kind === "open-tui-session") {
@@ -471,10 +494,10 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "open-memory-file") {
-      // Switch to Chats view (memory inspector lives in the right pane), and
+      // Switch to Agents view (memory inspector lives in the right pane), and
       // surface the path via a hash that InspectorPane can wire to in a
       // follow-up commit; for now this is a no-op visual placeholder.
-      setMode("chats");
+      setMode("agents");
       window.location.hash = `memory:${encodeURIComponent(intent.path)}`;
       return;
     }
@@ -482,14 +505,14 @@ export function Workspace() {
       // Map slash commands directly to local actions
       switch (intent.command) {
         case "/new":
-          setMode("chats");
-          routerRef.current?.newChat();
+          startAgentChat(activeId);
           return;
         case "/board":
           setMode("board");
           return;
         case "/chats":
-          setMode("chats");
+        case "/agents":
+          showAgentChatList();
           return;
         case "/inbox":
           setMode("inbox");
@@ -518,12 +541,10 @@ export function Workspace() {
           toggleAgentPanel();
           return;
         case "/quit":
-          setMode("chats");
-          routerRef.current?.goToList();
+          showAgentChatList();
           return;
         case "/sessions":
-          setMode("chats");
-          routerRef.current?.goToList();
+          showAgentChatList();
           return;
         case "/familiar": {
           const name = (intent.args ?? "").trim().toLowerCase();
@@ -533,8 +554,7 @@ export function Workspace() {
             );
             if (match) {
               setActiveId(match.id);
-              setMode("chats");
-              routerRef.current?.goToList();
+              showAgentChatList();
               return;
             }
           }
@@ -549,9 +569,7 @@ export function Workspace() {
           }
           // Find which familiar this session belongs to so we surface the right rail row
           const target = sessions.find((s) => s.id === sid);
-          if (target?.familiarId) setActiveId(target.familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sid), 0);
+          openAgentSession(sid, target?.familiarId);
           return;
         }
         case "/tui": {
@@ -619,10 +637,10 @@ export function Workspace() {
 
   // Mood C three-pane Shell:
   //   nav   = always present (mode switcher + command launchers)
-  //   list  = only in chats mode (familiar rail). Inbox/Board/Plugins
+  //   list  = unused by Agents; Inbox/Board/Plugins
   //           are full-width detail surfaces — they have their own list
   //           UI baked in and we don't want to double-list.
-  //   detail = the active view. Chats mode renders an inline inspector
+  //   detail = the active view. Agents mode renders an inline inspector
   //           rail on its right edge so we keep the inspector affordance
   //           without spawning a 4th pane.
   // Inbox badge counts unresolved escalations (Inbox is now the
@@ -631,15 +649,8 @@ export function Workspace() {
   const inboxBadgeCount = escalationsUnresolved;
 
   const openProjectChat = useCallback((projectRoot: string) => {
-    setPendingProjectChatRoot(projectRoot);
-    setMode("chats");
-    if (activeId) {
-      setTimeout(() => {
-        routerRef.current?.newChat(projectRoot);
-        setPendingProjectChatRoot(null);
-      }, 0);
-    }
-  }, [activeId]);
+    startAgentChat(activeId, projectRoot);
+  }, [activeId, startAgentChat]);
 
   const sidebar = (
     <SidebarMinimal
@@ -648,9 +659,7 @@ export function Workspace() {
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       inboxBadgeCount={inboxBadgeCount}
       onNewChat={() => {
-        setPendingProjectChatRoot(null);
-        setMode("chats");
-        setTimeout(() => routerRef.current?.newChat(), 0);
+        startAgentChat(activeId);
       }}
       onOpenSearch={() => setPaletteOpen(true)}
       onModeChange={(m) => {
@@ -661,10 +670,8 @@ export function Workspace() {
         setMode(m as WorkspaceMode);
       }}
       onOpenSession={(id) => {
-        setMode("chats");
-        setTimeout(() => routerRef.current?.openSession(id), 0);
+        openAgentSession(id);
       }}
-      onCollapse={() => shellRef.current?.toggleNav()}
     />
   );
 
@@ -690,84 +697,36 @@ export function Workspace() {
         activeFamiliarId={activeId}
         sessions={sessions}
         onNavigateToChat={(sessionId, fid) => {
-          setActiveId(fid);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+          openAgentSession(sessionId, fid);
         }}
         onNavigateToBoard={() => setMode("board")}
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
       />
-    ) : mode === "sessions" ? (
-      <SessionsView
+    ) : mode === "agents" ? (
+      <AgentsView
         familiars={familiars}
         sessions={sessions}
+        activeFamiliar={active}
         activeFamiliarId={activeId}
         activeSessionId={routerRef.current?.currentSessionId() ?? null}
-        onOpenSession={(id, familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(id), 0);
+        daemonRunning={daemonRunning}
+        routerRef={routerRef}
+        inboxItems={inboxItemsWithEphemeral}
+        inspectorOpen={inspectorOpen}
+        pendingProjectRoot={pendingProjectChatRoot}
+        onSetInspectorOpen={setInspectorOpen}
+        onSetActiveFamiliar={setActiveId}
+        onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
+        onSessionStarted={loadSessions}
+        onSlashFromChat={(command, args) => {
+          onPaletteIntent({ kind: "slash", command, args });
+          return true;
         }}
-        onNewChat={(familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.newChat(), 0);
-        }}
+        onOpenOnboarding={openOnboarding}
+        onOpenInbox={() => setMode("inbox")}
+        onOpenMode={(nextMode) => setMode(nextMode as WorkspaceMode)}
       />
-    ) : mode === "chats" ? (
-      <div className="flex h-full min-w-0">
-        <div className="min-w-0 flex-1">
-          <ChatRouter
-            ref={routerRef}
-            familiar={active}
-            familiars={familiars}
-            sessions={sessions}
-            daemonRunning={daemonRunning}
-            onSessionStarted={loadSessions}
-            onSlashFromChat={(command, args) => {
-              onPaletteIntent({ kind: "slash", command, args });
-              return true;
-            }}
-            onOpenOnboarding={openOnboarding}
-            onFamiliarSelect={(id) => {
-              setActiveId(id);
-              if (pendingProjectChatRoot) {
-                const projectRoot = pendingProjectChatRoot;
-                setPendingProjectChatRoot(null);
-                setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
-              } else {
-                setTimeout(() => routerRef.current?.goToList(), 0);
-              }
-            }}
-            pendingProjectRoot={pendingProjectChatRoot}
-          />
-        </div>
-        {inspectorOpen ? (
-          <aside className="relative hidden h-full w-[340px] shrink-0 lg:block">
-            <button
-              type="button"
-              onClick={() => setInspectorOpen(false)}
-              className="absolute right-2 top-2 z-10 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-1.5 text-[var(--text-muted)] shadow-sm transition-colors hover:text-[var(--text-primary)]"
-              title="Close inspector"
-              aria-label="Close inspector"
-            >
-              <Icon name="ph:x-bold" width={12} />
-            </button>
-            <InspectorPane familiar={active} inboxItems={inboxItemsWithEphemeral} onOpenInbox={() => setMode("inbox")} />
-          </aside>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setInspectorOpen(true)}
-            className="hidden h-full w-9 shrink-0 items-start justify-center border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pt-3 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] lg:flex"
-            title="Open inspector"
-            aria-label="Open inspector"
-          >
-            <Icon name="ph:brain-bold" width={15} />
-          </button>
-        )}
-      </div>
     ) : mode === "library" ? (
       <LibraryView />
     ) : mode === "board" ? (
@@ -776,17 +735,14 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliarId={activeId}
         onJumpToSession={(sessionId, familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+          openAgentSession(sessionId, familiarId);
         }}
       />
     ) : mode === "inbox" ? (
       <InboxEscalationsView
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
-            setMode("chats");
-            setTimeout(() => routerRef.current?.openSession(item.sourceSessionKey!), 0);
+            openAgentSession(item.sourceSessionKey);
           } else if (item.sourceUrl) {
             window.open(item.sourceUrl, "_blank", "noopener");
           }
@@ -797,19 +753,7 @@ export function Workspace() {
         familiars={familiars}
         onNewReminder={() => openReminderModal()}
         onOpenSession={(sessionId, familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
-        }}
-      />
-    ) : mode === "calls" ? (
-      <CallsView
-        familiars={familiars}
-        sessions={sessions}
-        onOpenSession={(sessionId, familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+          openAgentSession(sessionId, familiarId);
         }}
       />
     ) : mode === "browser" ? (
@@ -819,9 +763,7 @@ export function Workspace() {
         view="terminal"
         sessions={sessions}
         onOpenSession={(sessionId, familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+          openAgentSession(sessionId, familiarId);
         }}
         onNewChat={openProjectChat}
       />
@@ -830,9 +772,7 @@ export function Workspace() {
         view="projects"
         sessions={sessions}
         onOpenSession={(sessionId, familiarId) => {
-          if (familiarId) setActiveId(familiarId);
-          setMode("chats");
-          setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+          openAgentSession(sessionId, familiarId);
         }}
         onNewChat={openProjectChat}
       />
@@ -851,9 +791,7 @@ export function Workspace() {
         }}
         onOpenItem={(item) => {
           if (item.sessionId) {
-            if (item.familiarId) setActiveId(item.familiarId);
-            setMode("chats");
-            setTimeout(() => routerRef.current?.openSession(item.sessionId!), 0);
+            openAgentSession(item.sessionId, item.familiarId);
           } else {
             setMode("inbox");
           }
@@ -862,17 +800,14 @@ export function Workspace() {
     ) : (
       <PluginsView
         onOpenChat={() => {
-          setMode("chats");
-          setTimeout(() => routerRef.current?.newChat(), 0);
+          startAgentChat(activeId);
         }}
         onCreateReminder={() => openReminderModal()}
         onCreateSkill={() => {
-          setMode("chats");
-          setTimeout(() => routerRef.current?.newChat(), 0);
+          startAgentChat(activeId);
         }}
         onCreatePlugin={() => {
-          setMode("chats");
-          setTimeout(() => routerRef.current?.newChat(), 0);
+          startAgentChat(activeId);
         }}
         familiars={familiars.map((f) => ({ id: f.id, display_name: f.display_name }))}
       />
@@ -898,12 +833,7 @@ export function Workspace() {
             onOpenInbox={() => setMode("inbox")}
             onOpenInboxItem={(item) => {
               if (item.sessionId) {
-                if (item.familiarId) setActiveId(item.familiarId);
-                setMode("chats");
-                setTimeout(
-                  () => routerRef.current?.openSession(item.sessionId!),
-                  0,
-                );
+                openAgentSession(item.sessionId, item.familiarId);
               } else {
                 setMode("inbox");
               }

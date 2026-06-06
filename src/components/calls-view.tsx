@@ -22,7 +22,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { CovenFloor } from "@/components/coven-floor";
 import { Icon } from "@/lib/icon";
 
-type Tab = "floor" | "delegations";
+export type CallsViewTab = "floor" | "delegations";
 type TimeWindow = "24h" | "7d" | "all";
 type Selection =
   | { kind: "edge"; key: string }
@@ -34,6 +34,8 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   onOpenSession?: (sessionId: string, familiarId?: string | null) => void;
+  initialTab?: CallsViewTab;
+  embedded?: boolean;
 };
 
 type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
@@ -107,8 +109,8 @@ function edgeStroke(edge: DelegationGraphEdge): string {
   return "#8E3DFF";
 }
 
-export function CallsView({ familiars, sessions, onOpenSession }: Props) {
-  const [tab, setTab] = useState<Tab>("floor");
+export function CallsView({ familiars, sessions, onOpenSession, initialTab = "floor", embedded = false }: Props) {
+  const [tab, setTab] = useState<CallsViewTab>(initialTab);
   const [calls, setCalls] = useState<CovenCall[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -183,6 +185,7 @@ export function CallsView({ familiars, sessions, onOpenSession }: Props) {
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)]">
+      {!embedded && (
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[var(--border-hairline)] px-5 py-3">
         <div className="min-w-0">
           <h1 className="text-sm font-semibold text-[var(--text-primary)]">Coven Calls</h1>
@@ -192,7 +195,7 @@ export function CallsView({ familiars, sessions, onOpenSession }: Props) {
           {([
             ["floor", "The Floor"] as const,
             ["delegations", "Delegations"] as const,
-          ] as [Tab, string][]).map(([id, label]) => (
+          ] as [CallsViewTab, string][]).map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -209,6 +212,7 @@ export function CallsView({ familiars, sessions, onOpenSession }: Props) {
           ))}
         </div>
       </header>
+      )}
 
       {tab === "floor" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
