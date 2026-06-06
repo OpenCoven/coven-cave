@@ -13,6 +13,7 @@ type ViewMode = "agenda" | "day" | "week" | "month";
 type Props = {
   items: InboxItem[];
   familiars: Familiar[];
+  onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
 };
 
@@ -65,6 +66,26 @@ function fmtDateHeading(d: Date): string {
     month: "long",
     day: "numeric",
   });
+}
+
+function defaultEntryFireAt(day: Date): string {
+  const target = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
+  const now = new Date();
+  if (target.getTime() > now.getTime()) return target.toISOString();
+
+  const fallback = new Date(now);
+  fallback.setMinutes(Math.ceil((fallback.getMinutes() + 5) / 15) * 15, 0, 0);
+  return fallback.toISOString();
+}
+
+function defaultWeekEntryFireAt(anchor: Date): string {
+  const weekStart = startOfWeek(anchor);
+  const today = startOfDay(new Date());
+  const day =
+    Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).find(
+      (candidate) => startOfDay(candidate).getTime() >= today.getTime(),
+    ) ?? weekStart;
+  return defaultEntryFireAt(day);
 }
 
 function itemDate(item: InboxItem): Date | null {
@@ -125,15 +146,44 @@ function ItemChip({
   );
 }
 
+function EmptyScheduleState({
+  icon,
+  label,
+  onAddEntry,
+}: {
+  icon: IconName;
+  label: string;
+  onAddEntry?: () => void;
+}) {
+  return (
+    <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
+      <Icon name={icon} className="text-3xl opacity-30" />
+      <span>{label}</span>
+      {onAddEntry ? (
+        <button
+          type="button"
+          onClick={onAddEntry}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+        >
+          <Icon name="ph:plus" width={12} />
+          Add task or event
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 // ─── Agenda view ──────────────────────────────────────────────────────────────
 
 function AgendaView({
   items,
   anchor,
+  onAddEntry,
   onOpenItem,
 }: {
   items: InboxItem[];
   anchor: Date;
+  onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
 }) {
   // Group items by date, sorted ascending from anchor
@@ -153,10 +203,15 @@ function AgendaView({
 
   if (groups.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-[var(--text-muted)] text-sm gap-2">
-        <Icon name="ph:calendar-blank" className="text-3xl opacity-30" />
-        <span>Nothing scheduled</span>
-      </div>
+      <EmptyScheduleState
+        icon="ph:calendar-blank"
+        label="Nothing scheduled"
+        onAddEntry={
+          onAddEntry
+            ? () => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })
+            : undefined
+        }
+      />
     );
   }
 
@@ -369,10 +424,12 @@ function TimeGrid({
 function DayView({
   items,
   anchor,
+  onAddEntry,
   onOpenItem,
 }: {
   items: InboxItem[];
   anchor: Date;
+  onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
 }) {
   const today = new Date();
@@ -417,10 +474,15 @@ function DayView({
       )}
       {/* Time grid */}
       {timedItems.length === 0 && allDayItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)] text-sm gap-2">
-          <Icon name="ph:sun" className="text-3xl opacity-30" />
-          <span>Nothing scheduled for this day</span>
-        </div>
+        <EmptyScheduleState
+          icon="ph:sun"
+          label="Nothing scheduled for this day"
+          onAddEntry={
+            onAddEntry
+              ? () => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })
+              : undefined
+          }
+        />
       ) : timedItems.length === 0 ? null : (
         <TimeGrid columns={columns} onOpenItem={onOpenItem} />
       )}
@@ -433,10 +495,12 @@ function DayView({
 function WeekView({
   items,
   anchor,
+  onAddEntry,
   onOpenItem,
 }: {
   items: InboxItem[];
   anchor: Date;
+  onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
 }) {
   const weekStart = startOfWeek(anchor);
@@ -464,6 +528,10 @@ function WeekView({
       }),
     }));
   }, [items, days]);
+
+  const isWeekEmpty =
+    columns.every((col) => col.items.length === 0) &&
+    allDayColumns.every((col) => col.items.length === 0);
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -497,7 +565,19 @@ function WeekView({
       {allDayColumns.some((c) => c.items.length > 0) && (
         <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
       )}
-      <TimeGrid columns={columns} onOpenItem={onOpenItem} />
+      {isWeekEmpty ? (
+        <EmptyScheduleState
+          icon="ph:calendar-blank"
+          label="Nothing scheduled for this week"
+          onAddEntry={
+            onAddEntry
+              ? () => onAddEntry({ fireAt: defaultWeekEntryFireAt(anchor) })
+              : undefined
+          }
+        />
+      ) : (
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} />
+      )}
     </div>
   );
 }
@@ -709,7 +789,7 @@ function ItemDetailPanel({
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, onOpenItem }: Props) {
+export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
@@ -842,13 +922,28 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
       {/* View body */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {viewMode === "agenda" && (
-          <AgendaView items={items} anchor={anchor} onOpenItem={(item) => setSelectedItem(item)} />
+          <AgendaView
+            items={items}
+            anchor={anchor}
+            onAddEntry={onAddEntry}
+            onOpenItem={(item) => setSelectedItem(item)}
+          />
         )}
         {viewMode === "day" && (
-          <DayView items={items} anchor={anchor} onOpenItem={(item) => setSelectedItem(item)} />
+          <DayView
+            items={items}
+            anchor={anchor}
+            onAddEntry={onAddEntry}
+            onOpenItem={(item) => setSelectedItem(item)}
+          />
         )}
         {viewMode === "week" && (
-          <WeekView items={items} anchor={anchor} onOpenItem={(item) => setSelectedItem(item)} />
+          <WeekView
+            items={items}
+            anchor={anchor}
+            onAddEntry={onAddEntry}
+            onOpenItem={(item) => setSelectedItem(item)}
+          />
         )}
         {viewMode === "month" && (
           <MonthView

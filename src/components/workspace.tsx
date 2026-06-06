@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SidebarMinimal } from "@/components/sidebar-minimal";
+import { SidebarMinimal, FOLDER_MODES, UTILITY_MODES } from "@/components/sidebar-minimal";
+import { Icon } from "@/lib/icon";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { DaemonBar } from "@/components/daemon-bar";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
@@ -26,7 +27,6 @@ import { GitHubView } from "@/components/github-view";
 import { HomeComposer } from "@/components/home-composer";
 import { nativeNotify } from "@/lib/native-notify";
 import { SessionsView } from "@/components/sessions-view";
-import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -37,6 +37,50 @@ type WorkspaceMode = Parameters<typeof DaemonBar>[0]["mode"] | "sessions";
 // Narrow helper for DaemonBar (which doesn't know about "sessions")
 function isDaemonMode(m: WorkspaceMode): m is Parameters<typeof DaemonBar>[0]["mode"] {
   return m !== "sessions";
+}
+
+// Icon-only nav strip shown when the sidebar is collapsed
+function IconNavStrip({
+  mode,
+  inboxBadgeCount,
+  onModeChange,
+}: {
+  mode: string;
+  inboxBadgeCount?: number;
+  onModeChange: (m: string) => void;
+}) {
+  return (
+    <>
+      {FOLDER_MODES.map((fm) => {
+        const badge = fm.badge?.({ mode, inboxBadgeCount } as Parameters<typeof fm.badge>[0]);
+        return (
+          <button
+            key={fm.id}
+            type="button"
+            title={fm.label}
+            aria-label={fm.label}
+            onClick={() => onModeChange(fm.id)}
+            className={`shell-nav-tab-icon-btn${mode === fm.id ? " shell-nav-tab-icon-btn--active" : ""}`}
+          >
+            <Icon name={fm.iconName} width={15} />
+            {badge && <span className="shell-nav-tab-badge">{badge}</span>}
+          </button>
+        );
+      })}
+      <span className="my-1 h-px w-5 bg-[var(--border-hairline)]" />
+      {UTILITY_MODES.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          title={item.label}
+          aria-label={item.label}
+          onClick={() => onModeChange(item.id)}
+        >
+          <Icon name={item.iconName} width={15} />
+        </button>
+      ))}
+    </>
+  );
 }
 
 export function Workspace() {
@@ -62,9 +106,10 @@ export function Workspace() {
   });
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
   const [reminderModalDefaults, setReminderModalDefaults] = useState<{
+    fireAt: string;
     title: string;
     whenText: string;
-  }>({ title: "", whenText: "" });
+  }>({ fireAt: "", title: "", whenText: "" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
@@ -142,7 +187,7 @@ export function Workspace() {
         const { listen } = await import("@tauri-apps/api/event");
         unlistenOpen = await listen("tray:open-inbox", () => setMode("inbox"));
         unlistenNew = await listen("tray:new-reminder", () => {
-          setReminderModalDefaults({ title: "", whenText: "" });
+          setReminderModalDefaults({ fireAt: "", title: "", whenText: "" });
           setReminderModalOpen(true);
         });
       } catch {
@@ -333,8 +378,8 @@ export function Workspace() {
     };
   }, []);
 
-  const openReminderModal = useCallback((title = "", whenText = "") => {
-    setReminderModalDefaults({ title, whenText });
+  const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
+    setReminderModalDefaults({ fireAt, title, whenText });
     setReminderModalOpen(true);
   }, []);
 
@@ -615,6 +660,19 @@ export function Workspace() {
         setMode("chats");
         setTimeout(() => routerRef.current?.openSession(id), 0);
       }}
+      onCollapse={() => shellRef.current?.toggleNav()}
+    />
+  );
+
+  const iconNav = (
+    <IconNavStrip
+      mode={mode}
+      inboxBadgeCount={inboxBadgeCount}
+      onModeChange={(m) => {
+        shellRef.current?.openNav();
+        if (m === "browser") { setMode("browser"); return; }
+        setMode(m as WorkspaceMode);
+      }}
     />
   );
 
@@ -776,6 +834,13 @@ export function Workspace() {
       <CalendarView
         items={inboxItems}
         familiars={familiars}
+        onAddEntry={(defaults) => {
+          openReminderModal(
+            defaults?.title ?? "",
+            defaults?.whenText ?? "",
+            defaults?.fireAt ?? "",
+          );
+        }}
         onOpenItem={(item) => {
           if (item.sessionId) {
             if (item.familiarId) setActiveId(item.familiarId);
@@ -789,6 +854,15 @@ export function Workspace() {
     ) : (
       <PluginsView
         onOpenChat={() => {
+          setMode("chats");
+          setTimeout(() => routerRef.current?.newChat(), 0);
+        }}
+        onCreateReminder={() => openReminderModal()}
+        onCreateSkill={() => {
+          setMode("chats");
+          setTimeout(() => routerRef.current?.newChat(), 0);
+        }}
+        onCreatePlugin={() => {
           setMode("chats");
           setTimeout(() => routerRef.current?.newChat(), 0);
         }}
@@ -829,6 +903,7 @@ export function Workspace() {
           />
         }
         nav={sidebar}
+        iconNav={iconNav}
         list={list}
         detail={detail}
         agent={mode === "browser" ? undefined : <BrowserPane label="default" />}
@@ -853,6 +928,7 @@ export function Workspace() {
         onClose={() => setReminderModalOpen(false)}
         familiars={familiars}
         defaultFamiliarId={activeId}
+        defaultFireAt={reminderModalDefaults.fireAt}
         defaultWhenText={reminderModalDefaults.whenText}
         defaultTitle={reminderModalDefaults.title}
         onCreate={async (draft) => {

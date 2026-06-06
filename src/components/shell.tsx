@@ -84,10 +84,14 @@ export type ShellHandle = {
   openAgent: () => void;
   closeAgent: () => void;
   toggleAgent: () => void;
+  openNav: () => void;
+  closeNav: () => void;
+  toggleNav: () => void;
 };
 
 function ShellInner({
   nav,
+  iconNav,
   list,
   detail,
   agent,
@@ -97,6 +101,7 @@ function ShellInner({
   topBar,
 }: {
   nav: ReactNode;
+  iconNav?: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
   agent?: ReactNode;
@@ -113,24 +118,27 @@ function ShellInner({
   useEffect(() => setMounted(true), []);
 
   useImperativeHandle(ref, () => ({
-    openAgent: () => {
-      agentRef.current?.expand();
-      setAgentOpen(true);
-    },
-    closeAgent: () => {
-      agentRef.current?.collapse();
-      setAgentOpen(false);
-    },
+    openAgent: () => { agentRef.current?.expand(); setAgentOpen(true); },
+    closeAgent: () => { agentRef.current?.collapse(); setAgentOpen(false); },
     toggleAgent: () => {
       const panel = agentRef.current;
       if (!panel) return;
       if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
       else { panel.collapse(); setAgentOpen(false); }
     },
+    openNav: () => { navRef.current?.expand(); setNavOpen(true); },
+    closeNav: () => { navRef.current?.collapse(); setNavOpen(false); },
+    toggleNav: () => {
+      const panel = navRef.current;
+      if (!panel) return;
+      if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
+      else { panel.collapse(); setNavOpen(false); }
+    },
   }), []);
 
   const twoPane = !list;
   const hasAgent = !!agent;
+  const hasIconNav = !!iconNav;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
@@ -154,6 +162,13 @@ function ShellInner({
     if (agentPanelIdx < 0 || !defaultLayout) return false;
     const pct = defaultLayout[agentPanelIdx];
     return typeof pct === "number" && pct > 0;
+  });
+
+  const navPanelIdx = panelIds.indexOf("nav");
+  const [navOpen, setNavOpen] = useState(() => {
+    if (!defaultLayout) return true;
+    const pct = defaultLayout[navPanelIdx];
+    return typeof pct !== "number" || pct > 0;
   });
 
   useEffect(() => {
@@ -220,6 +235,7 @@ function ShellInner({
         collapsible
         collapsedSize={0}
         panelRef={navRef}
+        onResize={(size) => setNavOpen((size.asPercentage ?? 0) > 0)}
       >
         <aside className="shell-nav">{nav}</aside>
       </Panel>
@@ -268,7 +284,23 @@ function ShellInner({
   return (
     <div className="flex h-full w-full flex-col">
       {topBar}
-      <div className="flex flex-1 min-h-0 relative">
+      <div className="flex flex-1 min-h-0">
+        {/* Left icon strip — shown when nav is collapsed */}
+        {hasIconNav && !navOpen && (
+          <div className="shell-nav-tab">
+            <button
+              type="button"
+              className="shell-nav-tab-toggle"
+              title="Expand sidebar (⌘B)"
+              onClick={() => { navRef.current?.expand(); setNavOpen(true); }}
+            >
+              <Icon name="ph:sidebar-simple" width={15} />
+            </button>
+            <div className="shell-nav-tab-icons">
+              {iconNav}
+            </div>
+          </div>
+        )}
         {hasBottom ? (
           <Group
             className="flex-1 min-h-0"

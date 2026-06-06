@@ -234,7 +234,18 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
   useEffect(() => {
     if (!text) return;
     let cancelled = false;
-    void mdToHtml(text).then((h) => { if (!cancelled) setHtml(h); });
+    void mdToHtml(text).then((h) => {
+      if (cancelled) return;
+      const doc = new DOMParser().parseFromString(h, "text/html");
+      for (const el of Array.from(doc.querySelectorAll("script, iframe, object, embed, link, style"))) el.remove();
+      for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
+        for (const attr of Array.from(el.attributes)) {
+          if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+          if ((attr.name === "href" || attr.name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+        }
+      }
+      setHtml(doc.body.innerHTML);
+    });
     return () => { cancelled = true; };
   }, [text]);
 

@@ -502,7 +502,7 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
               "mb-1 grid h-7 w-7 shrink-0 place-items-center rounded transition-colors",
               railPinned
                 ? "text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
-                : "text-[var(--fg-muted)] hover:text-[var(--fg-base)]",
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]",
             ].join(" ")}
           >
             <Icon name={railPinned ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={13} />
