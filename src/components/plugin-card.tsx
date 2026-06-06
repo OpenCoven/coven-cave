@@ -54,12 +54,12 @@ export function PluginCard({
       onClick={onClick}
       className={`group flex min-w-0 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
         harness.installed
-          ? "border-border bg-card hover:border-border-strong hover:bg-muted/40"
-          : "border-border bg-card opacity-50 hover:opacity-70"
+          ? "border-border bg-[#050409] hover:border-border-strong hover:bg-[#111018]"
+          : "border-border bg-[#050409] opacity-50 hover:opacity-70"
       }`}
     >
       {/* Icon */}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#111018] text-muted-foreground">
         {iconName ? (
           <Icon name={iconName} width={18} height={18} />
         ) : (
