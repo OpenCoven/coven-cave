@@ -126,6 +126,10 @@ cp -R "$APP_PATH" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
 hdiutil create -volname "${APP_NAME}" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
 
+echo "==> Signing DMG container"
+codesign --force --timestamp \
+  --sign "$SIGNING_IDENTITY" "$DMG_PATH"
+
 echo "==> Submitting DMG for notarization"
 if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
   xcrun notarytool submit "$DMG_PATH" \
