@@ -59,12 +59,12 @@ function isClosed(s: SessionRow): boolean {
   return ["complete", "completed", "done", "exited", "failed", "cancelled"].includes(s.status);
 }
 
-function statusTone(s: SessionRow): string {
-  if (s.status === "running") return "border-emerald-500/25 bg-emerald-500/15 text-emerald-300";
+/** Only show a pill for meaningful / attention-worthy statuses. */
+function statusPill(s: SessionRow): { label: string; cls: string } | null {
+  if (s.status === "running") return { label: "running", cls: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300" };
   if (s.status === "failed" || (s.exit_code !== null && s.exit_code !== 0))
-    return "border-rose-500/25 bg-rose-500/15 text-rose-200";
-  if (isClosed(s)) return "border-[var(--border-hairline)] bg-[var(--bg-raised)] text-[var(--text-muted)]";
-  return "border-sky-500/25 bg-sky-500/15 text-sky-200";
+    return { label: "failed", cls: "border-rose-500/30 bg-rose-500/15 text-rose-300" };
+  return null; // orphaned / created / idle = no pill
 }
 
 // ── Agents command bar ────────────────────────────────────────────────────────
@@ -390,50 +390,46 @@ export function AgentsView({
           </div>
 
           {/* Actions flush right */}
-          <div className="flex items-center gap-2 py-1.5">
+          <div className="flex items-center gap-1.5 py-1.5">
             {(scope === "sessions" || scope === "conversation") && (
               <div className="relative">
                 <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search agents..."
-                  className="h-7 w-[160px] rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:w-[220px] transition-all"
+                  placeholder="Search chats…"
+                  className="h-7 w-[140px] rounded-md border border-[var(--border-hairline)] bg-transparent pl-7 pr-3 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:border-[oklch(0.65_0.18_280/60%)] focus:w-[200px] transition-all"
                 />
               </div>
             )}
             {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-0.5">
+              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Open / Closed">
                 <button type="button" onClick={() => setShowClosed(false)} className={softButton(!showClosed)}>
-                  Open <span className="opacity-60">{openCount}</span>
+                  Open <span className="opacity-50 font-normal">{openCount}</span>
                 </button>
                 <button type="button" onClick={() => setShowClosed(true)} className={softButton(showClosed)}>
-                  Closed <span className="opacity-60">{closedCount}</span>
+                  Closed <span className="opacity-50 font-normal">{closedCount}</span>
                 </button>
               </div>
             )}
             {(scope === "sessions" || scope === "conversation") && (
-              <div
-                className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-0.5"
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as typeof groupBy)}
+                className="h-7 cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-2 pr-6 text-[11px] text-[var(--text-muted)] outline-none hover:text-[var(--text-secondary)] focus:border-[oklch(0.65_0.18_280/50%)] appearance-none"
                 title="Group by"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23888' d='M2 3.5l3 3 3-3'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 6px center" }}
               >
-                {(["familiar", "status", "date", "none"] as const).map((g) => (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => setGroupBy(g)}
-                    className={softButton(groupBy === g)}
-                    title={`Group by ${g}`}
-                  >
-                    {g === "familiar" ? "Familiar" : g === "status" ? "Status" : g === "date" ? "Date" : "None"}
-                  </button>
-                ))}
-              </div>
+                <option value="familiar">Familiar</option>
+                <option value="status">Status</option>
+                <option value="date">Date</option>
+                <option value="none">None</option>
+              </select>
             )}
             <button
               type="button"
               onClick={() => startConversation(activeFamiliarId)}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-90"
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-[oklch(0.65_0.18_280)] px-3 text-[11px] font-semibold text-white shadow-sm hover:bg-[oklch(0.6_0.18_280)] transition-colors"
             >
               <Icon name="ph:plus-bold" width={11} />
               Chat
@@ -539,47 +535,60 @@ export function AgentsView({
                   {groupedSessions.map(({ label, sessions: groupSessions }) => (
                     <React.Fragment key={label ?? "__ungrouped__"}>
                       {label !== null && (
-                        <div className="sticky top-0 z-10 bg-[var(--bg-canvas)] px-4 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border-hairline)]">
+                        <div className="sticky top-0 z-10 bg-[var(--bg-canvas)]/95 backdrop-blur-sm px-5 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border-hairline)]">
                           {label}
-                          <span className="ml-1.5 font-normal opacity-50">{groupSessions.length}</span>
+                          <span className="ml-1.5 font-normal opacity-40">{groupSessions.length}</span>
                         </div>
                       )}
                       {groupSessions.map((session) => {
                         const familiar = session.familiarId ? famById.get(session.familiarId) : undefined;
                         const isActive = session.id === activeSessionId;
+                        const pill = statusPill(session);
                         return (
                           <div
                             key={session.id}
                             role="button"
                             tabIndex={0}
                             className={[
-                              "group flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-[var(--bg-raised)]",
-                              isActive ? "bg-[var(--bg-raised)] border-l-2 border-[var(--accent-presence)]" : "",
+                              "group relative flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-[var(--bg-raised)]",
+                              isActive ? "bg-[var(--bg-raised)]" : "",
                             ].join(" ")}
                             onClick={() => openConversation(session)}
                             onKeyDown={(e) => e.key === "Enter" && openConversation(session)}
                           >
+                            {/* Active indicator */}
+                            {isActive && <div className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r bg-[oklch(0.65_0.18_280)]" />}
                             {/* Familiar glyph */}
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)] text-[20px] leading-none">
+                            <div className={[
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[20px] leading-none transition-colors",
+                              isActive
+                                ? "bg-[oklch(0.65_0.18_280/18%)] ring-1 ring-[oklch(0.65_0.18_280/30%)]"
+                                : "bg-[var(--bg-elevated)] group-hover:bg-[var(--bg-raised)]",
+                            ].join(" ")}>
                               {familiar?.emoji
                                 ? <span>{familiar.emoji}</span>
-                                : <Icon name="ph:robot" width={18} className="text-[var(--text-muted)]" />}
+                                : <Icon name="ph:robot" width={17} className="text-[var(--text-muted)]" />}
                             </div>
                             {/* Content */}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-baseline gap-2">
-                                <span className="flex-1 truncate text-[13px] font-medium text-[var(--text-primary)]">
+                                <span className={[
+                                  "flex-1 truncate text-[13px] leading-snug",
+                                  isActive ? "font-semibold text-[var(--text-primary)]" : "font-medium text-[var(--text-primary)]",
+                                ].join(" ")}>
                                   {session.title || "Untitled"}
                                 </span>
-                                <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{relTime(session.created_at)}</span>
+                                <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">{relTime(session.updated_at ?? session.created_at)}</span>
                               </div>
-                              <div className="mt-0.5 flex items-center gap-2">
-                                <span className="truncate text-[12px] text-[var(--text-secondary)]">
-                                  {familiar?.display_name ?? session.familiarId ?? "—"}
+                              <div className="mt-0.5 flex items-center gap-1.5">
+                                <span className="truncate text-[11.5px] text-[var(--text-muted)]">
+                                  {familiar?.display_name ?? session.familiarId ?? ""}
                                 </span>
-                                <span className={`shrink-0 inline-block rounded-full border px-1.5 py-0.5 text-[10px] capitalize ${statusTone(session)}`}>
-                                  {session.status}
-                                </span>
+                                {pill && (
+                                  <span className={`shrink-0 inline-block rounded-full border px-1.5 py-px text-[10px] capitalize ${pill.cls}`}>
+                                    {pill.label}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             {/* Hover actions */}

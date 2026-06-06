@@ -9,9 +9,418 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 8px 0 0;
-  font-size: 14px;
+  padding: 6px 0 0;
+  font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* ── Header CTA ──────────────────────────────────────────────────────────── */
+.sidebar-actions {
+  padding: 0 8px 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-action-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sidebar-action-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-action-row--active {
+  background: oklch(0.65 0.18 280 / 12%);
+  color: var(--text-primary);
+}
+
+/* "New chat" is the top CTA — give it a subtle pill feel */
+.sidebar-actions:first-child .sidebar-action-row {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-hairline);
+}
+.sidebar-actions:first-child .sidebar-action-row:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.sidebar-action-icon {
+  flex-shrink: 0;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.65;
+}
+
+.sidebar-action-row:hover .sidebar-action-icon,
+.sidebar-action-row--active .sidebar-action-icon {
+  opacity: 1;
+}
+
+.sidebar-action-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.sidebar-action-kbd {
+  font-size: 10px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+/* ── Folder mode rows ────────────────────────────────────────────────────── */
+.sidebar-folders {
+  padding: 4px 8px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.sidebar-addins {
+  padding-top: 4px;
+}
+
+.sidebar-section-label {
+  padding: 6px 10px 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.5;
+  user-select: none;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border-hairline);
+  margin: 3px 10px;
+}
+
+.sidebar-folder-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 9px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sidebar-folder-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-folder-row--active {
+  background: oklch(0.65 0.18 280 / 12%);
+  color: var(--text-primary);
+}
+
+.sidebar-folder-icon {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.sidebar-folder-row--active .sidebar-folder-icon,
+.sidebar-folder-row:hover .sidebar-folder-icon {
+  opacity: 1;
+}
+
+.sidebar-folder-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-badge {
+  font-size: 10px;
+  padding: 0.05em 0.45em;
+  border-radius: 8px;
+  background: oklch(0.65 0.18 280 / 15%);
+  color: oklch(0.78 0.12 280);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Recents header ──────────────────────────────────────────────────────── */
+.sidebar-recents-header {
+  padding: 8px 14px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ── Flat recents list ───────────────────────────────────────────────────── */
+.sidebar-recents {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+.sidebar-recents::-webkit-scrollbar { width: 3px; }
+.sidebar-recents::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 2px;
+}
+
+.sidebar-recents-empty {
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.sidebar-recent-row {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+  min-width: 0;
+}
+
+.sidebar-recent-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.sidebar-recent-row--active {
+  background: oklch(0.65 0.18 280 / 10%);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.sidebar-recent-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sidebar-recent-ts {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Bottom utility footer ───────────────────────────────────────────────── */
+.sidebar-actions--footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border-hairline);
+  padding: 6px 8px 10px;
+}
+
+/* Footer rows slightly smaller/dimmer than header rows */
+.sidebar-actions--footer .sidebar-action-row {
+  font-size: 12px;
+  padding: 5px 10px;
+  color: var(--text-muted);
+}
+
+.sidebar-actions--footer .sidebar-action-row:hover {
+  color: var(--text-secondary);
+}
+
+.sidebar-actions--footer .sidebar-action-row--active {
+  color: var(--text-primary);
+}
+
+.sidebar-bottom {
+  flex-shrink: 0;
+  padding: 6px 7px 8px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.sidebar-settings-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.sidebar-settings-row:hover {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+/* ── FamiliarStrip (AgentPanel top) ──────────────────────────────────────── */
+.familiar-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.familiar-strip::-webkit-scrollbar { display: none; }
+
+.familiar-strip-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  background: var(--bg-raised);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  padding: 0;
+}
+
+.familiar-strip-avatar:hover {
+  border-color: var(--border-strong);
+}
+
+.familiar-strip-avatar--active {
+  border-color: oklch(0.65 0.18 280);
+  box-shadow: 0 0 0 1px oklch(0.65 0.18 280 / 35%);
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 12%, var(--bg-raised));
+}
+
+/* ── Familiars section (left nav) ────────────────────────────────────────── */
+
+.sidebar-familiar-section-label {
+  padding: 5px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* ── Familiar list container ─────────────────────────────────────── */
+.sidebar-familiar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+.sidebar-familiar-list::-webkit-scrollbar { width: 3px; }
+.sidebar-familiar-list::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 2px;
+}
+
+/* ── Familiar nav rows ───────────────────────────────────────────────────── */
+
+.sidebar-familiar-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-align: left;
+  color: var(--text-secondary);
+}
+.sidebar-familiar-row:hover {
+  background: var(--bg-hover, var(--bg-raised));
+  color: var(--text-primary);
+}
+.sidebar-familiar-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+.sidebar-familiar-row-glyph {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+.sidebar-familiar-row:hover .sidebar-familiar-row-glyph,
+.sidebar-familiar-row--active .sidebar-familiar-row-glyph {
+  opacity: 1;
+}
+.sidebar-familiar-row-name {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sidebar-familiar-row--active .sidebar-familiar-row-name {
+  color: var(--accent-presence);
+  font-weight: 500;
+}
+.sidebar-familiar-row-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border-radius: 8px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-familiar-row--active .sidebar-familiar-row-count {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  color: var(--accent-presence);
 }
 
 /* ── 4 primary actions ───────────────────────────────────────────────────── */
