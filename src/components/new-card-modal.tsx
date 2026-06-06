@@ -18,6 +18,8 @@ export type NewCardDraft = {
   priority: CardPriority;
   familiarId: string | null;
   sessionId: string | null;
+  cwd: string | null;
+  links: string[];
   labels: string[];
   template: null;
 };
@@ -47,6 +49,8 @@ export function NewCardModal({
   const [priority, setPriority] = useState<CardPriority>("medium");
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [cwd, setCwd] = useState("");
+  const [links, setLinks] = useState("");
   const [labels, setLabels] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +63,8 @@ export function NewCardModal({
     setPriority("medium");
     setFamiliarId(defaultFamiliarId);
     setSessionId(null);
+    setCwd("");
+    setLinks("");
     setLabels("");
     setError(null);
   }, [open, defaultStatus, defaultFamiliarId]);
@@ -79,10 +85,9 @@ export function NewCardModal({
         priority,
         familiarId,
         sessionId,
-        labels: labels
-          .split(/[,\s]+/)
-          .map((s) => s.trim())
-          .filter(Boolean),
+        cwd: cwd.trim() || null,
+        links: parseDelimited(links),
+        labels: parseDelimited(labels),
         template: null,
       });
       onClose();
@@ -198,7 +203,7 @@ export function NewCardModal({
             ]}
           />
         </Field>
-        <Field label="Session">
+        <Field label="Session (optional)">
           <Select
             value={sessionId ?? ""}
             onChange={(v) => setSessionId(v || null)}
@@ -212,6 +217,25 @@ export function NewCardModal({
           />
         </Field>
       </div>
+
+      <Field label="CWD">
+        <input
+          value={cwd}
+          onChange={(e) => setCwd(e.target.value)}
+          placeholder="/Users/buns/Documents/GitHub/OpenCoven/coven-cave"
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+        />
+      </Field>
+
+      <Field label="Links">
+        <textarea
+          value={links}
+          onChange={(e) => setLinks(e.target.value)}
+          placeholder="https://github.com/OpenCoven/coven-cave/pull/153"
+          rows={3}
+          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+        />
+      </Field>
 
       <Field label="Labels">
         <input
@@ -271,4 +295,8 @@ function Select({
 
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function parseDelimited(value: string): string[] {
+  return [...new Set(value.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean))];
 }

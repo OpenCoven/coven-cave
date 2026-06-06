@@ -23,6 +23,8 @@ export async function PATCH(
     priority: CardPriority;
     familiarId: string | null;
     sessionId: string | null;
+    cwd: string | null;
+    links: string[];
     labels: string[];
     needsHuman: boolean;
     runningSince: string | undefined;

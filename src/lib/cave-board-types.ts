@@ -17,6 +17,8 @@ export type Card = {
   priority: CardPriority;
   familiarId: string | null;
   sessionId: string | null;
+  cwd: string | null;
+  links: string[];
   labels: string[];
   template?: string | null;
   createdAt: string;

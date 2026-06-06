@@ -45,11 +45,38 @@ function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus)
   return currentStatus;
 }
 
-function backfillCard(c: Card | (Omit<Card, "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"> & Partial<Pick<Card, "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries">>)): Card {
+function normalizeList(values: string[] | undefined): string[] {
+  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizeLinks(values: string[] | undefined): string[] {
+  return normalizeList(values);
+}
+
+function normalizeCwd(value: string | null | undefined): string | null {
+  const cwd = value?.trim();
+  return cwd ? cwd : null;
+}
+
+type LegacyCard = Omit<
+  Card,
+  "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"
+> &
+  Partial<
+    Pick<
+      Card,
+      "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"
+    >
+  >;
+
+function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
   return {
     ...c,
     status: statusForLifecycle(lifecycle, c.status),
+    cwd: normalizeCwd(c.cwd),
+    links: normalizeLinks(c.links),
+    labels: normalizeList(c.labels),
     lifecycle,
     lifecycleAt: c.lifecycleAt ?? c.updatedAt,
     retryCount: c.retryCount ?? 0,
@@ -94,6 +121,8 @@ export type NewCardInput = {
   priority?: CardPriority;
   familiarId?: string | null;
   sessionId?: string | null;
+  cwd?: string | null;
+  links?: string[];
   labels?: string[];
   template?: string | null;
 };
@@ -110,7 +139,9 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     priority: input.priority ?? "medium",
     familiarId: input.familiarId ?? null,
     sessionId: input.sessionId ?? null,
-    labels: (input.labels ?? []).map((l) => l.trim()).filter(Boolean),
+    cwd: normalizeCwd(input.cwd),
+    links: normalizeLinks(input.links),
+    labels: normalizeList(input.labels),
     template: input.template ?? null,
     createdAt: now,
     updatedAt: now,
@@ -139,8 +170,13 @@ export async function updateCard(
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString(),
     labels: patch.labels
-      ? patch.labels.map((l) => l.trim()).filter(Boolean)
+      ? normalizeList(patch.labels)
       : current.labels,
+    links: patch.links
+      ? normalizeLinks(patch.links)
+      : current.links,
+    cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
+    sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
   };
   if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;

@@ -209,6 +209,12 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
       </div>
       <div className="min-w-0 text-[13px] font-medium leading-snug text-foreground">{card.title}</div>
       {card.notes && <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{card.notes}</p>}
+      {(card.cwd || card.links.length > 0) && (
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+          {card.cwd && <span className="min-w-0 max-w-full truncate rounded border border-border bg-card px-1.5 py-px">{shortPath(card.cwd)}</span>}
+          {card.links.length > 0 && <span className="rounded border border-border bg-card px-1.5 py-px">{card.links.length} link{card.links.length === 1 ? "" : "s"}</span>}
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
         {card.labels.slice(0, 3).map((l) => (
@@ -227,4 +233,9 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
       </div>
     </li>
   );
+}
+
+function shortPath(value: string): string {
+  const parts = value.split("/").filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join("/") : value;
 }
