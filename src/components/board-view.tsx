@@ -76,6 +76,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [scopeToFamiliar, setScopeToFamiliar] = useState<boolean>(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const draggingIdRef = useRef<string | null>(null);
   const boardRailRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,6 +117,25 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     return m;
   }, [filtered]);
 
+  const selectedCard = useMemo(
+    () => cards.find((c) => c.id === selectedCardId) ?? null,
+    [cards, selectedCardId],
+  );
+
+  const boardStats = useMemo(() => {
+    const running = cards.filter((c) => c.status === "running").length;
+    const blocked = cards.filter((c) => c.status === "blocked" || c.needsHuman).length;
+    const review = cards.filter((c) => c.status === "review").length;
+    const done = cards.filter((c) => c.status === "done").length;
+    return { running, blocked, review, done };
+  }, [cards]);
+
+  useEffect(() => {
+    if (selectedCardId && !cards.some((c) => c.id === selectedCardId)) {
+      setSelectedCardId(null);
+    }
+  }, [cards, selectedCardId]);
+
   const togglePriority = (p: CardPriority) => {
     setPriorityFilter((prev) => {
       const next = new Set(prev);
@@ -150,6 +170,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
   const replaceCard = (next: Card) => {
     setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)));
+    setSelectedCardId(next.id);
   };
 
   const moveCardToStatus = (id: string, status: CardStatus) => {
@@ -215,7 +236,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const removeCard = async (id: string) => {
     const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
     const json = await res.json();
-    if (json.ok) await load();
+    if (json.ok) {
+      if (selectedCardId === id) setSelectedCardId(null);
+      await load();
+    }
   };
 
   return (
@@ -223,10 +247,18 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       <header className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
         <div>
           <h1 className="text-base font-semibold text-foreground">Board</h1>
-          <p className="text-[11px] text-muted-foreground">
-            Queue work for familiars. {filtered.length} of {cards.length} card
-            {cards.length === 1 ? "" : "s"} shown.
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <span>
+              {filtered.length} of {cards.length} card{cards.length === 1 ? "" : "s"}
+            </span>
+            <span className="text-border-strong">/</span>
+            <span>{boardStats.running} running</span>
+            <span>{boardStats.review} in review</span>
+            <span className={boardStats.blocked > 0 ? "text-rose-200" : undefined}>
+              {boardStats.blocked} blocked
+            </span>
+            <span>{boardStats.done} done</span>
+          </div>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -307,99 +339,111 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         </div>
       ) : null}
 
-      {cards.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-5 py-12">
-          <p className="text-[13px] text-muted-foreground">No cards yet.</p>
-          <button
-            onClick={() => {
-              setModalDefaultStatus("backlog");
-              setModalOpen(true);
-            }}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-          >
-            + New card
-          </button>
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <div
-            ref={boardRailRef}
-            className="h-full overflow-x-auto overflow-y-hidden scroll-smooth"
-          >
-            <div className="flex h-full min-w-max gap-3 px-5 py-4">
-              {COLUMNS.map((col) => {
-                const rows = grouped.get(col.id) ?? [];
-                const isDropTarget = dropTarget === col.id;
-                return (
-                  <div
-                    key={col.id}
-                    onDragEnter={(e) => handleDragEnter(e, col.id)}
-                    onDragOver={(e) => handleDragOver(e, col.id)}
-                    onDragLeave={(e) => handleDragLeave(e, col.id)}
-                    onDrop={(e) => handleDrop(e, col.id)}
-                    className={`flex h-full w-[260px] flex-shrink-0 flex-col rounded-xl border bg-card transition-colors sm:w-[280px] xl:w-[300px] ${
-                      isDropTarget
-                        ? "border-border-strong bg-muted"
-                        : "border-border"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground" title={col.hint}>
-                          {col.label}
-                        </span>
-                        <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
-                          {rows.length}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setModalDefaultStatus(col.id);
-                          setModalOpen(true);
-                        }}
-                        title={`Add card to ${col.label}`}
-                        className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-                      {rows.length === 0 ? (
-                        <li
-                          className={`rounded-md border border-dashed px-3 py-4 text-center text-[11px] transition-colors ${
-                            isDropTarget
-                              ? "border-border-strong text-foreground"
-                              : "border-border text-muted-foreground"
-                          }`}
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(260px,40vh)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_400px]">
+        {cards.length === 0 ? (
+          <div className="flex min-h-0 flex-col items-center justify-center gap-3 px-5 py-12">
+            <p className="text-[13px] text-muted-foreground">No cards yet.</p>
+            <button
+              onClick={() => {
+                setModalDefaultStatus("backlog");
+                setModalOpen(true);
+              }}
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              + New card
+            </button>
+          </div>
+        ) : (
+          <div className="min-h-0 overflow-hidden">
+            <div
+              ref={boardRailRef}
+              className="h-full overflow-x-auto overflow-y-hidden scroll-smooth"
+            >
+              <div className="flex h-full min-w-max gap-3 px-5 py-4">
+                {COLUMNS.map((col) => {
+                  const rows = grouped.get(col.id) ?? [];
+                  const isDropTarget = dropTarget === col.id;
+                  return (
+                    <div
+                      key={col.id}
+                      onDragEnter={(e) => handleDragEnter(e, col.id)}
+                      onDragOver={(e) => handleDragOver(e, col.id)}
+                      onDragLeave={(e) => handleDragLeave(e, col.id)}
+                      onDrop={(e) => handleDrop(e, col.id)}
+                      className={`flex h-full w-[260px] flex-shrink-0 flex-col rounded-lg border bg-card transition-colors sm:w-[280px] xl:w-[300px] ${
+                        isDropTarget
+                          ? "border-border-strong bg-muted"
+                          : "border-border"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground" title={col.hint}>
+                            {col.label}
+                          </span>
+                          <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
+                            {rows.length}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setModalDefaultStatus(col.id);
+                            setModalOpen(true);
+                          }}
+                          title={`Add card to ${col.label}`}
+                          className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         >
-                          {isDropTarget ? "Drop here" : "Empty"}
-                        </li>
-                      ) : null}
-                      {rows.map((card) => (
-                        <CardItem
-                          key={card.id}
-                          card={card}
-                          familiars={familiars}
-                          sessions={sessions}
-                          isDragging={draggingId === card.id}
-                          onDragStart={(e) => handleDragStart(e, card.id)}
-                          onDragEnd={handleDragEnd}
-                          onPatch={(patch) => patchCard(card.id, patch)}
-                          onMoveStatus={(status) => moveCardToStatus(card.id, status)}
-                          onDelete={() => removeCard(card.id)}
-                          onCardReplaced={replaceCard}
-                          onJumpToSession={onJumpToSession}
-                        />
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
+                          +
+                        </button>
+                      </div>
+
+                      <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                        {rows.length === 0 ? (
+                          <li
+                            className={`rounded-md border border-dashed px-3 py-4 text-center text-[11px] transition-colors ${
+                              isDropTarget
+                                ? "border-border-strong text-foreground"
+                                : "border-border text-muted-foreground"
+                            }`}
+                          >
+                            {isDropTarget ? "Drop here" : col.hint}
+                          </li>
+                        ) : null}
+                        {rows.map((card) => (
+                          <CardItem
+                            key={card.id}
+                            card={card}
+                            familiars={familiars}
+                            sessions={sessions}
+                            isDragging={draggingId === card.id}
+                            isSelected={selectedCardId === card.id}
+                            onSelect={() => setSelectedCardId(card.id)}
+                            onDragStart={(e) => handleDragStart(e, card.id)}
+                            onDragEnd={handleDragEnd}
+                            onJumpToSession={onJumpToSession}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        <BoardDetailPanel
+          card={selectedCard}
+          familiars={familiars}
+          sessions={sessions}
+          onClose={() => setSelectedCardId(null)}
+          onPatch={(id, patch) => patchCard(id, patch)}
+          onMoveStatus={moveCardToStatus}
+          onDelete={removeCard}
+          onCardReplaced={replaceCard}
+          onJumpToSession={onJumpToSession}
+        />
+      </div>
 
       <NewCardModal
         open={modalOpen}
@@ -419,27 +463,22 @@ function CardItem({
   familiars,
   sessions,
   isDragging,
+  isSelected,
+  onSelect,
   onDragStart,
   onDragEnd,
-  onPatch,
-  onMoveStatus,
-  onDelete,
-  onCardReplaced,
   onJumpToSession,
 }: {
   card: Card;
   familiars: Familiar[];
   sessions: SessionRow[];
   isDragging?: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
-  onPatch: (patch: Partial<Card>) => void;
-  onMoveStatus: (status: CardStatus) => void;
-  onDelete: () => void;
-  onCardReplaced: (card: Card) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const draggedRef = useRef(false);
   const familiar = familiars.find((f) => f.id === card.familiarId) ?? null;
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
@@ -462,20 +501,49 @@ function CardItem({
       }}
       onClick={() => {
         if (draggedRef.current) return;
-        setExpanded((v) => !v);
+        onSelect();
       }}
-      className={`cursor-grab rounded-lg border border-border bg-background p-3 transition-all active:cursor-grabbing hover:border-border-strong ${
-        isDragging ? "opacity-40" : ""
-      }`}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        onSelect();
+      }}
+      tabIndex={0}
+      aria-selected={isSelected}
+      className={`cursor-grab rounded-lg border bg-background p-3 outline-none transition-all active:cursor-grabbing ${
+        isSelected
+          ? "border-border-strong bg-muted/60 ring-1 ring-border-strong"
+          : "border-border hover:border-border-strong hover:bg-muted/30"
+      } ${isDragging ? "opacity-40" : ""}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="flex-1 text-[13px] leading-snug text-foreground">{card.title}</span>
+      <div className="mb-2 flex items-center justify-between gap-2">
         <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${pri.pill}`}>
           {pri.label}
         </span>
+        <span className="text-[9px] uppercase tracking-widest text-muted-foreground">
+          {card.status}
+        </span>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug text-foreground">
+          {card.title}
+        </span>
+        <Icon
+          name={isSelected ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+          width="0.9rem"
+          height="0.9rem"
+          className="mt-0.5 shrink-0 text-muted-foreground"
+        />
+      </div>
+
+      {card.notes ? (
+        <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+          {card.notes}
+        </p>
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
         {card.lifecycle === "running" ? (
           <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />
@@ -488,7 +556,7 @@ function CardItem({
             retry {card.retryCount}/{card.maxRetries}
           </span>
         ) : null}
-        {card.labels.map((l) => (
+        {card.labels.slice(0, 3).map((l) => (
           <span
             key={l}
             className="rounded border border-border bg-card px-1.5 py-px text-[10px] text-foreground"
@@ -496,11 +564,14 @@ function CardItem({
             {l}
           </span>
         ))}
+        {card.labels.length > 3 ? (
+          <span className="text-[10px] text-muted-foreground">+{card.labels.length - 3}</span>
+        ) : null}
       </div>
 
       <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
         {familiar ? (
-          <span title={`${familiar.display_name} · ${familiar.harness ?? "?"}`}>
+          <span className="min-w-0 truncate" title={`${familiar.display_name} · ${familiar.harness ?? "?"}`}>
             {familiar.display_name}
           </span>
         ) : (
@@ -521,33 +592,96 @@ function CardItem({
               title={`Open session: ${session.title || "(untitled)"}`}
               className={`${session.origin ? "" : "ml-auto"} rounded border border-border bg-card px-1.5 py-px text-foreground transition-colors hover:bg-muted`}
             >
-              <span className="inline-flex items-center gap-1">
-                {session.status === "running" ? (
-                  <Icon name="ph:circle-fill" width="0.5rem" height="0.5rem" />
-                ) : session.status === "failed" ? (
-                  <Icon name="ph:x-circle-fill" width="0.7rem" height="0.7rem" />
-                ) : null}
-                open
-              </span>
+              open
             </button>
           </>
         ) : null}
       </div>
+    </li>
+  );
+}
 
-      {expanded ? (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="mt-3 space-y-3 rounded border border-border bg-card p-3"
-        >
-          {card.notes ? (
-            <p className="whitespace-pre-wrap text-[11px] text-muted-foreground">{card.notes}</p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
+function BoardDetailPanel({
+  card,
+  familiars,
+  sessions,
+  onClose,
+  onPatch,
+  onMoveStatus,
+  onDelete,
+  onCardReplaced,
+  onJumpToSession,
+}: {
+  card: Card | null;
+  familiars: Familiar[];
+  sessions: SessionRow[];
+  onClose: () => void;
+  onPatch: (id: string, patch: Partial<Card>) => void;
+  onMoveStatus: (id: string, status: CardStatus) => void;
+  onDelete: (id: string) => void;
+  onCardReplaced: (card: Card) => void;
+  onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
+}) {
+  const familiar = card ? familiars.find((f) => f.id === card.familiarId) ?? null : null;
+  const session = card ? sessions.find((s) => s.id === card.sessionId) ?? null : null;
+  const priority = card ? PRIORITIES.find((p) => p.id === card.priority)! : null;
+  const eligibleSessions = card
+    ? sessions.filter((s) => !card.familiarId || s.familiarId === card.familiarId).slice(0, 40)
+    : [];
+
+  return (
+    <aside className="flex min-h-[260px] min-w-0 flex-col border-t border-border bg-card/70 lg:min-h-0 lg:border-l lg:border-t-0">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+            Selected card
+          </div>
+          <div className="mt-0.5 text-sm font-semibold text-foreground">
+            {card ? "Inspector" : "Nothing selected"}
+          </div>
+        </div>
+        {card ? (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close selected card panel"
+            title="Close selected card panel"
+            className="grid h-7 w-7 place-items-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Icon name="ph:x-bold" width="0.75rem" height="0.75rem" />
+          </button>
+        ) : null}
+      </div>
+
+      {card ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="min-w-0 flex-1 text-base font-semibold leading-snug text-foreground">
+              {card.title}
+            </h2>
+            {priority ? (
+              <span className={`shrink-0 rounded border px-2 py-1 text-[10px] uppercase tracking-widest ${priority.pill}`}>
+                {priority.label}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+            {card.lifecycle === "running" ? (
+              <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />
+            ) : null}
+            <span className="rounded border border-border bg-background px-1.5 py-px text-[10px] uppercase tracking-widest text-muted-foreground">
+              {card.status}
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-[11px]">
             <Mini label="Status">
               <select
                 value={card.status}
-                onChange={(e) => onMoveStatus(e.target.value as CardStatus)}
-                className="w-full rounded border border-border bg-background px-1.5 py-1 text-[11px] text-foreground"
+                onChange={(e) => onMoveStatus(card.id, e.target.value as CardStatus)}
+                className="w-full rounded border border-border bg-background px-2 py-1.5 text-[11px] text-foreground"
               >
                 {COLUMNS.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -559,8 +693,8 @@ function CardItem({
             <Mini label="Priority">
               <select
                 value={card.priority}
-                onChange={(e) => onPatch({ priority: e.target.value as CardPriority })}
-                className="w-full rounded border border-border bg-background px-1.5 py-1 text-[11px] text-foreground"
+                onChange={(e) => onPatch(card.id, { priority: e.target.value as CardPriority })}
+                className="w-full rounded border border-border bg-background px-2 py-1.5 text-[11px] text-foreground"
               >
                 {PRIORITIES.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -572,8 +706,8 @@ function CardItem({
             <Mini label="Familiar">
               <select
                 value={card.familiarId ?? ""}
-                onChange={(e) => onPatch({ familiarId: e.target.value || null })}
-                className="w-full rounded border border-border bg-background px-1.5 py-1 text-[11px] text-foreground"
+                onChange={(e) => onPatch(card.id, { familiarId: e.target.value || null })}
+                className="w-full rounded border border-border bg-background px-2 py-1.5 text-[11px] text-foreground"
               >
                 <option value="">Default familiar</option>
                 {familiars.map((f) => (
@@ -586,42 +720,148 @@ function CardItem({
             <Mini label="Session">
               <select
                 value={card.sessionId ?? ""}
-                onChange={(e) => onPatch({ sessionId: e.target.value || null })}
-                className="w-full rounded border border-border bg-background px-1.5 py-1 text-[11px] text-foreground"
+                onChange={(e) => onPatch(card.id, { sessionId: e.target.value || null })}
+                className="w-full rounded border border-border bg-background px-2 py-1.5 text-[11px] text-foreground"
               >
                 <option value="">No linked session</option>
-                {sessions
-                  .filter((s) => !card.familiarId || s.familiarId === card.familiarId)
-                  .slice(0, 30)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {(s.title || "(untitled)").slice(0, 30)}
-                    </option>
-                  ))}
+                {eligibleSessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {(s.title || "(untitled)").slice(0, 34)}
+                  </option>
+                ))}
               </select>
             </Mini>
           </div>
-          {card.lifecycleReason ? (
-            <p className="rounded border border-border bg-background px-2 py-1 text-[10px] text-muted-foreground">
-              <span className="uppercase tracking-widest text-[9px]">reason</span>{" "}
-              {card.lifecycleReason}
-            </p>
+
+          <DetailSection label="Notes">
+            {card.notes ? (
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
+                {card.notes}
+              </p>
+            ) : (
+              <p className="text-[12px] text-muted-foreground">No notes on this card.</p>
+            )}
+          </DetailSection>
+
+          <DetailSection label="Assignment">
+            <div className="space-y-2 text-[12px] text-muted-foreground">
+              <div className="flex items-center justify-between gap-3">
+                <span>Familiar</span>
+                <span className="min-w-0 truncate text-foreground">
+                  {familiar ? familiar.display_name : "Default familiar"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Session</span>
+                {session ? (
+                  <button
+                    type="button"
+                    onClick={() => onJumpToSession?.(session.id, session.familiarId ?? null)}
+                    className="min-w-0 truncate rounded border border-border bg-background px-2 py-1 text-foreground transition-colors hover:bg-muted"
+                    title={session.title || "(untitled)"}
+                  >
+                    {session.title || "(untitled)"}
+                  </button>
+                ) : (
+                  <span className="text-foreground">No linked session</span>
+                )}
+              </div>
+            </div>
+          </DetailSection>
+
+          {card.labels.length > 0 ? (
+            <DetailSection label="Labels">
+              <div className="flex flex-wrap gap-1.5">
+                {card.labels.map((label) => (
+                  <span
+                    key={label}
+                    className="rounded border border-border bg-background px-2 py-1 text-[11px] text-foreground"
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </DetailSection>
           ) : null}
-          <LifecycleActions card={card} onChanged={onCardReplaced} />
-          <div className="flex justify-end pt-1">
+
+          {card.lifecycleReason ? (
+            <DetailSection label="Reason">
+              <p className="text-[12px] leading-relaxed text-muted-foreground">
+                {card.lifecycleReason}
+              </p>
+            </DetailSection>
+          ) : null}
+
+          <DetailSection label="Lifecycle">
+            <LifecycleActions card={card} onChanged={onCardReplaced} />
+          </DetailSection>
+
+          <DetailSection label="Audit">
+            <div className="grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+              <div>
+                <div className="uppercase tracking-widest text-[9px]">Created</div>
+                <div className="mt-0.5 text-foreground">{formatCompactDate(card.createdAt)}</div>
+              </div>
+              <div>
+                <div className="uppercase tracking-widest text-[9px]">Updated</div>
+                <div className="mt-0.5 text-foreground">{formatCompactDate(card.updatedAt)}</div>
+              </div>
+              <div>
+                <div className="uppercase tracking-widest text-[9px]">Retries</div>
+                <div className="mt-0.5 text-foreground">{card.retryCount}/{card.maxRetries}</div>
+              </div>
+              <div>
+                <div className="uppercase tracking-widest text-[9px]">Lifecycle at</div>
+                <div className="mt-0.5 text-foreground">{formatCompactDate(card.lifecycleAt)}</div>
+              </div>
+            </div>
+          </DetailSection>
+
+          <div className="mt-4 flex justify-end border-t border-border pt-3">
             <button
+              type="button"
               onClick={() => {
-                if (confirm("Delete card?")) onDelete();
+                if (confirm("Delete card?")) onDelete(card.id);
               }}
-              className="rounded border border-border px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded border border-border bg-background px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
-              delete
+              Delete card
             </button>
           </div>
         </div>
-      ) : null}
-    </li>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col justify-center px-4 py-8 text-sm text-muted-foreground">
+          <Icon name="ph:sidebar-simple" width="1.5rem" height="1.5rem" className="mb-3 text-muted-foreground" />
+          <p className="text-foreground">Select a card to inspect it.</p>
+          <p className="mt-1 text-[12px] leading-relaxed">
+            The panel keeps details, assignment, lifecycle actions, and audit context visible without expanding cards inside the board.
+          </p>
+        </div>
+      )}
+    </aside>
   );
+}
+
+function DetailSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-4 border-t border-border pt-3">
+      <div className="mb-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+        {label}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function formatCompactDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
 /** Live-updating "running 47m of 2h" badge — ticks once per minute. */
