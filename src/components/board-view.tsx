@@ -129,7 +129,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             className="board-search-input"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder='Search tasks or type status:running label:ux'
+            placeholder='Search tasks or type is:open label:ux cody'
           />
           {searchQuery ? (
             <button

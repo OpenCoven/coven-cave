@@ -32,6 +32,9 @@ assert.equal(cardMatchesBoardSearch(card, "", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "drag ux", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "label:ux status:inbox familiar:cody", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, 'title:"between columns" -label:backend', familiarsById), true);
+assert.equal(cardMatchesBoardSearch(card, "is:open", familiarsById), true);
+assert.equal(cardMatchesBoardSearch({ ...card, status: "done" }, "is:closed", familiarsById), true);
+assert.equal(cardMatchesBoardSearch(card, "is:closed", familiarsById), false);
 assert.equal(cardMatchesBoardSearch(card, "label:backend", familiarsById), false);
 assert.equal(cardMatchesBoardSearch(card, "priority:urgent", familiarsById), false);
 

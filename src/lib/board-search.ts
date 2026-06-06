@@ -97,6 +97,10 @@ function tokenMatches(
       return normalize(card.sessionId).includes(value);
     case "id":
       return normalize(card.id).includes(value);
+    case "is":
+      if (value === "open") return card.status !== "done";
+      if (value === "closed") return card.status === "done";
+      return normalize(card.status).includes(value);
     default:
       return includesAny(
         [
