@@ -171,32 +171,24 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding-top: 12px;
+  justify-content: stretch;
+  padding-top: 0;
   width: 36px;
   flex-shrink: 0;
   height: 100%;
   border-left: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
   color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  cursor: default;
   -webkit-app-region: no-drag;
   user-select: none;
 }
 .shell-agent-tab:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  /* strip itself no longer interactive — hover handled per-button */
 }
 .shell-agent-tab--open {
   background: var(--bg-raised);
-  color: var(--text-secondary);
   border-left-color: var(--border-strong);
-  opacity: 1;
-}
-.shell-agent-tab--open:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 .shell-agent-tab-label {
   display: none;
@@ -205,16 +197,17 @@ body {
   display: none;
 }
 
-/* Individual icon button inside the agent strip */
+/* Individual icon button inside the agent strip — each takes 50% height */
 .shell-agent-strip-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  border-radius: 0;
   border: none;
   background: none;
-  color: inherit;
+  color: var(--text-muted);
   cursor: pointer;
   transition: color 0.12s, background 0.12s;
   flex-shrink: 0;
@@ -231,6 +224,10 @@ body {
 .shell-agent-strip-btn--active:hover {
   background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
 }
+/* Bottom button gets a hairline top border as separator */
+.shell-agent-strip-btn--bottom {
+  border-top: 1px solid var(--border-hairline);
+}
 
 /* Hairline divider between strip buttons */
 .shell-agent-strip-divider {
@@ -238,7 +235,7 @@ body {
   height: 1px;
   background: var(--border-hairline);
   flex-shrink: 0;
-  margin: 2px 0;
+  margin: 0;
 }
 
 .shell-bottom {
