@@ -88,52 +88,16 @@ function softButton(active = false): string {
   ].join(" ");
 }
 
-// ── Session row ───────────────────────────────────────────────────────────────
+// ── Origin icon map ───────────────────────────────────────────────────────────
 
-function SessionRow_({
-  session,
-  familiar,
-  active,
-  onClick,
-}: {
-  session: SessionRow;
-  familiar: Familiar | undefined;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left transition-colors hover:bg-[var(--bg-raised)]",
-        active ? "bg-[var(--bg-raised)]" : "",
-      ].join(" ")}
-    >
-      <div className="min-w-0">
-        <div className="truncate text-[12px] font-medium text-[var(--text-primary)]">
-          {session.title || "Untitled session"}
-        </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-          <span>{familiar?.display_name ?? session.familiarId ?? "—"}</span>
-          <span>·</span>
-          <span>{session.harness}</span>
-          {session.project_root && (
-            <span className="max-w-[200px] truncate opacity-60">{session.project_root}</span>
-          )}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <span className={`rounded-full border px-1.5 py-0.5 text-[10px] capitalize ${statusTone(session)}`}>
-          {session.status}
-        </span>
-        <span className="w-10 text-right text-[10px] text-[var(--text-muted)]">
-          {relTime(session.updated_at || session.created_at)}
-        </span>
-      </div>
-    </button>
-  );
-}
+const ORIGIN_ICONS: Record<string, string> = {
+  chat: "ph:chat-circle",
+  board: "ph:kanban",
+  cron: "ph:clock",
+  heartbeat: "ph:pulse",
+  call: "ph:phone",
+  mention: "ph:at",
+};
 
 // ── Right panel (inspector / chat) ────────────────────────────────────────────
 
@@ -375,7 +339,7 @@ export function AgentsView({
           <div className="flex items-end gap-0">
             {(["sessions", "floor", "delegations"] as const).map((s) => {
               const labels: Record<string, string> = {
-                sessions: "Agents",
+                sessions: "Sessions",
                 floor: "Floor",
                 delegations: "Traces",
               };
@@ -530,7 +494,7 @@ export function AgentsView({
               </div>
             )}
 
-            {/* List */}
+            {/* Sessions table */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               {filteredSessions.length === 0 ? (
                 <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-3 text-center">
@@ -545,17 +509,120 @@ export function AgentsView({
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-[var(--border-hairline)]">
-                  {filteredSessions.map((session) => (
-                    <SessionRow_
-                      key={session.id}
-                      session={session}
-                      familiar={session.familiarId ? famById.get(session.familiarId) : undefined}
-                      active={session.id === activeSessionId}
-                      onClick={() => openConversation(session)}
-                    />
-                  ))}
-                </div>
+                <table className="w-full text-[11px]">
+                  <thead className="sticky top-0 border-b border-[var(--border-hairline)] bg-[var(--bg-canvas)] text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left font-medium w-[120px]">Familiar</th>
+                      <th className="px-3 py-1.5 text-left font-medium">Title</th>
+                      <th className="px-3 py-1.5 text-left font-medium w-[80px]">Status</th>
+                      <th className="px-3 py-1.5 text-left font-medium w-[80px]">Harness</th>
+                      <th className="px-3 py-1.5 text-left font-medium w-[36px]">Origin</th>
+                      <th className="px-3 py-1.5 text-right font-medium w-20">Started</th>
+                      <th className="px-3 py-1.5 text-right font-medium w-[72px]">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-hairline)]">
+                    {filteredSessions.map((session) => {
+                      const familiar = session.familiarId ? famById.get(session.familiarId) : undefined;
+                      const isActive = session.id === activeSessionId;
+                      const originIcon = (session.origin && ORIGIN_ICONS[session.origin]) ?? "ph:question";
+                      return (
+                        <tr
+                          key={session.id}
+                          className={[
+                            "group cursor-pointer transition-colors hover:bg-[var(--bg-raised)]",
+                            isActive ? "relative bg-[var(--bg-raised)] border-l-2 border-[var(--accent-presence)]" : "",
+                          ].join(" ")}
+                          onClick={() => openConversation(session)}
+                        >
+                          {/* Familiar */}
+                          <td className="px-3 py-2 w-[120px] max-w-[120px]">
+                            <div className="flex items-center gap-1.5 truncate">
+                              {familiar?.emoji
+                                ? <span className="text-[14px] leading-none">{familiar.emoji}</span>
+                                : <Icon name="ph:robot" width={14} className="shrink-0 text-[var(--text-muted)]" />
+                              }
+                              <span className="truncate text-[var(--text-secondary)]">
+                                {familiar?.display_name ?? session.familiarId ?? "—"}
+                              </span>
+                            </div>
+                          </td>
+                          {/* Title */}
+                          <td className="px-3 py-2">
+                            <span className="truncate font-medium text-[var(--text-primary)]">
+                              {session.title || "Untitled"}
+                            </span>
+                          </td>
+                          {/* Status */}
+                          <td className="px-3 py-2 w-[80px]">
+                            <span className={`inline-block rounded-full border px-1.5 py-0.5 text-[10px] capitalize ${statusTone(session)}`}>
+                              {session.status}
+                            </span>
+                          </td>
+                          {/* Harness */}
+                          <td className="px-3 py-2 w-[80px] truncate text-[var(--text-muted)]">
+                            {session.harness}
+                          </td>
+                          {/* Origin */}
+                          <td className="px-3 py-2 w-[36px]">
+                            <Icon
+                              name={originIcon as IconName}
+                              width={13}
+                              className="text-[var(--text-muted)]"
+                              title={session.origin ?? "unknown"}
+                            />
+                          </td>
+                          {/* Started */}
+                          <td className="px-3 py-2 w-20 text-right text-[var(--text-muted)]">
+                            {relTime(session.created_at)}
+                          </td>
+                          {/* Actions */}
+                          <td className="px-3 py-2 w-[72px]">
+                            <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                              <button
+                                type="button"
+                                title="Open conversation"
+                                onClick={(e) => { e.stopPropagation(); openConversation(session); }}
+                                className="rounded p-0.5 hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                              >
+                                <Icon name="ph:arrow-square-out" width={13} />
+                              </button>
+                              <button
+                                type="button"
+                                title="Archive"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  await fetch(`/api/sessions/${session.id}`, {
+                                    method: "PATCH",
+                                    headers: { "content-type": "application/json" },
+                                    body: JSON.stringify({ archived: true }),
+                                  });
+                                  onSessionStarted();
+                                }}
+                                className="rounded p-0.5 hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                              >
+                                <Icon name="ph:archive" width={13} />
+                              </button>
+                              <button
+                                type="button"
+                                title="Sacrifice (delete)"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!window.confirm("Sacrifice this session? This cannot be undone.")) return;
+                                  await fetch(`/api/sessions/${session.id}`, { method: "DELETE" });
+                                  onSessionStarted();
+                                }}
+                                className="rounded p-0.5 hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-rose-400"
+                              >
+                                <Icon name="ph:trash" width={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>

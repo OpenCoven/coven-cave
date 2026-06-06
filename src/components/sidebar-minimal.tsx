@@ -16,7 +16,6 @@ import type { SessionRow } from "@/lib/types";
 export type FolderMode =
   | "agents"
   | "board"
-  | "inbox"
   | "terminal"
   | "projects"
   | "browser"
@@ -27,7 +26,6 @@ export type SidebarMinimalProps = {
   mode: string;
   sessions: SessionRow[];
   activeSessionId?: string | null;
-  inboxBadgeCount?: number;
   onNewChat: () => void;
   onOpenSearch: () => void;
   onModeChange: (mode: string) => void;
@@ -43,8 +41,6 @@ const FOLDER_MODES: Array<{
 }> = [
   // Primary loop
   { id: "agents",  label: "Agents",      iconName: "ph:robot" },
-  { id: "inbox",   label: "Inbox",       iconName: "ph:bell-fill",
-    badge: (p) => p.inboxBadgeCount && p.inboxBadgeCount > 0 ? String(p.inboxBadgeCount) : undefined },
   { id: "board",   label: "Tasks",       iconName: "ph:kanban" },
   // Tools
   { id: "terminal", label: "Terminal",   iconName: "ph:terminal-window", dividerBefore: true },

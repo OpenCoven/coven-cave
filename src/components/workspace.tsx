@@ -41,17 +41,14 @@ function isDaemonMode(m: WorkspaceMode): m is Parameters<typeof DaemonBar>[0]["m
 // Icon-only nav strip shown when the sidebar is collapsed
 function IconNavStrip({
   mode,
-  inboxBadgeCount,
   onModeChange,
 }: {
   mode: string;
-  inboxBadgeCount?: number;
   onModeChange: (m: string) => void;
 }) {
   return (
     <>
       {FOLDER_MODES.map((fm) => {
-        const badge = fm.badge?.({ mode, inboxBadgeCount } as Parameters<typeof fm.badge>[0]);
         return (
           <button
             key={fm.id}
@@ -62,7 +59,6 @@ function IconNavStrip({
             className={`shell-nav-tab-icon-btn${mode === fm.id ? " shell-nav-tab-icon-btn--active" : ""}`}
           >
             <Icon name={fm.iconName} width={15} />
-            {badge && <span className="shell-nav-tab-badge">{badge}</span>}
           </button>
         );
       })}
@@ -659,7 +655,6 @@ export function Workspace() {
       mode={mode}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
-      inboxBadgeCount={inboxBadgeCount}
       onNewChat={() => {
         startAgentChat(activeId);
       }}
@@ -680,7 +675,6 @@ export function Workspace() {
   const iconNav = (
     <IconNavStrip
       mode={mode}
-      inboxBadgeCount={inboxBadgeCount}
       onModeChange={(m) => {
         shellRef.current?.openNav();
         if (m === "browser") { setMode("browser"); return; }
