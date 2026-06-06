@@ -126,6 +126,13 @@ cp -R "$APP_PATH" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
 hdiutil create -volname "${APP_NAME}" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
 
+echo "==> Signing DMG envelope"
+codesign --force --timestamp \
+  --sign "$SIGNING_IDENTITY" "$DMG_PATH"
+
+echo "==> Verifying DMG signature"
+codesign -vvv "$DMG_PATH" 2>&1 | tail -n 5
+
 echo "==> Submitting DMG for notarization"
 if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
   xcrun notarytool submit "$DMG_PATH" \
@@ -151,9 +158,14 @@ xcrun stapler staple "$APP_PATH"
 
 echo "==> Verifying Gatekeeper acceptance"
 spctl -a -vvv "$APP_PATH"
+spctl -a -t open --context context:primary-signature -vv "$DMG_PATH"
 
 if ! spctl -a -vvv "$APP_PATH" 2>&1 | grep -q "Notarized Developer ID"; then
   echo "Gatekeeper verification failed: app is not accepted as a notarized Developer ID app" >&2
+  exit 1
+fi
+if ! spctl -a -t open --context context:primary-signature -vv "$DMG_PATH" 2>&1 | grep -q "Notarized Developer ID"; then
+  echo "Gatekeeper verification failed: DMG is not accepted as a notarized Developer ID disk image" >&2
   exit 1
 fi
 
