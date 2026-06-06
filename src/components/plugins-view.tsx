@@ -966,6 +966,51 @@ function RoleMetric({ label, value }: { label: string; value: number }) {
   );
 }
 
+function RoleRelationItem({
+  item,
+}: {
+  item: { id: string; title: string; detail: string; status: string };
+}) {
+  const hasDetail =
+    !!item.detail &&
+    item.detail !== "Declared by this role" &&
+    item.detail !== "Role workflow" &&
+    item.detail !== "Tool or command capability";
+  const [open, setOpen] = useState(false);
+
+  return (
+    <li className="overflow-hidden rounded-md bg-[var(--bg-elevated)]/60">
+      <button
+        type="button"
+        className="flex min-w-0 w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-elevated)]"
+        onClick={() => hasDetail && setOpen((v) => !v)}
+        aria-expanded={hasDetail ? open : undefined}
+      >
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+          item.status === "connected" || item.status === "local" || item.status === "daemon"
+            ? "bg-emerald-400"
+            : item.status === "disabled"
+              ? "bg-amber-400"
+              : "bg-[var(--text-muted)]/40"
+        }`} />
+        <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">{item.title}</p>
+        {hasDetail && (
+          <Icon
+            name={open ? "ph:caret-up" : "ph:caret-down"}
+            width={10}
+            className="shrink-0 text-[var(--text-muted)] transition-transform"
+          />
+        )}
+      </button>
+      {hasDetail && open && (
+        <div className="border-t border-[var(--border-hairline)] px-2.5 py-2">
+          <p className="text-[11px] leading-relaxed text-[var(--text-muted)]">{item.detail}</p>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function RoleRelationSection({
   title,
   icon,
@@ -987,21 +1032,7 @@ function RoleRelationSection({
       </div>
       <ul className="space-y-1">
         {items.map((item) => (
-          <li key={item.id} className="flex min-w-0 items-center gap-2 rounded-md bg-[var(--bg-elevated)]/60 px-2.5 py-1.5">
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              item.status === "connected" || item.status === "local" || item.status === "daemon"
-                ? "bg-emerald-400"
-                : item.status === "disabled"
-                  ? "bg-amber-400"
-                  : "bg-[var(--text-muted)]/40"
-            }`} />
-            <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--text-primary)]">{item.title}</p>
-            {item.detail && item.detail !== "Declared by this role" && item.detail !== "Role workflow" && item.detail !== "Tool or command capability" && (
-              <span className="shrink-0 max-w-[120px] truncate text-[10px] text-[var(--text-muted)]" title={item.detail}>
-                {item.detail}
-              </span>
-            )}
-          </li>
+          <RoleRelationItem key={item.id} item={item} />
         ))}
       </ul>
     </section>
