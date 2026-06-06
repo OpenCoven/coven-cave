@@ -141,12 +141,33 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         />
       </div>
 
-      {/* Folder mode rows */}
+      {/* Primary nav rows: Agents / Tasks / Terminal / Browser */}
       <div className="sidebar-folders">
-        {visibleFolderModes.map((fm) => (
-          <React.Fragment key={fm.id}>
-            {fm.dividerBefore && <div className="sidebar-divider" />}
+        {visibleFolderModes
+          .filter((fm) => fm.id !== "github" && fm.id !== "library")
+          .map((fm) => (
+            <React.Fragment key={fm.id}>
+              {fm.dividerBefore && <div className="sidebar-divider" />}
+              <FolderRow
+                id={fm.id}
+                label={fm.label}
+                iconName={fm.iconName}
+                active={mode === fm.id}
+                badge={fm.badge?.(props)}
+                onClick={() => onModeChange(fm.id)}
+              />
+            </React.Fragment>
+          ))}
+      </div>
+
+      {/* Add-ins section: GitHub · Library · Roles · Automations */}
+      <div className="sidebar-folders sidebar-addins">
+        <div className="sidebar-section-label">Add-ins</div>
+        {visibleFolderModes
+          .filter((fm) => fm.id === "github" || fm.id === "library")
+          .map((fm) => (
             <FolderRow
+              key={fm.id}
               id={fm.id}
               label={fm.label}
               iconName={fm.iconName}
@@ -154,13 +175,21 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               badge={fm.badge?.(props)}
               onClick={() => onModeChange(fm.id)}
             />
-          </React.Fragment>
+          ))}
+        {UTILITY_MODES.filter((u) => u.id === "plugins" || u.id === "schedules").map((item) => (
+          <ActionRow
+            key={item.id}
+            icon={<Icon name={item.iconName} width={14} />}
+            label={item.label}
+            active={mode === item.id}
+            onClick={() => onModeChange(item.id)}
+          />
         ))}
       </div>
 
-      {/* Utility actions footer */}
+      {/* Utility footer: Calendar only */}
       <div className="sidebar-actions sidebar-actions--footer">
-        {UTILITY_MODES.map((item) => (
+        {UTILITY_MODES.filter((u) => u.id === "calendar").map((item) => (
           <ActionRow
             key={item.id}
             icon={<Icon name={item.iconName} width={14} />}

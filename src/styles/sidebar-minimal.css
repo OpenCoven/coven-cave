@@ -81,6 +81,22 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 
+.sidebar-addins {
+  border-top: 1px solid var(--border-hairline);
+  margin-top: auto; /* push to bottom of folder area */
+}
+
+.sidebar-section-label {
+  padding: 8px 9px 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.6;
+  user-select: none;
+}
+
 .sidebar-divider {
   height: 1px;
   background: var(--border-hairline);

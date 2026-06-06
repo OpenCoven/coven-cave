@@ -196,10 +196,7 @@ function GitHubAttachSection({
               <div style={{ padding: "10px", fontSize: 11, color: "#f87171" }}>{err}</div>
             )}
             {!loading && !err && configured === false && (
-              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                <Icon name="ph:github-logo" width={18} className="text-[var(--text-muted)]" />
-                Connect a GitHub token to see your assigned items.
-              </div>
+              <InlinePATSetup onSaved={() => { setConfigured(null); loadItems(); }} />
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
