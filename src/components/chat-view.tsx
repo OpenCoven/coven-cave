@@ -11,6 +11,7 @@ import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { parseGlyphString, DEFAULT_FAMILIAR_GLYPH } from "@/lib/familiar-glyph";
 import {
   MAX_ATTACHMENT_TEXT_CHARS,
+  stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 
@@ -439,7 +440,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         body: JSON.stringify({
           familiarId: familiar.id,
           prompt: trimmed,
-          ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
+          ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFields(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
           ...(projectRoot && !currentSessionRef.current ? { projectRoot } : {}),
         }),
@@ -918,7 +919,7 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
 }
 
 function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
-  const isImage = attachment.mimeType?.startsWith("image/");
+  const isImage = (attachment.mimeType ?? attachment.type)?.startsWith("image/");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -928,6 +929,9 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview ${attachment.name}`}
     >
       <div
         className="relative max-h-[90vh] max-w-[90vw] overflow-auto rounded-xl border border-[var(--border-hairline)] bg-[#050409] shadow-2xl"
@@ -1045,7 +1049,7 @@ function ReasoningBlock({ text }: { text: string }) {
 function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   const anyRunning = tools.some((t) => t.status === "running");
   const anyError   = tools.some((t) => t.status === "error");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(anyRunning);
   const [manuallyToggled, setManuallyToggled] = useState(false);
 
   // Auto-open while running; auto-close when all settle (unless user manually toggled)

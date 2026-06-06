@@ -47,6 +47,10 @@ export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
     });
 }
 
+export function stripPreviewOnlyAttachmentFields(attachments: ChatAttachment[]): ChatAttachment[] {
+  return attachments.map(({ dataUrl: _dataUrl, mimeType: _mimeType, ...attachment }) => attachment);
+}
+
 function formatBytes(size?: number): string {
   if (size == null) return "unknown size";
   if (size < 1024) return `${size} B`;

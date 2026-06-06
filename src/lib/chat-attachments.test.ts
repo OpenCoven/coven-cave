@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
+  stripPreviewOnlyAttachmentFields,
 } from "./chat-attachments.ts";
 
 const attachments = normalizeChatAttachments([
@@ -53,3 +54,22 @@ const [truncated] = normalizeChatAttachments([
 
 assert.equal(truncated.text.length, 64_000);
 assert.equal(truncated.truncated, true);
+
+assert.deepEqual(
+  stripPreviewOnlyAttachmentFields([
+    {
+      name: "diagram.png",
+      type: "image/png",
+      mimeType: "image/png",
+      size: 128,
+      dataUrl: "data:image/png;base64,abc123",
+    },
+  ]),
+  [
+    {
+      name: "diagram.png",
+      type: "image/png",
+      size: 128,
+    },
+  ],
+);
