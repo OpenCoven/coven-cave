@@ -50,6 +50,73 @@ function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; time
   );
 }
 
+// ── Inline PAT Setup ─────────────────────────────────────────────────────────
+function InlinePATSetup({ onSaved }: { onSaved: () => void }) {
+  const [pat, setPat] = useState("");
+  const [usernameInput, setUsernameInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const trimmedPat = pat.trim();
+    const trimmedUser = usernameInput.trim();
+    if (!trimmedPat && !trimmedUser) { setError("Enter a GitHub username or PAT."); return; }
+    setSaving(true); setError(null);
+    try {
+      const body: Record<string, string> = {};
+      if (trimmedPat) body.pat = trimmedPat;
+      if (trimmedUser) body.username = trimmedUser;
+      const res = await fetch("/api/github/pat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) { setError(data?.error ?? "Failed to save."); return; }
+      onSaved();
+    } catch { setError("Network error — please try again."); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ padding: "10px 10px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+        <Icon name="ph:github-logo" width={14} className="text-[var(--text-muted)]" />
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Connect GitHub</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>GitHub username</label>
+        <input type="text" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="your-username"
+          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
+            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>
+          Personal Access Token <span style={{ fontWeight: 400 }}>(optional)</span>
+        </label>
+        <input type="password" value={pat} onChange={(e) => setPat(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="ghp_…"
+          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
+            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
+      </div>
+      {error && <p style={{ fontSize: 10, color: "#f87171", margin: 0 }}>{error}</p>}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+        <a href="https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local"
+          target="_blank" rel="noreferrer"
+          style={{ fontSize: 10, color: "oklch(0.65 0.18 280)", textDecoration: "none" }}>
+          Generate PAT →
+        </a>
+        <button type="button" disabled={(!pat.trim() && !usernameInput.trim()) || saving} onClick={() => void save()}
+          style={{ background: "oklch(0.65 0.18 280)", color: "#fff", border: "none", borderRadius: 6,
+            padding: "4px 12px", fontSize: 11, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Verifying…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── GitHub attach ─────────────────────────────────────────────────────────────
 const KIND_ICON: Record<string, string> = {
   pr: "ph:git-pull-request",
