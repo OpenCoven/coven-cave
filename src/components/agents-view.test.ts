@@ -44,6 +44,42 @@ assert.match(
 
 assert.match(
   agentsView,
+  /fetch\("\/api\/coven-calls"/,
+  "AgentsView should actively load delegation traces on the default sessions surface",
+);
+
+assert.match(
+  agentsView,
+  /fetch\("\/api\/board"/,
+  "AgentsView should load board context so inferred delegation traces are visible without opening the graph",
+);
+
+assert.match(
+  agentsView,
+  /setInterval\(loadDelegations,\s*10_000\)/,
+  "AgentsView should poll delegation traces so live events keep updating",
+);
+
+assert.match(
+  agentsView,
+  /Live trace events/,
+  "AgentsView should show live delegation trace events on the sessions surface",
+);
+
+assert.match(
+  agentsView,
+  /buildDelegationGraph\(\{[\s\S]*includeInferred: true/,
+  "AgentsView should build the provenance-aware delegation graph with inferred traces included",
+);
+
+assert.match(
+  agentsView,
+  /setScope\("delegations"\)/,
+  "AgentsView trace preview should provide a path into the full Delegations graph",
+);
+
+assert.match(
+  agentsView,
   /<ChatRouter/,
   "AgentsView should keep live chat available inside the Agents tab",
 );

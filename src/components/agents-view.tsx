@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { CallsView } from "@/components/calls-view";
 import { CovenFloor } from "@/components/coven-floor";
 import { InspectorPane } from "@/components/inspector-pane";
+import type { Card } from "@/lib/cave-board-types";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
+import {
+  buildDelegationGraph,
+  inferDelegationTraces,
+  type CovenCall,
+  type DelegationGraph,
+  type DelegationTrace,
+} from "@/lib/coven-calls-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type AgentsScope = "created" | "all" | "conversation" | "floor" | "delegations";
@@ -31,6 +39,9 @@ type Props = {
   onOpenInbox: () => void;
   onOpenMode: (mode: string) => void;
 };
+
+type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
+type BoardResponse = { ok: true; cards: Card[] } | { ok: false; error?: string };
 
 const STARTERS = [
   {
@@ -75,6 +86,112 @@ function statusTone(session: SessionRow): string {
   return "border-sky-500/25 bg-sky-500/15 text-sky-200";
 }
 
+function traceAgentName(familiarsById: Map<string, Familiar>, id: string): string {
+  const familiar = familiarsById.get(id);
+  return familiar?.display_name ?? familiar?.name ?? id;
+}
+
+function traceSourceTone(trace: DelegationTrace): string {
+  if (trace.source === "explicit") return "border-emerald-500/25 bg-emerald-500/12 text-emerald-200";
+  return "border-amber-500/25 bg-amber-500/12 text-amber-200";
+}
+
+function DelegationLivePanel({
+  graph,
+  familiarsById,
+  error,
+  loadedAt,
+  onOpenGraph,
+}: {
+  graph: DelegationGraph;
+  familiarsById: Map<string, Familiar>;
+  error: string | null;
+  loadedAt: string | null;
+  onOpenGraph: () => void;
+}) {
+  const explicitCount = graph.traces.filter((trace) => trace.source === "explicit").length;
+  const inferredCount = graph.traces.filter((trace) => trace.source === "inferred").length;
+  const runningCount = graph.traces.filter((trace) => trace.status === "running").length;
+  const failedCount = graph.traces.filter((trace) => trace.status === "failed").length;
+  const recentTraces = graph.traces.slice(0, 5);
+
+  return (
+    <section className="shrink-0 border-b border-[var(--border-hairline)] px-5 py-4">
+      <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)]/45">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border-hairline)] px-3 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Icon name="ph:graph" width={14} className="text-[var(--text-muted)]" />
+              <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">Live trace events</h3>
+            </div>
+            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+              {loadedAt ? `Updated ${relTime(loadedAt)}` : "Waiting for trace data"}
+              {error ? ` · ${error}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenGraph}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            <Icon name="ph:arrows-out-simple" width={12} />
+            Open graph
+          </button>
+        </div>
+
+        <div className="grid gap-px border-b border-[var(--border-hairline)] bg-[var(--border-hairline)] md:grid-cols-5">
+          {[
+            ["Explicit", explicitCount],
+            ["Inferred", inferredCount],
+            ["Running", runningCount],
+            ["Failed", failedCount],
+            ["Agents", graph.nodes.length],
+          ].map(([label, value]) => (
+            <div key={label} className="bg-[var(--bg-panel)] px-3 py-2">
+              <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</div>
+              <div className="mt-0.5 text-[15px] font-semibold text-[var(--text-primary)]">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="divide-y divide-[var(--border-hairline)]">
+          {recentTraces.length === 0 ? (
+            <div className="px-3 py-3 text-[12px] text-[var(--text-muted)]">No trace events yet.</div>
+          ) : (
+            recentTraces.map((trace) => (
+              <div key={trace.id} className="grid gap-2 px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-[var(--text-primary)]">
+                    <span className="truncate font-medium">{traceAgentName(familiarsById, trace.callerFamiliarId)}</span>
+                    <Icon name="ph:arrow-right-bold" width={11} className="text-[var(--text-muted)]" />
+                    <span className="truncate font-medium">{traceAgentName(familiarsById, trace.calleeFamiliarId)}</span>
+                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] capitalize ${traceSourceTone(trace)}`}>
+                      {trace.source}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate text-[11px] text-[var(--text-muted)]">{trace.request}</div>
+                </div>
+                <div className="flex items-center justify-between gap-2 md:justify-end">
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] capitalize ${
+                    trace.status === "running"
+                      ? "border-emerald-500/25 bg-emerald-500/15 text-emerald-300"
+                      : trace.status === "failed"
+                        ? "border-rose-500/25 bg-rose-500/15 text-rose-200"
+                        : "border-[var(--border-hairline)] bg-[var(--bg-raised)] text-[var(--text-muted)]"
+                  }`}>
+                    {trace.status}
+                  </span>
+                  <span className="w-12 text-right text-[11px] text-[var(--text-muted)]">{relTime(trace.createdAt)}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function AgentsView({
   familiars,
   sessions,
@@ -98,10 +215,56 @@ export function AgentsView({
   const [scope, setScope] = useState<AgentsScope>("created");
   const [query, setQuery] = useState("");
   const [showClosed, setShowClosed] = useState(false);
+  const [delegationCalls, setDelegationCalls] = useState<CovenCall[]>([]);
+  const [delegationCards, setDelegationCards] = useState<Card[]>([]);
+  const [delegationError, setDelegationError] = useState<string | null>(null);
+  const [delegationLoadedAt, setDelegationLoadedAt] = useState<string | null>(null);
 
   const famById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const openCount = useMemo(() => sessions.filter((s) => !isClosed(s)).length, [sessions]);
   const closedCount = sessions.length - openCount;
+
+  const inferredDelegationTraces = useMemo(
+    () => inferDelegationTraces({ cards: delegationCards, sessions }),
+    [delegationCards, sessions],
+  );
+
+  const delegationGraph = useMemo(
+    () =>
+      buildDelegationGraph({
+        explicitCalls: delegationCalls,
+        inferredTraces: inferredDelegationTraces,
+        includeInferred: true,
+      }),
+    [delegationCalls, inferredDelegationTraces],
+  );
+
+  const loadDelegations = useCallback(async () => {
+    try {
+      const [callsRes, boardRes] = await Promise.all([
+        fetch("/api/coven-calls", { cache: "no-store" }),
+        fetch("/api/board", { cache: "no-store" }),
+      ]);
+      const callsJson = (await callsRes.json()) as CallsResponse;
+      const boardJson = (await boardRes.json()) as BoardResponse;
+      if (!callsRes.ok) throw new Error("calls unavailable");
+      if (!callsJson.ok) throw new Error(callsJson.error ?? "calls unavailable");
+      if (!boardRes.ok) throw new Error("board unavailable");
+      if (!boardJson.ok) throw new Error(boardJson.error ?? "board unavailable");
+      setDelegationCalls(callsJson.calls);
+      setDelegationCards(boardJson.cards);
+      setDelegationLoadedAt(new Date().toISOString());
+      setDelegationError(null);
+    } catch (err) {
+      setDelegationError(err instanceof Error ? err.message : "trace data unavailable");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDelegations();
+    const timer = setInterval(loadDelegations, 10_000);
+    return () => clearInterval(timer);
+  }, [loadDelegations]);
 
   const filteredSessions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -325,6 +488,14 @@ export function AgentsView({
                 </span>
               </button>
             </header>
+
+            <DelegationLivePanel
+              graph={delegationGraph}
+              familiarsById={famById}
+              error={delegationError}
+              loadedAt={delegationLoadedAt}
+              onOpenGraph={() => setScope("delegations")}
+            />
 
             <div className="shrink-0 border-b border-[var(--border-hairline)] px-5 py-4">
               <div className="mb-2 text-[12px] font-medium text-[var(--text-secondary)]">Get started with agents</div>
