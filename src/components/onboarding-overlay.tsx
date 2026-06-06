@@ -125,6 +125,9 @@ function stepCount(status: OnboardingStatus | null): number {
   return Object.values(status?.steps ?? {}).filter((s) => s.ok).length;
 }
 
+const BENTO_CARD = "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4";
+const BENTO_CARD_SOFT = "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4";
+
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [platform, setPlatform] = useState<PlatformId>("unknown");
@@ -375,7 +378,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-[var(--bg-base)]/96 backdrop-blur-sm">
-      <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-full w-full max-w-[min(1680px,100vw)] flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider text-purple-300/80">
@@ -428,45 +431,18 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </section>
         ) : null}
 
-        <main className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <section className="space-y-4">
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Platform path</h2>
-                <button
-                  onClick={() => void copyText(platformCopy.installCommand)}
-                  className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                >
-                  Copy command
-                </button>
+        <main className="grid flex-1 auto-rows-[minmax(0,auto)] gap-4 py-5 lg:grid-cols-12">
+          <section className={`${BENTO_CARD} lg:col-span-12`}>
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Setup progress</h2>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Complete each local prerequisite once; Cave keeps checking while you work.
+                </p>
               </div>
-              <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
-                {platformCopy.installCommand}
-              </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                <InstructionList title="Install CovenCave" items={platformCopy.caveInstall} />
-                <InstructionList title="Install coven CLI" items={platformCopy.cliInstall} />
-              </div>
+              <span className="font-mono text-[11px] text-[var(--text-muted)]">{stepCount(status)}/6 ready</span>
             </div>
-
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Tester demo mode</h2>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                    Demo data is opt-in for testers and never appears in normal installs.
-                  </p>
-                </div>
-                <Icon name="ph:toggle-right-bold" className="text-[var(--text-muted)]" />
-              </div>
-              <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
-                NEXT_PUBLIC_DEMO=true pnpm dev
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {steps.map((s, i) => (
                 <div
                   key={s.key}
@@ -491,202 +467,240 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 </div>
               ))}
             </div>
+          </section>
 
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Create a local familiar</h2>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                    Use Codex, Claude Code, or any detected Coven adapter already installed on this machine.
-                  </p>
-                </div>
-                <button
-                  onClick={scaffoldOnly}
-                  disabled={picking !== null}
-                  className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
-                >
-                  {picking === "scaffold" ? "Creating..." : "Create folder only"}
-                </button>
-              </div>
-
-              <div className="mt-4 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-                    Local adapters
-                  </div>
-                  <button
-                    onClick={() => void loadHarnesses()}
-                    className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                  >
-                    Refresh
-                  </button>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {harnesses.map((adapter) => {
-                    const active = selectedHarnessId === adapter.id;
-                    return (
-                      <button
-                        key={adapter.id}
-                        onClick={() => {
-                          if (!adapter.installed) return;
-                          setSelectedHarnessId(adapter.id);
-                          setFamiliarName(adapter.label);
-                          setFamiliarRole("Code Familiar");
-                          setFamiliarDescription(`Local ${adapter.label} adapter on this machine.`);
-                        }}
-                        disabled={!adapter.installed}
-                        className={`rounded-lg border p-3 text-left ${
-                          active
-                            ? "border-purple-500/55 bg-purple-500/12 text-[var(--text-primary)]"
-                            : adapter.installed
-                              ? "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                              : "border-[var(--border-hairline)] bg-[var(--bg-base)]/40 text-[var(--text-muted)] opacity-70"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-[13px] font-medium">{adapter.label}</span>
-                          {active ? <Icon name="ph:check-bold" className="text-purple-200" /> : null}
-                        </div>
-                        <div className="mt-1 truncate font-mono text-[11px]">{adapter.binary}</div>
-                        <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
-                          {adapter.installed ? adapter.path ?? "installed" : adapter.installHint}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  onClick={createLocalFamiliar}
-                  disabled={picking !== null || !selectedHarnessId}
-                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-purple-500 disabled:opacity-50"
-                >
-                  <Icon name="ph:terminal-window" />
-                  {picking === "local" ? "Creating..." : "Use local adapter"}
-                </button>
-              </div>
-
-              <div className="mt-5 border-t border-[var(--border-hairline)] pt-4">
-                <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Or connect an OpenClaw agent</h3>
+          <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Install path</h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Choose one of your local OpenClaw agents. Cave writes only the selected agent as a familiar in `~/.coven/familiars.toml`.
+                  Follow the path for {platformCopy.label}, then re-check once the CLI is available.
                 </p>
               </div>
+              <button
+                onClick={() => void copyText(platformCopy.installCommand)}
+                className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              >
+                Copy
+              </button>
+            </div>
+            <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+              {platformCopy.installCommand}
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+              <InstructionList title="Install CovenCave" items={platformCopy.caveInstall} />
+              <InstructionList title="Install coven CLI" items={platformCopy.cliInstall} />
+            </div>
+          </section>
 
-              <div className="mt-4 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-                    Local OpenClaw agents
-                  </div>
+          <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Local adapters</h2>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Pick an installed harness that can back your first local familiar.
+                </p>
+              </div>
+              <button
+                onClick={() => void loadHarnesses()}
+                className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              {harnesses.map((adapter) => {
+                const active = selectedHarnessId === adapter.id;
+                return (
                   <button
-                    onClick={() => void loadOpenClawAgents()}
-                    disabled={agentsLoading}
-                    className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                    key={adapter.id}
+                    onClick={() => {
+                      if (!adapter.installed) return;
+                      setSelectedHarnessId(adapter.id);
+                      setFamiliarName(adapter.label);
+                      setFamiliarRole("Code Familiar");
+                      setFamiliarDescription(`Local ${adapter.label} adapter on this machine.`);
+                    }}
+                    disabled={!adapter.installed}
+                    className={`rounded-lg border p-3 text-left ${
+                      active
+                        ? "border-purple-500/55 bg-purple-500/12 text-[var(--text-primary)]"
+                        : adapter.installed
+                          ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
+                    }`}
                   >
-                    {agentsLoading ? "Loading..." : "Refresh"}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[13px] font-medium">{adapter.label}</span>
+                      {active ? <Icon name="ph:check-bold" className="text-purple-200" /> : null}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[11px]">{adapter.binary}</div>
+                    <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
+                      {adapter.installed ? adapter.path ?? "installed" : adapter.installHint}
+                    </div>
                   </button>
-                </div>
-                {agentsError ? (
-                  <div className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-200">
-                    {agentsError}
-                  </div>
-                ) : openclawAgents.length === 0 ? (
-                  <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-5 text-center text-[12px] text-[var(--text-muted)]">
-                    No OpenClaw agents found under ~/.openclaw/agents yet.
-                  </div>
-                ) : (
-                  <div className="grid max-h-56 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                    {openclawAgents.map((agent) => {
-                      const active = selectedAgentId === agent.id;
-                      return (
-                        <button
-                          key={agent.id}
-                          onClick={() => {
-                            setSelectedAgentId(agent.id);
-                            setFamiliarName(agent.displayName);
-                            setFamiliarRole(agent.role);
-                            setFamiliarDescription(`Connected to OpenClaw agent "${agent.id}".`);
-                          }}
-                          className={`rounded-lg border p-3 text-left ${
-                            active
-                              ? "border-purple-500/55 bg-purple-500/12 text-[var(--text-primary)]"
-                              : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-[13px] font-medium">{agent.displayName}</span>
-                            {active ? <Icon name="ph:check-bold" className="text-purple-200" /> : null}
-                          </div>
-                          <div className="mt-1 truncate font-mono text-[11px]">{agent.id}</div>
-                          <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{agent.role}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={createLocalFamiliar}
+              disabled={picking !== null || !selectedHarnessId}
+              className="mt-3 inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+            >
+              <Icon name="ph:terminal-window" />
+              {picking === "local" ? "Creating..." : "Use local adapter"}
+            </button>
+          </section>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Name</span>
-                  <input
-                    value={familiarName}
-                    onChange={(e) => setFamiliarName(e.target.value)}
-                    placeholder="Example: Riley"
-                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Role</span>
-                  <input
-                    value={familiarRole}
-                    onChange={(e) => setFamiliarRole(e.target.value)}
-                    placeholder="Research, Code, Ops..."
-                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Glyph</span>
-                  <input
-                    value={familiarGlyph}
-                    onChange={(e) => setFamiliarGlyph(e.target.value)}
-                    placeholder="ph:sparkle-fill"
-                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Description</span>
-                  <input
-                    value={familiarDescription}
-                    onChange={(e) => setFamiliarDescription(e.target.value)}
-                    placeholder="What should this familiar help with?"
-                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                  />
-                </label>
+          <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">OpenClaw agents</h2>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Connect one existing agent as a Coven familiar when you want continuity.
+                </p>
               </div>
+              <button
+                onClick={() => void loadOpenClawAgents()}
+                disabled={agentsLoading}
+                className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+              >
+                {agentsLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+            {agentsError ? (
+              <div className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-200">
+                {agentsError}
+              </div>
+            ) : openclawAgents.length === 0 ? (
+              <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-5 text-center text-[12px] text-[var(--text-muted)]">
+                No OpenClaw agents found under ~/.openclaw/agents yet.
+              </div>
+            ) : (
+              <div className="grid max-h-[19rem] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-1">
+                {openclawAgents.map((agent) => {
+                  const active = selectedAgentId === agent.id;
+                  return (
+                    <button
+                      key={agent.id}
+                      onClick={() => {
+                        setSelectedAgentId(agent.id);
+                        setFamiliarName(agent.displayName);
+                        setFamiliarRole(agent.role);
+                        setFamiliarDescription(`Connected to OpenClaw agent "${agent.id}".`);
+                      }}
+                      className={`rounded-lg border p-3 text-left ${
+                        active
+                          ? "border-purple-500/55 bg-purple-500/12 text-[var(--text-primary)]"
+                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[13px] font-medium">{agent.displayName}</span>
+                        {active ? <Icon name="ph:check-bold" className="text-purple-200" /> : null}
+                      </div>
+                      <div className="mt-1 truncate font-mono text-[11px]">{agent.id}</div>
+                      <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{agent.role}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <button
-                  onClick={createFamiliar}
-                  disabled={picking !== null || !selectedAgentId || familiarName.trim().length === 0}
-                  className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-purple-500 disabled:opacity-50"
-                >
-                  <Icon name="ph:sparkle" />
-                  {picking === "familiar" ? "Connecting..." : "Connect as familiar"}
-                </button>
-                <button
-                  onClick={startDaemon}
-                  disabled={startingDaemon || !status?.steps.covenCli.ok}
-                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
-                  title={!status?.steps.covenCli.ok ? "Install coven CLI first" : "coven daemon start"}
-                >
-                  <Icon name="ph:rocket-launch-bold" />
-                  {startingDaemon ? "Starting..." : "Start daemon"}
-                </button>
+          <section className={`${BENTO_CARD} lg:col-span-8 xl:col-span-8`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar details</h2>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Name the familiar, describe the job, then either bind it to a local adapter or connect the selected OpenClaw agent.
+                </p>
               </div>
+              <button
+                onClick={scaffoldOnly}
+                disabled={picking !== null}
+                className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+              >
+                {picking === "scaffold" ? "Creating..." : "Create folder only"}
+              </button>
             </div>
 
-            <MaintenancePanel prune={prune} setPrune={setPrune} />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Name</span>
+                <input
+                  value={familiarName}
+                  onChange={(e) => setFamiliarName(e.target.value)}
+                  placeholder="Example: Riley"
+                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Role</span>
+                <input
+                  value={familiarRole}
+                  onChange={(e) => setFamiliarRole(e.target.value)}
+                  placeholder="Research, Code, Ops..."
+                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Glyph</span>
+                <input
+                  value={familiarGlyph}
+                  onChange={(e) => setFamiliarGlyph(e.target.value)}
+                  placeholder="ph:sparkle-fill"
+                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Description</span>
+                <input
+                  value={familiarDescription}
+                  onChange={(e) => setFamiliarDescription(e.target.value)}
+                  placeholder="What should this familiar help with?"
+                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <button
+                onClick={createFamiliar}
+                disabled={picking !== null || !selectedAgentId || familiarName.trim().length === 0}
+                className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+              >
+                <Icon name="ph:sparkle" />
+                {picking === "familiar" ? "Connecting..." : "Connect as familiar"}
+              </button>
+              <button
+                onClick={startDaemon}
+                disabled={startingDaemon || !status?.steps.covenCli.ok}
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                title={!status?.steps.covenCli.ok ? "Install coven CLI first" : "coven daemon start"}
+              >
+                <Icon name="ph:rocket-launch-bold" />
+                {startingDaemon ? "Starting..." : "Start daemon"}
+              </button>
+            </div>
           </section>
+
+          <section className={`${BENTO_CARD_SOFT} lg:col-span-4 xl:col-span-2`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Tester demo mode</h2>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Demo data is opt-in for testers and never appears in normal installs.
+                </p>
+              </div>
+              <Icon name="ph:toggle-right-bold" className="text-[var(--text-muted)]" />
+            </div>
+            <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+              NEXT_PUBLIC_DEMO=true pnpm dev
+            </div>
+          </section>
+
+          <MaintenancePanel prune={prune} setPrune={setPrune} className="lg:col-span-4 xl:col-span-2" />
         </main>
 
         <footer className="flex items-center justify-between border-t border-[var(--border-hairline)] py-4">
@@ -742,12 +756,14 @@ function InstructionList({ title, items }: { title: string; items: string[] }) {
 function MaintenancePanel({
   prune,
   setPrune,
+  className = "",
 }: {
   prune: PruneState;
   setPrune: (next: PruneState) => void;
+  className?: string;
 }) {
   return (
-    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
+    <div className={`${BENTO_CARD_SOFT} ${className}`}>
       <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
         Maintenance
       </div>
