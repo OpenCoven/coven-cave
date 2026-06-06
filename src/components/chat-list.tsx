@@ -6,13 +6,16 @@ import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 
 type Props = {
   familiar: Familiar;
+  familiars?: Familiar[];
   sessions: SessionRow[];
   daemonRunning?: boolean;
   onOpen: (sessionId: string) => void;
   onNewChat: (projectRoot?: string) => void;
+  onFamiliarSelect?: (id: string) => void;
 };
 
 function age(iso: string): string {
@@ -52,7 +55,7 @@ function statusStyle(s: string) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onFamiliarSelect }: Props) {
   const [busyTuiId, setBusyTuiId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -140,9 +143,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
 
       {/* ── Header ── */}
       <header className="flex items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-3">
-        <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
-          {familiar.display_name}
-        </h2>
+        <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
 
         {/* Unreads toggle */}
         <button

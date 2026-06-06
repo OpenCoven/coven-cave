@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
@@ -39,6 +40,7 @@ type Turn = {
 
 type Props = {
   familiar: Familiar;
+  familiars?: Familiar[];
   sessionId: string | null;
   projectRoot?: string;
   daemonRunning?: boolean;
@@ -46,6 +48,7 @@ type Props = {
   onBack?: () => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
+  onFamiliarSelect?: (id: string) => void;
 };
 
 export type ChatViewHandle = {
@@ -246,7 +249,7 @@ function ChatEmptyState({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
+  { familiar, familiars = [], sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding, onFamiliarSelect },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -653,6 +656,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+      {/* Chat header — familiar switcher + back */}
+      <header className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
+        <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
+        <div className="ml-auto flex items-center gap-2">
+          <span className={[
+            "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+            "bg-[var(--bg-raised)]/60 text-[var(--text-muted)]",
+          ].join(" ")}>
+            <span className="font-mono">{familiar.harness ?? "—"}</span>
+          </span>
+        </div>
+      </header>
       {/* Transcript */}
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="space-y-6">
