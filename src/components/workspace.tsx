@@ -58,6 +58,7 @@ function IconNavStrip({
             key={fm.id}
             type="button"
             title={fm.label}
+            aria-label={fm.label}
             onClick={() => onModeChange(fm.id)}
             className={`shell-nav-tab-icon-btn${mode === fm.id ? " shell-nav-tab-icon-btn--active" : ""}`}
           >
