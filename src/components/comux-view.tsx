@@ -357,7 +357,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           </div>
 
           {/* Project detail */}
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 min-h-0 flex-1 flex-col">
             {selectedProject ? (
               <>
                 <div className="border-b border-[var(--border-hairline)] px-4 py-3">
@@ -469,7 +469,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     </div>
                   </div>
 
-                  <div className="min-w-0 flex flex-col overflow-hidden">
+                  <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
                     {previewPath ? (
                       <>
                         {/* Preview header */}
