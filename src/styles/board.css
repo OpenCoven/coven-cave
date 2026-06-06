@@ -54,10 +54,11 @@
 .board-table td { padding:8px 10px; vertical-align:middle; }
 .board-table-title { font-weight:500; color:var(--text-primary); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .board-table-muted { color:var(--text-muted); font-size:11px; }
-.board-table-group-row td { padding:10px 10px 6px; font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.04em; text-transform:uppercase; background:var(--bg-base); border-bottom:1px solid var(--border-hairline); cursor:pointer; user-select:none; }
-.board-table-group-row:hover td { color:var(--text-primary); }
+.board-table-group-row td { padding:8px 10px 7px; font-size:11px; font-weight:600; color:var(--text-secondary); letter-spacing:.04em; text-transform:uppercase; background:var(--bg-raised); border-top:1px solid var(--border-strong); border-bottom:1px solid var(--border-strong); cursor:pointer; user-select:none; }
+.board-table-group-row:first-child td { border-top:none; }
+.board-table-group-row:hover td { background:var(--bg-hover); color:var(--text-primary); }
 .board-table-group-caret { display:inline-flex; align-items:center; margin-right:4px; vertical-align:middle; }
-.board-table-group-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:16px; padding:0 5px; border-radius:8px; background:var(--bg-raised); color:var(--text-muted); font-size:10px; font-weight:500; margin-left:6px; vertical-align:middle; }
+.board-table-group-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:16px; padding:0 5px; border-radius:8px; background:var(--bg-base); border:1px solid var(--border-hairline); color:var(--text-muted); font-size:10px; font-weight:500; margin-left:6px; vertical-align:middle; }
 
 .board-swimlane { flex-shrink:0; border-bottom:1px solid var(--border-hairline); }
 .board-swimlane-header { display:flex; align-items:center; gap:8px; padding:8px 16px 6px; font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.05em; text-transform:uppercase; cursor:pointer; user-select:none; }
