@@ -110,7 +110,7 @@
   overflow: hidden;
   border-left: 1px solid var(--border-hairline);
 }
-.library-list-panel--open  { width: 280px; }
+.library-list-panel--open  { width: 300px; }
 .library-list-panel--closed { width: 28px; }
 
 /* Toggle strip — always visible narrow edge */
@@ -547,23 +547,40 @@ tr:hover .library-row-delete {
 }
 .library-list-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 0 16px;
-  height: 44px;
+  gap: 6px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-hairline);
   flex-shrink: 0;
+  min-height: 40px;
 }
 .library-list-header-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: 1;
+  min-width: 0;
 }
 .library-list-header-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+/* Make selects in list headers compact */
+.library-list-header-controls .board-toolbar-select {
+  max-width: 110px;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.library-list-header-controls .board-toolbar-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  white-space: nowrap;
 }
 
 /* ── add form strip ─────────────────────────────────────────────── */
