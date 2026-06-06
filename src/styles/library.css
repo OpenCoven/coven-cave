@@ -595,3 +595,150 @@ tr:hover .library-row-delete,
   border-radius: 3px;
   padding: 1px 5px;
 }
+
+/* ── Document preview markdown overrides ─────────────────────────
+ * cave-md is tuned for chat bubbles. library-preview-md layers
+ * document-reading typography on top: larger base, generous line
+ * height, breathing room between sections.
+ * ---------------------------------------------------------------- */
+.library-preview-md.cave-md {
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+/* More vertical breathing between block-level elements */
+.library-preview-md.cave-md > * + * {
+  margin-top: 1em;
+}
+
+/* Headings — document scale, not chat scale */
+.library-preview-md.cave-md h1 {
+  font-size: 1.55em;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  border-bottom: 1px solid var(--border-hairline);
+  padding-bottom: 0.35em;
+  margin-bottom: 0.75em;
+}
+
+.library-preview-md.cave-md h2 {
+  font-size: 1.2em;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+  margin-top: 1.8em;
+  border-bottom: 1px solid var(--border-hairline);
+  padding-bottom: 0.25em;
+}
+
+.library-preview-md.cave-md h3 {
+  font-size: 1.05em;
+  font-weight: 640;
+  margin-top: 1.4em;
+  color: var(--text-primary);
+}
+
+.library-preview-md.cave-md h4 {
+  font-size: 0.95em;
+  font-weight: 620;
+  margin-top: 1.2em;
+  color: var(--text-secondary);
+}
+
+/* Paragraphs — readable leading */
+.library-preview-md.cave-md p {
+  margin-top: 0.85em;
+}
+.library-preview-md.cave-md p:first-child {
+  margin-top: 0;
+}
+
+/* Lists — roomier */
+.library-preview-md.cave-md ul,
+.library-preview-md.cave-md ol {
+  padding-left: 1.5em;
+  margin-top: 0.85em;
+}
+
+.library-preview-md.cave-md li {
+  margin-top: 0.45em;
+  line-height: 1.75;
+}
+
+/* Blockquotes — document style */
+.library-preview-md.cave-md blockquote {
+  border-left: 3px solid color-mix(in oklab, oklch(0.65 0.18 280) 60%, transparent);
+  padding: 0.5em 0 0.5em 1.1em;
+  margin: 1.2em 0;
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 6%, var(--bg-base));
+  border-radius: 0 6px 6px 0;
+}
+
+/* Code blocks — readable size, not chat-compact */
+.library-preview-md.cave-md pre {
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 14px 16px;
+  border-radius: 8px;
+  margin: 1.1em 0;
+  overflow-x: auto;
+}
+
+/* Inline code */
+.library-preview-md.cave-md :not(pre) > code {
+  font-size: 0.88em;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+
+/* Tables */
+.library-preview-md.cave-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  margin: 1.2em 0;
+}
+
+.library-preview-md.cave-md th {
+  text-align: left;
+  font-weight: 640;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.library-preview-md.cave-md td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.library-preview-md.cave-md tr:last-child td {
+  border-bottom: none;
+}
+
+.library-preview-md.cave-md tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* Horizontal rules */
+.library-preview-md.cave-md hr {
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  margin: 2em 0;
+}
+
+/* Strong / em */
+.library-preview-md.cave-md strong {
+  font-weight: 680;
+  color: var(--text-primary);
+}
+
+/* Max readable width with comfortable padding */
+.library-preview-md {
+  max-width: 740px;
+  padding-bottom: 48px;
+}
