@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { parseGlyphString, DEFAULT_FAMILIAR_GLYPH } from "@/lib/familiar-glyph";
+import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { Icon } from "@/lib/icon";
 
 type Props = {
@@ -21,15 +22,15 @@ type Props = {
 export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const glyph =
-    parseGlyphString(familiar.icon) ??
-    parseGlyphString(familiar.emoji) ??
-    DEFAULT_FAMILIAR_GLYPH;
+  const glyphOverrides = useGlyphOverrides();
+  const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
 
   // Close on outside click / Esc
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     const onMouse = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
@@ -56,8 +57,9 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="group flex items-center gap-2 rounded-lg px-2 py-1 -ml-2 transition-colors hover:bg-[var(--bg-raised)]/60"
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={`Switch familiar from ${familiar.display_name}`}
       >
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md" style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.08)" }}>
           <FamiliarGlyph glyph={glyph} size="sm" />
@@ -74,23 +76,20 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
 
       {open ? (
         <div
-          role="listbox"
+          role="menu"
           className="absolute left-0 top-full z-40 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[#111018] shadow-2xl"
         >
           <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
             Switch familiar
           </div>
           {familiars.map((f) => {
-            const fGlyph =
-              parseGlyphString(f.icon) ??
-              parseGlyphString(f.emoji) ??
-              DEFAULT_FAMILIAR_GLYPH;
+            const fGlyph = resolveFamiliarGlyph(f, glyphOverrides);
             const isActive = f.id === familiar.id;
             return (
               <button
                 key={f.id}
-                role="option"
-                aria-selected={isActive}
+                role="menuitem"
+                aria-current={isActive ? "true" : undefined}
                 type="button"
                 onClick={() => {
                   setOpen(false);

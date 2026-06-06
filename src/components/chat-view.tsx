@@ -656,7 +656,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
-      {/* Chat header — familiar switcher + back */}
+      {/* Chat header: familiar switcher + harness badge */}
       <header className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
         <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
         <div className="ml-auto flex items-center gap-2">
