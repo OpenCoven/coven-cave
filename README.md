@@ -6,6 +6,35 @@ Cave is the native workspace for [OpenCoven](https://github.com/OpenCoven/coven)
 
 A familiar isn't a chat window. It has a name, a purpose, a memory, a toolset, and a place in your day. Cave is where that lives.
 
+## Windows download notice
+
+> [!WARNING]
+> **Windows users: turn off Smart App Control before downloading or opening CovenCave for now.**
+>
+> Go to **Settings -> Privacy & security -> Windows Security -> App & browser control -> Smart App Control**, then turn Smart App Control **Off** before downloading/running the Windows build. Download CovenCave only from the official [GitHub Releases](https://github.com/OpenCoven/coven-cave/releases) page.
+>
+> This is temporary release guidance while the Windows trust/reputation path settles.
+
+## Install
+
+Download the matching asset from [Releases](https://github.com/OpenCoven/coven-cave/releases):
+
+- **Windows:** download the `.msi`, follow the Smart App Control notice above, then install and launch CovenCave from Start.
+- **Linux:** download the `.AppImage`, run `chmod +x CovenCave_*.AppImage`, then launch it from your file manager or terminal.
+- **macOS:** download the `.dmg`, open it, and drag CovenCave to Applications.
+
+You'll also need the local [`coven`](https://github.com/OpenCoven/coven) CLI/daemon. On first launch, Cave opens a full-width setup screen that checks for the CLI, creates your local `~/.coven` folder, helps you add your first familiar, and starts the daemon.
+
+### Demo mode for testers
+
+Normal installs show only the user's own familiars from their local Coven configuration. Testers can opt into demo fixtures explicitly:
+
+```bash
+NEXT_PUBLIC_DEMO=true pnpm dev
+```
+
+Use demo mode only for local testing or demos. It intentionally injects sample familiars and sample activity.
+
 ## Screenshots
 
 <!-- Cave desktop interface -->
@@ -50,7 +79,7 @@ pnpm tauri dev                  # native window, hot-reloads Next.js
 pnpm dev                        # browser-only at http://localhost:3000
 ```
 
-You'll need the `coven` daemon running locally so Cave has something to talk to. See [OpenCoven/coven](https://github.com/OpenCoven/coven) for setup.
+You'll need the `coven` daemon running locally so Cave has something to talk to. See [OpenCoven/coven](https://github.com/OpenCoven/coven) for setup. For tester fixtures, run the dev server with `NEXT_PUBLIC_DEMO=true`.
 
 ### Pre-commit hook
 

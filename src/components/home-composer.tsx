@@ -61,8 +61,8 @@ type Props = {
 // ---------------------------------------------------------------------------
 
 const SEED_SUGGESTIONS = [
-  "Summarise what Nova has been working on today",
-  "Create a board card for the HomeComposer PR",
+  "Summarise what my active familiar has been working on today",
+  "Create a board card for the next app polish pass",
   "Remind me to review PRs tomorrow at 10 AM",
 ];
 

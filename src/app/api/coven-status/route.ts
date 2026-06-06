@@ -15,6 +15,7 @@ import {
   type FamiliarCard,
   type SessionSummary,
 } from "@/lib/coven-status-types";
+import { DEMO_FAMILIARS, DEMO_MODE } from "@/lib/demo-seed";
 
 export const dynamic = "force-dynamic";
 
@@ -167,7 +168,7 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
               // channel from sessionKey
               if (ev.sessionKey) {
                 const parts = ev.sessionKey.split(":");
-                // agent:kitty:telegram:direct:xxx → channel = telegram
+                // agent:<id>:telegram:direct:xxx -> channel = telegram
                 if (parts.length >= 3) channel = parts[2];
               }
             }
@@ -179,9 +180,9 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
 
       // Fallback label: extract from sessionKey
       if (!label && sessionKey) {
-        // agent:kitty:cron:uuid → "cron"
-        // agent:kitty:telegram:direct:xxx → "telegram"
-        // agent:kitty:subagent:uuid → "subagent"
+        // agent:<id>:cron:uuid -> "cron"
+        // agent:<id>:telegram:direct:xxx -> "telegram"
+        // agent:<id>:subagent:uuid -> "subagent"
         const parts = sessionKey.split(":");
         if (parts.length >= 3) {
           label = parts[2];
@@ -230,7 +231,8 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
 export async function GET() {
   const now = Date.now();
 
-  // Build familiar ids from local agent directories plus known defaults.
+  // Build familiar ids from local agent directories. Demo defaults are opt-in
+  // only so production installs show just the user's own familiars.
   const agentsRoot = path.join(homedir(), ".openclaw", "agents");
   let diskIds: string[] = [];
   try {
@@ -240,7 +242,7 @@ export async function GET() {
     // ignore
   }
 
-  const knownIds = ["kitty", "cody", "sage", "charm", "astra", "echo", "nova"];
+  const knownIds = DEMO_MODE ? DEMO_FAMILIARS.map((f) => f.id) : [];
   const familiarIds = Array.from(new Set([...diskIds, ...knownIds]));
   const familiarMeta = familiarIds.map((id) => ({
     id,

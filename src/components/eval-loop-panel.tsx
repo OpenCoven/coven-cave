@@ -10,7 +10,6 @@
  * when available; gracefully degrades to empty state when offline.
  *
  * Skill: eval-loop (Coven harness skill)
- * Author: Sage 🌿 · 2026-06-05
  */
 
 import { useEffect, useState } from "react";

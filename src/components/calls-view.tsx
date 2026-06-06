@@ -104,7 +104,7 @@ export function CallsView({ familiars }: Props) {
               No coven calls yet. The daemon will emit a delegation event
               each time one familiar calls another ({" "}
               <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
-                :cody &quot;task&quot;
+                :familiar &quot;task&quot;
               </code>{" "}
               etc.) and they will appear here.
             </div>

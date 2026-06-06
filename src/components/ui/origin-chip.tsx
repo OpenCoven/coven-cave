@@ -6,9 +6,9 @@ import { ORIGIN_ICON, ORIGIN_LABEL } from "@/lib/session-origin";
 
 type Props = {
   origin: SessionOrigin;
-  /** Optional delegation chain — e.g. `from: "sage"` renders as "call · from sage". */
+  /** Optional delegation chain, rendered as "call · from <id>". */
   from?: string;
-  /** Subject reference for cross-familiar surfacing — e.g. "about: cody". */
+  /** Subject reference for cross-familiar surfacing. */
   about?: string;
   /** When true, hide the text label and keep only the icon. */
   iconOnly?: boolean;

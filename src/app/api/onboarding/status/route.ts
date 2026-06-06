@@ -15,8 +15,10 @@ const execFileAsync = promisify(execFile);
 type Step = { ok: boolean; detail?: string; hint?: string };
 
 async function checkCovenCli(): Promise<Step> {
+  const command = process.platform === "win32" ? "where" : "command";
+  const args = process.platform === "win32" ? ["coven"] : ["-v", "coven"];
   try {
-    const { stdout } = await execFileAsync("which", ["coven"], { timeout: 1500 });
+    const { stdout } = await execFileAsync(command, args, { timeout: 1500 });
     const found = stdout.trim();
     if (found) return { ok: true, detail: found };
   } catch {
@@ -24,7 +26,7 @@ async function checkCovenCli(): Promise<Step> {
   }
   return {
     ok: false,
-    hint: "Install the coven CLI from OpenCoven/coven, then re-check.",
+    hint: "Install the coven CLI from OpenCoven/coven, make sure it is on PATH, then re-check.",
   };
 }
 
@@ -54,7 +56,7 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   return {
     step: {
       ok: false,
-      hint: res.ok ? "Daemon has no familiars yet — Cave can scaffold the starter roster." : "daemon offline",
+      hint: res.ok ? "Create your first familiar in Cave, or add one to ~/.coven/familiars.toml." : "daemon offline",
     },
     count,
   };

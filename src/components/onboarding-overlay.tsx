@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 
 type PruneState = { idle: true } | { counting: true } | { count: number } | { pruning: true } | { pruned: number } | { error: string };
 type Step = { ok: boolean; detail?: string; hint?: string };
+type PlatformId = "windows" | "linux" | "mac" | "unknown";
 
 type OnboardingStatus = {
   complete: boolean;
@@ -17,44 +19,127 @@ type OnboardingStatus = {
   };
 };
 
-type Template = {
-  id: string;
+type HarnessPreset = {
+  id: "codex" | "claude";
   label: string;
-  blurb: string;
-  harness: "claude" | "codex";
   model: string;
-  accent: string;
+  detail: string;
+  commandHint: string;
 };
 
-const TEMPLATES: Template[] = [
-  {
-    id: "claude",
-    label: "Claude Sonnet 4.6",
-    blurb: "Recommended. Strong reasoning, fast streaming. Needs an Anthropic API key.",
-    harness: "claude",
-    model: "anthropic/claude-sonnet-4-6",
-    accent: "from-purple-500/20 to-fuchsia-500/10 border-purple-700/40",
-  },
+const HARNESS_PRESETS: HarnessPreset[] = [
   {
     id: "codex",
-    label: "Codex GPT-5",
-    blurb: "OpenAI Codex CLI. Solid coding partner. Needs an OpenAI key in the Codex config.",
-    harness: "codex",
+    label: "Codex",
     model: "openai/gpt-5",
-    accent: "from-emerald-500/20 to-teal-500/10 border-emerald-700/40",
+    detail: "Best default for code-heavy work. Requires Codex/OpenAI auth on this machine.",
+    commandHint: "coven daemon start",
+  },
+  {
+    id: "claude",
+    label: "Claude",
+    model: "anthropic/claude-sonnet-4-6",
+    detail: "Strong reasoning path. Requires Anthropic/Claude auth on this machine.",
+    commandHint: "coven daemon start",
   },
 ];
+
+const PLATFORM_COPY: Record<PlatformId, {
+  label: string;
+  installCommand: string;
+  caveInstall: string[];
+  cliInstall: string[];
+  warning?: string;
+}> = {
+  windows: {
+    label: "Windows",
+    installCommand: "where coven",
+    warning: "For now, turn off Smart App Control before downloading or opening the Windows build.",
+    caveInstall: [
+      "Download the MSI from the official GitHub Release.",
+      "Before downloading/opening, go to Settings > Privacy & security > Windows Security > App & browser control > Smart App Control, then turn Smart App Control off for now.",
+      "Install CovenCave, then open it from Start.",
+    ],
+    cliInstall: [
+      "Install the coven CLI from OpenCoven/coven.",
+      "Make sure coven.exe is on PATH.",
+      "Click Re-check here after a new terminal can run coven.",
+    ],
+  },
+  linux: {
+    label: "Linux",
+    installCommand: "chmod +x CovenCave_*.AppImage && ./CovenCave_*.AppImage",
+    caveInstall: [
+      "Download the AppImage from the official GitHub Release.",
+      "Run chmod +x CovenCave_*.AppImage.",
+      "Launch the AppImage from your file manager or terminal.",
+    ],
+    cliInstall: [
+      "Install the coven CLI from OpenCoven/coven.",
+      "Make sure coven is executable and on PATH.",
+      "If your desktop shell has an older PATH, restart Cave after installing the CLI.",
+    ],
+  },
+  mac: {
+    label: "macOS",
+    installCommand: "brew install opencoven/tap/coven",
+    caveInstall: [
+      "Download the DMG from the official GitHub Release.",
+      "Open the DMG and drag CovenCave to Applications.",
+      "Open CovenCave from Applications.",
+    ],
+    cliInstall: [
+      "Install the coven CLI with Homebrew.",
+      "Make sure a terminal can run coven.",
+      "Click Re-check here after install.",
+    ],
+  },
+  unknown: {
+    label: "Your platform",
+    installCommand: "coven --version",
+    caveInstall: [
+      "Download the matching asset from the official GitHub Release.",
+      "Install or launch the app for your OS.",
+      "Open CovenCave and continue setup here.",
+    ],
+    cliInstall: [
+      "Install the coven CLI from OpenCoven/coven.",
+      "Make sure coven is on PATH.",
+      "Click Re-check here after install.",
+    ],
+  },
+};
 
 type Props = {
   open: boolean;
   onDismiss: () => void;
 };
 
+function detectPlatform(): PlatformId {
+  if (typeof navigator === "undefined") return "unknown";
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const raw = `${nav.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent}`.toLowerCase();
+  if (raw.includes("win")) return "windows";
+  if (raw.includes("linux")) return "linux";
+  if (raw.includes("mac")) return "mac";
+  return "unknown";
+}
+
+function stepCount(status: OnboardingStatus | null): number {
+  return Object.values(status?.steps ?? {}).filter((s) => s.ok).length;
+}
+
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [platform, setPlatform] = useState<PlatformId>("unknown");
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
-  const [pickedTemplate, setPickedTemplate] = useState<string | null>(null);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [familiarName, setFamiliarName] = useState("");
+  const [familiarRole, setFamiliarRole] = useState("Familiar");
+  const [familiarDescription, setFamiliarDescription] = useState("");
+  const [familiarGlyph, setFamiliarGlyph] = useState("ph:sparkle-fill");
+  const [selectedHarness, setSelectedHarness] = useState<HarnessPreset>(HARNESS_PRESETS[0]);
   const [prune, setPrune] = useState<PruneState>({ idle: true });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -65,9 +150,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       const json = (await res.json()) as OnboardingStatus & { ok: boolean };
       setStatus(json);
     } catch {
-      /* ignore — next poll will retry */
+      /* ignore; the next poll will retry */
     }
   }, []);
+
+  useEffect(() => setPlatform(detectPlatform()), []);
 
   useEffect(() => {
     if (!open) return;
@@ -79,33 +166,60 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     };
   }, [open, refresh]);
 
-  // Auto-dismiss when fully complete (brief celebratory beat).
   useEffect(() => {
     if (!open || !status?.complete) return;
     const t = setTimeout(onDismiss, 1200);
     return () => clearTimeout(t);
   }, [open, status?.complete, onDismiss]);
 
-  const runSetup = async (tmpl: Template) => {
-    setPicking(tmpl.id);
-    setPickedTemplate(tmpl.id);
+  const platformCopy = PLATFORM_COPY[platform];
+
+  const copyText = async (text: string) => {
     try {
-      await fetch("/api/onboarding/setup", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ harness: tmpl.harness, model: tmpl.model }),
-      });
-      await refresh();
-    } finally {
-      setPicking(null);
+      await navigator.clipboard.writeText(text);
+    } catch {
+      /* clipboard may be blocked */
     }
   };
 
   const scaffoldOnly = async () => {
     setPicking("scaffold");
+    setSetupError(null);
     try {
-      await fetch("/api/onboarding/setup", { method: "POST" });
+      const res = await fetch("/api/onboarding/setup", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "setup failed");
       await refresh();
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : "setup failed");
+    } finally {
+      setPicking(null);
+    }
+  };
+
+  const createFamiliar = async () => {
+    setPicking("familiar");
+    setSetupError(null);
+    try {
+      const res = await fetch("/api/onboarding/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiar: {
+            displayName: familiarName,
+            role: familiarRole,
+            description: familiarDescription,
+            glyph: familiarGlyph,
+            harness: selectedHarness.id,
+            model: selectedHarness.model,
+          },
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "setup failed");
+      await refresh();
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : "setup failed");
     } finally {
       setPicking(null);
     }
@@ -113,20 +227,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   const startDaemon = async () => {
     setStartingDaemon(true);
+    setSetupError(null);
     try {
-      await fetch("/api/daemon/start", { method: "POST" });
+      const res = await fetch("/api/daemon/start", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "daemon start failed");
       await refresh();
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : "daemon start failed");
     } finally {
       setStartingDaemon(false);
-    }
-  };
-
-  const installCmd = "brew install opencoven/tap/coven";
-  const copyInstall = async () => {
-    try {
-      await navigator.clipboard.writeText(installCmd);
-    } catch {
-      /* clipboard blocked — user can still copy manually */
     }
   };
 
@@ -135,236 +245,269 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     return [
       {
         key: "covenCli",
-        title: "Install the coven CLI",
+        title: "Install coven CLI",
         ok: !!s?.covenCli.ok,
-        detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…",
-        action: s?.covenCli.ok ? null : (
-          <div className="mt-2 space-y-2">
-            <div className="flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
-              <span className="text-[var(--text-muted)]">$</span>
-              <code className="flex-1">{installCmd}</code>
-              <button
-                onClick={copyInstall}
-                className="rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              >
-                copy
-              </button>
-            </div>
-            <p className="text-[11px] text-[var(--text-muted)]">
-              Or see{" "}
-              <span className="font-mono text-[var(--text-secondary)]">github.com/OpenCoven/coven</span>{" "}
-              for other install paths. Re-checks every 2s.
-            </p>
-          </div>
-        ),
+        detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking...",
+        icon: "ph:gear-six",
       },
       {
         key: "covenHome",
-        title: "Create your ~/.coven home",
+        title: "Create Coven home",
         ok: !!s?.covenHome.ok,
-        detail: s?.covenHome.detail ?? s?.covenHome.hint ?? "checking…",
-        action: s?.covenHome.ok ? null : (
-          <button
-            onClick={scaffoldOnly}
-            disabled={picking === "scaffold"}
-            className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
-          >
-            {picking === "scaffold" ? "creating…" : "Create ~/.coven"}
-          </button>
-        ),
+        detail: s?.covenHome.detail ?? s?.covenHome.hint ?? "checking...",
+        icon: "ph:folder",
       },
       {
         key: "binding",
-        title: "Pick your first familiar",
-        ok: !!s?.binding.ok && !!pickedTemplate,
-        detail: s?.binding.detail ?? s?.binding.hint ?? "checking…",
-        action: (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {TEMPLATES.map((tmpl) => {
-              const active = pickedTemplate === tmpl.id;
-              return (
-                <button
-                  key={tmpl.id}
-                  onClick={() => void runSetup(tmpl)}
-                  disabled={picking !== null}
-                  className={`rounded-lg border bg-gradient-to-br p-3 text-left transition disabled:opacity-50 ${
-                    active
-                      ? `${tmpl.accent} ring-1 ring-white/20`
-                      : "border-[var(--border-hairline)] from-[var(--bg-raised)]/40 to-[var(--bg-raised)]/10 hover:border-[var(--border-strong)]"
-                  }`}
-                >
-                  <div className="text-[13px] font-medium text-[var(--text-primary)]">{tmpl.label}</div>
-                  <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{tmpl.blurb}</div>
-                  {active ? (
-                    <div className="mt-1.5 flex items-center gap-1 font-mono text-[10px] text-emerald-300">
-                      <Icon name="ph:check-bold" />
-                      <span>saved</span>
-                    </div>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        ),
+        title: "Create first familiar",
+        ok: !!s?.binding.ok,
+        detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
+        icon: "ph:sparkle",
       },
       {
         key: "daemon",
-        title: "Start the coven daemon",
+        title: "Start daemon",
         ok: !!s?.daemon.ok,
-        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking…",
-        action: s?.daemon.ok ? null : (
-          <button
-            onClick={startDaemon}
-            disabled={startingDaemon || !s?.covenCli.ok}
-            className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
-            title={!s?.covenCli.ok ? "Install coven CLI first" : "Run `coven daemon start`"}
-          >
-            {startingDaemon ? "starting…" : "Start daemon"}
-          </button>
-        ),
+        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking...",
+        icon: "ph:plug",
       },
       {
         key: "familiars",
         title: "Load familiars",
         ok: !!s?.familiars.ok,
-        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking…",
-        action: null,
+        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking...",
+        icon: "ph:user",
       },
-    ];
-  }, [status, picking, pickedTemplate, startingDaemon]);
+    ] satisfies Array<{ key: string; title: string; ok: boolean; detail: string; icon: IconName }>;
+  }, [status]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/95 backdrop-blur-sm">
-      <div className="w-[540px] max-w-[94vw] max-h-[92vh] overflow-y-auto rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-7 shadow-2xl">
-        <div className="mb-5">
-          <div className="text-[11px] uppercase tracking-wider text-purple-300/80">Welcome</div>
-          <h1 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">Let's wake your Coven.</h1>
-          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
-            Five quick checks. Cave handles what it can; you handle the rest. Status refreshes automatically.
-          </p>
-        </div>
-
-        <ol className="space-y-4">
-          {steps.map((s, i) => (
-            <li
-              key={s.key}
-              className={`rounded-xl border p-4 transition-colors ${
-                s.ok ? "border-emerald-700/40 bg-emerald-950/15" : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/30"
-              }`}
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[var(--bg-base)]/96 backdrop-blur-sm">
+      <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+        <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider text-purple-300/80">
+              <span>Welcome</span>
+              <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 normal-case tracking-normal text-[var(--text-secondary)]">
+                {platformCopy.label}
+              </span>
+              {process.env.NEXT_PUBLIC_DEMO === "true" ? (
+                <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 normal-case tracking-normal text-amber-200">
+                  Demo mode
+                </span>
+              ) : null}
+            </div>
+            <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
+              Set up CovenCave on this machine.
+            </h1>
+            <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--text-secondary)]">
+              Cave checks your local runtime, creates only your Coven files, and helps you add a first familiar that belongs to you.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => void refresh()}
+              className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
             >
-              <div className="flex items-start gap-3">
-                <span
-                  className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border text-[12px] font-medium ${
-                    s.ok
-                      ? "border-emerald-600 bg-emerald-600/20 text-emerald-300"
-                      : "border-[var(--border-strong)] bg-[var(--bg-raised)] text-[var(--text-secondary)]"
+              <Icon name="ph:arrows-clockwise-bold" />
+              Re-check
+            </button>
+            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+              {stepCount(status)}/5 ready
+            </div>
+          </div>
+        </header>
+
+        {platformCopy.warning ? (
+          <section className="mt-5 rounded-lg border border-amber-500/50 bg-amber-500/12 p-4 text-[13px] text-amber-100">
+            <div className="flex items-start gap-3">
+              <Icon name="ph:warning-fill" width={18} className="mt-0.5 shrink-0 text-amber-200" />
+              <div>
+                <div className="font-semibold">Windows download notice</div>
+                <p className="mt-1 leading-6">{platformCopy.warning}</p>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {setupError ? (
+          <section className="mt-5 rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 text-[13px] text-rose-200">
+            {setupError}
+          </section>
+        ) : null}
+
+        <main className="grid flex-1 gap-5 py-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <section className="space-y-4">
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Platform path</h2>
+                <button
+                  onClick={() => void copyText(platformCopy.installCommand)}
+                  className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                >
+                  Copy command
+                </button>
+              </div>
+              <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+                {platformCopy.installCommand}
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                <InstructionList title="Install CovenCave" items={platformCopy.caveInstall} />
+                <InstructionList title="Install coven CLI" items={platformCopy.cliInstall} />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Tester demo mode</h2>
+                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                    Demo data is opt-in for testers and never appears in normal installs.
+                  </p>
+                </div>
+                <Icon name="ph:toggle-right-bold" className="text-[var(--text-muted)]" />
+              </div>
+              <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+                NEXT_PUBLIC_DEMO=true pnpm dev
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {steps.map((s, i) => (
+                <div
+                  key={s.key}
+                  className={`rounded-lg border p-3 ${
+                    s.ok ? "border-emerald-700/50 bg-emerald-950/20" : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/30"
                   }`}
                 >
-                  {s.ok ? <Icon name="ph:check-bold" /> : i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-[var(--text-primary)]">{s.title}</span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-[var(--text-muted)] truncate">{s.detail}</div>
-                  {s.action}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
-
-        {/* Maintenance */}
-        <div className="mt-6 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-            Maintenance
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xs text-[var(--text-secondary)]">
-              {"idle" in prune ? (
-                "Prune stale sessions (completed / failed / killed, older than 24 h)."
-              ) : "counting" in prune ? (
-                "Counting stale sessions…"
-              ) : "count" in prune ? (
-                `Found ${prune.count} stale session${prune.count === 1 ? "" : "s"}. Confirm to delete.`
-              ) : "pruning" in prune ? (
-                "Pruning…"
-              ) : "pruned" in prune ? (
-                `Done. ${prune.pruned} session${prune.pruned === 1 ? "" : "s"} removed.`
-              ) : "error" in prune ? (
-                <span className="text-rose-300">{prune.error}</span>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 gap-2">
-              {("idle" in prune || "pruned" in prune || "error" in prune) ? (
-                <button
-                  onClick={async () => {
-                    setPrune({ counting: true });
-                    try {
-                      const res = await fetch("/api/sessions/prune", {
-                        method: "POST",
-                        headers: { "content-type": "application/json" },
-                        body: JSON.stringify({ dryRun: true }),
-                      });
-                      const json = await res.json() as { ok: boolean; wouldPrune?: number; error?: string };
-                      if (json.ok) {
-                        setPrune({ count: json.wouldPrune ?? 0 });
-                      } else {
-                        setPrune({ error: json.error ?? "dry-run failed" });
-                      }
-                    } catch (err) {
-                      setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
-                    }
-                  }}
-                  className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                >
-                  Check
-                </button>
-              ) : null}
-              {"count" in prune ? (
-                <>
-                  <button
-                    onClick={() => setPrune({ idle: true })}
-                    className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                  >
-                    Cancel
-                  </button>
-                  {prune.count > 0 ? (
-                    <button
-                      onClick={async () => {
-                        setPrune({ pruning: true });
-                        try {
-                          const res = await fetch("/api/sessions/prune", {
-                            method: "POST",
-                            headers: { "content-type": "application/json" },
-                            body: JSON.stringify({ dryRun: false }),
-                          });
-                          const json = await res.json() as { ok: boolean; pruned?: number; error?: string };
-                          if (json.ok) {
-                            setPrune({ pruned: json.pruned ?? 0 });
-                          } else {
-                            setPrune({ error: json.error ?? "prune failed" });
-                          }
-                        } catch (err) {
-                          setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
-                        }
-                      }}
-                      className="rounded bg-rose-600/80 px-2.5 py-1 text-[11px] text-white hover:bg-rose-500"
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`grid h-7 w-7 place-items-center rounded-full border ${
+                        s.ok
+                          ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200"
+                          : "border-[var(--border-strong)] text-[var(--text-secondary)]"
+                      }`}
                     >
-                      Delete {prune.count}
-                    </button>
-                  ) : (
-                    <span className="text-[11px] text-[var(--text-muted)]">Nothing to prune.</span>
-                  )}
-                </>
-              ) : null}
+                      {s.ok ? <Icon name="ph:check-bold" /> : <Icon name={s.icon} />}
+                    </span>
+                    <span className="font-mono text-[11px] text-[var(--text-muted)]">{i + 1}</span>
+                  </div>
+                  <div className="mt-3 text-[12px] font-medium text-[var(--text-primary)]">{s.title}</div>
+                  <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{s.detail}</div>
+                </div>
+              ))}
             </div>
-          </div>
-        </div>
 
-        <div className="mt-6 flex items-center justify-between">
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Create your first familiar</h2>
+                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                    Pick a name and runtime. Cave writes only this familiar to your local `~/.coven/familiars.toml`.
+                  </p>
+                </div>
+                <button
+                  onClick={scaffoldOnly}
+                  disabled={picking !== null}
+                  className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                >
+                  {picking === "scaffold" ? "Creating..." : "Create folder only"}
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Name</span>
+                  <input
+                    value={familiarName}
+                    onChange={(e) => setFamiliarName(e.target.value)}
+                    placeholder="Example: Riley"
+                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Role</span>
+                  <input
+                    value={familiarRole}
+                    onChange={(e) => setFamiliarRole(e.target.value)}
+                    placeholder="Research, Code, Ops..."
+                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Glyph</span>
+                  <input
+                    value={familiarGlyph}
+                    onChange={(e) => setFamiliarGlyph(e.target.value)}
+                    placeholder="ph:sparkle-fill"
+                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Description</span>
+                  <input
+                    value={familiarDescription}
+                    onChange={(e) => setFamiliarDescription(e.target.value)}
+                    placeholder="What should this familiar help with?"
+                    className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {HARNESS_PRESETS.map((preset) => {
+                  const active = selectedHarness.id === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      onClick={() => setSelectedHarness(preset)}
+                      className={`rounded-lg border p-3 text-left ${
+                        active
+                          ? "border-purple-500/55 bg-purple-500/12 text-[var(--text-primary)]"
+                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/60 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-medium">{preset.label}</span>
+                        {active ? <Icon name="ph:check-bold" className="text-purple-200" /> : null}
+                      </div>
+                      <div className="mt-1 font-mono text-[11px]">{preset.model}</div>
+                      <div className="mt-1 text-[11px] leading-4 text-[var(--text-muted)]">{preset.detail}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  onClick={createFamiliar}
+                  disabled={picking !== null || familiarName.trim().length === 0}
+                  className="inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+                >
+                  <Icon name="ph:sparkle" />
+                  {picking === "familiar" ? "Creating..." : "Create familiar"}
+                </button>
+                <button
+                  onClick={startDaemon}
+                  disabled={startingDaemon || !status?.steps.covenCli.ok}
+                  className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                  title={!status?.steps.covenCli.ok ? "Install coven CLI first" : selectedHarness.commandHint}
+                >
+                  <Icon name="ph:rocket-launch-bold" />
+                  {startingDaemon ? "Starting..." : "Start daemon"}
+                </button>
+              </div>
+            </div>
+
+            <MaintenancePanel prune={prune} setPrune={setPrune} />
+          </section>
+        </main>
+
+        <footer className="flex items-center justify-between border-t border-[var(--border-hairline)] py-4">
           <button
             onClick={() => {
               try {
@@ -381,15 +524,122 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           {status?.complete ? (
             <button
               onClick={onDismiss}
-              className="rounded-md bg-emerald-500/90 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-emerald-400"
+              className="rounded-md bg-emerald-500/90 px-4 py-2 text-[13px] font-medium text-white hover:bg-emerald-400"
             >
-              Open Cave →
+              Open Cave
             </button>
           ) : (
             <span className="text-[11px] text-[var(--text-muted)]">
-              {Object.values(status?.steps ?? {}).filter((s) => s.ok).length}/5 ready
+              Status refreshes automatically every 2 seconds.
             </span>
           )}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function InstructionList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</h3>
+      <ol className="mt-2 space-y-2">
+        {items.map((item, index) => (
+          <li key={item} className="flex gap-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-[var(--border-hairline)] text-[10px] text-[var(--text-muted)]">
+              {index + 1}
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function MaintenancePanel({
+  prune,
+  setPrune,
+}: {
+  prune: PruneState;
+  setPrune: (next: PruneState) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+        Maintenance
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-[var(--text-secondary)]">
+          {"idle" in prune ? (
+            "Prune stale sessions: completed, failed, or killed sessions older than 24 hours."
+          ) : "counting" in prune ? (
+            "Counting stale sessions..."
+          ) : "count" in prune ? (
+            `Found ${prune.count} stale session${prune.count === 1 ? "" : "s"}. Confirm to delete.`
+          ) : "pruning" in prune ? (
+            "Pruning..."
+          ) : "pruned" in prune ? (
+            `Done. ${prune.pruned} session${prune.pruned === 1 ? "" : "s"} removed.`
+          ) : "error" in prune ? (
+            <span className="text-rose-300">{prune.error}</span>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {"idle" in prune || "pruned" in prune || "error" in prune ? (
+            <button
+              onClick={async () => {
+                setPrune({ counting: true });
+                try {
+                  const res = await fetch("/api/sessions/prune", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ dryRun: true }),
+                  });
+                  const json = await res.json() as { ok: boolean; wouldPrune?: number; error?: string };
+                  setPrune(json.ok ? { count: json.wouldPrune ?? 0 } : { error: json.error ?? "dry-run failed" });
+                } catch (err) {
+                  setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
+                }
+              }}
+              className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+            >
+              Check
+            </button>
+          ) : null}
+          {"count" in prune ? (
+            <>
+              <button
+                onClick={() => setPrune({ idle: true })}
+                className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              >
+                Cancel
+              </button>
+              {prune.count > 0 ? (
+                <button
+                  onClick={async () => {
+                    setPrune({ pruning: true });
+                    try {
+                      const res = await fetch("/api/sessions/prune", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ dryRun: false }),
+                      });
+                      const json = await res.json() as { ok: boolean; pruned?: number; error?: string };
+                      setPrune(json.ok ? { pruned: json.pruned ?? 0 } : { error: json.error ?? "prune failed" });
+                    } catch (err) {
+                      setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
+                    }
+                  }}
+                  className="rounded bg-rose-600/80 px-2.5 py-1 text-[11px] text-white hover:bg-rose-500"
+                >
+                  Delete {prune.count}
+                </button>
+              ) : (
+                <span className="text-[11px] text-[var(--text-muted)]">Nothing to prune.</span>
+              )}
+            </>
+          ) : null}
         </div>
       </div>
     </div>
