@@ -60,18 +60,6 @@ function ViewSwitcher({
       <button
         type="button"
         className={`sessions-view-switcher-btn${
-          value === "cards" ? " sessions-view-switcher-btn--active" : ""
-        }`}
-        onClick={() => onChange("cards")}
-        aria-pressed={value === "cards"}
-        aria-label="Show sessions as cards"
-        title="Cards"
-      >
-        <Icon name="ph:squares-four" width={13} />
-      </button>
-      <button
-        type="button"
-        className={`sessions-view-switcher-btn${
           value === "rows" ? " sessions-view-switcher-btn--active" : ""
         }`}
         onClick={() => onChange("rows")}
@@ -80,6 +68,18 @@ function ViewSwitcher({
         title="Rows"
       >
         <Icon name="ph:list-bullets" width={13} />
+      </button>
+      <button
+        type="button"
+        className={`sessions-view-switcher-btn${
+          value === "cards" ? " sessions-view-switcher-btn--active" : ""
+        }`}
+        onClick={() => onChange("cards")}
+        aria-pressed={value === "cards"}
+        aria-label="Show sessions as grid"
+        title="Grid"
+      >
+        <Icon name="ph:squares-four" width={13} />
       </button>
     </div>
   );
@@ -295,7 +295,7 @@ export function SessionsView({
   onNewChat,
 }: SessionsViewProps) {
   const overrides = useGlyphOverrides();
-  const [layoutMode, setLayoutMode] = useState<SessionsLayoutMode>("cards");
+  const [layoutMode, setLayoutMode] = useState<SessionsLayoutMode>("rows");
   const activeFamiliar = familiars.find((f) => f.id === activeFamiliarId) ?? null;
 
   // Sort sessions newest-first

@@ -12,9 +12,6 @@
 
 import { useMemo } from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -155,18 +152,12 @@ function FamiliarRow({
   active: boolean;
   onSelect: () => void;
 }) {
-  const overrides = useGlyphOverrides();
-  const glyph = resolveFamiliarGlyph(familiar, overrides);
-
   return (
     <button
       type="button"
       className={`sidebar-familiar-row${active ? " sidebar-familiar-row--active" : ""}`}
       onClick={onSelect}
     >
-      <span className="sidebar-familiar-row-glyph">
-        <FamiliarGlyph glyph={glyph} size="sm" />
-      </span>
       <span className="sidebar-familiar-row-name">{familiar.display_name}</span>
       {sessionCount > 0 && (
         <span className="sidebar-familiar-row-count">{sessionCount}</span>
