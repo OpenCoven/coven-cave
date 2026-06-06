@@ -73,6 +73,13 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
+      - name: Set release metadata
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -127,6 +134,8 @@ jobs:
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Keep the keychain unlocked for up to 6 hours so long notarization
+          # waits do not relock it before codesign finishes.
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERT_PATH" \
@@ -157,8 +166,8 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         with:
-          tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: "CovenCave ${{ github.event.inputs.tag || github.ref_name }}"
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: false
@@ -173,10 +182,7 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          VERSION="${TAG#v}"
-          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
-          bash scripts/release.sh "$VERSION"
+          bash scripts/release.sh "$RELEASE_VERSION"
 
       # Hard gate: fail the macOS leg if the produced DMG is not accepted
       # by Gatekeeper as a notarized Developer ID app. This is what makes
@@ -211,5 +217,5 @@ jobs:
         if: matrix.platform == 'macos-latest'
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: release/CovenCave-v${{ env.RELEASE_VERSION }}.dmg
