@@ -105,8 +105,8 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
 
-    let command = options.command.unwrap_or_else(|| default_shell());
-    let args = options.args.unwrap_or_else(|| default_shell_args());
+    let command = options.command.unwrap_or_else(default_shell);
+    let args = options.args.unwrap_or_else(default_shell_args);
     info!("pty_start[{}]: spawning {} {:?}", thread_id, command, args);
     let mut cmd = CommandBuilder::new(&command);
     cmd.args(&args);

@@ -41,6 +41,13 @@ fn safe_browser_label(label: Option<String>) -> String {
 }
 
 #[derive(Debug, Serialize, Clone)]
+struct BrowserTitleEvent {
+    label: String,
+    title: String,
+    url: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
 struct BrowserPageLoadEvent {
     label: String,
     url: String,
@@ -84,18 +91,20 @@ fn ensure_browser(
                 },
             );
             if matches!(payload.event(), PageLoadEvent::Finished) {
+                // Emit title event from Rust so it reaches the main window's
+                // event bus. Child webview JS → main window event propagation
+                // is unreliable in Tauri v2; Rust-side emit is the safe path.
                 let label_json = serde_json::to_string(&browser_label)
                     .unwrap_or_else(|_| "null".to_string());
+                let url_str = payload.url().to_string();
+
+                // Read document.title via eval and re-emit from Rust.
+                // eval() return value isn't easily captured in the page_load
+                // callback, so we inject a tiny script that calls a dedicated
+                // Tauri command instead.
                 let script = format!(
                     r#"(function(browserLabel) {{
                       try {{
-                        var emit = function(name, payload) {{
-                          if (window.__TAURI__ && window.__TAURI__.event) {{
-                            window.__TAURI__.event.emit(name, payload);
-                          }}
-                        }};
-                        var title = document.title || location.hostname || location.href;
-                        emit("browser:title", {{ label: browserLabel, title: title, url: location.href }});
                         if (!window.__CAVE_BROWSER_INSTALLED__) {{
                           window.__CAVE_BROWSER_INSTALLED__ = true;
                           window.addEventListener("keydown", function(event) {{
@@ -103,16 +112,43 @@ fn ensure_browser(
                               if ((event.metaKey || event.ctrlKey) && event.key && event.key.toLowerCase() === "t") {{
                                 event.preventDefault();
                                 event.stopPropagation();
-                                emit("browser:shortcut-new-tab", {{ label: browserLabel, url: location.href }});
+                                if (window.__TAURI_INTERNALS__) {{
+                                  window.__TAURI_INTERNALS__.invoke("browser_report_title", {{
+                                    label: browserLabel, url: location.href
+                                  }}).catch(function(){{}});
+                                }}
                               }}
                             }} catch (_) {{}}
                           }}, true);
+                        }}
+                        // Report title immediately on load
+                        if (window.__TAURI_INTERNALS__) {{
+                          var pageTitle = document.title || location.hostname || location.href;
+                          window.__TAURI_INTERNALS__.invoke("browser_report_title", {{
+                            label: browserLabel, title: pageTitle, url: location.href
+                          }}).catch(function(){{}});
                         }}
                       }} catch (_) {{}}
                     }})({})"#,
                     label_json
                 );
                 let _ = webview.eval(&script);
+                // Also emit page URL as a title fallback immediately from Rust
+                // so the tab rail updates even if the invoke path is delayed.
+                let title_fallback = {
+                    match Url::parse(&url_str) {
+                        Ok(u) => u.host_str().unwrap_or(&url_str).to_string(),
+                        Err(_) => url_str.clone(),
+                    }
+                };
+                let _ = app_for_load.emit(
+                    "browser:title",
+                    BrowserTitleEvent {
+                        label: browser_label.clone(),
+                        title: title_fallback,
+                        url: url_str,
+                    },
+                );
             }
         },
     );
@@ -166,7 +202,7 @@ pub fn browser_navigate(
         if let Err(_e) = webview.navigate(parsed_url.clone()) {
             let escaped = parsed_url.to_string().replace('"', "%22");
             webview
-                .eval(&format!("window.location.href = \"{}\";", escaped))
+                .eval(format!("window.location.href = \"{}\";", escaped))
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -231,5 +267,29 @@ pub fn browser_reload(app: AppHandle, label: Option<String>) -> Result<(), Strin
     if let Some(webview) = app.get_webview(&label) {
         webview.reload().map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// Called by the injected script inside a child browser webview so the real
+/// document.title can be emitted as a `browser:title` event on the main
+/// app event bus (where the BrowserPane JS component can receive it).
+/// This avoids the cross-webview event delivery problem in Tauri v2.
+#[tauri::command]
+pub fn browser_report_title(
+    app: AppHandle,
+    label: String,
+    title: String,
+    url: String,
+) -> Result<(), String> {
+    // The injected script calls this from the child webview, but `app.emit`
+    // sends to ALL windows/webviews so the main window's JS event bus sees it.
+    let _ = app.emit(
+        "browser:title",
+        BrowserTitleEvent {
+            label,
+            title,
+            url,
+        },
+    );
     Ok(())
 }

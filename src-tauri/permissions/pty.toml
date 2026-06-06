@@ -62,3 +62,8 @@ commands.allow = ["browser_reload"]
 identifier = "allow-shell-open"
 description = "Allows opening a URL in the system browser."
 commands.allow = ["shell_open"]
+
+[[permission]]
+identifier = "allow-browser-report-title"
+description = "Allows child browser webviews to report their document title via Rust."
+commands.allow = ["browser_report_title"]

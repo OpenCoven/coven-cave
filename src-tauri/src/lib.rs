@@ -104,7 +104,7 @@ fn find_node() -> Option<PathBuf> {
                 .filter(|p| p.is_dir())
                 .collect();
             versions.sort(); // lexicographic; good enough for v20 < v24, etc.
-            if let Some(latest) = versions.into_iter().rev().next() {
+            if let Some(latest) = versions.into_iter().next_back() {
                 let node = latest.join("node.exe");
                 if node.exists() {
                     return Some(node);
@@ -171,7 +171,7 @@ fn find_node() -> Option<PathBuf> {
                 .filter(|p| p.is_dir())
                 .collect();
             versions.sort();
-            if let Some(latest) = versions.into_iter().rev().next() {
+            if let Some(latest) = versions.into_iter().next_back() {
                 let node = latest.join("bin").join("node");
                 if node.exists() {
                     return Some(node);
@@ -318,6 +318,7 @@ fn node_arg_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     #[cfg(target_os = "windows")]
@@ -412,6 +413,7 @@ pub fn run() {
             browser::browser_hide_all_except,
             browser::browser_close,
             browser::browser_reload,
+            browser::browser_report_title,
             shell_open,
         ])
         .manage(SidecarState(Mutex::new(None)))
