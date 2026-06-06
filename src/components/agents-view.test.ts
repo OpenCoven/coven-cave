@@ -14,8 +14,8 @@ assert.match(
 
 assert.match(
   agentsView,
-  /Search sessions\.\.\./,
-  "AgentsView should keep session search in the primary command row",
+  /Search agents\.\.\./,
+  "AgentsView should keep agent search in the primary command row",
 );
 
 assert.match(
@@ -92,7 +92,7 @@ assert.match(
 
 assert.match(
   agentsView,
-  /setScope\("delegations"\)/,
+  /onClick=\{\(\) => setScope\(s\)\}/,
   "AgentsView trace preview should provide a path into the full Delegations graph",
 );
 
