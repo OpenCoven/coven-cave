@@ -144,7 +144,11 @@ export async function POST() {
           addedAt: now,
         }));
 
-        await updateCard(card.id, { steps: cardSteps });
+        const updated = await updateCard(card.id, { steps: cardSteps });
+        if (!updated) {
+          push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+          continue;
+        }
         push({ kind: "done", cardId: card.id, count: cardSteps.length });
       }
 
