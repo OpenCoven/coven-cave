@@ -41,6 +41,16 @@ on:
         description: "Tag to attach builds to (e.g. v0.0.16). Must already exist on origin."
         required: true
         type: string
+      platform:
+        description: "Platform to build when manually re-running a release."
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - linux
+          - windows
 
 concurrency:
   group: release-${{ github.ref }}
@@ -81,7 +91,9 @@ jobs:
           echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
 
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: >-
+          matrix.platform == 'ubuntu-22.04' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -115,7 +127,9 @@ jobs:
       # macOS release script. The path is exported into the env for later
       # steps. Runs only on the macOS leg.
       - name: Stage Apple API key
-        if: matrix.platform == 'macos-15-intel'
+        if: >-
+          matrix.platform == 'macos-15-intel' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
           set -euo pipefail
@@ -134,7 +148,9 @@ jobs:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
 
       - name: Import Apple signing certificate
-        if: matrix.platform == 'macos-15-intel'
+        if: >-
+          matrix.platform == 'macos-15-intel' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
           set -euo pipefail
@@ -175,7 +191,15 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Build with tauri-action
-        if: matrix.platform == 'ubuntu-22.04' || matrix.platform == 'windows-latest'
+        if: >-
+          (
+            matrix.platform == 'ubuntu-22.04' &&
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+          ) ||
+          (
+            matrix.platform == 'windows-latest' &&
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+          )
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -188,7 +212,9 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Build macOS DMG with custom release script
-        if: matrix.platform == 'macos-15-intel'
+        if: >-
+          matrix.platform == 'macos-15-intel' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         env:
           # Xcode 16.3's notarytool crashes with exit 132 on the current
@@ -209,7 +235,9 @@ jobs:
       # ship an unsigned DMG, which is exactly what regressed
       # v0.0.13–v0.0.15.
       - name: Verify macOS DMG is notarized
-        if: matrix.platform == 'macos-15-intel'
+        if: >-
+          matrix.platform == 'macos-15-intel' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
           set -euo pipefail
@@ -232,7 +260,9 @@ jobs:
           echo "OK: $(grep 'origin=' /tmp/spctl.out)"
 
       - name: Upload macOS DMG to GitHub Release
-        if: matrix.platform == 'macos-15-intel'
+        if: >-
+          matrix.platform == 'macos-15-intel' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
