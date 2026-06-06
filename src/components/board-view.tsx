@@ -509,7 +509,8 @@ function CardItem({
         onSelect();
       }}
       tabIndex={0}
-      aria-selected={isSelected}
+      role="button"
+      aria-pressed={isSelected}
       className={`cursor-grab rounded-lg border bg-background p-3 outline-none transition-all active:cursor-grabbing ${
         isSelected
           ? "border-border-strong bg-muted/60 ring-1 ring-border-strong"
