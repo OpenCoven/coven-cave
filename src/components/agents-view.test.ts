@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const agentsView = await readFile(new URL("./agents-view.tsx", import.meta.url), "utf8");
+const agentsMemoryView = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
-const callsView = await readFile(new URL("./calls-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   agentsView,
@@ -50,50 +50,62 @@ assert.match(
 
 assert.match(
   agentsView,
-  /<CallsView[\s\S]*embedded[\s\S]*initialTab="delegations"/,
-  "AgentsView should embed the delegation graph rather than sending users to a separate Calls tab",
+  /<AgentsMemoryView[\s\S]*familiars=\{familiars\}[\s\S]*activeFamiliar=\{activeFamiliar\}/,
+  "AgentsView should surface comprehensive memory as a first-class tab",
 );
 
 assert.match(
   agentsView,
-  /fetch\("\/api\/coven-calls"/,
-  "AgentsView should actively load delegation traces on the default sessions surface",
+  /memory: "Memory"/,
+  "AgentsView should label the third primary tab Memory instead of Traces",
 );
 
 assert.match(
   agentsView,
-  /fetch\("\/api\/board"/,
-  "AgentsView should load board context so inferred delegation traces are visible without opening the graph",
+  /groupBy[\s\S]*Familiar[\s\S]*Status[\s\S]*Date[\s\S]*None/,
+  "AgentsView should preserve the Chats group-by controls while replacing traces with memory",
 );
 
-assert.match(
-  agentsView,
-  /setInterval\(loadDelegations,\s*10_000\)/,
-  "AgentsView should poll delegation traces so live events keep updating",
-);
-
-assert.match(
+assert.doesNotMatch(
   agentsView,
   /Traces/,
-  "AgentsView should collapse live trace status into the quiet command row",
+  "AgentsView should not foreground trace terminology in the primary tabs",
+);
+
+assert.doesNotMatch(
+  agentsView,
+  /fetch\("\/api\/coven-calls"|buildDelegationGraph|loadDelegations/,
+  "AgentsView should not load trace graph data just to render the primary agents surface",
+);
+
+assert.match(
+  agentsMemoryView,
+  /fetch\("\/api\/coven-memory"/,
+  "Agents memory view should load daemon-backed Coven memory",
+);
+
+assert.match(
+  agentsMemoryView,
+  /fetch\("\/api\/memory"/,
+  "Agents memory view should load filesystem memory indexes",
+);
+
+assert.match(
+  agentsMemoryView,
+  /Coven entries[\s\S]*Memory files[\s\S]*Familiars/,
+  "Agents memory view should summarize all memory sources",
+);
+
+assert.match(
+  agentsMemoryView,
+  /familiarFilter/,
+  "Agents memory view should support familiar-scoped memory filtering",
 );
 
 assert.doesNotMatch(
   agentsView,
   /Left nav|w-\[44px\]/,
   "AgentsView should not render a second persistent left navigation rail inside the app shell",
-);
-
-assert.match(
-  agentsView,
-  /buildDelegationGraph\(\{[\s\S]*includeInferred: true/,
-  "AgentsView should build the provenance-aware delegation graph with inferred traces included",
-);
-
-assert.match(
-  agentsView,
-  /onClick=\{\(\) => setScope\(s\)\}/,
-  "AgentsView trace preview should provide a path into the full Delegations graph",
 );
 
 assert.match(
@@ -118,10 +130,4 @@ assert.match(
   workspace,
   /onOpenInboxItem=\{\(item\) => \{[\s\S]*openAgentSession\(item\.sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
   "Workspace should keep notification-bell inbox routing intact for session and non-session items",
-);
-
-assert.match(
-  callsView,
-  /embedded\?: boolean/,
-  "CallsView should support embedded rendering inside Agents",
 );

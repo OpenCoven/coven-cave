@@ -1,27 +1,19 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
+import React, { useEffect, useMemo, useState, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
-import { CallsView } from "@/components/calls-view";
+import { AgentsMemoryView } from "@/components/agents-memory-view";
+import { CovenFloor } from "@/components/coven-floor";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
-import type { Card } from "@/lib/cave-board-types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
-import {
-  buildDelegationGraph,
-  inferDelegationTraces,
-  type CovenCall,
-  type DelegationGraph,
-  type DelegationTrace,
-} from "@/lib/coven-calls-types";
-import { inferOrigin } from "@/lib/session-origin";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type AgentsScope = "sessions" | "conversation" | "delegations";
+type AgentsScope = "sessions" | "conversation" | "floor" | "memory";
 
 type Props = {
   familiars: Familiar[];
@@ -45,9 +37,6 @@ type Props = {
   onOpenInbox: () => void;
   onOpenMode: (mode: string) => void;
 };
-
-type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
-type BoardResponse = { ok: true; cards: Card[] } | { ok: false; error?: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -215,48 +204,9 @@ export function AgentsView({
     onSetInspectorOpen(next === "inspector");
   }
 
-  // Delegation data
-  const [delegationCalls, setDelegationCalls] = useState<CovenCall[]>([]);
-  const [delegationCards, setDelegationCards] = useState<Card[]>([]);
-  const [delegationError, setDelegationError] = useState<string | null>(null);
-
   const famById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const openCount = useMemo(() => sessions.filter((s) => !isClosed(s)).length, [sessions]);
   const closedCount = sessions.length - openCount;
-
-  const delegationGraph = useMemo(
-    () =>
-      buildDelegationGraph({
-        explicitCalls: delegationCalls,
-        inferredTraces: inferDelegationTraces({ cards: delegationCards, sessions }),
-        includeInferred: true,
-      }),
-    [delegationCalls, delegationCards, sessions],
-  );
-  const runningTraceCount = delegationGraph.traces.filter((t) => t.status === "running").length;
-  const failedTraceCount = delegationGraph.traces.filter((t) => t.status === "failed").length;
-
-  const loadDelegations = useCallback(async () => {
-    try {
-      const [cr, br] = await Promise.all([
-        fetch("/api/coven-calls", { cache: "no-store" }),
-        fetch("/api/board", { cache: "no-store" }),
-      ]);
-      const cj = (await cr.json()) as CallsResponse;
-      const bj = (await br.json()) as BoardResponse;
-      if (cj.ok) setDelegationCalls(cj.calls);
-      if (bj.ok) setDelegationCards(bj.cards);
-      setDelegationError(null);
-    } catch {
-      setDelegationError("trace unavailable");
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadDelegations();
-    const t = setInterval(loadDelegations, 10_000);
-    return () => clearInterval(t);
-  }, [loadDelegations]);
 
   // Window events
   useEffect(() => {
@@ -301,7 +251,6 @@ export function AgentsView({
       .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
   }, [famById, query, sessions, showClosed]);
 
-  // Group filteredSessions based on groupBy
   const groupedSessions = useMemo(() => {
     if (groupBy === "none") return [{ label: null, sessions: filteredSessions }];
     const map = new Map<string, typeof filteredSessions>();
@@ -313,7 +262,6 @@ export function AgentsView({
       } else if (groupBy === "status") {
         key = s.status ?? "unknown";
       } else {
-        // date grouping: today / yesterday / this week / older
         const d = new Date(s.updated_at);
         const now = new Date();
         const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
@@ -326,7 +274,7 @@ export function AgentsView({
       map.get(key)!.push(s);
     }
     return [...map.entries()].map(([label, sessions]) => ({ label, sessions }));
-  }, [filteredSessions, groupBy, famById]);
+  }, [famById, filteredSessions, groupBy]);
 
   // Clear selection when filter/group changes
   useEffect(() => { setSelectedIds(new Set()); }, [groupBy, showClosed, query]);
@@ -409,14 +357,16 @@ export function AgentsView({
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
           <div className="flex items-end gap-0">
-            {(["sessions", "delegations"] as const).map((s) => {
+            {(["sessions", "floor", "memory"] as const).map((s) => {
               const labels: Record<string, string> = {
                 sessions: "Chats",
-                delegations: "Traces",
+                floor: "Floor",
+                memory: "Memory",
               };
               const icons: Record<string, string> = {
-                sessions: "ph:chats-circle",
-                delegations: "ph:graph",
+                sessions: "ph:users",
+                floor: "ph:users-three",
+                memory: "ph:brain-bold",
               };
               const isActive = scope === s || (s === "sessions" && scope === "conversation");
               return (
@@ -433,13 +383,6 @@ export function AgentsView({
                 >
                   <Icon name={icons[s] as IconName} width={12} />
                   {labels[s]}
-                  {s === "delegations" && delegationGraph.traces.length > 0 && (
-                    <span className="rounded-full bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-secondary)]">
-                      {delegationGraph.traces.length}
-                    </span>
-                  )}
-                  {s === "delegations" && runningTraceCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-                  {s === "delegations" && failedTraceCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />}
                 </button>
               );
             })}
@@ -469,7 +412,10 @@ export function AgentsView({
               </div>
             )}
             {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-0.5" title="Group by">
+              <div
+                className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-0.5"
+                title="Group by"
+              >
                 {(["familiar", "status", "date", "none"] as const).map((g) => (
                   <button
                     key={g}
@@ -494,22 +440,18 @@ export function AgentsView({
             <button type="button" title="Configure plugins" onClick={() => onOpenMode("plugins")} className={softButton()}>
               <Icon name="ph:plug" width={12} />
             </button>
-            {delegationError && (
-              <span className="text-[10px] text-amber-400">{delegationError}</span>
-            )}
           </div>
         </div>
 
-        {scope === "delegations" ? (
-          <CallsView
+        {scope === "floor" ? (
+          <CovenFloor />
+        ) : scope === "memory" ? (
+          <AgentsMemoryView
             familiars={familiars}
-            sessions={sessions}
-            embedded
-            initialTab="delegations"
-            onOpenSession={(sessionId, familiarId) => {
-              if (familiarId) onSetActiveFamiliar(familiarId);
-              setScope("conversation");
-              window.setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+            activeFamiliar={activeFamiliar}
+            onOpenMemoryFile={(path) => {
+              setRightPanel("inspector");
+              window.location.hash = `memory:${encodeURIComponent(path)}`;
             }}
           />
         ) : scope === "conversation" ? (
