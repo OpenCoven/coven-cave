@@ -7,17 +7,14 @@ import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { PluginCard } from "@/components/plugin-card";
 import { SkillCard } from "@/components/skill-card";
-import {
-  CapabilitiesView,
-  type HarnessCapabilityManifest,
-} from "@/components/capability-card";
+import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   SkillDetailDrawer,
   type SkillEntry as SkillEntryWithDetail,
   type FamiliarForSkill,
 } from "@/components/skill-detail-drawer";
 
-type Tab = "roles" | "skills" | "plugins" | "capabilities";
+type Tab = "roles" | "plugins" | "skills";
 
 type HarnessReport = {
   id: string;
@@ -67,28 +64,24 @@ const TAB_LABEL: Record<Tab, string> = {
   plugins: "Plugins",
   skills: "Skills",
   roles: "Roles",
-  capabilities: "Capabilities",
 };
 
 const HERO_HEADLINE: Record<Tab, string> = {
   plugins: "Make Cave work your way",
   skills: "Harness your familiar's skills",
   roles: "Shape how familiars show up",
-  capabilities: "Explore harness capabilities",
 };
 
 const HERO_SEARCH_PLACEHOLDER: Record<Tab, string> = {
   plugins: "Search plugins",
   skills: "Search skills",
   roles: "Search roles",
-  capabilities: "Search capabilities",
 };
 
 const SECTION_LABEL: Record<Tab, string> = {
   plugins: "Harness plugins",
   skills: "Installed skills",
   roles: "Installed roles",
-  capabilities: "Harness capabilities",
 };
 
 export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
@@ -124,8 +117,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
   };
   const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
-  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
-  const [capabilitiesRefresh, setCapabilitiesRefresh] = useState(false);
+
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SkillEntryWithDetail | null>(null);
   const [selectedRole, setSelectedRole] = useState<RoleEntry | null>(null);
@@ -234,35 +226,13 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
             if (capabilitiesRes.status === "fulfilled" && capabilitiesRes.value.ok) {
               setCapabilities(capabilitiesRes.value.harness_capabilities ?? []);
               setCapabilitiesLoaded(true);
-              setCapabilitiesError(null);
+
             }
           }
         } catch (err) {
           if (!cancelled) setRolesError(err instanceof Error ? err.message : "fetch failed");
         } finally {
           if (!cancelled) setRolesLoaded(true);
-        }
-      })();
-      return () => { cancelled = true; };
-    }
-    if (tab === "capabilities" && !capabilitiesLoaded) {
-      let cancelled = false;
-      void (async () => {
-        try {
-          const res = await fetch(`/api/capabilities${capabilitiesRefresh ? '?refresh=1' : ''}`, { cache: "no-store" });
-          const json = await res.json();
-          if (!cancelled) {
-            if (json.ok) {
-              setCapabilities(json.harness_capabilities ?? []);
-              setCapabilitiesError(null);
-            } else {
-              setCapabilitiesError(json.error ?? "daemon offline");
-            }
-          }
-        } catch (err) {
-          if (!cancelled) setCapabilitiesError(err instanceof Error ? err.message : "fetch failed");
-        } finally {
-          if (!cancelled) { setCapabilitiesLoaded(true); setCapabilitiesRefresh(false); }
         }
       })();
       return () => { cancelled = true; };
@@ -333,13 +303,9 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
         ? skillsLoaded && !skillsError
           ? `${skills.length} installed`
           : "Loading skills"
-        : tab === "roles"
-          ? rolesLoaded && !rolesError
-            ? `${roles.length} installed`
-            : "Loading roles"
-          : capabilitiesLoaded && !capabilitiesError
-            ? `${capabilities.length} manifests`
-            : "Loading capabilities";
+        : rolesLoaded && !rolesError
+          ? `${roles.length} installed`
+          : "Loading roles";
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
@@ -348,7 +314,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
         <div className="flex h-12 items-center justify-between gap-4">
           {/* Tabs flush left — underline style */}
           <nav className="flex h-full items-end gap-1 overflow-x-auto" aria-label="View tabs">
-            {(["roles", "skills", "plugins", "capabilities"] as const).map((t) => (
+            {(["roles", "plugins", "skills"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -366,17 +332,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
 
           {/* Controls flush right */}
           <div className="flex shrink-0 items-center gap-2 text-[12px]">
-            {tab === "capabilities" ? (
-              <button
-                type="button"
-                onClick={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }}
-                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
-              >
-                <Icon name="ph:arrows-clockwise-bold" className="text-muted-foreground" width="0.8rem" />
-                <span>Refresh</span>
-              </button>
-            ) : (
-              <button
+            <button
                 type="button"
                 disabled
                 aria-disabled="true"
@@ -386,7 +342,6 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
                 <Icon name="ph:sliders-horizontal" className="text-muted-foreground" width="0.8rem" />
                 <span>Manage</span>
               </button>
-            )}
 
             <div ref={createRef} className="relative">
               <button
@@ -505,17 +460,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
                 capabilitiesByPlugin={capabilitiesByPlugin}
                 capabilitiesLoaded={capabilitiesLoaded}
               />
-            ) : (
-              <CapabilitiesView
-                items={capabilities.filter((c) => {
-                  const q = query.trim().toLowerCase();
-                  return !q || c.harness_id.toLowerCase().includes(q);
-                })}
-                loaded={capabilitiesLoaded}
-                error={capabilitiesError}
-                onRefresh={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }}
-              />
-            )}
+            ) : null}
           </section>
         </div>
       </div>
@@ -548,11 +493,37 @@ function PluginGrid({
       </p>
     );
   }
+
+  const installed = items.filter((h) => h.installed);
+  const notInstalled = items.filter((h) => !h.installed);
+  const showHeaders = installed.length > 0 && notInstalled.length > 0;
+
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {items.map((h) => (
-        <PluginCard key={h.id} harness={h} onClick={onOpenChat} />
-      ))}
+    <div className="flex flex-col">
+      {showHeaders && installed.length > 0 && (
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-1 mt-0">
+          Installed
+        </p>
+      )}
+      {installed.length > 0 && (
+        <div className="flex flex-col">
+          {installed.map((h) => (
+            <PluginCard key={h.id} harness={h} onClick={onOpenChat} />
+          ))}
+        </div>
+      )}
+      {showHeaders && notInstalled.length > 0 && (
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-1 mt-4">
+          Available
+        </p>
+      )}
+      {notInstalled.length > 0 && (
+        <div className="flex flex-col">
+          {notInstalled.map((h) => (
+            <PluginCard key={h.id} harness={h} onClick={onOpenChat} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -586,7 +557,7 @@ function SkillGrid({
     );
   }
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="flex flex-col">
       {items.map((s) => (
         <SkillCard
           key={s.id}
@@ -1056,18 +1027,18 @@ function RoleRelationSection({
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="flex flex-col">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
+          className="flex min-w-0 items-center gap-4 px-0 py-3 border-b border-[var(--border-hairline)] last:border-b-0"
         >
-          <span className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-muted" />
+          <span className="h-9 w-9 shrink-0 animate-pulse rounded-lg bg-muted" />
           <span className="flex-1 space-y-1.5">
-            <span className="block h-3 w-1/2 animate-pulse rounded bg-muted" />
-            <span className="block h-2.5 w-3/4 animate-pulse rounded bg-muted" />
+            <span className="block h-3 w-1/3 animate-pulse rounded bg-muted" />
+            <span className="block h-2.5 w-1/2 animate-pulse rounded bg-muted" />
           </span>
-          <span className="h-7 w-7 animate-pulse rounded-full bg-muted" />
+          <span className="h-4 w-14 animate-pulse rounded bg-muted" />
         </div>
       ))}
     </div>

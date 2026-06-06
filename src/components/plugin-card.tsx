@@ -48,22 +48,18 @@ export function PluginCard({
     HARNESS_TAGLINE[harness.id] ?? `Run ${harness.label} from a familiar`;
   const iconName = HARNESS_ICON[harness.id];
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`group flex min-w-0 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-        harness.installed
-          ? "border-border bg-[#050409] hover:border-border-strong hover:bg-[#111018]"
-          : "border-border bg-[#050409] opacity-50 hover:opacity-70"
-      }`}
-    >
+  const inner = (
+    <>
       {/* Icon */}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#111018] text-muted-foreground">
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)] ${
+          harness.installed ? "text-muted-foreground" : "text-muted-foreground/40"
+        }`}
+      >
         {iconName ? (
-          <Icon name={iconName} width={18} height={18} />
+          <Icon name={iconName} width={16} height={16} />
         ) : (
-          <span className="text-[15px] font-semibold text-foreground">
+          <span className="text-[13px] font-semibold text-foreground">
             {(harness.label.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase()}
           </span>
         )}
@@ -71,27 +67,44 @@ export function PluginCard({
 
       {/* Name + tagline */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-foreground">
+        <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]">
           {harness.label}
         </span>
-        <span className="block truncate text-[12px] text-muted-foreground">
+        <span className="block truncate text-[12px] text-[var(--text-muted)]">
           {tagline}
         </span>
       </span>
 
       {/* Install status */}
       {harness.installed ? (
-        <span
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/60"
-          title="Installed"
-        >
-          <Icon name="ph:check-bold" width={13} />
+        <span className="flex items-center gap-1 text-[11px] text-[var(--text-muted)]">
+          <Icon name="ph:check-bold" width={10} />
+          Installed
         </span>
       ) : (
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-border-strong group-hover:text-foreground">
-          <Icon name="ph:plus-bold" width={11} />
+        <span className="flex items-center gap-1 text-[11px] text-[oklch(0.65_0.18_280)]">
+          <Icon name="ph:arrow-down-bold" width={10} />
+          Install
         </span>
       )}
-    </button>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-4 px-0 py-3 border-b border-[var(--border-hairline)] last:border-b-0 transition-colors hover:bg-[var(--bg-raised)] text-left"
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex w-full items-center gap-4 px-0 py-3 border-b border-[var(--border-hairline)] last:border-b-0 transition-colors hover:bg-[var(--bg-raised)]">
+      {inner}
+    </div>
   );
 }

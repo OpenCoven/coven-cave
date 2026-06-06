@@ -12,7 +12,7 @@ type IconRule = { pattern: RegExp; icon: IconName };
 const NAME_RULES: IconRule[] = [
   { pattern: /xurl|twitter|x.com/i,          icon: "ph:x-logo-bold" },
   { pattern: /github/i,                        icon: "ph:github-logo" },
-  { pattern: /git/i,                         icon: "ph:git-branch-bold" },
+  { pattern: /git/i,                         icon: "ph:git-branch-bold" },
   { pattern: /codex/i,                         icon: "ph:terminal-window-bold" },
   { pattern: /claude/i,                        icon: "ph:brain-bold" },
   { pattern: /openclaw|opencoven|coven/i,      icon: "ph:paw-print-bold" },
@@ -99,23 +99,23 @@ export function SkillCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-w-0 w-full items-center gap-3 rounded-xl border border-border bg-[#050409] px-4 py-3 text-left transition-colors hover:border-border-strong hover:bg-[#111018]"
+      className="group flex w-full items-center gap-4 px-0 py-3 border-b border-[var(--border-hairline)] last:border-b-0 transition-colors hover:bg-[var(--bg-raised)] cursor-pointer text-left"
     >
       {/* Icon */}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#111018]">
-        <Icon name={icon} width={18} className="text-muted-foreground" />
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
+        <Icon name={icon} width={16} className="text-muted-foreground" />
       </span>
 
-      {/* Name + meta */}
+      {/* Name + meta + description */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-foreground">
+        <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]">
           {skill.name}
         </span>
-        <span className="block truncate text-[12px] text-muted-foreground">
+        <span className="block truncate text-[12px] text-[var(--text-muted)]">
           {meta}
         </span>
         {skill.description && (
-          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground/70">
+          <span className="mt-0.5 block line-clamp-1 text-[11px] text-[var(--text-muted)]/70">
             {skill.description}
           </span>
         )}
@@ -124,13 +124,13 @@ export function SkillCard({
       {/* Version + arrow */}
       <span className="flex shrink-0 items-center gap-2">
         {skill.version && (
-          <span className="rounded-full bg-[#111018] px-1.5 py-0.5 text-[9px] text-muted-foreground">
-            v{skill.version}
+          <span className="rounded-full bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+            {skill.version}
           </span>
         )}
         <Icon
           name="ph:arrow-right-bold"
-          width={13}
+          width={12}
           className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
         />
       </span>
