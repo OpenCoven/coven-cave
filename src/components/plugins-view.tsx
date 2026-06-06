@@ -44,22 +44,28 @@ type Props = {
   familiars?: FamiliarForSkill[];
 };
 
-const HARNESS_TAGLINE: Record<string, string> = {
-  codex: "Run Codex sessions from this Cave",
-  claude: "Drive Claude Code from a familiar",
-  openclaw: "Bring OpenClaw into the Coven",
-  copilot: "Wire up GitHub Copilot CLI",
-  opencode: "Run OpenCode locally",
-  gemini: "Talk to Google Gemini CLI",
-  hermes: "Light a Hermes runtime",
-  openhands: "Open up OpenHands tasks",
-  aider: "Pair with Aider in-repo",
-};
-
 const TAB_LABEL: Record<Tab, string> = {
   plugins: "Plugins",
   skills: "Skills",
   capabilities: "Capabilities",
+};
+
+const HERO_HEADLINE: Record<Tab, string> = {
+  plugins: "Make Cave work your way",
+  skills: "Harness your familiar's skills",
+  capabilities: "Explore harness capabilities",
+};
+
+const HERO_SEARCH_PLACEHOLDER: Record<Tab, string> = {
+  plugins: "Search plugins",
+  skills: "Search skills",
+  capabilities: "Search capabilities",
+};
+
+const SECTION_LABEL: Record<Tab, string> = {
+  plugins: "Featured",
+  skills: "Installed skills",
+  capabilities: "Harness capabilities",
 };
 
 export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
@@ -79,6 +85,12 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
   const [selectedSkill, setSelectedSkill] = useState<SkillEntryWithDetail | null>(null);
   const createRef = useRef<HTMLDivElement | null>(null);
 
+  // Reset query when switching tabs
+  const handleTabChange = (t: Tab) => {
+    setTab(t);
+    setQuery("");
+  };
+
   useEffect(() => {
     if (tab === "plugins" && !harnessesLoaded) {
       let cancelled = false;
@@ -93,9 +105,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
           if (!cancelled) setHarnessesLoaded(true);
         }
       })();
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }
     if (tab === "skills" && !skillsLoaded) {
       let cancelled = false;
@@ -117,9 +127,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
           if (!cancelled) setSkillsLoaded(true);
         }
       })();
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }
     if (tab === "capabilities" && !capabilitiesLoaded) {
       let cancelled = false;
@@ -141,9 +149,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
           if (!cancelled) { setCapabilitiesLoaded(true); setCapabilitiesRefresh(false); }
         }
       })();
-      return () => {
-        cancelled = true;
-      };
+      return () => { cancelled = true; };
     }
   }, [tab, harnessesLoaded, skillsLoaded, capabilitiesLoaded]);
 
@@ -153,8 +159,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
     return harnesses.filter(
       (h) =>
         h.label.toLowerCase().includes(q) ||
-        h.id.toLowerCase().includes(q) ||
-        (HARNESS_TAGLINE[h.id] ?? "").toLowerCase().includes(q),
+        h.id.toLowerCase().includes(q),
     );
   }, [harnesses, query]);
 
@@ -169,48 +174,33 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
     );
   }, [skills, query]);
 
-  const capabilityCount = capabilities.length;
   const installedHarnessCount = harnesses.filter((h) => h.installed).length;
-  const pageMeta =
-    tab === "plugins"
-      ? `${installedHarnessCount}/${harnesses.length || 0} installed`
-      : tab === "skills"
-        ? skillsLoaded ? `${skills.length} installed` : "Loading"
-        : capabilitiesLoaded ? `${capabilityCount} manifests` : "Loading";
-  const sectionTitle =
-    tab === "plugins" ? "Harness plugins" : tab === "skills" ? "Installed skills" : "Harness capabilities";
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
-      <header className="shrink-0 border-b border-border px-4 py-4 sm:px-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
-                {TAB_LABEL[tab]}
-              </h1>
-              <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
-                {pageMeta}
-              </span>
-            </div>
-          </div>
+      {/* ── Top bar: tabs left, controls right ─────────────────────────── */}
+      <header className="shrink-0 border-b border-border px-4 sm:px-8">
+        <div className="flex h-12 items-center justify-between gap-4">
+          {/* Tabs flush left — underline style */}
+          <nav className="flex h-full items-end gap-1 overflow-x-auto" aria-label="View tabs">
+            {(["plugins", "skills", "capabilities"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => handleTabChange(t)}
+                className={`relative flex h-full shrink-0 items-center px-3 text-[13px] font-medium transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-full after:transition-colors ${
+                  tab === t
+                    ? "text-foreground after:bg-foreground"
+                    : "text-muted-foreground hover:text-foreground after:bg-transparent"
+                }`}
+              >
+                {TAB_LABEL[t]}
+              </button>
+            ))}
+          </nav>
 
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <div className="relative w-full sm:w-64">
-              <Icon
-                name="ph:magnifying-glass-bold"
-                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-                width="0.85rem"
-                height="0.85rem"
-              />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={`Search ${TAB_LABEL[tab].toLowerCase()}`}
-                className="h-8 w-full rounded-md border border-border bg-card pl-7 pr-3 text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong"
-              />
-            </div>
+          {/* Controls flush right */}
+          <div className="flex shrink-0 items-center gap-2 text-[12px]">
             {tab === "capabilities" ? (
               <button
                 type="button"
@@ -220,58 +210,117 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                 <Icon name="ph:arrows-clockwise-bold" className="text-muted-foreground" width="0.8rem" />
                 <span>Refresh</span>
               </button>
-            ) : null}
-          <div ref={createRef} className="relative">
-            <button
-              type="button"
-              className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
-              onClick={() => setCreateOpen((v) => !v)}
-            >
-              <span>Create</span>
-              <Icon
-                name="ph:caret-down-bold"
-                className={`text-[10px] text-muted-foreground transition-transform duration-150 ${
-                  createOpen ? "rotate-180" : ""
-                }`}
-              />
-            </button>
-            {createOpen && (
-              <CreateDropdown
-                onClose={() => setCreateOpen(false)}
-                containerRef={createRef}
-                onCreatePlugin={onCreatePlugin}
-                onCreateSkill={onCreateSkill}
-                onCreateReminder={onCreateReminder}
-              />
+            ) : (
+              <button
+                type="button"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
+                onClick={() => {/* manage action */}}
+              >
+                <Icon name="ph:sliders-bold" className="text-muted-foreground" width="0.8rem" />
+                <span>Manage</span>
+              </button>
             )}
-          </div>
-          </div>
-        </div>
 
-        <div className="mt-4 flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 text-[12px] sm:w-fit">
-          {(["plugins", "skills", "capabilities"] as const).map((t) => (
+            <div ref={createRef} className="relative">
+              <button
+                type="button"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
+                onClick={() => setCreateOpen((v) => !v)}
+              >
+                <span>Create</span>
+                <Icon
+                  name="ph:caret-down-bold"
+                  className={`text-[10px] text-muted-foreground transition-transform duration-150 ${
+                    createOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {createOpen && (
+                <CreateDropdown
+                  onClose={() => setCreateOpen(false)}
+                  containerRef={createRef}
+                  onCreatePlugin={onCreatePlugin}
+                  onCreateSkill={onCreateSkill}
+                  onCreateReminder={onCreateReminder}
+                />
+              )}
+            </div>
+
             <button
-              key={t}
               type="button"
-              onClick={() => setTab(t)}
-              className={`h-7 shrink-0 rounded-md px-3 transition-colors ${
-                tab === t
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-              }`}
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="More options"
             >
-              {TAB_LABEL[t]}
+              <Icon name="ph:dots-three-bold" width="1rem" />
             </button>
-          ))}
+          </div>
         </div>
       </header>
 
-      {/* Scrolling content */}
+      {/* ── Scrolling content ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[980px] px-4 pb-12 pt-6 sm:px-8">
+        <div className="mx-auto w-full max-w-[920px] px-4 pb-12 sm:px-8">
+
+          {/* ── Hero section ─────────────────────────────────────────────── */}
+          <div className="pb-8 pt-10 text-center">
+            <h1 className="mb-5 text-[26px] font-semibold tracking-tight text-[var(--text-primary)]">
+              {HERO_HEADLINE[tab]}
+            </h1>
+
+            {/* Search bar */}
+            <div className="relative mx-auto mb-6 max-w-[560px]">
+              <Icon
+                name="ph:magnifying-glass-bold"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                width="0.9rem"
+                height="0.9rem"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={HERO_SEARCH_PLACEHOLDER[tab]}
+                className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-4 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong"
+              />
+            </div>
+
+            {/* Hero banner — coven-branded gradient spotlight card */}
+            <div className="mx-auto max-w-[560px] overflow-hidden rounded-2xl bg-gradient-to-r from-[#1a0a2e] via-[#3B164F] to-[#1a0a2e] px-6 py-5 text-left">
+              <span className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-purple-500/30 bg-purple-900/40 px-2.5 py-1 text-[10px] font-medium tracking-wide text-purple-200 uppercase">
+                <Icon name="ph:sparkle-bold" width={10} />
+                Featured
+              </span>
+              <p className="mt-2 text-[15px] font-semibold text-white">
+                Connect a harness, command an agent
+              </p>
+              <p className="mt-1 text-[12px] text-purple-200/70">
+                Install any CLI harness and talk to your familiars right from Cave.
+              </p>
+              <button
+                type="button"
+                onClick={onOpenChat}
+                className="mt-4 flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-white/20"
+              >
+                <Icon name="ph:chat-teardrop-dots-bold" width={12} />
+                Try in chat
+              </button>
+            </div>
+          </div>
+
+          {/* ── Section label + grid ──────────────────────────────────────── */}
           <section>
-            <h2 className="mb-4 text-[13px] font-semibold uppercase tracking-widest text-muted-foreground">
-              {sectionTitle}
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              {SECTION_LABEL[tab]}
+              {tab === "plugins" && harnessesLoaded && (
+                <span className="ml-2 font-normal normal-case tracking-normal text-[var(--text-muted)]">
+                  {installedHarnessCount}/{harnesses.length} installed
+                </span>
+              )}
+              {tab === "skills" && skillsLoaded && !skillsError && (
+                <span className="ml-2 font-normal normal-case tracking-normal text-[var(--text-muted)]">
+                  {skills.length} installed
+                </span>
+              )}
             </h2>
 
             {tab === "plugins" ? (
@@ -279,11 +328,17 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
             ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
             ) : (
-              <CapabilitiesView items={capabilities.filter(c => !query || c.harness_id.toLowerCase().includes(query.toLowerCase()))} loaded={capabilitiesLoaded} error={capabilitiesError} onRefresh={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }} />
+              <CapabilitiesView
+                items={capabilities.filter(c => !query || c.harness_id.toLowerCase().includes(query.toLowerCase()))}
+                loaded={capabilitiesLoaded}
+                error={capabilitiesError}
+                onRefresh={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }}
+              />
             )}
           </section>
         </div>
       </div>
+
       <SkillDetailDrawer
         skill={selectedSkill}
         familiars={familiars}
@@ -313,7 +368,7 @@ function PluginGrid({
     );
   }
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {items.map((h) => (
         <PluginCard key={h.id} harness={h} onLaunch={onOpenChat} />
       ))}
@@ -350,7 +405,7 @@ function SkillGrid({
     );
   }
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {items.map((s) => (
         <SkillCard
           key={s.id}
@@ -364,7 +419,7 @@ function SkillGrid({
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
@@ -375,7 +430,7 @@ function GridSkeleton() {
             <span className="block h-3 w-1/2 animate-pulse rounded bg-muted" />
             <span className="block h-2.5 w-3/4 animate-pulse rounded bg-muted" />
           </span>
-          <span className="h-5 w-5 animate-pulse rounded-full bg-muted" />
+          <span className="h-7 w-7 animate-pulse rounded-full bg-muted" />
         </div>
       ))}
     </div>
@@ -425,7 +480,6 @@ function CreateDropdown({
   onCreateSkill,
   onCreateReminder,
 }: CreateDropdownProps) {
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (
