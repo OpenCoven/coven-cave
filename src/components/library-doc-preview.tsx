@@ -79,10 +79,17 @@ async function getMdFn(): Promise<MdFn> {
   return mdFnCached;
 }
 
-function RenderedMarkdown({ text }: { text: string }) {
+interface RenderedMarkdownProps {
+  text: string;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
+}
+
+function RenderedMarkdown({ text, containerRef }: RenderedMarkdownProps) {
   const [html, setHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const ref = useRef<HTMLDivElement | null>(null);
+  const internalRef = useRef<HTMLDivElement | null>(null);
+  const ref = containerRef ?? internalRef;
+
   useEffect(() => {
     if (!text) { setHtml(null); setLoading(false); return; }
     setLoading(true);
@@ -114,6 +121,51 @@ function RenderedMarkdown({ text }: { text: string }) {
   );
   if (!html) return null;
   return <div ref={ref} className="cave-md library-preview-md" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+// ── ToC panel ────────────────────────────────────────────────────
+interface TocItem {
+  id: string;
+  text: string;
+  level: number;
+}
+
+interface TocPanelProps {
+  items: TocItem[];
+  activeId: string | null;
+  mdRef: React.RefObject<HTMLDivElement | null>;
+  readerMode?: boolean;
+}
+
+function TocPanel({ items, activeId, mdRef, readerMode = false }: TocPanelProps) {
+  if (items.length < 3) return null;
+  return (
+    <nav
+      className={["library-toc", readerMode ? "library-reader-toc" : ""].filter(Boolean).join(" ")}
+      aria-label="Table of contents"
+    >
+      <div className="library-toc-title">On this page</div>
+      <div className="library-toc-list">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            className={[
+              "library-toc-item",
+              `library-toc-item--h${item.level}`,
+              activeId === item.id ? "library-toc-item--active" : "",
+            ].filter(Boolean).join(" ")}
+            onClick={() => {
+              const el = mdRef.current?.querySelector(`#${CSS.escape(item.id)}`);
+              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            title={item.text}
+          >
+            {item.text}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
 }
 
 // ── Detail cards ─────────────────────────────────────────────────
@@ -265,13 +317,111 @@ function GitHubDetail({ item }: { item: LibraryGitHubItem }) {
 function DocDetail({ doc }: { doc: LibraryDocBody }) {
   const [readerOpen, setReaderOpen] = useState(false);
 
-  // Close on Esc
+  // Reading time estimate
+  const wordCount = doc.body.split(/\s+/).filter(Boolean).length;
+  const readMins = Math.max(1, Math.ceil(wordCount / 200));
+
+  // Scroll progress
+  const [scrollPct, setScrollPct] = useState(0);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const readerBodyRef = useRef<HTMLDivElement | null>(null);
+
+  function handleScroll() {
+    const el = bodyRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    setScrollPct(max > 0 ? (el.scrollTop / max) * 100 : 0);
+  }
+
+  const [readerScrollPct, setReaderScrollPct] = useState(0);
+  function handleReaderScroll() {
+    const el = readerBodyRef.current;
+    if (!el) return;
+    const max = el.scrollHeight - el.clientHeight;
+    setReaderScrollPct(max > 0 ? (el.scrollTop / max) * 100 : 0);
+  }
+
+  // ToC state
+  const [tocItems, setTocItems] = useState<TocItem[]>([]);
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
+  const mdRef = useRef<HTMLDivElement | null>(null);
+
+  const [readerTocItems, setReaderTocItems] = useState<TocItem[]>([]);
+  const [activeReaderTocId, setActiveReaderTocId] = useState<string | null>(null);
+  const readerMdRef = useRef<HTMLDivElement | null>(null);
+
+  // Parse headings after body renders (main preview)
+  useEffect(() => {
+    if (!mdRef.current) return;
+    const headings = Array.from(mdRef.current.querySelectorAll<HTMLElement>("h1,h2,h3")) as HTMLElement[];
+    const items = headings.map((el) => {
+      const text = el.textContent ?? "";
+      const id = "toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      el.id = id;
+      return { id, text, level: parseInt(el.tagName[1]) };
+    });
+    setTocItems(items);
+  }, [doc.body]);
+
+  // IntersectionObserver for active heading (main preview)
+  useEffect(() => {
+    if (!mdRef.current || tocItems.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) setActiveTocId(entry.target.id);
+        }
+      },
+      { rootMargin: "-20% 0px -70% 0px", threshold: 0 }
+    );
+    for (const item of tocItems) {
+      const el = mdRef.current.querySelector(`#${CSS.escape(item.id)}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [tocItems]);
+
+  // Parse headings after body renders (reader mode)
+  useEffect(() => {
+    if (!readerOpen || !readerMdRef.current) return;
+    const headings = Array.from(readerMdRef.current.querySelectorAll<HTMLElement>("h1,h2,h3")) as HTMLElement[];
+    const items = headings.map((el) => {
+      const text = el.textContent ?? "";
+      const id = "reader-toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      el.id = id;
+      return { id, text, level: parseInt(el.tagName[1]) };
+    });
+    setReaderTocItems(items);
+  }, [doc.body, readerOpen]);
+
+  // IntersectionObserver for active heading (reader mode)
+  useEffect(() => {
+    if (!readerMdRef.current || readerTocItems.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) setActiveReaderTocId(entry.target.id);
+        }
+      },
+      { rootMargin: "-20% 0px -70% 0px", threshold: 0 }
+    );
+    for (const item of readerTocItems) {
+      const el = readerMdRef.current.querySelector(`#${CSS.escape(item.id)}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [readerTocItems]);
+
+  // Close reader on Esc
   useEffect(() => {
     if (!readerOpen) return;
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setReaderOpen(false); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [readerOpen]);
+
+  const hasToc = tocItems.length >= 3;
+  const hasReaderToc = readerTocItems.length >= 3;
 
   const header = (
     <div className="library-preview-header">
@@ -280,6 +430,8 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
         <span className="library-preview-familiar">🌿 Sage</span>
         <span className="library-preview-sep">·</span>
         <span className="library-preview-date">{fmtDate(doc.modifiedAt)}</span>
+        <span className="library-preview-sep">·</span>
+        <span className="library-reading-time">⏱ ~{readMins} min read</span>
         {doc.tags.length > 0 && (
           <><span className="library-preview-sep">·</span>
           <div className="library-preview-tags">
@@ -327,10 +479,21 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
   return (
     <>
       <div className="library-preview">
+        {/* Scroll progress bar */}
+        <div className="library-scroll-progress">
+          <div className="library-scroll-progress-fill" style={{ width: `${scrollPct}%` }} />
+        </div>
         {header}
         {actionBar(false)}
-        <div className="library-preview-body">
-          <RenderedMarkdown text={doc.body} />
+        <div
+          ref={bodyRef}
+          onScroll={handleScroll}
+          className={hasToc ? "library-preview-body library-preview-body--with-toc" : "library-preview-body"}
+        >
+          <RenderedMarkdown text={doc.body} containerRef={mdRef} />
+          {hasToc && (
+            <TocPanel items={tocItems} activeId={activeTocId} mdRef={mdRef} />
+          )}
         </div>
       </div>
 
@@ -343,6 +506,10 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
           aria-label={`Reader: ${doc.title}`}
         >
           <div className="library-reader-modal">
+            {/* Reader scroll progress bar */}
+            <div className="library-scroll-progress">
+              <div className="library-scroll-progress-fill" style={{ width: `${readerScrollPct}%` }} />
+            </div>
             {/* Reader header */}
             <div className="library-reader-header">
               <div className="library-reader-title">{doc.title}</div>
@@ -350,6 +517,8 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
                 <span className="library-preview-familiar">🌿 Sage</span>
                 <span className="library-preview-sep">·</span>
                 <span className="library-preview-date">{fmtDate(doc.modifiedAt)}</span>
+                <span className="library-preview-sep">·</span>
+                <span className="library-reading-time">⏱ ~{readMins} min read</span>
                 {doc.tags.length > 0 && (
                   <><span className="library-preview-sep">·</span>
                   {doc.tags.map((t: string) => <span key={t} className="library-doclist-tag">{t}</span>)}
@@ -366,8 +535,15 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
               </button>
             </div>
             {/* Reader body */}
-            <div className="library-reader-body">
-              <RenderedMarkdown text={doc.body} />
+            <div
+              ref={readerBodyRef}
+              onScroll={handleReaderScroll}
+              className={hasReaderToc ? "library-reader-body library-reader-body--with-toc" : "library-reader-body"}
+            >
+              <RenderedMarkdown text={doc.body} containerRef={readerMdRef} />
+              {hasReaderToc && (
+                <TocPanel items={readerTocItems} activeId={activeReaderTocId} mdRef={readerMdRef} readerMode />
+              )}
             </div>
             {/* Reader footer actions */}
             <div className="library-reader-footer">
