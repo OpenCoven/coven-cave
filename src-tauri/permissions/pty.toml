@@ -24,6 +24,41 @@ description = "Allows listing active PTY sessions."
 commands.allow = ["pty_list"]
 
 [[permission]]
+identifier = "allow-pty-diagnose"
+description = "Allows running a one-shot PTY diagnostic."
+commands.allow = ["pty_diagnose"]
+
+[[permission]]
+identifier = "allow-browser-navigate"
+description = "Allows navigating an embedded browser webview."
+commands.allow = ["browser_navigate"]
+
+[[permission]]
+identifier = "allow-browser-set-bounds"
+description = "Allows positioning an embedded browser webview."
+commands.allow = ["browser_set_bounds"]
+
+[[permission]]
+identifier = "allow-browser-hide"
+description = "Allows hiding an embedded browser webview."
+commands.allow = ["browser_hide"]
+
+[[permission]]
+identifier = "allow-browser-hide-all-except"
+description = "Allows hiding all embedded browser webviews except one."
+commands.allow = ["browser_hide_all_except"]
+
+[[permission]]
+identifier = "allow-browser-close"
+description = "Allows closing an embedded browser webview."
+commands.allow = ["browser_close"]
+
+[[permission]]
+identifier = "allow-browser-reload"
+description = "Allows reloading an embedded browser webview."
+commands.allow = ["browser_reload"]
+
+[[permission]]
 identifier = "allow-shell-open"
 description = "Allows opening a URL in the system browser."
 commands.allow = ["shell_open"]

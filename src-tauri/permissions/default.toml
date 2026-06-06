@@ -6,5 +6,12 @@ permissions = [
   "allow-pty-resize",
   "allow-pty-stop",
   "allow-pty-list",
+  "allow-pty-diagnose",
+  "allow-browser-navigate",
+  "allow-browser-set-bounds",
+  "allow-browser-hide",
+  "allow-browser-hide-all-except",
+  "allow-browser-close",
+  "allow-browser-reload",
   "allow-shell-open",
 ]
