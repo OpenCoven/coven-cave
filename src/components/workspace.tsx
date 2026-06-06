@@ -643,7 +643,6 @@ export function Workspace() {
           setMode("chats");
           setTimeout(() => routerRef.current?.newChat(), 0);
         }}
-        onSessionsChanged={loadSessions}
       />
     ) : mode === "chats" ? (
       <div className="flex h-full min-w-0">

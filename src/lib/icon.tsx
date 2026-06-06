@@ -71,6 +71,8 @@ export const ICON_NAMES = [
   "ph:globe",
   "ph:graph",
   "ph:squares-four",
+  "ph:sidebar-simple",
+  "ph:sidebar-simple-fill",
   "ph:folder",
   "ph:folder-open",
   "ph:calendar-blank",
