@@ -95,6 +95,7 @@ export function Workspace() {
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<"inspector" | "chat" | null>(null);
+  const [shellAgentPane, setShellAgentPane] = useState<"browser" | "chat">("browser");
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
@@ -846,18 +847,42 @@ export function Workspace() {
         iconNav={iconNav}
         list={list}
         detail={detail}
-        agent={mode === "browser" ? undefined : <BrowserPane label="default" />}
-        agentLabel="Browser"
-        agentIcon="ph:globe"
+        agent={
+          mode === "browser" ? undefined : shellAgentPane === "chat" ? (
+            <AgentPanel
+              familiar={active}
+              familiars={familiars}
+              activeId={activeId}
+              sessions={sessions}
+              daemonRunning={daemonRunning}
+              onSessionStarted={loadSessions}
+              onSlashFromChat={(command, args) => {
+                onPaletteIntent({ kind: "slash", command, args });
+                return true;
+              }}
+              onOpenOnboarding={openOnboarding}
+              onFamiliarSelect={setActiveId}
+            />
+          ) : (
+            <BrowserPane label="default" />
+          )
+        }
+        agentLabel={shellAgentPane === "chat" ? "Chat" : "Browser"}
+        agentIcon={shellAgentPane === "chat" ? "ph:chats" : "ph:globe"}
         agentExtra={
           <button
             type="button"
-            className={`shell-agent-strip-btn shell-agent-strip-btn--bottom${rightPanel === "chat" ? " shell-agent-strip-btn--active" : ""}`}
+            className={`shell-agent-strip-btn shell-agent-strip-btn--bottom${shellAgentPane === "chat" ? " shell-agent-strip-btn--active" : ""}`}
             title="Chat"
-            aria-label={rightPanel === "chat" ? "Close chat panel" : "Open chat panel"}
+            aria-label={shellAgentPane === "chat" ? "Close chat panel" : "Open chat panel"}
             onClick={() => {
-              if (mode !== "agents") setMode("agents");
-              setRightPanel(rightPanel === "chat" ? null : "chat");
+              if (shellAgentPane === "chat") {
+                shellRef.current?.closeAgent();
+                setShellAgentPane("browser");
+                return;
+              }
+              setShellAgentPane("chat");
+              shellRef.current?.openAgent();
             }}
           >
             <Icon name="ph:chats" width={15} />

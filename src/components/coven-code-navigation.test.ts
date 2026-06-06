@@ -75,6 +75,24 @@ assert.match(
 
 assert.match(
   workspace,
+  /const \[shellAgentPane,\s*setShellAgentPane\] = useState<"browser" \| "chat">\("browser"\)/,
+  "Workspace should keep the shell chat sidepanel state separate from Agents view state",
+);
+
+assert.match(
+  workspace,
+  /shellAgentPane === "chat" \? \([\s\S]*<AgentPanel[\s\S]*\) : \([\s\S]*<BrowserPane label="default" \/>/,
+  "Workspace should render chat directly in the shell sidepanel instead of routing through Agents",
+);
+
+assert.doesNotMatch(
+  workspace,
+  /aria-label=\{shellAgentPane === "chat" \? "Close chat panel" : "Open chat panel"\}[\s\S]{0,240}setMode\("agents"\)/,
+  "Chat sidepanel toggle should not navigate to the Agents page",
+);
+
+assert.match(
+  workspace,
   /mode === "terminal"[\s\S]*<ComuxView[\s\S]*view="terminal"/,
   "Workspace should route Terminal to ComuxView terminal mode",
 );
