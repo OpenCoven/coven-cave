@@ -231,7 +231,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             disabled={enriching || cards.length === 0}
             title="Ask each familiar to populate steps for their assigned tasks"
           >
-            <Icon name="ph:sparkle-bold" width={13} />
+            <Icon name="ph:sparkle" width={13} />
             {enriching
               ? enrichProgress
                 ? `${enrichProgress.done}/${enrichProgress.total}`
