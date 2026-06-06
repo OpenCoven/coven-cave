@@ -7,11 +7,7 @@ import { DEMO_MODE, DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus } from "@/lib/cave-board-types";
-import {
-  type FilterState,
-  emptyFilter,
-} from "@/components/board-filter-popover";
-import { BoardMultiSelect } from "@/components/board-multi-select";
+import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { BoardInspector } from "@/components/board-inspector";
@@ -36,7 +32,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "priority", "none"]));
-  const [filter, setFilter] = useState<FilterState>(emptyFilter());
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
@@ -63,19 +59,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
   useEffect(() => { localStorage.setItem("cave:board:groupBy", groupBy); }, [groupBy]);
 
-  const filtered = useMemo(() => cards.filter((c) => {
-    if (filter.priorities.size > 0 && !filter.priorities.has(c.priority)) return false;
-    if (filter.familiarIds.size > 0 && !filter.familiarIds.has(c.familiarId ?? "")) return false;
-    if (filter.statuses.size > 0 && !filter.statuses.has(c.status)) return false;
-    if (filter.labels.size > 0 && !c.labels.some((l) => filter.labels.has(l))) return false;
-    return true;
-  }), [cards, filter]);
-
-  const allLabels = useMemo(() => {
-    const s = new Set<string>();
-    for (const c of cards) for (const l of c.labels) s.add(l);
-    return [...s].sort();
-  }, [cards]);
+  const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
+  const filtered = useMemo(
+    () => cards.filter((c) => cardMatchesBoardSearch(c, searchQuery, familiarsById)),
+    [cards, familiarsById, searchQuery],
+  );
 
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -88,16 +76,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   useEffect(() => {
     if (selectedCardId && !cards.some((c) => c.id === selectedCardId)) setSelectedCardId(null);
   }, [cards, selectedCardId]);
-
-  // Build active filter chips
-  const activeChips = useMemo(() => {
-    const chips: { label: string; onRemove: () => void }[] = [];
-    for (const p of filter.priorities) chips.push({ label: `Priority: ${p.charAt(0).toUpperCase() + p.slice(1)}`, onRemove: () => setFilter((f) => { const s = new Set(f.priorities); s.delete(p); return { ...f, priorities: s }; }) });
-    for (const id of filter.familiarIds) { const name = familiars.find((f) => f.id === id)?.display_name ?? id; chips.push({ label: `Familiar: ${name}`, onRemove: () => setFilter((f) => { const s = new Set(f.familiarIds); s.delete(id); return { ...f, familiarIds: s }; }) }); }
-    for (const st of filter.statuses) chips.push({ label: `Status: ${st.charAt(0).toUpperCase() + st.slice(1)}`, onRemove: () => setFilter((f) => { const s = new Set(f.statuses); s.delete(st); return { ...f, statuses: s }; }) });
-    for (const l of filter.labels) chips.push({ label: `Label: ${l}`, onRemove: () => setFilter((f) => { const s = new Set(f.labels); s.delete(l); return { ...f, labels: s }; }) });
-    return chips;
-  }, [filter, familiars]);
 
   const lifecycleForStatus = (status: CardStatus) => {
     if (status === "running") return "running" as const;
@@ -143,6 +121,27 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           {stats.running > 0 && <><span className="board-header-stats-sep">·</span><span>{stats.running} running</span></>}
           {stats.blocked > 0 && <><span className="board-header-stats-sep">·</span><span className="board-header-stats--blocked">{stats.blocked} blocked</span></>}
         </div>
+        <div className="board-search-wrap">
+          <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
+          <label className="sr-only" htmlFor="board-search">Search tasks</label>
+          <input
+            id="board-search"
+            className="board-search-input"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder='Search tasks or type is:open label:ux cody'
+          />
+          {searchQuery ? (
+            <button
+              type="button"
+              className="board-search-clear"
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear task search"
+            >
+              <Icon name="ph:x-bold" width={10} />
+            </button>
+          ) : null}
+        </div>
         <div className="board-header-controls">
           <label className="sr-only" htmlFor="board-groupby">Group by</label>
           <select id="board-groupby" className="board-toolbar-select" value={groupBy}
@@ -152,53 +151,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             <option value="priority">Group: Priority</option>
             <option value="none">No grouping</option>
           </select>
-
-          <BoardMultiSelect
-            label="Priority"
-            icon="ph:dots-three-vertical"
-            options={[
-              { id: "urgent", label: "Urgent" },
-              { id: "high",   label: "High" },
-              { id: "medium", label: "Medium" },
-              { id: "low",    label: "Low" },
-            ]}
-            selected={filter.priorities}
-            onChange={(next) => setFilter((f) => ({ ...f, priorities: next as Set<import("@/lib/cave-board-types").CardPriority> }))}
-          />
-
-          <BoardMultiSelect
-            label="Status"
-            icon="ph:circle-fill"
-            options={[
-              { id: "backlog", label: "Backlog" },
-              { id: "inbox",   label: "Inbox" },
-              { id: "running", label: "Running" },
-              { id: "review",  label: "Review" },
-              { id: "blocked", label: "Blocked" },
-              { id: "done",    label: "Done" },
-            ]}
-            selected={filter.statuses}
-            onChange={(next) => setFilter((f) => ({ ...f, statuses: next as Set<import("@/lib/cave-board-types").CardStatus> }))}
-          />
-
-          <BoardMultiSelect
-            label="Familiar"
-            icon="ph:sparkle"
-            options={familiars.map((f) => ({ id: f.id, label: f.display_name }))}
-            selected={filter.familiarIds}
-            onChange={(next) => setFilter((f) => ({ ...f, familiarIds: next }))}
-            emptyLabel="No familiars configured"
-          />
-
-          {allLabels.length > 0 && (
-            <BoardMultiSelect
-              label="Labels"
-              icon="ph:tag-bold"
-              options={allLabels.map((l) => ({ id: l, label: l }))}
-              selected={filter.labels}
-              onChange={(next) => setFilter((f) => ({ ...f, labels: next }))}
-            />
-          )}
 
           <div className="board-view-toggle" role="group" aria-label="Tasks view mode">
             <button type="button" aria-label="Kanban view"
@@ -219,21 +171,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           </button>
         </div>
       </header>
-
-      {/* Active filter chips */}
-      {activeChips.length > 0 && (
-        <div className="board-filter-chips">
-          {activeChips.map((chip, i) => (
-            <span key={i} className="board-filter-chip">
-              {chip.label}
-              <button type="button" className="board-filter-chip-remove" onClick={chip.onRemove} aria-label={`Remove filter`}>
-                <Icon name="ph:x-bold" width={8} />
-              </button>
-            </span>
-          ))}
-          <button type="button" className="board-filter-chip--clear-all" onClick={() => setFilter(emptyFilter())}>Clear all</button>
-        </div>
-      )}
 
       {error && (
         <div className="border-b border-border bg-card px-5 py-1.5 text-xs text-muted-foreground">{error}</div>
