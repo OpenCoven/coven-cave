@@ -108,7 +108,7 @@ function ItemChip({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-raised)] px-2 py-1 text-left text-[11px] hover:bg-[var(--bg-elevated)] transition-colors group"
+      className="flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-left text-[11px] hover:bg-[var(--bg-elevated)] transition-colors group"
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
       <Icon
@@ -174,7 +174,7 @@ function AgendaView({
             >
               {isSameDay(date, new Date()) ? "Today" : fmtDateHeading(date)}
             </span>
-            <div className="flex-1 h-px bg-[var(--border-subtle)]" />
+            <div className="flex-1 h-px bg-[var(--border-hairline)]" />
             <span className="text-[10px] text-[var(--text-muted)]">
               {groupItems.length} item{groupItems.length !== 1 ? "s" : ""}
             </span>
@@ -214,9 +214,9 @@ function AllDayStrip({
   onDayClick?: (day: Date) => void;
 }) {
   return (
-    <div className="flex shrink-0 border-b border-[var(--border-subtle)] bg-[var(--bg-panel)]">
+    <div className="flex shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       {/* Label */}
-      <div className="w-12 shrink-0 border-r border-[var(--border-subtle)] flex items-center justify-end pr-1.5 py-1">
+      <div className="w-12 shrink-0 border-r border-[var(--border-hairline)] flex items-center justify-end pr-1.5 py-1">
         <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] leading-tight text-right">
           All
           <br />
@@ -224,7 +224,7 @@ function AllDayStrip({
         </span>
       </div>
       {/* Per-column chips */}
-      <div className="flex flex-1 divide-x divide-[var(--border-subtle)]">
+      <div className="flex flex-1 divide-x divide-[var(--border-hairline)]">
         {columns.map((col, i) => (
           <div key={i} className="flex-1 min-w-[80px] flex flex-col gap-0.5 p-1">
             {col.items.slice(0, MAX_ALLDAY_VISIBLE).map((item) => (
@@ -292,7 +292,7 @@ function TimeGrid({
   return (
     <div className="flex flex-1 overflow-auto">
       {/* Time axis */}
-      <div className="shrink-0 w-12 border-r border-[var(--border-subtle)] relative" style={{ height: totalHeight }}>
+      <div className="shrink-0 w-12 border-r border-[var(--border-hairline)] relative" style={{ height: totalHeight }}>
         {HOURS.map((h) => (
           <div
             key={h}
@@ -305,7 +305,7 @@ function TimeGrid({
       </div>
 
       {/* Columns */}
-      <div className="flex flex-1 divide-x divide-[var(--border-subtle)]">
+      <div className="flex flex-1 divide-x divide-[var(--border-hairline)]">
         {columns.map((col, ci) => (
           <div key={ci} className="flex-1 relative min-w-[80px]" style={{ height: totalHeight }}>
             {/* Hour lines */}
@@ -392,7 +392,7 @@ function DayView({
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-[var(--border-subtle)] shrink-0">
+      <div className="px-6 py-3 border-b border-[var(--border-hairline)] shrink-0">
         <h2 className="text-sm font-medium text-[var(--text-primary)]">
           {fmtDateHeading(anchor)}
         </h2>
@@ -457,10 +457,10 @@ function WeekView({
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Sticky column headers */}
-      <div className="flex shrink-0 border-b border-[var(--border-subtle)]">
+      <div className="flex shrink-0 border-b border-[var(--border-hairline)]">
         {/* Spacer for the time axis */}
-        <div className="w-12 shrink-0 border-r border-[var(--border-subtle)]" />
-        <div className="flex flex-1 min-w-[320px] divide-x divide-[var(--border-subtle)] overflow-x-auto">
+        <div className="w-12 shrink-0 border-r border-[var(--border-hairline)]" />
+        <div className="flex flex-1 min-w-[320px] divide-x divide-[var(--border-hairline)] overflow-x-auto">
           {columns.map((col, i) => (
             <div
               key={i}
@@ -537,7 +537,7 @@ function MonthView({
         ))}
       </div>
       {/* Day cells */}
-      <div className="grid grid-cols-7 grid-rows-6 flex-1 gap-px bg-[var(--border-subtle)] rounded-lg overflow-hidden">
+      <div className="grid grid-cols-7 grid-rows-6 flex-1 gap-px bg-[var(--border-hairline)] rounded-lg overflow-hidden">
         {cells.map((day, i) => {
           const key = startOfDay(day).toISOString();
           const dayItems = byDay.get(key) ?? [];
@@ -573,7 +573,7 @@ function MonthView({
                       e.stopPropagation();
                       onOpenItem?.(item);
                     }}
-                    className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] bg-[var(--bg-raised)] border border-[var(--border-subtle)] hover:bg-[var(--bg-elevated)] w-full text-left"
+                    className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] bg-[var(--bg-raised)] border border-[var(--border-hairline)] hover:bg-[var(--bg-elevated)] w-full text-left"
                   >
                     <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />
                     <span className="truncate text-[var(--text-primary)]">{item.title}</span>
@@ -659,10 +659,10 @@ function ItemDetailPanel({
         )}
       </div>
 
-      <div className="px-4 py-3 border-t border-[var(--border-subtle)] flex gap-2">
+      <div className="px-4 py-3 border-t border-[var(--border-hairline)] flex gap-2">
         <button
           onClick={onClose}
-          className="flex-1 rounded-md border border-[var(--border-subtle)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+          className="flex-1 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
         >
           Dismiss
         </button>
@@ -674,7 +674,7 @@ function ItemDetailPanel({
             Snooze →
           </button>
           {snoozeOpen && (
-            <div className="absolute bottom-full right-0 mb-1 w-32 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-lg overflow-hidden z-10">
+            <div className="absolute bottom-full right-0 mb-1 w-32 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-lg overflow-hidden z-10">
               {SNOOZE_OPTIONS.map((opt) => (
                 <button
                   key={opt.label}
@@ -769,7 +769,7 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
   return (
     <div ref={containerRef} className="flex flex-col h-full bg-[var(--bg-base)] relative">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-subtle)] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-hairline)] shrink-0">
         {/* Nav arrows */}
         <button
           onClick={() => navigate(-1)}
@@ -780,7 +780,7 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
         </button>
         <button
           onClick={() => setAnchor(new Date())}
-          className="rounded-md border border-[var(--border-subtle)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
         >
           Today
         </button>
@@ -807,7 +807,7 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
         </span>
 
         {/* View mode toggle */}
-        <div className="flex items-center rounded-lg border border-[var(--border-subtle)] overflow-hidden">
+        <div className="flex items-center rounded-lg border border-[var(--border-hairline)] overflow-hidden">
           {VIEW_MODES.map(({ id, label }) => (
             <button
               key={id}
