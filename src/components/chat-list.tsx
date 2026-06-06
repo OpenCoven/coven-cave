@@ -7,6 +7,9 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 
 type Props = {
   familiar: Familiar;
@@ -63,6 +66,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [activeId, setActiveId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
+  const glyphOverrides = useGlyphOverrides();
+  const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -100,6 +105,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }, [mine, search, unreadsOnly]);
 
   const hasAny = mine.length > 0;
+  const runningCount = mine.filter((s) => s.status === "running").length;
+  const projectCount = new Set(mine.map((s) => s.project_root).filter(Boolean)).size;
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
@@ -141,71 +148,100 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
-      {/* ── Header ── */}
-      <header className="flex items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-3">
-        <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
+      {/* ── Agent dossier + command strip ── */}
+      <header className="agent-panel-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+            aria-hidden
+          >
+            <FamiliarGlyph glyph={glyph} size="md" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
+              <span
+                className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  daemonRunning
+                    ? "bg-emerald-950/60 text-emerald-400"
+                    : "bg-rose-950/60 text-rose-400"
+                }`}
+              >
+                <span className={`inline-block h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-emerald-400 animate-pulse" : "bg-rose-400"}`} />
+                {daemonRunning ? "online" : "offline"}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-[12px] text-[var(--text-muted)]">
+              {familiar.role || "Familiar"} · Agent runtime{" "}
+              <span className="font-mono text-[var(--text-secondary)]">
+                {familiar.harness ?? "codex"}
+                {familiar.model ? ` / ${familiar.model}` : ""}
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNewChat()}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85 active:scale-95"
+          >
+            <Icon name="ph:plus-bold" width={12} />
+            <span>Chat</span>
+          </button>
+        </div>
 
-        {/* Unreads toggle */}
-        <button
-          type="button"
-          onClick={() => setUnreadsOnly((v) => !v)}
-          className={[
-            "flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors",
-            unreadsOnly
-              ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-400"
-              : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-          ].join(" ")}
-        >
-          {unreadsOnly && (
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-          Unreads
-        </button>
+        <div className="mt-3 grid grid-cols-3 gap-1.5">
+          <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5">
+            <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Chats</p>
+            <p className="mt-0.5 font-mono text-[13px] text-[var(--text-primary)]">{mine.length}</p>
+          </div>
+          <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5">
+            <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Live</p>
+            <p className="mt-0.5 font-mono text-[13px] text-[var(--text-primary)]">{runningCount}</p>
+          </div>
+          <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5">
+            <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Projects</p>
+            <p className="mt-0.5 font-mono text-[13px] text-[var(--text-primary)]">{projectCount}</p>
+          </div>
+        </div>
 
-        {/* Daemon badge */}
-        <span
-          className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
-            daemonRunning
-              ? "bg-emerald-950/60 text-emerald-400"
-              : "bg-rose-950/60 text-rose-400"
-          } min-w-0 truncate`}
-        >
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-emerald-400 animate-pulse" : "bg-rose-400"}`} />
-          {daemonRunning ? "daemon running" : "offline"}
-        </span>
+        <div className="mt-3 flex items-center gap-2">
+          <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 focus-within:border-[var(--accent-presence)]/60 transition-colors">
+            <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search chats..."
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                aria-label="Clear chat search"
+              >
+                <Icon name="ph:x" width={12} />
+              </button>
+            )}
+          </label>
 
-        <button
-          type="button"
-          onClick={() => onNewChat()}
-          className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[var(--accent-presence)] px-3 py-1 text-[12px] font-medium text-white transition-opacity hover:opacity-80 active:scale-95"
-        >
-          <span className="text-sm leading-none">+</span> New chat
-        </button>
+          <button
+            type="button"
+            onClick={() => setUnreadsOnly((v) => !v)}
+            className={[
+              "flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-medium transition-colors",
+              unreadsOnly
+                ? "border-emerald-500/40 bg-emerald-950/40 text-emerald-400"
+                : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+            ].join(" ")}
+          >
+            <Icon name={unreadsOnly ? "ph:circle-fill" : "ph:circle"} width={12} />
+            Unreads
+          </button>
+        </div>
       </header>
-
-      {/* ── Search ── */}
-      <div className="border-b border-[var(--border-hairline)] px-3 py-2">
-        <label className="flex items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 focus-within:border-[var(--accent-presence)]/60 transition-colors">
-          <Icon name="ph:magnifying-glass" width={14} className="shrink-0 text-[var(--text-muted)]" />
-          <input
-            ref={searchRef}
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Type to search…"
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch("")}
-              className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-            >
-              <Icon name="ph:x" width={12} />
-            </button>
-          )}
-        </label>
-      </div>
 
       {/* ── Error banner ── */}
       {error && (
@@ -218,34 +254,42 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!hasAny ? (
           /* Empty state */
-          <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 text-[var(--text-muted)]">
-              <Icon name="ph:sparkle" width={20} aria-hidden />
+          <div className="flex h-full flex-col justify-between px-4 py-4">
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-muted)]">
+                  <Icon name="ph:sparkle" width={17} aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-[var(--text-primary)]">Ready for a new thread</p>
+                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">
+                    Start a focused chat with {familiar.display_name}. The thread will inherit this
+                    familiar's runtime and show up here once it starts.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Harness</p>
+                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar.harness ?? "codex"}</p>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</p>
+                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar.model ?? "default"}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => onNewChat()}
+                className="mt-4 flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
+              >
+                <Icon name="ph:plus-bold" width={12} />
+                Start with context
+              </button>
             </div>
-            <div>
-              <p className="text-sm font-medium text-[var(--text-secondary)]">No chats yet</p>
-              <p className="mt-1 text-[12px] text-[var(--text-muted)]">
-                {familiar.display_name} runs on{" "}
-                <code className="rounded bg-[var(--bg-raised)] px-1 font-mono text-[11px] text-[var(--text-secondary)]">
-                  {familiar.harness ?? "codex"}
-                </code>
-                {familiar.model ? (
-                  <>
-                    {" "}with{" "}
-                    <code className="rounded bg-[var(--bg-raised)] px-1 font-mono text-[11px] text-[var(--text-secondary)]">
-                      {familiar.model}
-                    </code>
-                  </>
-                ) : null}
-                .
-              </p>
+            <div className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-2 text-[11px] leading-5 text-[var(--text-muted)]">
+              <span className="font-medium text-[var(--text-secondary)]">Tip:</span> use {keys.mod}F
+              to jump back to chat search after this list has history.
             </div>
-            <button
-              onClick={() => onNewChat()}
-              className="shrink-0 whitespace-nowrap rounded-full bg-[var(--accent-presence)] px-5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
-            >
-              + New chat
-            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
