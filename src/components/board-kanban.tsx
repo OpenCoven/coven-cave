@@ -36,7 +36,8 @@ type Props = {
 };
 
 function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: string; label: string; cards: Card[] }[] {
-  if (by === "status" || by === "none") return [{ key: "all", label: "", cards }];
+  if (by === "none") return [{ key: "all", label: "", cards }];
+  if (by === "status") return [{ key: "all", label: "Status", cards }];
   const map = new Map<string, Card[]>();
   for (const c of cards) {
     const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : c.priority;
@@ -60,7 +61,7 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const groups = getGroups(cards, groupBy, familiars);
-  const showSwimlanes = groupBy !== "status" && groupBy !== "none";
+  const showSwimlanes = groupBy !== "none";
 
   const grouped = (gc: Card[]) => {
     const m = new Map<CardStatus, Card[]>();
@@ -105,31 +106,35 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
       {groups.map(({ key, label, cards: gc }) => {
         const isCollapsed = collapsedGroups.has(key);
         const grpGrouped = grouped(gc);
+        const isStatusGroup = groupBy === "status"; // single-group, full-height
+        const isMultiSwimlane = showSwimlanes && !isStatusGroup;
         return (
-          <div key={key} className={showSwimlanes ? "board-swimlane" : ""} style={showSwimlanes ? {} : { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div key={key} className={isMultiSwimlane ? "board-swimlane" : ""} style={isMultiSwimlane ? {} : { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
             {showSwimlanes && (
               <div className="board-swimlane-header" onClick={() => toggleGroup(key)}>
                 <Icon name={isCollapsed ? "ph:caret-right" : "ph:caret-down"} width={10} />
                 {label}
                 <span className="board-swimlane-badge">{gc.length}</span>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); scroll(key, -1); }}
-                    style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: 4, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
-                    <Icon name="ph:arrow-left-bold" width={10} />
-                  </button>
-                  <button type="button" onClick={(e) => { e.stopPropagation(); scroll(key, 1); }}
-                    style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: 4, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
-                    <Icon name="ph:arrow-right-bold" width={10} />
-                  </button>
-                </div>
+                {isMultiSwimlane && (
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); scroll(key, -1); }}
+                      style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: 4, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
+                      <Icon name="ph:arrow-left-bold" width={10} />
+                    </button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); scroll(key, 1); }}
+                      style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: 4, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
+                      <Icon name="ph:arrow-right-bold" width={10} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {!isCollapsed && (
               <div
-                className={showSwimlanes ? "board-swimlane-rail" : "h-full overflow-x-auto overflow-y-hidden scroll-smooth"}
-                style={showSwimlanes ? {} : { flex: 1, minHeight: 0 }}
+                className={isMultiSwimlane ? "board-swimlane-rail" : "h-full overflow-x-auto overflow-y-hidden scroll-smooth"}
+                style={isMultiSwimlane ? {} : { flex: 1, minHeight: 0 }}
                 ref={(el) => { if (el) railRefs.current.set(key, el); }}>
-                <div className="flex gap-3 px-5 py-4" style={showSwimlanes ? { height: 320, minWidth: "max-content" } : { height: "100%", minWidth: "max-content" }}>
+                <div className="flex gap-3 px-5 py-4" style={isMultiSwimlane ? { height: 320, minWidth: "max-content" } : { height: "100%", minWidth: "max-content" }}>
                   {COLUMNS.map((col) => {
                     const rows = grpGrouped.get(col.id) ?? [];
                     const isDrop = dropTarget === col.id;

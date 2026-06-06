@@ -76,6 +76,12 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 
+.sidebar-divider {
+  height: 1px;
+  background: var(--border-hairline);
+  margin: 4px 9px;
+}
+
 .sidebar-folder-row {
   display: flex;
   align-items: center;
@@ -207,6 +213,12 @@
 }
 
 /* ── Bottom settings row ─────────────────────────────────────────────────── */
+.sidebar-actions--footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border-hairline);
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
 .sidebar-bottom {
   flex-shrink: 0;
   padding: 6px 7px 8px;

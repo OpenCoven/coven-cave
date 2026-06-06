@@ -1,9 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
+import type {
+  AutomationStatus,
+  CodexAutomation,
+  CodexAutomationPatch,
+} from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
 
 // AutomationsView — redesigned June 2026
@@ -21,6 +27,16 @@ type Props = {
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const RRULE_DAY_ORDER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+const RRULE_DAY_LABEL: Record<string, string> = {
+  SU: "Sun",
+  MO: "Mon",
+  TU: "Tue",
+  WE: "Wed",
+  TH: "Thu",
+  FR: "Fri",
+  SA: "Sat",
+};
 
 function pad(n: number) {
   return n.toString().padStart(2, "0");
@@ -57,6 +73,76 @@ function relTime(iso: string | undefined | null): string {
   const d = Math.round(h / 24);
   return delta > 0 ? `in ${d}d` : `${d}d ago`;
 }
+
+function parseCodexRrule(rrule: string | null): {
+  mode: "daily" | "weekly" | "raw";
+  days: string[];
+  time: string;
+  raw: string;
+} {
+  const raw = rrule ?? "";
+  const freq = raw.match(/FREQ=(\w+)/)?.[1];
+  const hour = raw.match(/BYHOUR=(\d+)/)?.[1];
+  const min = raw.match(/BYMINUTE=(\d+)/)?.[1];
+  const days = raw.match(/BYDAY=([^;]+)/)?.[1]?.split(",").filter(Boolean) ?? [];
+  const time = `${(hour ?? "9").padStart(2, "0")}:${(min ?? "0").padStart(2, "0")}`;
+
+  if (freq === "DAILY" && hour !== undefined) return { mode: "daily", days: [], time, raw };
+  if (freq === "WEEKLY" && hour !== undefined) {
+    return {
+      mode: "weekly",
+      days: days.length > 0 ? days : RRULE_DAY_ORDER,
+      time,
+      raw,
+    };
+  }
+  return { mode: "raw", days: RRULE_DAY_ORDER, time, raw };
+}
+
+function buildCodexRrule(mode: "daily" | "weekly" | "raw", time: string, days: string[], raw: string): string {
+  if (mode === "raw") return raw.trim();
+  const [hour = "9", minute = "0"] = time.split(":");
+  const parts = [
+    "RRULE:FREQ=" + (mode === "daily" ? "DAILY" : "WEEKLY"),
+    `BYHOUR=${Number(hour)}`,
+    `BYMINUTE=${Number(minute)}`,
+  ];
+  if (mode === "weekly") {
+    const ordered = RRULE_DAY_ORDER.filter((day) => days.includes(day));
+    parts.push(`BYDAY=${ordered.join(",")}`);
+  }
+  return parts.join(";");
+}
+
+function listInput(values: string[]): string {
+  return values.join("\n");
+}
+
+function commaInput(values: string[]): string {
+  return values.join(", ");
+}
+
+function parseListInput(value: string): string[] {
+  return value
+    .split(/\n|,/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
+      style={{ color: "var(--text-muted)" }}>
+      {children}
+    </label>
+  );
+}
+
+const fieldStyle = {
+  background: "var(--bg-base)",
+  borderColor: "var(--border-hairline)",
+  color: "var(--text-primary)",
+} as const;
 
 // ── Status icon ──────────────────────────────────────────────────────────────
 function StatusIcon({ item }: { item: InboxItem }) {
@@ -147,31 +233,27 @@ function DetailPanel({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Schedule</p>
+            <FieldLabel>Schedule</FieldLabel>
             <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
               {humanSchedule(item.recurrence)}
             </p>
           </div>
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Status</p>
+            <FieldLabel>Status</FieldLabel>
             <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
               {paused ? "Paused" : item.status}
             </p>
           </div>
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Next run</p>
+            <FieldLabel>Next run</FieldLabel>
             <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
               {relTime(item.fireAt)}
             </p>
           </div>
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ color: "var(--text-muted)" }}>Last run</p>
+            <FieldLabel>Last run</FieldLabel>
             <p className="text-[12px]" style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
               {item.firedAt ? relTime(item.firedAt) : "Never"}
             </p>
@@ -292,19 +374,400 @@ function Section({
   );
 }
 
+// ── Codex automation detail panel ────────────────────────────────────────────
+function CodexDetailPanel({
+  auto,
+  busy,
+  onClose,
+  onToggle,
+  onSave,
+}: {
+  auto: CodexAutomation;
+  busy: boolean;
+  onClose: () => void;
+  onToggle: (auto: CodexAutomation) => void;
+  onSave: (auto: CodexAutomation, patch: CodexAutomationPatch) => void;
+}) {
+  const isActive = auto.status === "ACTIVE";
+  const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
+  const [name, setName] = useState(auto.name);
+  const [prompt, setPrompt] = useState(auto.prompt);
+  const [model, setModel] = useState(auto.model ?? "");
+  const [reasoningEffort, setReasoningEffort] = useState(auto.reasoningEffort ?? "medium");
+  const [executionEnvironment, setExecutionEnvironment] = useState(auto.executionEnvironment ?? "worktree");
+  const [tagsText, setTagsText] = useState(commaInput(auto.tags));
+  const [cwdsText, setCwdsText] = useState(listInput(auto.cwds));
+  const [scheduleMode, setScheduleMode] = useState<"daily" | "weekly" | "raw">(parsedSchedule.mode);
+  const [scheduleTime, setScheduleTime] = useState(parsedSchedule.time);
+  const [scheduleDays, setScheduleDays] = useState(parsedSchedule.days);
+  const [rawRrule, setRawRrule] = useState(parsedSchedule.raw);
+
+  useEffect(() => {
+    const nextSchedule = parseCodexRrule(auto.rrule);
+    setName(auto.name);
+    setPrompt(auto.prompt);
+    setModel(auto.model ?? "");
+    setReasoningEffort(auto.reasoningEffort ?? "medium");
+    setExecutionEnvironment(auto.executionEnvironment ?? "worktree");
+    setTagsText(commaInput(auto.tags));
+    setCwdsText(listInput(auto.cwds));
+    setScheduleMode(nextSchedule.mode);
+    setScheduleTime(nextSchedule.time);
+    setScheduleDays(nextSchedule.days);
+    setRawRrule(nextSchedule.raw);
+  }, [auto]);
+
+  const nextRrule = buildCodexRrule(scheduleMode, scheduleTime, scheduleDays, rawRrule);
+  const tags = parseListInput(tagsText);
+  const cwds = parseListInput(cwdsText);
+  const invalidSchedule =
+    !nextRrule.startsWith("RRULE:") || (scheduleMode === "weekly" && scheduleDays.length === 0);
+  const dirty =
+    name !== auto.name ||
+    prompt !== auto.prompt ||
+    model !== (auto.model ?? "") ||
+    reasoningEffort !== (auto.reasoningEffort ?? "medium") ||
+    executionEnvironment !== (auto.executionEnvironment ?? "worktree") ||
+    tagsText !== commaInput(auto.tags) ||
+    cwdsText !== listInput(auto.cwds) ||
+    nextRrule !== (auto.rrule ?? "");
+  const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
+
+  const toggleDay = (day: string) => {
+    setScheduleDays((prev) =>
+      prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day],
+    );
+  };
+
+  const save = () => {
+    if (!canSave) return;
+    onSave(auto, {
+      name: name.trim(),
+      prompt,
+      rrule: nextRrule,
+      model: model.trim(),
+      reasoning_effort: reasoningEffort,
+      execution_environment: executionEnvironment,
+      tags,
+      cwds,
+    });
+  };
+
+  return (
+    <div className="flex h-full flex-col"
+      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between border-b px-5 py-3"
+        style={{ borderColor: "var(--border-hairline)" }}>
+        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+          Automation details
+        </h2>
+        <button type="button" onClick={onClose}
+          className="rounded p-1 transition-colors hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}>
+          <Icon name="ph:x" width={14} />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+        <div>
+          <FieldLabel>Name</FieldLabel>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+            style={fieldStyle}
+          />
+        </div>
+
+        <div>
+          <FieldLabel>Prompt</FieldLabel>
+          <textarea
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            rows={9}
+            className="w-full resize-y rounded-md border px-2 py-2 text-[12px] leading-relaxed outline-none focus:border-white/30"
+            style={fieldStyle}
+          />
+        </div>
+
+        <div>
+          <FieldLabel>Schedule</FieldLabel>
+          <div className="mb-2 inline-flex rounded-md border p-0.5"
+            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
+            {(["weekly", "daily", "raw"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setScheduleMode(mode)}
+                className="rounded px-2 py-1 text-[11px] capitalize transition-colors"
+                style={{
+                  background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
+                }}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+
+          {scheduleMode === "raw" ? (
+            <textarea
+              value={rawRrule}
+              onChange={(event) => setRawRrule(event.target.value)}
+              rows={3}
+              className="w-full resize-y rounded-md border px-2 py-2 font-mono text-[11px] leading-relaxed outline-none focus:border-white/30"
+              style={fieldStyle}
+            />
+          ) : (
+            <div className="space-y-3">
+              {scheduleMode === "weekly" && (
+                <div className="flex flex-wrap gap-1.5">
+                  {RRULE_DAY_ORDER.map((day) => {
+                    const selected = scheduleDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => toggleDay(day)}
+                        className="rounded-md border px-2 py-1 text-[11px] transition-colors"
+                        style={{
+                          background: selected ? "oklch(0.65 0.18 280 / 0.18)" : "var(--bg-base)",
+                          borderColor: selected ? "oklch(0.65 0.18 280 / 0.5)" : "var(--border-hairline)",
+                          color: selected ? "var(--text-primary)" : "var(--text-muted)",
+                        }}
+                      >
+                        {RRULE_DAY_LABEL[day]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <input
+                type="time"
+                value={scheduleTime}
+                onChange={(event) => setScheduleTime(event.target.value)}
+                className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+                style={fieldStyle}
+              />
+            </div>
+          )}
+          <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
+            {nextRrule || "RRULE required"}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
+          <div>
+            <FieldLabel>Status</FieldLabel>
+            <p className="text-[12px]" style={{ color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
+              {isActive ? "Active" : "Paused"}
+            </p>
+          </div>
+          <div>
+            <FieldLabel>Model</FieldLabel>
+            <input
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              style={fieldStyle}
+            />
+          </div>
+          <div>
+            <FieldLabel>Reasoning</FieldLabel>
+            <select
+              value={reasoningEffort}
+              onChange={(event) => setReasoningEffort(event.target.value)}
+              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              style={fieldStyle}
+            >
+              {!["low", "medium", "high"].includes(reasoningEffort) && (
+                <option value={reasoningEffort}>{reasoningEffort}</option>
+              )}
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Environment</FieldLabel>
+            <select
+              value={executionEnvironment}
+              onChange={(event) => setExecutionEnvironment(event.target.value)}
+              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              style={fieldStyle}
+            >
+              {!["worktree", "repo"].includes(executionEnvironment) && (
+                <option value={executionEnvironment}>{executionEnvironment}</option>
+              )}
+              <option value="worktree">worktree</option>
+              <option value="repo">repo</option>
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Working directories</FieldLabel>
+            <textarea
+              value={cwdsText}
+              onChange={(event) => setCwdsText(event.target.value)}
+              rows={3}
+              className="w-full resize-y rounded-md border px-2 py-2 font-mono text-[11px] leading-relaxed outline-none focus:border-white/30"
+              style={fieldStyle}
+            />
+          </div>
+          <div>
+            <FieldLabel>Tags</FieldLabel>
+            <input
+              value={tagsText}
+              onChange={(event) => setTagsText(event.target.value)}
+              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              style={fieldStyle}
+            />
+          </div>
+          {auto.skillPath && (
+            <div>
+              <FieldLabel>Skill</FieldLabel>
+              <p className="break-all font-mono text-[10px]" style={{ color: "var(--text-muted)" }}>
+                {auto.skillPath}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="border-t px-5 py-4 space-y-2"
+        style={{ borderColor: "var(--border-hairline)" }}>
+        <button
+          type="button"
+          disabled={!canSave}
+          onClick={save}
+          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
+          style={{ background: "oklch(0.65 0.18 280)" }}
+        >
+          {busy ? "Saving..." : "Save changes"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onToggle(auto)}
+          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
+          style={{ background: isActive ? "oklch(0.45 0.12 20)" : "oklch(0.65 0.18 280)" }}
+        >
+          {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Codex automation row ──────────────────────────────────────────────────────
+function CodexRow({
+  auto,
+  selected,
+  onSelect,
+}: {
+  auto: CodexAutomation;
+  selected: boolean;
+  onSelect: (auto: CodexAutomation) => void;
+}) {
+  const isActive = auto.status === "ACTIVE";
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(auto)}
+        className="group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
+        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
+        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+      >
+        {/* Status dot */}
+        {isActive ? (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+            style={{ background: "oklch(0.65 0.18 280)" }} />
+        ) : (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+            style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
+            <Icon name="ph:minus" width={8} />
+          </span>
+        )}
+        <span className="flex-1 min-w-0 flex items-baseline gap-2">
+          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+            {auto.name}
+          </span>
+          {auto.tags.includes("coven") && (
+            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>coven</span>
+          )}
+        </span>
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {auto.scheduleHuman}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+// ── Codex Section ─────────────────────────────────────────────────────────────
+function CodexSection({
+  title,
+  items,
+  selectedId,
+  onSelect,
+}: {
+  title: string;
+  items: CodexAutomation[];
+  selectedId: string | null;
+  onSelect: (auto: CodexAutomation) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-3 mb-1 pb-2"
+        style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+        <span className="text-[12px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+          {title}
+        </span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded"
+          style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
+          Codex
+        </span>
+      </div>
+      <ul>
+        {items.map((auto) => (
+          <CodexRow
+            key={auto.id}
+            auto={auto}
+            selected={selectedId === auto.id}
+            onSelect={onSelect}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
+  const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
+  const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/inbox", { cache: "no-store" });
-      const json = await res.json();
-      if (!json.ok) { setError(json.error ?? "load failed"); return; }
-      setItems(json.items ?? []);
+      const [inboxRes, codexRes] = await Promise.all([
+        fetch("/api/inbox", { cache: "no-store" }),
+        fetch("/api/codex-automations", { cache: "no-store" }),
+      ]);
+      const inboxJson = await inboxRes.json();
+      if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
+      setItems(inboxJson.items ?? []);
+      const codexJson = await codexRes.json();
+      if (codexJson.ok) setCodexAutos(codexJson.automations ?? []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "fetch failed");
@@ -316,6 +779,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Keep selectedCodex in sync after reload
+  useEffect(() => {
+    if (!selectedCodex) return;
+    const fresh = codexAutos.find((a) => a.id === selectedCodex.id);
+    if (fresh) setSelectedCodex(fresh);
+    else setSelectedCodex(null);
+  }, [codexAutos, selectedCodex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const famById = useMemo(() => {
     const m = new Map<string, Familiar>();
@@ -381,6 +852,44 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
 
+  // ── Codex toggle ──────────────────────────────────────────────────────────
+  const toggleCodex = useCallback(async (auto: CodexAutomation) => {
+    setBusyId(auto.id);
+    try {
+      const newStatus: AutomationStatus = auto.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "codex patch failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [load]);
+
+  const saveCodex = useCallback(async (auto: CodexAutomation, patch: CodexAutomationPatch) => {
+    setBusyId(auto.id);
+    try {
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      if (json.automation) setSelectedCodex(json.automation);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "codex save failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [load]);
+
   // ── Sections ──────────────────────────────────────────────────────────────
   const current = useMemo(() =>
     items.filter((it) =>
@@ -410,7 +919,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
       .slice(0, 20),
     [items]);
 
-  const isEmpty = current.length + paused.length + oneShots.length === 0;
+  const codexActive = useMemo(
+    () => codexAutos.filter((a) => a.status === "ACTIVE"),
+    [codexAutos],
+  );
+  const codexPaused = useMemo(
+    () => codexAutos.filter((a) => a.status === "PAUSED"),
+    [codexAutos],
+  );
+
+  const isEmpty =
+    current.length + paused.length + oneShots.length + codexAutos.length === 0;
 
   return (
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
@@ -460,14 +979,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
           ) : (
             <>
               <Section title="Current" items={current} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
+              <CodexSection title="Active Schedules" items={codexActive}
+                selectedId={selectedCodex?.id ?? null}
+                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }} />
               <Section title="Paused" items={paused} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
+              <CodexSection title="Paused Schedules" items={codexPaused}
+                selectedId={selectedCodex?.id ?? null}
+                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }} />
               <Section title="Pending" items={oneShots} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
               {history.length > 0 && (
                 <Section title="History" items={history} selectedId={selectedItem?.id ?? null}
-                  familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                  familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
               )}
             </>
           )}
@@ -475,18 +1000,29 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
       </div>
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
-      {selectedItem && (
-        <div className="w-72 shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
-          <DetailPanel
-            item={selectedItem}
-            familiarLabel={familiarLabel}
-            busyId={busyId}
-            onClose={() => setSelectedItem(null)}
-            runNow={runNow}
-            togglePaused={togglePaused}
-            stopRecurrence={stopRecurrence}
-            removeItem={removeItem}
-          />
+      {(selectedItem || selectedCodex) && (
+        <div className="w-[380px] max-w-[42vw] shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+          {selectedItem && (
+            <DetailPanel
+              item={selectedItem}
+              familiarLabel={familiarLabel}
+              busyId={busyId}
+              onClose={() => setSelectedItem(null)}
+              runNow={runNow}
+              togglePaused={togglePaused}
+              stopRecurrence={stopRecurrence}
+              removeItem={removeItem}
+            />
+          )}
+          {selectedCodex && (
+            <CodexDetailPanel
+              auto={selectedCodex}
+              busy={busyId === selectedCodex.id}
+              onClose={() => setSelectedCodex(null)}
+              onToggle={toggleCodex}
+              onSave={saveCodex}
+            />
+          )}
         </div>
       )}
     </section>

@@ -324,6 +324,11 @@ export async function POST(req: Request) {
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
           const id = toolIdFor(name);
+          // Try to pretty-print JSON payloads; fall back to raw string.
+          const fmtPayload = (raw: string): string | undefined => {
+            if (!raw) return undefined;
+            try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+          };
           if (isPost) {
             const meta = toolStartTimes.get(name);
             const durationMs = meta ? Date.now() - meta.startedAt : undefined;
@@ -332,7 +337,7 @@ export async function POST(req: Request) {
               kind: "tool_use",
               id,
               name,
-              output: rest || undefined,
+              output: fmtPayload(rest),
               status: isError ? "error" : "ok",
               durationMs,
             });
@@ -342,7 +347,7 @@ export async function POST(req: Request) {
               kind: "tool_use",
               id,
               name,
-              input: rest || undefined,
+              input: fmtPayload(rest),
               status: "running",
             });
           }

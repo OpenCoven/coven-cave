@@ -187,7 +187,7 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: 6px;
   border: none;
   background: oklch(0.65 0.18 280);
   color: #fff;

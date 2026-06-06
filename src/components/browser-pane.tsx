@@ -170,9 +170,10 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
   const [addressBar, setAddressBar] = useState<string>(HOME_URL);
   const [quickOpen, setQuickOpen] = useState(false);
   const [railHover, setRailHover] = useState(false);
+  const [railPinned, setRailPinned] = useState(false);
   // Rail expands on hover/focus and stays expanded while the quick-open
   // palette is up so users can verify the active tab visually.
-  const railExpanded = railHover || quickOpen;
+  const railExpanded = railPinned || railHover || quickOpen;
 
   // History per-tab
   const historyRef = useRef<Record<string, { stack: string[]; idx: number }>>({});
@@ -492,6 +493,20 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
             railExpanded ? "opacity-100" : "pointer-events-none opacity-0",
           ].join(" ")}
         >
+          {/* Pin/unpin toggle at the very top of the rail */}
+          <button
+            type="button"
+            onClick={() => setRailPinned((v) => !v)}
+            title={railPinned ? "Auto-hide tabs" : "Pin tabs open"}
+            className={[
+              "mb-1 grid h-7 w-7 shrink-0 place-items-center rounded transition-colors",
+              railPinned
+                ? "text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
+                : "text-[var(--fg-muted)] hover:text-[var(--fg-base)]",
+            ].join(" ")}
+          >
+            <Icon name={railPinned ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={13} />
+          </button>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);

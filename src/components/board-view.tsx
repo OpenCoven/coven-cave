@@ -8,9 +8,10 @@ import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus } from "@/lib/cave-board-types";
 import {
-  BoardFilterPopover, type FilterState,
-  emptyFilter, hasActiveFilters,
+  type FilterState,
+  emptyFilter,
 } from "@/components/board-filter-popover";
+import { BoardMultiSelect } from "@/components/board-multi-select";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { BoardInspector } from "@/components/board-inspector";
@@ -36,7 +37,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "priority", "none"]));
   const [filter, setFilter] = useState<FilterState>(emptyFilter());
-  const [filterOpen, setFilterOpen] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
@@ -153,18 +153,52 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             <option value="none">No grouping</option>
           </select>
 
-          <div className="board-filter-popover-anchor">
-            <button type="button"
-              className={`board-toolbar-btn${hasActiveFilters(filter) ? " board-toolbar-btn--active" : ""}`}
-              onClick={() => setFilterOpen((v) => !v)}>
-              <Icon name={hasActiveFilters(filter) ? "ph:funnel-fill" : "ph:funnel"} width={13} />
-              Filter
-            </button>
-            {filterOpen && (
-              <BoardFilterPopover filter={filter} familiars={familiars} allLabels={allLabels}
-                onChange={setFilter} onClose={() => setFilterOpen(false)} />
-            )}
-          </div>
+          <BoardMultiSelect
+            label="Priority"
+            icon="ph:dots-three-vertical"
+            options={[
+              { id: "urgent", label: "Urgent" },
+              { id: "high",   label: "High" },
+              { id: "medium", label: "Medium" },
+              { id: "low",    label: "Low" },
+            ]}
+            selected={filter.priorities}
+            onChange={(next) => setFilter((f) => ({ ...f, priorities: next as Set<import("@/lib/cave-board-types").CardPriority> }))}
+          />
+
+          <BoardMultiSelect
+            label="Status"
+            icon="ph:circle-fill"
+            options={[
+              { id: "backlog", label: "Backlog" },
+              { id: "inbox",   label: "Inbox" },
+              { id: "running", label: "Running" },
+              { id: "review",  label: "Review" },
+              { id: "blocked", label: "Blocked" },
+              { id: "done",    label: "Done" },
+            ]}
+            selected={filter.statuses}
+            onChange={(next) => setFilter((f) => ({ ...f, statuses: next as Set<import("@/lib/cave-board-types").CardStatus> }))}
+          />
+
+          <BoardMultiSelect
+            label="Familiar"
+            icon="ph:sparkle"
+            options={familiars.map((f) => ({ id: f.id, label: f.display_name }))}
+            selected={filter.familiarIds}
+            onChange={(next) => setFilter((f) => ({ ...f, familiarIds: next }))}
+            emptyLabel="No familiars configured"
+          />
+
+          {allLabels.length > 0 && (
+            <BoardMultiSelect
+              label="Labels"
+              icon="ph:tag-bold"
+              options={allLabels.map((l) => ({ id: l, label: l }))}
+              selected={filter.labels}
+              onChange={(next) => setFilter((f) => ({ ...f, labels: next }))}
+            />
+          )}
 
           <div className="board-view-toggle" role="group" aria-label="Tasks view mode">
             <button type="button" aria-label="Kanban view"
