@@ -213,8 +213,10 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
             ) : (
               <button
                 type="button"
-                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
-                onClick={() => {/* manage action */}}
+                disabled
+                aria-disabled="true"
+                title="Coming soon"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Icon name="ph:sliders-bold" className="text-muted-foreground" width="0.8rem" />
                 <span>Manage</span>
