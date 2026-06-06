@@ -38,20 +38,18 @@ type Props = {
 };
 
 function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: string; label: string; cards: Card[] }[] {
-  if (by === "none") return [{ key: "all", label: "", cards }];
-  if (by === "status") return [{ key: "all", label: "Status", cards }];
+  if (by === "status") return [{ key: "all", label: "", cards }];
+  // by === "familiar"
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : c.priority;
+    const key = c.familiarId ?? "__unassigned__";
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
-  return [...map.entries()].map(([key, cards]) => ({
+  return [...map.entries()].map(([key, grpCards]) => ({
     key,
-    label: by === "familiar"
-      ? (key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key))
-      : key.charAt(0).toUpperCase() + key.slice(1),
-    cards,
+    label: key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key),
+    cards: grpCards,
   }));
 }
 
@@ -63,7 +61,7 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const groups = getGroups(cards, groupBy, familiars);
-  const showSwimlanes = groupBy !== "none";
+  const showSwimlanes = true;
 
   const grouped = (gc: Card[]) => {
     const m = new Map<CardStatus, Card[]>();
