@@ -171,6 +171,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           } catch { /* */ }
         }
       }
+      setEnriching(false);
     } catch {
       setEnriching(false);
     }
