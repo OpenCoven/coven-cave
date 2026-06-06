@@ -38,6 +38,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -137,6 +139,42 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     }
   };
 
+  const handleEnrichSteps = async () => {
+    setEnriching(true);
+    setEnrichProgress(null);
+    try {
+      const res = await fetch("/api/board/enrich-steps", { method: "POST" });
+      if (!res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const msg = JSON.parse(trimmed) as Record<string, unknown>;
+            if (msg.kind === "start") {
+              setEnrichProgress({ done: 0, total: (msg.total as number) ?? 0 });
+            } else if (msg.kind === "done") {
+              setEnrichProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
+            } else if (msg.kind === "complete") {
+              await load();
+              setEnriching(false);
+            }
+          } catch { /* */ }
+        }
+      }
+    } catch {
+      setEnriching(false);
+    }
+  };
+
   return (
     <section className="board-shell">
       {/* Header */}
@@ -186,7 +224,21 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             </button>
           </div>
 
-          <button type="button" className="board-new-card-btn"
+          <button
+            type="button"
+            className="board-toolbar-btn"
+            onClick={handleEnrichSteps}
+            disabled={enriching || cards.length === 0}
+            title="Ask each familiar to populate steps for their assigned tasks"
+          >
+            <Icon name="ph:sparkle-bold" width={13} />
+            {enriching
+              ? enrichProgress
+                ? `${enrichProgress.done}/${enrichProgress.total}`
+                : "Starting…"
+              : "Enrich steps"}
+          </button>
+                    <button type="button" className="board-new-card-btn"
             onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}>
             + New task
           </button>
