@@ -378,11 +378,7 @@
 .library-preview-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-}
-
-.library-preview-md {
-  max-width: 720px;
+  padding: 28px 32px;
 }
 
 /* ── Row delete button ─────────────────────────────────────────── */
@@ -749,6 +745,25 @@ tr:hover .library-row-delete,
 .library-preview-md {
   max-width: 740px;
   padding-bottom: 48px;
+}
+
+/* ── MD loading skeleton ─────────────────────────────────────────── */
+.library-md-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 600px;
+  padding: 4px 0;
+}
+.library-md-skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--text-muted) 12%, var(--bg-base));
+  animation: library-skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes library-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
 }
 
 /* ── Rail: shared icon wrap ───────────────────────────────────── */

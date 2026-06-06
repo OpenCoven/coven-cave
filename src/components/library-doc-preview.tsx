@@ -80,9 +80,11 @@ async function getMdFn(): Promise<MdFn> {
 
 function RenderedMarkdown({ text }: { text: string }) {
   const [html, setHtml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!text) { setHtml(null); return; }
+    if (!text) { setHtml(null); setLoading(false); return; }
+    setLoading(true);
     let cancelled = false;
     void (async () => {
       const fn = await getMdFn();
@@ -97,13 +99,19 @@ function RenderedMarkdown({ text }: { text: string }) {
         }
       }
       setHtml(doc.body.innerHTML);
+      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [text]);
 
-  if (!html) return (
-    <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)]">{text}</pre>
+  if (loading) return (
+    <div className="library-md-skeleton">
+      {["80%", "95%", "70%", "88%", "60%", "92%", "75%"].map((w, i) => (
+        <div key={i} className="library-md-skeleton-line" style={{ width: w }} />
+      ))}
+    </div>
   );
+  if (!html) return null;
   return <div ref={ref} className="cave-md library-preview-md" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
