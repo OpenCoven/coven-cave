@@ -176,15 +176,15 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
   }, [skills, query]);
 
   return (
-    <div className="flex h-full flex-col bg-background text-foreground">
+    <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
       {/* Top tab strip */}
-      <header className="flex items-center justify-between border-b border-border px-5 py-3">
-        <div className="flex items-center gap-5 text-[13px]">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-3 sm:px-5">
+        <div className="flex min-w-0 max-w-full items-center gap-5 overflow-x-auto text-[13px]">
           {(["plugins", "skills", "capabilities"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`relative pb-2 transition-colors ${
+              className={`relative shrink-0 pb-2 transition-colors ${
                 tab === t ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -195,7 +195,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 text-[12px]">
+        <div className="flex shrink-0 items-center gap-2 text-[12px]">
           <button
             className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-foreground transition-colors hover:bg-muted"
             title="Manage plugins (not wired in v1)"
@@ -237,15 +237,15 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
 
       {/* Scrolling content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[860px] px-6 pt-12 pb-16">
+        <div className="mx-auto w-full max-w-[860px] px-3 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-12">
           {/* Headline */}
-          <h1 className="text-center text-[34px] font-normal tracking-tight text-foreground">
+          <h1 className="text-center text-[26px] font-normal tracking-tight text-foreground sm:text-[34px]">
             Make Cave work your way
           </h1>
 
           {/* Filter row */}
-          <div className="mt-10 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-1 text-[13px]">
+          <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 text-[13px]">
               {([
                 { id: "curated" as const, label: "Curated by Cave" },
                 { id: "shared" as const, label: "Shared with you" },
@@ -254,7 +254,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                 <button
                   key={chip.id}
                   onClick={() => setFilter(chip.id)}
-                  className={`rounded-md px-3 py-1.5 transition-colors ${
+                  className={`shrink-0 rounded-md px-3 py-1.5 transition-colors ${
                     filter === chip.id
                       ? "bg-muted text-foreground"
                       : "text-muted-foreground hover:bg-card hover:text-foreground"
@@ -265,7 +265,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
               ))}
               <button
                 onClick={() => setFilter("more")}
-                className={`flex items-center gap-1 rounded-md px-3 py-1.5 transition-colors ${
+                className={`flex shrink-0 items-center gap-1 rounded-md px-3 py-1.5 transition-colors ${
                   filter === "more"
                     ? "bg-muted text-foreground"
                     : "text-muted-foreground hover:bg-card hover:text-foreground"
@@ -276,7 +276,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
               </button>
             </div>
 
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Icon
                 name="ph:magnifying-glass-bold"
                 className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -288,7 +288,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={tab === "plugins" ? "Search plugins" : tab === "skills" ? "Search skills" : "Search capabilities"}
-                className="w-56 rounded-md border border-border bg-card py-1.5 pl-7 pr-3 text-[12px] text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-border-strong"
+                className="w-full rounded-md border border-border bg-card py-1.5 pl-7 pr-3 text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong sm:w-56"
               />
             </div>
           </div>
@@ -331,7 +331,7 @@ function PluginGrid({
     );
   }
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {items.map((h) => {
         const initial = (h.label.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();
         const tagline = HARNESS_TAGLINE[h.id] ?? `Run ${h.label} from a familiar`;
@@ -347,7 +347,7 @@ function PluginGrid({
                   ? `Open a chat with ${h.label}`
                   : `${h.label} is installed but native chat isn't wired yet`
             }
-            className={`group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors ${
+            className={`group flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors ${
               h.installed
                 ? "hover:border-border-strong hover:bg-muted"
                 : "cursor-default opacity-70"
@@ -416,14 +416,14 @@ function SkillGrid({
     );
   }
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {items.map((s) => {
         const initial = (s.name.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();
         const tagline = [s.owner, s.category].filter(Boolean).join(" · ") || "Skill";
         return (
           <div
             key={s.id}
-            className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
+            className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
           >
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[15px] font-semibold ${HARNESS_TILE}`}>
               {initial}
@@ -450,11 +450,11 @@ function SkillGrid({
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
+          className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
         >
           <span className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-muted" />
           <span className="flex-1 space-y-1.5">
@@ -533,7 +533,7 @@ function CreateDropdown({
 
   return (
     <div
-      className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+      className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-card shadow-lg"
       role="menu"
     >
       {CREATE_ITEMS.map((item, i) => (
@@ -551,7 +551,7 @@ function CreateDropdown({
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
             <Icon name={item.icon} className="text-[13px]" />
           </span>
-          <span className="flex flex-col">
+          <span className="flex min-w-0 flex-col">
             <span className="font-medium text-foreground">{item.label}</span>
             <span className="text-[10px] text-muted-foreground">{item.desc}</span>
           </span>
@@ -578,7 +578,7 @@ function CapabilitiesView({
 
   if (error) {
     return (
-      <div className="rounded-lg border border-border bg-card px-5 py-6">
+      <div className="rounded-lg border border-border bg-card px-4 py-6 sm:px-5">
         <p className="mb-3 text-[13px] text-muted-foreground">
           {error === "daemon offline"
             ? "Coven daemon is offline — harness capabilities require a running daemon."
@@ -629,9 +629,9 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
     manifest.plugins.length;
 
   return (
-    <div className="rounded-xl border border-border bg-card">
+    <div className="min-w-0 rounded-xl border border-border bg-card">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-[13px] font-semibold text-foreground">
           {initial}
         </span>
@@ -641,7 +641,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
             {totalItems === 0 ? "No config found" : `${totalItems} item${totalItems === 1 ? "" : "s"} configured`}
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground">
+        <span className="text-[10px] text-muted-foreground sm:ml-auto">
           {new Date(manifest.scanned_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
@@ -654,7 +654,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
             <Icon name="ph:note-pencil" className="mt-0.5 shrink-0 text-muted-foreground" width="0.85rem" />
             <div className="min-w-0 flex-1">
               <p className="text-[12px] font-medium text-foreground">Global instructions</p>
-              <p className="truncate text-[11px] text-muted-foreground">
+              <p className="break-all text-[11px] text-muted-foreground sm:truncate">
                 {manifest.global_instructions.path?.replace(/^\/Users\/[^/]+/, "~") ?? "—"}
               </p>
               {manifest.global_instructions.byte_count !== undefined && (
@@ -682,9 +682,9 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
                 <li key={s.id} className="flex items-start gap-2">
                   <Icon name="ph:sparkle" className="mt-0.5 shrink-0 text-muted-foreground" width="0.75rem" />
                   <div className="min-w-0">
-                    <p className="text-[12px] text-foreground">{s.name}</p>
+                    <p className="break-words text-[12px] text-foreground">{s.name}</p>
                     {s.description && (
-                      <p className="text-[11px] text-muted-foreground">{s.description}</p>
+                      <p className="break-words text-[11px] text-muted-foreground">{s.description}</p>
                     )}
                   </div>
                 </li>
@@ -704,8 +704,8 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
                 <li key={p.id} className="flex items-start gap-2">
                   <Icon name="ph:plug" className="mt-0.5 shrink-0 text-muted-foreground" width="0.75rem" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[12px] text-foreground">{p.name}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="min-w-0 break-words text-[12px] text-foreground">{p.name}</p>
                       <span className="rounded-full bg-muted px-1.5 py-px text-[9px] text-muted-foreground uppercase tracking-wide">
                         {p.kind}
                       </span>
@@ -714,7 +714,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
                       )}
                     </div>
                     {p.command && (
-                      <p className="truncate text-[11px] text-muted-foreground font-mono">
+                      <p className="break-all font-mono text-[11px] text-muted-foreground sm:truncate">
                         {p.command} {p.args?.join(" ")}
                       </p>
                     )}
@@ -729,9 +729,9 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
         {manifest.warnings.length > 0 ? (
           <div className="px-4 py-3">
             {manifest.warnings.map((w, i) => (
-              <p key={i} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <p key={i} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
                 <Icon name="ph:warning-fill" width={11} aria-hidden />
-                <span>{w.message}</span>
+                <span className="min-w-0 break-words">{w.message}</span>
               </p>
             ))}
           </div>

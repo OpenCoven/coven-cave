@@ -161,7 +161,7 @@ function AgendaView({
   }
 
   return (
-    <div className="flex flex-col gap-6 px-6 py-4 overflow-y-auto">
+    <div className="flex flex-col gap-6 overflow-y-auto px-3 py-4 sm:px-6">
       {groups.map(({ date, items: groupItems }) => (
         <div key={date.toISOString()}>
           <div className="mb-2 flex items-center gap-3">
@@ -214,9 +214,9 @@ function AllDayStrip({
   onDayClick?: (day: Date) => void;
 }) {
   return (
-    <div className="flex shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
+    <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       {/* Label */}
-      <div className="w-12 shrink-0 border-r border-[var(--border-hairline)] flex items-center justify-end pr-1.5 py-1">
+      <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
         <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] leading-tight text-right">
           All
           <br />
@@ -224,7 +224,11 @@ function AllDayStrip({
         </span>
       </div>
       {/* Per-column chips */}
-      <div className="flex flex-1 divide-x divide-[var(--border-hairline)]">
+      <div
+        className={`flex flex-1 divide-x divide-[var(--border-hairline)] ${
+          columns.length > 1 ? "min-w-[560px]" : "min-w-[180px]"
+        }`}
+      >
         {columns.map((col, i) => (
           <div key={i} className="flex-1 min-w-[80px] flex flex-col gap-0.5 p-1">
             {col.items.slice(0, MAX_ALLDAY_VISIBLE).map((item) => (
@@ -292,7 +296,10 @@ function TimeGrid({
   return (
     <div className="flex flex-1 overflow-auto">
       {/* Time axis */}
-      <div className="shrink-0 w-12 border-r border-[var(--border-hairline)] relative" style={{ height: totalHeight }}>
+      <div
+        className="sticky left-0 z-20 w-12 shrink-0 border-r border-[var(--border-hairline)] bg-[var(--bg-base)] relative"
+        style={{ height: totalHeight }}
+      >
         {HOURS.map((h) => (
           <div
             key={h}
@@ -305,7 +312,11 @@ function TimeGrid({
       </div>
 
       {/* Columns */}
-      <div className="flex flex-1 divide-x divide-[var(--border-hairline)]">
+      <div
+        className={`flex flex-1 divide-x divide-[var(--border-hairline)] ${
+          columns.length > 1 ? "min-w-[560px]" : "min-w-[220px]"
+        }`}
+      >
         {columns.map((col, ci) => (
           <div key={ci} className="flex-1 relative min-w-[80px]" style={{ height: totalHeight }}>
             {/* Hour lines */}
@@ -392,7 +403,7 @@ function DayView({
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-[var(--border-hairline)] shrink-0">
+      <div className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-3 sm:px-6">
         <h2 className="text-sm font-medium text-[var(--text-primary)]">
           {fmtDateHeading(anchor)}
         </h2>
@@ -457,10 +468,10 @@ function WeekView({
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Sticky column headers */}
-      <div className="flex shrink-0 border-b border-[var(--border-hairline)]">
+      <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)]">
         {/* Spacer for the time axis */}
-        <div className="w-12 shrink-0 border-r border-[var(--border-hairline)]" />
-        <div className="flex flex-1 min-w-[320px] divide-x divide-[var(--border-hairline)] overflow-x-auto">
+        <div className="sticky left-0 z-10 w-12 shrink-0 border-r border-[var(--border-hairline)] bg-[var(--bg-base)]" />
+        <div className="flex min-w-[560px] flex-1 divide-x divide-[var(--border-hairline)]">
           {columns.map((col, i) => (
             <div
               key={i}
@@ -524,77 +535,81 @@ function MonthView({
   }, [items]);
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden px-4 pb-4">
+    <div className="flex flex-1 flex-col overflow-hidden px-2 pb-3 sm:px-4 sm:pb-4">
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 mb-1">
-        {WEEKDAYS.map((wd) => (
-          <div
-            key={wd}
-            className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-muted)]"
-          >
-            {wd}
-          </div>
-        ))}
-      </div>
-      {/* Day cells */}
-      <div className="grid grid-cols-7 grid-rows-6 flex-1 gap-px bg-[var(--border-hairline)] rounded-lg overflow-hidden">
-        {cells.map((day, i) => {
-          const key = startOfDay(day).toISOString();
-          const dayItems = byDay.get(key) ?? [];
-          const isCurrentMonth = day.getMonth() === anchor.getMonth();
-          const isToday = isSameDay(day, today);
-
-          return (
-            <div
-              key={i}
-              onClick={() => onDayClick?.(day)}
-              className={`flex flex-col p-1.5 cursor-pointer transition-colors overflow-hidden ${
-                isCurrentMonth
-                  ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
-                  : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
-              }`}
-            >
-              <span
-                className={`text-[11px] font-medium mb-1 w-5 h-5 flex items-center justify-center rounded-full ${
-                  isToday
-                    ? "bg-[#8E3DFF] text-white"
-                    : isCurrentMonth
-                    ? "text-[var(--text-primary)]"
-                    : "text-[var(--text-muted)]"
-                }`}
+      <div className="min-h-0 flex-1 overflow-x-auto">
+        <div className="flex h-full min-w-[560px] flex-col">
+          <div className="mb-1 grid grid-cols-7">
+            {WEEKDAYS.map((wd) => (
+              <div
+                key={wd}
+                className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-muted)]"
               >
-                {day.getDate()}
-              </span>
-              <div className="flex flex-col gap-0.5 overflow-hidden">
-                {dayItems.slice(0, 3).map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenItem?.(item);
-                    }}
-                    className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] bg-[var(--bg-raised)] border border-[var(--border-hairline)] hover:bg-[var(--bg-elevated)] w-full text-left"
-                  >
-                    <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />
-                    <span className="truncate text-[var(--text-primary)]">{item.title}</span>
-                  </button>
-                ))}
-                {dayItems.length > 3 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDayClick?.(day);
-                    }}
-                    className="text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
-                    title={`${dayItems.length - 3} more items — click to see all`}
-                  >
-                    +{dayItems.length - 3} more
-                  </button>
-                )}
+                {wd}
               </div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+          {/* Day cells */}
+          <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
+            {cells.map((day, i) => {
+              const key = startOfDay(day).toISOString();
+              const dayItems = byDay.get(key) ?? [];
+              const isCurrentMonth = day.getMonth() === anchor.getMonth();
+              const isToday = isSameDay(day, today);
+
+              return (
+                <div
+                  key={i}
+                  onClick={() => onDayClick?.(day)}
+                  className={`flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
+                    isCurrentMonth
+                      ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
+                      : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
+                  }`}
+                >
+                  <span
+                    className={`mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
+                      isToday
+                        ? "bg-[#8E3DFF] text-white"
+                        : isCurrentMonth
+                        ? "text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {day.getDate()}
+                  </span>
+                  <div className="flex flex-col gap-0.5 overflow-hidden">
+                    {dayItems.slice(0, 3).map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenItem?.(item);
+                        }}
+                        className="flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 py-0.5 text-left text-[9px] hover:bg-[var(--bg-elevated)]"
+                      >
+                        <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />
+                        <span className="truncate text-[var(--text-primary)]">{item.title}</span>
+                      </button>
+                    ))}
+                    {dayItems.length > 3 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDayClick?.(day);
+                        }}
+                        className="w-full px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+                        title={`${dayItems.length - 3} more items — click to see all`}
+                      >
+                        +{dayItems.length - 3} more
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -767,52 +782,53 @@ export function CalendarView({ items, familiars, onOpenItem }: Props) {
   ];
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full bg-[var(--bg-base)] relative">
+    <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-hairline)] shrink-0">
-        {/* Nav arrows */}
-        <button
-          onClick={() => navigate(-1)}
-          aria-label="Previous"
-          className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <Icon name="ph:arrow-left-bold" width={12} />
-        </button>
-        <button
-          onClick={() => setAnchor(new Date())}
-          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
-        >
-          Today
-        </button>
-        <button
-          onClick={() => navigate(1)}
-          className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <Icon name="ph:arrow-right-bold" />
-        </button>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Nav arrows */}
+          <button
+            onClick={() => navigate(-1)}
+            aria-label="Previous"
+            className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:arrow-left-bold" width={12} />
+          </button>
+          <button
+            onClick={() => setAnchor(new Date())}
+            className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            Today
+          </button>
+          <button
+            onClick={() => navigate(1)}
+            aria-label="Next"
+            className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:arrow-right-bold" />
+          </button>
+        </div>
 
-        {/* Heading */}
-        <h2 className="flex-1 text-sm font-semibold text-[var(--text-primary)]">
-          {headingLabel()}
-        </h2>
-
-        {/* Item count */}
-        <span className="text-[11px] text-[var(--text-muted)]">
-          {items.filter((i) => i.status === "pending").length} pending
-        </span>
-
-        {/* Keyboard hint */}
-        <span className="text-[10px] text-[var(--text-muted)] hidden md:block">
-          ← → navigate · T today · D W M A views
-        </span>
+        <div className="min-w-[180px] flex-1">
+          {/* Heading */}
+          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+            {headingLabel()}
+          </h2>
+          <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
+            <span>{items.filter((i) => i.status === "pending").length} pending</span>
+            <span className="hidden md:inline">
+              ← → navigate · T today · D W M A views
+            </span>
+          </div>
+        </div>
 
         {/* View mode toggle */}
-        <div className="flex items-center rounded-lg border border-[var(--border-hairline)] overflow-hidden">
+        <div className="flex max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)]">
           {VIEW_MODES.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setViewMode(id)}
-              className={`px-3 py-1 text-[11px] transition-colors ${
+              className={`px-2.5 py-1 text-[11px] transition-colors sm:px-3 ${
                 viewMode === id
                   ? "bg-[#8E3DFF] text-white"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
