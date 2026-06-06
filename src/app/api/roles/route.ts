@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { loadConfig, upsertRoleConfig } from "@/lib/cave-config";
+import { covenHome, familiarIds, familiarWorkspace } from "@/lib/coven-paths";
 
 export const dynamic = "force-dynamic";
-
-// Known familiar workspace dirs
-const FAMILIAR_DIRS = ["sage", "echo", "charm", "astra", "cody", "kitty", "nova"];
 
 function parseFrontmatter(text: string): Record<string, string> {
   const fm: Record<string, string> = {};
@@ -44,15 +41,15 @@ export type RoleEntry = {
 };
 
 export async function GET() {
-  const workspaceRoot = path.join(homedir(), ".openclaw", "workspace");
   const roles: RoleEntry[] = [];
 
   // Load config for active state overlay
   const cfg = await loadConfig();
   const roleConfigMap = new Map(cfg.roles.map(r => [`${r.familiar}:${r.id}`, r]));
 
-  for (const familiar of FAMILIAR_DIRS) {
-    const rolesDir = path.join(workspaceRoot, familiar, "roles");
+  for (const familiar of await familiarIds()) {
+    const workspace = await familiarWorkspace(familiar);
+    const rolesDir = path.join(workspace, "roles");
     let roleDirs: string[] = [];
     try {
       const entries = await readdir(rolesDir, { withFileTypes: true });
@@ -83,6 +80,39 @@ export async function GET() {
         });
       } catch { continue; }
     }
+  }
+
+  const globalRolesDir = path.join(covenHome(), "roles");
+  let globalRoleDirs: string[] = [];
+  try {
+    const entries = await readdir(globalRolesDir, { withFileTypes: true });
+    globalRoleDirs = entries.filter(e => e.isDirectory()).map(e => e.name);
+  } catch { /* no global roles */ }
+
+  for (const roleName of globalRoleDirs) {
+    const roleMdPath = path.join(globalRolesDir, roleName, "ROLE.md");
+    try {
+      await stat(roleMdPath);
+      const text = await readFile(roleMdPath, "utf8");
+      const fm = parseFrontmatter(text);
+      const familiar = fm.familiar ?? "global";
+      const configEntry = roleConfigMap.get(`${familiar}:${roleName}`);
+      roles.push({
+        id: roleName,
+        name: fm.name ?? roleName,
+        description: fm.description,
+        version: fm.version,
+        emoji: fm.emoji,
+        familiar,
+        skills: parseListField(text, "skills"),
+        tools: parseListField(text, "tools"),
+        plugins: parseListField(text, "plugins"),
+        workflows: parseListField(text, "workflows"),
+        path: roleMdPath,
+        active: configEntry?.active ?? false,
+        activatedAt: configEntry?.activatedAt,
+      });
+    } catch { continue; }
   }
 
   return NextResponse.json({ ok: true, roles });

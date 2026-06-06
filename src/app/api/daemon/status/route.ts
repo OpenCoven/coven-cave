@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { homedir } from "node:os";
-import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
+import { covenWorkspaceRoot } from "@/lib/coven-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -12,17 +11,9 @@ type Health = {
   daemon?: { pid: number; startedAt: string; socket: string };
 };
 
-function workspaceRoot(): string {
-  return (
-    process.env.WORKSPACE_ROOT ||
-    process.env.NEXT_PUBLIC_WORKSPACE_ROOT ||
-    path.join(homedir(), ".openclaw")
-  );
-}
-
 export async function GET() {
   const res = await callDaemon<Health>({ path: "/api/v1/health", timeoutMs: 1500 });
-  const root = workspaceRoot();
+  const root = covenWorkspaceRoot();
   if (!res.ok || !res.data) {
     return NextResponse.json({
       running: false,

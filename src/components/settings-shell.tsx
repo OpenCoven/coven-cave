@@ -127,6 +127,8 @@ function WorkspacePathField() {
 function DaemonSection() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   const refresh = () => {
     setLoading(true);
@@ -138,10 +140,27 @@ function DaemonSection() {
 
   useEffect(refresh, []);
 
+  const startDaemon = async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/daemon/start", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || json?.stderr || "daemon did not start");
+      }
+      refresh();
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "daemon did not start");
+    } finally {
+      setStarting(false);
+    }
+  };
+
   return (
     <SettingsPage title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
       <SettingsGroup label="Status">
-        <div className="flex items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-card)] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-card)] px-4 py-3">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
             loading ? "animate-pulse bg-[var(--text-muted)]"
             : status?.running ? "bg-emerald-400"
@@ -155,14 +174,27 @@ function DaemonSection() {
               pid {status.daemon.pid}
             </span>
           )}
+          {!loading && !status?.running && (
+            <button
+              type="button"
+              onClick={startDaemon}
+              disabled={starting}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+              title="coven daemon start"
+            >
+              <Icon name="ph:rocket-launch-bold" width={12} />
+              {starting ? "Starting..." : "Start daemon"}
+            </button>
+          )}
           <button
             type="button"
             onClick={refresh}
-            className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className={`${status?.running ? "ml-auto" : ""} flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]`}
           >
             <Icon name="ph:arrow-clockwise" width={11} />
             Refresh
           </button>
+          {startError && <p className="basis-full text-[11px] text-rose-300">{startError}</p>}
         </div>
       </SettingsGroup>
 

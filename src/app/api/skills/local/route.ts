@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { covenHome, familiarIds, familiarWorkspace } from "@/lib/coven-paths";
 
 export const dynamic = "force-dynamic";
-
-// Known familiar workspace dirs — scan only these for per-familiar skills
-const FAMILIAR_DIRS = ["sage", "echo", "charm", "astra", "cody", "kitty", "nova"];
 
 function parseFrontmatter(text: string): Record<string, string> {
   const fm: Record<string, string> = {};
@@ -65,15 +62,14 @@ async function scanSkillsDir(dir: string, familiar: string, out: LocalSkillEntry
 }
 
 export async function GET() {
-  const workspaceRoot = path.join(homedir(), ".openclaw", "workspace");
   const skills: LocalSkillEntry[] = [];
 
-  // 1. Global shared skills at workspace root
-  await scanSkillsDir(path.join(workspaceRoot, "skills"), "global", skills);
+  // 1. Global shared Coven skills.
+  await scanSkillsDir(path.join(covenHome(), "skills"), "global", skills);
 
-  // 2. Per-familiar skills
-  for (const familiar of FAMILIAR_DIRS) {
-    await scanSkillsDir(path.join(workspaceRoot, familiar, "skills"), familiar, skills);
+  // 2. Per-familiar skills resolved the same way the daemon resolves familiar workspaces.
+  for (const familiar of await familiarIds()) {
+    await scanSkillsDir(path.join(await familiarWorkspace(familiar), "skills"), familiar, skills);
   }
 
   return NextResponse.json({ ok: true, skills });

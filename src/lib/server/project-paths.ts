@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { covenWorkspaceRoot } from "@/lib/coven-paths";
 
 function realpathOrResolve(value: string): string {
   const resolved = path.resolve(value);
@@ -16,7 +16,7 @@ const ALLOWED_ROOTS = Array.from(
     [
       process.env.WORKSPACE_ROOT,
       process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
-      path.join(homedir(), ".openclaw"),
+      covenWorkspaceRoot(),
       process.cwd(),
     ]
       .filter((value): value is string => Boolean(value))

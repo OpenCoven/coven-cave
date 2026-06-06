@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join as joinPath } from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import { bindingFor, loadConfig, recordSessionFamiliar } from "@/lib/cave-config";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { familiarWorkspace } from "@/lib/coven-paths";
 import {
   type ChatTurn,
   loadConversation,
@@ -74,13 +74,15 @@ async function resolveCwd(requested?: string): Promise<string> {
   return homedir();
 }
 
-/** Resolve the familiar's OpenClaw workspace dir (~/.openclaw/workspace/<id>).
- *  Falls back to undefined if the dir doesn't exist so callers can skip --cwd.
+/** Resolve the familiar's Coven workspace dir.
+ *  Uses ~/.coven/familiars.toml workspace when present, otherwise
+ *  ~/.coven/familiars/<id>. Falls back to undefined if the dir doesn't exist
+ *  so callers can skip --cwd.
  */
 async function resolveFamiliarWorkspace(familiarId: string): Promise<string | undefined> {
   // Guard against path traversal: familiar IDs should be simple slugs.
   if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
-  const candidate = joinPath(homedir(), ".openclaw", "workspace", familiarId);
+  const candidate = await familiarWorkspace(familiarId);
   try {
     const s = await stat(candidate);
     if (s.isDirectory()) return candidate;
