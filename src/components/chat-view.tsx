@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
