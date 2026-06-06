@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+import { PluginCard } from "@/components/plugin-card";
+import { SkillCard } from "@/components/skill-card";
+import {
+  SkillDetailDrawer,
+  type SkillEntry as SkillEntryWithDetail,
+  type FamiliarForSkill,
+} from "@/components/skill-detail-drawer";
 
 type Tab = "plugins" | "skills" | "capabilities";
 type FilterChip = "curated" | "shared" | "created" | "more";
@@ -50,6 +57,7 @@ type Props = {
   onCreateReminder?: () => void;
   onCreateSkill?: () => void;
   onCreatePlugin?: () => void;
+  familiars?: FamiliarForSkill[];
 };
 
 const HARNESS_TAGLINE: Record<string, string> = {
@@ -68,7 +76,7 @@ const HARNESS_TAGLINE: Record<string, string> = {
 // so harness initial tiles all read on the same hairline-card palette.
 const HARNESS_TILE = "bg-muted text-foreground";
 
-export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCreatePlugin }: Props) {
+export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
   const [tab, setTab] = useState<Tab>("plugins");
   const [filter, setFilter] = useState<FilterChip>("curated");
   const [query, setQuery] = useState("");
@@ -83,6 +91,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [capabilitiesRefresh, setCapabilitiesRefresh] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<SkillEntryWithDetail | null>(null);
   const createRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -239,9 +248,18 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[860px] px-3 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-12">
           {/* Headline */}
-          <h1 className="text-center text-[26px] font-normal tracking-tight text-foreground sm:text-[34px]">
-            Make Cave work your way
-          </h1>
+          <div className="text-center">
+            <h1 className="text-[26px] font-normal tracking-tight text-[var(--text-primary)] sm:text-[34px]">
+              Make Cave work your way
+            </h1>
+            <p className="mt-2 text-[13px] text-[var(--text-muted)]">
+              {tab === "plugins"
+                ? "Connect harnesses and tools to extend what your familiars can do."
+                : tab === "skills"
+                  ? "Skills teach your familiars how to handle specific tasks consistently."
+                  : "What each harness knows about — its instructions, skills, and plugins."}
+            </p>
+          </div>
 
           {/* Filter row */}
           <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -300,13 +318,18 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
             {tab === "plugins" ? (
               <PluginGrid items={filteredHarnesses} loaded={harnessesLoaded} onOpenChat={onOpenChat} />
             ) : tab === "skills" ? (
-              <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} />
+              <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
             ) : (
               <CapabilitiesView items={capabilities.filter(c => !query || c.harness_id.toLowerCase().includes(query.toLowerCase()))} loaded={capabilitiesLoaded} error={capabilitiesError} onRefresh={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }} />
             )}
           </section>
         </div>
       </div>
+      <SkillDetailDrawer
+        skill={selectedSkill}
+        familiars={familiars}
+        onClose={() => setSelectedSkill(null)}
+      />
     </div>
   );
 }
@@ -332,59 +355,9 @@ function PluginGrid({
   }
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {items.map((h) => {
-        const initial = (h.label.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();
-        const tagline = HARNESS_TAGLINE[h.id] ?? `Run ${h.label} from a familiar`;
-        return (
-          <button
-            key={h.id}
-            onClick={h.installed && h.chatSupported ? onOpenChat : undefined}
-            disabled={!h.installed}
-            title={
-              !h.installed
-                ? `Install \`${h.binary}\` on your PATH to enable`
-                : h.chatSupported
-                  ? `Open a chat with ${h.label}`
-                  : `${h.label} is installed but native chat isn't wired yet`
-            }
-            className={`group flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors ${
-              h.installed
-                ? "hover:border-border-strong hover:bg-muted"
-                : "cursor-default opacity-70"
-            }`}
-          >
-            <span
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[15px] font-semibold ${HARNESS_TILE}`}
-            >
-              {initial}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-foreground">
-                {h.label}
-              </span>
-              <span className="block truncate text-[12px] text-muted-foreground">{tagline}</span>
-            </span>
-            <span className="shrink-0">
-              {h.installed ? (
-                <span
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-foreground"
-                  title="Installed"
-                  aria-label="Installed"
-                >
-                  <Icon name="ph:check-bold" />
-                </span>
-              ) : (
-                <span
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:text-foreground"
-                  title="Add"
-                >
-                  +
-                </span>
-              )}
-            </span>
-          </button>
-        );
-      })}
+      {items.map((h) => (
+        <PluginCard key={h.id} harness={h} onLaunch={onOpenChat} />
+      ))}
     </div>
   );
 }
@@ -393,10 +366,12 @@ function SkillGrid({
   items,
   loaded,
   error,
+  onSelect,
 }: {
   items: SkillEntry[];
   loaded: boolean;
   error: string | null;
+  onSelect: (s: SkillEntryWithDetail) => void;
 }) {
   if (!loaded) {
     return <GridSkeleton />;
@@ -417,33 +392,13 @@ function SkillGrid({
   }
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {items.map((s) => {
-        const initial = (s.name.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();
-        const tagline = [s.owner, s.category].filter(Boolean).join(" · ") || "Skill";
-        return (
-          <div
-            key={s.id}
-            className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
-          >
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[15px] font-semibold ${HARNESS_TILE}`}>
-              {initial}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-foreground">
-                {s.name}
-              </span>
-              <span className="block truncate text-[12px] text-muted-foreground">{tagline}</span>
-            </span>
-            <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-foreground"
-              title="Available"
-              aria-label="Available"
-            >
-              <Icon name="ph:check-bold" />
-            </span>
-          </div>
-        );
-      })}
+      {items.map((s) => (
+        <SkillCard
+          key={s.id}
+          skill={s}
+          onClick={() => onSelect(s)}
+        />
+      ))}
     </div>
   );
 }

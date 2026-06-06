@@ -732,6 +732,7 @@ export function Workspace() {
           setMode("chats");
           setTimeout(() => routerRef.current?.newChat(), 0);
         }}
+        familiars={familiars.map((f) => ({ id: f.id, display_name: f.display_name }))}
       />
     )}
     </div>
