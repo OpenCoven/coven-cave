@@ -30,6 +30,8 @@ export type SessionSummary = {
   model?: string;
   /** Channel the session is on. */
   channel?: string;
+  /** Harness/runner the session is attached to (e.g. "telegram", "cron", "direct"). */
+  harness?: string;
 };
 
 export type FamiliarCard = {

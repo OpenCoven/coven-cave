@@ -4,12 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { FamiliarCard, CovenStatusResponse } from "@/lib/coven-status-types";
 import { FamiliarStatusCard } from "@/components/familiar-status-card";
 
-// Coven Floor — live status board showing all familiars.
-// Each card shows derived status, current task, and session activity.
-// Cards can be expanded to see the session tree.
-//
-// Refreshes every 15 seconds. Sits inside the "calls" route as the
-// first tab alongside the Delegations timeline.
+// Coven Floor — live session traceability board.
+// Two-column grid; slim toolbar; pulsing "live" indicator.
+// Refreshes every 15 seconds.
 
 export function CovenFloor() {
   const [familiars, setFamiliars] = useState<FamiliarCard[]>([]);
@@ -48,22 +45,34 @@ export function CovenFloor() {
 
   return (
     <div className="flex h-full flex-col bg-[var(--bg-base)]">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-5 py-3">
-        <div>
-          <h2 className="text-sm font-medium text-[var(--text-primary)]">
-            The Floor
-          </h2>
-          <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-            What everyone&apos;s working on right now.
-          </p>
+      {/* Error banner */}
+      {error && (
+        <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-1.5 text-[11px] text-amber-200">
+          {error}
         </div>
-        <div className="flex items-center gap-2">
+      )}
+
+      {/* Cards area */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        {/* Slim toolbar */}
+        <div className="mb-3 flex items-center justify-end gap-2">
+          {/* Live indicator */}
+          <span className="flex items-center gap-1.5">
+            <span className="relative inline-flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            <span className="text-[10px] text-[var(--text-muted)]">live</span>
+          </span>
+
+          {/* Computed at */}
           {computedAt && (
             <span className="text-[10px] text-[var(--text-muted)]">
               updated {new Date(computedAt).toLocaleTimeString()}
             </span>
           )}
+
+          {/* Refresh button */}
           <button
             type="button"
             onClick={() => void load()}
@@ -73,17 +82,8 @@ export function CovenFloor() {
             ↺
           </button>
         </div>
-      </div>
 
-      {/* Error banner */}
-      {error && (
-        <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-1.5 text-[11px] text-amber-200">
-          {error}
-        </div>
-      )}
-
-      {/* Cards */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {/* Content */}
         {loading && familiars.length === 0 ? (
           <div className="flex items-center justify-center py-16 text-sm text-[var(--text-muted)]">
             Loading…
@@ -93,7 +93,7 @@ export function CovenFloor() {
             No familiar activity found.
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {familiars.map((card) => (
               <FamiliarStatusCard
                 key={card.id}
