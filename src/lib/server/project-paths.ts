@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 
 function realpathOrResolve(value: string): string {
@@ -15,6 +16,7 @@ const ALLOWED_ROOTS = Array.from(
     [
       process.env.WORKSPACE_ROOT,
       process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
+      path.join(homedir(), ".openclaw"),
       process.cwd(),
     ]
       .filter((value): value is string => Boolean(value))
@@ -32,4 +34,3 @@ export function resolveAllowedProjectPath(value: string): string | null {
     ? candidate
     : null;
 }
-
