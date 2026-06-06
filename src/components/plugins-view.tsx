@@ -34,6 +34,9 @@ type SkillEntry = {
   name: string;
   owner?: string;
   category?: string;
+  description?: string;
+  familiar?: string;
+  path?: string;
   tags?: string[];
   score?: number;
   source?: "local" | "daemon";
@@ -105,6 +108,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
     const next = !role.active;
     // Optimistic update
     setRoles(prev => prev.map(r => r.id === role.id && r.familiar === role.familiar ? { ...r, active: next } : r));
+    setSelectedRole(prev => prev && prev.id === role.id && prev.familiar === role.familiar ? { ...prev, active: next } : prev);
     try {
       const res = await fetch('/api/roles', {
         method: 'POST',
@@ -115,6 +119,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
     } catch {
       // Rollback on error
       setRoles(prev => prev.map(r => r.id === role.id && r.familiar === role.familiar ? { ...r, active: role.active } : r));
+      setSelectedRole(prev => prev && prev.id === role.id && prev.familiar === role.familiar ? role : prev);
     }
   };
   const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
@@ -123,6 +128,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
   const [capabilitiesRefresh, setCapabilitiesRefresh] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SkillEntryWithDetail | null>(null);
+  const [selectedRole, setSelectedRole] = useState<RoleEntry | null>(null);
   const createRef = useRef<HTMLDivElement | null>(null);
 
   // Reset query when switching tabs
@@ -130,6 +136,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
     if (t === tab) return;
     setTab(t);
     setQuery("");
+    setSelectedRole(null);
   };
 
   useEffect(() => {
@@ -184,14 +191,50 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
       let cancelled = false;
       void (async () => {
         try {
-          const res = await fetch("/api/roles", { cache: "no-store" });
-          const json = await res.json();
+          const [rolesRes, daemonRes, localRes, capabilitiesRes] = await Promise.allSettled([
+            fetch("/api/roles", { cache: "no-store" }).then(r => r.json()),
+            fetch("/api/skills", { cache: "no-store" }).then(r => r.json()),
+            fetch("/api/skills/local", { cache: "no-store" }).then(r => r.json()),
+            fetch("/api/capabilities", { cache: "no-store" }).then(r => r.json()),
+          ]);
           if (!cancelled) {
-            if (json.ok) {
-              setRoles(json.roles ?? []);
+            if (rolesRes.status === "fulfilled" && rolesRes.value.ok) {
+              setRoles(rolesRes.value.roles ?? []);
               setRolesError(null);
             } else {
-              setRolesError(json.error ?? "failed to load roles");
+              setRolesError(
+                rolesRes.status === "fulfilled"
+                  ? rolesRes.value.error ?? "failed to load roles"
+                  : rolesRes.reason instanceof Error
+                    ? rolesRes.reason.message
+                    : "failed to load roles",
+              );
+            }
+
+            const daemonSkills: SkillEntry[] = daemonRes.status === "fulfilled" && daemonRes.value.ok
+              ? (daemonRes.value.skills ?? []).map((s: SkillEntry) => ({ ...s, source: "daemon" as const }))
+              : [];
+            const localSkills: SkillEntry[] = localRes.status === "fulfilled" && localRes.value.ok
+              ? (localRes.value.skills ?? []).map((s: SkillEntry) => ({ ...s, source: "local" as const }))
+              : [];
+            if (daemonSkills.length > 0 || localSkills.length > 0) {
+              const seen = new Set<string>();
+              const merged: SkillEntry[] = [];
+              for (const s of [...localSkills, ...daemonSkills]) {
+                if (!seen.has(s.id)) {
+                  seen.add(s.id);
+                  merged.push(s);
+                }
+              }
+              setSkills(merged);
+              setSkillsLoaded(true);
+              setSkillsError(null);
+            }
+
+            if (capabilitiesRes.status === "fulfilled" && capabilitiesRes.value.ok) {
+              setCapabilities(capabilitiesRes.value.harness_capabilities ?? []);
+              setCapabilitiesLoaded(true);
+              setCapabilitiesError(null);
             }
           }
         } catch (err) {
@@ -256,6 +299,29 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
       r.skills.some(s => s.toLowerCase().includes(q))
     );
   }, [roles, query]);
+
+  const skillsById = useMemo(() => {
+    const map = new Map<string, SkillEntry>();
+    for (const skill of skills) {
+      map.set(skill.id.toLowerCase(), skill);
+      map.set(skill.name.toLowerCase(), skill);
+    }
+    return map;
+  }, [skills]);
+
+  const capabilitiesByPlugin = useMemo(() => {
+    const map = new Map<string, { harness: string; plugin: HarnessCapabilityManifest["plugins"][number] }[]>();
+    for (const manifest of capabilities) {
+      for (const plugin of manifest.plugins) {
+        for (const key of [plugin.id, plugin.name].map((value) => value.toLowerCase())) {
+          const list = map.get(key) ?? [];
+          list.push({ harness: manifest.harness_id, plugin });
+          map.set(key, list);
+        }
+      }
+    }
+    return map;
+  }, [capabilities]);
 
   const installedHarnessCount = harnesses.filter((h) => h.installed).length;
   const pageMeta =
@@ -428,7 +494,22 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
             ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
             ) : tab === "roles" ? (
-              <RoleGrid items={filteredRoles} loaded={rolesLoaded} error={rolesError} onToggle={handleRoleToggle} />
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+                <RoleGrid
+                  items={filteredRoles}
+                  loaded={rolesLoaded}
+                  error={rolesError}
+                  selectedRole={selectedRole}
+                  onSelect={setSelectedRole}
+                  onToggle={handleRoleToggle}
+                />
+                <RoleCapabilityMap
+                  role={selectedRole}
+                  skillsById={skillsById}
+                  capabilitiesByPlugin={capabilitiesByPlugin}
+                  capabilitiesLoaded={capabilitiesLoaded}
+                />
+              </div>
             ) : (
               <CapabilitiesView
                 items={capabilities.filter((c) => {
@@ -526,11 +607,15 @@ function RoleGrid({
   items,
   loaded,
   error,
+  selectedRole,
+  onSelect,
   onToggle,
 }: {
   items: RoleEntry[];
   loaded: boolean;
   error: string | null;
+  selectedRole: RoleEntry | null;
+  onSelect: (role: RoleEntry) => void;
   onToggle: (role: RoleEntry) => Promise<void>;
 }) {
   if (!loaded) return <GridSkeleton />;
@@ -549,15 +634,31 @@ function RoleGrid({
     );
   }
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2">
       {items.map((r) => (
-        <RoleCard key={r.id} role={r} onToggle={onToggle} />
+        <RoleCard
+          key={`${r.familiar}:${r.id}`}
+          role={r}
+          selected={selectedRole?.id === r.id && selectedRole?.familiar === r.familiar}
+          onSelect={onSelect}
+          onToggle={onToggle}
+        />
       ))}
     </div>
   );
 }
 
-function RoleCard({ role, onToggle }: { role: RoleEntry; onToggle: (role: RoleEntry) => Promise<void> }) {
+function RoleCard({
+  role,
+  selected,
+  onSelect,
+  onToggle,
+}: {
+  role: RoleEntry;
+  selected: boolean;
+  onSelect: (role: RoleEntry) => void;
+  onToggle: (role: RoleEntry) => Promise<void>;
+}) {
   const [toggling, setToggling] = React.useState(false);
   const chips = [
     role.skills.length > 0 && `${role.skills.length} skill${role.skills.length !== 1 ? "s" : ""}`,
@@ -573,10 +674,26 @@ function RoleCard({ role, onToggle }: { role: RoleEntry; onToggle: (role: RoleEn
   };
 
   return (
-    <div className={`group flex min-w-0 items-start gap-3 rounded-xl border px-4 py-3 transition-colors ${role.active ? "border-[var(--accent)] bg-[var(--accent-subtle,var(--bg-card))]" : "border-[var(--border-hairline)] bg-[var(--bg-card)] hover:bg-muted/40"}`}>
-      {/* Emoji / icon */}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[18px]">
-        {role.emoji ?? "📦"}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(role)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(role);
+        }
+      }}
+      className={`group flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-colors ${
+        selected
+          ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/10"
+          : role.active
+            ? "border-[var(--accent)] bg-[var(--accent-subtle,var(--bg-card))]"
+            : "border-[var(--border-hairline)] bg-[var(--bg-card)] hover:bg-muted/40"
+      }`}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-[var(--bg-raised)] text-[13px] font-semibold text-[var(--text-primary)]">
+        {role.name.slice(0, 2).toUpperCase()}
       </span>
       {/* Content */}
       <div className="min-w-0 flex-1">
@@ -587,6 +704,9 @@ function RoleCard({ role, onToggle }: { role: RoleEntry; onToggle: (role: RoleEn
           )}
           {role.active && (
             <span className="ml-auto shrink-0 rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-medium text-white">active</span>
+          )}
+          {selected && !role.active && (
+            <span className="ml-auto shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">selected</span>
           )}
         </div>
         {role.description && (
@@ -612,6 +732,178 @@ function RoleCard({ role, onToggle }: { role: RoleEntry; onToggle: (role: RoleEn
         <Icon name={toggling ? "ph:arrows-clockwise" : role.active ? "ph:toggle-right-bold" : "ph:toggle-left-bold"} width={20} height={20} />
       </button>
     </div>
+  );
+}
+
+function RoleCapabilityMap({
+  role,
+  skillsById,
+  capabilitiesByPlugin,
+  capabilitiesLoaded,
+}: {
+  role: RoleEntry | null;
+  skillsById: Map<string, SkillEntry>;
+  capabilitiesByPlugin: Map<string, { harness: string; plugin: HarnessCapabilityManifest["plugins"][number] }[]>;
+  capabilitiesLoaded: boolean;
+}) {
+  if (!role) {
+    return (
+      <aside className="rounded-xl border border-dashed border-border bg-card/60 px-4 py-5 lg:sticky lg:top-4">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Icon name="ph:info" width={16} />
+          </span>
+          <div>
+            <p className="text-[13px] font-medium text-foreground">Select a role</p>
+            <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+              Choose a role to inspect its connected skills, plugins, workflows, and runtime capabilities.
+            </p>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  const connectedSkills = role.skills.map((id) => {
+    const skill = skillsById.get(id.toLowerCase());
+    return {
+      id,
+      title: skill?.name ?? id,
+      detail: skill?.description ?? skill?.path ?? "Declared by this role",
+      status: skill ? skill.source ?? "connected" : "declared",
+    };
+  });
+
+  const connectedPlugins = role.plugins.map((id) => {
+    const matches = capabilitiesByPlugin.get(id.toLowerCase()) ?? [];
+    return {
+      id,
+      title: id,
+      detail: matches.length > 0
+        ? matches.map((m) => `${m.harness}${m.plugin.enabled ? "" : " disabled"}`).join(" · ")
+        : capabilitiesLoaded
+          ? "Declared by this role"
+          : "Capability scan pending",
+      status: matches.length > 0 ? "connected" : "declared",
+    };
+  });
+
+  const workflowItems = role.workflows.map((id) => ({
+    id,
+    title: id,
+    detail: "Role workflow",
+    status: "declared",
+  }));
+
+  const capabilityItems = [
+    ...role.tools.map((id) => ({
+      id,
+      title: id,
+      detail: "Tool or command capability",
+      status: "declared",
+    })),
+    ...role.plugins.flatMap((id) => {
+      const matches = capabilitiesByPlugin.get(id.toLowerCase()) ?? [];
+      return matches.map((match) => ({
+        id: `${id}:${match.harness}`,
+        title: match.plugin.name,
+        detail: `${match.harness} plugin · ${match.plugin.kind}${match.plugin.command ? ` · ${match.plugin.command}` : ""}`,
+        status: match.plugin.enabled ? "connected" : "disabled",
+      }));
+    }),
+  ];
+
+  return (
+    <aside className="rounded-xl border border-border bg-card lg:sticky lg:top-4">
+      <div className="border-b border-border px-4 py-4">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-[13px] font-semibold text-foreground">
+            {role.name.slice(0, 2).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-[14px] font-semibold text-foreground">{role.name}</h3>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${role.active ? "bg-emerald-400/15 text-emerald-200" : "bg-muted text-muted-foreground"}`}>
+                {role.active ? "active" : "available"}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">{role.familiar}</p>
+          </div>
+        </div>
+        {role.description ? (
+          <p className="mt-3 text-[12px] leading-5 text-muted-foreground">{role.description}</p>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-2 divide-x divide-y divide-border text-center text-[11px] sm:grid-cols-4 lg:grid-cols-2">
+        <RoleMetric label="Skills" value={role.skills.length} />
+        <RoleMetric label="Plugins" value={role.plugins.length} />
+        <RoleMetric label="Workflows" value={role.workflows.length} />
+        <RoleMetric label="Capabilities" value={role.tools.length + role.plugins.length} />
+      </div>
+
+      <div className="space-y-4 px-4 py-4">
+        <RoleRelationSection title="Connected skills" icon="ph:sparkle" empty="No skills declared by this role." items={connectedSkills} />
+        <RoleRelationSection title="Plugins" icon="ph:plug" empty="No plugins declared by this role." items={connectedPlugins} />
+        <RoleRelationSection title="Workflows" icon="ph:list-bullets" empty="No workflows declared by this role." items={workflowItems} />
+        <RoleRelationSection title="Capabilities" icon="ph:lightning-bold" empty="No tools or runtime capabilities declared yet." items={capabilityItems} />
+      </div>
+    </aside>
+  );
+}
+
+function RoleMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="px-3 py-3">
+      <p className="text-[15px] font-semibold tabular-nums text-foreground">{value}</p>
+      <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function RoleRelationSection({
+  title,
+  icon,
+  empty,
+  items,
+}: {
+  title: string;
+  icon: IconName;
+  empty: string;
+  items: { id: string; title: string; detail: string; status: string }[];
+}) {
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-2">
+        <Icon name={icon} width={13} className="text-muted-foreground" />
+        <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{title}</h4>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-border bg-background/40 px-3 py-2 text-[11px] text-muted-foreground">
+          {empty}
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((item) => (
+            <li key={item.id} className="rounded-lg border border-border bg-background/40 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">{item.title}</p>
+                <span className={`shrink-0 rounded-full px-1.5 py-px text-[9px] uppercase tracking-wide ${
+                  item.status === "connected" || item.status === "local" || item.status === "daemon"
+                    ? "bg-emerald-400/15 text-emerald-200"
+                    : item.status === "disabled"
+                      ? "bg-amber-400/15 text-amber-200"
+                      : "bg-muted text-muted-foreground"
+                }`}>
+                  {item.status}
+                </span>
+              </div>
+              <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{item.detail}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
