@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { patchTomlAutomationFields } from "./codex-automations.ts";
+import { patchTomlAutomationFields, patchTomlStatus } from "./codex-automations.ts";
 
 const original = `version = 1
 id = "ios-application-priority-audit"
@@ -41,3 +41,25 @@ assert.match(patched, /^tags = \["ios", "priority", "audit"\]/m);
 assert.ok(patched.includes("prompt = '''Daily task: iOS Application Priority Audit\n\nLook for drift.\n'''"));
 assert.ok(!patched.includes("Old prompt"));
 assert.ok(patched.includes('skill_path = "/Users/buns/.coven/skills/coven-task-manager"'));
+
+const oddlyFormatted = `version = 1
+  status = 'PAUSED' # keep old comment
+  prompt = '''Old prompt
+still old
+'''
+`;
+
+const patchedOdd = patchTomlAutomationFields(oddlyFormatted, {
+  status: "ACTIVE",
+  prompt: "New prompt",
+});
+
+assert.match(patchedOdd, /^  status = "ACTIVE"$/m);
+assert.ok(patchedOdd.includes("  prompt = '''New prompt\n'''"));
+assert.ok(!patchedOdd.includes("still old"));
+assert.equal((patchedOdd.match(/^\s*status\s*=/gm) ?? []).length, 1);
+assert.equal((patchedOdd.match(/^\s*prompt\s*=/gm) ?? []).length, 1);
+
+const bareStatus = patchTomlStatus("status = PAUSED # old\n", "ACTIVE");
+assert.match(bareStatus, /^status = "ACTIVE"$/m);
+assert.equal((bareStatus.match(/^\s*status\s*=/gm) ?? []).length, 1);

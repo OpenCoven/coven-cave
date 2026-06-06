@@ -3,7 +3,7 @@
  *
  * TOML is handled with a minimal line-level approach (no external dep):
  *   - Reads key = "value" / key = 'value' / key = BARE pairs.
- *   - Patching sets exactly `status = "ACTIVE"` or `status = "PAUSED"` inline.
+ *   - Patching replaces recognized top-level keys inline.
  *   - Multiline values (''') are treated as opaque blobs and preserved.
  *
  * Files live at:  ~/.codex/automations/<id>/automation.toml
@@ -12,39 +12,14 @@
 import { readdir, readFile, writeFile, access } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import type {
+  AutomationStatus,
+  CodexAutomation,
+  CodexAutomationPatch,
+  CodexAutomationRecord,
+} from "./codex-automations-types";
 
-export type AutomationStatus = "ACTIVE" | "PAUSED";
-
-export type CodexAutomation = {
-  id: string;
-  name: string;
-  kind: string;
-  status: AutomationStatus;
-  rrule: string | null;
-  model: string | null;
-  reasoningEffort: string | null;
-  executionEnvironment: string | null;
-  cwds: string[];
-  tags: string[];
-  prompt: string;
-  skillPath: string | null;
-  /** Parsed from rrule for display */
-  scheduleHuman: string;
-  tomlPath: string;
-};
-
-export type CodexAutomationPatch = {
-  name?: string;
-  prompt?: string;
-  status?: AutomationStatus;
-  rrule?: string;
-  model?: string;
-  reasoning_effort?: string;
-  execution_environment?: string;
-  cwds?: string[];
-  tags?: string[];
-  skill_path?: string;
-};
+export type { AutomationStatus, CodexAutomation, CodexAutomationPatch };
 
 const AUTOMATIONS_DIR = path.join(homedir(), ".codex", "automations");
 
@@ -57,7 +32,7 @@ function parseTomlString(raw: string): Record<string, string> {
   while (i < lines.length) {
     const line = lines[i];
     // Multiline literal string: key = '''content can start here
-    const mlMatch = line.match(/^(\w[\w-]*)\s*=\s*'''(.*)$/);
+    const mlMatch = line.match(/^\s*(\w[\w-]*)\s*=\s*'''(.*)$/);
     if (mlMatch) {
       const key = mlMatch[1];
       const first = mlMatch[2] ?? "";
@@ -83,7 +58,7 @@ function parseTomlString(raw: string): Record<string, string> {
       continue;
     }
     // Normal key = "value" or key = 'value' or key = bare
-    const match = line.match(/^(\w[\w-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(.*))$/);
+    const match = line.match(/^\s*(\w[\w-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(.*))$/);
     if (match) {
       const key = match[1];
       const val = match[2] !== undefined
@@ -167,12 +142,7 @@ function humanRrule(rrule: string | null): string {
 // ── Patch status in TOML preserving file structure ────────────────────────────
 
 export function patchTomlStatus(raw: string, newStatus: AutomationStatus): string {
-  const statusLine = /^status\s*=\s*"(ACTIVE|PAUSED)"/m;
-  if (statusLine.test(raw)) {
-    return raw.replace(statusLine, `status = "${newStatus}"`);
-  }
-  // Append if missing
-  return raw.trimEnd() + `\nstatus = "${newStatus}"\n`;
+  return patchTomlAutomationFields(raw, { status: newStatus });
 }
 
 function replaceTomlKey(raw: string, key: string, value: string): string {
@@ -181,19 +151,19 @@ function replaceTomlKey(raw: string, key: string, value: string): string {
   let replaced = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const keyMatch = line.match(/^(\w[\w-]*)\s*=/);
-    if (keyMatch?.[1] !== key) {
+    const keyMatch = line.match(/^(\s*)(\w[\w-]*)\s*=/);
+    if (keyMatch?.[2] !== key) {
       next.push(line);
       continue;
     }
 
-    next.push(`${key} = ${value}`);
+    next.push(`${keyMatch[1]}${key} = ${value}`);
     replaced = true;
 
-    if (/^\w[\w-]*\s*=\s*'''/.test(line) && !line.endsWith("'''")) {
+    if (/^\s*\w[\w-]*\s*=\s*'''/.test(line) && !line.trimEnd().endsWith("'''")) {
       while (i + 1 < lines.length) {
         i++;
-        if (lines[i].endsWith("'''")) break;
+        if (lines[i].trimEnd().endsWith("'''")) break;
       }
     }
   }
@@ -234,7 +204,27 @@ export function patchTomlAutomationFields(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function listCodexAutomations(): Promise<CodexAutomation[]> {
+export function toCodexAutomationPayload(auto: CodexAutomationRecord): CodexAutomation {
+  const { tomlPath: _tomlPath, ...payload } = auto;
+  return payload;
+}
+
+// Serialize read-modify-write sequences against automation TOMLs. Multiple
+// route handlers may patch the same file concurrently when the UI autosaves or
+// toggles status; the chain prevents last-writer-wins clobbering.
+declare global {
+  // eslint-disable-next-line no-var
+  var __codexAutomationWriteChain: Promise<unknown> | undefined;
+}
+
+function withCodexAutomationLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = globalThis.__codexAutomationWriteChain ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  globalThis.__codexAutomationWriteChain = next.catch(() => undefined);
+  return next;
+}
+
+export async function listCodexAutomations(): Promise<CodexAutomationRecord[]> {
   let entries: string[];
   try {
     entries = await readdir(AUTOMATIONS_DIR);
@@ -242,7 +232,7 @@ export async function listCodexAutomations(): Promise<CodexAutomation[]> {
     return [];
   }
 
-  const results: CodexAutomation[] = [];
+  const results: CodexAutomationRecord[] = [];
 
   for (const entry of entries.sort()) {
     const tomlPath = path.join(AUTOMATIONS_DIR, entry, "automation.toml");
@@ -280,7 +270,7 @@ export async function listCodexAutomations(): Promise<CodexAutomation[]> {
   return results;
 }
 
-export async function getCodexAutomation(id: string): Promise<CodexAutomation | null> {
+export async function getCodexAutomation(id: string): Promise<CodexAutomationRecord | null> {
   const list = await listCodexAutomations();
   return list.find((a) => a.id === id) ?? null;
 }
@@ -288,27 +278,22 @@ export async function getCodexAutomation(id: string): Promise<CodexAutomation | 
 export async function setCodexAutomationStatus(
   id: string,
   status: AutomationStatus,
-): Promise<CodexAutomation | null> {
-  const auto = await getCodexAutomation(id);
-  if (!auto) return null;
-
-  const raw = await readFile(auto.tomlPath, "utf8");
-  const patched = patchTomlStatus(raw, status);
-  await writeFile(auto.tomlPath, patched, "utf8");
-
-  return { ...auto, status };
+): Promise<CodexAutomationRecord | null> {
+  return updateCodexAutomation(id, { status });
 }
 
 export async function updateCodexAutomation(
   id: string,
   patch: CodexAutomationPatch,
-): Promise<CodexAutomation | null> {
-  const auto = await getCodexAutomation(id);
-  if (!auto) return null;
+): Promise<CodexAutomationRecord | null> {
+  return withCodexAutomationLock(async () => {
+    const auto = await getCodexAutomation(id);
+    if (!auto) return null;
 
-  const raw = await readFile(auto.tomlPath, "utf8");
-  const patched = patchTomlAutomationFields(raw, patch);
-  await writeFile(auto.tomlPath, patched, "utf8");
+    const raw = await readFile(auto.tomlPath, "utf8");
+    const patched = patchTomlAutomationFields(raw, patch);
+    await writeFile(auto.tomlPath, patched, "utf8");
 
-  return getCodexAutomation(id);
+    return getCodexAutomation(id);
+  });
 }

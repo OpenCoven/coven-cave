@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { listCodexAutomations } from "@/lib/codex-automations";
+import { listCodexAutomations, toCodexAutomationPayload } from "@/lib/codex-automations";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const automations = await listCodexAutomations();
+    const automations = (await listCodexAutomations()).map(toCodexAutomationPayload);
     return NextResponse.json({ ok: true, automations });
   } catch (err) {
     return NextResponse.json(

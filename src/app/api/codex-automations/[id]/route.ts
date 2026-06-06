@@ -3,6 +3,7 @@ import {
   type AutomationStatus,
   type CodexAutomationPatch,
   getCodexAutomation,
+  toCodexAutomationPayload,
   updateCodexAutomation,
 } from "@/lib/codex-automations";
 
@@ -10,16 +11,26 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+function isLocalOrigin(req: Request): boolean {
+  const host = req.headers.get("host") ?? "";
+  const bare = host.split(":")[0];
+  return bare === "127.0.0.1" || bare === "localhost" || bare === "[::1]";
+}
+
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
   const auto = await getCodexAutomation(id);
   if (!auto) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true, automation: auto });
+  return NextResponse.json({ ok: true, automation: toCodexAutomationPayload(auto) });
 }
 
 export async function PATCH(req: Request, { params }: Params) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
+
   const { id } = await params;
   let body: Record<string, unknown>;
   try {
@@ -84,5 +95,5 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!updated) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true, automation: updated });
+  return NextResponse.json({ ok: true, automation: toCodexAutomationPayload(updated) });
 }

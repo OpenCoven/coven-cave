@@ -5,38 +5,12 @@ import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
+import type {
+  AutomationStatus,
+  CodexAutomation,
+  CodexAutomationPatch,
+} from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
-
-// ── Codex automation types (mirrored from lib/codex-automations.ts) ──────────
-type AutomationStatus = "ACTIVE" | "PAUSED";
-type CodexAutomation = {
-  id: string;
-  name: string;
-  kind: string;
-  status: AutomationStatus;
-  rrule: string | null;
-  model: string | null;
-  reasoningEffort: string | null;
-  executionEnvironment: string | null;
-  cwds: string[];
-  tags: string[];
-  prompt: string;
-  skillPath: string | null;
-  scheduleHuman: string;
-  tomlPath: string;
-};
-
-type CodexAutomationPatch = {
-  name?: string;
-  prompt?: string;
-  status?: AutomationStatus;
-  rrule?: string;
-  model?: string;
-  reasoning_effort?: string;
-  execution_environment?: string;
-  cwds?: string[];
-  tags?: string[];
-};
 
 // AutomationsView — redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -811,6 +785,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
     if (!selectedCodex) return;
     const fresh = codexAutos.find((a) => a.id === selectedCodex.id);
     if (fresh) setSelectedCodex(fresh);
+    else setSelectedCodex(null);
   }, [codexAutos, selectedCodex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const famById = useMemo(() => {
