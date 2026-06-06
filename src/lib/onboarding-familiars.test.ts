@@ -34,3 +34,23 @@ assert.match(toml, /model = "riley"/);
 assert.match(toml, /openclaw_agent = "riley"/);
 
 assert.equal(normalizeFamiliarDraft({ displayName: "Cody", openclawAgentId: "cody" }).id, "cody");
+
+const localDraft = normalizeFamiliarDraft({
+  displayName: "Codex Local",
+  role: "Code",
+  harness: "codex",
+  model: "local-codex",
+});
+
+assert.deepEqual(localDraft, {
+  id: "codex-local",
+  displayName: "Codex Local",
+  role: "Code",
+  description: "",
+  glyph: "ph:sparkle-fill",
+  harness: "codex",
+  model: "local-codex",
+  openclawAgentId: undefined,
+});
+
+assert.equal(normalizeFamiliarDraft({ displayName: "Solo" }).harness, "codex");

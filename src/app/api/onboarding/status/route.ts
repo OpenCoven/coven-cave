@@ -6,6 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
+import { covenSpawnEnv } from "@/lib/coven-bin";
+import { adapterSetupState, COMPATIBILITY_ADAPTERS, type AdapterReport } from "@/lib/harness-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,19 +17,43 @@ const execFileAsync = promisify(execFile);
 type Step = { ok: boolean; detail?: string; hint?: string };
 
 async function checkCovenCli(): Promise<Step> {
-  const command = process.platform === "win32" ? "where" : "command";
-  const args = process.platform === "win32" ? ["coven"] : ["-v", "coven"];
-  try {
-    const { stdout } = await execFileAsync(command, args, { timeout: 1500 });
-    const found = stdout.trim();
-    if (found) return { ok: true, detail: found };
-  } catch {
-    /* not found */
-  }
+  const found = await commandPath("coven");
+  if (found) return { ok: true, detail: found };
   return {
     ok: false,
     hint: "Install the coven CLI from OpenCoven/coven, make sure it is on PATH, then re-check.",
   };
+}
+
+async function commandPath(binary: string): Promise<string | null> {
+  const command = process.platform === "win32" ? "where" : "which";
+  try {
+    const { stdout } = await execFileAsync(command, [binary], { env: covenSpawnEnv(), timeout: 1500 });
+    return stdout.trim().split(/\r?\n/)[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function checkHarnessAdapters(): Promise<Step> {
+  const reports: AdapterReport[] = await Promise.all(
+    COMPATIBILITY_ADAPTERS.map(async (adapter) => {
+      const found = await commandPath(adapter.binary);
+      return {
+        id: adapter.id,
+        label: adapter.label,
+        binary: adapter.binary,
+        chatSupported: adapter.chatSupported,
+        installed: !!found,
+        path: found,
+        version: null,
+        installHint: adapter.installHint,
+        source: adapter.source,
+        manifestPath: null,
+      };
+    }),
+  );
+  return adapterSetupState(reports);
 }
 
 async function checkCovenHome(): Promise<Step> {
@@ -66,7 +92,7 @@ async function checkBinding(familiarsAvailable: boolean): Promise<Step> {
   const config = await loadConfig();
   const hasDefaults = !!config.defaults.harness && !!config.defaults.model;
   if (!hasDefaults) {
-    return { ok: false, hint: "Connect an OpenClaw agent so Cave can create a familiar binding." };
+    return { ok: false, hint: "Create a local Codex/Claude familiar or connect an OpenClaw agent." };
   }
   if (!familiarsAvailable) {
     return { ok: false, hint: "Bindings set but no familiars to bind." };
@@ -81,11 +107,13 @@ export async function GET() {
     checkDaemon(),
     checkFamiliars(),
   ]);
+  const adapters = await checkHarnessAdapters();
   const binding = await checkBinding(familiarsRes.count > 0);
 
   const steps = {
     covenCli,
     covenHome,
+    adapters,
     daemon,
     familiars: familiarsRes.step,
     binding,

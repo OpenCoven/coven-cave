@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { COMPATIBILITY_ADAPTERS, mergeAdapterReports, type AdapterReport, type CovenAdapterSummary } from "@/lib/harness-adapters";
+import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,18 +18,6 @@ type HarnessSpec = {
   versionArgs?: string[];
 };
 
-const HARNESSES: HarnessSpec[] = [
-  { id: "codex", label: "Codex", binary: "codex", chatSupported: true },
-  { id: "claude", label: "Claude Code", binary: "claude", chatSupported: true, versionArgs: ["--version"] },
-  { id: "openclaw", label: "OpenClaw", binary: "openclaw", chatSupported: false },
-  { id: "copilot", label: "GitHub Copilot", binary: "copilot", chatSupported: false },
-  { id: "opencode", label: "OpenCode", binary: "opencode", chatSupported: false },
-  { id: "gemini", label: "Gemini CLI", binary: "gemini", chatSupported: false },
-  { id: "hermes", label: "Hermes", binary: "hermes", chatSupported: false },
-  { id: "openhands", label: "OpenHands", binary: "openhands", chatSupported: false },
-  { id: "aider", label: "Aider", binary: "aider", chatSupported: false },
-];
-
 type HarnessReport = HarnessSpec & {
   installed: boolean;
   path: string | null;
@@ -36,7 +26,8 @@ type HarnessReport = HarnessSpec & {
 
 function which(binary: string): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = spawn("/usr/bin/which", [binary], { stdio: ["ignore", "pipe", "ignore"] });
+    const command = process.platform === "win32" ? "where" : "which";
+    const child = spawn(command, [binary], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.on("close", (code) => resolve(code === 0 ? out.trim() || null : null));
@@ -46,7 +37,7 @@ function which(binary: string): Promise<string | null> {
 
 function probeVersion(binary: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -65,9 +56,35 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
   });
 }
 
+function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
+  return new Promise((resolve) => {
+    const child = spawn(covenBin(), ["adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    const t = setTimeout(() => {
+      child.kill("SIGTERM");
+      resolve([]);
+    }, 3000);
+    child.stdout.on("data", (d) => (out += d.toString()));
+    child.on("close", (code) => {
+      clearTimeout(t);
+      if (code !== 0) return resolve([]);
+      try {
+        const parsed = JSON.parse(out);
+        resolve(Array.isArray(parsed) ? parsed as CovenAdapterSummary[] : []);
+      } catch {
+        resolve([]);
+      }
+    });
+    child.on("error", () => {
+      clearTimeout(t);
+      resolve([]);
+    });
+  });
+}
+
 export async function GET() {
   const reports: HarnessReport[] = await Promise.all(
-    HARNESSES.map(async (h) => {
+    COMPATIBILITY_ADAPTERS.map(async (h) => {
       const path = await which(h.binary);
       if (!path) {
         return { ...h, installed: false, path: null, version: null };
@@ -76,5 +93,7 @@ export async function GET() {
       return { ...h, installed: true, path, version };
     }),
   );
-  return NextResponse.json({ ok: true, harnesses: reports });
+  const covenReports = await loadCovenAdapterSummaries();
+  const harnesses: AdapterReport[] = mergeAdapterReports(reports, covenReports);
+  return NextResponse.json({ ok: true, harnesses });
 }

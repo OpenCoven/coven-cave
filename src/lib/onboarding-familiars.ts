@@ -44,7 +44,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   if (!id) throw new Error("Familiar id is required.");
 
   const openclawAgentId = slugify(cleanText(input.openclawAgentId));
-  const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "openclaw");
+  const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
   const model = cleanText(input.model) || openclawAgentId || id;
 
   return {

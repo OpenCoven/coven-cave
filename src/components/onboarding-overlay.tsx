@@ -13,10 +13,24 @@ type OnboardingStatus = {
   steps: {
     covenCli: Step;
     covenHome: Step;
+    adapters: Step;
     daemon: Step;
     familiars: Step;
     binding: Step;
   };
+};
+
+type HarnessReport = {
+  id: string;
+  label: string;
+  binary: string;
+  chatSupported: boolean;
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+  installHint: string;
+  source: string;
+  manifestPath: string | null;
 };
 
 type OpenClawAgent = {
@@ -122,6 +136,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [familiarDescription, setFamiliarDescription] = useState("");
   const [familiarGlyph, setFamiliarGlyph] = useState("ph:sparkle-fill");
   const [openclawAgents, setOpenclawAgents] = useState<OpenClawAgent[]>([]);
+  const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
+  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -164,16 +180,35 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   }, []);
 
+  const loadHarnesses = useCallback(async () => {
+    try {
+      const res = await fetch("/api/harnesses", { cache: "no-store" });
+      const json = await res.json() as { ok?: boolean; harnesses?: HarnessReport[] };
+      if (!res.ok || json.ok === false) return;
+      const next = json.harnesses ?? [];
+      setHarnesses(next);
+      setSelectedHarnessId((current) => {
+        if (current && next.some((adapter) => adapter.id === current && adapter.installed)) return current;
+        return next.find((adapter) => adapter.installed && adapter.chatSupported)?.id
+          ?? next.find((adapter) => adapter.installed)?.id
+          ?? current;
+      });
+    } catch {
+      /* harness availability is advisory; status cards carry setup hints */
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     void refresh();
+    void loadHarnesses();
     void loadOpenClawAgents();
     pollRef.current = setInterval(refresh, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, refresh, loadOpenClawAgents]);
+  }, [open, refresh, loadHarnesses, loadOpenClawAgents]);
 
   useEffect(() => {
     if (!open || !status?.complete) return;
@@ -239,6 +274,40 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
+  const createLocalFamiliar = async () => {
+    const selectedHarness = harnesses.find((adapter) => adapter.id === selectedHarnessId && adapter.installed) ?? null;
+    if (!selectedHarness) {
+      setSetupError("Pick an installed local adapter first.");
+      return;
+    }
+    setPicking("local");
+    setSetupError(null);
+    try {
+      const res = await fetch("/api/onboarding/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiar: {
+            id: `${selectedHarness.id}-local`,
+            displayName: familiarName.trim() || selectedHarness.label,
+            role: familiarRole.trim() || "Code Familiar",
+            description: familiarDescription.trim() || `Local ${selectedHarness.label} adapter on this machine.`,
+            glyph: familiarGlyph,
+            harness: selectedHarness.id,
+            model: `${selectedHarness.id}-local`,
+          },
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "setup failed");
+      await refresh();
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : "setup failed");
+    } finally {
+      setPicking(null);
+    }
+  };
+
   const startDaemon = async () => {
     setStartingDaemon(true);
     setSetupError(null);
@@ -272,8 +341,15 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:folder",
       },
       {
+        key: "adapters",
+        title: "Find local adapter",
+        ok: !!s?.adapters.ok,
+        detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking...",
+        icon: "ph:terminal-window",
+      },
+      {
         key: "binding",
-        title: "Connect OpenClaw agent",
+        title: "Create familiar",
         ok: !!s?.binding.ok,
         detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
         icon: "ph:sparkle",
@@ -329,7 +405,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               Re-check
             </button>
             <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-              {stepCount(status)}/5 ready
+              {stepCount(status)}/6 ready
             </div>
           </div>
         </header>
@@ -419,9 +495,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Connect an OpenClaw agent</h2>
+                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Create a local familiar</h2>
                   <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                    Choose one of your local OpenClaw agents. Cave writes only the selected agent as a familiar in `~/.coven/familiars.toml`.
+                    Use Codex, Claude Code, or any detected Coven adapter already installed on this machine.
                   </p>
                 </div>
                 <button
@@ -431,6 +507,69 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 >
                   {picking === "scaffold" ? "Creating..." : "Create folder only"}
                 </button>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                    Local adapters
+                  </div>
+                  <button
+                    onClick={() => void loadHarnesses()}
+                    className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {harnesses.map((adapter) => {
+                    const active = selectedHarnessId === adapter.id;
+                    return (
+                      <button
+                        key={adapter.id}
+                        onClick={() => {
+                          if (!adapter.installed) return;
+                          setSelectedHarnessId(adapter.id);
+                          setFamiliarName(adapter.label);
+                          setFamiliarRole("Code Familiar");
+                          setFamiliarDescription(`Local ${adapter.label} adapter on this machine.`);
+                        }}
+                        disabled={!adapter.installed}
+                        className={`rounded-lg border p-3 text-left ${
+                          active
+                            ? "border-purple-500/55 bg-purple-500/12 text-[var(--text-primary)]"
+                            : adapter.installed
+                              ? "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                              : "border-[var(--border-hairline)] bg-[var(--bg-base)]/40 text-[var(--text-muted)] opacity-70"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[13px] font-medium">{adapter.label}</span>
+                          {active ? <Icon name="ph:check-bold" className="text-purple-200" /> : null}
+                        </div>
+                        <div className="mt-1 truncate font-mono text-[11px]">{adapter.binary}</div>
+                        <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
+                          {adapter.installed ? adapter.path ?? "installed" : adapter.installHint}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={createLocalFamiliar}
+                  disabled={picking !== null || !selectedHarnessId}
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-purple-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-purple-500 disabled:opacity-50"
+                >
+                  <Icon name="ph:terminal-window" />
+                  {picking === "local" ? "Creating..." : "Use local adapter"}
+                </button>
+              </div>
+
+              <div className="mt-5 border-t border-[var(--border-hairline)] pt-4">
+                <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Or connect an OpenClaw agent</h3>
+                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  Choose one of your local OpenClaw agents. Cave writes only the selected agent as a familiar in `~/.coven/familiars.toml`.
+                </p>
               </div>
 
               <div className="mt-4 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
