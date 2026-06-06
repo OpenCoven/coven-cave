@@ -494,22 +494,17 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
             ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
             ) : tab === "roles" ? (
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
-                <RoleGrid
-                  items={filteredRoles}
-                  loaded={rolesLoaded}
-                  error={rolesError}
-                  selectedRole={selectedRole}
-                  onSelect={setSelectedRole}
-                  onToggle={handleRoleToggle}
-                />
-                <RoleCapabilityMap
-                  role={selectedRole}
-                  skillsById={skillsById}
-                  capabilitiesByPlugin={capabilitiesByPlugin}
-                  capabilitiesLoaded={capabilitiesLoaded}
-                />
-              </div>
+              <RoleGrid
+                items={filteredRoles}
+                loaded={rolesLoaded}
+                error={rolesError}
+                selectedRole={selectedRole}
+                onSelect={setSelectedRole}
+                onToggle={handleRoleToggle}
+                skillsById={skillsById}
+                capabilitiesByPlugin={capabilitiesByPlugin}
+                capabilitiesLoaded={capabilitiesLoaded}
+              />
             ) : (
               <CapabilitiesView
                 items={capabilities.filter((c) => {
@@ -610,6 +605,9 @@ function RoleGrid({
   selectedRole,
   onSelect,
   onToggle,
+  skillsById,
+  capabilitiesByPlugin,
+  capabilitiesLoaded,
 }: {
   items: RoleEntry[];
   loaded: boolean;
@@ -617,6 +615,9 @@ function RoleGrid({
   selectedRole: RoleEntry | null;
   onSelect: (role: RoleEntry) => void;
   onToggle: (role: RoleEntry) => Promise<void>;
+  skillsById: Map<string, SkillEntry>;
+  capabilitiesByPlugin: Map<string, string[]>;
+  capabilitiesLoaded: boolean;
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
 
@@ -687,15 +688,29 @@ function RoleGrid({
             </button>
             {isOpen && (
               <div className="space-y-1.5">
-                {roles.map((r) => (
-                  <RoleCard
-                    key={`${r.familiar}:${r.id}`}
-                    role={r}
-                    selected={selectedRole?.id === r.id && selectedRole?.familiar === r.familiar}
-                    onSelect={onSelect}
-                    onToggle={onToggle}
-                  />
-                ))}
+                {roles.map((r) => {
+                  const isSelected = selectedRole?.id === r.id && selectedRole?.familiar === r.familiar;
+                  return (
+                    <React.Fragment key={`${r.familiar}:${r.id}`}>
+                      <RoleCard
+                        role={r}
+                        selected={isSelected}
+                        onSelect={onSelect}
+                        onToggle={onToggle}
+                      />
+                      {isSelected && (
+                        <div className="ml-4 overflow-hidden rounded-b-lg border border-t-0 border-[var(--accent-presence)]/30 bg-[var(--accent-presence)]/5 px-4 pb-4 pt-3">
+                          <RoleCapabilityMap
+                            role={selectedRole}
+                            skillsById={skillsById}
+                            capabilitiesByPlugin={capabilitiesByPlugin}
+                            capabilitiesLoaded={capabilitiesLoaded}
+                          />
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             )}
           </div>
