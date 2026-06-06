@@ -32,14 +32,25 @@ const BOARD_PATH = path.join(homedir(), ".coven", "cave-board.json");
 function inferLifecycle(status: CardStatus): CardLifecycle {
   if (status === "running") return "running";
   if (status === "review") return "review";
+  if (status === "done") return "completed";
+  if (status === "blocked") return "failed";
   return "queued";
 }
 
+function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus): CardStatus {
+  if (lifecycle === "dispatched" || lifecycle === "running") return "running";
+  if (lifecycle === "review") return "review";
+  if (lifecycle === "completed") return "done";
+  if (lifecycle === "failed" || lifecycle === "cancelled") return "blocked";
+  return currentStatus;
+}
+
 function backfillCard(c: Card | (Omit<Card, "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"> & Partial<Pick<Card, "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries">>)): Card {
-  const inferred = inferLifecycle(c.status);
+  const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
   return {
     ...c,
-    lifecycle: c.lifecycle ?? inferred,
+    status: statusForLifecycle(lifecycle, c.status),
+    lifecycle,
     lifecycleAt: c.lifecycleAt ?? c.updatedAt,
     retryCount: c.retryCount ?? 0,
     maxRetries: c.maxRetries ?? DEFAULT_MAX_RETRIES,
@@ -90,7 +101,7 @@ export type NewCardInput = {
 export async function createCard(input: NewCardInput): Promise<Card> {
   const board = await loadBoard();
   const now = new Date().toISOString();
-  const status: CardStatus = input.status ?? "inbox";
+  const status: CardStatus = input.status ?? "backlog";
   const card: Card = {
     id: crypto.randomUUID(),
     title: input.title.trim(),
@@ -131,6 +142,11 @@ export async function updateCard(
       ? patch.labels.map((l) => l.trim()).filter(Boolean)
       : current.labels,
   };
+  if (next.status === "running" && !next.runningSince) {
+    next.runningSince = next.updatedAt;
+  } else if (next.status !== "running") {
+    delete next.runningSince;
+  }
   board.cards[idx] = next;
   await saveBoard(board);
   return next;
@@ -139,8 +155,8 @@ export async function updateCard(
 /**
  * Move a card through the lifecycle state machine. Encapsulates the rules
  * we don't want call sites to forget — most importantly that `failed`
- * without remaining retries auto-rolls the card back to the Inbox column
- * with a `needs human` flag.
+ * without remaining retries moves the card into the Blocked column with a
+ * `needs human` flag.
  *
  * Transitions enforced:
  *   queued      → dispatched | cancelled
@@ -194,23 +210,30 @@ export async function transitionCard(
     next.status = "running";
     next.runningSince = now;
     next.needsHuman = false;
+  } else if (to === "dispatched") {
+    next.status = "running";
+    next.needsHuman = false;
   } else if (to === "review") {
     next.status = "review";
   } else if (to === "completed") {
-    next.status = "review"; // stay in Review column; lifecycle distinguishes
+    next.status = "done";
+    next.needsHuman = false;
   } else if (to === "failed") {
     const exhausted = current.retryCount >= current.maxRetries;
     if (exhausted) {
-      // Auto-rollback: failed without remaining retries → back to Inbox
-      // with `needs human` flag. Spec section 3 (rollback behavior).
-      next.status = "inbox";
+      // Auto-rollback: failed without remaining retries → Blocked with
+      // `needs human` flag. Spec section 3 (rollback behavior).
+      next.status = "blocked";
       next.needsHuman = true;
+    } else {
+      next.status = "blocked";
     }
   } else if (to === "queued" && retry) {
     next.retryCount = current.retryCount + 1;
-    next.status = "inbox";
+    next.status = "backlog";
     next.needsHuman = false;
   } else if (to === "cancelled") {
+    next.status = "blocked";
     next.needsHuman = false;
   }
 

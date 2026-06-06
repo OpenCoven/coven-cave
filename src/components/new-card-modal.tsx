@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Modal } from "@/components/ui/modal";
 import { PropertyPill } from "@/components/ui/property-pill";
-
-const STATUSES: CardStatus[] = ["inbox", "running", "review"];
-const PRIORITIES: CardPriority[] = ["urgent", "high", "medium", "low"];
-
-type CardStatus = "inbox" | "running" | "review";
-type CardPriority = "low" | "medium" | "high" | "urgent";
+import {
+  STATUSES,
+  PRIORITIES,
+  type CardPriority,
+  type CardStatus,
+} from "@/lib/cave-board-types";
 
 export type NewCardDraft = {
   title: string;

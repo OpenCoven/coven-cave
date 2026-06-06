@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteCard,
   updateCard,
+  type CardLifecycle,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
@@ -17,10 +18,14 @@ export async function PATCH(
     title: string;
     notes: string;
     status: CardStatus;
+    lifecycle: CardLifecycle;
+    lifecycleReason: string | undefined;
     priority: CardPriority;
     familiarId: string | null;
     sessionId: string | null;
     labels: string[];
+    needsHuman: boolean;
+    runningSince: string | undefined;
   }>;
   try {
     body = await req.json();
