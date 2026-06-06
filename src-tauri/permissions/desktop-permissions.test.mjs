@@ -43,10 +43,20 @@ test("packaged desktop app can use native browser and terminal commands", () => 
   assert.ok(capability.permissions.includes("default"), "default capability should include custom app permissions");
 
   for (const permissionId of requiredPermissionIds) {
-    assert.match(defaultPermissions, new RegExp(`"${permissionId}"`), `${permissionId} must be in default permission group`);
+    const escapedPermissionId = permissionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(
+      defaultPermissions,
+      new RegExp(String.raw`"${escapedPermissionId}"`),
+      `${permissionId} must be in default permission group`,
+    );
   }
 
   for (const command of requiredCommands) {
-    assert.match(commandPermissions, new RegExp(`commands\\.allow = \\["${command}"\\]`), `${command} must have a Tauri allow permission`);
+    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(
+      commandPermissions,
+      new RegExp(String.raw`commands\.allow\s*=\s*\[[^\]]*"${escapedCommand}"[^\]]*\]`),
+      `${command} must have a Tauri allow permission`,
+    );
   }
 });
