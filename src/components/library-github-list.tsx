@@ -514,6 +514,7 @@ const COLS: { key: SortKey; label: string; width?: string }[] = [
   { key: "repo",    label: "Repo",    width: "150px" },
   { key: "savedAt", label: "Saved",   width: "80px" },
 ];
+const GITHUB_TABLE_COLUMN_COUNT = COLS.length + 4;
 
 export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
   const [items, setItems] = useState<LibraryGitHubItem[]>([]);
@@ -628,7 +629,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
                     <tr className="board-table-group-row" onClick={() => toggleGroup(key)}>
-                      <td colSpan={7}>
+                      <td colSpan={GITHUB_TABLE_COLUMN_COUNT}>
                         <span className="board-table-group-caret">
                           <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
                         </span>
@@ -640,70 +641,75 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
                   {!collapsed.has(key) && gi.map((item) => {
                     const st = stateStyle(item.state);
                     return (
-                      <tr key={item.id}
-                        className={item.id === selectedId ? "selected" : ""}
-                        onClick={() => onSelect(item)}>
-                        <td>
-                          <span className="board-table-title">{item.title}</span>
-                          {item.number && (
-                            <div className="board-table-muted" style={{ marginTop: 2 }}>
-                              {item.repo}#{item.number}
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <span className="board-table-muted">{item.repo}</span>
-                        </td>
-                        <td style={{ textAlign: "right" }}>
-                          <span className="board-table-muted">{relTime(item.savedAt)}</span>
-                        </td>
-                        <td>
-                          <span className="board-table-muted library-source-type">
-                            {kindIcon(item.kind)}
-                            <span style={{ marginLeft: 3 }}>{item.kind}</span>
-                          </span>
-                        </td>
-                        <td>
-                          <span className="library-gh-state-dot" style={{ color: st.color }}>
-                            ● {st.label}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="library-tag-chips">
-                            {item.labels.slice(0, 3).map((l: string) => (
-                              <span key={l} className="library-doclist-tag">{l}</span>
-                            ))}
-                            {item.labels.length > 3 && (
-                              <span className="board-table-muted">+{item.labels.length - 3}</span>
+                      <React.Fragment key={item.id}>
+                        <tr
+                          className={`gh-row-main${item.id === selectedId ? " selected" : ""}`}
+                          onClick={() => onSelect(item)}
+                        >
+                          <td>
+                            <span className="board-table-title">{item.title}</span>
+                            {item.number && (
+                              <div className="board-table-muted" style={{ marginTop: 2 }}>
+                                {item.repo}#{item.number}
+                              </div>
                             )}
-                          </div>
-                        </td>
-                        <td onClick={(e) => { e.stopPropagation(); void handleDelete(item.id); }}>
-                          <span className="library-row-delete" title="Remove">
-                            <Icon name="ph:x" width={11} />
-                          </span>
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div className="gh-row-actions">
-                            <button
-                              type="button"
-                              className="gh-row-action-btn"
-                              title="Attach to task"
-                              onClick={(e) => { e.stopPropagation(); setAttachItem(item); }}
-                            >
-                              <Icon name="ph:clipboard-text" width={11} />
-                            </button>
-                            <button
-                              type="button"
-                              className="gh-row-action-btn"
-                              title="Handoff to agent"
-                              onClick={(e) => { e.stopPropagation(); setHandoffItem(item); }}
-                            >
-                              <Icon name="ph:share-network" width={11} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                          <td>
+                            <span className="board-table-muted">{item.repo}</span>
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <span className="board-table-muted">{relTime(item.savedAt)}</span>
+                          </td>
+                          <td>
+                            <span className="board-table-muted library-source-type">
+                              {kindIcon(item.kind)}
+                              <span style={{ marginLeft: 3 }}>{item.kind}</span>
+                            </span>
+                          </td>
+                          <td>
+                            <span className="library-gh-state-dot" style={{ color: st.color }}>
+                              ● {st.label}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="library-tag-chips">
+                              {item.labels.slice(0, 3).map((l: string) => (
+                                <span key={l} className="library-doclist-tag">{l}</span>
+                              ))}
+                              {item.labels.length > 3 && (
+                                <span className="board-table-muted">+{item.labels.length - 3}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td onClick={(e) => { e.stopPropagation(); void handleDelete(item.id); }}>
+                            <span className="library-row-delete" title="Remove">
+                              <Icon name="ph:x" width={11} />
+                            </span>
+                          </td>
+                        </tr>
+                        <tr className={`gh-row-action-strip-row${item.id === selectedId ? " selected" : ""}`}>
+                          <td colSpan={GITHUB_TABLE_COLUMN_COUNT}>
+                            <div className="gh-row-actions" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="gh-row-action-btn"
+                                onClick={() => setAttachItem(item)}
+                              >
+                                <Icon name="ph:clipboard-text" width={12} />
+                                <span>Attach to task</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="gh-row-action-btn"
+                                onClick={() => setHandoffItem(item)}
+                              >
+                                <Icon name="ph:share-network" width={12} />
+                                <span>Handoff to agent</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
                     );
                   })}
                 </React.Fragment>

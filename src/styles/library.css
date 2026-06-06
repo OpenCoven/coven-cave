@@ -1025,32 +1025,49 @@ tr:hover .library-row-delete,
 }
 
 /* ── GitHub row action buttons ────────────────────────────────── */
-.gh-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.12s;
+.board-table tbody tr.gh-row-main {
+  border-bottom: none;
 }
-tr:hover .gh-row-actions,
-tr.selected .gh-row-actions {
-  opacity: 1;
+.board-table tbody tr.gh-row-action-strip-row {
+  cursor: default;
+}
+.board-table tbody tr.gh-row-action-strip-row:hover {
+  background: transparent;
+}
+.board-table tbody tr.gh-row-action-strip-row.selected {
+  background: color-mix(in oklab, oklch(0.65 0.18 280) 8%, var(--bg-base));
+  box-shadow: inset 2px 0 0 oklch(0.65 0.18 280);
+}
+.gh-row-action-strip-row td {
+  padding: 0 10px 9px;
+}
+.gh-row-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 6px;
+  width: 100%;
 }
 .gh-row-action-btn {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 4px;
-  background: none;
+  display: inline-flex;
+  min-width: 0;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--bg-raised) 76%, transparent);
   color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
-  transition: color 0.1s, background 0.1s;
+  transition: color 0.1s, background 0.1s, border-color 0.1s;
 }
 .gh-row-action-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 /* ── GitHub modals (shared shell) ─────────────────────────────── */
