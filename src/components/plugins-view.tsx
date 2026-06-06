@@ -331,7 +331,10 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
             ) : (
               <CapabilitiesView
-                items={capabilities.filter(c => !query || c.harness_id.toLowerCase().includes(query.toLowerCase()))}
+                items={capabilities.filter((c) => {
+                  const q = query.trim().toLowerCase();
+                  return !q || c.harness_id.toLowerCase().includes(q);
+                })}
                 loaded={capabilitiesLoaded}
                 error={capabilitiesError}
                 onRefresh={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }}
