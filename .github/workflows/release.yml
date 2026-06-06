@@ -116,9 +116,18 @@ jobs:
       # steps. Runs only on the macOS leg.
       - name: Stage Apple API key
         if: matrix.platform == 'macos-latest'
+        shell: bash
         run: |
+          set -euo pipefail
+          decode_base64() {
+            if base64 --decode </dev/null >/dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
           KEY_PATH="$RUNNER_TEMP/apple_api_key.p8"
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          printf '%s' "$APPLE_API_KEY_BASE64" | decode_base64 > "$KEY_PATH"
           chmod 600 "$KEY_PATH"
           echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
         env:
@@ -138,7 +147,15 @@ jobs:
             echo "::error::Failed to generate a temporary keychain password"
             exit 1
           fi
-          printf '%s' "$APPLE_CERTIFICATE" | (base64 --decode 2>/dev/null || base64 -d 2>/dev/null || base64 -D) > "$CERT_PATH"
+          decode_base64() {
+            if base64 --decode </dev/null >/dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+          printf '%s' "$APPLE_CERTIFICATE" | decode_base64 > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           # Keep the keychain unlocked for up to 6 hours so long notarization
           # waits do not relock it before codesign finishes.
           security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_PATH"
@@ -162,14 +179,6 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Apple signing + notarization (macOS only; secrets are simply
-          # empty strings on Linux/Windows runners and tauri-action skips
-          # the signing/notarization path when no cert is present).
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
