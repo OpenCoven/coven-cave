@@ -210,12 +210,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           onClick={onNewChat}
         />
         <ActionRow
-          icon={<Icon name="ph:magnifying-glass" width={14} />}
-          label="Search"
-          kbd="⌘K"
-          onClick={onOpenSearch}
-        />
-        <ActionRow
           icon={<Icon name="ph:plug" width={14} />}
           label="Plugins"
           onClick={() => onModeChange("plugins")}

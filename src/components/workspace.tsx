@@ -10,6 +10,7 @@ import { PluginsView } from "@/components/plugins-view";
 import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
+import { InspectorPane } from "@/components/inspector-pane";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
@@ -25,6 +26,7 @@ import { GitHubView } from "@/components/github-view";
 import { HomeComposer } from "@/components/home-composer";
 import { nativeNotify } from "@/lib/native-notify";
 import { SessionsView } from "@/components/sessions-view";
+import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -48,6 +50,7 @@ export function Workspace() {
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
@@ -642,18 +645,46 @@ export function Workspace() {
         }}
       />
     ) : mode === "chats" ? (
-      <ChatRouter
-        ref={routerRef}
-        familiar={active}
-        sessions={sessions}
-        daemonRunning={daemonRunning}
-        onSessionStarted={loadSessions}
-        onSlashFromChat={(command, args) => {
-          onPaletteIntent({ kind: "slash", command, args });
-          return true;
-        }}
-        onOpenOnboarding={openOnboarding}
-      />
+      <div className="flex h-full min-w-0">
+        <div className="min-w-0 flex-1">
+          <ChatRouter
+            ref={routerRef}
+            familiar={active}
+            sessions={sessions}
+            daemonRunning={daemonRunning}
+            onSessionStarted={loadSessions}
+            onSlashFromChat={(command, args) => {
+              onPaletteIntent({ kind: "slash", command, args });
+              return true;
+            }}
+            onOpenOnboarding={openOnboarding}
+          />
+        </div>
+        {inspectorOpen ? (
+          <aside className="relative hidden h-full w-[340px] shrink-0 lg:block">
+            <button
+              type="button"
+              onClick={() => setInspectorOpen(false)}
+              className="absolute right-2 top-2 z-10 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-1.5 text-[var(--text-muted)] shadow-sm transition-colors hover:text-[var(--text-primary)]"
+              title="Close inspector"
+              aria-label="Close inspector"
+            >
+              <Icon name="ph:x-bold" width={12} />
+            </button>
+            <InspectorPane familiar={active} inboxItems={inboxItemsWithEphemeral} onOpenInbox={() => setMode("inbox")} />
+          </aside>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setInspectorOpen(true)}
+            className="hidden h-full w-9 shrink-0 items-start justify-center border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pt-3 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] lg:flex"
+            title="Open inspector"
+            aria-label="Open inspector"
+          >
+            <Icon name="ph:brain-bold" width={15} />
+          </button>
+        )}
+      </div>
     ) : mode === "board" ? (
       <BoardView
         familiars={familiars}
@@ -746,6 +777,7 @@ export function Workspace() {
           <DaemonBar
             mode={isDaemonMode(mode) ? mode : "home"}
             onModeChange={setMode}
+            onOpenSearch={() => setPaletteOpen(true)}
             inboxBadgeCount={inboxBadgeCount}
             onRunningChange={setDaemonRunning}
             inboxItems={[]}

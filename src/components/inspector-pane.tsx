@@ -5,6 +5,7 @@ import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
+import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 
 type Tab = "memory" | "capabilities" | "inbox";
 
@@ -249,7 +250,7 @@ type CovenMemoryEntry = {
 };
 
 function MemoryTab({ familiar }: { familiar: Familiar | null }) {
-  const [mode, setMode] = useState<"coven" | "files">("coven");
+  const [mode, setMode] = useState<"inspector" | "coven" | "files">("inspector");
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [covenLoaded, setCovenLoaded] = useState(false);
@@ -267,16 +268,11 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
         if (json.ok) {
           const fetched: CovenMemoryEntry[] = json.entries ?? [];
           setCovenEntries(fetched);
-          // Auto-switch to "files" tab when daemon returns no memory entries
-          // so users see something useful rather than a blank coven pane.
-          if (fetched.length === 0) setMode("files");
         } else {
-          // Daemon memory endpoint unavailable — fall through to file browser.
-          setMode("files");
+          /* Inspector remains the default; the legacy Coven tab can stay empty. */
         }
       } catch {
-        // Network or daemon error — fall through to file browser.
-        setMode("files");
+        /* Inspector remains the default; the legacy Coven tab can stay empty. */
       } finally {
         setCovenLoaded(true);
       }
@@ -401,7 +397,7 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1 border-b border-[var(--border-hairline)] px-2 py-1.5">
-        {(["coven", "files"] as const).map((m) => (
+        {(["inspector", "coven", "files"] as const).map((m) => (
           <button
             key={m}
             onClick={() => {
@@ -418,9 +414,10 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
           </button>
         ))}
         <span className="ml-auto text-[10px] text-[var(--text-muted)]">
-          {mode === "coven" ? covenFiltered.length : filtered.length}
+          {mode === "inspector" ? "read-only" : mode === "coven" ? covenFiltered.length : filtered.length}
         </span>
       </div>
+      {mode !== "inspector" ? (
       <div className="border-b border-[var(--border-hairline)] p-2">
         <input
           value={query}
@@ -429,6 +426,13 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
           className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-purple-600"
         />
       </div>
+      ) : null}
+
+      {mode === "inspector" ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <MemoryInspectorPanel familiar={familiar} />
+        </div>
+      ) : null}
 
       {mode === "coven" ? (
         <ul className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">
@@ -725,4 +729,3 @@ function scopeFor(owner: string | undefined): string {
   if (owner === "local" || owner === "user") return "local";
   return owner;
 }
-
