@@ -5,6 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
+import type { LibraryGitHubItem } from "@/lib/library-types";
 import { Icon } from "@/lib/icon";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -46,6 +47,211 @@ function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; time
     </span>
   );
 }
+
+// ── GitHub attach ─────────────────────────────────────────────────────────────
+const KIND_ICON: Record<string, string> = {
+  pr: "ph:git-pull-request",
+  issue: "ph:bug-bold",
+  discussion: "ph:chat-teardrop-text-bold",
+  repo: "ph:git-fork-bold",
+};
+
+const STATE_COLOR: Record<string, string> = {
+  open: "text-emerald-400",
+  merged: "text-violet-400",
+  closed: "text-rose-400",
+};
+
+function GitHubAttachSection({
+  card,
+  familiars,
+  onPatch,
+}: {
+  card: Card;
+  familiars: Familiar[];
+  onPatch: (id: string, patch: Partial<Card>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<LibraryGitHubItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || items.length > 0) return;
+    setLoading(true);
+    fetch("/api/library/github")
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setItems(d.items ?? []); else setErr(d.error ?? "failed"); })
+      .catch(() => setErr("fetch failed"))
+      .finally(() => setLoading(false));
+  }, [open, items.length]);
+
+  const attachedUrls = new Set(card.links);
+
+  const filtered = items.filter((item) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return (
+      item.title.toLowerCase().includes(q) ||
+      item.repo.toLowerCase().includes(q) ||
+      (item.number != null && String(item.number).includes(q))
+    );
+  });
+
+  const attachedItems = items.filter((i) => attachedUrls.has(i.url));
+
+  function attach(item: LibraryGitHubItem) {
+    if (attachedUrls.has(item.url)) return;
+    onPatch(card.id, { links: [...card.links, item.url] });
+  }
+
+  function detach(url: string) {
+    onPatch(card.id, { links: card.links.filter((l) => l !== url) });
+  }
+
+  function assignAgent(item: LibraryGitHubItem) {
+    const fam = familiars.find(
+      (f) => f.id === item.familiar ||
+        f.display_name?.toLowerCase() === item.familiar?.toLowerCase()
+    );
+    if (fam) onPatch(card.id, { familiarId: fam.id });
+  }
+
+  const iconName = (k: string) => (KIND_ICON[k] ?? "ph:link") as IconName;
+
+  return (
+    <div className="board-drawer-field">
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>GitHub</span>
+        <button
+          type="button"
+          className="board-toolbar-btn"
+          onClick={() => setOpen((v) => !v)}
+          style={{ fontSize: 10, padding: "2px 8px" }}
+        >
+          <Icon name={open ? "ph:caret-up" : "ph:github-logo"} width={11} />
+          {open ? "Hide" : "Attach"}
+        </button>
+      </div>
+
+      {attachedItems.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+          {attachedItems.map((item) => (
+            <div key={item.id} style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "var(--bg-elevated)", borderRadius: 6,
+              padding: "5px 8px", border: "1px solid var(--border-hairline)"
+            }}>
+              <Icon name={iconName(item.kind)} width={12} className={STATE_COLOR[item.state ?? ""] ?? "text-[var(--text-muted)]"} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-primary)" }}>
+                {item.repo}{item.number != null ? " #" + item.number : ""} — {item.title}
+              </span>
+              <button
+                type="button"
+                className="board-toolbar-btn"
+                style={{ fontSize: 10, padding: "1px 6px" }}
+                onClick={() => detach(item.url)}
+                title="Detach"
+              >
+                <Icon name="ph:x-bold" width={9} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div style={{ border: "1px solid var(--border-hairline)", borderRadius: 8, overflow: "hidden", background: "var(--bg-raised)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
+            <Icon name="ph:magnifying-glass" width={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search PRs, issues, repos…"
+              style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "var(--text-primary)" }}
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+                <Icon name="ph:x" width={11} />
+              </button>
+            )}
+          </div>
+
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {loading && (
+              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>Loading…</div>
+            )}
+            {err && (
+              <div style={{ padding: "10px", fontSize: 11, color: "#f87171" }}>{err}</div>
+            )}
+            {!loading && !err && filtered.length === 0 && (
+              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+                {items.length === 0 ? "No GitHub items saved in Library yet." : "No matches."}
+              </div>
+            )}
+            {filtered.map((item) => {
+              const attached = attachedUrls.has(item.url);
+              const fam = familiars.find(
+                (f) => f.id === item.familiar ||
+                  f.display_name?.toLowerCase() === item.familiar?.toLowerCase()
+              );
+              return (
+                <div key={item.id} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)",
+                  background: attached ? "color-mix(in oklab, oklch(0.65 0.18 280) 8%, var(--bg-raised))" : undefined,
+                }}>
+                  <Icon
+                    name={iconName(item.kind)}
+                    width={13}
+                    className={STATE_COLOR[item.state ?? ""] ?? "text-[var(--text-muted)]"}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.repo}{item.number != null ? " #" + item.number : ""}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.title}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    {fam && (
+                      <button
+                        type="button"
+                        className="board-toolbar-btn"
+                        style={{ fontSize: 10, padding: "2px 7px" }}
+                        title={"Assign to " + fam.display_name}
+                        onClick={() => assignAgent(item)}
+                      >
+                        <Icon name="ph:user-bold" width={10} />
+                        {fam.display_name}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="board-toolbar-btn"
+                      style={{
+                        fontSize: 10, padding: "2px 7px",
+                        ...(attached ? { color: "oklch(0.65 0.18 280)", borderColor: "oklch(0.65 0.18 280)" } : {}),
+                      }}
+                      onClick={() => attached ? detach(item.url) : attach(item)}
+                    >
+                      <Icon name={attached ? "ph:check-bold" : "ph:paperclip-bold"} width={10} />
+                      {attached ? "Attached" : "Attach"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, chatLinking = false }: Props) {
   const [closing, setClosing] = useState(false);
@@ -195,6 +401,8 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
                 if (next.join("\n") !== card.links.join("\n")) onPatch(card.id, { links: next });
               }} />
           </div>
+
+          <GitHubAttachSection card={card} familiars={familiars} onPatch={onPatch} />
 
           <div className="board-drawer-field">
             <div className="board-drawer-field-label">Notes</div>
