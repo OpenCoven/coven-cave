@@ -30,6 +30,8 @@ type Props = {
   onDelete: (id: string) => Promise<void>;
   onCardReplaced: (card: Card) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
+  onOpenTaskChat?: (id: string) => Promise<void>;
+  chatLinking?: boolean;
 };
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
@@ -45,7 +47,7 @@ function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; time
   );
 }
 
-export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession }: Props) {
+export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, chatLinking = false }: Props) {
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<CardLifecycle | null>(null);
@@ -53,9 +55,6 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
   const [newLabel, setNewLabel] = useState("");
 
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
-  const eligibleSessions = card.familiarId
-    ? sessions.filter((s) => s.familiarId === card.familiarId)
-    : sessions;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
@@ -134,21 +133,32 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
           </div>
 
           <div className="board-drawer-field">
-            <div className="board-drawer-field-label">Session (optional)</div>
+            <div className="board-drawer-field-label">Chat</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <select className="board-drawer-field-select" value={card.sessionId ?? ""}
-                onChange={(e) => onPatch(card.id, { sessionId: e.target.value || null })}>
-                <option value="">No linked session</option>
-                {eligibleSessions.slice(0, 50).map((s) => (
-                  <option key={s.id} value={s.id}>{s.title || "(untitled)"} · {s.harness}</option>
-                ))}
-              </select>
+              {session ? (
+                <span className="board-table-muted" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {session.title || "(untitled)"}
+                </span>
+              ) : (
+                <span className="board-table-muted" style={{ flex: 1 }}>
+                  No chat linked yet.
+                </span>
+              )}
               {session ? (
                 <button type="button" className="board-toolbar-btn"
                   onClick={() => onJumpToSession?.(session.id, session.familiarId ?? null)}>
-                  Open <Icon name="ph:arrow-square-out" width={11} />
+                  Open chat <Icon name="ph:arrow-square-out" width={11} />
                 </button>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  className="board-toolbar-btn"
+                  disabled={chatLinking}
+                  onClick={() => void onOpenTaskChat?.(card.id)}
+                >
+                  {chatLinking ? "Starting..." : "Start chat"} <Icon name="ph:chat-circle-dots" width={11} />
+                </button>
+              )}
             </div>
           </div>
 

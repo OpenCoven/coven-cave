@@ -36,6 +36,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
+  const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
+  const [chatLinkError, setChatLinkError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +113,30 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     if (json.ok) { if (selectedCardId === id) setSelectedCardId(null); await load(); }
   };
 
+  const onOpenTaskChat = async (id: string) => {
+    const card = cards.find((candidate) => candidate.id === id);
+    const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
+    setChatLinkingId(id);
+    setChatLinkError(null);
+    try {
+      const res = await fetch(`/api/board/${id}/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId: fallbackFamiliarId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? "failed to open task chat");
+      if (json.card) {
+        setCards((prev) => prev.map((candidate) => candidate.id === id ? json.card : candidate));
+      }
+      onJumpToSession?.(json.sessionId, json.familiarId);
+    } catch (err) {
+      setChatLinkError(err instanceof Error ? err.message : "failed to open task chat");
+    } finally {
+      setChatLinkingId(null);
+    }
+  };
+
   return (
     <section className="board-shell">
       {/* Header */}
@@ -170,6 +196,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       {error && (
         <div className="border-b border-border bg-card px-5 py-1.5 text-xs text-muted-foreground">{error}</div>
       )}
+      {chatLinkError && (
+        <div className="border-b border-border bg-card px-5 py-1.5 text-xs text-muted-foreground">
+          {chatLinkError}
+        </div>
+      )}
 
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
@@ -178,7 +209,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             groupBy={groupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
-            onJumpToSession={onJumpToSession} />
+            onJumpToSession={onJumpToSession}
+            onOpenTaskChat={onOpenTaskChat}
+            chatLinkingId={chatLinkingId} />
         ) : (
           <BoardTable cards={filtered} familiars={familiars}
             groupBy={groupBy} selectedCardId={selectedCardId}
@@ -194,7 +227,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           onMoveStatus={moveCardToStatus}
           onDelete={removeCard}
           onCardReplaced={(next) => setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)))}
-          onJumpToSession={onJumpToSession} />
+          onJumpToSession={onJumpToSession}
+          onOpenTaskChat={onOpenTaskChat}
+          chatLinking={chatLinkingId === selectedCard.id} />
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}

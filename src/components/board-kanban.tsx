@@ -33,6 +33,8 @@ type Props = {
   onMoveStatus: (id: string, status: CardStatus) => void;
   onNewCard: (status: CardStatus) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
+  onOpenTaskChat?: (id: string) => Promise<void>;
+  chatLinkingId?: string | null;
 };
 
 function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: string; label: string; cards: Card[] }[] {
@@ -53,7 +55,7 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: st
   }));
 }
 
-export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, onNewCard, onJumpToSession }: Props) {
+export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -166,7 +168,9 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
                               onSelect={() => onSelect(card.id)}
                               onDragStart={(e) => handleDragStart(e, card.id)}
                               onDragEnd={handleDragEnd}
-                              onJumpToSession={onJumpToSession} />
+                              onJumpToSession={onJumpToSession}
+                              onOpenTaskChat={onOpenTaskChat}
+                              chatLinking={chatLinkingId === card.id} />
                           ))}
                         </ul>
                       </div>
@@ -182,11 +186,13 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
   );
 }
 
-function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelect, onDragStart, onDragEnd, onJumpToSession }: {
+function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelect, onDragStart, onDragEnd, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
   card: Card; familiars: Familiar[]; sessions: SessionRow[];
   isDragging: boolean; isSelected: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
+  onOpenTaskChat?: (id: string) => Promise<void>;
+  chatLinking?: boolean;
 }) {
   const draggedRef = useRef(false);
   const familiar = familiars.find((f) => f.id === card.familiarId) ?? null;
@@ -224,10 +230,18 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
       </div>
       <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
         <span className="min-w-0 truncate">{familiar?.display_name ?? "unassigned"}</span>
-        {session && (
+        {session ? (
           <button onClick={(e) => { e.stopPropagation(); onJumpToSession?.(session.id, session.familiarId ?? null); }}
             className="ml-auto rounded border border-border bg-card px-1.5 py-px text-foreground hover:bg-muted">
             open
+          </button>
+        ) : (
+          <button
+            disabled={chatLinking}
+            onClick={(e) => { e.stopPropagation(); void onOpenTaskChat?.(card.id); }}
+            className="ml-auto rounded border border-border bg-card px-1.5 py-px text-foreground hover:bg-muted disabled:cursor-wait disabled:opacity-60"
+          >
+            {chatLinking ? "starting" : "chat"}
           </button>
         )}
       </div>

@@ -1,0 +1,53 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const boardView = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
+const boardInspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
+const route = await readFile(new URL("../app/api/board/[id]/chat/route.ts", import.meta.url), "utf8");
+
+assert.match(
+  boardView,
+  /onOpenTaskChat/,
+  "BoardView should expose a task chat action",
+);
+assert.match(
+  boardView,
+  /fetch\(`\/api\/board\/\$\{id\}\/chat`, \{[\s\S]*method: "POST"/,
+  "Task chat action should POST to the board chat link endpoint",
+);
+assert.match(
+  boardView,
+  /onJumpToSession\?\.\(json\.sessionId, json\.familiarId/,
+  "Task chat action should navigate to the linked session",
+);
+assert.match(
+  boardInspector,
+  /Start chat|Open chat/,
+  "Board inspector should show a visible chat button for every task",
+);
+assert.match(
+  boardInspector,
+  /onOpenTaskChat\?\.\(card\.id/,
+  "Board inspector chat button should call the task chat action",
+);
+assert.match(
+  route,
+  /card\.sessionId/,
+  "Board chat endpoint should reuse an existing card session link",
+);
+assert.match(
+  route,
+  /callDaemon<\{ id: string; status: string \}>/,
+  "Board chat endpoint should create a real daemon session when a card is unlinked",
+);
+assert.match(
+  route,
+  /updateCard\(card\.id, \{ sessionId/,
+  "Board chat endpoint should persist the relation on the board card",
+);
+assert.match(
+  route,
+  /recordSessionFamiliar/,
+  "Board chat endpoint should record the familiar-session relation",
+);
