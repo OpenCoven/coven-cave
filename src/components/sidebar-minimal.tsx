@@ -46,7 +46,7 @@ const FOLDER_MODES: Array<{
   dividerBefore?: boolean;
 }> = [
   // Primary loop
-  { id: "agents",  label: "Agents",      iconName: "ph:robot" },
+  { id: "agents",  label: "Familiars",   iconName: "ph:robot" },
   { id: "board",   label: "Tasks",       iconName: "ph:kanban" },
   // Tools
   { id: "terminal", label: "Terminal",   iconName: "ph:terminal-window", dividerBefore: true },

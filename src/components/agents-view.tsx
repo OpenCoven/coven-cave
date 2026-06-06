@@ -558,17 +558,6 @@ export function AgentsView({
                           >
                             {/* Active indicator */}
                             {isActive && <div className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r bg-[oklch(0.65_0.18_280)]" />}
-                            {/* Familiar glyph */}
-                            <div className={[
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[20px] leading-none transition-colors",
-                              isActive
-                                ? "bg-[oklch(0.65_0.18_280/18%)] ring-1 ring-[oklch(0.65_0.18_280/30%)]"
-                                : "bg-[var(--bg-elevated)] group-hover:bg-[var(--bg-raised)]",
-                            ].join(" ")}>
-                              {familiar?.emoji
-                                ? <span>{familiar.emoji}</span>
-                                : <Icon name="ph:robot" width={17} className="text-[var(--text-muted)]" />}
-                            </div>
                             {/* Content */}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-baseline gap-2">
