@@ -7,6 +7,7 @@ import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import type { Familiar, SessionRow, SessionOrigin } from "@/lib/types";
+import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,7 +261,7 @@ function SessionCard({
   const overrides = useGlyphOverrides();
   const glyph = familiar ? resolveFamiliarGlyph(familiar, overrides) : null;
   const ts = shortRelTime(session.updated_at || session.created_at);
-  const title = session.title || "Untitled session";
+  const title = stripLeadingTrailingEmoji(session.title || "Untitled session");
   const label = originLabel(session.origin);
   const archived = !!session.archived_at;
 
@@ -362,7 +363,7 @@ function SessionRowItem({
   const overrides = useGlyphOverrides();
   const glyph = familiar ? resolveFamiliarGlyph(familiar, overrides) : null;
   const ts = shortRelTime(session.updated_at || session.created_at);
-  const title = session.title || "Untitled session";
+  const title = stripLeadingTrailingEmoji(session.title || "Untitled session");
   const label = originLabel(session.origin);
   const archived = !!session.archived_at;
 

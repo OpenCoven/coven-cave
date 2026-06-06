@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
@@ -339,7 +340,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                           ? "text-white"
                           : "text-[var(--text-primary)]",
                       ].join(" ")}>
-                        {s.title || "(untitled chat)"}
+                        {stripLeadingTrailingEmoji(s.title || "(untitled chat)")}
                       </span>
 
                       {/* Row 3: status preview */}
