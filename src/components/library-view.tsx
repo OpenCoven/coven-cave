@@ -1,7 +1,8 @@
 "use client";
 
 import "@/styles/library.css";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon } from "@/lib/icon";
 import { LibraryCollectionRail } from "@/components/library-collection-rail";
 import { LibraryDocList } from "@/components/library-doc-list";
 import { LibraryBookmarksList } from "@/components/library-bookmarks-list";
@@ -28,6 +29,10 @@ export function LibraryView() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [listPinned, setListPinned] = useState(true);
+  const [listHover, setListHover] = useState(false);
+  const listExpanded = listPinned || listHover;
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadDocs = useCallback(async (collectionId: string) => {
     setLoading(true);
@@ -89,41 +94,77 @@ export function LibraryView() {
         }}
       />
       <div className="library-divider" />
-      {/* Preview pane — now the dominant left content area */}
+      {/* Preview pane — dominant left content area */}
       <LibraryDocPreview selected={selectedItem} loading={previewLoading} />
-      <div className="library-divider" />
-      {/* List panel — right sidebar picker */}
-      {activeSection === "docs" && (
-        <LibraryDocList
-          docs={docs}
-          selectedId={selectedDocId}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          onSelect={handleSelectDoc}
-          loading={loading}
-        />
-      )}
-      {activeSection === "bookmarks" && (
-        <LibraryBookmarksList
-          selectedId={selectedBmId}
-          onSelect={(item: LibraryBookmark) => setSelectedItem({ kind: "bookmark", item })}
-          onDelete={(id) => { if (selectedBmId === id) setSelectedItem(null); }}
-        />
-      )}
-      {activeSection === "reading" && (
-        <LibraryReadingList
-          selectedId={selectedReadId}
-          onSelect={(item: LibraryReadingItem) => setSelectedItem({ kind: "reading", item })}
-          onDelete={(id) => { if (selectedReadId === id) setSelectedItem(null); }}
-        />
-      )}
-      {activeSection === "github" && (
-        <LibraryGitHubList
-          selectedId={selectedGhId}
-          onSelect={(item: LibraryGitHubItem) => setSelectedItem({ kind: "github", item })}
-          onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
-        />
-      )}
+
+      {/* Collapsible list panel — matches browser rail expand/collapse pattern */}
+      <div
+        className={[
+          "library-list-panel",
+          "transition-[width] duration-200 ease-out",
+          listExpanded ? "library-list-panel--open" : "library-list-panel--closed",
+        ].join(" ")}
+        onMouseEnter={() => {
+          if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+          setListHover(true);
+        }}
+        onMouseLeave={() => {
+          hoverTimerRef.current = setTimeout(() => setListHover(false), 120);
+        }}
+      >
+        {/* Toggle strip — always visible, sits on the left edge of the panel */}
+        <div className="library-list-toggle">
+          <button
+            type="button"
+            className="library-list-toggle-btn"
+            onClick={() => setListPinned((v) => !v)}
+            title={listPinned ? "Collapse list" : "Pin list open"}
+          >
+            <Icon
+              name={listPinned ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
+              width={13}
+            />
+          </button>
+        </div>
+
+        {/* Actual list content — fades out when collapsed */}
+        <div className={[
+          "library-list-content",
+          listExpanded ? "library-list-content--visible" : "library-list-content--hidden",
+        ].join(" ")}>
+          {activeSection === "docs" && (
+            <LibraryDocList
+              docs={docs}
+              selectedId={selectedDocId}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onSelect={handleSelectDoc}
+              loading={loading}
+            />
+          )}
+          {activeSection === "bookmarks" && (
+            <LibraryBookmarksList
+              selectedId={selectedBmId}
+              onSelect={(item: LibraryBookmark) => setSelectedItem({ kind: "bookmark", item })}
+              onDelete={(id) => { if (selectedBmId === id) setSelectedItem(null); }}
+            />
+          )}
+          {activeSection === "reading" && (
+            <LibraryReadingList
+              selectedId={selectedReadId}
+              onSelect={(item: LibraryReadingItem) => setSelectedItem({ kind: "reading", item })}
+              onDelete={(id) => { if (selectedReadId === id) setSelectedItem(null); }}
+            />
+          )}
+          {activeSection === "github" && (
+            <LibraryGitHubList
+              selectedId={selectedGhId}
+              onSelect={(item: LibraryGitHubItem) => setSelectedItem({ kind: "github", item })}
+              onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }
