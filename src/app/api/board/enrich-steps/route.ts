@@ -2,11 +2,15 @@ import { loadBoard, updateCard } from "@/lib/cave-board";
 import type { CardStep } from "@/lib/cave-board-types";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { familiarWorkspace } from "@/lib/coven-paths";
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { stripAnsi } from "@/lib/ansi";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const ENRICH_INTENT = "board-enrich-steps";
 
 // Prompt the familiar to return ONLY a JSON array of step strings — nothing else.
 function enrichPrompt(card: { title: string; notes?: string; labels?: string[] }): string {
@@ -23,20 +27,56 @@ function enrichPrompt(card: { title: string; notes?: string; labels?: string[] }
   ].join("\n");
 }
 
+async function hasIntent(req: Request): Promise<boolean> {
+  if (req.headers.get("x-coven-cave-intent") !== "board-enrich-steps") return false;
+  try {
+    const body = (await req.json()) as { intent?: unknown };
+    return body.intent === "board-enrich-steps";
+  } catch {
+    return false;
+  }
+}
+
+async function resolveFamiliarWorkspace(familiarId: string): Promise<string | undefined> {
+  if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
+  const candidate = await familiarWorkspace(familiarId);
+  try {
+    const entry = await stat(candidate);
+    return entry.isDirectory() ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Run coven CLI and collect full stdout output as a string.
-function runCoven(args: string[], familiarId: string, familiarWorkspacePath?: string): Promise<string> {
+function runCoven(args: string[], signal: AbortSignal, familiarWorkspacePath?: string): Promise<string> {
   return new Promise((resolve) => {
     try {
       let out = "";
+      let settled = false;
       const child = spawn(covenBin(), args, {
         cwd: familiarWorkspacePath ?? process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
         env: covenSpawnEnv(),
       });
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        resolve(out);
+      };
+      const onAbort = () => {
+        try { child.kill("SIGTERM"); } catch { /* ignore */ }
+      };
+
+      if (signal.aborted) onAbort();
+      signal.addEventListener("abort", onAbort, { once: true });
+
       child.stdout.on("data", (d: Buffer) => { out += d.toString("utf8"); });
       child.stderr.on("data", (d: Buffer) => { out += d.toString("utf8"); });
-      child.on("close", () => resolve(out));
-      child.on("error", () => resolve(out));
+      child.on("close", finish);
+      child.on("error", finish);
     } catch {
       resolve("");
     }
@@ -92,7 +132,14 @@ function parseSteps(raw: string): string[] | null {
   return null;
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  if (!(await hasIntent(req))) {
+    return new Response(JSON.stringify({ ok: false, error: "missing enrich intent" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const [board, config] = await Promise.all([loadBoard(), loadConfig()]);
 
   // Only enrich tasks that:
@@ -107,12 +154,20 @@ export async function POST() {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       const enc = new TextEncoder();
-      const push = (obj: object) =>
-        controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
+      let closed = false;
+      const push = (obj: object) => {
+        if (closed) return;
+        try {
+          controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
+        } catch {
+          closed = true;
+        }
+      };
 
       push({ kind: "start", total: candidates.length });
 
       for (const card of candidates) {
+        if (req.signal.aborted) break;
         const familiarId = card.familiarId!;
         const binding = bindingFor(config, familiarId);
 
@@ -124,11 +179,23 @@ export async function POST() {
 
         push({ kind: "progress", cardId: card.id, title: card.title });
 
-        const args: string[] = ["run", binding.harness, "--stream-json"];
+        const title = `Plan task steps: ${card.title.trim().slice(0, 80) || card.id}`;
+        const args: string[] = [
+          "run",
+          binding.harness,
+          "--stream-json",
+          "--archive",
+          "--title",
+          title,
+          "--labels",
+          "board,enrich-steps",
+        ];
         if (/^[a-z0-9_-]+$/i.test(familiarId)) args.push("--familiar", familiarId);
         args.push("--", enrichPrompt(card));
 
-        const raw = await runCoven(args, familiarId);
+        const workspace = await resolveFamiliarWorkspace(familiarId);
+        const raw = await runCoven(args, req.signal, workspace);
+        if (req.signal.aborted) break;
         const steps = parseSteps(raw);
 
         if (!steps || steps.length === 0) {
@@ -153,7 +220,7 @@ export async function POST() {
       }
 
       push({ kind: "complete" });
-      try { controller.close(); } catch { /* */ }
+      try { closed = true; controller.close(); } catch { /* */ }
     },
   });
 

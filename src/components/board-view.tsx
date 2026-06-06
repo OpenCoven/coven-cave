@@ -143,7 +143,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     setEnriching(true);
     setEnrichProgress(null);
     try {
-      const res = await fetch("/api/board/enrich-steps", { method: "POST" });
+      const res = await fetch("/api/board/enrich-steps", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-coven-cave-intent": "board-enrich-steps",
+        },
+        body: JSON.stringify({ intent: "board-enrich-steps" }),
+      });
       if (!res.ok) throw new Error(`enrich steps failed (${res.status})`);
       if (!res.body) throw new Error("enrich steps: missing response body");
       const reader = res.body.getReader();
