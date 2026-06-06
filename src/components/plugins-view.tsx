@@ -63,7 +63,7 @@ const HERO_SEARCH_PLACEHOLDER: Record<Tab, string> = {
 };
 
 const SECTION_LABEL: Record<Tab, string> = {
-  plugins: "Featured",
+  plugins: "Harness plugins",
   skills: "Installed skills",
   capabilities: "Harness capabilities",
 };
@@ -176,6 +176,18 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
   }, [skills, query]);
 
   const installedHarnessCount = harnesses.filter((h) => h.installed).length;
+  const pageMeta =
+    tab === "plugins"
+      ? harnessesLoaded
+        ? `${installedHarnessCount}/${harnesses.length} installed`
+        : "Loading plugins"
+      : tab === "skills"
+        ? skillsLoaded && !skillsError
+          ? `${skills.length} installed`
+          : "Loading skills"
+        : capabilitiesLoaded && !capabilitiesError
+          ? `${capabilities.length} manifests`
+          : "Loading capabilities";
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
@@ -219,7 +231,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                 title="Coming soon"
                 className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Icon name="ph:sliders-bold" className="text-muted-foreground" width="0.8rem" />
+                <Icon name="ph:sliders-horizontal" className="text-muted-foreground" width="0.8rem" />
                 <span>Manage</span>
               </button>
             )}
@@ -249,13 +261,6 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
               )}
             </div>
 
-            <button
-              type="button"
-              className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="More options"
-            >
-              <Icon name="ph:dots-three-bold" width="1rem" />
-            </button>
           </div>
         </div>
       </header>
@@ -264,14 +269,28 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[920px] px-4 pb-12 sm:px-8">
 
-          {/* ── Hero section ─────────────────────────────────────────────── */}
-          <div className="pb-8 pt-10 text-center">
-            <h1 className="mb-5 text-[26px] font-semibold tracking-tight text-[var(--text-primary)]">
-              {HERO_HEADLINE[tab]}
-            </h1>
+          {/* ── Overview section ─────────────────────────────────────────── */}
+          <div className="pb-6 pt-6">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-[22px] font-semibold text-[var(--text-primary)]">
+                  {HERO_HEADLINE[tab]}
+                </h1>
+                <p className="mt-1 text-[12px] text-muted-foreground">
+                  {pageMeta}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenChat}
+                className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                <Icon name="ph:chat-circle-dots-bold" width={12} />
+                <span>Open chat</span>
+              </button>
+            </div>
 
-            {/* Search bar */}
-            <div className="relative mx-auto mb-6 max-w-[560px]">
+            <div className="relative max-w-[560px]">
               <Icon
                 name="ph:magnifying-glass-bold"
                 className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -283,30 +302,8 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={HERO_SEARCH_PLACEHOLDER[tab]}
-                className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-4 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong"
+                className="h-10 w-full rounded-lg border border-border bg-card pl-9 pr-4 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong"
               />
-            </div>
-
-            {/* Hero banner — coven-branded gradient spotlight card */}
-            <div className="mx-auto max-w-[560px] overflow-hidden rounded-2xl bg-gradient-to-r from-[#1a0a2e] via-[#3B164F] to-[#1a0a2e] px-6 py-5 text-left">
-              <span className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-purple-500/30 bg-purple-900/40 px-2.5 py-1 text-[10px] font-medium tracking-wide text-purple-200 uppercase">
-                <Icon name="ph:sparkle-bold" width={10} />
-                Featured
-              </span>
-              <p className="mt-2 text-[15px] font-semibold text-white">
-                Connect a harness, command an agent
-              </p>
-              <p className="mt-1 text-[12px] text-purple-200/70">
-                Install any CLI harness and talk to your familiars right from Cave.
-              </p>
-              <button
-                type="button"
-                onClick={onOpenChat}
-                className="mt-4 flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-white/20"
-              >
-                <Icon name="ph:chat-teardrop-dots-bold" width={12} />
-                Try in chat
-              </button>
             </div>
           </div>
 
