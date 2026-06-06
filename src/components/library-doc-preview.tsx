@@ -427,7 +427,7 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
     <div className="library-preview-header">
       <div className="library-preview-title">{doc.title}</div>
       <div className="library-preview-meta">
-        <span className="library-preview-familiar">🌿 Sage</span>
+        <span className="library-preview-familiar"><Icon name="ph:robot" width={12} className="inline-block mr-1 text-[var(--text-muted)]" />Sage</span>
         <span className="library-preview-sep">·</span>
         <span className="library-preview-date">{fmtDate(doc.modifiedAt)}</span>
         <span className="library-preview-sep">·</span>
@@ -514,7 +514,7 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
             <div className="library-reader-header">
               <div className="library-reader-title">{doc.title}</div>
               <div className="library-reader-meta">
-                <span className="library-preview-familiar">🌿 Sage</span>
+                <span className="library-preview-familiar"><Icon name="ph:robot" width={12} className="inline-block mr-1 text-[var(--text-muted)]" />Sage</span>
                 <span className="library-preview-sep">·</span>
                 <span className="library-preview-date">{fmtDate(doc.modifiedAt)}</span>
                 <span className="library-preview-sep">·</span>

@@ -222,7 +222,7 @@ function AttachTaskModal({
                     <select className="gh-modal-select" value={familiarId} onChange={(e) => setFamiliarId(e.target.value)}>
                       <option value="">Unassigned</option>
                       {familiars.map((f) => (
-                        <option key={f.id} value={f.id}>{f.emoji ?? ""} {f.display_name}</option>
+                        <option key={f.id} value={f.id}>{f.display_name}</option>
                       ))}
                     </select>
                   </label>
@@ -414,10 +414,10 @@ function HandoffModal({
                 >
                   <option value="">— pick an agent —</option>
                   {familiars.map((f) => (
-                    <option key={f.id} value={f.id}>{f.emoji ?? "🤖"} {f.display_name}</option>
+                    <option key={f.id} value={f.id}>{f.display_name}</option>
                   ))}
                 </select>
-                {fam && <span className="gh-modal-agent-pill">{fam.emoji ?? "🤖"} {fam.display_name}</span>}
+                {fam && <span className="gh-modal-agent-pill">{fam.display_name}</span>}
               </div>
             </label>
 

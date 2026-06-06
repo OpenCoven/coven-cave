@@ -95,7 +95,7 @@ export function LibraryDocList({
                 <span className="library-doclist-item-date">{relDate(doc.modifiedAt)}</span>
               </div>
               <div className="library-doclist-item-meta">
-                <span className="library-doclist-item-familiar">🌿</span>
+                <Icon name="ph:robot" width={12} className="library-doclist-item-familiar shrink-0 text-[var(--text-muted)]" />
                 {doc.excerpt && (
                   <span className="library-doclist-item-excerpt">{doc.excerpt}</span>
                 )}

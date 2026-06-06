@@ -855,9 +855,7 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
                 className="rounded border border-purple-500/20 bg-purple-600/10 px-2 py-1.5"
               >
                 <div className="flex items-center gap-1.5">
-                  {role.emoji ? (
-                    <span className="text-[13px]">{role.emoji}</span>
-                  ) : null}
+                  <Icon name="ph:sparkle" width={13} className="shrink-0 text-purple-300" />
                   <span className="font-medium text-[var(--text-primary)]">{role.name}</span>
                   <span className="ml-auto rounded bg-purple-600/20 px-1 text-[10px] text-purple-200">
                     {role.familiar}

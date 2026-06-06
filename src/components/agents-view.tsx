@@ -309,7 +309,7 @@ export function AgentsView({
       let key: string;
       if (groupBy === "familiar") {
         const f = s.familiarId ? famById.get(s.familiarId) : null;
-        key = f ? `${f.emoji ?? "🤖"} ${f.display_name}` : "Unknown";
+        key = f ? f.display_name : "Unknown";
       } else if (groupBy === "status") {
         key = s.status ?? "unknown";
       } else {

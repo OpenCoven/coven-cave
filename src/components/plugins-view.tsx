@@ -756,7 +756,7 @@ function RoleCard({
             ? "bg-emerald-500/15 text-emerald-300"
             : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
       ].join(" ")}>
-        {role.emoji ?? role.name.slice(0, 2).toUpperCase()}
+        <Icon name="ph:sparkle" width={14} />
       </span>
 
       {/* Name + meta */}
@@ -900,7 +900,7 @@ function RoleCapabilityMap({
           "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[12px] font-bold",
           role.active ? "bg-emerald-500/15 text-emerald-300" : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]",
         ].join(" ")}>
-          {role.emoji ?? role.name.slice(0, 2).toUpperCase()}
+          <Icon name="ph:sparkle" width={14} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
