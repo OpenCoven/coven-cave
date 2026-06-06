@@ -53,6 +53,9 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
   const [newLabel, setNewLabel] = useState("");
 
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
+  const eligibleSessions = card.familiarId
+    ? sessions.filter((s) => s.familiarId === card.familiarId)
+    : sessions;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
@@ -130,20 +133,58 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
             </select>
           </div>
 
-          {session && (
-            <div className="board-drawer-field">
-              <div className="board-drawer-field-label">Session</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="board-table-muted" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {session.title || "(untitled)"}
-                </span>
+          <div className="board-drawer-field">
+            <div className="board-drawer-field-label">Session (optional)</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <select className="board-drawer-field-select" value={card.sessionId ?? ""}
+                onChange={(e) => onPatch(card.id, { sessionId: e.target.value || null })}>
+                <option value="">No linked session</option>
+                {eligibleSessions.slice(0, 50).map((s) => (
+                  <option key={s.id} value={s.id}>{s.title || "(untitled)"} · {s.harness}</option>
+                ))}
+              </select>
+              {session ? (
                 <button type="button" className="board-toolbar-btn"
                   onClick={() => onJumpToSession?.(session.id, session.familiarId ?? null)}>
                   Open <Icon name="ph:arrow-square-out" width={11} />
                 </button>
-              </div>
+              ) : null}
             </div>
-          )}
+          </div>
+
+          <div className="board-drawer-field">
+            <div className="board-drawer-field-label">CWD</div>
+            <input className="board-drawer-field-input" defaultValue={card.cwd ?? ""}
+              placeholder="/Users/buns/Documents/GitHub/OpenCoven/coven-cave"
+              onBlur={(e) => {
+                const next = e.target.value.trim() || null;
+                if (next !== card.cwd) onPatch(card.id, { cwd: next });
+              }} />
+          </div>
+
+          <div className="board-drawer-field">
+            <div className="board-drawer-field-label">Links</div>
+            {card.links.length > 0 && (
+              <div className="board-task-links">
+                {card.links.map((link) => {
+                  const href = safeHref(link);
+                  return href ? (
+                    <a key={link} className="board-task-link" href={href} target="_blank" rel="noreferrer">
+                      {formatLinkLabel(link)}
+                    </a>
+                  ) : (
+                    <span key={link} className="board-task-link">{link}</span>
+                  );
+                })}
+              </div>
+            )}
+            <textarea className="board-drawer-field-textarea" defaultValue={card.links.join("\n")}
+              placeholder="One URL or reference per line"
+              onBlur={(e) => {
+                const next = parseDelimited(e.target.value);
+                if (next.join("\n") !== card.links.join("\n")) onPatch(card.id, { links: next });
+              }} />
+          </div>
 
           <div className="board-drawer-field">
             <div className="board-drawer-field-label">Notes</div>
@@ -215,4 +256,26 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
       </div>
     </>
   );
+}
+
+function parseDelimited(value: string): string[] {
+  return [...new Set(value.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean))];
+}
+
+function safeHref(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatLinkLabel(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.hostname}${url.pathname}`.replace(/\/$/, "");
+  } catch {
+    return value;
+  }
 }

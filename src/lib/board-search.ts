@@ -72,6 +72,7 @@ function tokenMatches(
 ): boolean {
   const value = token.value;
   const labelValues = card.labels ?? [];
+  const linkValues = card.links ?? [];
   const familiar = familiarValues(card, familiarsById);
 
   switch (token.key) {
@@ -95,6 +96,15 @@ function tokenMatches(
       return normalize(card.notes).includes(value);
     case "session":
       return normalize(card.sessionId).includes(value);
+    case "cwd":
+    case "path":
+    case "repo":
+      return normalize(card.cwd).includes(value);
+    case "link":
+    case "links":
+    case "url":
+    case "urls":
+      return includesAny(linkValues, value);
     case "id":
       return normalize(card.id).includes(value);
     case "is":
@@ -110,6 +120,8 @@ function tokenMatches(
           card.status,
           card.priority,
           card.sessionId ?? "",
+          card.cwd ?? "",
+          ...linkValues,
           ...labelValues,
           ...familiar,
         ],

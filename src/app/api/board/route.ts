@@ -21,6 +21,8 @@ export async function POST(req: Request) {
     priority?: CardPriority;
     familiarId?: string | null;
     sessionId?: string | null;
+    cwd?: string | null;
+    links?: string[];
     labels?: string[];
     template?: string | null;
   };
@@ -39,6 +41,8 @@ export async function POST(req: Request) {
     priority: body.priority,
     familiarId: body.familiarId,
     sessionId: body.sessionId,
+    cwd: body.cwd,
+    links: body.links,
     labels: body.labels,
     template: body.template,
   });
