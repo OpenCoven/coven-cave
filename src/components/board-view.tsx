@@ -31,7 +31,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [cards, setCards] = useState<Card[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "priority", "none"]));
+  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar"]));
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -210,14 +210,24 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           ) : null}
         </div>
         <div className="board-header-controls">
-          <label className="sr-only" htmlFor="board-groupby">Group by</label>
-          <select id="board-groupby" className="board-toolbar-select" value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
-            <option value="status">Group: Status</option>
-            <option value="familiar">Group: Familiar</option>
-            <option value="priority">Group: Priority</option>
-            <option value="none">No grouping</option>
-          </select>
+          <div className="board-group-toggle" role="group" aria-label="Group tasks by">
+            <button
+              type="button"
+              className={`board-group-toggle-btn${groupBy === "status" ? " board-group-toggle-btn--active" : ""}`}
+              onClick={() => setGroupBy("status")}
+              aria-pressed={groupBy === "status"}
+            >
+              Status
+            </button>
+            <button
+              type="button"
+              className={`board-group-toggle-btn${groupBy === "familiar" ? " board-group-toggle-btn--active" : ""}`}
+              onClick={() => setGroupBy("familiar")}
+              aria-pressed={groupBy === "familiar"}
+            >
+              Familiar
+            </button>
+          </div>
 
           <div className="board-view-toggle" role="group" aria-label="Tasks view mode">
             <button type="button" aria-label="Kanban view"

@@ -6,7 +6,7 @@ import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 
-export type GroupBy = "status" | "familiar" | "priority" | "none";
+export type GroupBy = "status" | "familiar";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "cwd" | "links" | "lifecycle" | "updatedAt";
 export type SortDir = "asc" | "desc";
 
@@ -32,21 +32,19 @@ function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familia
 }
 
 function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: string; label: string; cards: Card[] }[] {
-  if (by === "none") return [{ key: "all", label: "", cards }];
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = by === "status" ? c.status : by === "priority" ? c.priority : (c.familiarId ?? "__unassigned__");
+    const key = by === "status" ? c.status : (c.familiarId ?? "__unassigned__");
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
-  const entries = [...map.entries()].map(([key, cards]) => {
-    let label = key;
-    if (by === "familiar") label = key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key);
-    else label = key.charAt(0).toUpperCase() + key.slice(1);
-    return { key, label, cards };
+  const entries = [...map.entries()].map(([key, grpCards]) => {
+    const label = by === "familiar"
+      ? (key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key))
+      : key.charAt(0).toUpperCase() + key.slice(1);
+    return { key, label, cards: grpCards };
   });
   if (by === "status") entries.sort((a, b) => (STATUS_ORDER[a.key as CardStatus] ?? 9) - (STATUS_ORDER[b.key as CardStatus] ?? 9));
-  if (by === "priority") entries.sort((a, b) => (PRIORITY_ORDER[a.key as CardPriority] ?? 9) - (PRIORITY_ORDER[b.key as CardPriority] ?? 9));
   return entries;
 }
 
@@ -128,7 +126,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
         <tbody>
           {groups.map(({ key, label, cards: gc }) => (
             <React.Fragment key={key}>
-              {groupBy !== "none" && (
+              {true && (
                 <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
                   <td colSpan={COLS.length}>
                     <span className="board-table-group-caret">
