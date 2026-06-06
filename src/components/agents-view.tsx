@@ -18,7 +18,9 @@ import {
 } from "@/lib/coven-calls-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 
-type AgentsScope = "created" | "all" | "conversation" | "floor" | "delegations";
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type AgentsScope = "sessions" | "conversation" | "floor" | "delegations";
 
 type Props = {
   familiars: Familiar[];
@@ -46,23 +48,7 @@ type Props = {
 type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
 type BoardResponse = { ok: true; cards: Card[] } | { ok: false; error?: string };
 
-const STARTERS = [
-  {
-    title: "Explain repository",
-    body: "Ask an agent to map the codebase and identify the important entry points.",
-    icon: "ph:git-pull-request" as const,
-  },
-  {
-    title: "Improve my workflow",
-    body: "Review recent sessions and suggest a sharper next operating loop.",
-    icon: "ph:rocket-launch-bold" as const,
-  },
-  {
-    title: "Create a plan",
-    body: "Turn an idea into a scoped implementation plan before editing files.",
-    icon: "ph:clipboard-text" as const,
-  },
-];
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function relTime(iso: string | undefined): string {
   if (!iso) return "";
@@ -76,124 +62,178 @@ function relTime(iso: string | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function isClosed(session: SessionRow): boolean {
-  if (session.archived_at) return true;
-  if (session.exit_code !== null) return true;
-  return ["complete", "completed", "done", "exited", "failed", "cancelled"].includes(session.status);
+function isClosed(s: SessionRow): boolean {
+  if (s.archived_at) return true;
+  if (s.exit_code !== null) return true;
+  return ["complete", "completed", "done", "exited", "failed", "cancelled"].includes(s.status);
 }
 
-function statusTone(session: SessionRow): string {
-  if (session.status === "running") return "border-emerald-500/25 bg-emerald-500/15 text-emerald-300";
-  if (session.status === "failed" || (session.exit_code !== null && session.exit_code !== 0)) return "border-rose-500/25 bg-rose-500/15 text-rose-200";
-  if (isClosed(session)) return "border-[var(--border-hairline)] bg-[var(--bg-raised)] text-[var(--text-muted)]";
+function statusTone(s: SessionRow): string {
+  if (s.status === "running") return "border-emerald-500/25 bg-emerald-500/15 text-emerald-300";
+  if (s.status === "failed" || (s.exit_code !== null && s.exit_code !== 0))
+    return "border-rose-500/25 bg-rose-500/15 text-rose-200";
+  if (isClosed(s)) return "border-[var(--border-hairline)] bg-[var(--bg-raised)] text-[var(--text-muted)]";
   return "border-sky-500/25 bg-sky-500/15 text-sky-200";
 }
 
-function traceAgentName(familiarsById: Map<string, Familiar>, id: string): string {
-  const familiar = familiarsById.get(id);
-  return familiar?.display_name ?? familiar?.name ?? id;
-}
+// ── Delegation mini-panel ─────────────────────────────────────────────────────
 
-function traceSourceTone(trace: DelegationTrace): string {
-  if (trace.source === "explicit") return "border-emerald-500/25 bg-emerald-500/12 text-emerald-200";
-  return "border-amber-500/25 bg-amber-500/12 text-amber-200";
-}
-
-function DelegationLivePanel({
+function DelegationStrip({
   graph,
-  familiarsById,
   error,
-  loadedAt,
-  onOpenGraph,
+  onOpen,
 }: {
   graph: DelegationGraph;
-  familiarsById: Map<string, Familiar>;
   error: string | null;
-  loadedAt: string | null;
-  onOpenGraph: () => void;
+  onOpen: () => void;
 }) {
-  const explicitCount = graph.traces.filter((trace) => trace.source === "explicit").length;
-  const inferredCount = graph.traces.filter((trace) => trace.source === "inferred").length;
-  const runningCount = graph.traces.filter((trace) => trace.status === "running").length;
-  const failedCount = graph.traces.filter((trace) => trace.status === "failed").length;
-  const recentTraces = graph.traces.slice(0, 5);
+  const running = graph.traces.filter((t) => t.status === "running").length;
+  const failed = graph.traces.filter((t) => t.status === "failed").length;
+  if (graph.traces.length === 0 && !running) return null;
 
   return (
-    <section className="shrink-0 border-b border-[var(--border-hairline)] px-5 py-4">
-      <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)]/45">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border-hairline)] px-3 py-2.5">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <Icon name="ph:graph" width={14} className="text-[var(--text-muted)]" />
-              <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">Live trace events</h3>
-            </div>
-            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-              {loadedAt ? `Updated ${relTime(loadedAt)}` : "Waiting for trace data"}
-              {error ? ` · ${error}` : ""}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenGraph}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrows-out-simple" width={12} />
-            Open graph
-          </button>
-        </div>
+    <div className="flex items-center gap-3 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-4 py-2 text-[11px]">
+      <Icon name="ph:graph" width={13} className="shrink-0 text-[var(--text-muted)]" />
+      <span className="text-[var(--text-muted)]">
+        {graph.traces.length} delegation{graph.traces.length !== 1 ? "s" : ""}
+        {running > 0 && <span className="ml-2 text-emerald-400">{running} running</span>}
+        {failed > 0 && <span className="ml-2 text-rose-400">{failed} failed</span>}
+        {error && <span className="ml-2 text-amber-400">· {error}</span>}
+      </span>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="ml-auto text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+      >
+        View graph
+      </button>
+    </div>
+  );
+}
 
-        <div className="grid gap-px border-b border-[var(--border-hairline)] bg-[var(--border-hairline)] md:grid-cols-5">
-          {[
-            ["Explicit", explicitCount],
-            ["Inferred", inferredCount],
-            ["Running", runningCount],
-            ["Failed", failedCount],
-            ["Agents", graph.nodes.length],
-          ].map(([label, value]) => (
-            <div key={label} className="bg-[var(--bg-panel)] px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">{label}</div>
-              <div className="mt-0.5 text-[15px] font-semibold text-[var(--text-primary)]">{value}</div>
-            </div>
-          ))}
-        </div>
+// ── Session row ───────────────────────────────────────────────────────────────
 
-        <div className="divide-y divide-[var(--border-hairline)]">
-          {recentTraces.length === 0 ? (
-            <div className="px-3 py-3 text-[12px] text-[var(--text-muted)]">No trace events yet.</div>
-          ) : (
-            recentTraces.map((trace) => (
-              <div key={trace.id} className="grid gap-2 px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_auto]">
-                <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] text-[var(--text-primary)]">
-                    <span className="truncate font-medium">{traceAgentName(familiarsById, trace.callerFamiliarId)}</span>
-                    <Icon name="ph:arrow-right-bold" width={11} className="text-[var(--text-muted)]" />
-                    <span className="truncate font-medium">{traceAgentName(familiarsById, trace.calleeFamiliarId)}</span>
-                    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] capitalize ${traceSourceTone(trace)}`}>
-                      {trace.source}
-                    </span>
-                  </div>
-                  <div className="mt-1 truncate text-[11px] text-[var(--text-muted)]">{trace.request}</div>
-                </div>
-                <div className="flex items-center justify-between gap-2 md:justify-end">
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] capitalize ${
-                    trace.status === "running"
-                      ? "border-emerald-500/25 bg-emerald-500/15 text-emerald-300"
-                      : trace.status === "failed"
-                        ? "border-rose-500/25 bg-rose-500/15 text-rose-200"
-                        : "border-[var(--border-hairline)] bg-[var(--bg-raised)] text-[var(--text-muted)]"
-                  }`}>
-                    {trace.status}
-                  </span>
-                  <span className="w-12 text-right text-[11px] text-[var(--text-muted)]">{relTime(trace.createdAt)}</span>
-                </div>
-              </div>
-            ))
+function SessionRow_({
+  session,
+  familiar,
+  active,
+  onClick,
+}: {
+  session: SessionRow;
+  familiar: Familiar | undefined;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left transition-colors hover:bg-[var(--bg-raised)]",
+        active ? "bg-[var(--bg-raised)]" : "",
+      ].join(" ")}
+    >
+      <div className="min-w-0">
+        <div className="truncate text-[12px] font-medium text-[var(--text-primary)]">
+          {session.title || "Untitled session"}
+        </div>
+        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+          <span>{familiar?.display_name ?? session.familiarId ?? "—"}</span>
+          <span>·</span>
+          <span>{session.harness}</span>
+          {session.project_root && (
+            <span className="max-w-[200px] truncate opacity-60">{session.project_root}</span>
           )}
         </div>
       </div>
-    </section>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className={`rounded-full border px-1.5 py-0.5 text-[10px] capitalize ${statusTone(session)}`}>
+          {session.status}
+        </span>
+        <span className="w-10 text-right text-[10px] text-[var(--text-muted)]">
+          {relTime(session.updated_at || session.created_at)}
+        </span>
+      </div>
+    </button>
   );
 }
+
+// ── Right panel (inspector / chat) ────────────────────────────────────────────
+
+function RightPanel({
+  panel,
+  activeFamiliar,
+  activeFamiliarId,
+  familiars,
+  sessions,
+  daemonRunning,
+  inboxItems,
+  onSetPanel,
+  onSessionStarted,
+  onSlashFromChat,
+  onOpenOnboarding,
+  onSetActiveFamiliar,
+  onOpenInbox,
+}: {
+  panel: "inspector" | "chat";
+  activeFamiliar: Familiar | null;
+  activeFamiliarId: string | null;
+  familiars: Familiar[];
+  sessions: SessionRow[];
+  daemonRunning: boolean;
+  inboxItems: InboxItem[];
+  onSetPanel: (p: "inspector" | "chat" | null) => void;
+  onSessionStarted: () => void;
+  onSlashFromChat: (cmd: string, args: string) => boolean;
+  onOpenOnboarding: () => void;
+  onSetActiveFamiliar: (id: string) => void;
+  onOpenInbox: () => void;
+}) {
+  return (
+    <aside className="relative hidden h-full w-[320px] shrink-0 border-l border-[var(--border-hairline)] lg:flex lg:flex-col">
+      <div className="right-panel-tabs">
+        <button
+          type="button"
+          className={`right-panel-tab${panel === "chat" ? " right-panel-tab--active" : ""}`}
+          onClick={() => onSetPanel("chat")}
+        >
+          <Icon name="ph:chats" width={13} />
+          Chat
+        </button>
+        <button
+          type="button"
+          className={`right-panel-tab${panel === "inspector" ? " right-panel-tab--active" : ""}`}
+          onClick={() => onSetPanel("inspector")}
+        >
+          <Icon name="ph:brain-bold" width={13} />
+          Inspector
+        </button>
+        <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
+          <Icon name="ph:x-bold" width={11} />
+        </button>
+      </div>
+      {panel === "inspector" && (
+        <InspectorPane familiar={activeFamiliar} inboxItems={inboxItems} onOpenInbox={onOpenInbox} />
+      )}
+      {panel === "chat" && (
+        <AgentPanel
+          ref={null}
+          familiar={activeFamiliar}
+          familiars={familiars}
+          activeId={activeFamiliarId}
+          sessions={sessions}
+          daemonRunning={daemonRunning}
+          onSessionStarted={onSessionStarted}
+          onSlashFromChat={onSlashFromChat}
+          onOpenOnboarding={onOpenOnboarding}
+          onFamiliarSelect={onSetActiveFamiliar}
+        />
+      )}
+    </aside>
+  );
+}
+
+// ── Main view ─────────────────────────────────────────────────────────────────
 
 export function AgentsView({
   familiars,
@@ -217,119 +257,74 @@ export function AgentsView({
   onOpenInbox,
   onOpenMode,
 }: Props) {
-  const [scope, setScope] = useState<AgentsScope>("created");
+  const [scope, setScope] = useState<AgentsScope>("sessions");
   const [query, setQuery] = useState("");
   const [showClosed, setShowClosed] = useState(false);
 
-  // Right-panel: new two-icon strip ("inspector" | "chat" | null)
-  // Falls back to legacy inspectorOpen bool when onSetRightPanel not provided
+  // Right panel — prefer new prop, fall back to legacy bool
   const rightPanel: "inspector" | "chat" | null =
-    rightPanelProp !== undefined
-      ? (rightPanelProp ?? null)
-      : inspectorOpen
-      ? "inspector"
-      : null;
+    rightPanelProp !== undefined ? (rightPanelProp ?? null) : inspectorOpen ? "inspector" : null;
 
   function setRightPanel(next: "inspector" | "chat" | null) {
     if (onSetRightPanel) { onSetRightPanel(next); return; }
-    // legacy fallback
     onSetInspectorOpen(next === "inspector");
   }
+
+  // Delegation data
   const [delegationCalls, setDelegationCalls] = useState<CovenCall[]>([]);
   const [delegationCards, setDelegationCards] = useState<Card[]>([]);
   const [delegationError, setDelegationError] = useState<string | null>(null);
-  const [delegationLoadedAt, setDelegationLoadedAt] = useState<string | null>(null);
 
   const famById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const openCount = useMemo(() => sessions.filter((s) => !isClosed(s)).length, [sessions]);
   const closedCount = sessions.length - openCount;
 
-  const inferredDelegationTraces = useMemo(
-    () => inferDelegationTraces({ cards: delegationCards, sessions }),
-    [delegationCards, sessions],
-  );
-
   const delegationGraph = useMemo(
     () =>
       buildDelegationGraph({
         explicitCalls: delegationCalls,
-        inferredTraces: inferredDelegationTraces,
+        inferredTraces: inferDelegationTraces({ cards: delegationCards, sessions }),
         includeInferred: true,
       }),
-    [delegationCalls, inferredDelegationTraces],
+    [delegationCalls, delegationCards, sessions],
   );
 
   const loadDelegations = useCallback(async () => {
     try {
-      const [callsRes, boardRes] = await Promise.all([
+      const [cr, br] = await Promise.all([
         fetch("/api/coven-calls", { cache: "no-store" }),
         fetch("/api/board", { cache: "no-store" }),
       ]);
-      const callsJson = (await callsRes.json()) as CallsResponse;
-      const boardJson = (await boardRes.json()) as BoardResponse;
-      if (!callsRes.ok) throw new Error("calls unavailable");
-      if (!callsJson.ok) throw new Error(callsJson.error ?? "calls unavailable");
-      if (!boardRes.ok) throw new Error("board unavailable");
-      if (!boardJson.ok) throw new Error(boardJson.error ?? "board unavailable");
-      setDelegationCalls(callsJson.calls);
-      setDelegationCards(boardJson.cards);
-      setDelegationLoadedAt(new Date().toISOString());
+      const cj = (await cr.json()) as CallsResponse;
+      const bj = (await br.json()) as BoardResponse;
+      if (cj.ok) setDelegationCalls(cj.calls);
+      if (bj.ok) setDelegationCards(bj.cards);
       setDelegationError(null);
-    } catch (err) {
-      setDelegationError(err instanceof Error ? err.message : "trace data unavailable");
+    } catch {
+      setDelegationError("trace unavailable");
     }
   }, []);
 
   useEffect(() => {
     void loadDelegations();
-    const timer = setInterval(loadDelegations, 10_000);
-    return () => clearInterval(timer);
+    const t = setInterval(loadDelegations, 15_000);
+    return () => clearInterval(t);
   }, [loadDelegations]);
 
-  const filteredSessions = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return [...sessions]
-      .filter((session) => (showClosed ? isClosed(session) : !isClosed(session)))
-      .filter((session) => {
-        if (!q) return true;
-        const familiar = session.familiarId ? famById.get(session.familiarId) : null;
-        return [
-          session.title,
-          session.status,
-          session.harness,
-          session.project_root,
-          session.origin ?? "",
-          familiar?.display_name ?? "",
-        ].some((value) => value.toLowerCase().includes(q));
-      })
-      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-  }, [famById, query, sessions, showClosed]);
-
-  const startConversation = (familiarId?: string | null) => {
-    if (familiarId) onSetActiveFamiliar(familiarId);
-    setScope("conversation");
-    window.setTimeout(() => routerRef.current?.newChat(), 0);
-  };
-
-  const openConversation = (session: SessionRow) => {
-    if (session.familiarId) onSetActiveFamiliar(session.familiarId);
-    setScope("conversation");
-    window.setTimeout(() => routerRef.current?.openSession(session.id), 0);
-  };
-
+  // Window events
   useEffect(() => {
-    const onNewChat = (event: Event) => {
-      const detail = (event as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null }>).detail;
-      if (detail?.familiarId) onSetActiveFamiliar(detail.familiarId);
+    const onNewChat = (e: Event) => {
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null }>).detail;
+      if (d?.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.newChat(detail?.projectRoot ?? undefined), 0);
+      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined), 0);
     };
-    const onOpenSession = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionId?: string; familiarId?: string | null }>).detail;
-      if (!detail?.sessionId) return;
-      if (detail.familiarId) onSetActiveFamiliar(detail.familiarId);
+    const onOpenSession = (e: Event) => {
+      const d = (e as CustomEvent<{ sessionId?: string; familiarId?: string | null }>).detail;
+      if (!d?.sessionId) return;
+      if (d.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.openSession(detail.sessionId!), 0);
+      window.setTimeout(() => routerRef.current?.openSession(d.sessionId!), 0);
     };
     const onShowList = () => {
       setScope("conversation");
@@ -345,63 +340,72 @@ export function AgentsView({
     };
   }, [onSetActiveFamiliar, routerRef]);
 
-  const scopeButton = (
-    id: AgentsScope,
-    label: string,
-    icon: Parameters<typeof Icon>[0]["name"],
-    count?: number,
-  ) => (
-    <button
-      key={id}
-      type="button"
-      onClick={() => setScope(id)}
-      className={[
-        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] transition-colors",
-        scope === id
-          ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-          : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
-      ].join(" ")}
-    >
-      <Icon name={icon} width={14} className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count !== undefined ? <span className="text-[10px] text-[var(--text-muted)]">{count}</span> : null}
-    </button>
-  );
+  const filteredSessions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return [...sessions]
+      .filter((s) => (showClosed ? isClosed(s) : !isClosed(s)))
+      .filter((s) => {
+        if (!q) return true;
+        const f = s.familiarId ? famById.get(s.familiarId) : null;
+        return [s.title, s.status, s.harness, s.project_root, s.origin ?? "", f?.display_name ?? ""]
+          .some((v) => v?.toLowerCase().includes(q));
+      })
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+  }, [famById, query, sessions, showClosed]);
+
+  function startConversation(familiarId?: string | null) {
+    if (familiarId) onSetActiveFamiliar(familiarId);
+    setScope("conversation");
+    window.setTimeout(() => routerRef.current?.newChat(), 0);
+  }
+
+  function openConversation(session: SessionRow) {
+    if (session.familiarId) onSetActiveFamiliar(session.familiarId);
+    setScope("conversation");
+    window.setTimeout(() => routerRef.current?.openSession(session.id), 0);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <section className="flex h-full min-w-0 bg-[var(--bg-base)]">
-      <aside className="hidden w-[218px] shrink-0 flex-col border-r border-[var(--border-hairline)] bg-[var(--bg-panel)]/70 p-3 md:flex">
-        <div className="mb-3 px-1">
-          <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Agents</h1>
-          <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Sessions, floor, and delegation traces.</p>
-        </div>
-        <div className="space-y-1">
-          {scopeButton("created", "Created by me", "ph:user", openCount)}
-          {scopeButton("all", "All sessions", "ph:squares-four", sessions.length)}
-        </div>
-        <div className="my-3 h-px bg-[var(--border-hairline)]" />
-        <div className="space-y-1">
-          {scopeButton("conversation", "Live chat", "ph:chat-circle-dots")}
-          {scopeButton("floor", "The Floor", "ph:users-three")}
-          {scopeButton("delegations", "Delegations", "ph:graph")}
-        </div>
-        <div className="mt-auto space-y-1 border-t border-[var(--border-hairline)] pt-3">
-          <button type="button" className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]" onClick={() => onOpenMode("plugins")}>
-            <Icon name="ph:plug" width={14} />
-            Configure
-          </button>
-          <button type="button" className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]" onClick={() => onOpenMode("library")}>
-            <Icon name="ph:brain-bold" width={14} />
-            Memories
-          </button>
-          <button type="button" className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]" onClick={() => onOpenMode("projects")}>
-            <Icon name="ph:terminal-window" width={14} />
-            Customize environment
-          </button>
-        </div>
-      </aside>
 
+      {/* Left nav */}
+      <nav className="hidden w-[44px] shrink-0 flex-col items-center gap-1 border-r border-[var(--border-hairline)] bg-[var(--bg-panel)]/70 py-2 md:flex">
+        {(
+          [
+            ["sessions",    "ph:list-bullets",      "Sessions"],
+            ["conversation","ph:chat-circle-dots",  "Chat"],
+            ["floor",       "ph:users-three",       "Floor"],
+            ["delegations", "ph:graph",             "Delegations"],
+          ] as [AgentsScope, Parameters<typeof Icon>[0]["name"], string][]
+        ).map(([id, icon, title]) => (
+          <button
+            key={id}
+            type="button"
+            title={title}
+            onClick={() => setScope(id)}
+            className={[
+              "grid h-8 w-8 place-items-center rounded-md transition-colors",
+              scope === id
+                ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+                : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]",
+            ].join(" ")}
+          >
+            <Icon name={icon} width={15} />
+          </button>
+        ))}
+        <div className="mt-auto flex flex-col items-center gap-1 border-t border-[var(--border-hairline)] pt-2 w-full">
+          <button type="button" title="Configure" onClick={() => onOpenMode("plugins")}
+            className="grid h-8 w-8 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]">
+            <Icon name="ph:plug" width={15} />
+          </button>
+        </div>
+      </nav>
+
+      {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
+
         {scope === "floor" ? (
           <CovenFloor />
         ) : scope === "delegations" ? (
@@ -431,9 +435,9 @@ export function AgentsView({
                 onFamiliarSelect={(id) => {
                   onSetActiveFamiliar(id);
                   if (pendingProjectRoot) {
-                    const projectRoot = pendingProjectRoot;
+                    const root = pendingProjectRoot;
                     onClearPendingProjectRoot();
-                    window.setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
+                    window.setTimeout(() => routerRef.current?.newChat(root), 0);
                   } else {
                     window.setTimeout(() => routerRef.current?.goToList(), 0);
                   }
@@ -441,186 +445,100 @@ export function AgentsView({
                 pendingProjectRoot={pendingProjectRoot}
               />
             </div>
-            {rightPanel !== null ? (
-              <aside className="relative hidden h-full w-[340px] shrink-0 border-l border-[var(--border-hairline)] lg:flex lg:flex-col">
-                {/* Tab strip */}
-                <div className="right-panel-tabs">
-                  <button
-                    type="button"
-                    className={`right-panel-tab${rightPanel === "chat" ? " right-panel-tab--active" : ""}`}
-                    onClick={() => setRightPanel("chat")}
-                    title="Chat"
-                  >
-                    <Icon name="ph:chats" width={13} />
-                    Chat
-                  </button>
-                  <button
-                    type="button"
-                    className={`right-panel-tab${rightPanel === "inspector" ? " right-panel-tab--active" : ""}`}
-                    onClick={() => setRightPanel("inspector")}
-                    title="Inspector"
-                  >
-                    <Icon name="ph:brain-bold" width={13} />
-                    Inspector
-                  </button>
-                  <button
-                    type="button"
-                    className="right-panel-close"
-                    onClick={() => setRightPanel(null)}
-                    title="Close panel"
-                    aria-label="Close panel"
-                  >
-                    <Icon name="ph:x-bold" width={11} />
-                  </button>
-                </div>
-                {rightPanel === "inspector" && (
-                  <InspectorPane familiar={activeFamiliar} inboxItems={inboxItems} onOpenInbox={onOpenInbox} />
-                )}
-                {rightPanel === "chat" && (
-                  <AgentPanel
-                    ref={null}
-                    familiar={activeFamiliar}
-                    familiars={familiars}
-                    activeId={activeFamiliarId}
-                    sessions={sessions}
-                    daemonRunning={daemonRunning}
-                    onSessionStarted={onSessionStarted}
-                    onSlashFromChat={onSlashFromChat}
-                    onOpenOnboarding={onOpenOnboarding}
-                    onFamiliarSelect={onSetActiveFamiliar}
-                  />
-                )}
-              </aside>
-            ) : null}
+            {rightPanel !== null && (
+              <RightPanel
+                panel={rightPanel}
+                activeFamiliar={activeFamiliar}
+                activeFamiliarId={activeFamiliarId}
+                familiars={familiars}
+                sessions={sessions}
+                daemonRunning={daemonRunning}
+                inboxItems={inboxItems}
+                onSetPanel={setRightPanel}
+                onSessionStarted={onSessionStarted}
+                onSlashFromChat={onSlashFromChat}
+                onOpenOnboarding={onOpenOnboarding}
+                onSetActiveFamiliar={onSetActiveFamiliar}
+                onOpenInbox={onOpenInbox}
+              />
+            )}
           </div>
         ) : (
+          /* Sessions list */
           <div className="flex min-h-0 flex-1 flex-col">
-            {!daemonRunning ? (
-              <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-2 text-[12px] text-amber-200">
-                The daemon is offline. Existing sessions are visible, but new agent tasks may not start until it is running.
+            {!daemonRunning && (
+              <div className="shrink-0 border-b border-amber-700/40 bg-amber-900/20 px-4 py-1.5 text-[11px] text-amber-200">
+                Daemon offline — existing sessions visible but new tasks may not start.
               </div>
-            ) : null}
+            )}
 
-            <header className="shrink-0 border-b border-[var(--border-hairline)] px-5 py-4">
-              <div className="flex flex-wrap items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-[18px] font-semibold text-[var(--text-primary)]">Sessions</h2>
-                  <p className="mt-1 text-[12px] text-[var(--text-muted)]">Start work, inspect live chats, and trace agent delegation from one place.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => startConversation(activeFamiliarId)}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white hover:opacity-90"
-                >
-                  <Icon name="ph:plus-bold" width={12} />
-                  New task
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => startConversation(activeFamiliarId)}
-                className="mt-4 flex min-h-[86px] w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 p-3 text-left transition-colors hover:border-[var(--border-strong)]"
-              >
-                <span className="text-[13px] text-[var(--text-secondary)]">Give an agent a background task to work on.</span>
-                <span className="mt-auto flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                  <span className="inline-flex items-center gap-2">
-                    <Icon name="ph:file" width={13} />
-                    <Icon name="ph:wrench-bold" width={13} />
-                  </span>
-                  <span className="inline-flex items-center gap-2">
-                    <span className="rounded-md border border-[var(--border-hairline)] px-2 py-1">Auto</span>
-                    <Icon name="ph:arrow-up-bold" width={13} />
-                  </span>
-                </span>
-              </button>
-            </header>
-
-            <DelegationLivePanel
-              graph={delegationGraph}
-              familiarsById={famById}
-              error={delegationError}
-              loadedAt={delegationLoadedAt}
-              onOpenGraph={() => setScope("delegations")}
-            />
-
-            <div className="shrink-0 border-b border-[var(--border-hairline)] px-5 py-4">
-              <div className="mb-2 text-[12px] font-medium text-[var(--text-secondary)]">Get started with agents</div>
-              <div className="grid gap-2 md:grid-cols-3">
-                {STARTERS.map((starter) => (
-                  <button
-                    key={starter.title}
-                    type="button"
-                    onClick={() => startConversation(activeFamiliarId)}
-                    className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)]"
-                  >
-                    <Icon name={starter.icon} width={16} className="mb-2 text-[var(--text-muted)]" />
-                    <div className="text-[12px] font-medium text-[var(--text-primary)]">{starter.title}</div>
-                    <div className="mt-1 text-[11px] leading-4 text-[var(--text-muted)]">{starter.body}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
-              <div className="relative min-w-[240px] flex-1">
-                <Icon name="ph:magnifying-glass" width={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            {/* Toolbar */}
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
+              <div className="relative flex-1">
+                <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="is:open author:@me"
-                  className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-8 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+                  placeholder="Search sessions…"
+                  className="h-7 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
                 />
               </div>
-              <button type="button" className={`h-8 rounded-md px-3 text-[12px] ${!showClosed ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`} onClick={() => setShowClosed(false)}>
-                Open {openCount}
+              <button
+                type="button"
+                onClick={() => setShowClosed(false)}
+                className={`h-7 rounded-md px-2.5 text-[11px] transition-colors ${!showClosed ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}
+              >
+                Open <span className="opacity-60">{openCount}</span>
               </button>
-              <button type="button" className={`h-8 rounded-md px-3 text-[12px] ${showClosed ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`} onClick={() => setShowClosed(true)}>
-                Closed {closedCount}
+              <button
+                type="button"
+                onClick={() => setShowClosed(true)}
+                className={`h-7 rounded-md px-2.5 text-[11px] transition-colors ${showClosed ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"}`}
+              >
+                Closed <span className="opacity-60">{closedCount}</span>
               </button>
-              <span className="hidden h-8 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-muted)] md:inline-flex">Status</span>
-              <span className="hidden h-8 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-muted)] md:inline-flex">Type</span>
-              <span className="hidden h-8 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-muted)] md:inline-flex">Agent</span>
-              <span className="hidden h-8 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-muted)] md:inline-flex">Newest</span>
+              <button
+                type="button"
+                onClick={() => startConversation(activeFamiliarId)}
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-90"
+              >
+                <Icon name="ph:plus-bold" width={11} />
+                New
+              </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+            {/* Delegation strip */}
+            <DelegationStrip
+              graph={delegationGraph}
+              error={delegationError}
+              onOpen={() => setScope("delegations")}
+            />
+
+            {/* List */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {filteredSessions.length === 0 ? (
-                <div className="flex h-full min-h-[220px] flex-col items-center justify-center text-center">
-                  <Icon name="ph:robot" width={24} className="text-[var(--text-muted)]" />
-                  <p className="mt-3 text-[13px] font-medium text-[var(--text-secondary)]">No matching sessions</p>
-                  <button type="button" className="mt-3 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]" onClick={() => startConversation(activeFamiliarId)}>
-                    Start an agent task
+                <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-3 text-center">
+                  <Icon name="ph:robot" width={22} className="text-[var(--text-muted)]" />
+                  <p className="text-[12px] text-[var(--text-secondary)]">No sessions yet</p>
+                  <button
+                    type="button"
+                    onClick={() => startConversation(activeFamiliarId)}
+                    className="rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                  >
+                    Start a task
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)]/35">
-                  {filteredSessions.map((session) => {
-                    const familiar = session.familiarId ? famById.get(session.familiarId) : null;
-                    return (
-                      <button
-                        key={session.id}
-                        type="button"
-                        onClick={() => openConversation(session)}
-                        className={`grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-3 text-left transition-colors hover:bg-[var(--bg-raised)] ${session.id === activeSessionId ? "bg-[var(--bg-raised)]" : ""}`}
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">{session.title || "Untitled session"}</div>
-                          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
-                            <span>{familiar?.display_name ?? session.familiarId ?? "Unassigned"}</span>
-                            <span>·</span>
-                            <span>{session.harness}</span>
-                            {session.origin ? <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5">{session.origin}</span> : null}
-                            {session.project_root ? <span className="max-w-[320px] truncate">{session.project_root}</span> : null}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] capitalize ${statusTone(session)}`}>{session.status}</span>
-                          <span className="w-12 text-right text-[11px] text-[var(--text-muted)]">{relTime(session.updated_at || session.created_at)}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="divide-y divide-[var(--border-hairline)]">
+                  {filteredSessions.map((session) => (
+                    <SessionRow_
+                      key={session.id}
+                      session={session}
+                      familiar={session.familiarId ? famById.get(session.familiarId) : undefined}
+                      active={session.id === activeSessionId}
+                      onClick={() => openConversation(session)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
