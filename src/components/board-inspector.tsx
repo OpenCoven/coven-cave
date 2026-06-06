@@ -265,7 +265,7 @@ function StepsSection({
   onPatch: (id: string, patch: Partial<Card>) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const inputRef = React.useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const steps = card.steps ?? [];
   const doneCount = steps.filter((s) => s.done).length;
