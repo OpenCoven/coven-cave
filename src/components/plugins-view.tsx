@@ -616,7 +616,7 @@ function RoleGrid({
   onSelect: (role: RoleEntry) => void;
   onToggle: (role: RoleEntry) => Promise<void>;
   skillsById: Map<string, SkillEntry>;
-  capabilitiesByPlugin: Map<string, string[]>;
+  capabilitiesByPlugin: Map<string, { harness: string; plugin: HarnessCapabilityManifest["plugins"][number] }[]>;
   capabilitiesLoaded: boolean;
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
