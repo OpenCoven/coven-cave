@@ -107,7 +107,8 @@ function tomlStringArray(values: string[]): string {
 }
 
 function tomlPrompt(value: string): string {
-  const normalized = value.replace(/\r\n?/g, "\n").replace(/'''/g, "''\\'");
+  const normalized = value.replace(/\r\n?/g, "\n");
+  if (normalized.includes("'''")) return tomlString(normalized);
   return `'''${normalized.replace(/\n*$/g, "")}\n'''`;
 }
 
