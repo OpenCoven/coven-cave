@@ -131,12 +131,17 @@ jobs:
           set -euo pipefail
           CERT_PATH="$RUNNER_TEMP/apple_certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_TIMEOUT_SECONDS=21600
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          if [ -z "$KEYCHAIN_PASSWORD" ]; then
+            echo "::error::Failed to generate a temporary keychain password"
+            exit 1
+          fi
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           # Keep the keychain unlocked for up to 6 hours so long notarization
           # waits do not relock it before codesign finishes.
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut "$KEYCHAIN_TIMEOUT_SECONDS" "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERT_PATH" \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
