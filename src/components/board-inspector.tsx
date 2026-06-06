@@ -7,6 +7,7 @@ import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import type { LibraryGitHubItem } from "@/lib/library-types";
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
