@@ -11,11 +11,11 @@
 # This file is safe to commit; it contains no credentials.
 
 GITHUB_PAT:
-  ref: "op://Personal/GitHub PAT/credential"
+  ref: "op://Development/GitHub PAT/credential"
   description: "GitHub Personal Access Token (read:user, repo, notifications)"
   required: false
 
 GITHUB_USERNAME:
-  ref: "op://Personal/GitHub PAT/username"
+  ref: "op://Development/GitHub PAT/username"
   description: "GitHub username associated with the PAT"
   required: false
