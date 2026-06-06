@@ -22,11 +22,28 @@ export type CodexAutomation = {
   status: AutomationStatus;
   rrule: string | null;
   model: string | null;
+  reasoningEffort: string | null;
+  executionEnvironment: string | null;
+  cwds: string[];
   tags: string[];
   prompt: string;
+  skillPath: string | null;
   /** Parsed from rrule for display */
   scheduleHuman: string;
   tomlPath: string;
+};
+
+export type CodexAutomationPatch = {
+  name?: string;
+  prompt?: string;
+  status?: AutomationStatus;
+  rrule?: string;
+  model?: string;
+  reasoning_effort?: string;
+  execution_environment?: string;
+  cwds?: string[];
+  tags?: string[];
+  skill_path?: string;
 };
 
 const AUTOMATIONS_DIR = path.join(homedir(), ".codex", "automations");
@@ -35,36 +52,56 @@ const AUTOMATIONS_DIR = path.join(homedir(), ".codex", "automations");
 
 function parseTomlString(raw: string): Record<string, string> {
   const result: Record<string, string> = {};
-  // Handle multiline: collapse ''' ... ''' blocks into a single placeholder
-  // so line iteration works cleanly.
   const lines = raw.split(/\r?\n/);
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    // Multiline string: key = '''
-    const mlMatch = line.match(/^(\w[\w-]*)\s*=\s*'''\s*$/);
+    // Multiline literal string: key = '''content can start here
+    const mlMatch = line.match(/^(\w[\w-]*)\s*=\s*'''(.*)$/);
     if (mlMatch) {
       const key = mlMatch[1];
+      const first = mlMatch[2] ?? "";
       const parts: string[] = [];
+      if (first.endsWith("'''")) {
+        result[key] = first.slice(0, -3);
+        i++;
+        continue;
+      }
+      parts.push(first);
       i++;
-      while (i < lines.length && lines[i] !== "'''") {
-        parts.push(lines[i]);
+      while (i < lines.length) {
+        const current = lines[i];
+        if (current.endsWith("'''")) {
+          parts.push(current.slice(0, -3));
+          i++;
+          break;
+        }
+        parts.push(current);
         i++;
       }
       result[key] = parts.join("\n");
-      i++; // skip closing '''
       continue;
     }
     // Normal key = "value" or key = 'value' or key = bare
-    const match = line.match(/^(\w[\w-]*)\s*=\s*(?:"([^"\\]*)"|'([^']*)'|(.*))$/);
+    const match = line.match(/^(\w[\w-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(.*))$/);
     if (match) {
       const key = match[1];
-      const val = match[2] ?? match[3] ?? (match[4] ?? "").trim();
+      const val = match[2] !== undefined
+        ? unescapeTomlBasicString(match[2])
+        : match[3] ?? (match[4] ?? "").trim();
       result[key] = val;
     }
     i++;
   }
   return result;
+}
+
+function unescapeTomlBasicString(value: string): string {
+  return value
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
 }
 
 function parseTags(raw: string): string[] {
@@ -76,6 +113,27 @@ function parseTags(raw: string): string[] {
     .split(",")
     .map((t) => t.trim().replace(/^["']|["']$/g, ""))
     .filter(Boolean);
+}
+
+function escapeTomlBasicString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t");
+}
+
+function tomlString(value: string): string {
+  return `"${escapeTomlBasicString(value)}"`;
+}
+
+function tomlStringArray(values: string[]): string {
+  return `[${values.map(tomlString).join(", ")}]`;
+}
+
+function tomlPrompt(value: string): string {
+  const normalized = value.replace(/\r\n?/g, "\n").replace(/'''/g, "''\\'");
+  return `'''${normalized.replace(/\n*$/g, "")}\n'''`;
 }
 
 function humanRrule(rrule: string | null): string {
@@ -117,6 +175,63 @@ export function patchTomlStatus(raw: string, newStatus: AutomationStatus): strin
   return raw.trimEnd() + `\nstatus = "${newStatus}"\n`;
 }
 
+function replaceTomlKey(raw: string, key: string, value: string): string {
+  const lines = raw.split(/\r?\n/);
+  const next: string[] = [];
+  let replaced = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const keyMatch = line.match(/^(\w[\w-]*)\s*=/);
+    if (keyMatch?.[1] !== key) {
+      next.push(line);
+      continue;
+    }
+
+    next.push(`${key} = ${value}`);
+    replaced = true;
+
+    if (/^\w[\w-]*\s*=\s*'''/.test(line) && !line.endsWith("'''")) {
+      while (i + 1 < lines.length) {
+        i++;
+        if (lines[i].endsWith("'''")) break;
+      }
+    }
+  }
+
+  if (!replaced) {
+    if (next.length > 0 && next[next.length - 1] !== "") next.push("");
+    next.push(`${key} = ${value}`);
+  }
+
+  return next.join("\n");
+}
+
+export function patchTomlAutomationFields(
+  raw: string,
+  patch: CodexAutomationPatch,
+): string {
+  const entries: [keyof CodexAutomationPatch, string, (value: never) => string][] = [
+    ["name", "name", tomlString as (value: never) => string],
+    ["prompt", "prompt", tomlPrompt as (value: never) => string],
+    ["status", "status", tomlString as (value: never) => string],
+    ["rrule", "rrule", tomlString as (value: never) => string],
+    ["model", "model", tomlString as (value: never) => string],
+    ["reasoning_effort", "reasoning_effort", tomlString as (value: never) => string],
+    ["execution_environment", "execution_environment", tomlString as (value: never) => string],
+    ["cwds", "cwds", tomlStringArray as (value: never) => string],
+    ["tags", "tags", tomlStringArray as (value: never) => string],
+    ["skill_path", "skill_path", tomlString as (value: never) => string],
+  ];
+
+  let next = raw;
+  for (const [patchKey, tomlKey, formatter] of entries) {
+    const value = patch[patchKey];
+    if (value === undefined) continue;
+    next = replaceTomlKey(next, tomlKey, formatter(value as never));
+  }
+  return next;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function listCodexAutomations(): Promise<CodexAutomation[]> {
@@ -148,8 +263,12 @@ export async function listCodexAutomations(): Promise<CodexAutomation[]> {
         status,
         rrule,
         model: kv["model"] ?? null,
+        reasoningEffort: kv["reasoning_effort"] ?? null,
+        executionEnvironment: kv["execution_environment"] ?? null,
+        cwds: parseTags(kv["cwds"] ?? ""),
         tags: parseTags(kv["tags"] ?? ""),
         prompt: kv["prompt"] ?? "",
+        skillPath: kv["skill_path"] ?? null,
         scheduleHuman: humanRrule(rrule),
         tomlPath,
       });
@@ -178,4 +297,18 @@ export async function setCodexAutomationStatus(
   await writeFile(auto.tomlPath, patched, "utf8");
 
   return { ...auto, status };
+}
+
+export async function updateCodexAutomation(
+  id: string,
+  patch: CodexAutomationPatch,
+): Promise<CodexAutomation | null> {
+  const auto = await getCodexAutomation(id);
+  if (!auto) return null;
+
+  const raw = await readFile(auto.tomlPath, "utf8");
+  const patched = patchTomlAutomationFields(raw, patch);
+  await writeFile(auto.tomlPath, patched, "utf8");
+
+  return getCodexAutomation(id);
 }
