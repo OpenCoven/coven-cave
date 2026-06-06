@@ -146,9 +146,10 @@ function GitHubAttachSection({
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
 
   useEffect(() => {
-    if (!open || items.length > 0) return;
+    if (!open) return;
     setLoading(true);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
@@ -162,7 +163,7 @@ function GitHubAttachSection({
       })
       .catch(() => setErr("fetch failed"))
       .finally(() => setLoading(false));
-  }, [open, items.length]);
+  }, [open, fetchKey]); // fetchKey bumped to force refetch after PAT save
 
   const attachedUrls = new Set(card.links);
 
@@ -263,7 +264,7 @@ function GitHubAttachSection({
               <div style={{ padding: "10px", fontSize: 11, color: "#f87171" }}>{err}</div>
             )}
             {!loading && !err && configured === false && (
-              <InlinePATSetup onSaved={() => { setConfigured(null); loadItems(); }} />
+              <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setFetchKey((k) => k + 1); }} />
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
