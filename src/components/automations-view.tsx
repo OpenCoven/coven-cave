@@ -944,7 +944,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
             <button
               type="button"
               onClick={onNewReminder}
-              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors hover:bg-white/5"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
               style={{
                 background: "var(--bg-raised)",
                 border: "1px solid var(--border-hairline)",
