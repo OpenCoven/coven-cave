@@ -165,7 +165,7 @@ function GitHubAttachSection({
       {open && (
         <div style={{ border: "1px solid var(--border-hairline)", borderRadius: 8, overflow: "hidden", background: "var(--bg-raised)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
-            <Icon name="ph:magnifying-glass" width={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+            <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
             <input
               autoFocus
               value={query}
