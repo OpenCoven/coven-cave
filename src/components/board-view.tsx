@@ -144,7 +144,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     setEnrichProgress(null);
     try {
       const res = await fetch("/api/board/enrich-steps", { method: "POST" });
-      if (!res.body) return;
+      if (!res.ok) throw new Error(`enrich steps failed (${res.status})`);
+      if (!res.body) throw new Error("enrich steps: missing response body");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
