@@ -142,9 +142,9 @@ export async function updateCard(
       ? patch.labels.map((l) => l.trim()).filter(Boolean)
       : current.labels,
   };
-  if (next.status === "running" && !next.runningSince) {
+  if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;
-  } else if (next.status !== "running") {
+  } else if (next.lifecycle !== "running") {
     delete next.runningSince;
   }
   board.cards[idx] = next;
@@ -204,6 +204,9 @@ export async function transitionCard(
     lifecycleReason: reason ?? undefined,
     updatedAt: now,
   };
+  if (to !== "running") {
+    delete next.runningSince;
+  }
 
   // Column-status fallouts of lifecycle transitions:
   if (to === "running") {
@@ -228,8 +231,10 @@ export async function transitionCard(
     } else {
       next.status = "blocked";
     }
-  } else if (to === "queued" && retry) {
-    next.retryCount = current.retryCount + 1;
+  } else if (to === "queued") {
+    if (retry) {
+      next.retryCount = current.retryCount + 1;
+    }
     next.status = "backlog";
     next.needsHuman = false;
   } else if (to === "cancelled") {

@@ -230,7 +230,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <div className="flex items-center gap-1" aria-label="Board column navigation">
+          <div className="flex items-center gap-1" role="group" aria-label="Board column navigation">
             <button
               type="button"
               onClick={() => scrollColumns(-1)}
