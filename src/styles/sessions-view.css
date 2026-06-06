@@ -1,0 +1,206 @@
+/* sessions-view.css */
+
+.sessions-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sessions-view-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.sessions-view-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.sessions-view-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent-presence);
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.sessions-view-new-btn:hover { opacity: 0.85; }
+
+.sessions-view-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.sessions-view-scroll::-webkit-scrollbar { width: 4px; }
+.sessions-view-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 2px;
+}
+
+/* ── Group (one per familiar when showing all) ─────────────── */
+.sessions-group {
+  margin-bottom: 28px;
+}
+.sessions-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sessions-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sessions-group-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border-radius: 8px;
+  padding: 1px 6px;
+}
+
+/* ── Card grid ─────────────────────────────────────────────── */
+.sessions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+/* ── Session card ──────────────────────────────────────────── */
+.session-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+  text-align: left;
+  min-height: 88px;
+}
+.session-card:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.session-card--active {
+  border-color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+}
+
+/* New-chat card */
+.session-card--new {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 6px;
+  min-height: 88px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.session-card--new:hover {
+  border-color: var(--accent-presence);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 5%, transparent);
+  transform: translateY(-1px);
+}
+
+/* Card internals */
+.session-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.session-card-familiar-chip {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.session-card-status {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.session-card-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.session-card-status-dot--running { background: #4ade80; box-shadow: 0 0 4px #4ade8080; }
+.session-card-status-dot--error   { background: #f87171; }
+.session-card-status-dot--idle    { background: var(--text-muted); opacity: 0.5; }
+
+.session-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1;
+}
+
+.session-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+}
+.session-card-origin {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: capitalize;
+}
+.session-card-ts {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Empty state */
+.sessions-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px;
+  text-align: center;
+}
+.sessions-empty-icon {
+  opacity: 0.25;
+}

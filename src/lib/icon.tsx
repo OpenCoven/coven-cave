@@ -92,6 +92,8 @@ export const ICON_NAMES = [
   "ph:book-open-bold",
   "ph:pencil-line-bold",
   "ph:brain-bold",
+  "ph:user",
+  "ph:plus",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];
