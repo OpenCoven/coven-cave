@@ -126,7 +126,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
         <tbody>
           {groups.map(({ key, label, cards: gc }) => (
             <React.Fragment key={key}>
-              {groupBy !== "none" && (
+              {true && (
                 <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
                   <td colSpan={COLS.length}>
                     <span className="board-table-group-caret">
