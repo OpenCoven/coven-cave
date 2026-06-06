@@ -3,6 +3,8 @@ export type LibraryCollection = {
   label: string;
   path: string;
   glob?: string;
+  icon?: string;       // phosphor icon name
+  familiar?: string;   // familiar id this collection belongs to
 };
 
 export type LibraryDoc = {

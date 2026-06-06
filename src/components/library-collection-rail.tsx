@@ -49,6 +49,11 @@ export function LibraryCollectionRail({
                 onSelectSection("docs");
               }}
             >
+              {col.icon && (
+                <span className="library-rail-icon-wrap">
+                  <Icon name={col.icon as IconName} width={13} />
+                </span>
+              )}
               <span className="library-rail-label">{col.label}</span>
               {count > 0 && <span className="library-rail-badge">{count}</span>}
             </button>

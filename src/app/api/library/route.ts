@@ -5,45 +5,167 @@ import { homedir } from "node:os";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import type { LibraryDoc, LibraryCollection } from "@/lib/library-types";
 
-const SAGE_ROOT = path.join(homedir(), ".openclaw", "workspace", "sage");
-
-const COLLECTIONS: LibraryCollection[] = [
-  { id: "all",          label: "All",          path: path.join(SAGE_ROOT, "research") },
-  { id: "synthesis",    label: "Synthesis",    path: path.join(SAGE_ROOT, "research", "synthesis") },
-  { id: "book",         label: "Book",         path: path.join(SAGE_ROOT, "research", "book", "summoning-the-familiar") },
-  { id: "grimoire",     label: "Grimoire",     path: path.join(SAGE_ROOT, "research", "book", "grimoire-drafts") },
-  { id: "projects",     label: "Projects",     path: path.join(SAGE_ROOT, "research", "projects") },
-  { id: "autoresearch", label: "Autoresearch", path: path.join(SAGE_ROOT, "research", "autoresearch") },
-  { id: "sources",      label: "Papers & Sources", path: path.join(SAGE_ROOT, "research", "sources") },
-  { id: "specs",        label: "Specs",        path: path.join(SAGE_ROOT, "research", "specs") },
+// ── Familiar registry ─────────────────────────────────────────────────────────
+// Each entry is a workspace root that exposes a research/ dir.
+// Phase 1: Sage only. Phase 2: add Echo, Cody, etc. here (or read from coven daemon).
+const FAMILIAR_WORKSPACES: { id: string; name: string; emoji: string; root: string }[] = [
+  {
+    id: "sage",
+    name: "Sage",
+    emoji: "🌿",
+    root: path.join(homedir(), ".openclaw", "workspace", "sage"),
+  },
 ];
 
-// Security: ensure path is within sage research dir only
-const RESEARCH_ROOT = path.join(SAGE_ROOT, "research");
+// ── library.yaml schema (optional per-workspace manifest) ────────────────────
+// If ~/.openclaw/workspace/<familiar>/research/library.yaml exists, it controls
+// which subdirectories appear, their labels, icons, and sort order.
+// Format:
+//   collections:
+//     - id: synthesis
+//       label: "Synthesis"
+//       icon: "ph:flask"        # phosphor icon name (optional)
+//       recursive: true         # walk subdirs (default: true)
+//       hidden: false           # exclude from rail (default: false)
+//     - id: sources
+//       label: "Papers & Sources"
 
-function resolveResearchPath(p: string): string | null {
+type ManifestEntry = {
+  id: string;
+  label?: string;
+  icon?: string;
+  recursive?: boolean;
+  hidden?: boolean;
+};
+
+type Manifest = { collections?: ManifestEntry[] };
+
+function parseYamlManifest(content: string): Manifest {
+  // Minimal YAML parser — handles the simple key:value / list format we use.
+  // Not a full YAML parser; complex values not needed here.
+  const result: Manifest = { collections: [] };
+  const lines = content.split("\n");
+  let inCollections = false;
+  let current: ManifestEntry | null = null;
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (/^collections\s*:/.test(line)) { inCollections = true; continue; }
+    if (inCollections) {
+      // New list item
+      const listMatch = line.match(/^  - id\s*:\s*(.+)$/);
+      if (listMatch) {
+        if (current) result.collections!.push(current);
+        current = { id: listMatch[1].trim().replace(/['"]/g, "") };
+        continue;
+      }
+      if (current) {
+        const kvMatch = line.match(/^    (\w+)\s*:\s*(.+)$/);
+        if (kvMatch) {
+          const [, key, val] = kvMatch;
+          const v = val.trim().replace(/^["']|["']$/g, "");
+          if (key === "label")     current.label = v;
+          else if (key === "icon") current.icon = v;
+          else if (key === "recursive") current.recursive = v !== "false";
+          else if (key === "hidden")    current.hidden = v === "true";
+        }
+      }
+    }
+  }
+  if (current) result.collections!.push(current);
+  return result;
+}
+
+function loadManifest(researchRoot: string): Manifest | null {
+  const manifestPath = path.join(researchRoot, "library.yaml");
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    return parseYamlManifest(fs.readFileSync(manifestPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+// ── Auto-discovery ───────────────────────────────────────────────────────────
+// Walk the research/ dir and return immediate subdirectories as collections.
+function discoverCollections(researchRoot: string): LibraryCollection[] {
+  if (!fs.existsSync(researchRoot)) return [];
+  const entries = fs.readdirSync(researchRoot, { withFileTypes: true });
+  return entries
+    .filter((e) => e.isDirectory())
+    .map((e) => ({
+      id: e.name,
+      label: e.name.charAt(0).toUpperCase() + e.name.slice(1).replace(/-/g, " "),
+      path: path.join(researchRoot, e.name),
+    }));
+}
+
+// ── Build final collection list ──────────────────────────────────────────────
+// 1. Start with auto-discovered subdirs
+// 2. Apply manifest overrides (label, icon, hidden, order)
+// 3. Prepend "All" sentinel
+function buildCollections(familiar: typeof FAMILIAR_WORKSPACES[number]): LibraryCollection[] {
+  const researchRoot = path.join(familiar.root, "research");
+  const discovered = discoverCollections(researchRoot);
+  const manifest = loadManifest(researchRoot);
+
+  let ordered: LibraryCollection[];
+
+  if (manifest?.collections?.length) {
+    // Manifest controls order and metadata; discovered fills in anything not listed
+    const manifestIds = new Set(manifest.collections.map((m) => m.id));
+    const extra = discovered.filter((d) => !manifestIds.has(d.id));
+
+    ordered = [
+      ...manifest.collections
+        .filter((m) => !m.hidden)
+        .map((m) => {
+          const base = discovered.find((d) => d.id === m.id);
+          return base
+            ? { ...base, label: m.label ?? base.label, icon: m.icon }
+            : null;
+        })
+        .filter(Boolean) as LibraryCollection[],
+      ...extra,
+    ];
+  } else {
+    // No manifest — use discovery order (alphabetical from readdir)
+    ordered = discovered;
+  }
+
+  // Prepend "All" (always first)
+  return [
+    {
+      id: "all",
+      label: "All",
+      path: researchRoot,
+      familiar: familiar.id,
+    } as LibraryCollection,
+    ...ordered.map((c) => ({ ...c, familiar: familiar.id })),
+  ];
+}
+
+// ── Security helper ──────────────────────────────────────────────────────────
+function resolveResearchPath(p: string, researchRoot: string): string | null {
   const resolved = resolveAllowedProjectPath(p);
   if (!resolved) return null;
-  // Extra invariant: must be inside research/
-  if (resolved !== RESEARCH_ROOT && !resolved.startsWith(RESEARCH_ROOT + path.sep)) return null;
+  if (resolved !== researchRoot && !resolved.startsWith(researchRoot + path.sep)) return null;
   return resolved;
 }
 
+// ── File walker ──────────────────────────────────────────────────────────────
 function walkMdFiles(dir: string): string[] {
   const results: string[] = [];
   if (!fs.existsSync(dir)) return results;
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walkMdFiles(full));
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      results.push(full);
-    }
+    if (entry.isDirectory()) results.push(...walkMdFiles(full));
+    else if (entry.isFile() && entry.name.endsWith(".md")) results.push(full);
   }
   return results;
 }
 
+// ── Frontmatter + excerpt helpers ────────────────────────────────────────────
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
   const fm: Record<string, string> = {};
   if (!content.startsWith("---")) return { frontmatter: fm, body: content };
@@ -53,97 +175,75 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
   for (const line of block.split("\n")) {
     const colon = line.indexOf(":");
     if (colon === -1) continue;
-    const key = line.slice(0, colon).trim();
-    const val = line.slice(colon + 1).trim();
-    fm[key] = val;
+    fm[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
   }
   return { frontmatter: fm, body: content.slice(end + 4).trimStart() };
 }
 
-function extractTitle(body: string, stem: string): string {
-  const match = body.match(/^#\s+(.+)/m);
-  return match ? match[1].trim() : stem;
+function extractTitle(body: string, filename: string): string {
+  const m = body.match(/^#{1,2}\s+(.+)/m);
+  return m ? m[1].replace(/[*_`]/g, "").trim() : path.basename(filename, ".md").replace(/-/g, " ");
 }
 
-function extractTags(fm: Record<string, string>): string[] {
-  const raw = fm["tags"] ?? fm["tag"] ?? "";
+function extractExcerpt(body: string): string {
+  const stripped = body.replace(/^#{1,6}\s+.+$/gm, "").replace(/[*_`#>\[\]]/g, "").replace(/\s+/g, " ").trim();
+  return stripped.slice(0, 200);
+}
+
+function parseTags(fm: Record<string, string>): string[] {
+  const raw = fm.tags ?? fm.tag ?? "";
   if (!raw) return [];
-  // Support both YAML list `[a, b]` and comma-separated
-  return raw
-    .replace(/^\[|\]$/g, "")
-    .split(/,\s*/)
-    .map((t) => t.replace(/['"]/g, "").trim())
-    .filter(Boolean);
+  return raw.replace(/[\[\]]/g, "").split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
 }
 
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1")
-    .replace(/\*(.+?)\*/g, "$1")
-    .replace(/`{3}[\s\S]*?`{3}/g, "")
-    .replace(/`(.+?)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    .replace(/^[-*>]+\s*/gm, "")
-    .replace(/\n{2,}/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
+// ── Route handler ────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get("collection") ?? "all";
-  const col = COLLECTIONS.find((c) => c.id === collectionId) ?? COLLECTIONS[0];
+  const familiarId   = req.nextUrl.searchParams.get("familiar") ?? FAMILIAR_WORKSPACES[0].id;
 
-  // Validate the collection root path
-  const colResolved = resolveResearchPath(col.path);
-  if (!colResolved) {
+  const familiar = FAMILIAR_WORKSPACES.find((f) => f.id === familiarId) ?? FAMILIAR_WORKSPACES[0];
+  const researchRoot = path.join(familiar.root, "research");
+  const collections = buildCollections(familiar);
+
+  const col = collections.find((c) => c.id === collectionId) ?? collections[0];
+
+  const resolvedColPath = resolveResearchPath(col.path, researchRoot);
+  if (!resolvedColPath) {
     return NextResponse.json({ ok: false, error: "collection path not allowed" }, { status: 403 });
   }
 
-  const files = walkMdFiles(colResolved);
+  const files = walkMdFiles(resolvedColPath);
   const docs: LibraryDoc[] = [];
 
-  for (const filePath of files) {
-    const resolved = resolveResearchPath(filePath);
-    if (!resolved) continue;
-
-    let stat: fs.Stats;
+  for (const file of files) {
+    const resolvedFile = resolveResearchPath(file, researchRoot);
+    if (!resolvedFile) continue;
     try {
-      stat = fs.statSync(resolved);
-    } catch { continue; }
-    if (!stat.isFile()) continue;
-
-    // 512KB cap — skip huge files
-    if (stat.size > 512 * 1024) continue;
-
-    let content: string;
-    try {
-      content = fs.readFileSync(resolved, "utf-8");
-    } catch { continue; }
-
-    const { frontmatter, body } = parseFrontmatter(content);
-    const stem = path.basename(resolved, ".md");
-    const title = extractTitle(body, stem);
-    const tags = extractTags(frontmatter);
-    const excerpt = stripMarkdown(body).slice(0, 200);
-
-    // id = relative from SAGE_ROOT
-    const id = path.relative(SAGE_ROOT, resolved);
-
-    docs.push({
-      id,
-      title,
-      familiar: "sage",
-      collection: collectionId,
-      modifiedAt: stat.mtime.toISOString(),
-      tags,
-      excerpt,
-    });
+      const stat = fs.statSync(resolvedFile);
+      const content = fs.readFileSync(resolvedFile, "utf-8");
+      const { frontmatter, body } = parseFrontmatter(content);
+      docs.push({
+        id: path.relative(familiar.root, resolvedFile),
+        title: frontmatter.title ?? extractTitle(body, file),
+        familiar: familiar.id,
+        collection: collectionId,
+        modifiedAt: stat.mtime.toISOString(),
+        tags: parseTags(frontmatter),
+        excerpt: extractExcerpt(body),
+      });
+    } catch {
+      // skip unreadable files
+    }
   }
 
-  // Sort newest first
-  docs.sort((a, b) => (a.modifiedAt < b.modifiedAt ? 1 : -1));
+  docs.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
 
-  return NextResponse.json({ ok: true, docs, collection: collectionId, collections: COLLECTIONS });
+  return NextResponse.json({
+    ok: true,
+    docs,
+    collection: collectionId,
+    familiar: familiarId,
+    collections,
+    familiars: FAMILIAR_WORKSPACES.map(({ id, name, emoji }) => ({ id, name, emoji })),
+  });
 }
