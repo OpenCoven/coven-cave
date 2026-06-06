@@ -7,6 +7,7 @@ import {
   useImperativeHandle,
   useState,
 } from "react";
+import { Icon } from "@/lib/icon";
 
 type TreeEntry = {
   name: string;
@@ -23,6 +24,20 @@ type Props = {
   root?: string;
   onFileClick?: (path: string) => void;
 };
+
+// Dirs that are collapsed by default (noise folders)
+const COLLAPSED_BY_DEFAULT = new Set([
+  "node_modules",
+  ".git",
+  ".next",
+  "dist",
+  "build",
+  ".turbo",
+  "__pycache__",
+  ".venv",
+  "target",
+  ".cargo",
+]);
 
 async function fetchTree(root: string, depth: number): Promise<TreeEntry[]> {
   try {
@@ -42,6 +57,14 @@ async function fetchTree(root: string, depth: number): Promise<TreeEntry[]> {
   }
 }
 
+function fileIconName(name: string): "ph:file-code" | "ph:file-image" | "ph:file-text" | "ph:file" {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (["ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "rb", "java", "c", "cpp", "h", "swift", "kt", "sh", "bash", "zsh", "fish", "toml", "yaml", "yml", "json", "jsonc", "css", "scss", "html", "svelte", "vue", "astro", "mdx"].includes(ext)) return "ph:file-code";
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "avif"].includes(ext)) return "ph:file-image";
+  if (["md", "txt", "log", "env", "lock", "gitignore"].includes(ext)) return "ph:file-text";
+  return "ph:file";
+}
+
 function resolveRoot(): string {
   if (typeof window !== "undefined") {
     const env = process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
@@ -59,13 +82,12 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     const load = useCallback(async () => {
       setLoading(true);
       if (rootProp) {
-        const tree = await fetchTree(rootProp, 2);
+        const tree = await fetchTree(rootProp, 1);
         setRoot(rootProp);
         setEntries(tree);
         setLoading(false);
         return;
       }
-      // Try daemon status for projectRoot first
       try {
         const res = await fetch("/api/daemon/status", { cache: "no-store" });
         const json = (await res.json()) as Record<string, unknown>;
@@ -73,7 +95,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
           (json.workspacePath as string | undefined) ??
           (json.projectRoot as string | undefined);
         if (wp && typeof wp === "string") {
-          const tree = await fetchTree(wp, 2);
+          const tree = await fetchTree(wp, 1);
           setRoot(wp);
           setEntries(tree);
           setLoading(false);
@@ -87,7 +109,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         setLoading(false);
         return;
       }
-      const tree = await fetchTree(root, 2);
+      const tree = await fetchTree(root, 1);
       setEntries(tree);
       setLoading(false);
     }, [root, rootProp]);
@@ -100,18 +122,25 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 
     if (loading) {
       return (
-        <p className="text-[var(--text-muted)]">Loading project tree...</p>
+        <div className="flex items-center gap-2 py-2 text-[11px] text-[var(--text-muted)]">
+          <Icon name="ph:arrow-clockwise" width={11} className="animate-spin" />
+          Loading…
+        </div>
       );
     }
 
     if (entries.length === 0) {
-      return <p className="text-[var(--text-muted)]">No entries found.</p>;
+      return (
+        <p className="py-2 text-[11px] text-[var(--text-muted)]">
+          No files found.
+        </p>
+      );
     }
 
     return (
-      <ul className="space-y-0.5">
+      <ul className="select-none space-y-px text-[11px]">
         {entries.map((e) => (
-          <TreeNode key={e.path} entry={e} onFileClick={onFileClick} />
+          <TreeNode key={e.path} entry={e} onFileClick={onFileClick} depth={0} />
         ))}
       </ul>
     );
@@ -121,16 +150,18 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 function TreeNode({
   entry,
   onFileClick,
-  depth = 0,
+  depth,
 }: {
   entry: TreeEntry;
   onFileClick?: (path: string) => void;
-  depth?: number;
+  depth: number;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const defaultExpanded = entry.isDir && !COLLAPSED_BY_DEFAULT.has(entry.name) && depth === 0;
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [children, setChildren] = useState<TreeEntry[] | null>(
     entry.children ?? null,
   );
+  const [loadingChildren, setLoadingChildren] = useState(false);
 
   const toggle = useCallback(async () => {
     if (!entry.isDir) {
@@ -140,40 +171,63 @@ function TreeNode({
     const next = !expanded;
     setExpanded(next);
     if (next && children === null) {
+      setLoadingChildren(true);
       const fetched = await fetchTree(entry.path, 1);
       setChildren(fetched);
+      setLoadingChildren(false);
     }
   }, [entry, expanded, children, onFileClick]);
 
-  const indent = depth * 12;
+  const paddingLeft = 6 + depth * 14;
 
   return (
     <li>
       <button
         type="button"
         onClick={toggle}
-        className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-[var(--bg-raised)]/60"
-        style={{ paddingLeft: `${indent + 4}px` }}
+        className="group flex w-full min-w-0 items-center gap-1.5 rounded py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+        style={{ paddingLeft, paddingRight: 6 }}
       >
-        {entry.isDir ? (
-          <span className="w-3 shrink-0 text-center text-[var(--text-muted)]">
-            {expanded ? "\u25BC" : "\u25B6"}
-          </span>
-        ) : (
-          <span className="w-3 shrink-0" />
-        )}
+        {/* Chevron for dirs, spacer for files */}
+        <span className="flex h-3 w-3 shrink-0 items-center justify-center text-[var(--text-muted)]">
+          {entry.isDir ? (
+            loadingChildren ? (
+              <Icon name="ph:arrow-clockwise" width={9} className="animate-spin" />
+            ) : expanded ? (
+              <Icon name="ph:caret-down" width={9} />
+            ) : (
+              <Icon name="ph:caret-right" width={9} />
+            )
+          ) : null}
+        </span>
+
+        {/* File/dir icon */}
+        <span className="shrink-0 text-[var(--text-muted)]">
+          {entry.isDir ? (
+            expanded ? (
+              <Icon name="ph:folder-open" width={13} />
+            ) : (
+              <Icon name="ph:folder" width={13} />
+            )
+          ) : (
+            <Icon name={fileIconName(entry.name)} width={13} />
+          )}
+        </span>
+
+        {/* Name */}
         <span
-          className={
+          className={`min-w-0 flex-1 truncate ${
             entry.isDir
-              ? "text-[var(--text-secondary)] font-medium"
+              ? "font-medium text-[var(--text-secondary)]"
               : "text-[var(--text-primary)]"
-          }
+          } ${COLLAPSED_BY_DEFAULT.has(entry.name) ? "opacity-50" : ""}`}
         >
           {entry.name}
         </span>
       </button>
+
       {entry.isDir && expanded && children && children.length > 0 && (
-        <ul className="space-y-0.5">
+        <ul className="space-y-px">
           {children.map((c) => (
             <TreeNode
               key={c.path}

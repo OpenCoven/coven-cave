@@ -89,6 +89,8 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const treeRef = useRef<ProjectTreeHandle | null>(null);
 
   // Daemon project root — forwarded to BottomTerminal so terminals open in
@@ -211,6 +213,14 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
     }
   }, []);
 
+  const copyPreview = useCallback(() => {
+    if (!previewContent) return;
+    void navigator.clipboard.writeText(previewContent).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [previewContent]);
+
   const selectProject = useCallback((project: ComuxProject) => {
     setSelectedProjectRoot(project.root);
     setPreviewPath(null);
@@ -231,27 +241,29 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
   return (
     <div className="flex h-full flex-col">
       {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-1.5 text-xs">
+      <div className="flex items-center gap-1 border-b border-[var(--border-hairline)] px-3 py-2">
         <button
           type="button"
           onClick={() => setTab("comux")}
-          className={`rounded px-2 py-0.5 transition-colors ${
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
             tab === "comux"
-              ? "bg-[var(--bg-base)] text-[var(--text-primary)]"
+              ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
               : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           }`}
         >
-          Coven Code
+          <Icon name="ph:terminal-window" width={13} />
+          Terminal
         </button>
         <button
           type="button"
           onClick={() => setTab("project")}
-          className={`rounded px-2 py-0.5 transition-colors ${
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors ${
             tab === "project"
-              ? "bg-[var(--bg-base)] text-[var(--text-primary)]"
+              ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
               : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           }`}
         >
+          <Icon name="ph:folder-open" width={13} />
           Project
         </button>
       </div>
@@ -293,9 +305,9 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
                     e.stopPropagation();
                     removeSession(i);
                   }}
-                  className="hidden group-hover:inline text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="hidden group-hover:inline-flex items-center text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 >
-                  x
+                  <Icon name="ph:x-bold" width={10} />
                 </button>
               </div>
             ))}
@@ -347,10 +359,11 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
         /* Project tab */
         <div className="flex flex-1 min-h-0">
           {/* Project list */}
-          <div className="w-[260px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-2 text-xs">
-            <div className="mb-2 flex items-center justify-between px-1">
+          <div className="w-[240px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] p-2 text-xs">
+            <div className="mb-2 flex items-center gap-2 px-1">
+              <Icon name="ph:folder" width={13} className="shrink-0 text-[var(--text-muted)]" />
               <span className="font-semibold text-[var(--text-secondary)]">Projects</span>
-              <span className="rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
+              <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
                 {projects.length}
               </span>
             </div>
@@ -429,47 +442,64 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
 
                 <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(220px,32%)_minmax(0,1fr)]">
                   <div className="min-h-0 overflow-y-auto border-b border-[var(--border-hairline)] p-3 xl:border-b-0 xl:border-r">
+                    {/* Recent sessions — collapsible */}
                     <div className="mb-3">
-                      <div className="mb-1 text-[11px] font-semibold text-[var(--text-secondary)]">
-                        Recent sessions
-                      </div>
-                      {recentProjectSessions.length === 0 ? (
-                        <p className="text-[11px] text-[var(--text-muted)]">
-                          No chats have been started in this project yet.
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          {recentProjectSessions.map((session) => (
-                            <button
-                              key={session.id}
-                              type="button"
-                              onClick={() => onOpenSession(session.id, session.familiarId)}
-                              className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
-                            >
-                              <span className="block truncate text-[11px] font-medium text-[var(--text-primary)]">
-                                {session.title || "(untitled chat)"}
-                              </span>
-                              <span className="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-                                <span>{session.status}</span>
-                                <span className="ml-auto">{shortProjectTime(session.updated_at)}</span>
-                              </span>
-                            </button>
-                          ))}
-                        </div>
+                      <button
+                        type="button"
+                        onClick={() => setSessionsCollapsed((v) => !v)}
+                        className="mb-2 flex w-full items-center gap-1.5 text-left"
+                      >
+                        <Icon
+                          name={sessionsCollapsed ? "ph:caret-right" : "ph:caret-down"}
+                          width={10}
+                          className="shrink-0 text-[var(--text-muted)]"
+                        />
+                        <Icon name="ph:chats-circle" width={12} className="shrink-0 text-[var(--text-muted)]" />
+                        <span className="text-[11px] font-semibold text-[var(--text-secondary)]">Recent sessions</span>
+                        {recentProjectSessions.length > 0 && (
+                          <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
+                            {recentProjectSessions.length}
+                          </span>
+                        )}
+                      </button>
+                      {!sessionsCollapsed && (
+                        recentProjectSessions.length === 0 ? (
+                          <p className="pl-4 text-[11px] text-[var(--text-muted)]">No chats in this project yet.</p>
+                        ) : (
+                          <div className="space-y-1 pl-3.5">
+                            {recentProjectSessions.map((session) => (
+                              <button
+                                key={session.id}
+                                type="button"
+                                onClick={() => onOpenSession(session.id, session.familiarId)}
+                                className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
+                              >
+                                <span className="block truncate text-[11px] font-medium text-[var(--text-primary)]">
+                                  {session.title || "(untitled chat)"}
+                                </span>
+                                <span className="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                                  <span>{session.status}</span>
+                                  <span className="ml-auto">{shortProjectTime(session.updated_at)}</span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )
                       )}
                     </div>
 
+                    {/* Files — always open, refresh button */}
                     <div>
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-[var(--text-secondary)]">
-                          Files
-                        </span>
+                      <div className="mb-2 flex items-center gap-1.5">
+                        <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-muted)]" />
+                        <span className="text-[11px] font-semibold text-[var(--text-secondary)]">Files</span>
                         <button
                           type="button"
                           onClick={() => treeRef.current?.refresh()}
-                          className="rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          title="Refresh tree"
                         >
-                          refresh
+                          <Icon name="ph:arrow-clockwise" width={10} />
                         </button>
                       </div>
                       <ProjectTree
@@ -480,26 +510,48 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
                     </div>
                   </div>
 
-                  <div className="min-w-0 overflow-auto p-3">
+                  <div className="min-w-0 flex flex-col overflow-hidden">
                     {previewPath ? (
                       <>
-                        <div className="mb-2 truncate text-[11px] text-[var(--text-muted)]">
-                          {previewPath}
+                        {/* Preview header */}
+                        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
+                          <Icon name="ph:file-code" width={12} className="shrink-0 text-[var(--text-muted)]" />
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">
+                            {previewPath.startsWith(selectedProject.root)
+                              ? previewPath.slice(selectedProject.root.length).replace(/^\//, "")
+                              : previewPath}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={copyPreview}
+                            disabled={!previewContent}
+                            className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                          >
+                            <Icon name="ph:copy" width={11} />
+                            {copied ? "Copied" : "Copy"}
+                          </button>
                         </div>
-                        {previewLoading ? (
-                          <p className="text-xs text-[var(--text-muted)]">Loading...</p>
-                        ) : (
-                          <SyntaxBlock
-                            text={previewContent ?? ""}
-                            lang={previewPath?.split(".").pop()}
-                            className="leading-relaxed"
-                          />
-                        )}
+                        {/* Preview content */}
+                        <div className="min-h-0 flex-1 overflow-auto p-3">
+                          {previewLoading ? (
+                            <div className="flex items-center gap-2 py-4 text-[11px] text-[var(--text-muted)]">
+                              <Icon name="ph:arrow-clockwise" width={12} className="animate-spin" />
+                              Loading…
+                            </div>
+                          ) : (
+                            <SyntaxBlock
+                              text={previewContent ?? ""}
+                              lang={previewPath.split(".").pop()}
+                              className="leading-relaxed"
+                            />
+                          )}
+                        </div>
                       </>
                     ) : (
-                      <p className="text-xs text-[var(--text-muted)]">
-                        Select a file to preview.
-                      </p>
+                      <div className="flex h-full flex-col items-center justify-center gap-2 text-[12px] text-[var(--text-muted)]">
+                        <Icon name="ph:file" width={28} className="opacity-30" />
+                        <p>Select a file to preview</p>
+                      </div>
                     )}
                   </div>
                 </div>
