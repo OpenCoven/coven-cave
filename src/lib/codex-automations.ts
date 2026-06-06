@@ -58,7 +58,7 @@ function parseTomlString(raw: string): Record<string, string> {
       continue;
     }
     // Normal key = "value" or key = 'value' or key = bare
-    const match = line.match(/^\s*(\w[\w-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|(.*))$/);
+    const match = line.match(/^\s*(\w[\w-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([^#]*?))\s*(?:#.*)?$/);
     if (match) {
       const key = match[1];
       const val = match[2] !== undefined
