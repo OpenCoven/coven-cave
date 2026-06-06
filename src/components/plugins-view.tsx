@@ -38,7 +38,6 @@ type SkillEntry = {
 
 type Props = {
   onOpenChat: () => void;
-  onCreateReminder?: () => void;
   onCreateSkill?: () => void;
   onCreatePlugin?: () => void;
   familiars?: FamiliarForSkill[];
@@ -68,7 +67,7 @@ const SECTION_LABEL: Record<Tab, string> = {
   capabilities: "Harness capabilities",
 };
 
-export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
+export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
   const [tab, setTab] = useState<Tab>("plugins");
   const [query, setQuery] = useState("");
 
@@ -256,7 +255,6 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
                   containerRef={createRef}
                   onCreatePlugin={onCreatePlugin}
                   onCreateSkill={onCreateSkill}
-                  onCreateReminder={onCreateReminder}
                 />
               )}
             </div>
@@ -447,11 +445,10 @@ type CreateDropdownProps = {
   onClose: () => void;
   onCreatePlugin?: () => void;
   onCreateSkill?: () => void;
-  onCreateReminder?: () => void;
 };
 
 const CREATE_ITEMS: {
-  id: "plugin" | "skill" | "reminder";
+  id: "plugin" | "skill";
   label: string;
   icon: IconName;
   desc: string;
@@ -468,12 +465,6 @@ const CREATE_ITEMS: {
     icon: "ph:sparkle-bold",
     desc: "Define a reusable familiar skill",
   },
-  {
-    id: "reminder",
-    label: "Reminder",
-    icon: "ph:bell-bold",
-    desc: "Schedule a one-time or recurring alert",
-  },
 ];
 
 function CreateDropdown({
@@ -481,7 +472,6 @@ function CreateDropdown({
   onClose,
   onCreatePlugin,
   onCreateSkill,
-  onCreateReminder,
 }: CreateDropdownProps) {
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -499,7 +489,6 @@ function CreateDropdown({
   const handlers: Record<string, (() => void) | undefined> = {
     plugin: onCreatePlugin,
     skill: onCreateSkill,
-    reminder: onCreateReminder,
   };
 
   return (

@@ -865,7 +865,6 @@ export function Workspace() {
           setMode("chats");
           setTimeout(() => routerRef.current?.newChat(), 0);
         }}
-        onCreateReminder={() => openReminderModal()}
         onCreateSkill={() => {
           setMode("chats");
           setTimeout(() => routerRef.current?.newChat(), 0);
