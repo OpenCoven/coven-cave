@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import { bindingFor, loadConfig, recordSessionFamiliar } from "@/lib/cave-config";
+import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import {
   type ChatTurn,
@@ -37,71 +38,12 @@ type StreamEvent =
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string }
   | { kind: "error"; message: string; code?: string };
 
-const HOOK_LINE_RE = /^hook:\s+/;
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
 // Examples:
 //   hook: tool_use Bash {...}
 //   hook: pre_tool_use Edit { ... }
 //   hook: post_tool_use Bash {... exitCode: 0 ...}
 const TOOL_HOOK_RE = /^hook:\s+(?:pre_tool_use|post_tool_use|tool_use)\s+(\S+)(?:\s+(.*))?$/;
-const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning|session id:|tokens used|\d[\d,]*\s*$)/;
-const CODEX_START_LINE = "codex";
-const CLAUDE_ASSISTANT_RE = /^claude(?:\s+code)?$/i;
-
-/**
- * Filter raw harness stdout (after JSON event lines have been stripped) into
- * what looks like assistant-authored text. Codex prints a banner + hook lines
- * + a `codex` marker before its reply + `tokens used` after. We keep only the
- * content between the start marker and the next hook/end-of-stream.
- */
-class AssistantFilter {
-  private phase: "pre" | "assistant" | "post" = "pre";
-  private buf = "";
-
-  push(chunk: string): string {
-    this.buf += chunk;
-    let out = "";
-    let idx;
-    while ((idx = this.buf.indexOf("\n")) >= 0) {
-      const line = this.buf.slice(0, idx);
-      this.buf = this.buf.slice(idx + 1);
-      out += this.processLine(line);
-    }
-    return out;
-  }
-
-  flush(): string {
-    if (!this.buf) return "";
-    const remainder = this.processLine(this.buf);
-    this.buf = "";
-    return remainder;
-  }
-
-  private processLine(rawLine: string): string {
-    const line = rawLine.replace(/\r/g, "");
-    const trimmed = line.trim();
-
-    if (trimmed === CODEX_START_LINE || CLAUDE_ASSISTANT_RE.test(trimmed)) {
-      this.phase = "assistant";
-      return "";
-    }
-    if (HOOK_LINE_RE.test(trimmed)) {
-      if (this.phase === "assistant" && /stop/i.test(trimmed)) {
-        this.phase = "post";
-      }
-      return "";
-    }
-    if (trimmed === "user") {
-      // Codex echoes the user prompt block; skip the leading marker
-      return "";
-    }
-    if (BANNER_LINE_RE.test(trimmed)) {
-      return "";
-    }
-    if (this.phase !== "assistant") return "";
-    return line + "\n";
-  }
-}
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
