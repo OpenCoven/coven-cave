@@ -118,7 +118,7 @@ export function CovenFloorMini({ onSelectFamiliar }: Props) {
   const sorted = [...active, ...rest];
 
   return (
-    <div className="select-none w-full" style={{ maxWidth: "600px" }}>
+    <div className="select-none w-full max-w-[600px]">
       <p className="mb-2 text-[11px] uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.2)" }}>
         Coven
       </p>
