@@ -15,6 +15,7 @@ export type ScenePosition = { x: number; y: number; z: number };
 export type TraceSceneNode = DelegationGraphNode & {
   label: string;
   position: ScenePosition;
+  memoryCount: number;
 };
 
 export type TraceSceneEdge = DelegationGraphEdge & {
@@ -79,6 +80,7 @@ function pos(x: number, y: number, z: number): ScenePosition {
 export function buildTraceGraphSceneModel(
   graph: DelegationGraph,
   labels: Map<string, string>,
+  memoryCounts?: Map<string, number>,
 ): TraceGraphSceneModel {
   const policy = renderPolicyForGraph({ nodeCount: graph.nodes.length, edgeCount: graph.edges.length });
   const count = Math.max(graph.nodes.length, 1);
@@ -94,6 +96,7 @@ export function buildTraceGraphSceneModel(
       ...node,
       label: labels.get(node.id) ?? node.id,
       position: pos(Math.cos(angle) * radius * scale, lift, Math.sin(angle) * radius * scale),
+      memoryCount: memoryCounts?.get(node.id) ?? 0,
     };
   });
 

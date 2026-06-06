@@ -27,10 +27,20 @@ const model = buildTraceGraphSceneModel(graph, new Map([
   ["cody", "Cody"],
   ["sage", "Sage"],
 ]));
+const modelWithMemory = buildTraceGraphSceneModel(graph, new Map([
+  ["nova", "Nova"],
+  ["cody", "Cody"],
+  ["sage", "Sage"],
+]), new Map([
+  ["cody", 3],
+]));
 
 assert.equal(model.nodes.length, 3);
 assert.equal(model.edges.length, 3);
 assert.equal(model.nodes[0].label, "Nova");
+assert.equal(model.nodes[0].memoryCount, 0);
+assert.equal(modelWithMemory.nodes.find((node) => node.id === "cody")?.memoryCount, 3);
+assert.equal(modelWithMemory.nodes.find((node) => node.id === "nova")?.memoryCount, 0);
 assert.equal(edgeKey(graph.edges[0]), "nova->cody->explicit");
 assert.notDeepEqual(model.nodes[0].position, model.nodes[1].position);
 assert.equal(selectionObjectKey({ kind: "trace", id: "trace-1" }, graph), "edge:nova->cody->explicit");

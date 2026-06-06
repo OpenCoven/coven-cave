@@ -29,6 +29,7 @@ type Props = {
   familiars: Map<string, Familiar>;
   selection: TraceGraphSelection;
   onSelect: (selection: TraceGraphSelection) => void;
+  memoryCounts?: Map<string, number>;
 };
 
 type Pickable = THREE.Object3D & {
@@ -145,7 +146,7 @@ function materialList(object: THREE.Object3D): THREE.Material[] {
   return Array.isArray(material) ? material : [material];
 }
 
-export function TraceGraph3D({ graph, familiars, selection, onSelect }: Props) {
+export function TraceGraph3D({ graph, familiars, selection, onSelect, memoryCounts }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const objectBySelectionRef = useRef(new Map<string, THREE.Object3D[]>());
@@ -155,7 +156,10 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect }: Props) {
   const [hover, setHover] = useState<GraphHover>(null);
   const reducedMotion = useReducedMotion();
   const labels = useMemo(() => new Map(Array.from(familiars, ([id, familiar]) => [id, familiar.display_name ?? id])), [familiars]);
-  const sceneModel = useMemo(() => buildTraceGraphSceneModel(graph, labels), [graph, labels]);
+  const sceneModel = useMemo(
+    () => buildTraceGraphSceneModel(graph, labels, memoryCounts),
+    [graph, labels, memoryCounts],
+  );
   const selectedObjectKey = selectionObjectKey(selection, graph);
 
   useEffect(() => {
@@ -220,6 +224,7 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect }: Props) {
 
     const pickables: Pickable[] = [];
     const particles: Array<{ mesh: THREE.Mesh; arc: THREE.QuadraticBezierCurve3; offset: number; speed: number }> = [];
+    const memoryHalos: Array<{ mesh: THREE.Mesh; baseScale: number; phase: number }> = [];
     const selectionMap = new Map<string, THREE.Object3D[]>();
     objectBySelectionRef.current = selectionMap;
     const maxEdgeCount = Math.max(...sceneModel.edges.map((edge) => edge.count), 1);
@@ -325,6 +330,31 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect }: Props) {
       halo.userData.billboard = true;
       root.add(halo);
       registerSelectable(`node:${node.id}`, halo, active ? 0.5 : 0.28);
+
+      if (node.memoryCount > 0) {
+        const memHalo = new THREE.Mesh(
+          new THREE.RingGeometry(size + 0.22, size + 0.28, 48),
+          new THREE.MeshBasicMaterial({
+            color: 0xf59e0b,
+            transparent: true,
+            opacity: 0.45,
+            side: THREE.DoubleSide,
+          }),
+        );
+        memHalo.position.copy(asVector(node.position));
+        memHalo.userData.billboard = true;
+        root.add(memHalo);
+        registerSelectable(`node:${node.id}`, memHalo, 0.45);
+        memoryHalos.push({ mesh: memHalo, baseScale: 1, phase: node.id.length * 0.33 });
+
+        if (node.memoryCount > 1 && sceneModel.policy.showLabels) {
+          const badge = makeLabelSprite(`${node.memoryCount} mem`, "#f59e0b");
+          badge.scale.set(1.2, 0.3, 1);
+          badge.position.copy(asVector(node.position).add(new THREE.Vector3(size + 0.55, size + 0.1, 0)));
+          root.add(badge);
+          registerSelectable(`node:${node.id}`, badge, 1);
+        }
+      }
 
       if (sceneModel.policy.showLabels) {
         const label = makeLabelSprite(node.label, active ? "#ffffff" : "#c9c0d8");
@@ -445,6 +475,14 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect }: Props) {
       for (const particle of particles) {
         const t = reducedMotion ? particle.offset : (particle.offset + elapsed * particle.speed) % 1;
         particle.mesh.position.copy(particle.arc.getPoint(t));
+      }
+      for (const halo of memoryHalos) {
+        const pulse = reducedMotion ? 0.5 : (Math.sin(elapsed * 1.8 + halo.phase) + 1) / 2;
+        const scale = halo.baseScale + pulse * 0.06;
+        halo.mesh.scale.setScalar(scale);
+        for (const material of materialList(halo.mesh)) {
+          material.opacity = 0.32 + pulse * 0.18;
+        }
       }
       root.traverse((child) => {
         if (child instanceof THREE.Sprite || child.userData.billboard) child.quaternion.copy(camera.quaternion);
@@ -582,11 +620,12 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect }: Props) {
         <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#38bdf8]" /> mixed</span>
         <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#62d08f]" /> running</span>
         <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#f87171]" /> failed</span>
+        <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#f59e0b]" /> memory</span>
       </div>
       <div className="pointer-events-none absolute bottom-3 right-3 hidden rounded-lg border border-white/10 bg-black/45 px-3 py-2 text-[10px] text-white/55 shadow-2xl backdrop-blur md:block">
         Drag to orbit · pinch or scroll to zoom · click nodes or routes
       </div>
-      {hover ? <GraphHoverTooltip hover={hover} graph={graph} familiars={familiars} /> : null}
+      {hover ? <GraphHoverTooltip hover={hover} graph={graph} familiars={familiars} memoryCounts={memoryCounts} /> : null}
     </div>
   );
 }
@@ -595,10 +634,12 @@ function GraphHoverTooltip({
   hover,
   graph,
   familiars,
+  memoryCounts,
 }: {
   hover: NonNullable<GraphHover>;
   graph: DelegationGraph;
   familiars: Map<string, Familiar>;
+  memoryCounts?: Map<string, number>;
 }) {
   const title = hover.kind === "node"
     ? familiarName(familiars, hover.id)
@@ -609,6 +650,7 @@ function GraphHoverTooltip({
   const detail = hover.kind === "node"
     ? graph.nodes.find((node) => node.id === hover.id)
     : graph.edges.find((edge) => edgeKey(edge) === hover.key);
+  const memoryCount = hover.kind === "node" ? memoryCounts?.get(hover.id) ?? 0 : 0;
 
   return (
     <div
@@ -619,7 +661,10 @@ function GraphHoverTooltip({
       {detail && "count" in detail ? (
         <div className="mt-1 text-white/65">{detail.count} traces · {detail.source} · {detail.latestStatus}</div>
       ) : detail ? (
-        <div className="mt-1 text-white/65">{detail.sentCount} sent · {detail.receivedCount} received</div>
+        <div className="mt-1 text-white/65">
+          {detail.sentCount} sent · {detail.receivedCount} received
+          {memoryCount > 0 ? ` · ${memoryCount} memories` : ""}
+        </div>
       ) : null}
     </div>
   );

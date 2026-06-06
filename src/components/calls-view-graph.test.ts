@@ -25,6 +25,18 @@ assert.match(
 );
 
 assert.match(
+  source,
+  /fetch\("\/api\/coven-memory"/,
+  "Delegations view should load coven memory counts for familiar nodes",
+);
+
+assert.match(
+  source,
+  /memoryCounts=\{memoryCounts\}/,
+  "Delegations view should pass memory counts into the 3D trace graph",
+);
+
+assert.match(
   graph3dSource,
   /import \* as THREE from "three"/,
   "3D trace graph should use Three.js for the graph scene",
@@ -94,6 +106,24 @@ assert.match(
   graph3dSource,
   /LineDashedMaterial/,
   "3D trace graph should preserve inferred-route dashed styling",
+);
+
+assert.match(
+  graph3dSource,
+  /memoryCounts\?: Map<string, number>/,
+  "3D trace graph should accept optional memory counts",
+);
+
+assert.match(
+  graph3dSource,
+  /0xf59e0b/,
+  "3D trace graph should render amber memory presence rings",
+);
+
+assert.match(
+  graph3dSource,
+  /> memory<\/span>/,
+  "3D trace graph legend should explain memory presence",
 );
 
 assert.doesNotMatch(

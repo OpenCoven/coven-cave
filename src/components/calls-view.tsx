@@ -39,6 +39,7 @@ type Props = {
 
 type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
 type BoardResponse = { ok: true; cards: Card[] } | { ok: false; error?: string };
+type CovenMemoryResponse = { ok: boolean; entries?: Array<{ familiar_id: string }> };
 
 const TIME_WINDOWS: Array<{ id: TimeWindow; label: string }> = [
   { id: "24h", label: "24h" },
@@ -106,6 +107,7 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<Selection>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
+  const [memoryCounts, setMemoryCounts] = useState<Map<string, number>>(new Map());
 
   const load = useCallback(async () => {
     try {
@@ -124,6 +126,22 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
       if (boardJson.ok) setCards(boardJson.cards ?? []);
       setError(boardJson.ok ? null : boardJson.error ?? "task context load failed");
       setLastLoadedAt(new Date().toISOString());
+
+      try {
+        const memRes = await fetch("/api/coven-memory", { cache: "no-store" });
+        const memJson = (await memRes.json()) as CovenMemoryResponse;
+        if (memJson.ok && memJson.entries) {
+          const counts = new Map<string, number>();
+          for (const entry of memJson.entries) {
+            counts.set(entry.familiar_id, (counts.get(entry.familiar_id) ?? 0) + 1);
+          }
+          setMemoryCounts(counts);
+        } else {
+          setMemoryCounts(new Map());
+        }
+      } catch {
+        setMemoryCounts(new Map());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "fetch failed");
     }
@@ -260,7 +278,13 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="flex min-w-0 flex-col gap-3 overflow-hidden">
-              <TraceGraph3D graph={graph} familiars={famById} selection={selection} onSelect={setSelection} />
+              <TraceGraph3D
+                graph={graph}
+                familiars={famById}
+                selection={selection}
+                onSelect={setSelection}
+                memoryCounts={memoryCounts}
+              />
               <TraceTimeline traces={graph.traces} familiars={famById} selectedTraceId={selection?.kind === "trace" ? selection.id : null} onSelect={(trace) => setSelection({ kind: "trace", id: trace.id })} />
             </section>
             <TraceInspector
