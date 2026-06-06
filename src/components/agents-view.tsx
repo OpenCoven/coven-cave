@@ -368,22 +368,62 @@ export function AgentsView({
     <section className="flex h-full min-w-0 bg-[var(--bg-base)]">
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
-          <div className="mr-1 min-w-[72px] text-[13px] font-semibold text-[var(--text-primary)]">
-            {scope === "conversation" ? "Chat" : scope === "floor" ? "Floor" : scope === "delegations" ? "Trace graph" : "Agents"}
+        {/* ── Tab bar — underline style matching roles/plugins view ─────── */}
+        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
+          {/* Tabs flush left */}
+          <div className="flex items-end gap-0">
+            {(["sessions", "floor", "delegations"] as const).map((s) => {
+              const labels: Record<string, string> = {
+                sessions: "Agents",
+                floor: "Floor",
+                delegations: "Live traces",
+              };
+              const icons: Record<string, string> = {
+                sessions: "ph:users",
+                floor: "ph:users-three",
+                delegations: "ph:graph",
+              };
+              const isActive = scope === s || (s === "sessions" && scope === "conversation");
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setScope(s)}
+                  className={[
+                    "relative flex items-center gap-1.5 px-3 py-2.5 text-[12px] font-medium transition-colors",
+                    isActive
+                      ? "text-[var(--text-primary)] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-t after:bg-[oklch(0.65_0.18_280)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  ].join(" ")}
+                >
+                  <Icon name={icons[s] as IconName} width={12} />
+                  {labels[s]}
+                  {s === "delegations" && delegationGraph.traces.length > 0 && (
+                    <span className="rounded-full bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-secondary)]">
+                      {delegationGraph.traces.length}
+                    </span>
+                  )}
+                  {s === "delegations" && runningTraceCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                  {s === "delegations" && failedTraceCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />}
+                </button>
+              );
+            })}
           </div>
 
-          {scope === "sessions" ? (
-            <>
-              <div className="relative min-w-[180px] flex-1">
+          {/* Actions flush right */}
+          <div className="flex items-center gap-2 py-1.5">
+            {(scope === "sessions" || scope === "conversation") && (
+              <div className="relative">
                 <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search sessions..."
-                  className="h-7 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+                  placeholder="Search agents..."
+                  className="h-7 w-[160px] rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:w-[220px] transition-all"
                 />
               </div>
+            )}
+            {(scope === "sessions" || scope === "conversation") && (
               <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-0.5">
                 <button type="button" onClick={() => setShowClosed(false)} className={softButton(!showClosed)}>
                   Open <span className="opacity-60">{openCount}</span>
@@ -392,41 +432,22 @@ export function AgentsView({
                   Closed <span className="opacity-60">{closedCount}</span>
                 </button>
               </div>
-            </>
-          ) : (
-            <button type="button" onClick={() => setScope("sessions")} className={softButton()}>
-              <Icon name="ph:list-bullets" width={12} />
-              Sessions
+            )}
+            <button
+              type="button"
+              onClick={() => startConversation(activeFamiliarId)}
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-90"
+            >
+              <Icon name="ph:plus-bold" width={11} />
+              New chat
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => startConversation(activeFamiliarId)}
-            className="inline-flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-90"
-          >
-            <Icon name="ph:plus-bold" width={11} />
-            New chat
-          </button>
-          <button type="button" onClick={() => setScope("floor")} className={softButton(scope === "floor")}>
-            <Icon name="ph:users-three" width={12} />
-            Floor
-          </button>
-          <button type="button" onClick={() => setScope("delegations")} className={softButton(scope === "delegations")}>
-            <Icon name="ph:graph" width={12} />
-            Live traces
-            <span className="rounded-full bg-[var(--bg-elevated)] px-1.5 text-[10px] text-[var(--text-secondary)]">
-              {delegationGraph.traces.length}
-            </span>
-            {runningTraceCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-            {failedTraceCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />}
-          </button>
-          {delegationError && (
-            <span className="text-[10px] text-amber-400">{delegationError}</span>
-          )}
-          <button type="button" title="Configure" onClick={() => onOpenMode("plugins")} className={softButton()}>
-            <Icon name="ph:plug" width={12} />
-          </button>
+            <button type="button" title="Configure plugins" onClick={() => onOpenMode("plugins")} className={softButton()}>
+              <Icon name="ph:plug" width={12} />
+            </button>
+            {delegationError && (
+              <span className="text-[10px] text-amber-400">{delegationError}</span>
+            )}
+          </div>
         </div>
 
         {scope === "floor" ? (
