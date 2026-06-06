@@ -14,7 +14,7 @@ import {
   type FamiliarForSkill,
 } from "@/components/skill-detail-drawer";
 
-type Tab = "roles" | "plugins" | "skills";
+type Tab = "roles" | "plugins" | "skills" | "workflows";
 
 type HarnessReport = {
   id: string;
@@ -37,6 +37,12 @@ type SkillEntry = {
   tags?: string[];
   score?: number;
   source?: "local" | "daemon";
+};
+
+type WorkflowEntry = {
+  id: string;
+  /** Roles that declare this workflow */
+  declaredBy: string[];
 };
 
 type RoleEntry = {
@@ -63,24 +69,28 @@ type Props = {
 const TAB_LABEL: Record<Tab, string> = {
   plugins: "Plugins",
   skills: "Skills",
+  workflows: "Workflows",
   roles: "Roles",
 };
 
 const HERO_HEADLINE: Record<Tab, string> = {
   plugins: "Make Cave work your way",
   skills: "Harness your familiar's skills",
+  workflows: "Automated sequences across your familiars",
   roles: "Shape how familiars show up",
 };
 
 const HERO_SEARCH_PLACEHOLDER: Record<Tab, string> = {
   plugins: "Search plugins",
   skills: "Search skills",
+  workflows: "Search workflows",
   roles: "Search roles",
 };
 
 const SECTION_LABEL: Record<Tab, string> = {
   plugins: "Harness plugins",
   skills: "Installed skills",
+  workflows: "All workflows",
   roles: "Installed roles",
 };
 
@@ -270,6 +280,20 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
     );
   }, [roles, query]);
 
+  // Aggregate unique workflow ids from all loaded roles
+  const workflows = useMemo<WorkflowEntry[]>(() => {
+    if (!rolesLoaded) return [];
+    const map = new Map<string, string[]>();
+    for (const role of roles) {
+      for (const wfId of role.workflows) {
+        const existing = map.get(wfId) ?? [];
+        if (!existing.includes(role.name)) existing.push(role.name);
+        map.set(wfId, existing);
+      }
+    }
+    return [...map.entries()].map(([id, declaredBy]) => ({ id, declaredBy }));
+  }, [roles, rolesLoaded]);
+
   const skillsById = useMemo(() => {
     const map = new Map<string, SkillEntry>();
     for (const skill of skills) {
@@ -314,7 +338,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
         <div className="flex h-12 items-center justify-between gap-4">
           {/* Tabs flush left — underline style */}
           <nav className="flex h-full items-end gap-1 overflow-x-auto" aria-label="View tabs">
-            {(["roles", "plugins", "skills"] as const).map((t) => (
+            {(["roles", "plugins", "skills", "workflows"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -448,7 +472,9 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
               <PluginGrid items={filteredHarnesses} loaded={harnessesLoaded} onOpenChat={onOpenChat} />
             ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
-            ) : tab === "roles" ? (
+            ) : tab === "workflows" ? (
+            <WorkflowGrid items={workflows} loaded={rolesLoaded} error={rolesError} />
+          ) : tab === "roles" ? (
               <RoleGrid
                 items={filteredRoles}
                 loaded={rolesLoaded}
@@ -1022,6 +1048,65 @@ function RoleRelationSection({
         ))}
       </ul>
     </section>
+  );
+}
+
+
+// ── WorkflowGrid ─────────────────────────────────────────────────────────────
+function WorkflowGrid({
+  items,
+  loaded,
+  error,
+}: {
+  items: WorkflowEntry[];
+  loaded: boolean;
+  error: string | null;
+}) {
+  if (!loaded) return <GridSkeleton />;
+  if (error) {
+    return (
+      <p className="rounded-lg border border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
+        Workflows unavailable: {error}
+      </p>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+        No workflows declared in any role yet.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      {items.map((wf) => (
+        <div
+          key={wf.id}
+          className="flex items-start gap-3 rounded-lg border border-border bg-[#050409] px-4 py-3 transition-colors hover:bg-[#111018]"
+        >
+          {/* Icon swatch */}
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#111018]">
+            <Icon name="ph:git-branch-bold" width={16} className="text-[var(--text-muted)]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[13px] font-medium text-[var(--text-primary)]">{wf.id}</span>
+              <span className="rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+                workflow
+              </span>
+            </div>
+            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+              {wf.declaredBy.length === 1
+                ? `Declared by ${wf.declaredBy[0]}`
+                : `Declared by ${wf.declaredBy.slice(0, -1).join(", ")} and ${wf.declaredBy[wf.declaredBy.length - 1]}`}
+            </p>
+          </div>
+          <div className="shrink-0 text-[11px] text-[var(--text-muted)]">
+            {wf.declaredBy.length} role{wf.declaredBy.length !== 1 ? "s" : ""}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
