@@ -191,7 +191,10 @@ jobs:
         if: matrix.platform == 'macos-15-intel'
         shell: bash
         env:
-          DEVELOPER_DIR: /Applications/Xcode_16.3.app/Contents/Developer
+          # Xcode 16.3's notarytool crashes with exit 132 on the current
+          # macos-15 Intel runner image. Use the image's default 16.4
+          # toolchain explicitly so notarization stays on the macOS 15 SDK.
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
           SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}

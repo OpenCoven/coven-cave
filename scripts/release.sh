@@ -39,6 +39,8 @@ require_value "$NOTARY_ISSUER" "NOTARY_ISSUER / APPLE_API_ISSUER"
 
 echo "==> Validating App Store Connect API key"
 openssl pkey -in "$NOTARY_KEY_FILE" -noout -check >/dev/null
+echo "==> Using notarytool: $(xcrun --find notarytool)"
+xcrun notarytool --version
 
 echo "==> Building CovenCave v${VERSION}"
 rm -rf "$DMG_DIR"
