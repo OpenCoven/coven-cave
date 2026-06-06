@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import type { LibraryGitHubItem, GitHubItemKind } from "@/lib/library-types";
 
@@ -79,6 +80,379 @@ function parseGitHubUrl(url: string): { repo: string; kind: GitHubItemKind; numb
   } catch { return null; }
 }
 
+// ── Types ─────────────────────────────────────────────────────────────────
+
+type Familiar = { id: string; display_name: string; emoji?: string };
+type BoardCard = { id: string; title: string; status: string; familiarId?: string | null };
+
+// ── Attach to Task modal ───────────────────────────────────────────────────
+
+function AttachTaskModal({
+  item,
+  onClose,
+}: {
+  item: LibraryGitHubItem;
+  onClose: () => void;
+}) {
+  const [familiars, setFamiliars]   = useState<Familiar[]>([]);
+  const [cards, setCards]           = useState<BoardCard[]>([]);
+  const [mode, setMode]             = useState<"new" | "existing">("new");
+  const [title, setTitle]           = useState(item.title);
+  const [notes, setNotes]           = useState(item.url);
+  const [familiarId, setFamiliarId] = useState("");
+  const [cardId, setCardId]         = useState("");
+  const [status, setStatus]         = useState<"backlog" | "todo" | "in-progress">("backlog");
+  const [busy, setBusy]             = useState(false);
+  const [done, setDone]             = useState<string | null>(null);
+  const [err, setErr]               = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/familiars", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (j.ok) setFamiliars(j.familiars ?? []); })
+      .catch(() => {});
+    void fetch("/api/board", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (j.ok) setCards(j.cards ?? []); })
+      .catch(() => {});
+  }, []);
+
+  // Close on Esc
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      if (mode === "new") {
+        const res = await fetch("/api/board", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            notes: notes.trim() || undefined,
+            status,
+            familiarId: familiarId || null,
+            labels: [item.kind, item.repo].filter(Boolean),
+          }),
+        });
+        const j = await res.json() as { ok: boolean; card?: { id: string; title: string } };
+        if (!j.ok) throw new Error("Failed to create task");
+        setDone(`Created task "${j.card?.title ?? title}"`);
+      } else {
+        // Attach link — patch the card's notes with the GitHub URL
+        if (!cardId) { setErr("Select an existing task"); setBusy(false); return; }
+        const existing = cards.find((c) => c.id === cardId);
+        const res = await fetch(`/api/board/${cardId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            notes: [(existing as { notes?: string } | undefined)?.notes, `GitHub: ${item.url}`]
+              .filter(Boolean).join("\n"),
+          }),
+        });
+        const j = await res.json() as { ok: boolean };
+        if (!j.ok) throw new Error("Failed to attach to task");
+        setDone(`Attached to task "${existing?.title ?? cardId}"`);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return createPortal(
+    <div
+      className="gh-modal-backdrop"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="gh-modal">
+        <div className="gh-modal-header">
+          <Icon name="ph:clipboard-text" width={14} />
+          <span>Attach to Task</span>
+          <button type="button" className="gh-modal-close" onClick={onClose}>
+            <Icon name="ph:x" width={13} />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="gh-modal-done">
+            <span style={{ color: "#34d399", display: "grid" }}><Icon name="ph:check-circle" width={18} /></span>
+            <span>{done}</span>
+            <button type="button" className="gh-modal-btn gh-modal-btn--primary" onClick={onClose}>Done</button>
+          </div>
+        ) : (
+          <form className="gh-modal-body" onSubmit={handleSubmit}>
+            {/* Source item */}
+            <div className="gh-modal-source">
+              <a href={item.url} target="_blank" rel="noopener noreferrer" className="gh-modal-source-link">
+                {item.title}
+              </a>
+              <span className="gh-modal-source-meta">{item.repo}{item.number ? ` #${item.number}` : ""}</span>
+            </div>
+
+            {/* Mode tabs */}
+            <div className="gh-modal-tabs">
+              <button type="button" className={`gh-modal-tab${mode === "new" ? " active" : ""}`} onClick={() => setMode("new")}>New task</button>
+              <button type="button" className={`gh-modal-tab${mode === "existing" ? " active" : ""}`} onClick={() => setMode("existing")}>Existing task</button>
+            </div>
+
+            {mode === "new" ? (
+              <>
+                <label className="gh-modal-label">Title
+                  <input className="gh-modal-input" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                </label>
+                <label className="gh-modal-label">Notes / URL
+                  <input className="gh-modal-input" value={notes} onChange={(e) => setNotes(e.target.value)} />
+                </label>
+                <div className="gh-modal-row">
+                  <label className="gh-modal-label" style={{ flex: 1 }}>Status
+                    <select className="gh-modal-select" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+                      <option value="backlog">Backlog</option>
+                      <option value="todo">To Do</option>
+                      <option value="in-progress">In Progress</option>
+                    </select>
+                  </label>
+                  <label className="gh-modal-label" style={{ flex: 1 }}>Assign to
+                    <select className="gh-modal-select" value={familiarId} onChange={(e) => setFamiliarId(e.target.value)}>
+                      <option value="">Unassigned</option>
+                      {familiars.map((f) => (
+                        <option key={f.id} value={f.id}>{f.emoji ?? ""} {f.display_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </>
+            ) : (
+              <label className="gh-modal-label">Pick existing task
+                <select className="gh-modal-select" value={cardId} onChange={(e) => setCardId(e.target.value)} required>
+                  <option value="">— select —</option>
+                  {cards.map((c) => (
+                    <option key={c.id} value={c.id}>[{c.status}] {c.title}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {err && <div className="gh-modal-err">{err}</div>}
+            <div className="gh-modal-footer">
+              <button type="button" className="gh-modal-btn" onClick={onClose}>Cancel</button>
+              <button type="submit" className="gh-modal-btn gh-modal-btn--primary" disabled={busy}>
+                {busy ? "Saving…" : mode === "new" ? "Create task" : "Attach"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Handoff to Agent modal ─────────────────────────────────────────────────
+
+// Scripted launch templates keyed by GitHub item kind
+const LAUNCH_TEMPLATES: Record<GitHubItemKind, string> = {
+  pr:         "Please review this PR and give me a concise summary of the changes, any concerns, and a go/no-go recommendation.\n\nPR: {url}\nTitle: {title}\nRepo: {repo}",
+  issue:      "Please investigate this issue and suggest a fix or next steps.\n\nIssue: {url}\nTitle: {title}\nRepo: {repo}",
+  discussion: "Please read this discussion and give me a summary and your take on the best path forward.\n\nDiscussion: {url}\nTitle: {title}\nRepo: {repo}",
+  repo:       "Please give me an overview of this repository — its purpose, tech stack, and any areas to watch.\n\nRepo: {url}\nTitle: {title}",
+};
+
+function fillTemplate(tpl: string, item: LibraryGitHubItem): string {
+  return tpl
+    .replace(/\{url\}/g, item.url)
+    .replace(/\{title\}/g, item.title)
+    .replace(/\{repo\}/g, item.repo)
+    .replace(/\{number\}/g, item.number ? `#${item.number}` : "");
+}
+
+function HandoffModal({
+  item,
+  onClose,
+  onLaunched,
+}: {
+  item: LibraryGitHubItem;
+  onClose: () => void;
+  onLaunched?: (familiarId: string, sessionId: string | null) => void;
+}) {
+  const [familiars, setFamiliars]   = useState<Familiar[]>([]);
+  const [familiarId, setFamiliarId] = useState("");
+  const [prompt, setPrompt]         = useState(() => fillTemplate(LAUNCH_TEMPLATES[item.kind] ?? LAUNCH_TEMPLATES.repo, item));
+  const [busy, setBusy]             = useState(false);
+  const [done, setDone]             = useState<{ familiar: string; session: string | null } | null>(null);
+  const [err, setErr]               = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/familiars", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) {
+          const list: Familiar[] = j.familiars ?? [];
+          setFamiliars(list);
+          if (list.length > 0 && !familiarId) setFamiliarId(list[0].id);
+        }
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  // Regenerate prompt when kind changes (shouldn't happen, but defensive)
+  function handleTemplateReset() {
+    setPrompt(fillTemplate(LAUNCH_TEMPLATES[item.kind] ?? LAUNCH_TEMPLATES.repo, item));
+  }
+
+  async function handleLaunch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!familiarId) { setErr("Pick an agent"); return; }
+    setBusy(true); setErr(null);
+    try {
+      // Fire-and-forget via fetch with a short timeout — we don't stream here,
+      // just kick off the chat. The user can follow up in the Chat view.
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 30_000);
+      const res = await fetch("/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId, prompt: prompt.trim() }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      // /api/chat/send returns SSE — read the first few events to get sessionId
+      const reader = res.body?.getReader();
+      let sessionId: string | null = null;
+      if (reader) {
+        const dec = new TextDecoder();
+        let buf = "";
+        let done2 = false;
+        while (!done2) {
+          const { value, done: d } = await reader.read();
+          if (d) break;
+          buf += dec.decode(value, { stream: true });
+          for (const line of buf.split("\n")) {
+            if (line.startsWith("data: ")) {
+              try {
+                const ev = JSON.parse(line.slice(6)) as { kind: string; sessionId?: string };
+                if (ev.kind === "session" && ev.sessionId) { sessionId = ev.sessionId; }
+                if (ev.kind === "done") { done2 = true; break; }
+              } catch { /* skip */ }
+            }
+          }
+          buf = buf.split("\n").pop() ?? "";
+        }
+        reader.cancel();
+      }
+      const f = familiars.find((x) => x.id === familiarId);
+      setDone({ familiar: f?.display_name ?? familiarId, session: sessionId });
+      onLaunched?.(familiarId, sessionId);
+    } catch (e) {
+      if ((e as Error).name === "AbortError") {
+        setErr("Request timed out — agent may still be processing.");
+      } else {
+        setErr(e instanceof Error ? e.message : "Unknown error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const fam = familiars.find((f) => f.id === familiarId);
+
+  return createPortal(
+    <div
+      className="gh-modal-backdrop"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="gh-modal gh-modal--wide">
+        <div className="gh-modal-header">
+          <Icon name="ph:share-network" width={14} />
+          <span>Handoff to Agent</span>
+          <button type="button" className="gh-modal-close" onClick={onClose}>
+            <Icon name="ph:x" width={13} />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="gh-modal-done">
+            <span style={{ color: "#34d399", display: "grid" }}><Icon name="ph:check-circle" width={18} /></span>
+            <div>
+              <div style={{ fontWeight: 600 }}>Handed off to {done.familiar}</div>
+              {done.session && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Session: {done.session}</div>
+              )}
+            </div>
+            <button type="button" className="gh-modal-btn gh-modal-btn--primary" onClick={onClose}>Done</button>
+          </div>
+        ) : (
+          <form className="gh-modal-body" onSubmit={handleLaunch}>
+            {/* Source item */}
+            <div className="gh-modal-source">
+              <a href={item.url} target="_blank" rel="noopener noreferrer" className="gh-modal-source-link">
+                {item.title}
+              </a>
+              <span className="gh-modal-source-meta">{item.repo}{item.number ? ` #${item.number}` : ""} · {item.kind}</span>
+            </div>
+
+            {/* Agent picker */}
+            <label className="gh-modal-label">Agent
+              <div className="gh-modal-agent-row">
+                <select
+                  className="gh-modal-select"
+                  value={familiarId}
+                  onChange={(e) => setFamiliarId(e.target.value)}
+                  required
+                >
+                  <option value="">— pick an agent —</option>
+                  {familiars.map((f) => (
+                    <option key={f.id} value={f.id}>{f.emoji ?? "🤖"} {f.display_name}</option>
+                  ))}
+                </select>
+                {fam && <span className="gh-modal-agent-pill">{fam.emoji ?? "🤖"} {fam.display_name}</span>}
+              </div>
+            </label>
+
+            {/* Prompt — pre-filled from template, fully editable */}
+            <label className="gh-modal-label">
+              <div className="gh-modal-label-row">
+                <span>Launch prompt</span>
+                <button type="button" className="gh-modal-reset" onClick={handleTemplateReset} title="Reset to template">
+                  <Icon name="ph:arrows-clockwise" width={11} /> reset
+                </button>
+              </div>
+              <textarea
+                className="gh-modal-textarea"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={7}
+                required
+              />
+            </label>
+
+            {err && <div className="gh-modal-err">{err}</div>}
+            <div className="gh-modal-footer">
+              <button type="button" className="gh-modal-btn" onClick={onClose}>Cancel</button>
+              <button type="submit" className="gh-modal-btn gh-modal-btn--primary" disabled={busy || !familiarId}>
+                {busy ? "Launching…" : "Launch handoff"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // ── Add form ───────────────────────────────────────────────────────────────
 
 function AddGitHubForm({ onAdd, onCancel }: {
@@ -149,6 +523,8 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
   const [groupBy, setGroupBy] = useState<GroupBy>("repo");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [attachItem, setAttachItem] = useState<LibraryGitHubItem | null>(null);
+  const [handoffItem, setHandoffItem] = useState<LibraryGitHubItem | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -307,6 +683,26 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
                             <Icon name="ph:x" width={11} />
                           </span>
                         </td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <div className="gh-row-actions">
+                            <button
+                              type="button"
+                              className="gh-row-action-btn"
+                              title="Attach to task"
+                              onClick={(e) => { e.stopPropagation(); setAttachItem(item); }}
+                            >
+                              <Icon name="ph:clipboard-text" width={11} />
+                            </button>
+                            <button
+                              type="button"
+                              className="gh-row-action-btn"
+                              title="Handoff to agent"
+                              onClick={(e) => { e.stopPropagation(); setHandoffItem(item); }}
+                            >
+                              <Icon name="ph:share-network" width={11} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -315,6 +711,18 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Modals */}
+      {attachItem && typeof document !== "undefined" && (
+        <AttachTaskModal item={attachItem} onClose={() => setAttachItem(null)} />
+      )}
+      {handoffItem && typeof document !== "undefined" && (
+        <HandoffModal
+          item={handoffItem}
+          onClose={() => setHandoffItem(null)}
+          onLaunched={() => { /* could open chat pane here */ }}
+        />
       )}
     </div>
   );
