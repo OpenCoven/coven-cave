@@ -228,6 +228,10 @@ function CallGraph({
     return m;
   }, [calls]);
 
+  useEffect(() => {
+    setTooltip(null);
+  }, [edges, nodeStats]);
+
   if (nodeIds.length === 0) {
     return (
       <div
@@ -300,7 +304,7 @@ function CallGraph({
             <polygon points="0 0, 7 3.5, 0 7" fill="var(--accent-presence)" fillOpacity={1} />
           </marker>
         </defs>
-        {edges.map((e, i) => {
+        {edges.map((e) => {
           const a = positions.get(e.caller);
           const b = positions.get(e.callee);
           if (!a || !b) return null;
@@ -319,7 +323,7 @@ function CallGraph({
           const pathD = `M ${x1} ${y1} L ${x2} ${y2}`;
           const isRunning = e.hasRunning;
           return (
-            <g key={i}>
+            <g key={`${e.caller}->${e.callee}`}>
               <path
                 d={pathD}
                 stroke="transparent"
