@@ -87,6 +87,7 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
 
   // Reset query when switching tabs
   const handleTabChange = (t: Tab) => {
+    if (t === tab) return;
     setTab(t);
     setQuery("");
   };
