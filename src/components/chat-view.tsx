@@ -965,7 +965,7 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
           </pre>
         ) : (
           <div className="flex flex-col items-center gap-3 px-8 py-10 text-[var(--text-muted)]">
-            <Icon name="ph:file-bold" width={32} />
+            <Icon name="ph:file-code" width={32} />
             <span className="text-[13px]">No preview available</span>
           </div>
         )}
