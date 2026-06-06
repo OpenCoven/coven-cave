@@ -106,6 +106,7 @@ xcrun notarytool submit "$DMG_PATH" \
   --key-id "$NOTARY_KEY_ID" \
   --issuer "$NOTARY_ISSUER" \
   --no-s3-acceleration \
+  --verbose \
   --wait
 
 echo "==> Stapling notarization ticket"

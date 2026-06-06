@@ -56,8 +56,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            label: macOS (DMG, signed + notarized)
+          - platform: macos-15-intel
+            label: macOS Intel (DMG, signed + notarized)
             args: "--bundles dmg"
           - platform: ubuntu-22.04
             label: Linux (AppImage)
@@ -115,7 +115,7 @@ jobs:
       # macOS release script. The path is exported into the env for later
       # steps. Runs only on the macOS leg.
       - name: Stage Apple API key
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15-intel'
         shell: bash
         run: |
           set -euo pipefail
@@ -134,7 +134,7 @@ jobs:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
 
       - name: Import Apple signing certificate
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15-intel'
         shell: bash
         run: |
           set -euo pipefail
@@ -188,7 +188,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Build macOS DMG with custom release script
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15-intel'
         shell: bash
         env:
           SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -205,7 +205,7 @@ jobs:
       # ship an unsigned DMG, which is exactly what regressed
       # v0.0.13–v0.0.15.
       - name: Verify macOS DMG is notarized
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15-intel'
         shell: bash
         run: |
           set -euo pipefail
@@ -228,7 +228,7 @@ jobs:
           echo "OK: $(grep 'origin=' /tmp/spctl.out)"
 
       - name: Upload macOS DMG to GitHub Release
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-15-intel'
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
