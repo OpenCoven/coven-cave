@@ -186,6 +186,7 @@ export const DEMO_BOARD_CARDS: Card[] = [
     lifecycleAt: ago(60),
     retryCount: 0,
     maxRetries: 2,
+    steps: [],
   },
   {
     id: "demo-card-2",
@@ -204,6 +205,7 @@ export const DEMO_BOARD_CARDS: Card[] = [
     lifecycleAt: ago(90),
     retryCount: 0,
     maxRetries: 2,
+    steps: [],
   },
   {
     id: "demo-card-3",
@@ -222,6 +224,7 @@ export const DEMO_BOARD_CARDS: Card[] = [
     lifecycleAt: ago(30),
     retryCount: 0,
     maxRetries: 2,
+    steps: [],
   },
   {
     id: "demo-card-4",
@@ -240,6 +243,7 @@ export const DEMO_BOARD_CARDS: Card[] = [
     lifecycleAt: ago(30),
     retryCount: 0,
     maxRetries: 2,
+    steps: [],
   },
   {
     id: "demo-card-5",
@@ -258,6 +262,7 @@ export const DEMO_BOARD_CARDS: Card[] = [
     lifecycleAt: ago(20),
     retryCount: 0,
     maxRetries: 2,
+    steps: [],
   },
 ];
 
