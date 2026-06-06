@@ -683,7 +683,7 @@ export function Workspace() {
   const list = undefined;
 
   const detail = (
-    <div key={mode} className="cave-mode-fade h-full">
+    <div key={mode} className="cave-mode-fade h-full flex flex-col">
       {mode === "home" ? (
       <HomeComposer
         familiars={familiars}
