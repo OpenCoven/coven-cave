@@ -8,6 +8,7 @@ export type ChatTurn = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  attachments?: import("./chat-attachments").ChatAttachment[];
   createdAt: string;
   durationMs?: number;
   isError?: boolean;

@@ -9,6 +9,10 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { parseGlyphString, DEFAULT_FAMILIAR_GLYPH } from "@/lib/familiar-glyph";
+import {
+  MAX_ATTACHMENT_TEXT_CHARS,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
 
 type ToolEvent = {
   id: string;
@@ -23,6 +27,7 @@ type Turn = {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  attachments?: ChatAttachment[];
   reasoning?: string;
   tools?: ToolEvent[];
   createdAt: string;
@@ -55,6 +60,8 @@ type StreamEvent =
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string }
   | { kind: "error"; message: string; code?: string };
 
+type ComposerAttachment = ChatAttachment & { id: string };
+
 function fmtDuration(ms?: number): string | null {
   if (!ms || ms < 0) return null;
   const s = Math.round(ms / 1000);
@@ -71,6 +78,39 @@ function fmtTime(iso: string): string {
   } catch {
     return "";
   }
+}
+
+function fmtBytes(size?: number): string {
+  if (size == null) return "unknown";
+  if (size < 1024) return `${size} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = size / 1024;
+  for (const unit of units) {
+    if (value < 1024 || unit === "GB") return `${value.toFixed(value >= 10 ? 0 : 1)} ${unit}`;
+    value /= 1024;
+  }
+  return `${size} B`;
+}
+
+function isTextLike(file: File): boolean {
+  if (file.type.startsWith("text/")) return true;
+  if (/\/(json|xml|yaml|toml|javascript|typescript|x-sh|csv)$/i.test(file.type)) return true;
+  return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
+}
+
+async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+  const attachment: ComposerAttachment = {
+    id: crypto.randomUUID(),
+    name: file.name,
+    type: file.type || undefined,
+    size: file.size,
+  };
+  if (isTextLike(file)) {
+    const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
+    attachment.text = text;
+    if (file.size > new Blob([text]).size) attachment.truncated = true;
+  }
+  return attachment;
 }
 
 /**
@@ -199,6 +239,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentSessionRef = useRef<string | null>(sessionId);
@@ -206,6 +247,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const keys = useKeySymbols();
 
@@ -241,10 +283,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             json.conversation.turns
               .filter((t: { role: string }) => t.role === "user" || t.role === "assistant")
               .map(
-                (t: { id: string; role: "user" | "assistant"; text: string; durationMs?: number; createdAt?: string }) => ({
+                (t: { id: string; role: "user" | "assistant"; text: string; attachments?: ChatAttachment[]; durationMs?: number; createdAt?: string }) => ({
                   id: t.id,
                   role: t.role,
                   text: t.text,
+                  attachments: t.attachments,
                   durationMs: t.durationMs,
                   createdAt: t.createdAt ?? new Date().toISOString(),
                 }),
@@ -351,8 +394,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return true;
   };
 
-  const sendRaw = async (text: string) => {
-    if (!text.trim() || busy) return;
+  const sendRaw = async (text: string, outgoingAttachments: ChatAttachment[] = []) => {
+    const trimmed = text.trim();
+    if ((!trimmed && outgoingAttachments.length === 0) || busy) return;
     setBusy(true);
     setError(null);
 
@@ -360,7 +404,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const userTurn: Turn = {
       id: crypto.randomUUID(),
       role: "user",
-      text,
+      text: trimmed,
+      ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
       createdAt: now,
     };
     const assistantId = crypto.randomUUID();
@@ -382,7 +427,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           familiarId: familiar.id,
-          prompt: text,
+          prompt: trimmed,
+          ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
           sessionId: currentSessionRef.current,
           ...(projectRoot && !currentSessionRef.current ? { projectRoot } : {}),
         }),
@@ -441,10 +487,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const send = async () => {
     const text = input.trim();
-    if (!text) return;
-    if (intentFromSlash(text)) return;
+    if (!text && attachments.length === 0) return;
+    if (attachments.length === 0 && intentFromSlash(text)) return;
+    const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     setInput("");
-    await sendRaw(text);
+    setAttachments([]);
+    await sendRaw(text, outgoingAttachments);
+  };
+
+  const attachFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const selected = Array.from(files).slice(0, Math.max(0, 10 - attachments.length));
+    if (selected.length === 0) return;
+    const next = await Promise.all(selected.map(fileToAttachment));
+    setAttachments((prev) => [...prev, ...next]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    inputRef.current?.focus();
   };
 
   const handleEvent = (ev: StreamEvent, assistantId: string) => {
@@ -670,6 +728,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
 
           <div className="rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 shadow-lg">
+            {attachments.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
+                {attachments.map((attachment) => (
+                  <span
+                    key={attachment.id}
+                    className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+                  >
+                    <Icon name="ph:paperclip" width={12} />
+                    <span className="truncate">{attachment.name}</span>
+                    <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
+                      className="grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                      title={`Remove ${attachment.name}`}
+                    >
+                      <Icon name="ph:x-bold" width={9} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <textarea
               ref={inputRef}
               value={input}
@@ -681,12 +761,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
               <div className="flex items-center gap-1 text-[var(--text-muted)]">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => void attachFiles(e.currentTarget.files)}
+                />
                 <button
+                  type="button"
                   className="grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                  title="Attach (coming soon)"
-                  disabled
+                  title="Attach files"
+                  disabled={busy || attachments.length >= 10}
+                  onClick={() => fileInputRef.current?.click()}
                 >
-                  +
+                  <Icon name="ph:paperclip" width={14} />
                 </button>
               </div>
               <div className="flex items-center gap-2 text-[var(--text-muted)]">
@@ -705,7 +794,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 ) : (
                   <button
                     onClick={() => void send()}
-                    disabled={!input.trim()}
+                    disabled={!input.trim() && attachments.length === 0}
                     className="grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[var(--accent-presence-soft)] disabled:opacity-40"
                     title={`Send (${keys.enter})`}
                   >
@@ -763,13 +852,16 @@ function ThinkingIndicator({ since }: { since: string }) {
 function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familiar: Familiar; showTimestamp?: boolean }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
-      <MessageBubble
-        role={turn.role}
-        content={turn.text}
-        timestamp={turn.createdAt}
-        showTimestamp={showTimestamp}
-        pending={turn.pending}
-      />
+      <div>
+        <MessageBubble
+          role={turn.role}
+          content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
+          timestamp={turn.createdAt}
+          showTimestamp={showTimestamp}
+          pending={turn.pending}
+        />
+        {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+      </div>
     );
   }
   // Assistant — preserve tool blocks + reasoning collapsible above the bubble
@@ -810,6 +902,27 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
+  return (
+    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+      {attachments.map((attachment, index) => (
+        <div
+          key={`${attachment.name}-${index}`}
+          className="inline-flex max-w-72 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+          title={`${attachment.name} (${fmtBytes(attachment.size)})`}
+        >
+          <Icon name="ph:paperclip" width={12} className="shrink-0 text-[var(--text-muted)]" />
+          <span className="truncate">{attachment.name}</span>
+          <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
+          {attachment.truncated ? (
+            <span className="shrink-0 text-[var(--text-muted)]">truncated</span>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }

@@ -3,6 +3,11 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { stripAnsi } from "@/lib/ansi";
 import { bindingFor, loadConfig, recordSessionFamiliar } from "@/lib/cave-config";
+import {
+  buildPromptWithAttachments,
+  normalizeChatAttachments,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { familiarWorkspace } from "@/lib/coven-paths";
@@ -17,9 +22,10 @@ export const runtime = "nodejs";
 
 type SendBody = {
   familiarId: string;
-  prompt: string;
+  prompt?: string;
   sessionId?: string;
   projectRoot?: string;
+  attachments?: ChatAttachment[];
 };
 
 type StreamEvent =
@@ -104,12 +110,15 @@ export async function POST(req: Request) {
       headers: { "content-type": "application/json" },
     });
   }
-  if (!body.familiarId || !body.prompt?.trim()) {
+  const attachments = normalizeChatAttachments(body.attachments);
+  const promptText = body.prompt?.trim() ?? "";
+  if (!body.familiarId || (!promptText && attachments.length === 0)) {
     return new Response(
-      JSON.stringify({ ok: false, error: "familiarId and prompt are required" }),
+      JSON.stringify({ ok: false, error: "familiarId and prompt or attachments are required" }),
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
+  const harnessPrompt = buildPromptWithAttachments(promptText, attachments);
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
@@ -152,7 +161,7 @@ export async function POST(req: Request) {
     if (/^[a-z0-9_-]+$/i.test(body.familiarId)) {
       a.push("--familiar", body.familiarId);
     }
-    a.push("--", body.prompt);
+    a.push("--", harnessPrompt);
     return a;
   };
   const args = buildArgs(body.sessionId ?? null);
@@ -180,7 +189,7 @@ export async function POST(req: Request) {
         }
       };
 
-      push({ kind: "user", text: body.prompt });
+      push({ kind: "user", text: promptText });
 
       let sessionId: string | null = body.sessionId ?? null;
       let assistantFilter = new AssistantFilter();
@@ -419,7 +428,8 @@ export async function POST(req: Request) {
         const userTurn: ChatTurn = {
           id: crypto.randomUUID(),
           role: "user",
-          text: body.prompt,
+          text: promptText,
+          ...(attachments.length ? { attachments } : {}),
           createdAt: now,
         };
         const assistantTurn: ChatTurn = {
@@ -434,7 +444,7 @@ export async function POST(req: Request) {
           sessionId: finalSessionId,
           familiarId: body.familiarId,
           harness: binding.harness,
-          title: body.prompt.slice(0, 60),
+          title: (promptText || attachments[0]?.name || "Attached files").slice(0, 60),
           createdAt: now,
           updatedAt: now,
           turns: [],
