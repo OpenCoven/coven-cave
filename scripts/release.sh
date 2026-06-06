@@ -45,7 +45,17 @@ echo "==> Running pnpm tauri build"
 # release script using hdiutil so we're not dependent on Tauri's
 # bundle_dmg.sh which requires a background image and can fail on version
 # mismatches between the generated script and the installed create-dmg.
-APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY" pnpm tauri build --bundles app
+# Keep App Store Connect credentials out of this subprocess so Tauri does not
+# take its built-in notarization path before this script assembles the DMG.
+env \
+  -u APPLE_API_KEY \
+  -u APPLE_API_KEY_PATH \
+  -u APPLE_API_ISSUER \
+  -u NOTARY_KEY_FILE \
+  -u NOTARY_KEY_ID \
+  -u NOTARY_ISSUER \
+  APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY" \
+  pnpm tauri build --bundles app
 
 APP_PATH=$(find "$BUILD_DIR/macos" -name "${APP_NAME}.app" -type d -maxdepth 2 | head -n1)
 if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
