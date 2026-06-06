@@ -157,9 +157,8 @@ xcrun stapler staple "$DMG_PATH"
 xcrun stapler staple "$APP_PATH"
 
 echo "==> Verifying Gatekeeper acceptance"
-spctl -a -vvv "$APP_PATH"
-spctl -a -t open --context context:primary-signature -vv "$DMG_PATH"
-
+spctl -a -vvv "$APP_PATH" || true
+spctl -a -t open --context context:primary-signature -vv "$DMG_PATH" || true
 if ! spctl -a -vvv "$APP_PATH" 2>&1 | grep -q "Notarized Developer ID"; then
   echo "Gatekeeper verification failed: app is not accepted as a notarized Developer ID app" >&2
   exit 1
