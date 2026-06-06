@@ -105,9 +105,10 @@ export function Workspace() {
   });
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
   const [reminderModalDefaults, setReminderModalDefaults] = useState<{
+    fireAt: string;
     title: string;
     whenText: string;
-  }>({ title: "", whenText: "" });
+  }>({ fireAt: "", title: "", whenText: "" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
@@ -185,7 +186,7 @@ export function Workspace() {
         const { listen } = await import("@tauri-apps/api/event");
         unlistenOpen = await listen("tray:open-inbox", () => setMode("inbox"));
         unlistenNew = await listen("tray:new-reminder", () => {
-          setReminderModalDefaults({ title: "", whenText: "" });
+          setReminderModalDefaults({ fireAt: "", title: "", whenText: "" });
           setReminderModalOpen(true);
         });
       } catch {
@@ -376,8 +377,8 @@ export function Workspace() {
     };
   }, []);
 
-  const openReminderModal = useCallback((title = "", whenText = "") => {
-    setReminderModalDefaults({ title, whenText });
+  const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
+    setReminderModalDefaults({ fireAt, title, whenText });
     setReminderModalOpen(true);
   }, []);
 
@@ -832,6 +833,13 @@ export function Workspace() {
       <CalendarView
         items={inboxItems}
         familiars={familiars}
+        onAddEntry={(defaults) => {
+          openReminderModal(
+            defaults?.title ?? "",
+            defaults?.whenText ?? "",
+            defaults?.fireAt ?? "",
+          );
+        }}
         onOpenItem={(item) => {
           if (item.sessionId) {
             if (item.familiarId) setActiveId(item.familiarId);
@@ -919,6 +927,7 @@ export function Workspace() {
         onClose={() => setReminderModalOpen(false)}
         familiars={familiars}
         defaultFamiliarId={activeId}
+        defaultFireAt={reminderModalDefaults.fireAt}
         defaultWhenText={reminderModalDefaults.whenText}
         defaultTitle={reminderModalDefaults.title}
         onCreate={async (draft) => {
