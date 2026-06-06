@@ -50,3 +50,9 @@ assert.equal(
   "<reasoning>\nI should think privately.\n</reasoning>\nVisible answer.\n",
   "reasoning tags should remain available for the collapsible reasoning UI",
 );
+
+assert.equal(
+  feed(["codex", "reasoning about this should stay visible."]),
+  "reasoning about this should stay visible.\n",
+  "visible assistant text that starts with reasoning should not be treated as a banner",
+);

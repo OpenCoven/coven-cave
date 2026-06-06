@@ -1,5 +1,5 @@
 const HOOK_LINE_RE = /^hook:\s+/;
-const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning|session id:|tokens used|\d[\d,]*\s*$)/;
+const BANNER_LINE_RE = /^(?:--------|workdir:|model:|provider:|approval:|sandbox:|reasoning:|session id:|tokens used|\d[\d,]*\s*$)/;
 const CODEX_START_LINE = "codex";
 const CLAUDE_ASSISTANT_RE = /^claude(?:\s+code)?$/i;
 
