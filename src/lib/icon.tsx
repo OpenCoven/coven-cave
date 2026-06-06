@@ -71,6 +71,8 @@ export const ICON_NAMES = [
   "ph:sparkle",
   "ph:tray",
   "ph:wrench-bold",
+  "ph:wrench",
+  "ph:brain",
   "ph:x",
   "ph:x-bold",
   "ph:x-circle-fill",

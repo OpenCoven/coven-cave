@@ -816,24 +816,30 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
 
 function ReasoningBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  const lineCount = text.split("\n").length;
+  const lines = text.split("\n").filter((l) => l.trim());
+  const preview = lines[0] ? lines[0].slice(0, 72) + (lines[0].length > 72 ? "…" : "") : "";
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-[var(--border-hairline)]/70 bg-[var(--bg-raised)]/30 text-[12px]">
+    <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]/60"
+        className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
       >
+        <Icon name="ph:brain" width="0.8rem" height="0.8rem" className="shrink-0 text-[var(--text-muted)]/70" />
+        <span className="text-[11px] text-[var(--text-muted)]">reasoning</span>
+        {!open && preview ? (
+          <span className="flex-1 truncate font-mono text-[11px] italic text-[var(--text-muted)]/60">{preview}</span>
+        ) : (
+          <span className="text-[11px] text-[var(--text-muted)]/50">{lines.length} line{lines.length === 1 ? "" : "s"}</span>
+        )}
         <Icon
           name="ph:caret-right-bold"
-          width="0.7rem"
-          height="0.7rem"
-          className={`transition-transform ${open ? "rotate-90" : ""}`}
+          width="0.65rem"
+          height="0.65rem"
+          className={`shrink-0 text-[var(--text-muted)]/50 transition-transform ${open ? "rotate-90" : ""}`}
         />
-        <span className="text-[var(--text-secondary)]">reasoning</span>
-        <span className="text-[var(--text-muted)]">· {lineCount} line{lineCount === 1 ? "" : "s"}</span>
       </button>
       {open ? (
-        <div className="border-t border-[var(--border-hairline)]/70 px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-[var(--text-secondary)]">
+        <div className="border-t border-[var(--border-hairline)]/60 px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[var(--text-secondary)]">
           {text}
         </div>
       ) : null}
@@ -845,57 +851,56 @@ function ReasoningBlock({ text }: { text: string }) {
 // When a turn has 3+ tool calls, collapse them under a summary row.
 // 1-2 tools always show expanded (they don't clutter).
 
-const TOOL_COLLAPSE_THRESHOLD = 3;
-
+// All tool groups are collapsed by default — expand on demand.
+// Running tools auto-open so the user sees live progress.
 function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   const anyRunning = tools.some((t) => t.status === "running");
-  const anyError = tools.some((t) => t.status === "error");
-  const shouldCollapse = tools.length >= TOOL_COLLAPSE_THRESHOLD && !anyRunning;
-  const [open, setOpen] = useState(!shouldCollapse);
+  const anyError   = tools.some((t) => t.status === "error");
+  const [open, setOpen] = useState(anyRunning);
 
-  if (!shouldCollapse) {
-    return (
-      <div className="mb-3 space-y-1.5">
-        {tools.map((t) => <ToolBlock key={t.id} tool={t} />)}
-      </div>
-    );
-  }
+  // Auto-open when a tool starts running, auto-close when all settle
+  const prevRunning = useRef(anyRunning);
+  useEffect(() => {
+    if (anyRunning && !prevRunning.current) setOpen(true);
+    prevRunning.current = anyRunning;
+  }, [anyRunning]);
 
   const doneCount = tools.filter((t) => t.status === "ok").length;
   const errCount  = tools.filter((t) => t.status === "error").length;
-  const summaryDot = anyError
+
+  const statusDot = anyError
     ? "bg-rose-400"
     : anyRunning
     ? "bg-amber-400 animate-pulse"
-    : "bg-emerald-400";
+    : "bg-emerald-400/70";
 
   const label = anyRunning
-    ? `${tools.length} tool calls running…`
+    ? `${tools.length} tool call${tools.length > 1 ? "s" : ""} · running`
     : errCount > 0
-    ? `${tools.length} tool calls · ${errCount} error${errCount > 1 ? "s" : ""}`
-    : `${tools.length} tool calls · ${doneCount} done`;
+    ? `${tools.length} tool call${tools.length > 1 ? "s" : ""} · ${errCount} error${errCount > 1 ? "s" : ""}`
+    : tools.length === 1
+    ? tools[0].name
+    : `${tools.length} tool calls · done`;
 
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-[var(--border-hairline)]/70 bg-[var(--bg-raised)]/20 text-[12px]">
-      {/* Summary row */}
+    <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[var(--bg-raised)]/60"
+        className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
       >
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
+        <Icon name="ph:wrench" width="0.8rem" height="0.8rem" className="shrink-0 text-[var(--text-muted)]/70" />
+        <span className="flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">{label}</span>
         <Icon
           name="ph:caret-right-bold"
-          width="0.7rem"
-          height="0.7rem"
-          className={`text-[var(--text-muted)] transition-transform ${open ? "rotate-90" : ""}`}
+          width="0.65rem"
+          height="0.65rem"
+          className={`shrink-0 text-[var(--text-muted)]/50 transition-transform ${open ? "rotate-90" : ""}`}
         />
-        <Icon name="ph:wrench-bold" width="0.85rem" height="0.85rem" className="text-purple-300/70" />
-        <span className="text-[var(--text-secondary)]">{label}</span>
-        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${summaryDot}`} />
       </button>
-      {/* Expanded tool list */}
       {open ? (
-        <div className="space-y-1.5 border-t border-[var(--border-hairline)]/70 p-1.5">
+        <div className="space-y-1.5 border-t border-[var(--border-hairline)]/60 p-1.5">
           {tools.map((t) => <ToolBlock key={t.id} tool={t} />)}
         </div>
       ) : null}

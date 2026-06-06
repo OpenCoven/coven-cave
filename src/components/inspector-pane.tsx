@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
+import { Icon } from "@/lib/icon";
 
 type Tab = "memory" | "capabilities" | "inbox";
 
@@ -238,6 +240,132 @@ function InboxTab({
   );
 }
 
+/* ---------- Memory file viewer (inline + fullscreen) ---------- */
+
+type MemoryFileViewProps = {
+  path: string;
+  file: MemoryFile | null;
+  reveal: boolean;
+  totalRedactions: number;
+  onRevealToggle: () => void;
+  onBack: () => void;
+};
+
+function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, onBack }: MemoryFileViewProps) {
+  const [fullscreen, setFullscreen] = useState(false);
+  const isMarkdown = path.endsWith(".md");
+  const filename = path.split("/").slice(-2).join("/");
+  const text = file?.text ?? "loading…";
+
+  const header = (
+    <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-xs">
+      <button
+        onClick={onBack}
+        className="rounded border border-[var(--border-strong)] px-2 py-0.5 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+      >
+        ← back
+      </button>
+      <div className="flex-1 truncate font-mono text-[var(--text-secondary)]">{filename}</div>
+      <button
+        onClick={() => setFullscreen((v) => !v)}
+        title={fullscreen ? "Exit fullscreen" : "Open fullscreen"}
+        className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+      >
+        <Icon name={fullscreen ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={13} />
+      </button>
+    </div>
+  );
+
+  const toolbar = (
+    <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-[11px]">
+      <div>
+        {totalRedactions > 0 ? (
+          <span className="text-amber-300">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
+        ) : (
+          <span className="text-[var(--text-muted)]">no secrets detected</span>
+        )}
+      </div>
+      <button
+        onClick={onRevealToggle}
+        className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-widest transition-colors ${
+          reveal
+            ? "bg-rose-600/80 text-white hover:bg-rose-500"
+            : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        }`}
+        title={reveal ? "Hide secrets" : "Reveal raw (shows secrets)"}
+      >
+        {reveal ? "hide secrets" : "reveal secrets"}
+      </button>
+    </div>
+  );
+
+  const body = isMarkdown ? (
+    <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-4 py-4" />
+  ) : (
+    <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[11px]" />
+  );
+
+  const inlineView = (
+    <div className="flex h-full flex-col">
+      {header}
+      {toolbar}
+      {body}
+    </div>
+  );
+
+  if (!fullscreen) return inlineView;
+
+  return (
+    <>
+      {inlineView}
+      {createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
+          style={{ fontFamily: "inherit" }}
+        >
+          <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5 text-xs">
+            <button
+              onClick={() => setFullscreen(false)}
+              className="rounded border border-[var(--border-strong)] px-2 py-0.5 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+            >
+              ← back
+            </button>
+            <div className="flex-1 truncate font-mono text-[13px] text-[var(--text-secondary)]">{filename}</div>
+            <div className="flex items-center gap-2">
+              {totalRedactions > 0 && (
+                <span className="text-[11px] text-amber-300">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
+              )}
+              <button
+                onClick={onRevealToggle}
+                className={`rounded px-2.5 py-1 text-[10px] uppercase tracking-widest transition-colors ${
+                  reveal
+                    ? "bg-rose-600/80 text-white hover:bg-rose-500"
+                    : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                }`}
+                title={reveal ? "Hide secrets" : "Reveal raw (shows secrets)"}
+              >
+                {reveal ? "hide secrets" : "reveal secrets"}
+              </button>
+              <button
+                onClick={() => setFullscreen(false)}
+                className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+              >
+                <Icon name="ph:arrows-in-simple" width={14} />
+              </button>
+            </div>
+          </div>
+          {isMarkdown ? (
+            <MarkdownBlock text={text} className="min-h-0 flex-1 overflow-auto px-8 py-6 max-w-4xl mx-auto w-full" />
+          ) : (
+            <SyntaxBlock text={text} className="min-h-0 flex-1 overflow-auto px-6 py-4 text-[12px]" />
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 /* ---------- Memory tab ---------- */
 
 type CovenMemoryEntry = {
@@ -351,53 +479,16 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
       ? Object.values(openFile.redactions).reduce((a, b) => a + b, 0)
       : 0;
     return (
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-xs">
-          <button
-            onClick={() => {
-              setOpenPath(null);
-              setReveal(false);
-            }}
-            className="rounded border border-[var(--border-strong)] px-2 py-0.5 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-          >
-            ← back
-          </button>
-          <div className="flex-1 truncate text-[var(--text-secondary)]">{openPath.split("/").slice(-2).join("/")}</div>
-        </div>
-
-        <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-3 py-1.5 text-[11px]">
-          <div className="text-[var(--text-secondary)]">
-            {totalRedactions > 0 ? (
-              <span className="text-amber-300">{totalRedactions} secret{totalRedactions === 1 ? "" : "s"} redacted</span>
-            ) : (
-              <span className="text-[var(--text-muted)]">no secrets matched</span>
-            )}
-          </div>
-          <button
-            onClick={() => setReveal((v) => !v)}
-            className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-widest transition-colors ${
-              reveal
-                ? "bg-rose-600/80 text-white hover:bg-rose-500"
-                : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-            }`}
-            title={reveal ? "Hide secrets again" : "Reveal raw file (dangerous)"}
-          >
-            {reveal ? "hide secrets" : "reveal"}
-          </button>
-        </div>
-
-        {openPath.endsWith(".md") ? (
-          <MarkdownBlock
-            text={openFile?.text ?? "loading…"}
-            className="min-h-0 flex-1 overflow-auto px-4 py-4"
-          />
-        ) : (
-          <SyntaxBlock
-            text={openFile?.text ?? "loading…"}
-            className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[11px]"
-          />
-        )}
-      </div>
+      <>
+        <MemoryFileView
+          path={openPath}
+          file={openFile}
+          reveal={reveal}
+          totalRedactions={totalRedactions}
+          onRevealToggle={() => setReveal((v) => !v)}
+          onBack={() => { setOpenPath(null); setReveal(false); }}
+        />
+      </>
     );
   }
 
