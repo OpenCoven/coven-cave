@@ -104,7 +104,7 @@ export function PluginCard({
             rel="noopener noreferrer"
             className="ml-auto flex items-center gap-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
-            <Icon name="ph:arrow-square-out" width={11} />
+            <Icon name="ph:arrow-square-out-bold" width={11} />
             Docs
           </a>
         </div>
