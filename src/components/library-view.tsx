@@ -47,7 +47,12 @@ export function LibraryView() {
   const handleSelectDoc = useCallback(async (doc: LibraryDoc) => {
     setPreviewLoading(true);
     try {
-      const res = await fetch(`/api/library/doc?id=${encodeURIComponent(doc.id)}`, { cache: "no-store" });
+      // doc.id is relative to the familiar workspace root (e.g. "research/synthesis/foo.md")
+      // The doc route expects an absolute path via ?path=
+      const home = (typeof window !== "undefined" && (window as { __HOME__?: string }).__HOME__) ?? "";
+      const sageRoot = `${home}/.openclaw/workspace/sage`;
+      const absPath = doc.id.startsWith("/") ? doc.id : `${sageRoot}/${doc.id}`;
+      const res = await fetch(`/api/library/doc?path=${encodeURIComponent(absPath)}`, { cache: "no-store" });
       const json = await res.json() as { ok: boolean; doc?: LibraryDocBody };
       if (json.ok && json.doc) setSelectedItem({ kind: "doc", doc: json.doc });
     } catch { /* no-op */ }

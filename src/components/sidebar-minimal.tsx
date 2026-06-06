@@ -60,7 +60,7 @@ const UTILITY_MODES: Array<{
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
 }> = [
-  { id: "plugins", label: "Plugins", iconName: "ph:plug" },
+  { id: "plugins", label: "Roles", iconName: "ph:sparkle" },
   { id: "schedules", label: "Automations", iconName: "ph:clock" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank" },
 ];

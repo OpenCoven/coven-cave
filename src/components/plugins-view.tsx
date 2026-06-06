@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
@@ -15,7 +17,7 @@ import {
   type FamiliarForSkill,
 } from "@/components/skill-detail-drawer";
 
-type Tab = "plugins" | "skills" | "roles" | "capabilities";
+type Tab = "roles" | "skills" | "plugins" | "capabilities";
 
 type HarnessReport = {
   id: string;
@@ -42,11 +44,13 @@ type RoleEntry = {
   name: string;
   description?: string;
   emoji?: string;
-  familiar?: string;
+  familiar: string;
   skills: string[];
   tools: string[];
   plugins: string[];
   workflows: string[];
+  active: boolean;
+  activatedAt?: string;
 };
 
 type Props = {
@@ -85,7 +89,7 @@ const SECTION_LABEL: Record<Tab, string> = {
 };
 
 export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
-  const [tab, setTab] = useState<Tab>("plugins");
+  const [tab, setTab] = useState<Tab>("roles");
   const [query, setQuery] = useState("");
 
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
@@ -96,6 +100,23 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
   const [roles, setRoles] = useState<RoleEntry[]>([]);
   const [rolesLoaded, setRolesLoaded] = useState(false);
   const [rolesError, setRolesError] = useState<string | null>(null);
+
+  const handleRoleToggle = async (role: RoleEntry) => {
+    const next = !role.active;
+    // Optimistic update
+    setRoles(prev => prev.map(r => r.id === role.id && r.familiar === role.familiar ? { ...r, active: next } : r));
+    try {
+      const res = await fetch('/api/roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: role.id, familiar: role.familiar, active: next }),
+      });
+      if (!res.ok) throw new Error('save failed');
+    } catch {
+      // Rollback on error
+      setRoles(prev => prev.map(r => r.id === role.id && r.familiar === role.familiar ? { ...r, active: role.active } : r));
+    }
+  };
   const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
@@ -261,7 +282,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
         <div className="flex h-12 items-center justify-between gap-4">
           {/* Tabs flush left — underline style */}
           <nav className="flex h-full items-end gap-1 overflow-x-auto" aria-label="View tabs">
-            {(["plugins", "skills", "roles", "capabilities"] as const).map((t) => (
+            {(["roles", "skills", "plugins", "capabilities"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -397,7 +418,7 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
             ) : tab === "skills" ? (
               <SkillGrid items={filteredSkills} loaded={skillsLoaded} error={skillsError} onSelect={(s) => setSelectedSkill(s)} />
             ) : tab === "roles" ? (
-              <RoleGrid items={filteredRoles} loaded={rolesLoaded} error={rolesError} />
+              <RoleGrid items={filteredRoles} loaded={rolesLoaded} error={rolesError} onToggle={handleRoleToggle} />
             ) : (
               <CapabilitiesView
                 items={capabilities.filter((c) => {
@@ -495,10 +516,12 @@ function RoleGrid({
   items,
   loaded,
   error,
+  onToggle,
 }: {
   items: RoleEntry[];
   loaded: boolean;
   error: string | null;
+  onToggle: (role: RoleEntry) => Promise<void>;
 }) {
   if (!loaded) return <GridSkeleton />;
   if (error) {
@@ -518,31 +541,42 @@ function RoleGrid({
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {items.map((r) => (
-        <RoleCard key={r.id} role={r} />
+        <RoleCard key={r.id} role={r} onToggle={onToggle} />
       ))}
     </div>
   );
 }
 
-function RoleCard({ role }: { role: RoleEntry }) {
+function RoleCard({ role, onToggle }: { role: RoleEntry; onToggle: (role: RoleEntry) => Promise<void> }) {
+  const [toggling, setToggling] = React.useState(false);
   const chips = [
     role.skills.length > 0 && `${role.skills.length} skill${role.skills.length !== 1 ? "s" : ""}`,
     role.workflows.length > 0 && `${role.workflows.length} workflow${role.workflows.length !== 1 ? "s" : ""}`,
     role.tools.length > 0 && `${role.tools.length} tool${role.tools.length !== 1 ? "s" : ""}`,
   ].filter(Boolean) as string[];
 
+  const handleToggle = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (toggling) return;
+    setToggling(true);
+    try { await onToggle(role); } finally { setToggling(false); }
+  };
+
   return (
-    <div className="group flex min-w-0 items-start gap-3 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-card)] px-4 py-3 transition-colors hover:bg-muted/40">
+    <div className={`group flex min-w-0 items-start gap-3 rounded-xl border px-4 py-3 transition-colors ${role.active ? "border-[var(--accent)] bg-[var(--accent-subtle,var(--bg-card))]" : "border-[var(--border-hairline)] bg-[var(--bg-card)] hover:bg-muted/40"}`}>
       {/* Emoji / icon */}
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[18px]">
         {role.emoji ?? "📦"}
       </span>
       {/* Content */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-2">
           <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]">{role.name}</span>
           {role.familiar && (
             <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{role.familiar}</span>
+          )}
+          {role.active && (
+            <span className="ml-auto shrink-0 rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-medium text-white">active</span>
           )}
         </div>
         {role.description && (
@@ -556,6 +590,17 @@ function RoleCard({ role }: { role: RoleEntry }) {
           </div>
         )}
       </div>
+      {/* Toggle button */}
+      <button
+        type="button"
+        disabled={toggling}
+        onClick={handleToggle}
+        className={`shrink-0 rounded-full p-1.5 transition-colors ${role.active ? "text-[var(--accent)] hover:bg-[var(--accent)]/10" : "text-[var(--text-muted)] hover:bg-muted"} disabled:opacity-40`}
+        title={role.active ? "Deactivate role" : "Activate role"}
+        aria-label={role.active ? "Deactivate role" : "Activate role"}
+      >
+        <Icon name={toggling ? "ph:arrows-clockwise" : role.active ? "ph:toggle-right-bold" : "ph:toggle-left-bold"} width={20} height={20} />
+      </button>
     </div>
   );
 }

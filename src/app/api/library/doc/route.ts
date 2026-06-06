@@ -64,9 +64,17 @@ function stripMarkdown(text: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const filePath = req.nextUrl.searchParams.get("path");
+  // Accept either ?path= (absolute, legacy) or ?id= (relative to sage root)
+  let filePath = req.nextUrl.searchParams.get("path");
+  const docId   = req.nextUrl.searchParams.get("id");
+
+  if (!filePath && docId) {
+    // id is relative to the sage workspace root (e.g. "research/synthesis/foo.md")
+    filePath = path.join(SAGE_ROOT, docId);
+  }
+
   if (!filePath) {
-    return NextResponse.json({ ok: false, error: "missing path param" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "missing path or id param" }, { status: 400 });
   }
 
   const resolved = resolveResearchPath(filePath);

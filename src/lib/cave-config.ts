@@ -9,6 +9,7 @@ const DEFAULT_CONFIG: CaveConfig = {
   version: 1,
   defaults: { harness: "codex", model: "openai/gpt-5.5" },
   familiars: {},
+  roles: [],
 };
 
 const DEFAULT_STATE: CaveState = {
@@ -24,10 +25,18 @@ export type FamiliarBinding = {
   note?: string;
 };
 
+export type RoleConfigEntry = {
+  id: string;
+  familiar: string;
+  active: boolean;
+  activatedAt?: string;
+};
+
 export type CaveConfig = {
   version: number;
   defaults: FamiliarBinding;
   familiars: Record<string, Partial<FamiliarBinding>>;
+  roles: RoleConfigEntry[];
 };
 
 export type CaveState = {
@@ -49,6 +58,7 @@ export async function loadConfig(): Promise<CaveConfig> {
       version: parsed.version ?? 1,
       defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
       familiars: parsed.familiars ?? {},
+      roles: parsed.roles ?? [],
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -137,4 +147,22 @@ export async function sacrificeSessionLocal(sessionId: string): Promise<string> 
   state.sessionSacrificed[sessionId] = now;
   await saveState(state);
   return now;
+}
+
+/** Upsert a role's config entry (active state, activatedAt). */
+export async function upsertRoleConfig(
+  roleId: string,
+  familiar: string,
+  active: boolean,
+): Promise<void> {
+  const cfg = await loadConfig();
+  const now = new Date().toISOString();
+  const idx = cfg.roles.findIndex(r => r.id === roleId && r.familiar === familiar);
+  if (idx >= 0) {
+    cfg.roles[idx] = { ...cfg.roles[idx], active, activatedAt: active ? now : cfg.roles[idx].activatedAt };
+  } else {
+    cfg.roles.push({ id: roleId, familiar, active, activatedAt: active ? now : undefined });
+  }
+  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
+  await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
 }
