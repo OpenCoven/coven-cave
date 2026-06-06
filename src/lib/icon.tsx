@@ -57,6 +57,11 @@ export const ICON_NAMES = [
   "ph:x-bold",
   "ph:x-circle-fill",
   "ph:arrow-square-out",
+  "ph:arrow-left",
+  "ph:sliders-horizontal",
+  "ph:users-three",
+  "ph:paint-brush",
+  "ph:info",
   "ph:arrow-square-out-bold",
   "ph:arrow-left-bold",
   "ph:arrow-right-bold",
@@ -110,6 +115,10 @@ export const ICON_NAMES = [
   "ph:info-bold",
   "ph:x-bold",
   "ph:tag-bold",
+  "ph:dots-three-vertical",
+  "ph:archive",
+  "ph:flame",
+  "ph:arrow-counter-clockwise",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

@@ -643,6 +643,7 @@ export function Workspace() {
           setMode("chats");
           setTimeout(() => routerRef.current?.newChat(), 0);
         }}
+        onSessionsChanged={loadSessions}
       />
     ) : mode === "chats" ? (
       <div className="flex h-full min-w-0">
@@ -777,6 +778,7 @@ export function Workspace() {
           <DaemonBar
             mode={isDaemonMode(mode) ? mode : "home"}
             onModeChange={setMode}
+            onOpenSearch={() => setPaletteOpen(true)}
             inboxBadgeCount={inboxBadgeCount}
             onRunningChange={setDaemonRunning}
             inboxItems={[]}
