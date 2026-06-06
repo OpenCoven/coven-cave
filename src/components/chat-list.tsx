@@ -167,15 +167,16 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
             daemonRunning
               ? "bg-emerald-950/60 text-emerald-400"
               : "bg-rose-950/60 text-rose-400"
-          }`}
+          } min-w-0 truncate`}
         >
           <span className={`inline-block h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-emerald-400 animate-pulse" : "bg-rose-400"}`} />
           {daemonRunning ? "daemon running" : "offline"}
         </span>
 
         <button
+          type="button"
           onClick={() => onNewChat()}
-          className="ml-auto flex items-center gap-1 rounded-full bg-[var(--accent-presence)] px-3 py-1 text-[12px] font-medium text-white transition-opacity hover:opacity-80 active:scale-95"
+          className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-[var(--accent-presence)] px-3 py-1 text-[12px] font-medium text-white transition-opacity hover:opacity-80 active:scale-95"
         >
           <span className="text-sm leading-none">+</span> New chat
         </button>
@@ -240,7 +241,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
             </div>
             <button
               onClick={() => onNewChat()}
-              className="rounded-full bg-[var(--accent-presence)] px-5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
+              className="shrink-0 whitespace-nowrap rounded-full bg-[var(--accent-presence)] px-5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
             >
               + New chat
             </button>
