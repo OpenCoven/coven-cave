@@ -99,7 +99,7 @@ export function CovenFloorMini({ onSelectFamiliar }: Props) {
   // Skeleton while loading
   if (loading) {
     return (
-      <div className="flex flex-wrap gap-2 mt-4">
+      <div className="flex flex-wrap gap-2">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
@@ -118,7 +118,7 @@ export function CovenFloorMini({ onSelectFamiliar }: Props) {
   const sorted = [...active, ...rest];
 
   return (
-    <div className="mt-5 select-none">
+    <div className="select-none w-full" style={{ maxWidth: "600px" }}>
       <p className="mb-2 text-[11px] uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.2)" }}>
         Coven
       </p>
