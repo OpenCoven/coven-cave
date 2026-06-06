@@ -25,14 +25,17 @@
     "react-dom": "19.2.4",
     "react-resizable-panels": "^4.11.2",
     "shiki": "^4.1.0",
+    "three": "^0.184.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@tauri-apps/cli": "^2.11.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.184.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
