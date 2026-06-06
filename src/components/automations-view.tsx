@@ -5,17 +5,13 @@ import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
 import { Icon } from "@/lib/icon";
-import { SnoozeMenu } from "@/components/snooze-menu";
 
-// AutomationsView (issue: automations restructure, June 2026) —
-// replaces the old kanban Inbox + thin Schedules pages. Single home
-// for every time-driven InboxItem, split into three tabs:
-//   • Schedules — recurring items (daily/weekly/interval/cron) with
-//     next-fire, last-run, run-now, pause/resume.
-//   • Pending   — one-shot reminders waiting to fire.
-//   • History   — fired/done/dismissed entries (audit log).
-// The dedicated triage page (Inbox) takes over the "Inbox" mode;
-// this view absorbs everything that was tracking automation timing.
+// AutomationsView — redesigned June 2026
+// Clean list layout matching the sleek/professional reference design:
+//   • No tabs — items grouped by status section (Current / Paused / Pending / History)
+//   • Minimal rows: name · workspace badge · schedule string, action icons on hover
+//   • Click any row → dedicated detail panel slides in
+//   • "Create via chat" CTA top-right
 
 type Props = {
   familiars: Familiar[];
@@ -23,40 +19,30 @@ type Props = {
   onNewReminder?: () => void;
 };
 
-type TabId = "schedules" | "pending" | "history";
-
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-function pad(n: number): string {
+function pad(n: number) {
   return n.toString().padStart(2, "0");
 }
 
-function humanRecurrence(rec: Recurrence | undefined): string {
-  if (!rec || rec.type === "none") return "one-shot";
+function humanSchedule(rec: Recurrence | undefined): string {
+  if (!rec || rec.type === "none") return "One-shot";
   if (rec.type === "interval") {
     const m = Math.round(rec.everyMs / 60000);
-    if (m < 60) return `every ${m}m`;
+    if (m < 60) return `Every ${m}m`;
     const h = Math.round(m / 60);
-    if (h < 24) return `every ${h}h`;
-    return `every ${Math.round(h / 24)}d`;
+    if (h < 24) return `Every ${h}h`;
+    return `Every ${Math.round(h / 24)}d`;
   }
-  if (rec.type === "daily") return `daily ${pad(rec.hour)}:${pad(rec.minute)}`;
-  if (rec.type === "weekly") {
-    const days = rec.days.map((d) => DAY_INITIALS[d] ?? "?").join("/");
-    return `${days} ${pad(rec.hour)}:${pad(rec.minute)}`;
-  }
-  if (rec.type === "cron") return `cron "${rec.expr}"`;
-  return "scheduled";
-}
-
-function humanRecurrenceLong(rec: Recurrence | undefined): string {
-  if (!rec || rec.type === "none") return "one-shot";
+  if (rec.type === "daily")
+    return `Daily at ${pad(rec.hour)}:${pad(rec.minute)}`;
   if (rec.type === "weekly") {
     const days = rec.days.map((d) => WEEKDAY[d] ?? "?").join("/");
-    return `${days} at ${pad(rec.hour)}:${pad(rec.minute)}`;
+    return `${days}s at ${pad(rec.hour)}:${pad(rec.minute)}`;
   }
-  return humanRecurrence(rec);
+  if (rec.type === "cron") return `Cron: ${rec.expr}`;
+  return "Scheduled";
 }
 
 function relTime(iso: string | undefined | null): string {
@@ -72,24 +58,252 @@ function relTime(iso: string | undefined | null): string {
   return delta > 0 ? `in ${d}d` : `${d}d ago`;
 }
 
-export function AutomationsView({
-  familiars,
-  onOpenSession,
-  onNewReminder,
-}: Props) {
-  const [tab, setTab] = useState<TabId>("schedules");
+// ── Status icon ──────────────────────────────────────────────────────────────
+function StatusIcon({ item }: { item: InboxItem }) {
+  const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
+  const active = item.status === "pending" || item.status === "fired";
+  const hasRun = !!item.firedAt;
+
+  if (paused) {
+    // Pause icon — two vertical bars inside circle
+    return (
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+        style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
+        <Icon name="ph:minus" width={8} />
+      </span>
+    );
+  }
+  if (active && hasRun) {
+    // Filled purple circle — has fired before
+    return (
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+        style={{ background: "oklch(0.65 0.18 280)" }} />
+    );
+  }
+  // Hollow circle — active, never fired yet
+  return (
+    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+      style={{ borderColor: "rgba(255,255,255,0.28)" }} />
+  );
+}
+
+// ── Detail panel (slides in on row click) ────────────────────────────────────
+function DetailPanel({
+  item,
+  familiarLabel,
+  busyId,
+  onClose,
+  runNow,
+  togglePaused,
+  stopRecurrence,
+  removeItem,
+}: {
+  item: InboxItem;
+  familiarLabel: (fid?: string | null) => string | null;
+  busyId: string | null;
+  onClose: () => void;
+  runNow: (id: string) => void;
+  togglePaused: (item: InboxItem) => void;
+  stopRecurrence: (id: string) => void;
+  removeItem: (id: string) => void;
+}) {
+  const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
+  const isRecurring = item.recurrence && item.recurrence.type !== "none";
+  const busy = busyId === item.id;
+
+  return (
+    <div className="flex h-full flex-col"
+      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between border-b px-5 py-3"
+        style={{ borderColor: "var(--border-hairline)" }}>
+        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+          Automation details
+        </h2>
+        <button type="button" onClick={onClose}
+          className="rounded p-1 transition-colors hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}>
+          <Icon name="ph:x" width={14} />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-muted)" }}>Name</p>
+          <p className="text-[14px] font-medium" style={{ color: "var(--text-primary)" }}>
+            {item.title}
+          </p>
+        </div>
+
+        {item.body && (
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Description</p>
+            <p className="text-[12px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              {item.body}
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Schedule</p>
+            <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+              {humanSchedule(item.recurrence)}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Status</p>
+            <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
+              {paused ? "Paused" : item.status}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Next run</p>
+            <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+              {relTime(item.fireAt)}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Last run</p>
+            <p className="text-[12px]" style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
+              {item.firedAt ? relTime(item.firedAt) : "Never"}
+            </p>
+          </div>
+        </div>
+
+        {familiarLabel(item.familiarId) && (
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Familiar</p>
+            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
+              style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}>
+              {familiarLabel(item.familiarId)}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="border-t px-5 py-4 space-y-2"
+        style={{ borderColor: "var(--border-hairline)" }}>
+        <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
+          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
+          style={{ background: "oklch(0.65 0.18 280)" }}>
+          Run now
+        </button>
+        <button type="button" disabled={busy} onClick={() => togglePaused(item)}
+          className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+          style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
+          {paused ? "Resume" : "Pause"}
+        </button>
+        {isRecurring && (
+          <button type="button" disabled={busy} onClick={() => stopRecurrence(item.id)}
+            className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
+            Stop repeating
+          </button>
+        )}
+        <button type="button" disabled={busy} onClick={() => removeItem(item.id)}
+          className="w-full rounded-lg py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
+          style={{ color: "oklch(0.65 0.18 20)" }}>
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Section ───────────────────────────────────────────────────────────────────
+function Section({
+  title,
+  items,
+  selectedId,
+  familiarLabel,
+  onSelect,
+}: {
+  title: string;
+  items: InboxItem[];
+  selectedId: string | null;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-3 mb-1 pb-2"
+        style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+        <span className="text-[12px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+          {title}
+        </span>
+      </div>
+      <ul>
+        {items.map((item) => {
+          const workspace = familiarLabel(item.familiarId);
+          const schedule = item.recurrence?.type !== "none"
+            ? humanSchedule(item.recurrence)
+            : item.fireAt
+            ? relTime(item.fireAt)
+            : "Paused";
+          const selected = selectedId === item.id;
+
+          return (
+            <li key={item.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(item)}
+                className="group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+                style={{
+                  background: selected ? "rgba(255,255,255,0.05)" : "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                }}
+              >
+                <StatusIcon item={item} />
+                <span className="flex-1 min-w-0 flex items-baseline gap-2">
+                  <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+                    {item.title}
+                  </span>
+                  {workspace && (
+                    <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      {workspace}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+                  {schedule}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/inbox", { cache: "no-store" });
       const json = await res.json();
-      if (!json.ok) {
-        setError(json.error ?? "load failed");
-        return;
-      }
+      if (!json.ok) { setError(json.error ?? "load failed"); return; }
       setItems(json.items ?? []);
       setError(null);
     } catch (err) {
@@ -109,639 +323,172 @@ export function AutomationsView({
     return m;
   }, [familiars]);
 
-  const schedules = useMemo(
-    () =>
-      items
-        .filter(
-          (it) =>
-            it.recurrence &&
-            it.recurrence.type !== "none" &&
-            (it.status === "pending" || it.status === "dismissed"),
-        )
-        .sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [items],
+  const familiarLabel = useCallback(
+    (fid?: string | null) => fid ? (famById.get(fid)?.display_name ?? fid) : null,
+    [famById],
   );
 
-  const pending = useMemo(
-    () =>
-      items
-        .filter(
-          (it) =>
-            (!it.recurrence || it.recurrence.type === "none") &&
-            (it.status === "pending" || it.status === "snoozed"),
-        )
-        .sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [items],
-  );
+  const patchItem = useCallback(async (id: string, body: object) => {
+    if (id.startsWith("eph:")) return;
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/inbox/${id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "patch failed");
+    } finally { setBusyId(null); }
+  }, [load]);
 
-  const history = useMemo(
-    () =>
-      items
-        .filter(
-          (it) =>
-            it.status === "fired" ||
-            it.status === "done" ||
-            (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none")),
-        )
-        .sort((a, b) =>
-          (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt),
-        ),
-    [items],
-  );
+  const actItem = useCallback(async (id: string, path: string, body?: object) => {
+    if (id.startsWith("eph:")) return;
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/inbox/${id}/${path}`, {
+        method: "POST",
+        headers: body ? { "content-type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "action failed");
+    } finally { setBusyId(null); }
+  }, [load]);
 
-  const dueSoonCount = useMemo(() => {
-    const cutoff = Date.now() + 24 * 3600_000;
-    return [...schedules, ...pending].filter((it) => {
-      if (it.status === "dismissed") return false;
-      if (!it.fireAt) return false;
-      const t = new Date(it.fireAt).getTime();
-      return t > Date.now() && t <= cutoff;
-    }).length;
-  }, [schedules, pending]);
-
-  const patchItem = useCallback(
-    async (id: string, body: object) => {
-      if (id.startsWith("eph:")) return;
-      setBusyId(id);
-      try {
-        const res = await fetch(`/api/inbox/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw new Error(`http ${res.status}`);
-        await load();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "patch failed");
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [load],
-  );
-
-  const actItem = useCallback(
-    async (id: string, path: string, body?: object) => {
-      if (id.startsWith("eph:")) return;
-      setBusyId(id);
-      try {
-        const res = await fetch(`/api/inbox/${id}/${path}`, {
-          method: "POST",
-          headers: body ? { "content-type": "application/json" } : undefined,
-          body: body ? JSON.stringify(body) : undefined,
-        });
-        if (!res.ok) throw new Error(`http ${res.status}`);
-        await load();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "action failed");
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [load],
-  );
-
-  const removeItem = useCallback(
-    async (id: string) => {
-      if (id.startsWith("eph:")) return;
-      setBusyId(id);
-      try {
-        const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error(`http ${res.status}`);
-        await load();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "delete failed");
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [load],
-  );
+  const removeItem = useCallback(async (id: string) => {
+    if (id.startsWith("eph:")) return;
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      setSelectedItem((prev) => prev?.id === id ? null : prev);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "delete failed");
+    } finally { setBusyId(null); }
+  }, [load]);
 
   const runNow = (id: string) =>
     patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
 
   const togglePaused = (item: InboxItem) =>
-    patchItem(item.id, {
-      status: item.status === "dismissed" ? "pending" : "dismissed",
-    });
+    patchItem(item.id, { status: item.status === "dismissed" ? "pending" : "dismissed" });
 
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
 
-  const familiarLabel = (fid?: string | null) => {
-    if (!fid) return null;
-    return famById.get(fid)?.display_name ?? fid;
-  };
+  // ── Sections ──────────────────────────────────────────────────────────────
+  const current = useMemo(() =>
+    items.filter((it) =>
+      (it.status === "pending" || it.status === "fired") &&
+      it.recurrence && it.recurrence.type !== "none"
+    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
+    [items]);
 
-  const initial = (fid?: string | null) => {
-    const f = fid ? famById.get(fid) : null;
-    return (f?.display_name ?? "?").slice(0, 1).toUpperCase();
-  };
+  const paused = useMemo(() =>
+    items.filter((it) =>
+      it.status === "dismissed" && it.recurrence && it.recurrence.type !== "none"
+    ).sort((a, b) => (a.title).localeCompare(b.title)),
+    [items]);
 
-  const TABS: { id: TabId; label: string; count: number }[] = [
-    { id: "schedules", label: "Schedules", count: schedules.length },
-    { id: "pending", label: "Pending", count: pending.length },
-    { id: "history", label: "History", count: history.length },
-  ];
+  const oneShots = useMemo(() =>
+    items.filter((it) =>
+      (!it.recurrence || it.recurrence.type === "none") &&
+      (it.status === "pending" || it.status === "snoozed")
+    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
+    [items]);
+
+  const history = useMemo(() =>
+    items.filter((it) =>
+      it.status === "fired" || it.status === "done" ||
+      (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none"))
+    ).sort((a, b) => (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt))
+      .slice(0, 20),
+    [items]);
+
+  const isEmpty = current.length + paused.length + oneShots.length === 0;
 
   return (
-    <section className="flex h-full flex-col bg-[var(--bg-base)]">
-      <header className="border-b border-[var(--border-hairline)] px-5 py-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
-            <h1 className="text-sm font-medium text-[var(--text-primary)]">
-              Automations
-            </h1>
-            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-              Reminders, schedules, and recurring familiar tasks. {dueSoonCount}{" "}
-              firing in the next 24h.
-            </p>
-          </div>
-          {onNewReminder ? (
+    <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
+      {/* ── Main list ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-w-0 flex-col">
+        {/* Page header */}
+        <div className="flex items-center justify-between px-8 pt-8 pb-5">
+          <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
+            Automations
+          </h1>
+          {onNewReminder && (
             <button
               type="button"
               onClick={onNewReminder}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]/80"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors hover:bg-white/5"
+              style={{
+                background: "var(--bg-raised)",
+                border: "1px solid var(--border-hairline)",
+                color: "var(--text-primary)",
+              }}
             >
-              <Icon name="ph:plus" width={11} />
-              New automation
+              Create via chat
+              <span style={{ color: "var(--text-muted)", display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
             </button>
-          ) : null}
+          )}
         </div>
 
-        <div className="mt-3 flex items-center gap-1">
-          {TABS.map((t) => {
-            const active = t.id === tab;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={
-                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-colors " +
-                  (active
-                    ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-secondary)]")
-                }
-              >
-                <span>{t.label}</span>
-                <span
-                  className={
-                    "rounded-full px-1.5 py-px text-[9px] tabular-nums " +
-                    (active
-                      ? "bg-[var(--bg-base)] text-[var(--text-secondary)]"
-                      : "bg-[var(--bg-raised)]/60 text-[var(--text-muted)]")
-                  }
-                >
-                  {t.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </header>
+        {error && (
+          <div className="mx-8 mb-3 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-2 text-[11px] text-amber-200">
+            {error}
+          </div>
+        )}
 
-      {error ? (
-        <div className="border-b border-amber-700/40 bg-amber-900/20 px-5 py-1.5 text-[11px] text-amber-200">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <div className="mx-auto max-w-3xl">
-          {tab === "schedules" ? (
-            <SchedulesPanel
-              items={schedules}
-              busyId={busyId}
-              initial={initial}
-              familiarLabel={familiarLabel}
-              runNow={runNow}
-              togglePaused={togglePaused}
-              stopRecurrence={stopRecurrence}
-              removeItem={removeItem}
-            />
-          ) : tab === "pending" ? (
-            <PendingPanel
-              items={pending}
-              busyId={busyId}
-              initial={initial}
-              familiarLabel={familiarLabel}
-              actItem={actItem}
-              runNow={runNow}
-              removeItem={removeItem}
-            />
+        {/* List */}
+        <div className="flex-1 overflow-y-auto px-8 pb-8">
+          {isEmpty ? (
+            <div className="mt-12 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
+              No automations yet.{" "}
+              {onNewReminder && (
+                <button type="button" onClick={onNewReminder}
+                  className="underline underline-offset-2 hover:opacity-80"
+                  style={{ color: "var(--text-secondary)" }}>
+                  Create one via chat.
+                </button>
+              )}
+            </div>
           ) : (
-            <HistoryPanel
-              items={history}
-              busyId={busyId}
-              initial={initial}
-              familiarLabel={familiarLabel}
-              onOpenSession={onOpenSession}
-              actItem={actItem}
-              removeItem={removeItem}
-            />
+            <>
+              <Section title="Current" items={current} selectedId={selectedItem?.id ?? null}
+                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+              <Section title="Paused" items={paused} selectedId={selectedItem?.id ?? null}
+                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+              <Section title="Pending" items={oneShots} selectedId={selectedItem?.id ?? null}
+                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+              {history.length > 0 && (
+                <Section title="History" items={history} selectedId={selectedItem?.id ?? null}
+                  familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+              )}
+            </>
           )}
         </div>
       </div>
+
+      {/* ── Detail panel ───────────────────────────────────────────────────── */}
+      {selectedItem && (
+        <div className="w-72 shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+          <DetailPanel
+            item={selectedItem}
+            familiarLabel={familiarLabel}
+            busyId={busyId}
+            onClose={() => setSelectedItem(null)}
+            runNow={runNow}
+            togglePaused={togglePaused}
+            stopRecurrence={stopRecurrence}
+            removeItem={removeItem}
+          />
+        </div>
+      )}
     </section>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-5 py-10 text-center text-sm text-[var(--text-secondary)]">
-      {children}
-    </div>
-  );
-}
-
-function PrimaryBtn({
-  children,
-  onClick,
-  disabled,
-  title,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  title: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className="rounded-full bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-[var(--accent-presence-soft)] disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
-  );
-}
-
-function GhostBtn({
-  children,
-  onClick,
-  disabled,
-  title,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  title: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className="rounded-full border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
-  );
-}
-
-function FamiliarDot({ letter, title }: { letter: string; title?: string }) {
-  return (
-    <div
-      className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[10px] font-semibold uppercase"
-      style={{
-        background: "var(--bg-raised)",
-        color: "var(--text-secondary)",
-      }}
-      title={title}
-    >
-      {letter}
-    </div>
-  );
-}
-
-type SchedulesPanelProps = {
-  items: InboxItem[];
-  busyId: string | null;
-  initial: (fid?: string | null) => string;
-  familiarLabel: (fid?: string | null) => string | null;
-  runNow: (id: string) => Promise<void> | void;
-  togglePaused: (item: InboxItem) => Promise<void> | void;
-  stopRecurrence: (id: string) => Promise<void> | void;
-  removeItem: (id: string) => Promise<void> | void;
-};
-
-function SchedulesPanel({
-  items,
-  busyId,
-  initial,
-  familiarLabel,
-  runNow,
-  togglePaused,
-  stopRecurrence,
-  removeItem,
-}: SchedulesPanelProps) {
-  if (items.length === 0) {
-    return (
-      <Empty>
-        No recurring schedules yet. Create one from the Pending tab or a
-        familiar&apos;s chat.
-      </Empty>
-    );
-  }
-  return (
-    <ul className="divide-y divide-[var(--border-hairline)]">
-      {items.map((it) => {
-        const paused = it.status === "dismissed";
-        return (
-          <li key={it.id} className="py-3">
-            <div className="flex items-center gap-3">
-              <FamiliarDot
-                letter={initial(it.familiarId)}
-                title={familiarLabel(it.familiarId) ?? "unbound"}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="truncate font-medium text-[var(--text-primary)]">
-                    {it.title}
-                  </span>
-                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-                    {humanRecurrenceLong(it.recurrence)}
-                  </span>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-baseline gap-3 text-[11px] text-[var(--text-muted)]">
-                  <span title={it.fireAt ?? undefined}>
-                    next {relTime(it.fireAt)}
-                  </span>
-                  <span title={it.firedAt ?? undefined}>
-                    last{" "}
-                    {it.firedAt ? (
-                      <span className="text-emerald-300">
-                        {relTime(it.firedAt)}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </span>
-                  {paused ? (
-                    <span className="rounded bg-[var(--bg-raised)] px-1 text-[var(--text-secondary)]">
-                      paused
-                    </span>
-                  ) : null}
-                  {familiarLabel(it.familiarId) ? (
-                    <span className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-1 text-[var(--text-secondary)]">
-                      {familiarLabel(it.familiarId)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <PrimaryBtn
-                disabled={busyId === it.id || paused}
-                onClick={() => runNow(it.id)}
-                title="Trigger this automation now"
-              >
-                Run now
-              </PrimaryBtn>
-              <GhostBtn
-                disabled={busyId === it.id}
-                onClick={() => togglePaused(it)}
-                title={paused ? "Resume schedule" : "Pause schedule"}
-              >
-                {paused ? "Resume" : "Pause"}
-              </GhostBtn>
-              <GhostBtn
-                disabled={busyId === it.id}
-                onClick={() => stopRecurrence(it.id)}
-                title="Convert to one-shot — stop re-spawning"
-              >
-                Stop repeat
-              </GhostBtn>
-              <GhostBtn
-                disabled={busyId === it.id}
-                onClick={() => removeItem(it.id)}
-                title="Delete this automation"
-              >
-                <Icon name="ph:trash" width={12} />
-              </GhostBtn>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-type PendingPanelProps = {
-  items: InboxItem[];
-  busyId: string | null;
-  initial: (fid?: string | null) => string;
-  familiarLabel: (fid?: string | null) => string | null;
-  actItem: (id: string, path: string, body?: object) => Promise<void> | void;
-  runNow: (id: string) => Promise<void> | void;
-  removeItem: (id: string) => Promise<void> | void;
-};
-
-function PendingPanel({
-  items,
-  busyId,
-  initial,
-  familiarLabel,
-  actItem,
-  runNow,
-  removeItem,
-}: PendingPanelProps) {
-  if (items.length === 0) {
-    return (
-      <Empty>
-        No one-shot reminders waiting. Use{" "}
-        <span className="rounded bg-[var(--bg-raised)] px-1 text-[var(--text-primary)]">
-          /remind
-        </span>{" "}
-        to add one.
-      </Empty>
-    );
-  }
-  return (
-    <ul className="divide-y divide-[var(--border-hairline)]">
-      {items.map((it) => {
-        const isSnoozed = it.status === "snoozed";
-        return (
-          <li key={it.id} className="py-3">
-            <div className="flex items-center gap-3">
-              <FamiliarDot
-                letter={initial(it.familiarId)}
-                title={familiarLabel(it.familiarId) ?? "unbound"}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="truncate font-medium text-[var(--text-primary)]">
-                    {it.title}
-                  </span>
-                  {isSnoozed ? (
-                    <span className="shrink-0 rounded bg-[var(--bg-raised)] px-1 text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
-                      snoozed
-                    </span>
-                  ) : null}
-                </div>
-                {it.body ? (
-                  <p className="mt-0.5 line-clamp-2 text-[11px] text-[var(--text-muted)]">
-                    {it.body}
-                  </p>
-                ) : null}
-                <div className="mt-0.5 flex flex-wrap items-baseline gap-3 text-[11px] text-[var(--text-muted)]">
-                  <span
-                    className="inline-flex items-center gap-1"
-                    title={it.fireAt ?? undefined}
-                  >
-                    <Icon name="ph:alarm-bold" width={11} />
-                    fires {relTime(it.fireAt)}
-                  </span>
-                  {familiarLabel(it.familiarId) ? (
-                    <span className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-1 text-[var(--text-secondary)]">
-                      {familiarLabel(it.familiarId)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <PrimaryBtn
-                disabled={busyId === it.id}
-                onClick={() => runNow(it.id)}
-                title="Fire now"
-              >
-                Run now
-              </PrimaryBtn>
-              <SnoozeMenu
-                size="xs"
-                onSnooze={(untilIso) => actItem(it.id, "snooze", { untilIso })}
-              />
-              <GhostBtn
-                disabled={busyId === it.id}
-                onClick={() => actItem(it.id, "dismiss")}
-                title="Dismiss"
-              >
-                Dismiss
-              </GhostBtn>
-              <GhostBtn
-                disabled={busyId === it.id}
-                onClick={() => removeItem(it.id)}
-                title="Delete"
-              >
-                <Icon name="ph:trash" width={12} />
-              </GhostBtn>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-type HistoryPanelProps = {
-  items: InboxItem[];
-  busyId: string | null;
-  initial: (fid?: string | null) => string;
-  familiarLabel: (fid?: string | null) => string | null;
-  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
-  actItem: (id: string, path: string, body?: object) => Promise<void> | void;
-  removeItem: (id: string) => Promise<void> | void;
-};
-
-function HistoryPanel({
-  items,
-  busyId,
-  initial,
-  familiarLabel,
-  onOpenSession,
-  actItem,
-  removeItem,
-}: HistoryPanelProps) {
-  if (items.length === 0) {
-    return <Empty>No fired automations yet.</Empty>;
-  }
-  return (
-    <ul className="divide-y divide-[var(--border-hairline)]">
-      {items.map((it) => {
-        const isFired = it.status === "fired";
-        const isDismissed = it.status === "dismissed";
-        const ts = it.firedAt ?? it.updatedAt;
-        return (
-          <li key={it.id} className="py-3">
-            <div className="flex items-center gap-3">
-              <FamiliarDot
-                letter={initial(it.familiarId)}
-                title={familiarLabel(it.familiarId) ?? "unbound"}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="truncate text-[var(--text-primary)]">
-                    {it.title}
-                  </span>
-                  <StatusBadge status={it.status} />
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-baseline gap-3 text-[11px] text-[var(--text-muted)]">
-                  <span title={ts}>
-                    {isFired ? "fired" : isDismissed ? "dismissed" : "done"}{" "}
-                    {relTime(ts)}
-                  </span>
-                  {familiarLabel(it.familiarId) ? (
-                    <span className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-1 text-[var(--text-secondary)]">
-                      {familiarLabel(it.familiarId)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              {isFired ? (
-                <GhostBtn
-                  disabled={busyId === it.id}
-                  onClick={() => actItem(it.id, "done")}
-                  title="Mark done"
-                >
-                  Mark done
-                </GhostBtn>
-              ) : null}
-              {it.sessionId && onOpenSession ? (
-                <GhostBtn
-                  disabled={busyId === it.id}
-                  onClick={() =>
-                    onOpenSession(it.sessionId!, it.familiarId ?? null)
-                  }
-                  title="Open the session this fired into"
-                >
-                  Open session
-                </GhostBtn>
-              ) : null}
-              <GhostBtn
-                disabled={busyId === it.id}
-                onClick={() => removeItem(it.id)}
-                title="Delete from history"
-              >
-                <Icon name="ph:trash" width={12} />
-              </GhostBtn>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function StatusBadge({ status }: { status: InboxItem["status"] }) {
-  const map: Record<InboxItem["status"], { label: string; cls: string }> = {
-    pending: { label: "pending", cls: "text-[var(--text-muted)]" },
-    snoozed: { label: "snoozed", cls: "text-[var(--text-muted)]" },
-    fired: { label: "fired", cls: "text-emerald-300" },
-    done: { label: "done", cls: "text-[var(--text-muted)]" },
-    dismissed: { label: "dismissed", cls: "text-[var(--text-muted)]" },
-  };
-  const m = map[status] ?? { label: status, cls: "text-[var(--text-muted)]" };
-  return (
-    <span
-      className={
-        "shrink-0 rounded bg-[var(--bg-raised)] px-1 text-[10px] uppercase tracking-wider " +
-        m.cls
-      }
-    >
-      {m.label}
-    </span>
   );
 }
