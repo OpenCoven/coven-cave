@@ -5,6 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
+import type { CardStep } from "@/lib/cave-board-types";
 import type { LibraryGitHubItem } from "@/lib/library-types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
@@ -254,6 +255,219 @@ function GitHubAttachSection({
 }
 
 
+
+// ── Steps ─────────────────────────────────────────────────────────────────────
+function StepsSection({
+  card,
+  onPatch,
+}: {
+  card: Card;
+  onPatch: (id: string, patch: Partial<Card>) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const steps = card.steps ?? [];
+  const doneCount = steps.filter((s) => s.done).length;
+  const total = steps.length;
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+
+  function addStep() {
+    const text = draft.trim();
+    if (!text) return;
+    const now = new Date().toISOString();
+    const next: CardStep = {
+      id: crypto.randomUUID(),
+      text,
+      done: false,
+      addedAt: now,
+    };
+    onPatch(card.id, { steps: [...steps, next] });
+    setDraft("");
+    inputRef.current?.focus();
+  }
+
+  function toggleStep(id: string) {
+    const now = new Date().toISOString();
+    onPatch(card.id, {
+      steps: steps.map((s) =>
+        s.id === id
+          ? { ...s, done: !s.done, doneAt: !s.done ? now : undefined }
+          : s
+      ),
+    });
+  }
+
+  function deleteStep(id: string) {
+    onPatch(card.id, { steps: steps.filter((s) => s.id !== id) });
+  }
+
+  function reorderStep(id: string, dir: -1 | 1) {
+    const idx = steps.findIndex((s) => s.id === id);
+    if (idx < 0) return;
+    const next = [...steps];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap], next[idx]];
+    onPatch(card.id, { steps: next });
+  }
+
+  return (
+    <div className="board-drawer-field">
+      {/* Header row */}
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Icon name="ph:list-checks-bold" width={12} />
+          Steps
+          {total > 0 && (
+            <span style={{
+              fontSize: 10,
+              color: "var(--text-muted)",
+              background: "var(--bg-elevated)",
+              borderRadius: 8,
+              padding: "1px 6px",
+            }}>
+              {doneCount}/{total}
+            </span>
+          )}
+        </span>
+        {total > 0 && (
+          <span style={{ fontSize: 10, color: pct === 100 ? "var(--color-emerald-400, #34d399)" : "var(--text-muted)" }}>
+            {pct}%
+          </span>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      {total > 0 && (
+        <div style={{
+          height: 2,
+          borderRadius: 2,
+          background: "var(--border-hairline)",
+          marginBottom: 8,
+          overflow: "hidden",
+        }}>
+          <div style={{
+            height: "100%",
+            width: pct + "%",
+            background: pct === 100 ? "oklch(0.76 0.18 150)" : "oklch(0.65 0.18 280)",
+            transition: "width 0.2s ease, background 0.2s ease",
+          }} />
+        </div>
+      )}
+
+      {/* Step list */}
+      {steps.length > 0 && (
+        <ul style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+          {steps.map((step, i) => (
+            <li
+              key={step.id}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                padding: "6px 8px",
+                borderRadius: 6,
+                background: step.done ? "color-mix(in oklab, oklch(0.76 0.18 150) 6%, var(--bg-elevated))" : "var(--bg-elevated)",
+                border: "1px solid var(--border-hairline)",
+              }}
+            >
+              {/* Checkbox */}
+              <button
+                type="button"
+                onClick={() => toggleStep(step.id)}
+                style={{
+                  flexShrink: 0,
+                  marginTop: 1,
+                  width: 15,
+                  height: 15,
+                  borderRadius: 4,
+                  border: step.done ? "none" : "1.5px solid var(--border-strong)",
+                  background: step.done ? "oklch(0.76 0.18 150)" : "transparent",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  transition: "background 0.15s",
+                }}
+                title={step.done ? "Mark incomplete" : "Mark complete"}
+              >
+                {step.done && <Icon name="ph:check-bold" width={9} className="text-white" />}
+              </button>
+
+              {/* Text */}
+              <span style={{
+                flex: 1,
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: step.done ? "var(--text-muted)" : "var(--text-primary)",
+                textDecoration: step.done ? "line-through" : "none",
+                wordBreak: "break-word",
+              }}>
+                {step.text}
+              </span>
+
+              {/* Actions */}
+              <span style={{ display: "flex", gap: 2, flexShrink: 0, opacity: 0 }} className="step-actions">
+                {i > 0 && (
+                  <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px" }}
+                    onClick={() => reorderStep(step.id, -1)} title="Move up">
+                    <Icon name="ph:arrow-up-bold" width={9} />
+                  </button>
+                )}
+                {i < steps.length - 1 && (
+                  <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px" }}
+                    onClick={() => reorderStep(step.id, 1)} title="Move down">
+                    <Icon name="ph:arrow-down-bold" width={9} />
+                  </button>
+                )}
+                <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px", color: "#f87171" }}
+                  onClick={() => deleteStep(step.id)} title="Delete step">
+                  <Icon name="ph:x-bold" width={9} />
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Add step input */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addStep(); } }}
+          placeholder="Add a step…"
+          style={{
+            flex: 1,
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border-hairline)",
+            borderRadius: 6,
+            padding: "5px 9px",
+            fontSize: 12,
+            color: "var(--text-primary)",
+            outline: "none",
+          }}
+        />
+        <button
+          type="button"
+          className="board-toolbar-btn"
+          onClick={addStep}
+          disabled={!draft.trim()}
+          style={{ padding: "4px 10px", fontSize: 11 }}
+        >
+          <Icon name="ph:plus-bold" width={11} />
+          Add
+        </button>
+      </div>
+
+      {/* CSS for hover reveal on step actions */}
+      <style>{".step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions { opacity: 1; }"}</style>
+    </div>
+  );
+}
+
 export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, chatLinking = false }: Props) {
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -378,6 +592,8 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
                 if (next !== card.cwd) onPatch(card.id, { cwd: next });
               }} />
           </div>
+
+          <StepsSection card={card} onPatch={onPatch} />
 
           <div className="board-drawer-field">
             <div className="board-drawer-field-label">Links</div>

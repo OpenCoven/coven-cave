@@ -181,6 +181,8 @@ export const ICON_NAMES = [
   "ph:chat-centered-text",
   "ph:dots-three",
   "ph:minus-circle",
+  "ph:arrow-down-bold",
+  "ph:list-checks-bold",
   "ph:pencil-bold",
   "ph:rocket-bold",
   "ph:arrow-clockwise-bold",

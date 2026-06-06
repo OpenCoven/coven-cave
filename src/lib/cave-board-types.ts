@@ -9,6 +9,14 @@ export type CardLifecycle =
   | "failed"
   | "cancelled";
 
+export type CardStep = {
+  id: string;        // nanoid — stable across edits
+  text: string;      // what needs to be done
+  done: boolean;     // completed?
+  addedAt: string;   // ISO timestamp when step was created
+  doneAt?: string;   // ISO timestamp when step was checked off
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -31,6 +39,7 @@ export type Card = {
   runningSince?: string;
   retryCount: number;
   maxRetries: number;
+  steps: CardStep[];
 };
 
 export const STATUSES: CardStatus[] = ["backlog", "inbox", "running", "review", "blocked", "done"];

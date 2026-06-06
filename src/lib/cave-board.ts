@@ -60,12 +60,12 @@ function normalizeCwd(value: string | null | undefined): string | null {
 
 type LegacyCard = Omit<
   Card,
-  "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"
+  "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries"
+      "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
     >
   >;
 
@@ -81,6 +81,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     lifecycleAt: c.lifecycleAt ?? c.updatedAt,
     retryCount: c.retryCount ?? 0,
     maxRetries: c.maxRetries ?? DEFAULT_MAX_RETRIES,
+    steps: c.steps ?? [],
   } as Card;
 }
 
@@ -149,6 +150,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     lifecycleAt: now,
     retryCount: 0,
     maxRetries: DEFAULT_MAX_RETRIES,
+    steps: [],
   };
   board.cards.push(card);
   await saveBoard(board);
@@ -177,6 +179,7 @@ export async function updateCard(
       : current.links,
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
+    steps: patch.steps ?? current.steps,
   };
   if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;

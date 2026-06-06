@@ -6,6 +6,7 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
+import type { CardStep } from "@/lib/cave-board-types";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export async function PATCH(
     labels: string[];
     needsHuman: boolean;
     runningSince: string | undefined;
+    steps: CardStep[];
   }>;
   try {
     body = await req.json();
