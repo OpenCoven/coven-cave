@@ -615,7 +615,6 @@ export function Workspace() {
         setMode("chats");
         setTimeout(() => routerRef.current?.openSession(id), 0);
       }}
-      onOpenSettings={openOnboarding}
     />
   );
 

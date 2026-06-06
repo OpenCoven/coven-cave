@@ -35,7 +35,6 @@ export type SidebarMinimalProps = {
   onOpenSearch: () => void;
   onModeChange: (mode: string) => void;
   onOpenSession: (id: string) => void;
-  onOpenSettings: () => void;
 };
 
 // ---------------------------------------------------------------------------
@@ -120,7 +119,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     mode,
     onNewChat,
     onModeChange,
-    onOpenSettings,
   } = props;
 
   return (
@@ -162,19 +160,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             onClick={() => onModeChange(fm.id)}
           />
         ))}
-      </div>
-
-      {/* ── Settings gear (pinned bottom) ─────────────────────── */}
-      <div className="sidebar-bottom">
-        <button
-          type="button"
-          className="sidebar-settings-row"
-          onClick={onOpenSettings}
-          aria-label="Settings"
-        >
-          <Icon name="ph:gear-six" width={16} />
-          <span>Settings</span>
-        </button>
       </div>
     </nav>
   );
