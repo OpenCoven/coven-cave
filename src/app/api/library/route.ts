@@ -14,6 +14,8 @@ const COLLECTIONS: LibraryCollection[] = [
   { id: "grimoire",     label: "Grimoire",     path: path.join(SAGE_ROOT, "research", "book", "grimoire-drafts") },
   { id: "projects",     label: "Projects",     path: path.join(SAGE_ROOT, "research", "projects") },
   { id: "autoresearch", label: "Autoresearch", path: path.join(SAGE_ROOT, "research", "autoresearch") },
+  { id: "sources",      label: "Papers & Sources", path: path.join(SAGE_ROOT, "research", "sources") },
+  { id: "specs",        label: "Specs",        path: path.join(SAGE_ROOT, "research", "specs") },
 ];
 
 // Security: ensure path is within sage research dir only
