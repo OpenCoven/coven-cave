@@ -861,8 +861,8 @@ export function Workspace() {
             <BrowserPane label="default" />
           )
         }
-        agentLabel={shellAgentPane === "chat" ? "Chat" : "Browser"}
-        agentIcon={shellAgentPane === "chat" ? "ph:chats" : "ph:globe"}
+        agentLabel="Browser"
+        agentIcon="ph:globe"
         agentExtra={
           <button
             type="button"
