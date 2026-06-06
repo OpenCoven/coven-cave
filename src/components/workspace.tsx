@@ -68,12 +68,13 @@ function IconNavStrip({
       })}
       <span className="my-1 h-px w-5 bg-[var(--border-hairline)]" />
       {UTILITY_MODES.map((item) => (
+      {UTILITY_MODES.map((item) => (
         <button
           key={item.id}
           type="button"
           title={item.label}
+          aria-label={item.label}
           onClick={() => onModeChange(item.id)}
-          className={`shell-nav-tab-icon-btn${mode === item.id ? " shell-nav-tab-icon-btn--active" : ""}`}
         >
           <Icon name={item.iconName} width={15} />
         </button>
