@@ -58,6 +58,7 @@ type Props = {
   onClose: () => void;
   familiars: Familiar[];
   defaultFamiliarId?: string | null;
+  defaultFireAt?: string;
   defaultWhenText?: string;
   defaultTitle?: string;
   onCreate: (draft: NewReminderDraft) => Promise<void> | void;
@@ -76,6 +77,7 @@ export function NewReminderModal({
   onClose,
   familiars,
   defaultFamiliarId = null,
+  defaultFireAt = "",
   defaultWhenText = "",
   defaultTitle = "",
   onCreate,
@@ -93,12 +95,12 @@ export function NewReminderModal({
     if (!open) return;
     setTitle(defaultTitle);
     setWhenText(defaultWhenText);
-    setManualFireAt("");
+    setManualFireAt(defaultFireAt ? toLocalInput(defaultFireAt) : "");
     setFamiliarId(defaultFamiliarId);
     setRecurPreset("none");
     setCronExpr("*/15 * * * *");
     setError(null);
-  }, [open, defaultFamiliarId, defaultWhenText, defaultTitle]);
+  }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle]);
 
   useEffect(() => {
     if (!open) return;

@@ -69,7 +69,6 @@ function IconNavStrip({
       })}
       <span className="my-1 h-px w-5 bg-[var(--border-hairline)]" />
       {UTILITY_MODES.map((item) => (
-      {UTILITY_MODES.map((item) => (
         <button
           key={item.id}
           type="button"
