@@ -99,7 +99,7 @@ export function CovenFloorMini({ onSelectFamiliar }: Props) {
   // Skeleton while loading
   if (loading) {
     return (
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 w-full max-w-[600px]">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
