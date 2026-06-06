@@ -162,11 +162,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             const msg = JSON.parse(trimmed) as Record<string, unknown>;
             if (msg.kind === "start") {
               setEnrichProgress({ done: 0, total: (msg.total as number) ?? 0 });
-            } else if (msg.kind === "done") {
+            } else if (msg.kind === "done" || msg.kind === "skip") {
               setEnrichProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
             } else if (msg.kind === "complete") {
               await load();
-              setEnriching(false);
             }
           } catch { /* */ }
         }
