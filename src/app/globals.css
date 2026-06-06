@@ -177,7 +177,7 @@ body {
   flex-shrink: 0;
   height: 100%;
   border-left: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
   color: var(--text-muted);
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
@@ -189,13 +189,14 @@ body {
   color: var(--text-primary);
 }
 .shell-agent-tab--open {
-  color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
-  border-left-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  border-left-color: var(--border-strong);
+  opacity: 1;
 }
 .shell-agent-tab--open:hover {
-  background: color-mix(in oklch, var(--accent-presence) 13%, var(--bg-raised));
-  color: var(--accent-presence);
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 .shell-agent-tab-label {
   display: none;
@@ -964,4 +965,85 @@ body {
 }
 .cave-mode-fade {
   animation: cave-mode-in 120ms ease-out both;
+}
+
+/* Left nav collapsed strip -- mirrors the agent tab on the right */
+.shell-nav-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 36px;
+  flex-shrink: 0;
+  height: 100%;
+  border-right: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  padding-top: 4px;
+}
+.shell-nav-tab-toggle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.shell-nav-tab-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.shell-nav-tab-icons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0 4px;
+}
+.shell-nav-tab-icon-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.shell-nav-tab-icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.shell-nav-tab-icon-btn--active {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+.shell-nav-tab-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--accent-presence);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  pointer-events: none;
+}
+.sidebar-collapse-btn {
+  flex-shrink: 0;
 }

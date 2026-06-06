@@ -16,7 +16,6 @@ import {
 } from "@/components/skill-detail-drawer";
 
 type Tab = "plugins" | "skills" | "capabilities";
-type FilterChip = "curated" | "shared" | "created" | "more";
 
 type HarnessReport = {
   id: string;
@@ -57,13 +56,14 @@ const HARNESS_TAGLINE: Record<string, string> = {
   aider: "Pair with Aider in-repo",
 };
 
-// Neutral tile chrome — Mood C reserves accent colour for presence/health,
-// so harness initial tiles all read on the same hairline-card palette.
-const HARNESS_TILE = "bg-muted text-foreground";
+const TAB_LABEL: Record<Tab, string> = {
+  plugins: "Plugins",
+  skills: "Skills",
+  capabilities: "Capabilities",
+};
 
 export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCreatePlugin, familiars = [] }: Props) {
   const [tab, setTab] = useState<Tab>("plugins");
-  const [filter, setFilter] = useState<FilterChip>("curated");
   const [query, setQuery] = useState("");
 
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
@@ -169,37 +169,62 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
     );
   }, [skills, query]);
 
+  const capabilityCount = capabilities.length;
+  const installedHarnessCount = harnesses.filter((h) => h.installed).length;
+  const pageMeta =
+    tab === "plugins"
+      ? `${installedHarnessCount}/${harnesses.length || 0} installed`
+      : tab === "skills"
+        ? skillsLoaded ? `${skills.length} installed` : "Loading"
+        : capabilitiesLoaded ? `${capabilityCount} manifests` : "Loading";
+  const sectionTitle =
+    tab === "plugins" ? "Harness plugins" : tab === "skills" ? "Installed skills" : "Harness capabilities";
+
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
-      {/* Top tab strip */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-3 sm:px-5">
-        <div className="flex min-w-0 max-w-full items-center gap-5 overflow-x-auto text-[13px]">
-          {(["plugins", "skills", "capabilities"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`relative shrink-0 pb-2 transition-colors ${
-                tab === t ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <span className="capitalize">{t}</span>
-              {tab === t ? (
-                <span className="absolute -bottom-[13px] left-0 right-0 h-px bg-foreground" />
-              ) : null}
-            </button>
-          ))}
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-[12px]">
-          <button
-            className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-foreground transition-colors hover:bg-muted"
-            title="Manage plugins (not wired in v1)"
-          >
-            <Icon name="ph:gear-six-bold" className="text-muted-foreground" />
-            <span>Manage</span>
-          </button>
+      <header className="shrink-0 border-b border-border px-4 py-4 sm:px-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
+                {TAB_LABEL[tab]}
+              </h1>
+              <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+                {pageMeta}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <div className="relative w-full sm:w-64">
+              <Icon
+                name="ph:magnifying-glass-bold"
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                width="0.85rem"
+                height="0.85rem"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Search ${TAB_LABEL[tab].toLowerCase()}`}
+                className="h-8 w-full rounded-md border border-border bg-card pl-7 pr-3 text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong"
+              />
+            </div>
+            {tab === "capabilities" ? (
+              <button
+                type="button"
+                onClick={() => { setCapabilitiesRefresh(true); setCapabilitiesLoaded(false); }}
+                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
+              >
+                <Icon name="ph:arrows-clockwise-bold" className="text-muted-foreground" width="0.8rem" />
+                <span>Refresh</span>
+              </button>
+            ) : null}
           <div ref={createRef} className="relative">
             <button
-              className="flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-foreground transition-colors hover:bg-muted"
+              type="button"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
               onClick={() => setCreateOpen((v) => !v)}
             >
               <span>Create</span>
@@ -220,85 +245,34 @@ export function PluginsView({ onOpenChat, onCreateReminder, onCreateSkill, onCre
               />
             )}
           </div>
-          <button
-            className="rounded-md px-2 py-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-            title="More"
-          >
-            ⋯
-          </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex min-w-0 gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 text-[12px] sm:w-fit">
+          {(["plugins", "skills", "capabilities"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`h-7 shrink-0 rounded-md px-3 transition-colors ${
+                tab === t
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              }`}
+            >
+              {TAB_LABEL[t]}
+            </button>
+          ))}
         </div>
       </header>
 
       {/* Scrolling content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[860px] px-3 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-12">
-          {/* Headline */}
-          <div className="text-center">
-            <h1 className="text-[26px] font-normal tracking-tight text-[var(--text-primary)] sm:text-[34px]">
-              Make Cave work your way
-            </h1>
-            <p className="mt-2 text-[13px] text-[var(--text-muted)]">
-              {tab === "plugins"
-                ? "Connect harnesses and tools to extend what your familiars can do."
-                : tab === "skills"
-                  ? "Skills teach your familiars how to handle specific tasks consistently."
-                  : "What each harness knows about — its instructions, skills, and plugins."}
-            </p>
-          </div>
-
-          {/* Filter row */}
-          <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 text-[13px]">
-              {([
-                { id: "curated" as const, label: "Curated by Cave" },
-                { id: "shared" as const, label: "Shared with you" },
-                { id: "created" as const, label: "Created by me" },
-              ]).map((chip) => (
-                <button
-                  key={chip.id}
-                  onClick={() => setFilter(chip.id)}
-                  className={`shrink-0 rounded-md px-3 py-1.5 transition-colors ${
-                    filter === chip.id
-                      ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-card hover:text-foreground"
-                  }`}
-                >
-                  {chip.label}
-                </button>
-              ))}
-              <button
-                onClick={() => setFilter("more")}
-                className={`flex shrink-0 items-center gap-1 rounded-md px-3 py-1.5 transition-colors ${
-                  filter === "more"
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-card hover:text-foreground"
-                }`}
-              >
-                <span>More</span>
-                <span className="text-[10px] text-muted-foreground">▾</span>
-              </button>
-            </div>
-
-            <div className="relative w-full sm:w-auto">
-              <Icon
-                name="ph:magnifying-glass-bold"
-                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-                width="0.85rem"
-                height="0.85rem"
-              />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={tab === "plugins" ? "Search plugins" : tab === "skills" ? "Search skills" : "Search capabilities"}
-                className="w-full rounded-md border border-border bg-card py-1.5 pl-7 pr-3 text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong sm:w-56"
-              />
-            </div>
-          </div>
-
-          {/* Featured grid */}
-          <section className="mt-10">
-            <h2 className="mb-4 text-[15px] font-medium text-foreground">Featured</h2>
+        <div className="mx-auto w-full max-w-[980px] px-4 pb-12 pt-6 sm:px-8">
+          <section>
+            <h2 className="mb-4 text-[13px] font-semibold uppercase tracking-widest text-muted-foreground">
+              {sectionTitle}
+            </h2>
 
             {tab === "plugins" ? (
               <PluginGrid items={filteredHarnesses} loaded={harnessesLoaded} onOpenChat={onOpenChat} />
