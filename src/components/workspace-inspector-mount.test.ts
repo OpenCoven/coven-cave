@@ -15,3 +15,9 @@ assert.match(
   /<InspectorPane\s+familiar=\{active\}\s+inboxItems=\{inboxItemsWithEphemeral\}\s+onOpenInbox=\{\(\) => setMode\("inbox"\)\}\s+\/>/,
   "Chats mode should mount InspectorPane with the active familiar and inbox items",
 );
+
+assert.match(
+  workspace,
+  /const \[inspectorOpen,\s*setInspectorOpen\] = useState\(false\);/,
+  "Chats mode should start with the inspector collapsed so the brain toggle is visible",
+);
