@@ -1010,7 +1010,7 @@ function ReasoningBlock({ text }: { text: string }) {
   return (
     <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
       <button
-        onClick={() => { setManuallyToggled(true); setOpen((v) => !v); }}
+        onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
       >
         <Icon name="ph:brain" width="0.8rem" height="0.8rem" className="shrink-0 text-[var(--text-muted)]/70" />
@@ -1082,7 +1082,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
     <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setManuallyToggled(true); setOpen((v) => !v); }}
         className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
       >
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
