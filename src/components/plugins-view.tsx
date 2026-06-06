@@ -361,9 +361,19 @@ export function PluginsView({ onOpenChat, onCreateSkill, onCreatePlugin, familia
                 <h1 className="text-[22px] font-semibold text-[var(--text-primary)]">
                   {HERO_HEADLINE[tab]}
                 </h1>
-                <p className="mt-1 text-[12px] text-muted-foreground">
-                  {pageMeta}
-                </p>
+                {tab === "plugins" && harnessesLoaded && installedHarnessCount === 0 ? (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    No harnesses installed yet — install one to get started.
+                  </p>
+                ) : tab === "plugins" && harnessesLoaded ? (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {installedHarnessCount} of {harnesses.length} harnesses active
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {pageMeta}
+                  </p>
+                )}
               </div>
               <button
                 type="button"
@@ -465,7 +475,7 @@ function PluginGrid({
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {items.map((h) => (
-        <PluginCard key={h.id} harness={h} onLaunch={onOpenChat} />
+        <PluginCard key={h.id} harness={h} onClick={onOpenChat} />
       ))}
     </div>
   );

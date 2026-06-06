@@ -171,6 +171,13 @@ export const ICON_NAMES = [
   "ph:chat-centered-text",
   "ph:dots-three",
   "ph:minus-circle",
+  "ph:terminal-window-bold",
+  "ph:git-branch-bold",
+  "ph:lightning-bold",
+  "ph:lightning-fill",
+  "ph:paw-print-bold",
+  "ph:code-bold",
+  "ph:hand-bold",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

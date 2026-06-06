@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 
 export type HarnessReport = {
   id: string;
@@ -24,56 +25,71 @@ const HARNESS_TAGLINE: Record<string, string> = {
   aider: "Pair with Aider in-repo",
 };
 
+const HARNESS_ICON: Record<string, IconName> = {
+  codex:     "ph:terminal-window-bold",
+  claude:    "ph:brain-bold",
+  openclaw:  "ph:paw-print-bold",
+  copilot:   "ph:git-branch-bold",
+  opencode:  "ph:code-bold",
+  gemini:    "ph:sparkle-bold",
+  hermes:    "ph:lightning-bold",
+  openhands: "ph:hand-bold",
+  aider:     "ph:wrench-bold",
+};
+
 export function PluginCard({
   harness,
-  onLaunch,
   onClick,
 }: {
   harness: HarnessReport;
-  onLaunch: () => void;
   onClick?: () => void;
 }) {
-  const initial = (harness.label.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase();
   const tagline =
     HARNESS_TAGLINE[harness.id] ?? `Run ${harness.label} from a familiar`;
+  const iconName = HARNESS_ICON[harness.id];
 
   return (
     <button
       type="button"
-      onClick={onClick ?? onLaunch}
-      className="group flex min-w-0 w-full items-center gap-3 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-card)] px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={onClick}
+      className={`group flex min-w-0 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+        harness.installed
+          ? "border-border bg-card hover:border-border-strong hover:bg-muted/40"
+          : "border-border bg-card opacity-50 hover:opacity-70"
+      }`}
     >
       {/* Icon */}
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[15px] font-semibold text-[var(--text-primary)]">
-        {initial}
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        {iconName ? (
+          <Icon name={iconName} width={18} height={18} />
+        ) : (
+          <span className="text-[15px] font-semibold text-foreground">
+            {(harness.label.match(/[a-z0-9]/i)?.[0] ?? "?").toUpperCase()}
+          </span>
+        )}
       </span>
 
       {/* Name + tagline */}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]">
+        <span className="block truncate text-[13px] font-medium text-foreground">
           {harness.label}
         </span>
-        <span className="block truncate text-[12px] text-[var(--text-muted)]">
+        <span className="block truncate text-[12px] text-muted-foreground">
           {tagline}
         </span>
       </span>
 
-      {/* Status icon flush right */}
+      {/* Install status */}
       {harness.installed ? (
         <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--accent-presence)]"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/60"
           title="Installed"
-          aria-label="Installed"
         >
-          <Icon name="ph:check-bold" width={14} />
+          <Icon name="ph:check-bold" width={13} />
         </span>
       ) : (
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors group-hover:border-[var(--border-strong)] group-hover:text-[var(--text-primary)]"
-          title="Not installed"
-          aria-label="Not installed"
-        >
-          <Icon name="ph:plus-bold" width={12} />
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors group-hover:border-border-strong group-hover:text-foreground">
+          <Icon name="ph:plus-bold" width={11} />
         </span>
       )}
     </button>
