@@ -359,44 +359,41 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
         /* Project tab */
         <div className="flex flex-1 min-h-0">
           {/* Project list */}
-          <div className="w-[240px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] p-2 text-xs">
-            <div className="mb-2 flex items-center gap-2 px-1">
-              <Icon name="ph:folder" width={13} className="shrink-0 text-[var(--text-muted)]" />
-              <span className="font-semibold text-[var(--text-secondary)]">Projects</span>
-              <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
+          <div className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] py-2 text-[12px]">
+            <div className="mb-1 flex items-center gap-1.5 px-3 pb-1">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Projects</span>
+              <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
                 {projects.length}
               </span>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-px">
               {projects.map((project) => (
                 <button
                   key={project.root}
                   type="button"
                   onClick={() => selectProject(project)}
-                  className={`w-full rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                    selectedProject?.root === project.root
-                      ? "border-[var(--accent-presence)] bg-[var(--bg-base)]"
-                      : "border-[var(--border-hairline)] bg-[var(--bg-base)]/50 hover:border-[var(--border-strong)] hover:bg-[var(--bg-base)]"
-                  }`}
                   title={project.root}
+                  className={`flex w-full items-center gap-2 px-3 py-[5px] text-left transition-colors ${
+                    selectedProject?.root === project.root
+                      ? "bg-[var(--accent-presence)] text-white"
+                      : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                  }`}
                 >
-                  <span className="flex items-center gap-2">
-                    <Icon name="ph:folder" width={13} className="shrink-0 text-[var(--text-muted)]" />
-                    <span className="min-w-0 flex-1 truncate font-medium text-[var(--text-primary)]">
-                      {project.name}
-                    </span>
-                    {project.runningCount > 0 && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    )}
-                  </span>
-                  <span className="mt-1 block truncate text-[10px] text-[var(--text-muted)]">
-                    {project.root}
-                  </span>
-                  <span className="mt-1.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-                    <span>{project.sessionCount} chats</span>
-                    <span>{project.familiarCount} familiars</span>
-                    <span className="ml-auto">{shortProjectTime(project.updatedAt)}</span>
-                  </span>
+                  <Icon
+                    name={project.runningCount > 0 ? "ph:folder-open" : "ph:folder"}
+                    width={13}
+                    className={`shrink-0 ${
+                      selectedProject?.root === project.root
+                        ? "text-white/70"
+                        : "text-[var(--text-muted)]"
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                  {project.runningCount > 0 && (
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                      selectedProject?.root === project.root ? "bg-white/60" : "bg-emerald-400"
+                    }`} />
+                  )}
                 </button>
               ))}
             </div>
@@ -443,19 +440,21 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
                 <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(220px,32%)_minmax(0,1fr)]">
                   <div className="min-h-0 overflow-y-auto border-b border-[var(--border-hairline)] p-3 xl:border-b-0 xl:border-r">
                     {/* Recent sessions — collapsible */}
-                    <div className="mb-3">
+                    <div className="mb-2">
                       <button
                         type="button"
                         onClick={() => setSessionsCollapsed((v) => !v)}
-                        className="mb-2 flex w-full items-center gap-1.5 text-left"
+                        className="flex w-full items-center gap-1.5 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
                       >
-                        <Icon
-                          name={sessionsCollapsed ? "ph:caret-right" : "ph:caret-down"}
-                          width={10}
-                          className="shrink-0 text-[var(--text-muted)]"
-                        />
-                        <Icon name="ph:chats-circle" width={12} className="shrink-0 text-[var(--text-muted)]" />
-                        <span className="text-[11px] font-semibold text-[var(--text-secondary)]">Recent sessions</span>
+                        <svg
+                          width="7" height="7" viewBox="0 0 8 8"
+                          className="shrink-0 text-[var(--text-muted)] transition-transform duration-150"
+                          style={{ transform: sessionsCollapsed ? "rotate(0deg)" : "rotate(90deg)" }}
+                        >
+                          <polygon points="1,1 7,4 1,7" fill="currentColor" />
+                        </svg>
+                        <Icon name="ph:chats-circle" width={11} className="shrink-0 text-[var(--text-muted)]" />
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Sessions</span>
                         {recentProjectSessions.length > 0 && (
                           <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
                             {recentProjectSessions.length}
@@ -464,22 +463,26 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
                       </button>
                       {!sessionsCollapsed && (
                         recentProjectSessions.length === 0 ? (
-                          <p className="pl-4 text-[11px] text-[var(--text-muted)]">No chats in this project yet.</p>
+                          <p className="py-1 pl-6 text-[11px] text-[var(--text-muted)]">No chats yet.</p>
                         ) : (
-                          <div className="space-y-1 pl-3.5">
+                          <div className="space-y-px">
                             {recentProjectSessions.map((session) => (
                               <button
                                 key={session.id}
                                 type="button"
                                 onClick={() => onOpenSession(session.id, session.familiarId)}
-                                className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
+                                className="flex w-full items-center gap-2 rounded py-[4px] pl-6 pr-2 text-left text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
                               >
-                                <span className="block truncate text-[11px] font-medium text-[var(--text-primary)]">
+                                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                  session.status === "running" ? "bg-emerald-400"
+                                  : session.status === "failed" ? "bg-red-400"
+                                  : "bg-[var(--border-strong)]"
+                                }`} />
+                                <span className="min-w-0 flex-1 truncate">
                                   {session.title || "(untitled chat)"}
                                 </span>
-                                <span className="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-                                  <span>{session.status}</span>
-                                  <span className="ml-auto">{shortProjectTime(session.updated_at)}</span>
+                                <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                                  {shortProjectTime(session.updated_at)}
                                 </span>
                               </button>
                             ))}
@@ -488,16 +491,14 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
                       )}
                     </div>
 
-                    {/* Files — always open, refresh button */}
+                    {/* Files — native tree */}
                     <div>
-                      <div className="mb-2 flex items-center gap-1.5">
-                        <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-muted)]" />
-                        <span className="text-[11px] font-semibold text-[var(--text-secondary)]">Files</span>
+                      <div className="mb-1 flex items-center justify-end pr-0.5">
                         <button
                           type="button"
                           onClick={() => treeRef.current?.refresh()}
-                          className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
-                          title="Refresh tree"
+                          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          title="Refresh"
                         >
                           <Icon name="ph:arrow-clockwise" width={10} />
                         </button>
@@ -505,6 +506,7 @@ export function ComuxView({ sessions: daemonSessions, onOpenSession, onNewChat }
                       <ProjectTree
                         ref={treeRef}
                         root={selectedProject.root}
+                        selectedPath={previewPath}
                         onFileClick={openFilePreview}
                       />
                     </div>
