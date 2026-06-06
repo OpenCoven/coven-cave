@@ -116,11 +116,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       {/* Header */}
       <header className="board-header">
         <span className="board-header-title">Tasks</span>
-        <div className="board-header-stats">
-          <span>{stats.total} card{stats.total !== 1 ? "s" : ""}</span>
-          {stats.running > 0 && <><span className="board-header-stats-sep">·</span><span>{stats.running} running</span></>}
-          {stats.blocked > 0 && <><span className="board-header-stats-sep">·</span><span className="board-header-stats--blocked">{stats.blocked} blocked</span></>}
-        </div>
         <div className="board-search-wrap">
           <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
           <label className="sr-only" htmlFor="board-search">Search tasks</label>
