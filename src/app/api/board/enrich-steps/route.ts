@@ -26,15 +26,20 @@ function enrichPrompt(card: { title: string; notes?: string; labels?: string[] }
 // Run coven CLI and collect full stdout output as a string.
 function runCoven(args: string[], familiarId: string, familiarWorkspacePath?: string): Promise<string> {
   return new Promise((resolve) => {
-    let out = "";
-    const child = spawn(covenBin(), args, {
-      cwd: familiarWorkspacePath ?? process.cwd(),
-      stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
-    });
-    child.stdout.on("data", (d: Buffer) => { out += d.toString("utf8"); });
-    child.on("close", () => resolve(out));
-    child.on("error", () => resolve(""));
+    try {
+      let out = "";
+      const child = spawn(covenBin(), args, {
+        cwd: familiarWorkspacePath ?? process.cwd(),
+        stdio: ["ignore", "pipe", "pipe"],
+        env: covenSpawnEnv(),
+      });
+      child.stdout.on("data", (d: Buffer) => { out += d.toString("utf8"); });
+      child.stderr.on("data", (d: Buffer) => { out += d.toString("utf8"); });
+      child.on("close", () => resolve(out));
+      child.on("error", () => resolve(out));
+    } catch {
+      resolve("");
+    }
   });
 }
 
