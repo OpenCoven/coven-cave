@@ -73,6 +73,7 @@ export function GitHubView({ onOpenSession }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: number | null = null;
 
     async function refresh() {
       try {
@@ -81,21 +82,26 @@ export function GitHubView({ onOpenSession }: Props) {
         setTasks(next.tasks);
         setSource("api");
         setError(null);
+        // Only schedule next poll if we got a real response
+        if (!cancelled) timer = window.setTimeout(() => void refresh(), 15_000);
       } catch (e) {
         if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "GitHub task endpoint unavailable";
         setTasks(PLACEHOLDER_TASKS);
         setSource("demo");
-        setError(e instanceof Error ? e.message : "GitHub task endpoint unavailable");
+        setError(msg);
+        // 503 = not configured — don't hammer the server, back off to 60s
+        const isUnconfigured = msg.includes("503") || msg.includes("not configured");
+        if (!cancelled) timer = window.setTimeout(() => void refresh(), isUnconfigured ? 60_000 : 15_000);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 15_000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer !== null) window.clearTimeout(timer);
     };
   }, []);
 

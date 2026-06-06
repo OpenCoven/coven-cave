@@ -44,7 +44,7 @@
 /* ── Composer card ───────────────────────────────────────────────────────── */
 .home-composer-card {
   width: 100%;
-  max-width: 620px;
+  max-width: 760px;
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 16px;
@@ -237,7 +237,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-width: 620px;
+  max-width: 760px;
   width: 100%;
   justify-content: center;
 }
