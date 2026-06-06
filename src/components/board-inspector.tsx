@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
