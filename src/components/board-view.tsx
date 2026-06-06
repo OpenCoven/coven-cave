@@ -18,12 +18,6 @@ import {
   type CardStatus,
 } from "@/lib/cave-board-types";
 
-const COLUMNS: { id: CardStatus; label: string }[] = [
-  { id: "inbox", label: "Inbox" },
-  { id: "running", label: "Running" },
-  { id: "review", label: "Review" },
-];
-
 // Priority chrome stays neutral per Mood C — visual emphasis comes from
 // border + text weight, not saturated fills. Reserves accent for presence.
 const PRIORITIES: { id: CardPriority; label: string; pill: string }[] = [
@@ -40,16 +34,50 @@ type Props = {
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
 };
 
+type BoardColumn = {
+  id: CardStatus;
+  label: string;
+  hint: string;
+};
+
+const COLUMNS: BoardColumn[] = [
+  { id: "backlog", label: "Backlog", hint: "Ideas and work not ready to dispatch." },
+  { id: "inbox", label: "Inbox", hint: "Ready for a familiar to pick up." },
+  { id: "running", label: "Running", hint: "In use by a familiar right now." },
+  { id: "review", label: "Review", hint: "Needs human or maintainer review." },
+  { id: "blocked", label: "Blocked", hint: "Waiting, failed, cancelled, or needs help." },
+  { id: "done", label: "Done", hint: "Completed work." },
+];
+
+function lifecycleForStatus(status: CardStatus): CardLifecycle {
+  if (status === "running") return "running";
+  if (status === "review") return "review";
+  if (status === "blocked") return "failed";
+  if (status === "done") return "completed";
+  return "queued";
+}
+
+function patchForStatus(status: CardStatus): Partial<Card> {
+  const patch: Partial<Card> = {
+    status,
+    lifecycle: lifecycleForStatus(status),
+    needsHuman: status === "blocked" ? true : false,
+  };
+  if (status === "running") patch.runningSince = new Date().toISOString();
+  return patch;
+}
+
 export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSession }: Props) {
   const [cards, setCards] = useState<Card[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("inbox");
+  const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [priorityFilter, setPriorityFilter] = useState<Set<CardPriority>>(new Set());
   const [scopeToFamiliar, setScopeToFamiliar] = useState<boolean>(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const draggingIdRef = useRef<string | null>(null);
+  const boardRailRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -124,6 +152,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)));
   };
 
+  const moveCardToStatus = (id: string, status: CardStatus) => {
+    void patchCard(id, patchForStatus(status));
+  };
+
+  const scrollColumns = (direction: -1 | 1) => {
+    const rail = boardRailRef.current;
+    if (!rail) return;
+    const step = Math.max(rail.clientWidth * 0.72, 280);
+    rail.scrollBy({ left: step * direction, behavior: "smooth" });
+  };
+
   const handleDragStart = (e: React.DragEvent, id: string) => {
     draggingIdRef.current = id;
     setDraggingId(id);
@@ -170,7 +209,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     if (!id) return;
     const card = cards.find((c) => c.id === id);
     if (!card || card.status === status) return;
-    void patchCard(id, { status });
+    moveCardToStatus(id, status);
   };
 
   const removeCard = async (id: string) => {
@@ -191,6 +230,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1" aria-label="Board column navigation">
+            <button
+              type="button"
+              onClick={() => scrollColumns(-1)}
+              aria-label="Show previous board columns"
+              title="Show previous board columns"
+              className="grid h-7 w-7 place-items-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Icon name="ph:arrow-left-bold" width={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollColumns(1)}
+              aria-label="Show next board columns"
+              title="Show next board columns"
+              className="grid h-7 w-7 place-items-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Icon name="ph:arrow-right-bold" width={12} />
+            </button>
+          </div>
           {activeFamiliarId ? (
             <button
               onClick={() => setScopeToFamiliar((v) => !v)}
@@ -206,7 +265,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           ) : null}
           <button
             onClick={() => {
-              setModalDefaultStatus("inbox");
+              setModalDefaultStatus("backlog");
               setModalOpen(true);
             }}
             className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
@@ -253,7 +312,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           <p className="text-[13px] text-muted-foreground">No cards yet.</p>
           <button
             onClick={() => {
-              setModalDefaultStatus("inbox");
+              setModalDefaultStatus("backlog");
               setModalOpen(true);
             }}
             className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
@@ -262,76 +321,84 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           </button>
         </div>
       ) : (
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="flex h-full w-full gap-3 px-5 py-4">
-          {COLUMNS.map((col) => {
-            const rows = grouped.get(col.id) ?? [];
-            const isDropTarget = dropTarget === col.id;
-            return (
-              <div
-                key={col.id}
-                onDragEnter={(e) => handleDragEnter(e, col.id)}
-                onDragOver={(e) => handleDragOver(e, col.id)}
-                onDragLeave={(e) => handleDragLeave(e, col.id)}
-                onDrop={(e) => handleDrop(e, col.id)}
-                className={`flex h-full min-w-0 flex-1 basis-0 flex-col rounded-xl border bg-card transition-colors ${
-                  isDropTarget
-                    ? "border-border-strong bg-muted"
-                    : "border-border"
-                }`}
-              >
-                <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{col.label}</span>
-                    <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
-                      {rows.length}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setModalDefaultStatus(col.id);
-                      setModalOpen(true);
-                    }}
-                    title={`Add card to ${col.label}`}
-                    className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div
+            ref={boardRailRef}
+            className="h-full overflow-x-auto overflow-y-hidden scroll-smooth"
+          >
+            <div className="flex h-full min-w-max gap-3 px-5 py-4">
+              {COLUMNS.map((col) => {
+                const rows = grouped.get(col.id) ?? [];
+                const isDropTarget = dropTarget === col.id;
+                return (
+                  <div
+                    key={col.id}
+                    onDragEnter={(e) => handleDragEnter(e, col.id)}
+                    onDragOver={(e) => handleDragOver(e, col.id)}
+                    onDragLeave={(e) => handleDragLeave(e, col.id)}
+                    onDrop={(e) => handleDrop(e, col.id)}
+                    className={`flex h-full w-[260px] flex-shrink-0 flex-col rounded-xl border bg-card transition-colors sm:w-[280px] xl:w-[300px] ${
+                      isDropTarget
+                        ? "border-border-strong bg-muted"
+                        : "border-border"
+                    }`}
                   >
-                    +
-                  </button>
-                </div>
+                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground" title={col.hint}>
+                          {col.label}
+                        </span>
+                        <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
+                          {rows.length}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setModalDefaultStatus(col.id);
+                          setModalOpen(true);
+                        }}
+                        title={`Add card to ${col.label}`}
+                        className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        +
+                      </button>
+                    </div>
 
-                <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-                  {rows.length === 0 ? (
-                    <li
-                      className={`rounded-md border border-dashed px-3 py-4 text-center text-[11px] transition-colors ${
-                        isDropTarget
-                          ? "border-border-strong text-foreground"
-                          : "border-border text-muted-foreground"
-                      }`}
-                    >
-                      {isDropTarget ? "Drop here" : "Empty"}
-                    </li>
-                  ) : null}
-                  {rows.map((card) => (
-                    <CardItem
-                      key={card.id}
-                      card={card}
-                      familiars={familiars}
-                      sessions={sessions}
-                      isDragging={draggingId === card.id}
-                      onDragStart={(e) => handleDragStart(e, card.id)}
-                      onDragEnd={handleDragEnd}
-                      onPatch={(patch) => patchCard(card.id, patch)}
-                      onDelete={() => removeCard(card.id)}
-                      onCardReplaced={replaceCard}
-                      onJumpToSession={onJumpToSession}
-                    />
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
+                    <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                      {rows.length === 0 ? (
+                        <li
+                          className={`rounded-md border border-dashed px-3 py-4 text-center text-[11px] transition-colors ${
+                            isDropTarget
+                              ? "border-border-strong text-foreground"
+                              : "border-border text-muted-foreground"
+                          }`}
+                        >
+                          {isDropTarget ? "Drop here" : "Empty"}
+                        </li>
+                      ) : null}
+                      {rows.map((card) => (
+                        <CardItem
+                          key={card.id}
+                          card={card}
+                          familiars={familiars}
+                          sessions={sessions}
+                          isDragging={draggingId === card.id}
+                          onDragStart={(e) => handleDragStart(e, card.id)}
+                          onDragEnd={handleDragEnd}
+                          onPatch={(patch) => patchCard(card.id, patch)}
+                          onMoveStatus={(status) => moveCardToStatus(card.id, status)}
+                          onDelete={() => removeCard(card.id)}
+                          onCardReplaced={replaceCard}
+                          onJumpToSession={onJumpToSession}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </div>
       )}
 
       <NewCardModal
@@ -355,6 +422,7 @@ function CardItem({
   onDragStart,
   onDragEnd,
   onPatch,
+  onMoveStatus,
   onDelete,
   onCardReplaced,
   onJumpToSession,
@@ -366,6 +434,7 @@ function CardItem({
   onDragStart?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
   onPatch: (patch: Partial<Card>) => void;
+  onMoveStatus: (status: CardStatus) => void;
   onDelete: () => void;
   onCardReplaced: (card: Card) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
@@ -477,7 +546,7 @@ function CardItem({
             <Mini label="Status">
               <select
                 value={card.status}
-                onChange={(e) => onPatch({ status: e.target.value as CardStatus })}
+                onChange={(e) => onMoveStatus(e.target.value as CardStatus)}
                 className="w-full rounded border border-border bg-background px-1.5 py-1 text-[11px] text-foreground"
               >
                 {COLUMNS.map((c) => (

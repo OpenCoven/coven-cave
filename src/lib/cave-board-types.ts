@@ -1,4 +1,4 @@
-export type CardStatus = "inbox" | "running" | "review";
+export type CardStatus = "backlog" | "inbox" | "running" | "review" | "blocked" | "done";
 export type CardPriority = "low" | "medium" | "high" | "urgent";
 export type CardLifecycle =
   | "queued"
@@ -31,7 +31,7 @@ export type Card = {
   maxRetries: number;
 };
 
-export const STATUSES: CardStatus[] = ["inbox", "running", "review"];
+export const STATUSES: CardStatus[] = ["backlog", "inbox", "running", "review", "blocked", "done"];
 export const PRIORITIES: CardPriority[] = ["urgent", "high", "medium", "low"];
 export const LIFECYCLES: CardLifecycle[] = [
   "queued",
