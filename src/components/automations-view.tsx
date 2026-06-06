@@ -6,6 +6,21 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
 import { Icon } from "@/lib/icon";
 
+// ── Codex automation types (mirrored from lib/codex-automations.ts) ──────────
+type AutomationStatus = "ACTIVE" | "PAUSED";
+type CodexAutomation = {
+  id: string;
+  name: string;
+  kind: string;
+  status: AutomationStatus;
+  rrule: string | null;
+  model: string | null;
+  tags: string[];
+  prompt: string;
+  scheduleHuman: string;
+  tomlPath: string;
+};
+
 // AutomationsView — redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
 //   • No tabs — items grouped by status section (Current / Paused / Pending / History)
@@ -292,19 +307,216 @@ function Section({
   );
 }
 
+// ── Codex automation detail panel ────────────────────────────────────────────
+function CodexDetailPanel({
+  auto,
+  busy,
+  onClose,
+  onToggle,
+}: {
+  auto: CodexAutomation;
+  busy: boolean;
+  onClose: () => void;
+  onToggle: (auto: CodexAutomation) => void;
+}) {
+  const isActive = auto.status === "ACTIVE";
+  return (
+    <div className="flex h-full flex-col"
+      style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between border-b px-5 py-3"
+        style={{ borderColor: "var(--border-hairline)" }}>
+        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+          Automation details
+        </h2>
+        <button type="button" onClick={onClose}
+          className="rounded p-1 transition-colors hover:bg-white/5"
+          style={{ color: "var(--text-muted)" }}>
+          <Icon name="ph:x" width={14} />
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+        <div>
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-muted)" }}>Name</p>
+          <p className="text-[14px] font-medium" style={{ color: "var(--text-primary)" }}>
+            {auto.name}
+          </p>
+        </div>
+
+        {auto.prompt && (
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Prompt</p>
+            <p className="text-[12px] leading-relaxed whitespace-pre-wrap line-clamp-6"
+              style={{ color: "var(--text-secondary)" }}>
+              {auto.prompt}
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Schedule</p>
+            <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+              {auto.scheduleHuman}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Status</p>
+            <p className="text-[12px]" style={{ color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
+              {isActive ? "Active" : "Paused"}
+            </p>
+          </div>
+          {auto.model && (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+                style={{ color: "var(--text-muted)" }}>Model</p>
+              <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+                {auto.model}
+              </p>
+            </div>
+          )}
+          {auto.tags.length > 0 && (
+            <div>
+              <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+                style={{ color: "var(--text-muted)" }}>Tags</p>
+              <p className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                {auto.tags.join(", ")}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="border-t px-5 py-4 space-y-2"
+        style={{ borderColor: "var(--border-hairline)" }}>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onToggle(auto)}
+          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
+          style={{ background: isActive ? "oklch(0.45 0.12 20)" : "oklch(0.65 0.18 280)" }}
+        >
+          {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Codex automation row ──────────────────────────────────────────────────────
+function CodexRow({
+  auto,
+  selected,
+  onSelect,
+}: {
+  auto: CodexAutomation;
+  selected: boolean;
+  onSelect: (auto: CodexAutomation) => void;
+}) {
+  const isActive = auto.status === "ACTIVE";
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(auto)}
+        className="group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
+        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
+        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+      >
+        {/* Status dot */}
+        {isActive ? (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+            style={{ background: "oklch(0.65 0.18 280)" }} />
+        ) : (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+            style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
+            <Icon name="ph:minus" width={8} />
+          </span>
+        )}
+        <span className="flex-1 min-w-0 flex items-baseline gap-2">
+          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+            {auto.name}
+          </span>
+          {auto.tags.includes("coven") && (
+            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>coven</span>
+          )}
+        </span>
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {auto.scheduleHuman}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+// ── Codex Section ─────────────────────────────────────────────────────────────
+function CodexSection({
+  title,
+  items,
+  selectedId,
+  onSelect,
+}: {
+  title: string;
+  items: CodexAutomation[];
+  selectedId: string | null;
+  onSelect: (auto: CodexAutomation) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-3 mb-1 pb-2"
+        style={{ borderBottom: "1px solid var(--border-hairline)" }}>
+        <span className="text-[12px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+          {title}
+        </span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded"
+          style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
+          Codex
+        </span>
+      </div>
+      <ul>
+        {items.map((auto) => (
+          <CodexRow
+            key={auto.id}
+            auto={auto}
+            selected={selectedId === auto.id}
+            onSelect={onSelect}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
+  const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
+  const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/inbox", { cache: "no-store" });
-      const json = await res.json();
-      if (!json.ok) { setError(json.error ?? "load failed"); return; }
-      setItems(json.items ?? []);
+      const [inboxRes, codexRes] = await Promise.all([
+        fetch("/api/inbox", { cache: "no-store" }),
+        fetch("/api/codex-automations", { cache: "no-store" }),
+      ]);
+      const inboxJson = await inboxRes.json();
+      if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
+      setItems(inboxJson.items ?? []);
+      const codexJson = await codexRes.json();
+      if (codexJson.ok) setCodexAutos(codexJson.automations ?? []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "fetch failed");
@@ -316,6 +528,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Keep selectedCodex in sync after reload
+  useEffect(() => {
+    if (!selectedCodex) return;
+    const fresh = codexAutos.find((a) => a.id === selectedCodex.id);
+    if (fresh) setSelectedCodex(fresh);
+  }, [codexAutos, selectedCodex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const famById = useMemo(() => {
     const m = new Map<string, Familiar>();
@@ -381,6 +600,25 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
 
+  // ── Codex toggle ──────────────────────────────────────────────────────────
+  const toggleCodex = useCallback(async (auto: CodexAutomation) => {
+    setBusyId(auto.id);
+    try {
+      const newStatus: AutomationStatus = auto.status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "codex patch failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [load]);
+
   // ── Sections ──────────────────────────────────────────────────────────────
   const current = useMemo(() =>
     items.filter((it) =>
@@ -410,7 +648,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
       .slice(0, 20),
     [items]);
 
-  const isEmpty = current.length + paused.length + oneShots.length === 0;
+  const codexActive = useMemo(
+    () => codexAutos.filter((a) => a.status === "ACTIVE"),
+    [codexAutos],
+  );
+  const codexPaused = useMemo(
+    () => codexAutos.filter((a) => a.status === "PAUSED"),
+    [codexAutos],
+  );
+
+  const isEmpty =
+    current.length + paused.length + oneShots.length + codexAutos.length === 0;
 
   return (
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
@@ -460,14 +708,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
           ) : (
             <>
               <Section title="Current" items={current} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
+              <CodexSection title="Active Schedules" items={codexActive}
+                selectedId={selectedCodex?.id ?? null}
+                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }} />
               <Section title="Paused" items={paused} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
+              <CodexSection title="Paused Schedules" items={codexPaused}
+                selectedId={selectedCodex?.id ?? null}
+                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }} />
               <Section title="Pending" items={oneShots} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
               {history.length > 0 && (
                 <Section title="History" items={history} selectedId={selectedItem?.id ?? null}
-                  familiarLabel={familiarLabel} onSelect={setSelectedItem} />
+                  familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
               )}
             </>
           )}
@@ -475,18 +729,28 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
       </div>
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
-      {selectedItem && (
+      {(selectedItem || selectedCodex) && (
         <div className="w-72 shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
-          <DetailPanel
-            item={selectedItem}
-            familiarLabel={familiarLabel}
-            busyId={busyId}
-            onClose={() => setSelectedItem(null)}
-            runNow={runNow}
-            togglePaused={togglePaused}
-            stopRecurrence={stopRecurrence}
-            removeItem={removeItem}
-          />
+          {selectedItem && (
+            <DetailPanel
+              item={selectedItem}
+              familiarLabel={familiarLabel}
+              busyId={busyId}
+              onClose={() => setSelectedItem(null)}
+              runNow={runNow}
+              togglePaused={togglePaused}
+              stopRecurrence={stopRecurrence}
+              removeItem={removeItem}
+            />
+          )}
+          {selectedCodex && (
+            <CodexDetailPanel
+              auto={selectedCodex}
+              busy={busyId === selectedCodex.id}
+              onClose={() => setSelectedCodex(null)}
+              onToggle={toggleCodex}
+            />
+          )}
         </div>
       )}
     </section>
