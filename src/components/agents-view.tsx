@@ -8,6 +8,7 @@ import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
 import type { Card } from "@/lib/cave-board-types";
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import {
   buildDelegationGraph,
