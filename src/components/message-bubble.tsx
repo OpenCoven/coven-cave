@@ -224,6 +224,37 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
+// ---------------------------------------------------------------------------
+
+export function MarkdownBlock({ text, className }: { text: string; className?: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!text) return;
+    let cancelled = false;
+    void mdToHtml(text).then((h) => { if (!cancelled) setHtml(h); });
+    return () => { cancelled = true; };
+  }, [text]);
+
+  if (!html) {
+    return (
+      <pre className={`whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] ${className ?? ""}`}>
+        {text}
+      </pre>
+    );
+  }
+
+  return (
+    <div
+      className={`cave-md ${className ?? ""}`}
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

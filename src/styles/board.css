@@ -15,6 +15,11 @@
 
 .board-toolbar-select { height:28px; padding:0 24px 0 8px; border-radius:7px; border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:12px; cursor:pointer; appearance:none; -webkit-appearance:none; transition:background-color .12s,color .12s; }
 .board-toolbar-select:hover { background-color:var(--bg-hover); color:var(--text-primary); }
+.board-toolbar-select--active { background:color-mix(in oklab,oklch(0.65 0.18 280) 14%,var(--bg-raised)); border-color:color-mix(in oklab,oklch(0.65 0.18 280) 40%,transparent); color:var(--text-primary); }
+.board-multiselect-btn { display:inline-flex; align-items:center; gap:5px; padding:0 8px; height:28px; white-space:nowrap; }
+.board-multiselect-caret { color:var(--text-muted); transition:transform .15s; flex-shrink:0; }
+.board-multiselect-caret--open { transform:rotate(180deg); }
+.board-multiselect-popover { min-width:180px; }
 
 .board-view-toggle { display:flex; border:1px solid var(--border-strong); border-radius:7px; overflow:hidden; }
 .board-view-toggle-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; transition:background .12s,color .12s; }
@@ -27,7 +32,7 @@
 
 .board-filter-chips { display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:6px 16px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; }
 .board-filter-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:11px; cursor:default; }
-.board-filter-chip-remove { display:flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; border:none; background:transparent; color:var(--text-muted); cursor:pointer; padding:0; margin-left:1px; transition:background .1s,color .1s; }
+.board-filter-chip-remove { display:flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:4px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; padding:0; margin-left:1px; transition:background .1s,color .1s; }
 .board-filter-chip-remove:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-filter-chip--clear-all { background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:11px; padding:2px 6px; }
 .board-filter-chip--clear-all:hover { color:var(--text-primary); }
@@ -90,7 +95,7 @@
 
 .board-label-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .board-label-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; border:1px solid var(--border-strong); background:var(--bg-base); color:var(--text-secondary); font-size:11px; }
-.board-label-chip-remove { display:flex; align-items:center; justify-content:center; width:12px; height:12px; border-radius:50%; border:none; background:transparent; color:var(--text-muted); cursor:pointer; padding:0; transition:color .1s; }
+.board-label-chip-remove { display:flex; align-items:center; justify-content:center; width:12px; height:12px; border-radius:4px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; padding:0; transition:color .1s; }
 .board-label-chip-remove:hover { color:var(--text-primary); }
 
 .board-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; padding:48px 24px; color:var(--text-muted); font-size:13px; }

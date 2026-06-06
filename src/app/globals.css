@@ -166,23 +166,19 @@ body {
   overflow: hidden;
 }
 
-/* Right-rail toggle tab — Dia/Linear-style vertical pill */
+/* Right-rail toggle tab — full-height strip, matches inspector closed state */
 .shell-agent-tab {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 10px 5px;
-  border-radius: 8px 0 0 8px;
-  border: 1px solid var(--border-hairline);
-  border-right: none;
-  background: var(--bg-elevated);
-  color: var(--fg-muted);
+  justify-content: flex-start;
+  padding-top: 12px;
+  width: 36px;
+  flex-shrink: 0;
+  height: 100%;
+  border-left: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-muted);
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
   -webkit-app-region: no-drag;
@@ -190,18 +186,22 @@ body {
 }
 .shell-agent-tab:hover {
   background: var(--bg-hover);
-  color: var(--fg-base);
+  color: var(--text-primary);
+}
+.shell-agent-tab--open {
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  border-left-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+.shell-agent-tab--open:hover {
+  background: color-mix(in oklch, var(--accent-presence) 13%, var(--bg-raised));
+  color: var(--accent-presence);
 }
 .shell-agent-tab-label {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  line-height: 1;
+  display: none;
 }
 .shell-agent-tab-chevron {
-  opacity: 0.5;
+  display: none;
 }
 
 .shell-bottom {

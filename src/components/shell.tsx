@@ -265,32 +265,6 @@ function ShellInner({
     </Group>
   );
 
-  // Right-rail toggle tab (Dia/Linear-style vertical pill)
-  const agentTab = hasAgent ? (
-    <button
-      className="shell-agent-tab"
-      aria-label={agentOpen ? `Close ${agentLabel ?? "Browser"}` : `Open ${agentLabel ?? "Browser"}`}
-      title={`${agentLabel ?? "Browser"} (⌘J)`}
-      onClick={() => {
-        const panel = agentRef.current;
-        if (!panel) return;
-        if (panel.isCollapsed()) {
-          panel.expand();
-          setAgentOpen(true);
-        } else {
-          panel.collapse();
-          setAgentOpen(false);
-        }
-      }}
-    >
-      <Icon name={agentIcon ?? "ph:globe"} width={14} height={14} />
-      <span className="shell-agent-tab-label">{agentLabel ?? "Browser"}</span>
-      <span style={{ transform: agentOpen ? "rotate(0deg)" : "rotate(180deg)", transition: "transform 0.2s", display: "flex" }}>
-        <Icon name="ph:caret-right" width={10} height={10} className="shell-agent-tab-chevron" />
-      </span>
-    </button>
-  ) : null;
-
   return (
     <div className="flex h-full w-full flex-col">
       {topBar}
@@ -321,7 +295,22 @@ function ShellInner({
         ) : (
           horizontalGroup
         )}
-        {agentTab}
+        {hasAgent && (
+          <button
+            type="button"
+            className={`shell-agent-tab${agentOpen ? " shell-agent-tab--open" : ""}`}
+            aria-label={agentOpen ? `Close ${agentLabel ?? "Browser"}` : `Open ${agentLabel ?? "Browser"}`}
+            title={`${agentLabel ?? "Browser"} (⌘J)`}
+            onClick={() => {
+              const panel = agentRef.current;
+              if (!panel) return;
+              if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
+              else { panel.collapse(); setAgentOpen(false); }
+            }}
+          >
+            <Icon name={agentIcon ?? "ph:globe"} width={15} />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { SyntaxBlock } from "@/components/message-bubble";
+import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 
@@ -386,10 +386,17 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
           </button>
         </div>
 
-        <SyntaxBlock
-          text={openFile?.text ?? "loading…"}
-          className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[11px]"
-        />
+        {openPath.endsWith(".md") ? (
+          <MarkdownBlock
+            text={openFile?.text ?? "loading…"}
+            className="min-h-0 flex-1 overflow-auto px-4 py-4"
+          />
+        ) : (
+          <SyntaxBlock
+            text={openFile?.text ?? "loading…"}
+            className="min-h-0 flex-1 overflow-auto px-3 py-3 text-[11px]"
+          />
+        )}
       </div>
     );
   }

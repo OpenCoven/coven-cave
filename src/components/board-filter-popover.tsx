@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import type { CardPriority, CardStatus } from "@/lib/cave-board-types";
-import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 
 export type FilterState = {
@@ -14,6 +13,11 @@ export type FilterState = {
 
 export function emptyFilter(): FilterState {
   return { priorities: new Set(), familiarIds: new Set(), statuses: new Set(), labels: new Set() };
+}
+
+/** True when the filter popover itself has active selections (priority or status only). */
+export function hasActivePopoverFilters(f: FilterState): boolean {
+  return f.priorities.size > 0 || f.statuses.size > 0;
 }
 
 export function hasActiveFilters(f: FilterState): boolean {
@@ -38,8 +42,6 @@ const STATUS_OPTIONS: { id: CardStatus; label: string }[] = [
 
 type Props = {
   filter: FilterState;
-  familiars: Familiar[];
-  allLabels: string[];
   onChange: (f: FilterState) => void;
   onClose: () => void;
 };
@@ -61,7 +63,7 @@ function toggle<T extends string>(set: Set<T>, value: T): Set<T> {
   return next;
 }
 
-export function BoardFilterPopover({ filter, familiars, allLabels, onChange, onClose }: Props) {
+export function BoardFilterPopover({ filter, onChange, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,29 +88,12 @@ export function BoardFilterPopover({ filter, familiars, allLabels, onChange, onC
         ))}
       </div>
       <div className="board-filter-popover-section">
-        <div className="board-filter-popover-label">Familiar</div>
-        {familiars.map((f) => (
-          <CheckOption key={f.id} checked={filter.familiarIds.has(f.id)} label={f.display_name}
-            onToggle={() => onChange({ ...filter, familiarIds: toggle(filter.familiarIds, f.id) })} />
-        ))}
-        {familiars.length === 0 && <p className="board-table-muted" style={{ padding: "4px 2px" }}>No familiars</p>}
-      </div>
-      <div className="board-filter-popover-section">
         <div className="board-filter-popover-label">Status</div>
         {STATUS_OPTIONS.map((o) => (
           <CheckOption key={o.id} checked={filter.statuses.has(o.id)} label={o.label}
             onToggle={() => onChange({ ...filter, statuses: toggle(filter.statuses, o.id) })} />
         ))}
       </div>
-      {allLabels.length > 0 && (
-        <div className="board-filter-popover-section">
-          <div className="board-filter-popover-label">Labels</div>
-          {allLabels.map((l) => (
-            <CheckOption key={l} checked={filter.labels.has(l)} label={l}
-              onToggle={() => onChange({ ...filter, labels: toggle(filter.labels, l) })} />
-          ))}
-        </div>
-      )}
       <div className="board-filter-popover-footer">
         <button type="button" className="board-toolbar-btn" onClick={() => onChange(emptyFilter())}>Clear all</button>
         <button type="button" className="board-new-card-btn" onClick={onClose}>Done</button>

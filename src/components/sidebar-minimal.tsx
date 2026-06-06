@@ -4,11 +4,12 @@
  * SidebarMinimal — the redesigned Cave sidebar.
  *
  * Layout (top → bottom):
- *   1. Primary actions (new chat, plugins, automations, calendar)
- *   2. App destinations (Chat / Board / Inbox / Terminal / Projects / etc.)
- *   3. Settings gear (pinned bottom)
+ *   1. New chat CTA
+ *   2. App destinations (Chat / Inbox / Tasks · Terminal / Projects / Browser · Calls / GitHub)
+ *   3. Utility actions footer (Plugins / Automations / Calendar)
  */
 
+import React from "react";
 import { Icon } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 
@@ -38,7 +39,7 @@ export type SidebarMinimalProps = {
 };
 
 // ---------------------------------------------------------------------------
-// Action button (top group)
+// Action button
 // ---------------------------------------------------------------------------
 
 function ActionRow({
@@ -70,16 +71,19 @@ const FOLDER_MODES: Array<{
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
+  dividerBefore?: boolean;
 }> = [
-  { id: "chats",      label: "Chat",        iconName: "ph:chat-circle-dots" },
-  { id: "board",      label: "Tasks",       iconName: "ph:kanban" },
-  { id: "inbox",      label: "Inbox",       iconName: "ph:bell-fill",
+  // ── Primary loop ────────────────────────────────────────────────────────
+  { id: "chats",    label: "Chat",        iconName: "ph:chat-circle-dots" },
+  { id: "inbox",    label: "Inbox",       iconName: "ph:bell-fill",
     badge: (p) => p.inboxBadgeCount && p.inboxBadgeCount > 0 ? String(p.inboxBadgeCount) : undefined },
-  { id: "terminal",   label: "Terminal",    iconName: "ph:terminal-window" },
-  { id: "projects",   label: "Projects",    iconName: "ph:folder-open" },
-  { id: "calls",      label: "Coven Calls", iconName: "ph:graph" },
-  { id: "browser",    label: "Browser",     iconName: "ph:globe" },
-  { id: "github",     label: "GitHub",      iconName: "ph:github-logo" },
+  { id: "board",    label: "Tasks",       iconName: "ph:kanban" },
+  // ── Tools ───────────────────────────────────────────────────────────────
+  { id: "terminal",  label: "Terminal",    iconName: "ph:terminal-window", dividerBefore: true },
+  { id: "browser",   label: "Browser",     iconName: "ph:globe" },
+  // ── Integrations ────────────────────────────────────────────────────────
+  { id: "calls",   label: "Coven Calls", iconName: "ph:graph",       dividerBefore: true },
+  { id: "github",  label: "GitHub",      iconName: "ph:github-logo" },
 ];
 
 function FolderRow({
@@ -123,13 +127,34 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   return (
     <nav className="sidebar-minimal">
-      {/* ── Primary actions ───────────────────────────────────── */}
+      {/* ── New chat (top CTA) ──────────────────────────────── */}
       <div className="sidebar-actions">
         <ActionRow
           icon={<Icon name="ph:note-pencil" width={14} />}
           label="New chat"
           onClick={onNewChat}
         />
+      </div>
+
+      {/* ── Folder mode rows ────────────────────────────────── */}
+      <div className="sidebar-folders">
+        {FOLDER_MODES.map((fm) => (
+          <React.Fragment key={fm.id}>
+            {fm.dividerBefore && <div className="sidebar-divider" />}
+            <FolderRow
+              id={fm.id}
+              label={fm.label}
+              iconName={fm.iconName}
+              active={mode === fm.id}
+              badge={fm.badge?.(props)}
+              onClick={() => onModeChange(fm.id)}
+            />
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* ── Utility actions (footer) ────────────────────────── */}
+      <div className="sidebar-actions sidebar-actions--footer">
         <ActionRow
           icon={<Icon name="ph:plug" width={14} />}
           label="Plugins"
@@ -145,21 +170,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           label="Calendar"
           onClick={() => onModeChange("calendar")}
         />
-      </div>
-
-      {/* ── Folder mode rows ──────────────────────────────────── */}
-      <div className="sidebar-folders">
-        {FOLDER_MODES.map((fm) => (
-          <FolderRow
-            key={fm.id}
-            id={fm.id}
-            label={fm.label}
-            iconName={fm.iconName}
-            active={mode === fm.id}
-            badge={fm.badge?.(props)}
-            onClick={() => onModeChange(fm.id)}
-          />
-        ))}
       </div>
     </nav>
   );

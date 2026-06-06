@@ -203,6 +203,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [error, setError] = useState<string | null>(null);
   const currentSessionRef = useRef<string | null>(sessionId);
   const tailRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const keys = useKeySymbols();
@@ -256,8 +258,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [sessionId]);
 
   useEffect(() => {
-    tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns]);
+    if (atBottom) tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns, atBottom]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const threshold = 80;
+      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < threshold);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -571,7 +584,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Transcript */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="space-y-6">
           {turns.length === 0 ? (
             <ChatEmptyState familiar={familiar} modKey={keys.mod} />
@@ -592,6 +605,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           })}
           <div ref={tailRef} />
         </div>
+
+        {/* Scroll-to-bottom FAB */}
+        {!atBottom && (
+          <button
+            type="button"
+            onClick={() => {
+              setAtBottom(true);
+              tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+            }}
+            aria-label="Scroll to bottom"
+            className="sticky bottom-4 float-right z-20 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
+          >
+            <Icon name="ph:caret-down-bold" width={12} />
+          </button>
+        )}
       </div>
 
       {error ? (
@@ -653,7 +681,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <div className="flex items-center justify-between px-3 pb-2.5">
               <div className="flex items-center gap-1 text-[var(--text-muted)]">
                 <button
-                  className="grid h-7 w-7 place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                  className="grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                   title="Attach (coming soon)"
                   disabled
                 >
@@ -668,7 +696,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {busy ? (
                   <button
                     onClick={cancelSend}
-                    className="grid h-7 w-7 place-items-center rounded-full bg-rose-500/90 text-white transition-colors hover:bg-rose-500"
+                    className="grid h-7 w-7 place-items-center rounded-md bg-rose-500/90 text-white transition-colors hover:bg-rose-500"
                     title="Cancel (esc)"
                   >
                     ■
@@ -677,7 +705,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <button
                     onClick={() => void send()}
                     disabled={!input.trim()}
-                    className="grid h-7 w-7 place-items-center rounded-full bg-[var(--accent-presence)] text-white transition-colors hover:bg-[var(--accent-presence-soft)] disabled:opacity-40"
+                    className="grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[var(--accent-presence-soft)] disabled:opacity-40"
                     title={`Send (${keys.enter})`}
                   >
                     ↑
@@ -876,6 +904,53 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 
 // ── ToolBlock ──────────────────────────────────────────────────────────────────
 
+/** Lines above this threshold get a max-height + fade + expand toggle */
+const TOOL_BODY_COLLAPSE_LINES = 12;
+
+function ToolBodySection({ label, text }: { label: string; text: string }) {
+  const lineCount = text.split("\n").length;
+  const isLong = lineCount > TOOL_BODY_COLLAPSE_LINES;
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div>
+      <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
+      <div className="relative">
+        <div
+          style={isLong && !expanded
+            ? { maxHeight: "12rem", overflow: "hidden" }
+            : undefined}
+        >
+          <SyntaxBlock text={text} />
+        </div>
+        {isLong && !expanded && (
+          <div
+            className="absolute inset-x-0 bottom-0 flex items-end justify-center"
+            style={{ height: "3.5rem", background: "linear-gradient(to bottom, transparent, var(--bg-raised, #1a1a1a) 85%)" }}
+          >
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="mb-1 rounded border border-[var(--border-hairline)]/70 px-2.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
+            >
+              Show {lineCount - TOOL_BODY_COLLAPSE_LINES} more lines
+            </button>
+          </div>
+        )}
+        {isLong && expanded && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="mt-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+          >
+            ↑ collapse
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   const [open, setOpen] = useState(false);
   const statusDot =
@@ -912,18 +987,8 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       </button>
       {open && hasBody ? (
         <div className="space-y-2 border-t border-[var(--border-hairline)]/70 px-3 py-2 font-mono text-[12px] leading-relaxed">
-          {tool.input ? (
-            <div>
-              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">input</div>
-              <SyntaxBlock text={tool.input} />
-            </div>
-          ) : null}
-          {tool.output ? (
-            <div>
-              <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">output</div>
-              <SyntaxBlock text={tool.output} />
-            </div>
-          ) : null}
+          {tool.input ? <ToolBodySection label="input" text={tool.input} /> : null}
+          {tool.output ? <ToolBodySection label="output" text={tool.output} /> : null}
         </div>
       ) : null}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
@@ -123,7 +123,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
         </thead>
         <tbody>
           {groups.map(({ key, label, cards: gc }) => (
-            <>
+            <React.Fragment key={key}>
               {groupBy !== "none" && (
                 <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
                   <td colSpan={COLS.length}>
@@ -149,7 +149,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
                   </tr>
                 );
               })}
-            </>
+            </React.Fragment>
           ))}
         </tbody>
       </table>
