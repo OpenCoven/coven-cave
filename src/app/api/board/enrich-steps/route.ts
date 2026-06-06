@@ -46,15 +46,49 @@ function runCoven(args: string[], familiarId: string, familiarWorkspacePath?: st
 // Parse familiar response — look for a JSON array anywhere in the output.
 function parseSteps(raw: string): string[] | null {
   const clean = stripAnsi(raw);
-  // Try to find a JSON array in the response (familiar may add prose around it)
-  const match = clean.match(/\[[\s\S]*?\]/);
+
+  // When using `--stream-json`, assistant text is wrapped in JSON envelopes.
+  // Extract the assistant's text payload first so we don't accidentally match
+  // other JSON arrays like `message.content`.
+  let assistantText = "";
+  for (const line of clean.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      try {
+        const ev = JSON.parse(trimmed) as {
+          type?: string;
+          message?: { content?: Array<{ type?: string; text?: string }> };
+        };
+        if (ev.type === "assistant" && ev.message?.content) {
+          for (const block of ev.message.content) {
+            if (block.type === "text" && typeof block.text === "string") {
+              assistantText += block.text;
+            }
+          }
+          continue;
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+
+    // Fallback for harnesses that emit plain text even with --stream-json.
+    assistantText += trimmed + "\n";
+  }
+
+  const haystack = assistantText.trim() ? assistantText : clean;
+  const match = haystack.match(/\[[\s\S]*?\]/);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[0]);
     if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
-      return parsed.filter((s) => s.trim().length > 0).slice(0, 10);
+      return parsed.map((s) => s.trim()).filter(Boolean).slice(0, 7);
     }
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
   return null;
 }
 
