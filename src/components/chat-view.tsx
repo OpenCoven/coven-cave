@@ -103,12 +103,23 @@ async function fileToAttachment(file: File): Promise<ComposerAttachment> {
     id: crypto.randomUUID(),
     name: file.name,
     type: file.type || undefined,
+    mimeType: file.type || undefined,
     size: file.size,
   };
   if (isTextLike(file)) {
     const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
     attachment.text = text;
     if (file.size > new Blob([text]).size) attachment.truncated = true;
+  } else if (file.type.startsWith("image/")) {
+    await new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") attachment.dataUrl = reader.result;
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
   }
   return attachment;
 }
@@ -880,7 +891,7 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
       </div>
 
       {/* Content column */}
-      <div className="cave-turn-content text-[14px] leading-relaxed text-[var(--text-primary)]">
+      <div className="cave-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
         {tools.length > 0 ? <ToolGroup tools={tools} /> : null}
         {reasoning ? <ReasoningBlock text={reasoning} /> : null}
         {turn.pending && !visible ? (
@@ -896,7 +907,7 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
           />
         )}
         {duration && !turn.pending ? (
-          <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+          <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)] opacity-0 transition-opacity group-hover/turn:opacity-100">
             <span>·</span>
             <span>worked for {duration}</span>
           </div>
@@ -906,24 +917,89 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
   );
 }
 
-function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
+function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
+  const isImage = attachment.mimeType?.startsWith("image/");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
-    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-      {attachments.map((attachment, index) => (
-        <div
-          key={`${attachment.name}-${index}`}
-          className="inline-flex max-w-72 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)]"
-          title={`${attachment.name} (${fmtBytes(attachment.size)})`}
-        >
-          <Icon name="ph:paperclip" width={12} className="shrink-0 text-[var(--text-muted)]" />
-          <span className="truncate">{attachment.name}</span>
-          <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-h-[90vh] max-w-[90vw] overflow-auto rounded-xl border border-[var(--border-hairline)] bg-[#050409] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
+          <Icon name="ph:paperclip" width={13} className="shrink-0 text-[var(--text-muted)]" />
+          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]">{attachment.name}</span>
+          <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
           {attachment.truncated ? (
-            <span className="shrink-0 text-[var(--text-muted)]">truncated</span>
+            <span className="shrink-0 rounded bg-amber-900/40 px-1.5 py-0.5 text-[10px] text-amber-300">truncated</span>
           ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-2 flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
+            aria-label="Close"
+          >
+            <Icon name="ph:x-bold" width={11} />
+          </button>
         </div>
-      ))}
+        {/* Body */}
+        {isImage && attachment.dataUrl ? (
+          <div className="flex items-center justify-center p-4">
+            <img
+              src={attachment.dataUrl}
+              alt={attachment.name}
+              className="max-h-[75vh] max-w-[85vw] rounded-lg object-contain"
+            />
+          </div>
+        ) : attachment.text ? (
+          <pre className="max-h-[70vh] overflow-auto p-4 font-mono text-[12px] leading-relaxed text-[var(--text-secondary)] whitespace-pre-wrap">
+            {attachment.text}
+          </pre>
+        ) : (
+          <div className="flex flex-col items-center gap-3 px-8 py-10 text-[var(--text-muted)]">
+            <Icon name="ph:file-bold" width={32} />
+            <span className="text-[13px]">No preview available</span>
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
+  const [selected, setSelected] = useState<ChatAttachment | null>(null);
+  return (
+    <>
+      <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+        {attachments.map((attachment, index) => (
+          <button
+            type="button"
+            key={`${attachment.name}-${index}`}
+            className="inline-flex max-w-72 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-presence)]/40 hover:bg-[var(--bg-raised)]/70"
+            title={`View ${attachment.name}`}
+            onClick={() => setSelected(attachment)}
+          >
+            <Icon name="ph:paperclip" width={12} className="shrink-0 text-[var(--text-muted)]" />
+            <span className="truncate">{attachment.name}</span>
+            <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
+            {attachment.truncated ? (
+              <span className="shrink-0 text-[var(--text-muted)]">truncated</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      {selected ? (
+        <AttachmentLightbox attachment={selected} onClose={() => setSelected(null)} />
+      ) : null}
+    </>
   );
 }
 
@@ -934,7 +1010,7 @@ function ReasoningBlock({ text }: { text: string }) {
   return (
     <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => { setManuallyToggled(true); setOpen((v) => !v); }}
         className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
       >
         <Icon name="ph:brain" width="0.8rem" height="0.8rem" className="shrink-0 text-[var(--text-muted)]/70" />
@@ -969,14 +1045,21 @@ function ReasoningBlock({ text }: { text: string }) {
 function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   const anyRunning = tools.some((t) => t.status === "running");
   const anyError   = tools.some((t) => t.status === "error");
-  const [open, setOpen] = useState(anyRunning);
+  const [open, setOpen] = useState(false);
+  const [manuallyToggled, setManuallyToggled] = useState(false);
 
-  // Auto-open when a tool starts running, auto-close when all settle
+  // Auto-open while running; auto-close when all settle (unless user manually toggled)
   const prevRunning = useRef(anyRunning);
   useEffect(() => {
-    if (anyRunning && !prevRunning.current) setOpen(true);
+    if (anyRunning && !prevRunning.current) {
+      setOpen(true);
+      setManuallyToggled(false);
+    }
+    if (!anyRunning && prevRunning.current && !manuallyToggled) {
+      setOpen(false);
+    }
     prevRunning.current = anyRunning;
-  }, [anyRunning]);
+  }, [anyRunning, manuallyToggled]);
 
   const doneCount = tools.filter((t) => t.status === "ok").length;
   const errCount  = tools.filter((t) => t.status === "error").length;

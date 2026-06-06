@@ -3,9 +3,13 @@ export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 export type ChatAttachment = {
   name: string;
   type?: string;
+  /** MIME type — more explicit than `type`, used for preview decisions */
+  mimeType?: string;
   size?: number;
   text?: string;
   truncated?: boolean;
+  /** Base64 data URL for images, set when the file is attached locally */
+  dataUrl?: string;
 };
 
 function cleanName(name: unknown): string {
