@@ -37,6 +37,7 @@ export const ICON_NAMES = [
   "ph:rows",
   "ph:columns",
   "ph:caret-up-down",
+  "ph:caret-up-down-bold",
   "ph:caret-up",
   "ph:caret-down-fill",
   "ph:check",

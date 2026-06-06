@@ -118,10 +118,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     return (
       <ChatList
         familiar={familiar}
+        familiars={familiars}
         sessions={sessions}
         daemonRunning={daemonRunning}
         onOpen={(sessionId) => setView({ kind: "chat", sessionId })}
         onNewChat={(projectRoot) => setView({ kind: "chat", sessionId: null, projectRoot })}
+        onFamiliarSelect={onFamiliarSelect}
       />
     );
   }
@@ -130,10 +132,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     <ChatView
       ref={viewHandle}
       familiar={familiar}
+      familiars={familiars}
       sessionId={view.sessionId}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
       daemonRunning={daemonRunning}
       onBack={() => setView({ kind: "list" })}
+      onFamiliarSelect={onFamiliarSelect}
       onSessionStarted={(sid) => {
         // Only promote the sessionId in the view state when the current chat
         // has no session yet (null). If a session is already set, leave the
