@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     notes: body.notes,
     tags: body.tags ?? [],
     addedAt: new Date().toISOString(),
-    familiar: body.capture?.familiar ?? body.familiar ?? "sage",
+    familiar: body.capture?.familiar ?? body.familiar ?? "unknown",
     capture: body.capture,
   };
 

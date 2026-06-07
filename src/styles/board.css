@@ -74,6 +74,39 @@
 .board-table-group-row:hover td { background:var(--bg-hover); color:var(--text-primary); }
 .board-table-group-caret { display:inline-flex; align-items:center; margin-right:4px; vertical-align:middle; }
 .board-table-group-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:16px; padding:0 5px; border-radius:8px; background:var(--bg-base); border:1px solid var(--border-hairline); color:var(--text-muted); font-size:10px; font-weight:500; margin-left:6px; vertical-align:middle; }
+.board-table-group-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:7px; vertical-align:middle; box-shadow:0 0 0 3px color-mix(in oklch,currentColor 14%,transparent); position:relative; top:-1px; }
+.board-table-group-dot--backlog { background:var(--text-muted); color:var(--text-muted); }
+.board-table-group-dot--inbox { background:var(--accent-presence); color:var(--accent-presence); }
+.board-table-group-dot--running { background:var(--color-warning); color:var(--color-warning); }
+.board-table-group-dot--review { background:var(--accent-presence-soft); color:var(--accent-presence-soft); }
+.board-table-group-dot--blocked { background:var(--color-danger); color:var(--color-danger); }
+.board-table-group-dot--done { background:var(--color-success); color:var(--color-success); }
+
+/* Row cells */
+.board-table-cell-status,
+.board-table-cell-priority,
+.board-table-cell-familiar { display:inline-flex; align-items:center; gap:7px; color:var(--text-primary); font-size:11.5px; font-weight:450; min-width:0; max-width:100%; }
+.board-table-status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 3px color-mix(in oklch,currentColor 14%,transparent); }
+.board-table-status-dot--backlog { background:var(--text-muted); color:var(--text-muted); }
+.board-table-status-dot--inbox { background:var(--accent-presence); color:var(--accent-presence); }
+.board-table-status-dot--running { background:var(--color-warning); color:var(--color-warning); }
+.board-table-status-dot--review { background:var(--accent-presence-soft); color:var(--accent-presence-soft); }
+.board-table-status-dot--blocked { background:var(--color-danger); color:var(--color-danger); }
+.board-table-status-dot--done { background:var(--color-success); color:var(--color-success); }
+.board-table-priority-flag { width:3px; height:12px; border-radius:2px; flex-shrink:0; }
+.board-table-priority-flag--urgent { background:var(--color-danger); box-shadow:0 0 0 2px color-mix(in oklch,var(--color-danger) 18%,transparent); }
+.board-table-priority-flag--high { background:var(--color-warning); }
+.board-table-priority-flag--medium { background:var(--accent-presence); }
+.board-table-priority-flag--low { background:color-mix(in oklch,var(--text-muted) 60%,transparent); }
+.board-table-familiar-avatar { display:flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:5px; background:var(--bg-elevated); border:1px solid var(--border-hairline); color:var(--text-primary); overflow:hidden; flex-shrink:0; }
+.board-table-familiar-avatar > * { display:flex; }
+.board-table-familiar-avatar--empty { color:var(--text-muted); }
+.board-table-cell-familiar-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.board-table-cell-path { display:inline-block; max-width:100%; padding:1px 6px; border-radius:4px; background:var(--bg-elevated); border:1px solid var(--border-hairline); color:var(--text-secondary); font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:10.5px; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }
+.board-table-cell-links { display:inline-flex; align-items:center; gap:4px; color:var(--text-secondary); font-size:11px; }
+.board-table-cell-links svg { color:var(--text-muted); }
+.board-table-cell-empty { color:color-mix(in oklch,var(--text-muted) 50%,transparent); font-size:11px; }
+.board-table-cell-time { color:var(--text-muted); font-size:11px; font-variant-numeric:tabular-nums; }
 
 .board-swimlane { flex-shrink:0; border-bottom:1px solid var(--border-hairline); }
 .board-swimlane-header { display:flex; align-items:center; gap:8px; padding:8px 16px 6px; font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.05em; text-transform:uppercase; cursor:pointer; user-select:none; }

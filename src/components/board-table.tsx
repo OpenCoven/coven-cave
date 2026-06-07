@@ -5,6 +5,8 @@ import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { parseGlyphString } from "@/lib/familiar-glyph";
 
 export type GroupBy = "status" | "familiar";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "cwd" | "links" | "lifecycle" | "updatedAt";
@@ -126,30 +128,70 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
         <tbody>
           {groups.map(({ key, label, cards: gc }) => (
             <React.Fragment key={key}>
-              {true && (
-                <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
-                  <td colSpan={COLS.length}>
-                    <span className="board-table-group-caret">
-                      <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
-                    </span>
-                    {label}
-                    <span className="board-table-group-badge">{gc.length}</span>
-                  </td>
-                </tr>
-              )}
+              <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
+                <td colSpan={COLS.length}>
+                  <span className="board-table-group-caret">
+                    <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
+                  </span>
+                  {groupBy === "status" && (
+                    <span className={`board-table-group-dot board-table-group-dot--${key}`} aria-hidden />
+                  )}
+                  {label}
+                  <span className="board-table-group-badge">{gc.length}</span>
+                </td>
+              </tr>
               {!collapsed.has(key) && gc.map((card) => {
                 const familiar = familiars.find((f) => f.id === card.familiarId);
+                const familiarGlyph = familiar
+                  ? parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? null
+                  : null;
                 return (
                   <tr key={card.id} className={selectedCardId === card.id ? "selected" : ""}
                     onClick={() => onSelect(card.id)}>
                     <td><span className="board-table-title">{card.title}</span></td>
-                    <td><span className="board-table-muted">{card.status.charAt(0).toUpperCase() + card.status.slice(1)}</span></td>
-                    <td><span className="board-table-muted">{card.priority.charAt(0).toUpperCase() + card.priority.slice(1)}</span></td>
-                    <td><span className="board-table-muted">{familiar?.display_name ?? <span style={{ opacity: 0.4 }}>—</span>}</span></td>
-                    <td><span className="board-table-muted" title={card.cwd ?? undefined}>{card.cwd ? shortPath(card.cwd) : <span style={{ opacity: 0.4 }}>—</span>}</span></td>
-                    <td><span className="board-table-muted">{card.links.length > 0 ? card.links.length : <span style={{ opacity: 0.4 }}>—</span>}</span></td>
+                    <td>
+                      <span className="board-table-cell-status">
+                        <span className={`board-table-status-dot board-table-status-dot--${card.status}`} aria-hidden />
+                        <span>{card.status.charAt(0).toUpperCase() + card.status.slice(1)}</span>
+                      </span>
+                    </td>
+                    <td>
+                      <span className="board-table-cell-priority">
+                        <span className={`board-table-priority-flag board-table-priority-flag--${card.priority}`} aria-hidden />
+                        <span>{card.priority.charAt(0).toUpperCase() + card.priority.slice(1)}</span>
+                      </span>
+                    </td>
+                    <td>
+                      {familiar ? (
+                        <span className="board-table-cell-familiar">
+                          <span className={`board-table-familiar-avatar${familiarGlyph ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
+                            {familiarGlyph ? <FamiliarGlyph glyph={familiarGlyph} size="sm" /> : <Icon name="ph:user" width={9} />}
+                          </span>
+                          <span className="board-table-cell-familiar-name">{familiar.display_name}</span>
+                        </span>
+                      ) : (
+                        <span className="board-table-cell-empty">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {card.cwd ? (
+                        <span className="board-table-cell-path" title={card.cwd}>{shortPath(card.cwd)}</span>
+                      ) : (
+                        <span className="board-table-cell-empty">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {card.links.length > 0 ? (
+                        <span className="board-table-cell-links">
+                          <Icon name="ph:link-simple" width={10} />
+                          {card.links.length}
+                        </span>
+                      ) : (
+                        <span className="board-table-cell-empty">—</span>
+                      )}
+                    </td>
                     <td><LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} /></td>
-                    <td style={{ textAlign: "right" }}><span className="board-table-muted">{relTime(card.updatedAt)}</span></td>
+                    <td style={{ textAlign: "right" }}><span className="board-table-cell-time">{relTime(card.updatedAt)}</span></td>
                   </tr>
                 );
               })}
