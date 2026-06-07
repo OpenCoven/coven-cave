@@ -173,6 +173,7 @@ export const ICON_NAMES = [
   "ph:flame",
   "ph:arrow-counter-clockwise",
   "ph:bookmark-simple",
+  "ph:bookmark-simple-fill",
   "ph:link",
   "ph:link-simple",
   "ph:git-pull-request",

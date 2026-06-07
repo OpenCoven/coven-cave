@@ -777,7 +777,7 @@ export function Workspace() {
         }}
       />
     ) : mode === "browser" ? (
-      <BrowserPane label="main" />
+      <BrowserPane label="main" activeFamiliarId={active?.id ?? null} />
     ) : mode === "terminal" ? (
       <ComuxView
         view="terminal"
@@ -882,7 +882,7 @@ export function Workspace() {
               onFamiliarSelect={setActiveId}
             />
           ) : (
-            <BrowserPane label="default" />
+            <BrowserPane label="default" activeFamiliarId={active?.id ?? null} />
           )
         }
         agentLabel={stripLock === "chat" ? "Chat" : "Browser"}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Icon } from "@/lib/icon";
+import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 
 // ── Favicon helpers (mirrors open-sesame FaviconService pattern) ──────────────
@@ -157,7 +158,49 @@ async function probeLocalhost(port: number): Promise<boolean> {
   }
 }
 
-export function BrowserPane({ label = "default" }: { label?: string }) {
+function SaveToLibraryButton({
+  url, title, activeFamiliar,
+}: { url: string | null; title: string; activeFamiliar: string | null }) {
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "dedup" | "err">("idle");
+  if (!url) return null;
+
+  const handleSave = async () => {
+    if (!activeFamiliar) return;
+    setState("saving");
+    try {
+      const res = await fetch("/api/library/route-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          url,
+          source: { kind: "browser", tabUrl: url, tabTitle: title },
+          familiar: activeFamiliar,
+        }),
+      });
+      const json = await res.json() as { ok: boolean; deduped?: boolean };
+      if (!json.ok) setState("err");
+      else if (json.deduped) setState("dedup");
+      else setState("saved");
+    } catch { setState("err"); }
+    finally { setTimeout(() => setState("idle"), 3000); }
+  };
+
+  if (state === "saved") {
+    return (
+      <IconButton icon="ph:check-bold" aria-label="Save to library" title="Saved" onClick={handleSave} />
+    );
+  }
+  if (state === "dedup") {
+    return (
+      <IconButton icon="ph:bookmark-simple-fill" aria-label="Save to library" title="Already in library" onClick={handleSave} />
+    );
+  }
+  return (
+    <IconButton icon="ph:bookmark-simple" aria-label="Save to library" title="Save to library" onClick={handleSave} />
+  );
+}
+
+export function BrowserPane({ label = "default", activeFamiliarId = null }: { label?: string; activeFamiliarId?: string | null }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBridge | null>(null);
@@ -628,6 +671,12 @@ export function BrowserPane({ label = "default" }: { label?: string }) {
           title="Home" aria-label="Home">
           <Icon name="ph:house-bold" width={13} />
         </button>
+        {/* Save to library */}
+        <SaveToLibraryButton
+          url={activeTab?.url ?? null}
+          title={tabTitles[activeTabId] ?? activeTab?.title ?? ""}
+          activeFamiliar={activeFamiliarId}
+        />
         {/* Open in system browser */}
         <button type="button"
           onClick={() => {
