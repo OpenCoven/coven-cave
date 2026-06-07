@@ -20,9 +20,6 @@ import {
 } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { Icon, type IconName } from "@/lib/icon";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -71,7 +68,6 @@ export function HomeComposer({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const glyphOverrides = useGlyphOverrides();
 
   // Sync activeFamiliarId → local when parent changes
   useEffect(() => {
@@ -263,11 +259,6 @@ export function HomeComposer({
 
           {/* Left: familiar selector */}
           <div className="hc-familiar-selector">
-            {active && (
-              <span className="hc-familiar-glyph" aria-hidden>
-                <FamiliarGlyph glyph={resolveFamiliarGlyph(active, glyphOverrides)} size="sm" />
-              </span>
-            )}
             <select
               className="hc-familiar-select"
               value={familiarId ?? ""}
