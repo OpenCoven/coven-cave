@@ -17,6 +17,8 @@ import {
   saveConversation,
 } from "@/lib/cave-conversations";
 import { buildTaskAwarePrompt, taskContextForSession } from "@/lib/task-chat-context";
+import { extractLinks } from "@/lib/link-extractor";
+import { routeLinkHandler } from "@/app/api/library/route-link/route";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,6 +97,36 @@ async function resolveFamiliarWorkspace(familiarId: string): Promise<string | un
     if (s.isDirectory()) return candidate;
   } catch { /* not found */ }
   return undefined;
+}
+
+function scheduleLinkRoute(args: {
+  prompt: string;
+  sessionId: string | null;
+  turnId: string | null;
+  chatTitle: string;
+  familiar: string;
+}) {
+  if (!args.sessionId || !args.turnId) return; // chat-source requires both
+  const { prompt } = args;
+  const urls = extractLinks(prompt);
+  for (const url of urls) {
+    void (async () => {
+      try {
+        await routeLinkHandler({
+          url,
+          source: {
+            kind: "chat",
+            sessionId: args.sessionId!,
+            turnId: args.turnId!,
+            chatTitle: args.chatTitle,
+          },
+          familiar: args.familiar,
+        });
+      } catch (err) {
+        console.warn("[chat-send] routeLink failed:", (err as Error).message);
+      }
+    })();
+  }
 }
 
 function sse(event: StreamEvent): Uint8Array {
@@ -427,15 +459,18 @@ export async function POST(req: Request) {
         await recordSessionFamiliar(finalSessionId, body.familiarId);
         const existing = await loadConversation(finalSessionId);
         const now = new Date().toISOString();
+        const userTurnId = crypto.randomUUID();
+        const assistantTurnId = crypto.randomUUID();
+        const chatTitle = (promptText || attachments[0]?.name || "Attached files").slice(0, 60);
         const userTurn: ChatTurn = {
-          id: crypto.randomUUID(),
+          id: userTurnId,
           role: "user",
           text: promptText,
           ...(attachments.length ? { attachments } : {}),
           createdAt: now,
         };
         const assistantTurn: ChatTurn = {
-          id: crypto.randomUUID(),
+          id: assistantTurnId,
           role: "assistant",
           text: assistantText.trim(),
           createdAt: new Date().toISOString(),
@@ -446,13 +481,31 @@ export async function POST(req: Request) {
           sessionId: finalSessionId,
           familiarId: body.familiarId,
           harness: binding.harness,
-          title: (promptText || attachments[0]?.name || "Attached files").slice(0, 60),
+          title: chatTitle,
           createdAt: now,
           updatedAt: now,
           turns: [],
         };
         conv.turns.push(userTurn, assistantTurn);
         await saveConversation(conv);
+
+        // Fire-and-forget: extract URLs from user prompt and assistant text,
+        // route them to the library. Failures must never affect the chat stream.
+        const prompt = promptText;
+        scheduleLinkRoute({
+          prompt,
+          sessionId: finalSessionId,
+          turnId: userTurnId,
+          chatTitle,
+          familiar: body.familiarId,
+        });
+        scheduleLinkRoute({
+          prompt: assistantText.trim(),
+          sessionId: finalSessionId,
+          turnId: assistantTurnId,
+          chatTitle,
+          familiar: body.familiarId,
+        });
       }
 
       push({
