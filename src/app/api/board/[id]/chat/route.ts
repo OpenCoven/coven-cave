@@ -2,14 +2,9 @@ import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { loadBoard, updateCard } from "@/lib/cave-board";
 import { callDaemon } from "@/lib/coven-daemon";
+import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 
 export const dynamic = "force-dynamic";
-
-function taskPrompt(card: { title: string; notes?: string; labels?: string[] }): string {
-  const labels = card.labels?.length ? `\nLabels: ${card.labels.join(", ")}` : "";
-  const notes = card.notes?.trim() ? `\n\nNotes:\n${card.notes.trim()}` : "";
-  return `Task chat: ${card.title.trim()}${labels}${notes}\n\nUse this session as the working thread for the task.`;
-}
 
 export async function POST(
   req: Request,
@@ -56,7 +51,7 @@ export async function POST(
     body: {
       projectRoot: body.projectRoot ?? process.cwd(),
       harness: binding.harness,
-      prompt: taskPrompt(card),
+      prompt: buildInitialTaskChatPrompt(card),
     },
     timeoutMs: 8000,
   });

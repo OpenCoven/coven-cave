@@ -16,6 +16,7 @@ import {
   loadConversation,
   saveConversation,
 } from "@/lib/cave-conversations";
+import { buildTaskAwarePrompt, taskContextForSession } from "@/lib/task-chat-context";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -118,7 +119,8 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  const harnessPrompt = buildPromptWithAttachments(promptText, attachments);
+  const taskContext = await taskContextForSession(body.sessionId);
+  const harnessPrompt = buildTaskAwarePrompt(buildPromptWithAttachments(promptText, attachments), taskContext);
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
