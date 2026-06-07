@@ -17,6 +17,22 @@ export type CardStep = {
   doneAt?: string;   // ISO timestamp when step was checked off
 };
 
+export type CardGitHubKind = "repo" | "issue" | "pr" | "discussion" | "review_request" | "notification";
+
+export type CardGitHubLink = {
+  id: string;
+  kind: CardGitHubKind;
+  repo: string;
+  number?: number;
+  title: string;
+  url: string;
+  state?: string;
+  labels: string[];
+  source?: "library" | "assigned" | "manual" | "legacy-link";
+  savedAt?: string;
+  updatedAt?: string;
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -27,6 +43,7 @@ export type Card = {
   sessionId: string | null;
   cwd: string | null;
   links: string[];
+  github: CardGitHubLink[];
   labels: string[];
   template?: string | null;
   createdAt: string;

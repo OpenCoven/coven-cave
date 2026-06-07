@@ -5,10 +5,17 @@ import { homedir } from "node:os";
 import {
   DEFAULT_MAX_RETRIES,
   type Card,
+  type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board-types";
+import {
+  mergeLinksWithGitHub,
+  mergeTaskGitHubLinks as mergeGitHubLinks,
+  normalizeTaskGitHubLinks,
+  taskGitHubLinkFromUrl,
+} from "@/lib/task-github";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -17,6 +24,7 @@ export {
   PRIORITIES,
   STATUSES,
   type Card,
+  type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
@@ -53,6 +61,16 @@ function normalizeLinks(values: string[] | undefined): string[] {
   return normalizeList(values);
 }
 
+function normalizeGitHubLinks(values: CardGitHubLink[] | undefined): CardGitHubLink[] {
+  return normalizeTaskGitHubLinks(values);
+}
+
+function gitHubLinksFromLinks(values: string[] | undefined): CardGitHubLink[] {
+  return (values ?? [])
+    .map((url) => taskGitHubLinkFromUrl(url))
+    .filter((item): item is CardGitHubLink => item !== null);
+}
+
 function normalizeCwd(value: string | null | undefined): string | null {
   const cwd = value?.trim();
   return cwd ? cwd : null;
@@ -60,22 +78,25 @@ function normalizeCwd(value: string | null | undefined): string | null {
 
 type LegacyCard = Omit<
   Card,
-  "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
+  "cwd" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "links" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
+      "cwd" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
     >
   >;
 
 function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
+  const github = mergeGitHubLinks(normalizeGitHubLinks(c.github), ...gitHubLinksFromLinks(c.links));
+  const links = mergeLinksWithGitHub(normalizeLinks(c.links), github);
   return {
     ...c,
     status: statusForLifecycle(lifecycle, c.status),
     cwd: normalizeCwd(c.cwd),
-    links: normalizeLinks(c.links),
+    links,
+    github,
     labels: normalizeList(c.labels),
     lifecycle,
     lifecycleAt: c.lifecycleAt ?? c.updatedAt,
@@ -124,6 +145,7 @@ export type NewCardInput = {
   sessionId?: string | null;
   cwd?: string | null;
   links?: string[];
+  github?: CardGitHubLink[];
   labels?: string[];
   template?: string | null;
 };
@@ -132,6 +154,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
   const board = await loadBoard();
   const now = new Date().toISOString();
   const status: CardStatus = input.status ?? "backlog";
+  const github = mergeGitHubLinks(normalizeGitHubLinks(input.github), ...gitHubLinksFromLinks(input.links));
   const card: Card = {
     id: crypto.randomUUID(),
     title: input.title.trim(),
@@ -141,7 +164,8 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     familiarId: input.familiarId ?? null,
     sessionId: input.sessionId ?? null,
     cwd: normalizeCwd(input.cwd),
-    links: normalizeLinks(input.links),
+    links: mergeLinksWithGitHub(normalizeLinks(input.links), github),
+    github,
     labels: normalizeList(input.labels),
     template: input.template ?? null,
     createdAt: now,
@@ -174,9 +198,17 @@ export async function updateCard(
     labels: patch.labels
       ? normalizeList(patch.labels)
       : current.labels,
-    links: patch.links
-      ? normalizeLinks(patch.links)
-      : current.links,
+    github: mergeGitHubLinks(
+      normalizeGitHubLinks("github" in patch ? patch.github : current.github),
+      ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
+    ),
+    links: mergeLinksWithGitHub(
+      "links" in patch ? normalizeLinks(patch.links) : current.links,
+      mergeGitHubLinks(
+        normalizeGitHubLinks("github" in patch ? patch.github : current.github),
+        ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
+      ),
+    ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
     steps: patch.steps ?? current.steps,

@@ -7,6 +7,11 @@ import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import type { CardStep } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import {
+  mergeLinksWithGitHub,
+  mergeTaskGitHubLinks,
+  taskGitHubLinkFromGitHubItem,
+} from "@/lib/task-github";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 
@@ -131,6 +136,10 @@ const STATE_COLOR: Record<string, string> = {
   closed: "text-[var(--color-danger)]",
 };
 
+function taskGitHubLinkFromAssignedItem(item: GitHubItem) {
+  return taskGitHubLinkFromGitHubItem(item);
+}
+
 function GitHubAttachSection({
   card,
   familiars,
@@ -165,7 +174,7 @@ function GitHubAttachSection({
       .finally(() => setLoading(false));
   }, [open, fetchKey]); // fetchKey bumped to force refetch after PAT save
 
-  const attachedUrls = new Set(card.links);
+  const attachedUrls = new Set([...(card.links ?? []), ...(card.github ?? []).map((item) => item.url)]);
 
   const filtered = items.filter((item) => {
     if (!query.trim()) return true;
@@ -177,15 +186,20 @@ function GitHubAttachSection({
     );
   });
 
-  const attachedItems = items.filter((i) => attachedUrls.has(i.url));
+  const attachedItems = mergeTaskGitHubLinks(
+    card.github ?? [],
+    ...items.filter((i) => attachedUrls.has(i.url)).map(taskGitHubLinkFromAssignedItem),
+  );
 
   function attach(item: GitHubItem) {
     if (attachedUrls.has(item.url)) return;
-    onPatch(card.id, { links: [...card.links, item.url] });
+    const github = mergeTaskGitHubLinks(card.github ?? [], taskGitHubLinkFromAssignedItem(item));
+    onPatch(card.id, { github, links: mergeLinksWithGitHub(card.links, github) });
   }
 
   function detach(url: string) {
-    onPatch(card.id, { links: card.links.filter((l) => l !== url) });
+    const github = (card.github ?? []).filter((item) => item.url !== url);
+    onPatch(card.id, { github, links: card.links.filter((l) => l !== url) });
   }
 
   function assignAgent(item: GitHubItem) {

@@ -85,7 +85,7 @@ function BoardMode({
   async function attachToCard(cardId: string) {
     setBusy(true);
     setFeedback(null);
-    const result = await attachGitHubItemToCard(cardId, item.url);
+    const result = await attachGitHubItemToCard(cardId, item);
     setBusy(false);
     if (result.ok) {
       setFeedback({ status: "success", message: "Link added to card." });

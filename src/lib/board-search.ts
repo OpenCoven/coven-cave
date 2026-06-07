@@ -73,6 +73,15 @@ function tokenMatches(
   const value = token.value;
   const labelValues = card.labels ?? [];
   const linkValues = card.links ?? [];
+  const githubValues = (card.github ?? []).flatMap((item) => [
+    item.title,
+    item.repo,
+    item.url,
+    item.kind,
+    item.state ?? "",
+    item.number != null ? String(item.number) : "",
+    ...(item.labels ?? []),
+  ]);
   const familiar = familiarValues(card, familiarsById);
 
   switch (token.key) {
@@ -105,6 +114,9 @@ function tokenMatches(
     case "url":
     case "urls":
       return includesAny(linkValues, value);
+    case "github":
+    case "gh":
+      return includesAny(githubValues, value);
     case "id":
       return normalize(card.id).includes(value);
     case "is":
@@ -122,6 +134,7 @@ function tokenMatches(
           card.sessionId ?? "",
           card.cwd ?? "",
           ...linkValues,
+          ...githubValues,
           ...labelValues,
           ...familiar,
         ],

@@ -1,5 +1,13 @@
 // ── GitHub item context (for attaching to board / chat / familiar) ───────────
 
+import type { CardGitHubLink } from "@/lib/cave-board-types";
+import {
+  mergeLinksWithGitHub,
+  mergeTaskGitHubLinks,
+  taskGitHubLinkFromGitHubItem,
+  taskGitHubLinkFromUrl,
+} from "@/lib/task-github";
+
 export type GitHubItem = {
   kind: "pr" | "issue" | "review_request" | "notification";
   id: string;
@@ -57,6 +65,7 @@ export async function createBoardCardFromGitHubItem(
         notes,
         familiarId,
         links: [item.url],
+        github: [taskGitHubLinkFromGitHubItem(item)],
         status: "inbox" as const,
       }),
     });
@@ -72,21 +81,32 @@ export async function createBoardCardFromGitHubItem(
 
 export async function attachGitHubItemToCard(
   cardId: string,
-  url: string,
+  item: GitHubItem | string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    const githubLink = typeof item === "string"
+      ? taskGitHubLinkFromUrl(item)
+      : taskGitHubLinkFromGitHubItem(item);
+    const url = typeof item === "string" ? item : item.url;
     // Fetch existing card first to merge links
     const getRes = await fetch("/api/board");
     const getData = await getRes.json().catch(() => null);
-    const cards: Array<{ id: string; links?: string[] }> = getData?.cards ?? [];
+    const cards: Array<{ id: string; links?: string[]; github?: CardGitHubLink[] }> = getData?.cards ?? [];
     const existing = cards.find((c) => c.id === cardId);
     const existingLinks: string[] = existing?.links ?? [];
-    const mergedLinks = [...new Set([...existingLinks, url])];
+    const existingGitHub: CardGitHubLink[] = existing?.github ?? [];
+    const github = githubLink
+      ? mergeTaskGitHubLinks(
+          existingGitHub,
+          typeof item === "string" ? githubLink : taskGitHubLinkFromGitHubItem(item),
+        )
+      : existingGitHub;
+    const mergedLinks = mergeLinksWithGitHub([...new Set([...existingLinks, url])], github);
 
     const res = await fetch(`/api/board/${cardId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ links: mergedLinks }),
+      body: JSON.stringify({ links: mergedLinks, github }),
     });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data?.ok) {
