@@ -98,6 +98,16 @@ pnpm dev                        # browser-only at http://localhost:3000
 
 You'll need the `coven` daemon running locally so Cave has something to talk to. See [OpenCoven/coven](https://github.com/OpenCoven/coven) for setup. For tester fixtures, run the dev server with `NEXT_PUBLIC_DEMO=true`.
 
+### Mobile over Tailscale
+
+For private phone testing on the same tailnet:
+
+```bash
+pnpm mobile:tailscale
+```
+
+Then open the HTTPS URL from `tailscale serve status` on the phone. See `docs/mobile-tailscale.md`.
+
 ### Pre-commit hook
 
 `scripts/git-hooks/pre-commit` blocks commits that introduce env files,
