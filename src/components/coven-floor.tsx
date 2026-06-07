@@ -3,8 +3,6 @@
 import "@/styles/board.css";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { parseGlyphString } from "@/lib/familiar-glyph";
 import { Icon } from "@/lib/icon";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
@@ -238,28 +236,6 @@ function SessionSummaryRow({ counts }: { counts: ReturnType<typeof sessionCounts
   );
 }
 
-function FamiliarGlyphCell({ card }: { card: FamiliarCard }) {
-  const glyph = parseGlyphString(card.glyph) ?? {
-    kind: "icon" as const,
-    name: "ph:sparkle-fill",
-  };
-  const color = statusColor(card.status);
-
-  return (
-    <span
-      className="floor-familiar-avatar"
-      style={{
-        background: `color-mix(in srgb, ${color} 14%, var(--bg-raised))`,
-        borderColor: `color-mix(in srgb, ${color} 28%, transparent)`,
-        color,
-      }}
-      aria-hidden
-    >
-      <FamiliarGlyph glyph={glyph} size="sm" className="inline-flex items-center justify-center" />
-    </span>
-  );
-}
-
 export function CovenFloor() {
   const [familiars, setFamiliars] = useState<FamiliarCard[]>([]);
   const [computedAt, setComputedAt] = useState<string | null>(null);
@@ -393,7 +369,6 @@ export function CovenFloor() {
                             >
                               <Icon name="ph:caret-right" width={13} height={13} aria-hidden />
                             </button>
-                            <FamiliarGlyphCell card={card} />
                             <div className="min-w-0">
                               <div className="floor-familiar-name">{card.displayName}</div>
                               <div className="board-table-muted">{card.role}</div>

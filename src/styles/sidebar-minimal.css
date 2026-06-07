@@ -969,7 +969,7 @@
   flex-direction: column;
   gap: 11px;
   overflow-y: auto;
-  padding: 0 6px 2px;
+  padding: 0 4px 2px;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hairline) transparent;
 }
@@ -1000,10 +1000,16 @@
 
 .sidebar-folder-row,
 .sidebar-actions--footer .sidebar-action-row {
+  gap: 7px;
   min-height: 34px;
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 0 8px;
   color: var(--text-muted);
+}
+
+.sidebar-folder-icon,
+.sidebar-actions--footer .sidebar-action-icon {
+  width: 14px;
 }
 
 .sidebar-folder-row:hover,
