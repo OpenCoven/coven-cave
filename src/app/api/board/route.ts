@@ -5,6 +5,7 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
+import type { CardGitHubLink } from "@/lib/cave-board-types";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export async function POST(req: Request) {
     sessionId?: string | null;
     cwd?: string | null;
     links?: string[];
+    github?: CardGitHubLink[];
     labels?: string[];
     template?: string | null;
   };
@@ -43,6 +45,7 @@ export async function POST(req: Request) {
     sessionId: body.sessionId,
     cwd: body.cwd,
     links: body.links,
+    github: body.github,
     labels: body.labels,
     template: body.template,
   });

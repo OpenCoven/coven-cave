@@ -3,7 +3,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import type { CardGitHubLink, CardStatus } from "@/lib/cave-board-types";
 import type { LibraryGitHubItem, GitHubItemKind } from "@/lib/library-types";
+import {
+  libraryItemToTaskGitHubLink,
+  mergeLinksWithGitHub,
+  mergeTaskGitHubLinks,
+} from "@/lib/task-github";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -83,7 +89,20 @@ function parseGitHubUrl(url: string): { repo: string; kind: GitHubItemKind; numb
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type Familiar = { id: string; display_name: string; emoji?: string };
-type BoardCard = { id: string; title: string; status: string; familiarId?: string | null };
+type BoardCard = {
+  id: string;
+  title: string;
+  notes?: string;
+  status: string;
+  familiarId?: string | null;
+  links?: string[];
+  github?: CardGitHubLink[];
+  labels?: string[];
+};
+
+function mergeStringList(values: Array<string | undefined | null>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
 
 // ── Attach to Task modal ───────────────────────────────────────────────────
 
@@ -101,7 +120,7 @@ function AttachTaskModal({
   const [notes, setNotes]           = useState(item.url);
   const [familiarId, setFamiliarId] = useState("");
   const [cardId, setCardId]         = useState("");
-  const [status, setStatus]         = useState<"backlog" | "todo" | "in-progress">("backlog");
+  const [status, setStatus]         = useState<CardStatus>("backlog");
   const [busy, setBusy]             = useState(false);
   const [done, setDone]             = useState<string | null>(null);
   const [err, setErr]               = useState<string | null>(null);
@@ -128,6 +147,7 @@ function AttachTaskModal({
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
+      const github = [libraryItemToTaskGitHubLink(item)];
       if (mode === "new") {
         const res = await fetch("/api/board", {
           method: "POST",
@@ -137,6 +157,8 @@ function AttachTaskModal({
             notes: notes.trim() || undefined,
             status,
             familiarId: familiarId || null,
+            links: mergeLinksWithGitHub([], github),
+            github,
             labels: [item.kind, item.repo].filter(Boolean),
           }),
         });
@@ -144,14 +166,25 @@ function AttachTaskModal({
         if (!j.ok) throw new Error("Failed to create task");
         setDone(`Created task "${j.card?.title ?? title}"`);
       } else {
-        // Attach link — patch the card's notes with the GitHub URL
         if (!cardId) { setErr("Select an existing task"); setBusy(false); return; }
-        const existing = cards.find((c) => c.id === cardId);
+        const existing = cards.find((c) => c.id === cardId) ?? {
+          id: cardId,
+          title: cardId,
+          status: "",
+          links: [],
+          github: [],
+          labels: [],
+          notes: "",
+        };
+        const mergedGitHub = mergeTaskGitHubLinks(existing.github, libraryItemToTaskGitHubLink(item));
         const res = await fetch(`/api/board/${cardId}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            notes: [(existing as { notes?: string } | undefined)?.notes, `GitHub: ${item.url}`]
+            links: mergeLinksWithGitHub(existing.links, mergedGitHub),
+            github: mergeTaskGitHubLinks(existing.github, libraryItemToTaskGitHubLink(item)),
+            labels: mergeStringList([...(existing.labels ?? []), item.kind, item.repo]),
+            notes: [existing.notes, `GitHub: ${item.url}`]
               .filter(Boolean).join("\n"),
           }),
         });
@@ -212,10 +245,10 @@ function AttachTaskModal({
                 </label>
                 <div className="gh-modal-row">
                   <label className="gh-modal-label" style={{ flex: 1 }}>Status
-                    <select className="gh-modal-select" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+                    <select className="gh-modal-select" value={status} onChange={(e) => setStatus(e.target.value as CardStatus)}>
                       <option value="backlog">Backlog</option>
-                      <option value="todo">To Do</option>
-                      <option value="in-progress">In Progress</option>
+                      <option value="inbox">Inbox</option>
+                      <option value="running">Running</option>
                     </select>
                   </label>
                   <label className="gh-modal-label" style={{ flex: 1 }}>Assign to

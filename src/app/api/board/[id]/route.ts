@@ -7,6 +7,7 @@ import {
   type CardStatus,
 } from "@/lib/cave-board";
 import type { CardStep } from "@/lib/cave-board-types";
+import type { CardGitHubLink } from "@/lib/cave-board-types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export async function PATCH(
     sessionId: string | null;
     cwd: string | null;
     links: string[];
+    github: CardGitHubLink[];
     labels: string[];
     needsHuman: boolean;
     runningSince: string | undefined;

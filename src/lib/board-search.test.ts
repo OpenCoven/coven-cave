@@ -16,6 +16,16 @@ const card = {
   sessionId: "session-1",
   cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
   links: ["https://github.com/OpenCoven/coven-cave/pull/153"],
+  github: [{
+    id: "github:pr:opencoven/coven-cave:153",
+    kind: "pr",
+    repo: "OpenCoven/coven-cave",
+    number: 153,
+    title: "Board table GitHub task field",
+    url: "https://github.com/OpenCoven/coven-cave/pull/153",
+    state: "open",
+    labels: ["ui"],
+  }],
   labels: ["ux", "board", "drag"],
 };
 
@@ -36,6 +46,7 @@ assert.equal(cardMatchesBoardSearch(card, "label:ux status:inbox familiar:cody",
 assert.equal(cardMatchesBoardSearch(card, 'title:"between columns" -label:backend', familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "cwd:coven-cave link:github.com", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "path:OpenCoven url:pull/153", familiarsById), true);
+assert.equal(cardMatchesBoardSearch(card, "github:table gh:153", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "session:session-1", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "pull/153", familiarsById), true);
 assert.equal(cardMatchesBoardSearch(card, "coven-cave", familiarsById), true);
@@ -48,9 +59,10 @@ assert.equal(cardMatchesBoardSearch(card, "priority:urgent", familiarsById), fal
 const boardTypes = await readFile(new URL("./cave-board-types.ts", import.meta.url), "utf8");
 assert.match(boardTypes, /cwd: string \| null/, "Task cards should persist cwd");
 assert.match(boardTypes, /links: string\[\]/, "Task cards should persist links");
+assert.match(boardTypes, /github: CardGitHubLink\[\]/, "Task cards should persist GitHub connections");
 
 const boardStore = await readFile(new URL("./cave-board.ts", import.meta.url), "utf8");
-assert.match(boardStore, /links: normalizeLinks/, "Task persistence should normalize links");
+assert.match(boardStore, /mergeLinksWithGitHub\(normalizeLinks/, "Task persistence should normalize links");
 assert.match(boardStore, /cwd: normalizeCwd/, "Task persistence should normalize cwd");
 
 const boardApi = await readFile(new URL("../app/api/board/route.ts", import.meta.url), "utf8");
@@ -68,5 +80,5 @@ assert.match(newCardModal, /label="Links"/, "New task modal should include links
 assert.match(newCardModal, /label="Session \(optional\)"/, "New task modal should mark session optional");
 
 const boardInspector = await readFile(new URL("../components/board-inspector.tsx", import.meta.url), "utf8");
-assert.match(boardInspector, /board-task-link/, "Task inspector should render task links");
-assert.match(boardInspector, /Session \(optional\)/, "Task inspector should allow optional session edits");
+assert.match(boardInspector, /link-item-anchor/, "Task inspector should render task links");
+assert.match(boardInspector, /card\.sessionId/, "Task inspector should render task session context");
