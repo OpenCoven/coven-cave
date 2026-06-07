@@ -9,6 +9,9 @@ import { LibraryBookmarksList } from "@/components/library-bookmarks-list";
 import { LibraryReadingList } from "@/components/library-reading-list";
 import { LibraryGitHubList } from "@/components/library-github-list";
 import { LibraryDocPreview, type SelectedItem } from "@/components/library-doc-preview";
+import { LibraryTimeline } from "@/components/library-timeline";
+import type { TimelineEntry } from "@/app/api/library/all/route";
+import type { Familiar } from "@/lib/types";
 import type {
   LibraryCollection,
   LibraryDoc,
@@ -20,7 +23,7 @@ import type {
 } from "@/lib/library-types";
 
 export function LibraryView() {
-  const [activeSection, setActiveSection] = useState<LibrarySectionKind>("docs");
+  const [activeSection, setActiveSection] = useState<LibrarySectionKind>("all");
   const [activeCollection, setActiveCollection] = useState("all");
   const [collections, setCollections] = useState<LibraryCollection[]>([]);
   const [docs, setDocs] = useState<LibraryDoc[]>([]);
@@ -33,6 +36,15 @@ export function LibraryView() {
   const [listHover, setListHover] = useState(false);
   const listExpanded = listPinned || listHover;
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/familiars", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: { ok: boolean; familiars?: Familiar[] }) => { if (j.ok) setFamiliars(j.familiars ?? []); })
+      .catch(() => undefined);
+  }, []);
 
   const loadDocs = useCallback(async (collectionId: string) => {
     setLoading(true);
@@ -132,6 +144,22 @@ export function LibraryView() {
           "library-list-content",
           listExpanded ? "library-list-content--visible" : "library-list-content--hidden",
         ].join(" ")}>
+          {activeSection === "all" && (
+            <LibraryTimeline
+              familiars={familiars}
+              selectedEntryId={timelineSelectedId}
+              onSelect={(entry: TimelineEntry) => {
+                setTimelineSelectedId(entry.item.id);
+                if (entry.list === "bookmarks") {
+                  setSelectedItem({ kind: "bookmark", item: entry.item as any });
+                } else if (entry.list === "reading") {
+                  setSelectedItem({ kind: "reading", item: entry.item as any });
+                } else {
+                  setSelectedItem({ kind: "github", item: entry.item as any });
+                }
+              }}
+            />
+          )}
           {activeSection === "docs" && (
             <LibraryDocList
               docs={docs}
