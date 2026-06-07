@@ -128,8 +128,8 @@ function SessionTraceLine({ session }: { session: SessionSummary }) {
 
 function FamiliarGlyphCell({ card }: { card: FamiliarCard }) {
   const glyph = parseGlyphString(card.glyph) ?? {
-    kind: "emoji" as const,
-    char: card.displayName.charAt(0).toUpperCase(),
+    kind: "icon" as const,
+    name: "ph:sparkle-fill",
   };
   const color = statusColor(card.status);
 
