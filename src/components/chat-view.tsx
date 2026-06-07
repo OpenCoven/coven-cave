@@ -6,6 +6,7 @@ import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
@@ -401,6 +402,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (!args.trim()) return true;
       setInput("");
       setTimeout(() => sendRaw(args), 0);
+      return true;
+    }
+    // /save, /bookmark, /read — route a URL into the library
+    if (command === "/save" || command === "/bookmark" || command === "/read") {
+      const parsed = slashSaveParse(args);
+      if ("error" in parsed) {
+        appendSystem("Usage: /save <url> [bookmarks|reading|github] [#tag]");
+        setInput("");
+        return true;
+      }
+      setInput("");
+      void (async () => {
+        try {
+          const res = await fetch("/api/library/route-link", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              url: parsed.url,
+              source: { kind: "slash", originSessionId: currentSessionRef.current ?? null },
+              familiar: familiar.id,
+              tags: parsed.tags,
+              listHint: parsed.listHint,
+            }),
+          });
+          const json = await res.json() as { ok: boolean; deduped?: boolean; classify?: { rule: string } };
+          if (!json.ok) {
+            appendSystem("Save failed.");
+          } else if (json.deduped) {
+            appendSystem("Already in library.");
+          } else {
+            const list =
+              json.classify?.rule === "github" ? "GitHub" :
+              json.classify?.rule === "article-host" || json.classify?.rule === "paper-host" || json.classify?.rule === "video-host" ? "Reading" :
+              "Bookmarks";
+            appendSystem(`Saved to ${list}.`);
+          }
+        } catch {
+          appendSystem("Save failed.");
+        }
+      })();
       return true;
     }
     // Unknown slash command: surface inline rather than send to the harness

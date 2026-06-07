@@ -47,6 +47,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/run", hint: "run task", description: "Run a task through the active familiar's harness.", argPlaceholder: "task…", section: "launch" },
   { name: "/codex", hint: "codex harness", description: "Run a task through Codex regardless of active familiar.", argPlaceholder: "task…", section: "launch" },
   { name: "/claude", hint: "claude harness", description: "Run a task through Claude regardless of active familiar.", argPlaceholder: "task…", section: "launch" },
+
+  // Library
+  { name: "/save", aliases: ["/bookmark", "/read"], hint: "/save <url> [bookmarks|reading|github] [#tag]", description: "Route a URL into the library (auto-classified).", section: "view" },
 ];
 
 /** Build a lookup that includes every name + every alias → canonical name. */
