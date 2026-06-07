@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:app": "bash scripts/dev-app.sh",
+    "mobile:tailscale": "bash scripts/mobile-tailscale.sh",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "start": "next start"
