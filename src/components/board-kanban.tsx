@@ -6,6 +6,8 @@ import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { parseGlyphString } from "@/lib/familiar-glyph";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },
@@ -16,11 +18,11 @@ const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "done",     label: "Done",     hint: "Completed work." },
 ];
 
-const PRIORITIES: { id: CardPriority; label: string; pill: string }[] = [
-  { id: "urgent", label: "Urgent", pill: "bg-muted text-foreground border-border-strong" },
-  { id: "high",   label: "High",   pill: "bg-card text-foreground border-border-strong" },
-  { id: "medium", label: "Medium", pill: "bg-card text-muted-foreground border-border" },
-  { id: "low",    label: "Low",    pill: "bg-card text-muted-foreground border-border" },
+const PRIORITIES: { id: CardPriority; label: string }[] = [
+  { id: "urgent", label: "Urgent" },
+  { id: "high",   label: "High" },
+  { id: "medium", label: "Medium" },
+  { id: "low",    label: "Low" },
 ];
 
 type Props = {
@@ -131,10 +133,10 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
             )}
             {!isCollapsed && (
               <div
-                className={isMultiSwimlane ? "board-swimlane-rail" : "h-full overflow-x-auto overflow-y-hidden scroll-smooth"}
+                className={isMultiSwimlane ? "board-swimlane-rail" : "board-kanban-rail-wrap"}
                 style={isMultiSwimlane ? {} : { flex: 1, minHeight: 0 }}
                 ref={(el) => { if (el) railRefs.current.set(key, el); }}>
-                <div className="flex gap-3 px-5 py-4" style={isMultiSwimlane ? { height: 320, minWidth: "max-content" } : { height: "100%", minWidth: "max-content" }}>
+                <div className="board-kanban-rail" style={isMultiSwimlane ? { height: 320 } : { height: "100%" }}>
                   {COLUMNS.map((col) => {
                     const rows = grpGrouped.get(col.id) ?? [];
                     const isDrop = dropTarget === col.id;
@@ -144,20 +146,32 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
                         onDragOver={(e) => handleDragOver(e, col.id)}
                         onDragLeave={(e) => handleDragLeave(e, col.id)}
                         onDrop={(e) => handleDrop(e, col.id)}
-                        className={`flex flex-shrink-0 flex-col rounded-lg border bg-card transition-colors ${isDrop ? "border-border-strong bg-muted" : "border-border"}`}
-                        style={{ width: 280, height: "100%" }}>
-                        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground" title={col.hint}>{col.label}</span>
-                            <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">{rows.length}</span>
-                          </div>
-                          <button onClick={() => onNewCard(col.id)} title={`Add to ${col.label}`}
-                            className="grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground">+</button>
+                        className={`board-kanban-column${isDrop ? " board-kanban-column--drop" : ""}`}>
+                        <div className="board-kanban-column-header">
+                          <span className={`board-kanban-column-dot board-kanban-column-dot--${col.id}`} aria-hidden />
+                          <span className="board-kanban-column-label" title={col.hint}>{col.label}</span>
+                          <span className="board-kanban-column-count">{rows.length}</span>
+                          <button
+                            type="button"
+                            onClick={() => onNewCard(col.id)}
+                            title={`Add to ${col.label}`}
+                            className="board-kanban-column-add"
+                            aria-label={`Add to ${col.label}`}
+                          >
+                            <Icon name="ph:plus-bold" width={10} />
+                          </button>
                         </div>
-                        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                        <ul className="board-kanban-list">
                           {rows.length === 0 && (
-                            <li className={`rounded-md border border-dashed px-3 py-4 text-center text-[11px] ${isDrop ? "border-border-strong text-foreground" : "border-border text-muted-foreground"}`}>
-                              {isDrop ? "Drop here" : col.hint}
+                            <li className={`board-kanban-empty${isDrop ? " board-kanban-empty--drop" : ""}`}>
+                              {isDrop ? (
+                                <>
+                                  <Icon name="ph:arrow-down-bold" width={14} />
+                                  <span>Drop here</span>
+                                </>
+                              ) : (
+                                <span>{col.hint}</span>
+                              )}
                             </li>
                           )}
                           {rows.map((card) => (
@@ -196,6 +210,10 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
   const familiar = familiars.find((f) => f.id === card.familiarId) ?? null;
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const pri = PRIORITIES.find((p) => p.id === card.priority)!;
+  const familiarGlyph = familiar
+    ? parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? null
+    : null;
+  const hasChips = !!card.cwd || card.links.length > 0 || card.labels.length > 0;
 
   return (
     <li draggable
@@ -204,42 +222,63 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
       onClick={() => { if (draggedRef.current) return; onSelect(); }}
       onKeyDown={(e) => { if (e.key !== "Enter" && e.key !== " ") return; e.preventDefault(); onSelect(); }}
       tabIndex={0} aria-selected={isSelected}
-      className={`cursor-grab rounded-lg border bg-background p-3 outline-none transition-all active:cursor-grabbing ${
-        isSelected ? "border-border-strong bg-muted/60 ring-1 ring-border-strong" : "border-border hover:border-border-strong hover:bg-muted/30"
-      } ${isDragging ? "opacity-40" : ""}`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] uppercase tracking-widest ${pri.pill}`}>{pri.label}</span>
-        <span className="text-[9px] uppercase tracking-widest text-muted-foreground">{card.status}</span>
+      className={`board-kanban-card board-kanban-card--priority-${card.priority}${
+        isSelected ? " board-kanban-card--selected" : ""
+      }${isDragging ? " board-kanban-card--dragging" : ""}`}
+    >
+      <div className="board-kanban-card-top">
+        <span className={`board-kanban-priority-pill board-kanban-priority-pill--${card.priority}`}>{pri.label}</span>
+        <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
       </div>
-      <div className="min-w-0 text-[13px] font-medium leading-snug text-foreground">{card.title}</div>
-      {card.notes && <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{card.notes}</p>}
-      {(card.cwd || card.links.length > 0) && (
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-          {card.cwd && <span className="min-w-0 max-w-full truncate rounded border border-border bg-card px-1.5 py-px">{shortPath(card.cwd)}</span>}
-          {card.links.length > 0 && <span className="rounded border border-border bg-card px-1.5 py-px">{card.links.length} link{card.links.length === 1 ? "" : "s"}</span>}
+      <div className="board-kanban-card-title">{card.title}</div>
+      {card.notes && <p className="board-kanban-card-notes">{card.notes}</p>}
+      {hasChips && (
+        <div className="board-kanban-card-chips">
+          {card.cwd && (
+            <span className="board-kanban-card-chip board-kanban-card-chip--path" title={card.cwd}>
+              <Icon name="ph:folder" width={9} />
+              {shortPath(card.cwd)}
+            </span>
+          )}
+          {card.links.length > 0 && (
+            <span className="board-kanban-card-chip">
+              <Icon name="ph:link-simple" width={9} />
+              {card.links.length}
+            </span>
+          )}
+          {card.labels.slice(0, 2).map((l) => (
+            <span key={l} className="board-kanban-card-chip">{l}</span>
+          ))}
+          {card.labels.length > 2 && (
+            <span className="board-kanban-card-chip board-kanban-card-chip--more">+{card.labels.length - 2}</span>
+          )}
         </div>
       )}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
-        {card.labels.slice(0, 3).map((l) => (
-          <span key={l} className="rounded border border-border bg-card px-1.5 py-px text-[10px] text-foreground">{l}</span>
-        ))}
-        {card.labels.length > 3 && <span className="text-[10px] text-muted-foreground">+{card.labels.length - 3}</span>}
-      </div>
-      <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-        <span className="min-w-0 truncate">{familiar?.display_name ?? "unassigned"}</span>
+      <div className="board-kanban-card-footer">
+        <span className="board-kanban-card-familiar">
+          <span className={`board-kanban-card-familiar-avatar${familiarGlyph ? "" : " board-kanban-card-familiar-avatar--empty"}`}>
+            {familiarGlyph ? <FamiliarGlyph glyph={familiarGlyph} size="sm" /> : <Icon name="ph:user" width={9} />}
+          </span>
+          <span className="board-kanban-card-familiar-name">{familiar?.display_name ?? "Unassigned"}</span>
+        </span>
         {session ? (
-          <button onClick={(e) => { e.stopPropagation(); onJumpToSession?.(session.id, session.familiarId ?? null); }}
-            className="ml-auto rounded border border-border bg-card px-1.5 py-px text-foreground hover:bg-muted">
-            open
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onJumpToSession?.(session.id, session.familiarId ?? null); }}
+            className="board-kanban-card-action"
+          >
+            <Icon name="ph:arrow-square-out" width={10} />
+            Open
           </button>
         ) : (
           <button
+            type="button"
             disabled={chatLinking}
             onClick={(e) => { e.stopPropagation(); void onOpenTaskChat?.(card.id); }}
-            className="ml-auto rounded border border-border bg-card px-1.5 py-px text-foreground hover:bg-muted disabled:cursor-wait disabled:opacity-60"
+            className="board-kanban-card-action board-kanban-card-action--chat"
           >
-            {chatLinking ? "starting" : "chat"}
+            <Icon name="ph:chat-circle-dots" width={10} />
+            {chatLinking ? "Starting…" : "Chat"}
           </button>
         )}
       </div>
