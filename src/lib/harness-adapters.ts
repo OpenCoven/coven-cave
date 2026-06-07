@@ -38,7 +38,14 @@ export type AdapterReport = {
   manifestPath: string | null;
 };
 
-export type AdapterSetupState = { ok: true; detail: string } | { ok: false; hint: string };
+export type AdapterSetupState =
+  | { ok: true; detail: string }
+  | { ok: false; hint: string };
+
+export type AdapterManifestScaffold = {
+  filename: string;
+  contents: string;
+};
 
 export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
   {
@@ -46,7 +53,8 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     label: "Codex",
     binary: "codex",
     chatSupported: true,
-    installHint: "Install Codex with `npm install -g @openai/codex`, then run `codex login`.",
+    installHint:
+      "Install Codex with `npm install -g @openai/codex`, then run `codex login`.",
     source: "bundled",
   },
   {
@@ -55,7 +63,18 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     binary: "claude",
     chatSupported: true,
     versionArgs: ["--version"],
-    installHint: "Install Claude Code with `npm install -g @anthropic-ai/claude-code`, then run `claude doctor`.",
+    installHint:
+      "Install Claude Code with `npm install -g @anthropic-ai/claude-code`, then run `claude doctor`.",
+    source: "bundled",
+  },
+  {
+    id: "hermes",
+    label: "Hermes",
+    binary: "hermes",
+    chatSupported: true,
+    versionArgs: ["--version"],
+    installHint:
+      "Install Hermes, make sure `hermes` is on PATH, then let Cave create its Coven adapter manifest.",
     source: "bundled",
   },
 ];
@@ -65,7 +84,16 @@ export function covenHelpSupportsAdapterList(helpText: string): boolean {
 }
 
 export function mergeAdapterReports(
-  localReports: Array<Partial<AdapterReport> & { id: string; label: string; binary: string; installed: boolean; path: string | null; version: string | null }>,
+  localReports: Array<
+    Partial<AdapterReport> & {
+      id: string;
+      label: string;
+      binary: string;
+      installed: boolean;
+      path: string | null;
+      version: string | null;
+    }
+  >,
   covenReports: CovenAdapterSummary[],
 ): AdapterReport[] {
   const merged = new Map<string, AdapterReport>();
@@ -91,7 +119,7 @@ export function mergeAdapterReports(
       id: coven.id,
       label: coven.label,
       binary: coven.executable,
-      chatSupported: existing?.chatSupported ?? (coven.id === "codex" || coven.id === "claude"),
+      chatSupported: true,
       installed: coven.available || existing?.installed === true,
       path: existing?.path ?? null,
       version: existing?.version ?? null,
@@ -102,7 +130,8 @@ export function mergeAdapterReports(
   }
 
   return [...merged.values()].sort((a, b) => {
-    const rank = (id: string) => (id === "codex" ? 0 : id === "claude" ? 1 : 2);
+    const rank = (id: string) =>
+      id === "codex" ? 0 : id === "claude" ? 1 : id === "hermes" ? 2 : 3;
     return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
   });
 }
@@ -110,10 +139,61 @@ export function mergeAdapterReports(
 export function adapterSetupState(reports: AdapterReport[]): AdapterSetupState {
   const ready = reports.filter((adapter) => adapter.installed);
   if (ready.length > 0) {
-    return { ok: true, detail: ready.map((adapter) => adapter.label).join(", ") };
+    return {
+      ok: true,
+      detail: ready.map((adapter) => adapter.label).join(", "),
+    };
   }
   return {
     ok: false,
-    hint: "Install Codex or Claude Code, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install Codex, Claude Code, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+  };
+}
+
+export function runtimeSourceSetupState(
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): AdapterSetupState {
+  const local = adapterSetupState(reports);
+  if (local.ok) return local;
+  if (openclawAgentCount > 0) {
+    return {
+      ok: true,
+      detail: `${openclawAgentCount} OpenClaw agent${openclawAgentCount === 1 ? "" : "s"}`,
+    };
+  }
+  return local;
+}
+
+export function adapterManifestScaffoldForHarness(
+  harnessId: string,
+): AdapterManifestScaffold | null {
+  if (harnessId !== "hermes") return null;
+  return {
+    filename: "hermes.json",
+    contents: `${JSON.stringify(
+      {
+        adapters: [
+          {
+            id: "hermes",
+            label: "Hermes",
+            executable: "hermes",
+            interactive_prompt_prefix_args: ["chat", "--source", "coven", "-q"],
+            non_interactive_prompt_prefix_args: [
+              "chat",
+              "--source",
+              "coven",
+              "-Q",
+              "-q",
+            ],
+            install_hint:
+              "Install Hermes, make sure `hermes` is on PATH, and complete Hermes setup before using this adapter.",
+            system_prompt_flag: null,
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
   };
 }

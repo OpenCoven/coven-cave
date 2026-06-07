@@ -23,7 +23,23 @@ Download the matching asset from [Releases](https://github.com/OpenCoven/coven-c
 - **Linux:** download the `.AppImage`, run `chmod +x CovenCave_*.AppImage`, then launch it from your file manager or terminal.
 - **macOS:** download the `.dmg`, open it, and drag CovenCave to Applications.
 
-You'll also need the local [`coven`](https://github.com/OpenCoven/coven) CLI/daemon. On first launch, Cave opens a full-width setup screen that checks for the CLI, creates your local `~/.coven` folder, lets you connect one of your local OpenClaw agents as a familiar, and starts the daemon.
+You'll also need a local runtime source: Codex, Claude Code, Hermes, an existing OpenClaw agent, or another Coven adapter manifest. On first launch, Cave opens a full-width setup screen that checks the `coven` CLI/daemon, creates your local `~/.coven` folder, lets you choose whichever runtime you already have, writes the first familiar binding, creates a Hermes adapter manifest when needed, and starts the daemon.
+
+### First familiar without OpenClaw
+
+OpenClaw is not required to use CovenCave. A fresh Windows user can start with any installed harness:
+
+1. Install CovenCave from the official release asset.
+2. Install or expose the `coven` CLI so `coven` works from a new terminal.
+3. Install and authenticate at least one runtime:
+   - Codex: `npm install -g @openai/codex`, then `codex login`
+   - Claude Code: `npm install -g @anthropic-ai/claude-code`, then `claude doctor`
+   - Hermes: install Hermes, then make sure `hermes --version` works
+   - OpenClaw: keep using an existing agent under `~/.openclaw/agents`
+4. Open CovenCave and choose the runtime source that is already healthy on your machine. If you pick Hermes, Cave writes `~/.coven/adapters/hermes.json` so the Coven daemon can launch it through the external adapter path.
+5. Name the familiar, click the matching setup button, start the daemon, then open Cave.
+
+The setup screen treats Codex, Claude Code, Hermes, and OpenClaw as peer sources. If setup stalls, click **Copy diagnostics** and include the output with the relevant Cave or Coven sidecar logs.
 
 ### Demo mode for testers
 
@@ -38,6 +54,7 @@ Use demo mode only for local testing or demos. It intentionally injects sample f
 ## Screenshots
 
 <!-- Cave desktop interface -->
+
 ![Cave — Shell view](screenshots/shell.png)
 ![Cave — Chat view](screenshots/chat.png)
 ![Cave — Terminal](screenshots/terminal.png)
@@ -91,22 +108,22 @@ Bypass a confirmed false positive with `git commit --no-verify`.
 
 ## Keybinds
 
-| Shortcut | Action |
-|----------|--------|
-| `⌘B` | Toggle familiar rail |
-| `⇧⌘B` | Toggle inspector pane |
-| _drag handles_ | Resize side panels |
+| Shortcut       | Action                |
+| -------------- | --------------------- |
+| `⌘B`           | Toggle familiar rail  |
+| `⇧⌘B`          | Toggle inspector pane |
+| _drag handles_ | Resize side panels    |
 
 ## Stack
 
-| Layer | Tech |
-|-------|------|
-| Native shell | Tauri 2 |
-| Frontend | Next.js 16 (App Router, Turbopack) |
-| Styles | Tailwind v4 |
-| Markdown | Shiki (syntax highlighting) |
-| Terminal | xterm.js |
-| IPC | Unix socket → `~/.coven/coven.sock` |
+| Layer        | Tech                                |
+| ------------ | ----------------------------------- |
+| Native shell | Tauri 2                             |
+| Frontend     | Next.js 16 (App Router, Turbopack)  |
+| Styles       | Tailwind v4                         |
+| Markdown     | Shiki (syntax highlighting)         |
+| Terminal     | xterm.js                            |
+| IPC          | Unix socket → `~/.coven/coven.sock` |
 
 ## App identity
 
@@ -135,6 +152,7 @@ _The Coven lives in the Cave._
 ## Release standard
 
 Every release ships with:
+
 - A comprehensive changelog describing features, fixes, and install instructions
 - Screenshots updated to reflect the current UI
 - SHA256 checksums for all artifacts

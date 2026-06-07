@@ -10,6 +10,7 @@ import {
   type OnboardingFamiliarDraft,
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
+import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,12 +43,16 @@ export async function POST(req: Request) {
     draft = body.familiar ? normalizeFamiliarDraft(body.familiar) : null;
   } catch (err) {
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "Invalid familiar." },
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : "Invalid familiar.",
+      },
       { status: 400 },
     );
   }
   const harness = (draft?.harness ?? body.harness ?? "codex").trim() || "codex";
-  const model = (draft?.model ?? body.model ?? "codex-local").trim() || "codex-local";
+  const model =
+    (draft?.model ?? body.model ?? "codex-local").trim() || "codex-local";
 
   const home = homedir();
   const covenDir = path.join(home, ".coven");
@@ -55,12 +60,23 @@ export async function POST(req: Request) {
   const configJson = path.join(covenDir, "cave-config.json");
   const conversationsDir = path.join(covenDir, "cave-conversations");
   const memoryDir = path.join(covenDir, "memory");
+  const adaptersDir = path.join(covenDir, "adapters");
 
   const wrote: string[] = [];
 
   await mkdir(covenDir, { recursive: true });
   await mkdir(conversationsDir, { recursive: true });
   await mkdir(memoryDir, { recursive: true });
+  await mkdir(adaptersDir, { recursive: true });
+
+  const adapterManifest = adapterManifestScaffoldForHarness(harness);
+  if (adapterManifest) {
+    const manifestPath = path.join(adaptersDir, adapterManifest.filename);
+    if (!(await pathExists(manifestPath))) {
+      await writeFile(manifestPath, adapterManifest.contents, "utf8");
+      wrote.push(`adapters/${adapterManifest.filename}`);
+    }
+  }
 
   const familiarsExists = await pathExists(familiarsToml);
   if (!familiarsExists) {
@@ -70,7 +86,11 @@ export async function POST(req: Request) {
     const existingToml = await readFile(familiarsToml, "utf8");
     if (!familiarsTomlContainsId(existingToml, draft.id)) {
       const separator = existingToml.endsWith("\n") ? "\n" : "\n\n";
-      await writeFile(familiarsToml, `${existingToml}${separator}${buildFamiliarsToml(draft).replace(/^# User familiars for this Coven\.\n+/, "")}`, "utf8");
+      await writeFile(
+        familiarsToml,
+        `${existingToml}${separator}${buildFamiliarsToml(draft).replace(/^# User familiars for this Coven\.\n+/, "")}`,
+        "utf8",
+      );
       wrote.push("familiars.toml");
     }
   }
@@ -86,7 +106,7 @@ export async function POST(req: Request) {
           ...(existing.familiars ?? {}),
           [draft.id]: { harness: draft.harness, model: draft.model },
         }
-      : existing.familiars ?? {},
+      : (existing.familiars ?? {}),
   };
   await writeFile(configJson, JSON.stringify(nextConfig, null, 2), "utf8");
   wrote.push("cave-config.json");

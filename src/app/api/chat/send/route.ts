@@ -2,7 +2,11 @@ import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { stripAnsi } from "@/lib/ansi";
-import { bindingFor, loadConfig, recordSessionFamiliar } from "@/lib/cave-config";
+import {
+  bindingFor,
+  loadConfig,
+  recordSessionFamiliar,
+} from "@/lib/cave-config";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
@@ -16,7 +20,10 @@ import {
   loadConversation,
   saveConversation,
 } from "@/lib/cave-conversations";
-import { buildTaskAwarePrompt, taskContextForSession } from "@/lib/task-chat-context";
+import {
+  buildTaskAwarePrompt,
+  taskContextForSession,
+} from "@/lib/task-chat-context";
 import { extractLinks } from "@/lib/link-extractor";
 import { routeLinkHandler } from "@/app/api/library/route-link/route";
 
@@ -52,7 +59,8 @@ type StreamEvent =
 //   hook: tool_use Bash {...}
 //   hook: pre_tool_use Edit { ... }
 //   hook: post_tool_use Bash {... exitCode: 0 ...}
-const TOOL_HOOK_RE = /^hook:\s+(?:pre_tool_use|post_tool_use|tool_use)\s+(\S+)(?:\s+(.*))?$/;
+const TOOL_HOOK_RE =
+  /^hook:\s+(?:pre_tool_use|post_tool_use|tool_use)\s+(\S+)(?:\s+(.*))?$/;
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -88,14 +96,18 @@ async function resolveCwd(requested?: string): Promise<string> {
  *  ~/.coven/familiars/<id>. Falls back to undefined if the dir doesn't exist
  *  so callers can skip --cwd.
  */
-async function resolveFamiliarWorkspace(familiarId: string): Promise<string | undefined> {
+async function resolveFamiliarWorkspace(
+  familiarId: string,
+): Promise<string | undefined> {
   // Guard against path traversal: familiar IDs should be simple slugs.
   if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
   const candidate = await familiarWorkspace(familiarId);
   try {
     const s = await stat(candidate);
     if (s.isDirectory()) return candidate;
-  } catch { /* not found */ }
+  } catch {
+    /* not found */
+  }
   return undefined;
 }
 
@@ -138,21 +150,30 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as SendBody;
   } catch {
-    return new Response(JSON.stringify({ ok: false, error: "invalid json body" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ ok: false, error: "invalid json body" }),
+      {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      },
+    );
   }
   const attachments = normalizeChatAttachments(body.attachments);
   const promptText = body.prompt?.trim() ?? "";
   if (!body.familiarId || (!promptText && attachments.length === 0)) {
     return new Response(
-      JSON.stringify({ ok: false, error: "familiarId and prompt or attachments are required" }),
+      JSON.stringify({
+        ok: false,
+        error: "familiarId and prompt or attachments are required",
+      }),
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
   const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildTaskAwarePrompt(buildPromptWithAttachments(promptText, attachments), taskContext);
+  const harnessPrompt = buildTaskAwarePrompt(
+    buildPromptWithAttachments(promptText, attachments),
+    taskContext,
+  );
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
@@ -160,22 +181,22 @@ export async function POST(req: Request) {
   // Resolve familiar workspace for identity context. When a project root is
   // explicitly set, the harness boots there (and should have the familiar's
   // AGENTS.md injected separately). When there's no project root, boot in the
-  // familiar's own workspace so Codex/Claude picks up AGENTS.md / SOUL.md /
-  // IDENTITY.md and responds as the familiar instead of as "Codex".
+  // familiar's own workspace so the selected harness picks up AGENTS.md /
+  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
+  // generic CLI identity.
   const familiarWorkspace = !body.projectRoot
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
 
-  // coven run only knows codex|claude today. Other harnesses (openclaw,
-  // copilot, opencode, gemini, hermes, …) are surfaced in /api/harnesses
-  // and the rail configurator but can't be driven from native chat yet —
-  // open them via Coven Code TUI through /api/launch.
-  const COVEN_RUN_HARNESSES = new Set(["codex", "claude"]);
-  if (!COVEN_RUN_HARNESSES.has(binding.harness)) {
+  // Native Cave chat can drive any Coven harness that resolves through
+  // `coven run <harness> --stream-json`. OpenClaw-backed familiars use the
+  // OpenClaw agent bridge instead of the local harness runner.
+  if (binding.harness === "openclaw") {
     return new Response(
       JSON.stringify({
         ok: false,
-        error: `Native chat isn't wired for the "${binding.harness}" harness yet — open this familiar in the Coven Code TUI instead.`,
+        error:
+          "OpenClaw-backed familiars need the OpenClaw bridge. Pick a local harness familiar here, or open the agent from OpenClaw.",
       }),
       { status: 501, headers: { "content-type": "application/json" } },
     );
@@ -188,10 +209,9 @@ export async function POST(req: Request) {
   const buildArgs = (resumeSessionId: string | null): string[] => {
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
-    // Inject identity preamble. coven-cli renders this as a [Identity: ...]
-    // bracketed prefix for harnesses without a --system-prompt flag (Codex)
-    // or via --system-prompt for those that do (Claude). Without this,
-    // the harness answers as "Codex"/"Claude" instead of as the familiar.
+    // Inject identity preamble. coven-cli renders this through the best
+    // available identity channel for the chosen harness. Without this, the
+    // harness answers as its generic CLI identity instead of as the familiar.
     if (/^[a-z0-9_-]+$/i.test(body.familiarId)) {
       a.push("--familiar", body.familiarId);
     }
@@ -200,7 +220,7 @@ export async function POST(req: Request) {
   };
   const args = buildArgs(body.sessionId ?? null);
 
-  // Resume failures from either harness. Codex emits
+  // Resume failures from common harnesses. Codex emits
   // "thread/resume failed: no rollout found ... (code -32600)" when the
   // rollout DB no longer has the thread. Claude Code emits
   // "Session ID <uuid> is already in use" when --resume hits a session
@@ -251,7 +271,8 @@ export async function POST(req: Request) {
       // lines that look like errors as a fallback for the diagnostic.
       const stdoutErrTail: string[] = [];
       const STDOUT_ERR_KEEP = 10;
-      const ERR_LINE_RE = /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
+      const ERR_LINE_RE =
+        /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
 
       // Set to true when the harness reports its resume failed (rollout DB
       // miss). Triggers a single transparent retry without --continue.
@@ -314,7 +335,11 @@ export async function POST(req: Request) {
           // Try to pretty-print JSON payloads; fall back to raw string.
           const fmtPayload = (raw: string): string | undefined => {
             if (!raw) return undefined;
-            try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+            try {
+              return JSON.stringify(JSON.parse(raw), null, 2);
+            } catch {
+              return raw;
+            }
           };
           if (isPost) {
             const meta = toolStartTimes.get(name);
@@ -461,7 +486,11 @@ export async function POST(req: Request) {
         const now = new Date().toISOString();
         const userTurnId = crypto.randomUUID();
         const assistantTurnId = crypto.randomUUID();
-        const chatTitle = (promptText || attachments[0]?.name || "Attached files").slice(0, 60);
+        const chatTitle = (
+          promptText ||
+          attachments[0]?.name ||
+          "Attached files"
+        ).slice(0, 60);
         const userTurn: ChatTurn = {
           id: userTurnId,
           role: "user",

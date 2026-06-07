@@ -4,7 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 
-type PruneState = { idle: true } | { counting: true } | { count: number } | { pruning: true } | { pruned: number } | { error: string };
+type PruneState =
+  | { idle: true }
+  | { counting: true }
+  | { count: number }
+  | { pruning: true }
+  | { pruned: number }
+  | { error: string };
 type Step = { ok: boolean; detail?: string; hint?: string };
 type PlatformId = "windows" | "linux" | "mac" | "unknown";
 
@@ -40,26 +46,30 @@ type OpenClawAgent = {
   workspacePath: string | null;
 };
 
-const PLATFORM_COPY: Record<PlatformId, {
-  label: string;
-  installCommand: string;
-  caveInstall: string[];
-  cliInstall: string[];
-  warning?: string;
-}> = {
+const PLATFORM_COPY: Record<
+  PlatformId,
+  {
+    label: string;
+    installCommand: string;
+    caveInstall: string[];
+    cliInstall: string[];
+    warning?: string;
+  }
+> = {
   windows: {
     label: "Windows",
     installCommand: "where coven",
-    warning: "For now, turn off Smart App Control before downloading or opening the Windows build.",
+    warning:
+      "For now, turn off Smart App Control before downloading or opening the Windows build.",
     caveInstall: [
       "Download the MSI from the official GitHub Release.",
       "Before downloading/opening, go to Settings > Privacy & security > Windows Security > App & browser control > Smart App Control, then turn Smart App Control off for now.",
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the coven CLI from OpenCoven/coven.",
-      "Make sure coven.exe is on PATH.",
-      "Click Re-check here after a new terminal can run coven.",
+      "Install the coven CLI from OpenCoven/coven or use the bundled CLI when available.",
+      "Make sure coven.exe is on PATH if you installed it separately.",
+      "Click Re-check after Windows can run coven from a new terminal.",
     ],
   },
   linux: {
@@ -113,8 +123,11 @@ type Props = {
 
 function detectPlatform(): PlatformId {
   if (typeof navigator === "undefined") return "unknown";
-  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  const raw = `${nav.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent}`.toLowerCase();
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const raw =
+    `${nav.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent}`.toLowerCase();
   if (raw.includes("win")) return "windows";
   if (raw.includes("linux")) return "linux";
   if (raw.includes("mac")) return "mac";
@@ -125,8 +138,10 @@ function stepCount(status: OnboardingStatus | null): number {
   return Object.values(status?.steps ?? {}).filter((s) => s.ok).length;
 }
 
-const BENTO_CARD = "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4";
-const BENTO_CARD_SOFT = "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4";
+const BENTO_CARD =
+  "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4";
+const BENTO_CARD_SOFT =
+  "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4";
 
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
@@ -140,7 +155,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [familiarGlyph, setFamiliarGlyph] = useState("ph:sparkle-fill");
   const [openclawAgents, setOpenclawAgents] = useState<OpenClawAgent[]>([]);
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
-  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(null);
+  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
+    null,
+  );
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -165,19 +182,28 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     setAgentsError(null);
     try {
       const res = await fetch("/api/openclaw-agents", { cache: "no-store" });
-      const json = await res.json() as { ok?: boolean; agents?: OpenClawAgent[]; error?: string };
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? "failed to load OpenClaw agents");
+      const json = (await res.json()) as {
+        ok?: boolean;
+        agents?: OpenClawAgent[];
+        error?: string;
+      };
+      if (!res.ok || json.ok === false)
+        throw new Error(json.error ?? "failed to load OpenClaw agents");
       const agents = json.agents ?? [];
       setOpenclawAgents(agents);
       setSelectedAgentId((current) => {
         if (current || !agents[0]) return current;
         setFamiliarName(agents[0].displayName);
         setFamiliarRole(agents[0].role);
-        setFamiliarDescription(`Connected to OpenClaw agent "${agents[0].id}".`);
+        setFamiliarDescription(
+          `Connected to OpenClaw agent "${agents[0].id}".`,
+        );
         return agents[0].id;
       });
     } catch (err) {
-      setAgentsError(err instanceof Error ? err.message : "failed to load OpenClaw agents");
+      setAgentsError(
+        err instanceof Error ? err.message : "failed to load OpenClaw agents",
+      );
     } finally {
       setAgentsLoading(false);
     }
@@ -186,15 +212,25 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const loadHarnesses = useCallback(async () => {
     try {
       const res = await fetch("/api/harnesses", { cache: "no-store" });
-      const json = await res.json() as { ok?: boolean; harnesses?: HarnessReport[] };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        harnesses?: HarnessReport[];
+      };
       if (!res.ok || json.ok === false) return;
       const next = json.harnesses ?? [];
       setHarnesses(next);
       setSelectedHarnessId((current) => {
-        if (current && next.some((adapter) => adapter.id === current && adapter.installed)) return current;
-        return next.find((adapter) => adapter.installed && adapter.chatSupported)?.id
-          ?? next.find((adapter) => adapter.installed)?.id
-          ?? current;
+        if (
+          current &&
+          next.some((adapter) => adapter.id === current && adapter.installed)
+        )
+          return current;
+        return (
+          next.find((adapter) => adapter.installed && adapter.chatSupported)
+            ?.id ??
+          next.find((adapter) => adapter.installed)?.id ??
+          current
+        );
       });
     } catch {
       /* harness availability is advisory; status cards carry setup hints */
@@ -229,13 +265,44 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
+  const copyDiagnostics = async () => {
+    await copyText(
+      JSON.stringify(
+        {
+          platform,
+          setupComplete: status?.complete ?? false,
+          steps: status?.steps ?? null,
+          harnesses: harnesses.map((adapter) => ({
+            id: adapter.id,
+            label: adapter.label,
+            installed: adapter.installed,
+            path: adapter.path,
+            version: adapter.version,
+            chatSupported: adapter.chatSupported,
+            installHint: adapter.installHint,
+            source: adapter.source,
+            manifestPath: adapter.manifestPath,
+          })),
+          openclawAgents: openclawAgents.map((agent) => ({
+            id: agent.id,
+            displayName: agent.displayName,
+            workspacePath: agent.workspacePath,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+  };
+
   const scaffoldOnly = async () => {
     setPicking("scaffold");
     setSetupError(null);
     try {
       const res = await fetch("/api/onboarding/setup", { method: "POST" });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? "setup failed");
+      if (!res.ok || json.ok === false)
+        throw new Error(json.error ?? "setup failed");
       await refresh();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "setup failed");
@@ -245,9 +312,12 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   };
 
   const createFamiliar = async () => {
-    const selectedAgent = openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
+    const selectedAgent =
+      openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
     if (!selectedAgent) {
-      setSetupError("Pick an OpenClaw agent to connect first.");
+      setSetupError(
+        "Pick an existing OpenClaw agent, or choose Codex, Claude Code, or Hermes from Available harnesses.",
+      );
       return;
     }
     setPicking("familiar");
@@ -268,7 +338,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? "setup failed");
+      if (!res.ok || json.ok === false)
+        throw new Error(json.error ?? "setup failed");
       await refresh();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "setup failed");
@@ -278,9 +349,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   };
 
   const createLocalFamiliar = async () => {
-    const selectedHarness = harnesses.find((adapter) => adapter.id === selectedHarnessId && adapter.installed) ?? null;
+    const selectedHarness =
+      harnesses.find(
+        (adapter) => adapter.id === selectedHarnessId && adapter.installed,
+      ) ?? null;
     if (!selectedHarness) {
-      setSetupError("Pick an installed local adapter first.");
+      setSetupError(
+        "Pick an installed harness first, or choose an existing OpenClaw agent.",
+      );
       return;
     }
     setPicking("local");
@@ -294,7 +370,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             id: `${selectedHarness.id}-local`,
             displayName: familiarName.trim() || selectedHarness.label,
             role: familiarRole.trim() || "Code Familiar",
-            description: familiarDescription.trim() || `Local ${selectedHarness.label} adapter on this machine.`,
+            description:
+              familiarDescription.trim() ||
+              `Local ${selectedHarness.label} adapter on this machine.`,
             glyph: familiarGlyph,
             harness: selectedHarness.id,
             model: `${selectedHarness.id}-local`,
@@ -302,7 +380,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? "setup failed");
+      if (!res.ok || json.ok === false)
+        throw new Error(json.error ?? "setup failed");
       await refresh();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "setup failed");
@@ -317,7 +396,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     try {
       const res = await fetch("/api/daemon/start", { method: "POST" });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? "daemon start failed");
+      if (!res.ok || json.ok === false)
+        throw new Error(json.error ?? "daemon start failed");
       await refresh();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "daemon start failed");
@@ -345,7 +425,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       },
       {
         key: "adapters",
-        title: "Find local adapter",
+        title: "Find runtime source",
         ok: !!s?.adapters.ok,
         detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking...",
         icon: "ph:terminal-window",
@@ -371,7 +451,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking...",
         icon: "ph:user",
       },
-    ] satisfies Array<{ key: string; title: string; ok: boolean; detail: string; icon: IconName }>;
+    ] satisfies Array<{
+      key: string;
+      title: string;
+      ok: boolean;
+      detail: string;
+      icon: IconName;
+    }>;
   }, [status]);
 
   if (!open) return null;
@@ -396,7 +482,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               Set up CovenCave on this machine.
             </h1>
             <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--text-secondary)]">
-              Cave checks your local runtime, creates only your Coven files, and helps you add a first familiar that belongs to you.
+              Cave checks Codex, Claude Code, Hermes, and OpenClaw as equal ways
+              to create your first functional familiar. It creates only your
+              Coven files and shows exactly what still needs setup on this
+              machine.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -407,6 +496,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               <Icon name="ph:arrows-clockwise-bold" />
               Re-check
             </button>
+            <button
+              onClick={() => void copyDiagnostics()}
+              className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+            >
+              <Icon name="ph:clipboard-text" />
+              Copy diagnostics
+            </button>
             <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
               {stepCount(status)}/6 ready
             </div>
@@ -416,7 +512,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         {platformCopy.warning ? (
           <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] p-4 text-[13px] text-[var(--color-warning)]">
             <div className="flex items-start gap-3">
-              <Icon name="ph:warning-fill" width={18} className="mt-0.5 shrink-0 text-[var(--color-warning)]" />
+              <Icon
+                name="ph:warning-fill"
+                width={18}
+                className="mt-0.5 shrink-0 text-[var(--color-warning)]"
+              />
               <div>
                 <div className="font-semibold">Windows download notice</div>
                 <p className="mt-1 leading-6">{platformCopy.warning}</p>
@@ -435,19 +535,26 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <section className={`${BENTO_CARD} lg:col-span-12`}>
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Setup progress</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Setup progress
+                </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Complete each local prerequisite once; Cave keeps checking while you work.
+                  Bring whichever runtime you already use. Cave keeps checking
+                  and turns the first healthy source into a working familiar.
                 </p>
               </div>
-              <span className="font-mono text-[11px] text-[var(--text-muted)]">{stepCount(status)}/6 ready</span>
+              <span className="font-mono text-[11px] text-[var(--text-muted)]">
+                {stepCount(status)}/6 ready
+              </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {steps.map((s, i) => (
                 <div
                   key={s.key}
                   className={`rounded-lg border p-3 ${
-                    s.ok ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)]" : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/30"
+                    s.ok
+                      ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)]"
+                      : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/30"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -458,12 +565,22 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           : "border-[var(--border-strong)] text-[var(--text-secondary)]"
                       }`}
                     >
-                      {s.ok ? <Icon name="ph:check-bold" /> : <Icon name={s.icon} />}
+                      {s.ok ? (
+                        <Icon name="ph:check-bold" />
+                      ) : (
+                        <Icon name={s.icon} />
+                      )}
                     </span>
-                    <span className="font-mono text-[11px] text-[var(--text-muted)]">{i + 1}</span>
+                    <span className="font-mono text-[11px] text-[var(--text-muted)]">
+                      {i + 1}
+                    </span>
                   </div>
-                  <div className="mt-3 text-[12px] font-medium text-[var(--text-primary)]">{s.title}</div>
-                  <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{s.detail}</div>
+                  <div className="mt-3 text-[12px] font-medium text-[var(--text-primary)]">
+                    {s.title}
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
+                    {s.detail}
+                  </div>
                 </div>
               ))}
             </div>
@@ -472,9 +589,12 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Install path</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Install path
+                </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Follow the path for {platformCopy.label}, then re-check once the CLI is available.
+                  Follow the path for {platformCopy.label}, then re-check once
+                  the CLI is available.
                 </p>
               </div>
               <button
@@ -488,17 +608,26 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               {platformCopy.installCommand}
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <InstructionList title="Install CovenCave" items={platformCopy.caveInstall} />
-              <InstructionList title="Install coven CLI" items={platformCopy.cliInstall} />
+              <InstructionList
+                title="Install CovenCave"
+                items={platformCopy.caveInstall}
+              />
+              <InstructionList
+                title="Install coven CLI"
+                items={platformCopy.cliInstall}
+              />
             </div>
           </section>
 
           <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Local adapters</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Available harnesses
+                </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Pick an installed harness that can back your first local familiar.
+                  Pick Codex, Claude Code, Hermes, or any installed Coven
+                  adapter already on this machine.
                 </p>
               </div>
               <button
@@ -519,7 +648,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       setSelectedHarnessId(adapter.id);
                       setFamiliarName(adapter.label);
                       setFamiliarRole("Code Familiar");
-                      setFamiliarDescription(`Local ${adapter.label} adapter on this machine.`);
+                      setFamiliarDescription(
+                        `Local ${adapter.label} adapter on this machine.`,
+                      );
                     }}
                     disabled={!adapter.installed}
                     className={`rounded-lg border p-3 text-left ${
@@ -531,12 +662,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[13px] font-medium">{adapter.label}</span>
-                      {active ? <Icon name="ph:check-bold" className="text-[var(--accent-presence)]" /> : null}
+                      <span className="truncate text-[13px] font-medium">
+                        {adapter.label}
+                      </span>
+                      {active ? (
+                        <Icon
+                          name="ph:check-bold"
+                          className="text-[var(--accent-presence)]"
+                        />
+                      ) : null}
                     </div>
-                    <div className="mt-1 truncate font-mono text-[11px]">{adapter.binary}</div>
+                    <div className="mt-1 truncate font-mono text-[11px]">
+                      {adapter.binary}
+                    </div>
                     <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
-                      {adapter.installed ? adapter.path ?? "installed" : adapter.installHint}
+                      {adapter.installed
+                        ? (adapter.path ?? "installed")
+                        : adapter.installHint}
                     </div>
                   </button>
                 );
@@ -548,16 +690,19 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
             >
               <Icon name="ph:terminal-window" />
-              {picking === "local" ? "Creating..." : "Use local adapter"}
+              {picking === "local" ? "Creating..." : "Use selected harness"}
             </button>
           </section>
 
           <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">OpenClaw agents</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Existing OpenClaw agents
+                </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Connect one existing agent as a Coven familiar when you want continuity.
+                  Pick an existing OpenClaw agent instead when that is the
+                  runtime you already have.
                 </p>
               </div>
               <button
@@ -587,7 +732,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                         setSelectedAgentId(agent.id);
                         setFamiliarName(agent.displayName);
                         setFamiliarRole(agent.role);
-                        setFamiliarDescription(`Connected to OpenClaw agent "${agent.id}".`);
+                        setFamiliarDescription(
+                          `Connected to OpenClaw agent "${agent.id}".`,
+                        );
                       }}
                       className={`rounded-lg border p-3 text-left ${
                         active
@@ -596,11 +743,22 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-[13px] font-medium">{agent.displayName}</span>
-                        {active ? <Icon name="ph:check-bold" className="text-[var(--accent-presence)]" /> : null}
+                        <span className="truncate text-[13px] font-medium">
+                          {agent.displayName}
+                        </span>
+                        {active ? (
+                          <Icon
+                            name="ph:check-bold"
+                            className="text-[var(--accent-presence)]"
+                          />
+                        ) : null}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[11px]">{agent.id}</div>
-                      <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{agent.role}</div>
+                      <div className="mt-1 truncate font-mono text-[11px]">
+                        {agent.id}
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
+                        {agent.role}
+                      </div>
                     </button>
                   );
                 })}
@@ -611,9 +769,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <section className={`${BENTO_CARD} lg:col-span-8 xl:col-span-8`}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar details</h2>
+                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">
+                  Familiar details
+                </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Name the familiar, describe the job, then either bind it to a local adapter or connect the selected OpenClaw agent.
+                  Name the familiar, describe the job, then bind it to the
+                  selected harness or OpenClaw agent. This is the same setup
+                  path no matter whether the source is Codex, Claude Code,
+                  Hermes, or OpenClaw.
                 </p>
               </div>
               <button
@@ -627,7 +790,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Name</span>
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                  Name
+                </span>
                 <input
                   value={familiarName}
                   onChange={(e) => setFamiliarName(e.target.value)}
@@ -636,7 +801,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Role</span>
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                  Role
+                </span>
                 <input
                   value={familiarRole}
                   onChange={(e) => setFamiliarRole(e.target.value)}
@@ -645,7 +812,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Glyph</span>
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                  Glyph
+                </span>
                 <input
                   value={familiarGlyph}
                   onChange={(e) => setFamiliarGlyph(e.target.value)}
@@ -654,7 +823,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">Description</span>
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                  Description
+                </span>
                 <input
                   value={familiarDescription}
                   onChange={(e) => setFamiliarDescription(e.target.value)}
@@ -667,17 +838,27 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <button
                 onClick={createFamiliar}
-                disabled={picking !== null || !selectedAgentId || familiarName.trim().length === 0}
+                disabled={
+                  picking !== null ||
+                  !selectedAgentId ||
+                  familiarName.trim().length === 0
+                }
                 className="inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
               >
                 <Icon name="ph:sparkle" />
-                {picking === "familiar" ? "Connecting..." : "Connect as familiar"}
+                {picking === "familiar"
+                  ? "Connecting..."
+                  : "Connect as familiar"}
               </button>
               <button
                 onClick={startDaemon}
                 disabled={startingDaemon || !status?.steps.covenCli.ok}
                 className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
-                title={!status?.steps.covenCli.ok ? "Install coven CLI first" : "coven daemon start"}
+                title={
+                  !status?.steps.covenCli.ok
+                    ? "Install coven CLI first"
+                    : "coven daemon start"
+                }
               >
                 <Icon name="ph:rocket-launch-bold" />
                 {startingDaemon ? "Starting..." : "Start daemon"}
@@ -688,19 +869,29 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <section className={`${BENTO_CARD_SOFT} lg:col-span-4 xl:col-span-2`}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Tester demo mode</h2>
+                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Tester demo mode
+                </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Demo data is opt-in for testers and never appears in normal installs.
+                  Demo data is opt-in for testers and never appears in normal
+                  installs.
                 </p>
               </div>
-              <Icon name="ph:toggle-right-bold" className="text-[var(--text-muted)]" />
+              <Icon
+                name="ph:toggle-right-bold"
+                className="text-[var(--text-muted)]"
+              />
             </div>
             <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
               NEXT_PUBLIC_DEMO=true pnpm dev
             </div>
           </section>
 
-          <MaintenancePanel prune={prune} setPrune={setPrune} className="lg:col-span-4 xl:col-span-2" />
+          <MaintenancePanel
+            prune={prune}
+            setPrune={setPrune}
+            className="lg:col-span-4 xl:col-span-2"
+          />
         </main>
 
         <footer className="flex items-center justify-between border-t border-[var(--border-hairline)] py-4">
@@ -738,10 +929,15 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 function InstructionList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">{title}</h3>
+      <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
+        {title}
+      </h3>
       <ol className="mt-2 space-y-2">
         {items.map((item, index) => (
-          <li key={item} className="flex gap-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+          <li
+            key={item}
+            className="flex gap-2 text-[12px] leading-5 text-[var(--text-secondary)]"
+          >
             <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-[var(--border-hairline)] text-[10px] text-[var(--text-muted)]">
               {index + 1}
             </span>
@@ -794,10 +990,20 @@ function MaintenancePanel({
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ dryRun: true }),
                   });
-                  const json = await res.json() as { ok: boolean; wouldPrune?: number; error?: string };
-                  setPrune(json.ok ? { count: json.wouldPrune ?? 0 } : { error: json.error ?? "dry-run failed" });
+                  const json = (await res.json()) as {
+                    ok: boolean;
+                    wouldPrune?: number;
+                    error?: string;
+                  };
+                  setPrune(
+                    json.ok
+                      ? { count: json.wouldPrune ?? 0 }
+                      : { error: json.error ?? "dry-run failed" },
+                  );
                 } catch (err) {
-                  setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
+                  setPrune({
+                    error: err instanceof Error ? err.message : "fetch failed",
+                  });
                 }
               }}
               className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -823,10 +1029,21 @@ function MaintenancePanel({
                         headers: { "content-type": "application/json" },
                         body: JSON.stringify({ dryRun: false }),
                       });
-                      const json = await res.json() as { ok: boolean; pruned?: number; error?: string };
-                      setPrune(json.ok ? { pruned: json.pruned ?? 0 } : { error: json.error ?? "prune failed" });
+                      const json = (await res.json()) as {
+                        ok: boolean;
+                        pruned?: number;
+                        error?: string;
+                      };
+                      setPrune(
+                        json.ok
+                          ? { pruned: json.pruned ?? 0 }
+                          : { error: json.error ?? "prune failed" },
+                      );
                     } catch (err) {
-                      setPrune({ error: err instanceof Error ? err.message : "fetch failed" });
+                      setPrune({
+                        error:
+                          err instanceof Error ? err.message : "fetch failed",
+                      });
                     }
                   }}
                   className="rounded bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] px-2.5 py-1 text-[11px] text-white hover:bg-[color-mix(in_oklch,var(--color-danger)_85%,white)]"
@@ -834,7 +1051,9 @@ function MaintenancePanel({
                   Delete {prune.count}
                 </button>
               ) : (
-                <span className="text-[11px] text-[var(--text-muted)]">Nothing to prune.</span>
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Nothing to prune.
+                </span>
               )}
             </>
           ) : null}

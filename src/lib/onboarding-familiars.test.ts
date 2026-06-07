@@ -33,7 +33,10 @@ assert.match(toml, /harness = "openclaw"/);
 assert.match(toml, /model = "riley"/);
 assert.match(toml, /openclaw_agent = "riley"/);
 
-assert.equal(normalizeFamiliarDraft({ displayName: "Cody", openclawAgentId: "cody" }).id, "cody");
+assert.equal(
+  normalizeFamiliarDraft({ displayName: "Cody", openclawAgentId: "cody" }).id,
+  "cody",
+);
 
 const localDraft = normalizeFamiliarDraft({
   displayName: "Codex Local",
@@ -54,3 +57,23 @@ assert.deepEqual(localDraft, {
 });
 
 assert.equal(normalizeFamiliarDraft({ displayName: "Solo" }).harness, "codex");
+
+const hermesDraft = normalizeFamiliarDraft({
+  displayName: "Hermes Local",
+  role: "Planning",
+  harness: "hermes",
+  model: "hermes-local",
+});
+
+assert.deepEqual(hermesDraft, {
+  id: "hermes-local",
+  displayName: "Hermes Local",
+  role: "Planning",
+  description: "",
+  glyph: "ph:sparkle-fill",
+  harness: "hermes",
+  model: "hermes-local",
+  openclawAgentId: undefined,
+});
+
+assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);

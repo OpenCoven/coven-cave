@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./onboarding-overlay.tsx", import.meta.url), "utf8");
+const source = await readFile(
+  new URL("./onboarding-overlay.tsx", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -36,14 +39,20 @@ assert.match(
 
 assert.match(
   source,
-  /xl:col-span-4[\s\S]*Local adapters/,
-  "Local adapters should occupy a peer bento card in the same grid",
+  /xl:col-span-4[\s\S]*Available harnesses/,
+  "Local harnesses should occupy a peer bento card in the same grid",
 );
 
 assert.match(
   source,
-  /xl:col-span-4[\s\S]*OpenClaw agents/,
+  /xl:col-span-4[\s\S]*Existing OpenClaw agents/,
   "OpenClaw agents should occupy a peer bento card in the same grid",
+);
+
+assert.match(
+  source,
+  /Codex[\s\S]*Claude Code[\s\S]*Hermes[\s\S]*OpenClaw/,
+  "Setup copy should present Codex, Claude Code, Hermes, and OpenClaw as peer ways to create a first familiar",
 );
 
 assert.match(
