@@ -5,10 +5,39 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+
+fn coven_tray_icon() -> Image<'static> {
+    const SIZE: u32 = 18;
+    let mut rgba = vec![0; (SIZE * SIZE * 4) as usize];
+    let center = (SIZE as f32 - 1.0) / 2.0;
+
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let in_c_ring = (4.3..=7.7).contains(&dist) && !(dx > 1.2 && dy.abs() < 4.2);
+            let in_core = dx.abs() <= 1.2 && dy.abs() <= 5.8;
+            let in_mark = in_c_ring || in_core;
+            if !in_mark {
+                continue;
+            }
+
+            let idx = ((y * SIZE + x) * 4) as usize;
+            rgba[idx] = 255;
+            rgba[idx + 1] = 255;
+            rgba[idx + 2] = 255;
+            rgba[idx + 3] = 255;
+        }
+    }
+
+    Image::new_owned(rgba, SIZE, SIZE)
+}
 
 /// Surface a fatal startup error to the user. Platform-specific: macOS uses
 /// osascript (Cocoa alert), Windows writes to a temp file and opens Notepad,
@@ -657,7 +686,7 @@ pub fn run() {
             // icon as a template image so the system can adapt it to dark/light
             // menu bar). On other platforms the call doesn't exist — guard it.
             let tray_builder = TrayIconBuilder::with_id("cave-tray")
-                .icon(app.default_window_icon().cloned().expect("default icon present"))
+                .icon(coven_tray_icon())
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("CovenCave")
