@@ -34,6 +34,7 @@ export type LibraryBookmark = {
   tags: string[];
   savedAt: string;
   familiar: string;
+  capture?: LinkCapture;
 };
 
 // ── Reading List ─────────────────────────────────────────────────
@@ -52,6 +53,7 @@ export type LibraryReadingItem = {
   addedAt: string;
   finishedAt?: string;
   familiar: string;
+  capture?: LinkCapture;
 };
 
 // ── GitHub ───────────────────────────────────────────────────────
@@ -69,6 +71,30 @@ export type LibraryGitHubItem = {
   notes?: string;
   savedAt: string;
   familiar: string;
+  capture?: LinkCapture;
 };
 
 export type LibrarySectionKind = "docs" | "bookmarks" | "reading" | "github" | "skills";
+
+// ── Link routing (familiar-driven ingestion) ────────────────────
+export type LinkSource =
+  | { kind: "chat";    sessionId: string; turnId: string; chatTitle: string }
+  | { kind: "browser"; tabUrl: string; tabTitle: string }
+  | { kind: "slash";   originSessionId: string | null }
+  | { kind: "feed";    feedId: string; feedTitle: string }
+  | { kind: "manual" };
+
+export type LinkCaptureRule =
+  | "github"
+  | "paper-host"
+  | "video-host"
+  | "article-host"
+  | "default-bookmark"
+  | "familiar-fallback";
+
+export type LinkCapture = {
+  source: LinkSource;
+  familiar: string;
+  capturedAt: string;
+  classifier: { rule: LinkCaptureRule; confidence: "high" | "low" };
+};

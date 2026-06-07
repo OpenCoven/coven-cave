@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const boardView = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
 const boardInspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/board/[id]/chat/route.ts", import.meta.url), "utf8");
+const chatSendRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 
 assert.match(
   boardView,
@@ -38,6 +39,11 @@ assert.match(
 );
 assert.match(
   route,
+  /buildInitialTaskChatPrompt\(card\)/,
+  "Board chat endpoint should seed new sessions with task context",
+);
+assert.match(
+  route,
   /callDaemon<\{ id: string; status: string \}>/,
   "Board chat endpoint should create a real daemon session when a card is unlinked",
 );
@@ -50,4 +56,14 @@ assert.match(
   route,
   /recordSessionFamiliar/,
   "Board chat endpoint should record the familiar-session relation",
+);
+assert.match(
+  chatSendRoute,
+  /taskContextForSession\(body\.sessionId/,
+  "Chat send should look up task context for task-linked sessions",
+);
+assert.match(
+  chatSendRoute,
+  /buildTaskAwarePrompt\(buildPromptWithAttachments/,
+  "Chat send should include task context in the harness prompt only",
 );

@@ -99,30 +99,142 @@ function ChannelIcon({ channel, harness, isSubagent }: { channel?: string; harne
   return <Icon name="ph:circle-dashed" className="shrink-0 opacity-40" width={12} height={12} aria-hidden />;
 }
 
-function SessionTraceLine({ session }: { session: SessionSummary }) {
+function sessionSource(session: SessionSummary): string {
+  return session.harness ?? session.channel ?? "direct";
+}
+
+function SessionTableCells({ session }: { session: SessionSummary }) {
   const runtime = fmtRuntime(session.runtimeMs);
 
   return (
-    <div className={`floor-session-line${session.isSubagent ? " is-subagent" : ""}`}>
-      <div className="floor-session-main">
-        {session.isSubagent ? (
-          <span className="floor-session-branch" aria-hidden>
-            ↳
+    <>
+      <td className="floor-session-familiar-cell">
+        <div className="floor-session-main">
+          <span className="floor-session-indent" aria-hidden />
+          {session.isSubagent ? (
+            <span className="floor-session-branch" aria-hidden>
+              ↳
+            </span>
+          ) : null}
+          <ChannelIcon channel={session.channel} harness={session.harness} isSubagent={session.isSubagent} />
+          <span className="floor-session-label" title={session.label}>
+            {session.label}
           </span>
-        ) : null}
-        <SessionDot status={session.status} />
-        <ChannelIcon channel={session.channel} harness={session.harness} isSubagent={session.isSubagent} />
-        <span className="floor-session-label" title={session.label}>
+        </div>
+      </td>
+      <td>
+        <span className="floor-status-cell">
+          <SessionDot status={session.status} />
+          <span>{session.status}</span>
+        </span>
+      </td>
+      <td>
+        <div className="floor-session-meta">
+          <span>{sessionSource(session)}</span>
+          {session.model ? <span className="floor-model-pill">{session.model.replace(/^(?:gpt-|claude-)/i, "").slice(0, 14)}</span> : null}
+          {runtime ? <span>{runtime}</span> : null}
+        </div>
+      </td>
+      <td>
+        <span className="board-table-title" title={session.label}>
           {session.label}
         </span>
-      </div>
-      <div className="floor-session-meta">
-        {session.model ? <span className="floor-model-pill">{session.model.replace(/^(?:gpt-|claude-)/i, "").slice(0, 14)}</span> : null}
-        {runtime ? <span>{runtime}</span> : null}
-        <span className="floor-session-status">{session.status}</span>
-        <span>{relTime(session.updatedAt)}</span>
-      </div>
-    </div>
+      </td>
+      <td>
+        <span className="board-table-muted">{relTime(session.updatedAt)}</span>
+      </td>
+      <td className="floor-trace-cell">
+        <span className="board-table-muted">{session.isSubagent ? "Subagent" : "Session"}</span>
+      </td>
+    </>
+  );
+}
+
+function ShowMoreSessionRow({
+  card,
+  sessions,
+  hiddenCount,
+  onShowAll,
+}: {
+  card: FamiliarCard;
+  sessions: SessionSummary[];
+  hiddenCount: number;
+  onShowAll: (id: string) => void;
+}) {
+  return (
+    <tr className="floor-session-row floor-session-more-row">
+      <td className="floor-session-familiar-cell">
+        <span className="floor-session-indent" aria-hidden />
+        <span className="floor-session-label">More sessions</span>
+      </td>
+      <td>
+        <span className="board-table-muted">{hiddenCount} hidden</span>
+      </td>
+      <td>
+        <span className="board-table-muted">{sessions.length} total</span>
+      </td>
+      <td>
+        <button
+          type="button"
+          className="floor-session-more-button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onShowAll(card.id);
+          }}
+          aria-label={`Show all ${card.displayName} sessions`}
+        >
+          Show all {sessions.length} sessions
+        </button>
+      </td>
+      <td>
+        <span className="board-table-muted">for {card.displayName}</span>
+      </td>
+      <td className="floor-trace-cell">
+        <Icon name="ph:list-bullets" width={13} height={13} aria-hidden />
+      </td>
+    </tr>
+  );
+}
+
+function EmptySessionRow({ card }: { card: FamiliarCard }) {
+  return (
+    <tr className="floor-session-row floor-session-empty-row">
+      <td className="floor-session-familiar-cell">
+        <span className="floor-session-indent" aria-hidden />
+        <span className="floor-session-label">No recent sessions</span>
+      </td>
+      <td>
+        <span className="board-table-muted">quiet</span>
+      </td>
+      <td>
+        <span className="board-table-muted">0 total</span>
+      </td>
+      <td>
+        <span className="board-table-muted">No recent sessions for this familiar.</span>
+      </td>
+      <td>
+        <span className="board-table-muted">{relTime(card.lastActiveAt)}</span>
+      </td>
+      <td className="floor-trace-cell">
+        <span className="board-table-muted">Empty</span>
+      </td>
+    </tr>
+  );
+}
+
+function SessionSummaryRow({ counts }: { counts: ReturnType<typeof sessionCounts> }) {
+  return (
+    <tr className="floor-session-row floor-session-heading-row">
+      <td className="floor-session-familiar-cell">
+        <span className="floor-session-indent" aria-hidden />
+        <span className="floor-session-label">Session traceability</span>
+      </td>
+      <td><span className="board-table-muted">{counts.running} running</span></td>
+      <td><span className="board-table-muted">{counts.stuck} stuck</span></td>
+      <td><span className="board-table-muted">{counts.done} complete</span></td>
+      <td><span className="board-table-muted">Recent first</span></td>
+      <td className="floor-trace-cell"><span className="board-table-muted">Expanded</span></td>
+    </tr>
   );
 }
 
@@ -154,6 +266,7 @@ export function CovenFloor() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showAllSessionIds, setShowAllSessionIds] = useState<Set<string>>(() => new Set());
 
   const load = useCallback(async () => {
     try {
@@ -192,6 +305,13 @@ export function CovenFloor() {
   );
 
   const toggleExpand = (id: string) => setExpandedId((prev) => (prev === id ? null : id));
+  const showAllSessionsForFamiliar = (id: string) => {
+    setShowAllSessionIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col bg-[var(--bg-base)]">
@@ -249,7 +369,8 @@ export function CovenFloor() {
                 {sortedFamiliars.map((card) => {
                   const counts = sessionCounts(card.sessions);
                   const sessions = sortSessions(card.sessions);
-                  const visibleSessions = sessions.slice(0, MAX_VISIBLE_SESSIONS);
+                  const showAllSessions = showAllSessionIds.has(card.id);
+                  const visibleSessions = showAllSessions ? sessions : sessions.slice(0, MAX_VISIBLE_SESSIONS);
                   const hiddenCount = Math.max(0, sessions.length - visibleSessions.length);
 
                   return (
@@ -307,37 +428,23 @@ export function CovenFloor() {
 
                       {expandedId === card.id ? (
                         <>
-                          <tr className="floor-session-row floor-session-heading-row">
-                            <td colSpan={6}>
-                              <div className="floor-session-panel-heading">
-                                <span>Session traceability</span>
-                                <span className="board-table-muted">
-                                  {counts.running} running · {counts.stuck} stuck · {counts.done} complete
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
+                          <SessionSummaryRow counts={counts} />
                           {visibleSessions.length > 0 ? (
                             visibleSessions.map((session) => (
                               <tr key={session.id} className="floor-session-row">
-                                <td colSpan={6}>
-                                  <SessionTraceLine session={session} />
-                                </td>
+                                <SessionTableCells session={session} />
                               </tr>
                             ))
                           ) : (
-                            <tr className="floor-session-row">
-                              <td colSpan={6}>
-                                <div className="floor-session-empty">No recent sessions for this familiar.</div>
-                              </td>
-                            </tr>
+                            <EmptySessionRow card={card} />
                           )}
                           {hiddenCount > 0 ? (
-                            <tr className="floor-session-row">
-                              <td colSpan={6}>
-                                <div className="floor-session-more">+{hiddenCount} more sessions</div>
-                              </td>
-                            </tr>
+                            <ShowMoreSessionRow
+                              card={card}
+                              sessions={sessions}
+                              hiddenCount={hiddenCount}
+                              onShowAll={showAllSessionsForFamiliar}
+                            />
                           ) : null}
                         </>
                       ) : null}

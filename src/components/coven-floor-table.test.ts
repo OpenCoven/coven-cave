@@ -19,7 +19,7 @@ assert.match(
 assert.match(
   floor,
   /floor-session-row/,
-  "CovenFloor should render expanded session traceability as sub-category table rows",
+  "CovenFloor should render expanded session traceability as table rows",
 );
 
 assert.match(
@@ -30,8 +30,32 @@ assert.match(
 
 assert.match(
   floor,
+  /<td className="floor-session-familiar-cell">/,
+  "Session traceability rows should keep the same table columns as familiar rows",
+);
+
+assert.doesNotMatch(
+  floor,
   /colSpan=\{6\}/,
-  "Session traceability rows should span the full familiar table width",
+  "Session traceability should not collapse into a full-width nested panel",
+);
+
+assert.match(
+  floor,
+  /showAllSessionIds/,
+  "Show-all state should be keyed per familiar section",
+);
+
+assert.match(
+  floor,
+  /Show all \{sessions\.length\} sessions/,
+  "Show more should reveal every session for the selected familiar",
+);
+
+assert.match(
+  floor,
+  /setShowAllSessionIds\(\(prev\)/,
+  "Show more should update per-familiar show-all state",
 );
 
 assert.doesNotMatch(
