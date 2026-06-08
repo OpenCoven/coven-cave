@@ -989,7 +989,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <button
                       type="button"
                       onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
-                      className="grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                      className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title={`Remove ${attachment.name}`}
                     >
                       <Icon name="ph:x-bold" width={9} />
@@ -1018,7 +1018,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 />
                 <button
                   type="button"
-                  className="grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                  className="focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                   title="Attach files"
                   disabled={busy || attachments.length >= 10}
                   onClick={() => fileInputRef.current?.click()}
@@ -1034,7 +1034,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {busy ? (
                   <button
                     onClick={cancelSend}
-                    className="grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
+                    className="focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
                     title="Cancel (esc)"
                   >
                     ■
@@ -1043,7 +1043,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <button
                     onClick={() => void send()}
                     disabled={!input.trim() && attachments.length === 0}
-                    className="grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[var(--accent-presence-soft)] disabled:opacity-40"
+                    className="focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                     title={`Send (${keys.enter})`}
                   >
                     ↑
@@ -1073,22 +1073,21 @@ function ThinkingIndicator({ since }: { since: string }) {
   }, [since]);
 
   return (
-    <div className="flex items-center gap-2 py-2 text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+    <div className="flex items-center gap-2 py-2 text-[13px] text-[var(--text-muted)]">
       {/* Animated dots */}
       <span className="flex items-center gap-0.5">
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="inline-block h-1.5 w-1.5 rounded-full animate-bounce"
+            className="inline-block h-1.5 w-1.5 rounded-full animate-bounce bg-current"
             style={{
-              background: "rgba(255,255,255,0.35)",
               animationDelay: `${i * 150}ms`,
               animationDuration: "900ms",
             }}
           />
         ))}
       </span>
-      <span className="text-[11px] tabular-nums" style={{ color: "rgba(255,255,255,0.2)" }}>
+      <span className="text-[11px] tabular-nums opacity-60">
         {elapsed}s
       </span>
     </div>
