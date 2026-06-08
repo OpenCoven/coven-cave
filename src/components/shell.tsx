@@ -269,7 +269,7 @@ function ShellInner({
             id="agent"
             className="shell-agent-panel"
             defaultSize={"0%"}
-            minSize="20%"
+            minSize="25%"
             maxSize="38%"
             collapsible
             collapsedSize={0}

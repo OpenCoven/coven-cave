@@ -79,9 +79,10 @@ type Props = {
   groupBy: GroupBy;
   selectedCardId: string | null;
   onSelect: (id: string) => void;
+  onPatch: (id: string, patch: Partial<Card>) => void;
 };
 
-export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect }: Props) {
+export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect, onPatch }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));
@@ -162,16 +163,23 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
                       </span>
                     </td>
                     <td>
-                      {familiar ? (
-                        <span className="board-table-cell-familiar">
-                          <span className={`board-table-familiar-avatar${familiarGlyph ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
-                            {familiarGlyph ? <FamiliarGlyph glyph={familiarGlyph} size="sm" /> : <Icon name="ph:user" width={9} />}
-                          </span>
-                          <span className="board-table-cell-familiar-name">{familiar.display_name}</span>
+                      <span className="board-table-cell-familiar">
+                        <span className={`board-table-familiar-avatar${familiarGlyph ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
+                          {familiarGlyph ? <FamiliarGlyph glyph={familiarGlyph} size="sm" /> : <Icon name="ph:user" width={9} />}
                         </span>
-                      ) : (
-                        <span className="board-table-cell-empty">—</span>
-                      )}
+                        <select
+                          className="board-table-familiar-select"
+                          value={card.familiarId ?? ""}
+                          aria-label={`Assign familiar for ${card.title}`}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => onPatch(card.id, { familiarId: e.target.value || null })}
+                        >
+                          <option value="">Unassigned</option>
+                          {familiars.map((f) => (
+                            <option key={f.id} value={f.id}>{f.display_name}</option>
+                          ))}
+                        </select>
+                      </span>
                     </td>
                     <td>
                       {card.cwd ? (

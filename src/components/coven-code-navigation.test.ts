@@ -136,6 +136,13 @@ assert.match(
   "Workspace should render chat directly in the shell sidepanel instead of routing through Agents",
 );
 
+const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
+assert.match(
+  shell,
+  /id="agent"[\s\S]*minSize="25%"/,
+  "Browser/chat sidepanel should open 25% wider than the old 20% default",
+);
+
 assert.doesNotMatch(
   workspace,
   /aria-label=\{shellAgentPane === "chat" \? "Close chat panel" : "Open chat panel"\}[\s\S]{0,240}setMode\("agents"\)/,

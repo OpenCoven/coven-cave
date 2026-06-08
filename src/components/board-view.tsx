@@ -285,7 +285,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         ) : (
           <BoardTable cards={filtered} familiars={familiars}
             groupBy={groupBy} selectedCardId={selectedCardId}
-            onSelect={setSelectedCardId} />
+            onSelect={setSelectedCardId}
+            onPatch={patchCard} />
         )}
       </div>
 

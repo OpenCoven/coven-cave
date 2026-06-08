@@ -102,6 +102,8 @@
 .board-table-familiar-avatar > * { display:flex; }
 .board-table-familiar-avatar--empty { color:var(--text-muted); }
 .board-table-cell-familiar-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.board-table-familiar-select { width:100%; min-width:0; max-width:112px; height:24px; border:1px solid transparent; border-radius:5px; background:transparent; color:var(--text-primary); font:inherit; font-size:11.5px; font-weight:450; cursor:pointer; outline:none; }
+.board-table-familiar-select:hover,.board-table-familiar-select:focus-visible { border-color:var(--border-hairline); background:var(--bg-elevated); }
 .board-table-cell-path { display:inline-block; max-width:100%; padding:1px 6px; border-radius:4px; background:var(--bg-elevated); border:1px solid var(--border-hairline); color:var(--text-secondary); font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:10.5px; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }
 .board-table-cell-links { display:inline-flex; align-items:center; gap:4px; color:var(--text-secondary); font-size:11px; }
 .board-table-cell-links svg { color:var(--text-muted); }
