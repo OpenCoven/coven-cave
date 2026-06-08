@@ -87,6 +87,24 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
   },
 ];
 
+const TRUSTED_ONBOARDING_HARNESSES = new Set(
+  COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),
+);
+
+const TRUSTED_CHAT_HARNESSES = new Set(
+  COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map(
+    (adapter) => adapter.id,
+  ),
+);
+
+export function isTrustedOnboardingHarness(harness: string): boolean {
+  return TRUSTED_ONBOARDING_HARNESSES.has(harness);
+}
+
+export function isTrustedChatHarness(harness: string): boolean {
+  return TRUSTED_CHAT_HARNESSES.has(harness);
+}
+
 export function openClawAdapterReport(openclawAgentCount: number): AdapterReport {
   return {
     id: "openclaw",
@@ -144,7 +162,7 @@ export function mergeAdapterReports(
       id: coven.id,
       label: coven.label,
       binary: coven.executable,
-      chatSupported: true,
+      chatSupported: existing?.chatSupported ?? isTrustedChatHarness(coven.id),
       installed: coven.available || existing?.installed === true,
       path: existing?.path ?? null,
       version: existing?.version ?? null,

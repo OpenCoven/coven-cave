@@ -77,3 +77,14 @@ assert.deepEqual(hermesDraft, {
 });
 
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
+
+
+assert.throws(
+  () =>
+    normalizeFamiliarDraft({
+      displayName: "Evil",
+      harness: "attacker-adapter",
+      model: "evil-local",
+    }),
+  /Unsupported harness: attacker-adapter\./,
+);

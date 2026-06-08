@@ -15,6 +15,7 @@ import {
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { familiarWorkspace } from "@/lib/coven-paths";
+import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import {
   type ChatTurn,
   loadConversation,
@@ -188,8 +189,19 @@ export async function POST(req: Request) {
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
 
-  // Native Cave chat can drive any Coven harness that resolves through
-  // `coven run <harness> --stream-json`, including external adapter manifests.
+  // Native Cave chat only drives bundled, reviewed Coven harnesses through
+  // `coven run <harness> --stream-json`. OpenClaw and external adapter
+  // manifests use their own bridges instead of this privileged local runner.
+  if (!isTrustedChatHarness(binding.harness)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error:
+          "This familiar's harness is not supported by native Cave chat. Pick Codex, Claude Code, or Hermes here, or open the familiar from its own runtime.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
 
   // Build coven run argv.
   // Important: pass every flag BEFORE the prompt and add a `--` separator,

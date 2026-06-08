@@ -13,24 +13,18 @@ const boardRoute = await readFile(
 
 assert.match(
   chatRoute,
-  /coven run <harness> --stream-json/,
-  "Native chat should describe the generic Coven harness route instead of a fixed allow-list",
-);
-
-assert.doesNotMatch(
-  chatRoute,
-  /COVEN_RUN_HARNESSES|new Set\(\["codex", "claude"\]\)|new Set\(\["codex", "claude", "hermes"\]\)/,
-  "Native chat should not hard-code a local harness allow-list",
+  /isTrustedChatHarness\(binding\.harness\)/,
+  "Native chat should enforce the trusted Coven harness gate before spawning coven run",
 );
 
 assert.doesNotMatch(
   chatRoute,
   /binding\.harness === "openclaw"/,
-  "Native chat should not special-case OpenClaw outside the generic harness route",
+  "Native chat should not rely on an OpenClaw-only rejection",
 );
 
 assert.match(
   boardRoute,
-  /binding\.harness === "openclaw"/,
-  "Board step enrichment should skip OpenClaw bridge familiars while allowing local Coven harnesses",
+  /isTrustedChatHarness\(binding\.harness\)/,
+  "Board step enrichment should enforce the same trusted Coven harness gate",
 );

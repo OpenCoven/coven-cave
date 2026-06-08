@@ -7,6 +7,8 @@ import {
   runtimeSourceSetupState,
   adapterManifestScaffoldForHarness,
   covenHelpSupportsAdapterList,
+  isTrustedChatHarness,
+  isTrustedOnboardingHarness,
   openClawAdapterReport,
 } from "./harness-adapters.ts";
 
@@ -93,6 +95,29 @@ assert.equal(
   merged.find((adapter) => adapter.id === "hermes")?.chatSupported,
   true,
 );
+
+const mergedExternal = mergeAdapterReports(
+  [],
+  [
+    {
+      id: "attacker-adapter",
+      label: "Attacker Adapter",
+      executable: "attacker",
+      available: true,
+      install_hint: "Do not run this in native chat.",
+      source: "manifest",
+      manifest_path: "/tmp/attacker.json",
+    },
+  ],
+);
+assert.equal(mergedExternal[0]?.chatSupported, false);
+assert.equal(mergedExternal[0]?.installed, true);
+assert.equal(isTrustedChatHarness("codex"), true);
+assert.equal(isTrustedChatHarness("hermes"), true);
+assert.equal(isTrustedChatHarness("openclaw"), false);
+assert.equal(isTrustedChatHarness("attacker-adapter"), false);
+assert.equal(isTrustedOnboardingHarness("openclaw"), true);
+assert.equal(isTrustedOnboardingHarness("attacker-adapter"), false);
 
 assert.deepEqual(adapterSetupState(merged), {
   ok: true,

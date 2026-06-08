@@ -3,6 +3,7 @@ import type { CardStep } from "@/lib/cave-board-types";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { familiarWorkspace } from "@/lib/coven-paths";
+import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { stripAnsi } from "@/lib/ansi";
@@ -201,9 +202,10 @@ export async function POST(req: Request) {
         const familiarId = card.familiarId!;
         const binding = bindingFor(config, familiarId);
 
-        // Local Coven harnesses can run headlessly through `coven run
-        // <harness> --stream-json`, including external adapter manifests.
-        if (binding.harness === "openclaw") {
+        // Only bundled, reviewed Coven harnesses may run headlessly through
+        // `coven run <harness> --stream-json`. OpenClaw and external adapter
+        // manifests use their own bridges instead of this privileged runner.
+        if (!isTrustedChatHarness(binding.harness)) {
           push({
             kind: "skip",
             cardId: card.id,

@@ -10,7 +10,10 @@ import {
   type OnboardingFamiliarDraft,
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
-import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
+import {
+  adapterManifestScaffoldForHarness,
+  isTrustedOnboardingHarness,
+} from "@/lib/harness-adapters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +54,12 @@ export async function POST(req: Request) {
     );
   }
   const harness = (draft?.harness ?? body.harness ?? "codex").trim() || "codex";
+  if (!isTrustedOnboardingHarness(harness)) {
+    return NextResponse.json(
+      { ok: false, error: `Unsupported harness: ${harness}.` },
+      { status: 400 },
+    );
+  }
   const model =
     (draft?.model ?? body.model ?? "codex-local").trim() || "codex-local";
 

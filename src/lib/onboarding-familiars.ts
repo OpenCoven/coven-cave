@@ -1,3 +1,4 @@
+import { isTrustedOnboardingHarness } from "./harness-adapters.ts";
 export type OnboardingFamiliarDraft = {
   id: string;
   displayName: string;
@@ -45,6 +46,9 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
 
   const openclawAgentId = slugify(cleanText(input.openclawAgentId));
   const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
+  if (!isTrustedOnboardingHarness(harness)) {
+    throw new Error(`Unsupported harness: ${harness}.`);
+  }
   const model = cleanText(input.model) || openclawAgentId || id;
 
   return {
