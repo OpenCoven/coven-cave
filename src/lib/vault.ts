@@ -95,7 +95,8 @@ const OP_REF_PREFIX = "op://";
 const OP_REF_MAX_LENGTH = 2048;
 const OP_REF_FORBIDDEN_CHARS = /[\0\r\n`"$\\<>|;&]/;
 
-export function validateOpRef(ref: string): string | null {
+export function validateOpRef(ref: unknown): string | null {
+  if (typeof ref !== "string") return "ref must be a string";
   if (!ref.startsWith(OP_REF_PREFIX)) return "ref must start with op://";
   if (ref.length > OP_REF_MAX_LENGTH) return "ref is too long";
   if (OP_REF_FORBIDDEN_CHARS.test(ref)) return "ref contains invalid characters";
