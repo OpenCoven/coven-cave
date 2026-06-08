@@ -47,8 +47,10 @@ const THEME_SCRIPT = `
         }
       }
       if (style) {
+        var existingStyle = document.documentElement.getAttribute("style") || "";
+        if (existingStyle && !existingStyle.endsWith(";")) existingStyle += ";";
         document.documentElement.setAttribute("style",
-          (document.documentElement.getAttribute("style") || "") + style
+          existingStyle + style
         );
       }
     }

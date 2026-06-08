@@ -431,6 +431,7 @@ function ThemePresetCard({
     <button
       type="button"
       onClick={() => onSelect(preset.id)}
+      aria-pressed={active}
       className={`relative flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
         active
           ? "border-[var(--accent-presence)] bg-[var(--bg-raised)] ring-1 ring-[var(--accent-presence)]"
@@ -510,15 +511,18 @@ function AppearanceSection() {
   function normalizeTweakcnUrl(raw: string): string | null {
     try {
       const url = new URL(raw.trim());
-      const host = url.hostname.toLowerCase();
-      if (!(host === "tweakcn.com" || host.endsWith(".tweakcn.com"))) return null;
+      const hostname = url.hostname.toLowerCase();
+      if (!(hostname === "tweakcn.com" || hostname.endsWith(".tweakcn.com")))
+        return null;
       if (url.pathname.startsWith("/r/themes/")) {
-        const id = url.pathname.replace("/r/themes/", "").split("/")[0];
-        if (id) return `https://tweakcn.com/r/themes/${id}`;
+        const themeId = url.pathname.replace("/r/themes/", "").split("/")[0];
+        if (themeId)
+          return `https://tweakcn.com/r/themes/${encodeURIComponent(themeId)}`;
       }
       if (url.pathname.startsWith("/editor/theme")) {
-        const name = url.searchParams.get("theme");
-        if (name) return `https://tweakcn.com/r/themes/${name}`;
+        const themeName = url.searchParams.get("theme")?.trim();
+        if (themeName)
+          return `https://tweakcn.com/r/themes/${encodeURIComponent(themeName)}`;
       }
       return null;
     } catch {
