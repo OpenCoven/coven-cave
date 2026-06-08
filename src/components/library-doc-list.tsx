@@ -67,6 +67,7 @@ export function LibraryDocList({
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           spellCheck={false}
+          aria-label="Search documents"
         />
         {searchQuery && (
           <button

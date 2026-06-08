@@ -207,6 +207,7 @@ export function SalemChatPanel() {
           onChange={(e) => { setInput(e.target.value); if (e.target.value) setMood("listening"); else setMood("idle"); }}
           disabled={loading}
           autoFocus
+          aria-label="Search Salem docs"
         />
         <button type="submit" className="salem-panel__send salem-panel__send--label" disabled={loading || !input.trim()} aria-label="Send">
           <span className="salem-panel__send-text">SALEM</span>

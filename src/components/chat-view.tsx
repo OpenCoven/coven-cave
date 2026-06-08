@@ -995,6 +995,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…`}
               rows={1}
               className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              aria-label="Message"
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
               <div className="flex items-center gap-1 text-[var(--text-muted)]">

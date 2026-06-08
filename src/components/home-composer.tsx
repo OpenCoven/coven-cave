@@ -241,6 +241,7 @@ export function HomeComposer({
           onChange={(e) => { setText(e.target.value); autoGrow(); }}
           onKeyDown={handleKeyDown}
           disabled={sending}
+          aria-label="Ask anything"
         />
 
         {/* Action bar */}
