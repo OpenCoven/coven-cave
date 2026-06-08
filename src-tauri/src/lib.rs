@@ -416,7 +416,10 @@ fn shell_open(url: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(windows_system32_binary("rundll32.exe"))
+        // Use the Windows URL protocol handler directly instead of routing
+        // attacker-controlled URLs through `cmd.exe /c start`, where shell
+        // metacharacters such as `&` can execute additional commands.
+        std::process::Command::new("rundll32.exe")
             .args(["url.dll,FileProtocolHandler", &url])
             .spawn()
             .map_err(|e| e.to_string())?;
