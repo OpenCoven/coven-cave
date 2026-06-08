@@ -17,10 +17,18 @@ const covenEntries = [
   {
     id: "smoke-nova-1",
     familiar_id: "nova",
-    title: "Nova remembers the constellation architecture",
-    path: "/Users/buns/.coven/memory/nova/constellation.md",
+    title: "Nova remembers the agent memory map architecture",
+    path: "/Users/buns/.coven/memory/nova/memory-map.md",
     updated_at: now,
-    excerpt: "Anchor familiar hubs and keep the list as the retrieval surface.",
+    excerpt: "Focus one agent at a time and keep the list as the retrieval surface.",
+  },
+  {
+    id: "smoke-nova-2",
+    familiar_id: "nova",
+    title: "Nova remembers the review decision",
+    path: "/Users/buns/.coven/memory/nova/review.md",
+    updated_at: now,
+    excerpt: "Avoid spheres and show memory as cards in a focused field.",
   },
   {
     id: "smoke-cody-1",
@@ -52,7 +60,7 @@ const fileEntries = [
 ];
 
 export function MemoryGraph3DSmoke() {
-  const [selectedFamiliarId, setSelectedFamiliarId] = useState("all");
+  const [selectedFamiliarId, setSelectedFamiliarId] = useState("nova");
   const familiars = useMemo(() => new Map(familiarsList.map((familiar) => [familiar.id, familiar])), []);
   const graph = useMemo(
     () =>

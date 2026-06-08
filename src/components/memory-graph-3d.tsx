@@ -107,16 +107,14 @@ function disposeObject(object: THREE.Object3D) {
 
 function colorFor(node: MemoryGraphSceneNode, selectedFamiliarId: string): THREE.Color {
   const color = new THREE.Color(node.color);
-  if (selectedFamiliarId === "all") return color;
   const belongsToSelected =
     (node.kind === "hub" && node.familiarId === selectedFamiliarId) ||
     (node.kind !== "hub" && node.familiarId === selectedFamiliarId);
   if (belongsToSelected) return color;
-  return color.lerp(new THREE.Color("#1a1722"), 0.72);
+  return color.lerp(new THREE.Color("#201927"), 0.42);
 }
 
 function nodeIsDimmed(node: MemoryGraphSceneNode, selectedFamiliarId: string): boolean {
-  if (selectedFamiliarId === "all") return false;
   if (node.kind === "hub") return node.hubKind === "familiar" && node.familiarId !== selectedFamiliarId;
   return node.familiarId !== selectedFamiliarId;
 }
@@ -161,15 +159,15 @@ export function MemoryGraph3D({
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x07070d, 0.042);
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 90);
-    camera.position.set(0, 5.8, sceneModel.nodes.length <= 4 ? 10 : 14);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(0.3, 4.5, sceneModel.nodes.length <= 4 ? 8.2 : 10.2);
+    camera.lookAt(-0.45, 0.22, 0);
 
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.minDistance = 5.5;
-    controls.maxDistance = 24;
-    controls.target.set(0, 0, 0);
+    controls.minDistance = 4.8;
+    controls.maxDistance = 18;
+    controls.target.set(-0.45, 0.22, 0);
     controls.saveState();
 
     const root = new THREE.Group();
@@ -187,9 +185,7 @@ export function MemoryGraph3D({
     const hubs = sceneModel.nodes.filter((node) => node.kind === "hub");
     const leaves = sceneModel.nodes.filter((node) => node.kind === "memory");
     const clusters = sceneModel.nodes.filter((node) => node.kind === "cluster");
-    const hubById = new Map(hubs.map((hub) => [hub.id, hub]));
-
-    const grid = new THREE.GridHelper(18, 18, 0x2c2440, 0x151520);
+    const grid = new THREE.GridHelper(12, 12, 0x2c2440, 0x151520);
     grid.position.y = -2.35;
     root.add(grid);
 
@@ -204,9 +200,7 @@ export function MemoryGraph3D({
     }
 
     for (const hub of hubs) {
-      const geometry = hub.hubKind === "files"
-        ? new THREE.IcosahedronGeometry(hub.radius, 1)
-        : new THREE.SphereGeometry(hub.radius, 32, 24);
+      const geometry = new THREE.BoxGeometry(1.18, 1.72, 0.28);
       const material = new THREE.MeshStandardMaterial({
         color: 0x17131f,
         emissive: colorFor(hub, selectedFamiliarId),
@@ -221,20 +215,20 @@ export function MemoryGraph3D({
       pickables.push(mesh);
 
       const halo = new THREE.Mesh(
-        new THREE.RingGeometry(hub.radius + 0.13, hub.radius + 0.2 + Math.min(hub.memoryCount, 30) * 0.004, 56),
+        new THREE.PlaneGeometry(1.58 + Math.min(hub.memoryCount, 28) * 0.012, 2.1),
         new THREE.MeshBasicMaterial({
           color: colorFor(hub, selectedFamiliarId),
           transparent: true,
-          opacity: nodeIsDimmed(hub, selectedFamiliarId) ? 0.16 : 0.46,
+          opacity: nodeIsDimmed(hub, selectedFamiliarId) ? 0.08 : 0.18,
           side: THREE.DoubleSide,
         }),
       );
-      halo.position.copy(asVector(hub.position));
+      halo.position.copy(asVector(hub.position).add(new THREE.Vector3(0, 0, -0.08)));
       halo.userData.billboard = true;
       root.add(halo);
 
       const label = makeLabelSprite(
-        hub.hubKind === "files" ? hub.label : familiars.get(hub.familiarId ?? "")?.display_name ?? hub.label,
+        familiars.get(hub.familiarId ?? "")?.display_name ?? hub.label,
         nodeIsDimmed(hub, selectedFamiliarId) ? "#7d748c" : "#f7f1ff",
       );
       label.position.copy(asVector(hub.position).add(new THREE.Vector3(0, hub.radius + 0.55, 0)));
@@ -242,37 +236,40 @@ export function MemoryGraph3D({
     }
 
     if (leaves.length > 0) {
-      const geometry = new THREE.SphereGeometry(1, 12, 10);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xffffff,
-        emissiveIntensity: 0.18,
-        vertexColors: true,
-        roughness: 0.55,
-        metalness: 0.05,
+      const geometry = new THREE.BoxGeometry(1.14, 0.44, 0.08);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x62d08f,
+        transparent: true,
+        opacity: 0.86,
       });
       const instanced = new THREE.InstancedMesh(geometry, material, leaves.length);
       const matrix = new THREE.Matrix4();
       leaves.forEach((node, index) => {
+        const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.02 * Math.cos(index), 0.08 * Math.sin(index), 0.02 * Math.cos(index)));
         matrix.compose(
           asVector(node.position),
-          new THREE.Quaternion(),
-          new THREE.Vector3(node.radius, node.radius, node.radius),
+          tilt,
+          new THREE.Vector3(1, 1, 1),
         );
         instanced.setMatrixAt(index, matrix);
-        instanced.setColorAt(index, colorFor(node, selectedFamiliarId));
       });
       instanced.instanceMatrix.needsUpdate = true;
-      if (instanced.instanceColor) instanced.instanceColor.needsUpdate = true;
       instanced.userData.nodes = leaves;
       root.add(instanced);
       pickables.push(instanced as Pickable);
+
+      leaves.slice(0, 6).forEach((node) => {
+        const label = makeLabelSprite(node.label, "#dffbea");
+        label.scale.set(1.72, 0.42, 1);
+        label.position.copy(asVector(node.position).add(new THREE.Vector3(0, 0.46, 0)));
+        root.add(label);
+      });
     }
 
     for (const cluster of clusters) {
       const color = colorFor(cluster, selectedFamiliarId);
       const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(cluster.radius, 20, 14),
+        new THREE.BoxGeometry(1.24, 0.16, 0.64),
         new THREE.MeshStandardMaterial({
           color: 0x1e1820,
           emissive: color,
@@ -312,8 +309,8 @@ export function MemoryGraph3D({
     const resetView = () => {
       controls.reset();
       root.rotation.set(-0.18, 0, 0);
-      camera.position.set(0, 5.8, sceneModel.nodes.length <= 4 ? 10 : 14);
-      camera.lookAt(0, 0, 0);
+      camera.position.set(0.3, 4.5, sceneModel.nodes.length <= 4 ? 8.2 : 10.2);
+      camera.lookAt(-0.45, 0.22, 0);
       controls.update();
     };
     resetRef.current = resetView;
@@ -362,15 +359,15 @@ export function MemoryGraph3D({
       setPointer(event);
       const node = hitNode();
       if (!node) {
-        onSelectFamiliar("all");
+        resetRef.current?.();
       } else if (node.kind === "hub") {
-        onSelectFamiliar(node.familiarId ?? "all");
+        if (node.familiarId) onSelectFamiliar(node.familiarId);
       } else if (node.kind === "memory") {
         onOpenMemoryFile?.(node.path);
       } else if (node.familiarId) {
         onSelectFamiliar(node.familiarId);
       } else {
-        onSelectFamiliar("all");
+        resetRef.current?.();
       }
     };
     const onPointerLeave = () => setHover(null);
@@ -426,19 +423,17 @@ export function MemoryGraph3D({
     };
   }, [familiars, graph, onOpenMemoryFile, onSelectFamiliar, reducedMotion, sceneModel, selectedFamiliarId]);
 
-  const selectedLabel = selectedFamiliarId === "all"
-    ? `${graph.metrics.visibleCovenEntries + graph.metrics.visibleFileEntries} memories in constellation.`
-    : `Selected familiar ${familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}.`;
+  const selectedLabel = `Selected agent ${familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}; ${graph.metrics.visibleCovenEntries} memories in view.`;
 
   const onKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
-    if (event.key === "Escape") onSelectFamiliar("all");
+    if (event.key === "Escape") resetRef.current?.();
     if (event.key === "Home") resetRef.current?.();
   };
 
   if (sceneModel.nodes.length === 0) {
     return (
       <div className="grid min-h-[420px] flex-1 place-items-center bg-[oklch(0.11_0.022_293)] text-sm text-white/55">
-        No memories in this constellation.
+        No memories for this agent.
       </div>
     );
   }
@@ -448,7 +443,7 @@ export function MemoryGraph3D({
       <canvas
         ref={canvasRef}
         data-testid="memory-graph-3d-canvas"
-        aria-label="3D memory constellation"
+        aria-label="3D familiar memory map"
         role="application"
         tabIndex={0}
         onKeyDown={onKeyDown}
@@ -457,11 +452,10 @@ export function MemoryGraph3D({
       <p aria-live="polite" className="sr-only">{selectedLabel}</p>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-3 p-3">
         <div className="rounded-lg border border-white/10 bg-black/45 px-3 py-2 shadow-2xl backdrop-blur">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-white/55">Memory constellation</div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-white/55">Agent memory map</div>
           <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-white/70">
-            <span>{graph.metrics.familiarHubs} familiars</span>
-            <span>{graph.metrics.visibleCovenEntries} coven</span>
-            <span>{graph.metrics.visibleFileEntries} files</span>
+            <span>{familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}</span>
+            <span>{graph.metrics.visibleCovenEntries} memories</span>
           </div>
         </div>
         <button
@@ -474,14 +468,13 @@ export function MemoryGraph3D({
         </button>
       </div>
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/45 px-3 py-2 text-[10px] text-white/65 shadow-2xl backdrop-blur">
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#8E3DFF]" /> familiar</span>
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#62d08f]" /> coven</span>
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#38bdf8]" /> files</span>
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-[#f59e0b]" /> cluster</span>
+        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#8E3DFF]" /> agent</span>
+        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#62d08f]" /> memory card</span>
+        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#f59e0b]" /> older stack</span>
       </div>
       {graph.metrics.hiddenEntries > 0 ? (
         <div className="pointer-events-none absolute right-3 top-16 max-w-[260px] rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_25%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_18%,transparent)] px-3 py-2 text-[10px] text-[var(--color-warning)] shadow-2xl backdrop-blur">
-          Dense constellation: {graph.metrics.hiddenEntries} older memories are clustered.
+          Dense memory: {graph.metrics.hiddenEntries} older entries are stacked.
         </div>
       ) : null}
       {hover ? <MemoryGraphTooltip hover={hover} familiars={familiars} /> : null}
@@ -497,12 +490,12 @@ function MemoryGraphTooltip({
   familiars: Map<string, Familiar>;
 }) {
   const { node } = hover;
-  const familiarName = node.familiarId ? familiars.get(node.familiarId)?.display_name ?? node.familiarId : "Memory Files";
+  const familiarName = node.familiarId ? familiars.get(node.familiarId)?.display_name ?? node.familiarId : "Memory";
   const detail = node.kind === "hub"
     ? `${node.memoryCount} memories`
     : node.kind === "cluster"
       ? `${node.count} older memories`
-      : `${familiarName} · ${node.source === "file" ? node.rootLabel ?? "file" : "coven"} · ${compactAge(node.updatedAt)}`;
+      : `${familiarName} · ${compactAge(node.updatedAt)}`;
 
   return (
     <div

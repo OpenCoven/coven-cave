@@ -110,8 +110,6 @@ export type MemoryGraphSceneModel = {
 
 export type ScenePosition = { x: number; y: number; z: number };
 
-const FILE_HUB_ID = "hub:memory-files";
-
 function matchesQuery(values: Array<string | undefined>, query: string): boolean {
   if (!query) return true;
   return values.some((value) => (value ?? "").toLowerCase().includes(query));
@@ -121,16 +119,34 @@ function compareIsoDesc(a?: string, b?: string): number {
   return (b ?? "").localeCompare(a ?? "");
 }
 
-function compactFileTitle(entry: MemoryGraphFileEntry): string {
-  return entry.relPath || entry.fullPath.split("/").pop() || entry.fullPath;
-}
-
-function memoryIdForFile(entry: MemoryGraphFileEntry): string {
-  return `memory:file:${entry.fullPath}`;
-}
-
 function memoryIdForCoven(entry: MemoryGraphCovenEntry): string {
   return `memory:coven:${entry.id}`;
+}
+
+export function resolveMemoryFamiliarFilter({
+  familiars,
+  covenEntries,
+  currentFamiliarId,
+  activeFamiliarId,
+}: {
+  familiars: Familiar[];
+  covenEntries: MemoryGraphCovenEntry[];
+  currentFamiliarId: string;
+  activeFamiliarId?: string | null;
+}): string {
+  const familiarIds = new Set(familiars.map((familiar) => familiar.id));
+  if (activeFamiliarId && familiarIds.has(activeFamiliarId)) return activeFamiliarId;
+
+  const familiarsWithMemory = new Set(covenEntries.map((entry) => entry.familiar_id));
+  if (
+    currentFamiliarId &&
+    familiarIds.has(currentFamiliarId) &&
+    (familiarsWithMemory.size === 0 || familiarsWithMemory.has(currentFamiliarId))
+  ) {
+    return currentFamiliarId;
+  }
+
+  return familiars.find((familiar) => familiarsWithMemory.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
 }
 
 function edgeId(source: string, target: string): string {
@@ -203,7 +219,7 @@ function addCappedLeaves({
 export function buildMemoryGraphModel({
   familiars,
   covenEntries,
-  fileEntries,
+  fileEntries: _fileEntries,
   query = "",
   familiarFilter = "all",
   maxLeavesPerHub = 30,
@@ -220,54 +236,40 @@ export function buildMemoryGraphModel({
   const edges: MemoryGraphEdge[] = [];
   let hiddenEntries = 0;
 
+  const selectedFamiliarId = familiarFilter !== "all"
+    ? familiarFilter
+    : covenEntries.find((entry) => matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q))?.familiar_id ?? familiars[0]?.id;
+  const selectedFamiliar = familiars.find((familiar) => familiar.id === selectedFamiliarId);
+
   const matchingCovenEntries = covenEntries
-    .filter((entry) => familiarFilter === "all" || entry.familiar_id === familiarFilter)
+    .filter((entry) => entry.familiar_id === selectedFamiliarId)
     .filter((entry) =>
       matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q),
     )
     .sort((a, b) => compareIsoDesc(a.updated_at, b.updated_at));
 
-  const matchingFiles = fileEntries
-    .filter((entry) =>
-      matchesQuery([entry.rootLabel, entry.relPath, entry.fullPath], q),
-    )
-    .sort((a, b) => compareIsoDesc(a.modified, b.modified));
+  const totalMatchingForFamiliar = covenEntries.filter((entry) =>
+    entry.familiar_id === selectedFamiliarId &&
+    matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q),
+  ).length;
 
-  const covenByFamiliar = new Map<string, MemoryGraphCovenEntry[]>();
-  for (const entry of matchingCovenEntries) {
-    const bucket = covenByFamiliar.get(entry.familiar_id) ?? [];
-    bucket.push(entry);
-    covenByFamiliar.set(entry.familiar_id, bucket);
-  }
-
-  const totalCovenByFamiliar = new Map<string, number>();
-  for (const entry of covenEntries) {
-    if (!matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q)) continue;
-    totalCovenByFamiliar.set(
-      entry.familiar_id,
-      (totalCovenByFamiliar.get(entry.familiar_id) ?? 0) + 1,
-    );
-  }
-
-  for (const familiar of familiars) {
-    const hubId = `familiar:${familiar.id}`;
-    const entries = covenByFamiliar.get(familiar.id) ?? [];
-    const latestAt = entries[0]?.updated_at;
+  if (selectedFamiliar) {
+    const hubId = `familiar:${selectedFamiliar.id}`;
     nodes.push({
       kind: "hub",
       hubKind: "familiar",
       id: hubId,
-      label: familiar.display_name ?? familiar.name ?? familiar.id,
-      glyph: familiar.icon ?? familiar.emoji,
-      familiarId: familiar.id,
-      memoryCount: totalCovenByFamiliar.get(familiar.id) ?? 0,
-      latestAt,
+      label: selectedFamiliar.display_name ?? selectedFamiliar.name ?? selectedFamiliar.id,
+      glyph: selectedFamiliar.icon ?? selectedFamiliar.emoji,
+      familiarId: selectedFamiliar.id,
+      memoryCount: totalMatchingForFamiliar,
+      latestAt: matchingCovenEntries[0]?.updated_at,
     });
     addCappedLeaves({
       hubId,
-      familiarId: familiar.id,
+      familiarId: selectedFamiliar.id,
       source: "coven",
-      entries,
+      entries: matchingCovenEntries,
       maxLeavesPerHub,
       nodes,
       edges,
@@ -286,52 +288,17 @@ export function buildMemoryGraphModel({
         };
       },
     });
-    hiddenEntries += Math.max(entries.length - maxLeavesPerHub, 0);
-  }
-
-  if (matchingFiles.length > 0 || fileEntries.length > 0) {
-    nodes.push({
-      kind: "hub",
-      hubKind: "files",
-      id: FILE_HUB_ID,
-      label: "Memory Files",
-      glyph: "ph:file-text",
-      memoryCount: matchingFiles.length,
-      latestAt: matchingFiles[0]?.modified,
-    });
-    addCappedLeaves({
-      hubId: FILE_HUB_ID,
-      source: "file",
-      entries: matchingFiles,
-      maxLeavesPerHub,
-      nodes,
-      edges,
-      toMemoryNode: (entry) => {
-        const file = entry as MemoryGraphFileEntry;
-        return {
-          kind: "memory",
-          id: memoryIdForFile(file),
-          source: "file",
-          hubId: FILE_HUB_ID,
-          title: compactFileTitle(file),
-          path: file.fullPath,
-          updatedAt: file.modified,
-          rootLabel: file.rootLabel,
-          relPath: file.relPath,
-        };
-      },
-    });
-    hiddenEntries += Math.max(matchingFiles.length - maxLeavesPerHub, 0);
+    hiddenEntries += Math.max(matchingCovenEntries.length - maxLeavesPerHub, 0);
   }
 
   return {
     nodes,
     edges,
     metrics: {
-      familiarHubs: familiars.length,
-      fileHubs: fileEntries.length > 0 ? 1 : 0,
+      familiarHubs: selectedFamiliar ? 1 : 0,
+      fileHubs: 0,
       visibleCovenEntries: matchingCovenEntries.length,
-      visibleFileEntries: matchingFiles.length,
+      visibleFileEntries: 0,
       hiddenEntries,
     },
   };
@@ -340,58 +307,18 @@ export function buildMemoryGraphModel({
 export function memorySelectionObjectKey(selection: MemoryGraphSelection): string | null {
   if (!selection) return null;
   if (selection.kind === "familiar") return `hub:familiar:${selection.id}`;
-  if (selection.kind === "files") return `hub:${FILE_HUB_ID}`;
+  if (selection.kind === "files") return null;
   if (selection.kind === "memory") return `memory:${selection.id}`;
   return `cluster:${selection.id}`;
 }
 
-function hubSortKey(node: MemoryGraphHubNode): string {
-  return node.hubKind === "files" ? "zzzz" : node.label.toLowerCase();
-}
-
-function fibonacciHemispherePosition({
-  center,
-  index,
-  count,
-  radius,
-  phase,
-  orbitScale = 1,
-}: {
-  center: ScenePosition;
-  index: number;
-  count: number;
-  radius: number;
-  phase: number;
-  orbitScale?: number;
-}): ScenePosition {
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
-  const normalized = count <= 1 ? 0.5 : (index + 0.5) / count;
-  const y = 1 - normalized * 0.92;
-  const horizontal = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = goldenAngle * index + phase;
-  const scaledRadius = radius * orbitScale;
-  return pos(
-    positionAdd(center.x, Math.cos(theta) * horizontal * scaledRadius),
-    positionAdd(center.y, y * scaledRadius - 0.28),
-    positionAdd(center.z, Math.sin(theta) * horizontal * scaledRadius),
-  );
-}
-
 export function buildMemoryGraphSceneModel(graph: MemoryGraph): MemoryGraphSceneModel {
   const hubs = graph.nodes
-    .filter((node): node is MemoryGraphHubNode => node.kind === "hub")
-    .sort((a, b) => hubSortKey(a).localeCompare(hubSortKey(b)));
-  const hubCount = Math.max(hubs.length, 1);
-  const ringRadius = hubCount <= 2 ? 3.5 : Math.max(4.2, Math.min(8.2, 3.2 + hubCount * 0.52));
+    .filter((node): node is MemoryGraphHubNode => node.kind === "hub");
   const hubPositions = new Map<string, ScenePosition>();
 
-  hubs.forEach((hub, index) => {
-    const angle = hubCount === 1 ? -Math.PI / 2 : (index / hubCount) * Math.PI * 2 - Math.PI / 2;
-    const filesLift = hub.hubKind === "files" ? -0.8 : 0;
-    hubPositions.set(
-      hub.id,
-      pos(Math.cos(angle) * ringRadius, filesLift + Math.sin(index * 1.2) * 0.24, Math.sin(angle) * ringRadius),
-    );
+  hubs.forEach((hub) => {
+    hubPositions.set(hub.id, pos(-2.25, 0, 0));
   });
 
   const childrenByHub = new Map<string, MemoryGraphChildNode[]>();
@@ -409,29 +336,31 @@ export function buildMemoryGraphSceneModel(graph: MemoryGraph): MemoryGraphScene
       ...hub,
       label: hub.label,
       position: hubPosition,
-      radius: hub.hubKind === "files" ? 0.48 : 0.56 + Math.min(hub.memoryCount, 24) * 0.01,
-      color: hub.hubKind === "files" ? "#38bdf8" : "#8E3DFF",
+      radius: 0.72 + Math.min(hub.memoryCount, 24) * 0.008,
+      color: "#8E3DFF",
       memoryCount: hub.memoryCount,
     });
 
     const children = childrenByHub.get(hub.id) ?? [];
-    const shellRadius = hub.hubKind === "files" ? 1.65 : 1.35 + Math.min(children.length, 18) * 0.025;
+    const columns = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(children.length || 1))));
+    const rowGap = 0.82;
+    const colGap = 1.28;
     children.forEach((child, index) => {
-      const orbitScale = child.kind === "cluster" ? 1.16 : 1;
-      const position = fibonacciHemispherePosition({
-        center: hubPosition,
-        index,
-        count: Math.max(children.length, 1),
-        radius: shellRadius,
-        phase: hub.id.length * 0.17,
-        orbitScale,
-      });
+      const row = Math.floor(index / columns);
+      const col = index % columns;
+      const rowWidth = Math.min(columns, children.length - row * columns);
+      const colOffset = col - (rowWidth - 1) / 2;
+      const position = pos(
+        positionAdd(hubPosition.x, 1.75 + row * rowGap * 0.42),
+        positionAdd(hubPosition.y, -0.35 + row * rowGap * 0.72),
+        positionAdd(hubPosition.z, colOffset * colGap + Math.sin(index * 1.7) * 0.08),
+      );
       sceneNodes.push({
         ...child,
         label: child.kind === "memory" ? child.title : child.label,
         position,
-        radius: child.kind === "memory" && child.source === "file" ? 0.18 : child.kind === "memory" ? 0.2 : 0.32,
-        color: child.kind === "memory" && child.source === "file" ? "#38bdf8" : child.kind === "memory" ? "#62d08f" : "#f59e0b",
+        radius: child.kind === "memory" ? 0.36 : 0.48,
+        color: child.kind === "memory" ? "#62d08f" : "#f59e0b",
         memoryCount: child.kind === "cluster" ? child.count : 1,
       });
     });
@@ -446,7 +375,7 @@ export function buildMemoryGraphSceneModel(graph: MemoryGraph): MemoryGraphScene
       ...edge,
       from: source.position,
       to: target.position,
-      color: source.kind === "memory" && source.source === "file" ? "#38bdf8" : source.kind === "memory" ? "#62d08f" : "#f59e0b",
+      color: source.kind === "memory" ? "#62d08f" : "#f59e0b",
       opacity: source.kind === "cluster" ? 0.42 : 0.28,
     }];
   });
