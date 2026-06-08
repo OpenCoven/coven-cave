@@ -39,8 +39,21 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 import { useShellBanners } from "@/lib/shell-banners";
+import { TopBar } from "@/components/top-bar";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
+
+const SURFACE_LABELS: Record<WorkspaceMode, string> = {
+  home: "Home",
+  chat: "Chat",
+  board: "Board",
+  calendar: "Calendar",
+  inbox: "Inbox",
+  library: "Library",
+  browser: "Browser",
+  terminal: "Terminal",
+  github: "GitHub",
+};
 
 // Icon-only nav strip shown when the sidebar is collapsed
 function IconNavStrip({
@@ -740,6 +753,9 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
+  const surfaceLabel = SURFACE_LABELS[mode] ?? "Home";
+  const subContext = active ? active.display_name : undefined;
+
   const openProjectChat = useCallback((projectRoot: string) => {
     startAgentChat(activeId, projectRoot);
   }, [activeId, startAgentChat]);
@@ -929,6 +945,24 @@ export function Workspace() {
     <>
       <Shell
         ref={shellRef}
+        topBar={
+          <TopBar
+            surfaceLabel={surfaceLabel}
+            subContext={subContext}
+            onOpenPalette={() => setPaletteOpen(true)}
+            onOpenInbox={() => setMode("inbox")}
+            onOpenSettings={() => nextRouter.push("/settings")}
+            inboxItems={inboxItemsWithEphemeral}
+            familiars={familiars}
+            inboxPrefs={inboxPrefs}
+            inboxBadgeCount={inboxBadgeCount}
+            onOpenInboxItem={(item) => {
+              if (item.sessionId) openAgentSession(item.sessionId, item.familiarId);
+              else setMode("inbox");
+            }}
+            onNotificationPrefsChanged={refreshPrefs}
+          />
+        }
         familiarRail={
           <FamiliarAvatarRail
             familiars={familiars}

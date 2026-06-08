@@ -17,7 +17,6 @@ import { Icon } from "@/lib/icon";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
-import { NotificationBell } from "@/components/notification-bell";
 
 export type FolderMode =
   | "home"
@@ -188,9 +187,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     return true;
   });
 
-  const showNotifications =
-    !!onOpenInbox && !!onNotificationPrefsChanged && !!inboxPrefs;
-
   const workModes = visibleFolderModes.filter((fm) => fm.group === "work");
   const knowledgeModes = visibleFolderModes.filter((fm) => fm.group === "knowledge");
   const toolsModes = visibleFolderModes.filter((fm) => fm.group === "tools" || fm.group === "addons");
@@ -259,22 +255,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </SidebarSection>
       </div>
 
-      {/* Bottom: Notifications + Settings */}
+      {/* Bottom: Settings */}
       <div className="sidebar-foot">
-        {showNotifications ? (
-          <div className="sidebar-foot-bell">
-            <NotificationBell
-              items={inboxItems ?? []}
-              familiars={familiars ?? []}
-              prefs={inboxPrefs!}
-              badgeCount={notificationBadgeCount}
-              onOpenInbox={onOpenInbox!}
-              onOpenItem={onOpenInboxItem}
-              onPrefsChanged={onNotificationPrefsChanged!}
-            />
-            <span className="sidebar-foot-label">Notifications</span>
-          </div>
-        ) : null}
         <button
           type="button"
           className="sidebar-foot-btn"

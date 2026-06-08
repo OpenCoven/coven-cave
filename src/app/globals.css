@@ -2603,3 +2603,99 @@ body {
 .shell-banner__dismiss:hover {
   opacity: 1;
 }
+
+/* ────────────────────────────────────────────────
+   Top bar — brand · breadcrumb · search · bell · settings
+   (Phase 4, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 36px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: var(--text-sm);
+  user-select: none;
+}
+
+.top-bar__brand {
+  color: var(--accent-presence);
+  font-weight: 600;
+}
+
+.top-bar__sep {
+  color: var(--text-muted);
+}
+
+.top-bar__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top-bar__crumb-surface {
+  color: var(--text-primary);
+}
+
+.top-bar__crumb-sep {
+  color: var(--text-muted);
+}
+
+.top-bar__crumb-sub {
+  color: var(--text-secondary);
+}
+
+.top-bar__search {
+  margin-left: auto;
+  margin-right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  min-width: 240px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__search:hover {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.top-bar__search kbd {
+  margin-left: auto;
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.top-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.top-bar__icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.top-bar__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
