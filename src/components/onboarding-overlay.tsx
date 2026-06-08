@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type PruneState =
   | { idle: true }
@@ -166,6 +167,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [prune, setPrune] = useState<PruneState>({ idle: true });
   const [statusFailures, setStatusFailures] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(open, dialogRef, { onEscape: onDismiss });
 
   const refresh = useCallback(async () => {
     try {
@@ -481,7 +485,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-[var(--bg-base)]/96 backdrop-blur-sm">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Onboarding"
+      tabIndex={-1}
+      className="fixed inset-0 z-50 overflow-y-auto bg-[var(--bg-base)]/96 backdrop-blur-sm"
+    >
       <div className="mx-auto flex min-h-full w-full max-w-[min(1680px,100vw)] flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">

@@ -16,6 +16,7 @@ import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -735,6 +736,9 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(!closing, dialogRef, { onEscape: close });
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     document.addEventListener("keydown", h);
@@ -767,7 +771,7 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
   return (
     <>
       <div className="board-drawer-backdrop" onClick={close} />
-      <div className={`board-drawer${closing ? " board-drawer--closing" : ""}`} role="dialog" aria-modal aria-label="Card inspector">
+      <div ref={dialogRef} className={`board-drawer${closing ? " board-drawer--closing" : ""}`} role="dialog" aria-modal aria-label="Card inspector" tabIndex={-1}>
         <div className="board-drawer-header">
           <input
             className="board-drawer-title-input"

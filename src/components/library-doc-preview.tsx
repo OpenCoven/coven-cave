@@ -13,6 +13,7 @@ import type {
   ReadingStatus,
 } from "@/lib/library-types";
 import type { Skill } from "@/components/library-collection-rail";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 // ── Discriminated union ──────────────────────────────────────────
 export type SelectedItem =
@@ -337,6 +338,9 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
     setScrollPct(max > 0 ? (el.scrollTop / max) * 100 : 0);
   }
 
+  const readerDialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(readerOpen, readerDialogRef, { onEscape: () => setReaderOpen(false) });
+
   const [readerScrollPct, setReaderScrollPct] = useState(0);
   function handleReaderScroll() {
     const el = readerBodyRef.current;
@@ -503,11 +507,13 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
 
       {readerOpen && typeof document !== "undefined" && createPortal(
         <div
+          ref={readerDialogRef}
           className="library-reader-backdrop"
           onClick={(e) => { if (e.target === e.currentTarget) setReaderOpen(false); }}
           role="dialog"
           aria-modal="true"
           aria-label={`Reader: ${doc.title}`}
+          tabIndex={-1}
         >
           <div className="library-reader-modal">
             {/* Reader scroll progress bar */}

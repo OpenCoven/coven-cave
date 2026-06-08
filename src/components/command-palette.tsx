@@ -5,6 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS } from "@/lib/slash-commands";
 import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -84,7 +85,10 @@ export function CommandPalette({
   const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
   const [fsMemory, setFsMemory] = useState<FsMemoryEntry[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const keys = useKeySymbols();
+
+  useFocusTrap(open, dialogRef, { onEscape: onClose });
 
   // Fetch the searchable corpora once on first open. Cheap calls; refreshed
   // every time the palette opens so the index doesn't go stale.
@@ -114,18 +118,6 @@ export function CommandPalette({
 
     return () => clearTimeout(t);
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   const rows: Row[] = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -303,10 +295,12 @@ export function CommandPalette({
       style={{ animation: "ui-modal-fade-in var(--duration-fast) var(--ease-decelerate)" }}
     >
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
+        tabIndex={-1}
         className="mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
         style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
       >

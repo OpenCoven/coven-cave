@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import type { CardGitHubLink, CardStatus } from "@/lib/cave-board-types";
@@ -10,6 +10,7 @@ import {
   mergeLinksWithGitHub,
   mergeTaskGitHubLinks,
 } from "@/lib/task-github";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -125,6 +126,9 @@ function AttachTaskModal({
   const [done, setDone]             = useState<string | null>(null);
   const [err, setErr]               = useState<string | null>(null);
 
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(true, dialogRef, { onEscape: onClose });
+
   useEffect(() => {
     void fetch("/api/familiars", { cache: "no-store" })
       .then((r) => r.json())
@@ -204,7 +208,14 @@ function AttachTaskModal({
       className="gh-modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="gh-modal">
+      <div
+        ref={dialogRef}
+        className="gh-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Attach to Task"
+        tabIndex={-1}
+      >
         <div className="gh-modal-header">
           <Icon name="ph:clipboard-text" width={14} />
           <span>Attach to Task</span>
@@ -321,6 +332,9 @@ function HandoffModal({
   const [done, setDone]             = useState<{ familiar: string; session: string | null } | null>(null);
   const [err, setErr]               = useState<string | null>(null);
 
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(true, dialogRef, { onEscape: onClose });
+
   useEffect(() => {
     void fetch("/api/familiars", { cache: "no-store" })
       .then((r) => r.json())
@@ -406,7 +420,14 @@ function HandoffModal({
       className="gh-modal-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="gh-modal gh-modal--wide">
+      <div
+        ref={dialogRef}
+        className="gh-modal gh-modal--wide"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Handoff to Agent"
+        tabIndex={-1}
+      >
         <div className="gh-modal-header">
           <Icon name="ph:share-network" width={14} />
           <span>Handoff to Agent</span>
