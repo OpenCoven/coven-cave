@@ -129,7 +129,7 @@ function ItemChip({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-left text-[11px] hover:bg-[var(--bg-elevated)] transition-colors group"
+      className="focus-ring flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-left text-[11px] hover:bg-[var(--bg-elevated)] transition-colors group"
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
       <Icon
@@ -272,7 +272,7 @@ function AllDayStrip({
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       {/* Label */}
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
-        <span className="text-[9px] uppercase tracking-wider text-[var(--text-muted)] leading-tight text-right">
+        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
           All
           <br />
           day
@@ -547,7 +547,7 @@ function WeekView({
                 col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
               }`}
             >
-              <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
                 {WEEKDAYS[col.date.getDay()]}
               </div>
               <div
@@ -623,7 +623,7 @@ function MonthView({
             {WEEKDAYS.map((wd) => (
               <div
                 key={wd}
-                className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-muted)]"
+                className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-secondary)]"
               >
                 {wd}
               </div>
@@ -666,7 +666,7 @@ function MonthView({
                           e.stopPropagation();
                           onOpenItem?.(item);
                         }}
-                        className="flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 py-0.5 text-left text-[9px] hover:bg-[var(--bg-elevated)]"
+                        className="focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 py-0.5 text-left text-[9px] hover:bg-[var(--bg-elevated)]"
                       >
                         <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />
                         <span className="truncate text-[var(--text-primary)]">{item.title}</span>
@@ -678,7 +678,7 @@ function MonthView({
                           e.stopPropagation();
                           onDayClick?.(day);
                         }}
-                        className="w-full px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+                        className="focus-ring w-full rounded px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
                         title={`${dayItems.length - 3} more items — click to see all`}
                       >
                         +{dayItems.length - 3} more
@@ -723,7 +723,8 @@ function ItemDetailPanel({
         </div>
         <button
           onClick={onClose}
-          className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          aria-label="Close"
+          className="focus-ring shrink-0 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
         >
           <Icon name="ph:x" width={14} />
         </button>
@@ -757,14 +758,14 @@ function ItemDetailPanel({
       <div className="px-4 py-3 border-t border-[var(--border-hairline)] flex gap-2">
         <button
           onClick={onClose}
-          className="flex-1 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+          className="focus-ring flex-1 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
         >
           Dismiss
         </button>
         <div className="relative flex-1">
           <button
             onClick={() => setSnoozeOpen((v) => !v)}
-            className="w-full rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white hover:opacity-90 transition-opacity"
+            className="focus-ring w-full rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
           >
             Snooze →
           </button>
@@ -774,7 +775,7 @@ function ItemDetailPanel({
                 <button
                   key={opt.label}
                   onClick={() => { setSnoozeOpen(false); onClose(); }}
-                  className="w-full px-3 py-2 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] transition-colors"
+                  className="focus-ring w-full px-3 py-2 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] transition-colors"
                 >
                   {opt.label}
                 </button>
@@ -870,20 +871,20 @@ export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props
           <button
             onClick={() => navigate(-1)}
             aria-label="Previous"
-            className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-left-bold" width={12} />
           </button>
           <button
             onClick={() => setAnchor(new Date())}
-            className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="focus-ring rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
           >
             Today
           </button>
           <button
             onClick={() => navigate(1)}
             aria-label="Next"
-            className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-right-bold" width={12} />
           </button>
@@ -907,7 +908,7 @@ export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props
             <button
               key={id}
               onClick={() => setViewMode(id)}
-              className={`px-2.5 py-1 text-[11px] transition-colors sm:px-3 ${
+              className={`focus-ring-inset px-2.5 py-1 text-[11px] transition-colors sm:px-3 ${
                 viewMode === id
                   ? "bg-[var(--accent-presence)] text-white"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"

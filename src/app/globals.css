@@ -3189,6 +3189,43 @@ body {
 }
 
 /* ────────────────────────────────────────────────
+   Calendar item detail panel
+   Sits over the right edge of the calendar surface
+   when an event is selected. The container is just
+   a sibling div in calendar-view.tsx — these rules
+   give it a real side-pane affordance.
+   ──────────────────────────────────────────────── */
+.cave-cal-detail-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border-hairline);
+  box-shadow: -8px 0 24px color-mix(in oklch, var(--text-primary) 10%, transparent);
+  z-index: 10;
+  animation: cave-cal-detail-slide 160ms ease-out;
+}
+
+@keyframes cave-cal-detail-slide {
+  from { transform: translateX(8px); opacity: 0; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+
+.cave-cal-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+}
+
+/* ────────────────────────────────────────────────
    Familiar Studio drawer
    ──────────────────────────────────────────────── */
 
