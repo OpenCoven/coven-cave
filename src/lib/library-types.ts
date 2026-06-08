@@ -74,7 +74,7 @@ export type LibraryGitHubItem = {
   capture?: LinkCapture;
 };
 
-export type LibrarySectionKind = "all" | "docs" | "bookmarks" | "reading" | "github" | "skills";
+export type LibrarySectionKind = "all" | "docs" | "bookmarks" | "reading" | "github" | "skills" | "projects";
 
 // ── Link routing (familiar-driven ingestion) ────────────────────
 export type LinkSource =

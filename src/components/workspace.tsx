@@ -600,7 +600,8 @@ export function Workspace() {
           setMode("terminal");
           return;
         case "/projects":
-          setMode("projects");
+          setMode("library");
+          window.location.hash = "library:projects";
           return;
         case "/library":
           setMode("library");
@@ -822,11 +823,16 @@ export function Workspace() {
         onSessionsChanged={loadSessions}
       />
     ) : mode === "library" ? (
-      <LibraryView onOpenUrl={(url) => {
-        setMode("browser");
-        // Give the pane one frame to mount/become active, then navigate
-        requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
-      }} />
+      <LibraryView
+        onOpenUrl={(url) => {
+          setMode("browser");
+          // Give the pane one frame to mount/become active, then navigate
+          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
+        }}
+        sessions={sessions}
+        onOpenSession={openAgentSession}
+        onNewProjectChat={openProjectChat}
+      />
     ) : mode === "board" ? (
       <BoardView
         familiars={familiars}
@@ -856,15 +862,6 @@ export function Workspace() {
     ) : mode === "terminal" ? (
       <ComuxView
         view="terminal"
-        sessions={sessions}
-        onOpenSession={(sessionId, familiarId) => {
-          openAgentSession(sessionId, familiarId);
-        }}
-        onNewChat={openProjectChat}
-      />
-    ) : mode === "projects" ? (
-      <ComuxView
-        view="projects"
         sessions={sessions}
         onOpenSession={(sessionId, familiarId) => {
           openAgentSession(sessionId, familiarId);

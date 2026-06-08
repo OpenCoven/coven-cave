@@ -27,6 +27,7 @@ const STATIC_LIST_SECTIONS: ListSection[] = [
   { id: "bookmarks", label: "Bookmarks", icon: "ph:bookmark-simple" },
   { id: "reading",   label: "Reading",   icon: "ph:book-open" },
   { id: "github",    label: "GitHub",    icon: "ph:github-logo" },
+  { id: "projects",  label: "Projects",  icon: "ph:folder" },
 ];
 
 // ── Props ────────────────────────────────────────────────────────────────────
