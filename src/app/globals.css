@@ -21,14 +21,11 @@
    Reserved for familiar presence dots and the health strip — not
    for primary CTAs.
 
-   Palette v1.2 — Mood C tuned for a professional, sleek dark UI.
-   Surface chroma drops from 0.022 → ~0.005 so the shell reads as
-   refined neutral graphite rather than tinted purple. The cave base
-   sits deep (L≈0.07) for that "near-black, low-light editor" feel,
-   with small lightness steps building hierarchy (panel → card →
-   elevated → hover). Brand hue 293 is preserved in accents so the
-   accent-presence dot still feels OpenCoven without bleeding into
-   every surface. */
+   Palette v1.2 — Coven (default) tuned for editor density at both
+   modes. Dark uses near-black panels with low chroma on surfaces;
+   light mirrors the structure with a near-white panel ladder. Brand
+   hue 293 is preserved in accents so the accent-presence dot still
+   feels OpenCoven without bleeding into every surface. */
 
 :root {
   /* ---- Palette (oklch — same colour science as shadcn) ---- */
@@ -46,9 +43,9 @@
   --muted-foreground: oklch(0.66 0.012 293);
   --accent: oklch(0.17 0.006 293);
   --accent-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 5%);
-  --border-strong: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 8%);
+  --border: color-mix(in oklch, var(--foreground) 12%, transparent);
+  --border-strong: color-mix(in oklch, var(--foreground) 22%, transparent);
+  --input: color-mix(in oklch, var(--foreground) 18%, transparent);
   --ring: oklch(0.55 0.08 293);
 
   /* ---- Coven brand ----
@@ -72,7 +69,7 @@
   --fg-muted: var(--text-secondary);
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
-  --text-muted: oklch(0.985 0 0 / 40%);
+  --text-muted: color-mix(in oklch, var(--foreground) 40%, transparent);
 
   /* ---- Radii ---- */
   --radius: 0.625rem;
@@ -161,6 +158,48 @@
 
   /* ---- Surface alphas ---- */
   --backdrop-scrim: oklch(0 0 0 / 60%);
+}
+
+/* ============================================================
+   Coven (default theme) — LIGHT mode palette.
+   :root above holds the DARK palette; this override flips
+   surfaces, foreground, and accents for light mode. Hue and
+   structural tokens (radii, spacing, motion) are inherited.
+   ============================================================ */
+:root[data-mode="light"] {
+  --background: oklch(0.99 0.003 293);
+  --foreground: oklch(0.18 0.006 293);
+  --card: oklch(0.97 0.004 293);
+  --card-foreground: oklch(0.18 0.006 293);
+  --popover: oklch(1.00 0.000 0);
+  --popover-foreground: oklch(0.18 0.006 293);
+  --primary: oklch(0.20 0.006 293);
+  --primary-foreground: oklch(0.99 0.003 293);
+  --secondary: oklch(0.93 0.005 293);
+  --secondary-foreground: oklch(0.18 0.006 293);
+  --muted: oklch(0.93 0.005 293);
+  --muted-foreground: oklch(0.45 0.010 293);
+  --accent: oklch(0.93 0.005 293);
+  --accent-foreground: oklch(0.18 0.006 293);
+  --ring: oklch(0.55 0.10 293);
+
+  --accent-presence: #6F62A8;
+  --accent-presence-soft: oklch(0.55 0.08 295);
+
+  --bg-base: var(--background);
+  --bg-panel: oklch(1.00 0.000 0);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.95 0.005 293);
+  --bg-hover: oklch(0.91 0.005 293);
+
+  --text-primary: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  /* --border, --border-strong, --input, --text-muted are derived from --foreground;
+     they auto-invert. No override needed. */
+
+  --ring-focus: color-mix(in oklch, #6F62A8 55%, transparent);
+  --ring-focus-soft: color-mix(in oklch, #6F62A8 30%, transparent);
+  --backdrop-scrim: oklch(0 0 0 / 40%);
 }
 
 /* Respect OS-level reduced-motion preference by collapsing every
