@@ -7,6 +7,12 @@ const SIDECAR_AUTH_BRIDGE = `
   const token = params.get(tokenParam) || window.sessionStorage.getItem(storageKey);
   if (!token) return;
   window.sessionStorage.setItem(storageKey, token);
+  if (params.has(tokenParam)) {
+    params.delete(tokenParam);
+    const nextSearch = params.toString();
+    const nextUrl = window.location.pathname + (nextSearch ? "?" + nextSearch : "") + window.location.hash;
+    window.history.replaceState(window.history.state, "", nextUrl);
+  }
 
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {

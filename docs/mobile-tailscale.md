@@ -25,6 +25,8 @@ tailscale serve status
 
 and append the `?coven_access_token=...` value printed by `pnpm mobile:tailscale`. The app stores the token in an HTTP-only cookie after the first successful request.
 
+Do not open the Serve URL without the access query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects requests until the token is supplied by query, cookie, bearer header, or the equivalent internal request path.
+
 ## Manual Equivalent
 
 Use a strong random token and keep the Next.js server bound to loopback so only Tailscale Serve can proxy it. In one terminal, start Cave:
@@ -38,7 +40,7 @@ COVEN_CAVE_ACCESS_TOKEN="$TOKEN" pnpm exec next dev -H 127.0.0.1 -p 3000
 In another terminal, publish the loopback server:
 
 ```bash
-tailscale serve --bg 3000
+tailscale serve --bg http://127.0.0.1:3000
 tailscale serve status
 ```
 

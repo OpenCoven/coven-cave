@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "node:fs";
-import path from "node:path";
-import { homedir } from "node:os";
-import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { createLibraryStore } from "@/lib/library-store";
 import { isSafeHttpUrl } from "@/lib/url-safety";
-import type { LibraryBookmark } from "@/lib/library-types";
+import type { LibraryBookmark, LinkCapture } from "@/lib/library-types";
+import { enrichTitle, fallbackTitle } from "@/lib/title-enricher";
 
 const store = createLibraryStore();
 

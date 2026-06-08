@@ -720,6 +720,8 @@ pub fn run() {
             }
 
             let url = format!("http://127.0.0.1:{}/?covenCaveToken={}", port, auth_token);
+            let main_url = Url::parse(&url).expect("valid sidecar URL");
+            pty::trust_main_origin(&main_url);
             if let Err(e) = WebviewWindowBuilder::new(
                 app,
                 "main",

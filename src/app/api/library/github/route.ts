@@ -1,37 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "node:fs";
-import path from "node:path";
-import { homedir } from "node:os";
-import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { createLibraryStore } from "@/lib/library-store";
 import { parseSafeGitHubUrl } from "@/lib/url-safety";
-import type { LibraryGitHubItem, GitHubItemKind } from "@/lib/library-types";
+import type { LibraryGitHubItem, GitHubItemKind, LinkCapture } from "@/lib/library-types";
+import { parseGitHubUrl } from "@/lib/link-classifier";
 
 const store = createLibraryStore();
 
 function generateId(): string {
   return `gh_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
-
-/**
- * Parse a GitHub URL into { repo, kind, number }.
- * github.com/owner/repo               → repo
- * github.com/owner/repo/issues/123    → issue #123
- * github.com/owner/repo/pull/123      → pr #123
- * github.com/owner/repo/discussions/5 → discussion #5
- */
-function parseGitHubUrl(url: string): { repo: string; kind: GitHubItemKind; number?: number } | null {
-  try {
-    const u = parseSafeGitHubUrl(url);
-    if (!u) return null;
-    const parts = u.pathname.replace(/^\//, "").split("/");
-    if (parts.length < 2) return null;
-    const repo = `${parts[0]}/${parts[1]}`;
-    if (parts.length === 2) return { repo, kind: "repo" };
-    if (parts[2] === "issues" && parts[3]) return { repo, kind: "issue", number: parseInt(parts[3], 10) };
-    if (parts[2] === "pull" && parts[3]) return { repo, kind: "pr", number: parseInt(parts[3], 10) };
-    if (parts[2] === "discussions" && parts[3]) return { repo, kind: "discussion", number: parseInt(parts[3], 10) };
-    return { repo, kind: "repo" };
-  } catch { return null; }
 }
 
 export async function GET() {

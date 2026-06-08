@@ -17,7 +17,7 @@
 //   pty:data { thread_id, bytes }
 //   pty:exit { thread_id, code }
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::thread;

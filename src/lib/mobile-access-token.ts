@@ -4,7 +4,7 @@ export const MOBILE_ACCESS_TOKEN_COOKIE = "coven_mobile_token";
 export const MOBILE_ACCESS_TOKEN_HEADER = "x-coven-mobile-token";
 
 export function mobileAccessToken(): string {
-  return process.env.COVEN_MOBILE_ACCESS_TOKEN?.trim() ?? "";
+  return process.env[MOBILE_ACCESS_TOKEN_ENV]?.trim() ?? "";
 }
 
 export function tokensMatch(expected: string, actual: string | null | undefined): boolean {

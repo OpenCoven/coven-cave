@@ -13,7 +13,6 @@ const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
-const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -86,7 +85,20 @@ test("packaged desktop app can use native browser and terminal commands", () => 
 });
 
 test("packaged sidecar loopback origins can use restricted native browser commands only", () => {
-  assert.equal(defaultCapability.remote, undefined, "local default capability must not trust loopback origins");
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+    "http://127.0.0.1:64203/",
+    "http://localhost:64203/",
+    "http://[::1]:64203/",
+  ]) {
+    assert.equal(
+      capabilityAllowsOrigin(defaultCapability, origin),
+      false,
+      `default capability must not trust loopback origin ${origin}`,
+    );
+  }
 
   assert.ok(
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://127.0.0.1:3000/"),
@@ -97,6 +109,10 @@ test("packaged sidecar loopback origins can use restricted native browser comman
     "dev localhost origin should be allowed restricted browser IPC",
   );
   assert.ok(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://[::1]:3000/"),
+    "dev IPv6 loopback origin should be allowed restricted browser IPC",
+  );
+  assert.ok(
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://127.0.0.1:64203/"),
     "packaged random 127.0.0.1 sidecar port should be allowed restricted browser IPC",
   );
@@ -104,6 +120,24 @@ test("packaged sidecar loopback origins can use restricted native browser comman
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://localhost:64203/"),
     "packaged random localhost sidecar port should be allowed restricted browser IPC",
   );
+  assert.ok(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://[::1]:64203/"),
+    "packaged random IPv6 loopback sidecar port should be allowed restricted browser IPC",
+  );
+  for (const permission of [
+    "allow-browser-navigate",
+    "allow-browser-set-bounds",
+    "allow-browser-hide",
+    "allow-browser-hide-all-except",
+    "allow-browser-close",
+    "allow-browser-reload",
+    "allow-browser-report-title",
+  ]) {
+    assert.ok(
+      loopbackBrowserCapability.permissions.includes(permission),
+      `loopback-browser should grant restricted browser permission ${permission}`,
+    );
+  }
   assert.equal(
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://example.com:64203/"),
     false,

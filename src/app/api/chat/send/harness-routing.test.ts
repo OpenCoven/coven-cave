@@ -19,13 +19,13 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /COMPATIBILITY_ADAPTERS\.find/,
+  /const adapter = COMPATIBILITY_ADAPTERS\.find\(\(h\) => h\.id === binding\.harness\);/,
   "Native chat should consult bundled adapter metadata before spawning a harness",
 );
 
 assert.match(
   chatRoute,
-  /!adapter\.chatSupported/,
+  /if \(adapter && !adapter\.chatSupported\)/,
   "Native chat should reject bundled adapters that opt out of native chat",
 );
 

@@ -204,6 +204,15 @@ export async function POST(req: Request) {
       { status: 501, headers: { "content-type": "application/json" } },
     );
   }
+  if (!isTrustedChatHarness(binding.harness)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: `Harness '${binding.harness}' is not trusted for native Cave chat.`,
+      }),
+      { status: 403, headers: { "content-type": "application/json" } },
+    );
+  }
 
   // Build coven run argv.
   // Important: pass every flag BEFORE the prompt and add a `--` separator,

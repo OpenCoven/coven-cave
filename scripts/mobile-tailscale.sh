@@ -27,6 +27,14 @@ port_is_listening() {
   node -e "const net=require('net');const s=net.connect({host:process.argv[1],port:Number(process.argv[2])});s.setTimeout(300);s.on('connect',()=>process.exit(0));s.on('timeout',()=>process.exit(1));s.on('error',()=>process.exit(1));" "$HOST" "$PORT"
 }
 
+backend_url() {
+  if [ "$HOST" = "::1" ]; then
+    printf 'http://[::1]:%s' "$PORT"
+  else
+    printf 'http://%s:%s' "$HOST" "$PORT"
+  fi
+}
+
 tailscale_cmd() {
   node - "$TAILSCALE_TIMEOUT_MS" "$@" <<'NODE'
 const { spawnSync } = require("node:child_process");
@@ -90,7 +98,8 @@ if ! port_is_listening >/dev/null 2>&1; then
   exit 1
 fi
 
-tailscale_cmd serve --bg "$PORT"
+TAILSCALE_BACKEND="$(backend_url)"
+tailscale_cmd serve --bg "$TAILSCALE_BACKEND"
 
 echo
 echo "CovenCave mobile is available inside your tailnet."
@@ -99,7 +108,5 @@ echo "  ?coven_access_token=${ACCESS_TOKEN}"
 echo "The token is stored as an HTTP-only cookie after the first successful request."
 echo "Run this to see the base URL:"
 echo "  tailscale serve status"
-echo "Then open that URL with this access query:"
-echo "  ?coven_mobile_token=${COVEN_MOBILE_ACCESS_TOKEN}"
 echo
 tailscale_cmd serve status || true

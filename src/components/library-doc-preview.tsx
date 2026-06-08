@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
-import { isSafeGitHubUrl, isSafeHttpUrl } from "@/lib/url-safety";
+import { sanitizeHtml } from "@/lib/html-sanitize";
+import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
 import type {
   LibraryDocBody,
   LibraryBookmark,
@@ -31,8 +32,16 @@ function fmtDate(iso?: string): string {
   try { return dateFmt.format(new Date(iso)); } catch { return iso; }
 }
 
-async function openUrl(url: string, options: { requireGitHub?: boolean } = {}) {
-  if (options.requireGitHub ? !isSafeGitHubUrl(url) : !isSafeHttpUrl(url)) return;
+type UrlOpenKind = "web" | "github" | "vscode-file";
+
+function canOpenUrl(url: string, kind: UrlOpenKind): boolean {
+  if (kind === "github") return isSafeGitHubUrl(url);
+  if (kind === "vscode-file") return isSafeVscodeFileUrl(url);
+  return isSafeHttpUrl(url);
+}
+
+async function openUrl(url: string, kind: UrlOpenKind = "web") {
+  if (!canOpenUrl(url, kind)) return;
   // Use Tauri shell_open when running as desktop app
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     try {
@@ -61,10 +70,10 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-function OpenBtn({ url, label, requireGitHub = false }: { url: string; label?: string; requireGitHub?: boolean }) {
-  const safe = requireGitHub ? isSafeGitHubUrl(url) : isSafeHttpUrl(url);
+function OpenBtn({ url, label, kind = "web" }: { url: string; label?: string; kind?: UrlOpenKind }) {
+  const safe = canOpenUrl(url, kind);
   return (
-    <button type="button" className="library-preview-action-btn" disabled={!safe} title={safe ? undefined : "Unsafe URL blocked"} onClick={() => { void openUrl(url, { requireGitHub }); }}>
+    <button type="button" className="library-preview-action-btn" disabled={!safe} title={safe ? undefined : "Unsafe URL blocked"} onClick={() => { void openUrl(url, kind); }}>
       <Icon name="ph:arrow-square-out" width={13} />
       <span>{label ?? "Open"}</span>
     </button>
@@ -291,7 +300,7 @@ function GitHubDetail({ item }: { item: LibraryGitHubItem }) {
           </div>
         )}
         <div className="library-preview-actions">
-          <OpenBtn url={item.url} label="Open on GitHub" requireGitHub />
+          <OpenBtn url={item.url} label="Open on GitHub" kind="github" />
           <CopyButton text={item.url} label="Copy URL" />
         </div>
       </div>
@@ -453,7 +462,7 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
         type="button"
         className="library-preview-action-btn"
         title="Open in VS Code"
-        onClick={() => { if (doc.absolutePath) void openUrl(`vscode://file${doc.absolutePath}`); }}
+        onClick={() => { if (doc.absolutePath) void openUrl(`vscode://file${doc.absolutePath}`, "vscode-file"); }}
       >
         <Icon name="ph:code" width={13} />
         <span>Open in editor</span>
