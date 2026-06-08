@@ -11,6 +11,13 @@
  *  4. Always set BOTH `data-theme` and `data-mode` on <html>.
  *  5. If theme === "custom", apply `cssVars.theme` (mode-agnostic) +
  *     `cssVars[mode]` (mode-specific) from localStorage["coven-custom-theme"].
+ *
+ * NOTE: The storage key strings ("coven-theme", "coven-mode",
+ * "coven-custom-theme") and the legacy rename map are duplicated from
+ * src/lib/theme-storage.ts. They cannot be imported here because the
+ * script body is a string literal that runs in the browser before any
+ * module code resolves. Keep both in sync when adding new keys or
+ * renames.
  */
 
 const THEME_SCRIPT = `
@@ -46,6 +53,8 @@ const THEME_SCRIPT = `
       }
       applyGroup(cssVars.theme);
       var modeGroup = mode === "light" ? cssVars.light : cssVars.dark;
+      // Fallback to the opposite group if the selected mode is absent
+      // (tweakcn imports from the dark-only era ship only cssVars.dark).
       if (!modeGroup) modeGroup = mode === "light" ? cssVars.dark : cssVars.light;
       applyGroup(modeGroup);
     }
