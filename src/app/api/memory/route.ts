@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 
 export const dynamic = "force-dynamic";
 
-const MEMORY_ROOTS: Array<{ id: string; label: string; path: string }> = [
+const SHARED_MEMORY_ROOTS: Array<{ id: string; label: string; path: string }> = [
   {
     id: "workspace",
     label: "Workspace memory",
@@ -22,16 +22,25 @@ const MEMORY_INDEX_FILES = [
   path.join(homedir(), ".openclaw", "workspace", "MEMORY.md"),
 ];
 
-type MemoryEntry = {
+export type MemoryEntry = {
   root: string;
   rootLabel: string;
   relPath: string;
   fullPath: string;
   size: number;
   modified: string;
+  /** Familiar id when this entry belongs to a specific agent workspace */
+  familiarId?: string;
 };
 
-async function walk(dir: string, root: string, rootLabel: string, acc: MemoryEntry[]) {
+async function walk(
+  dir: string,
+  root: string,
+  rootLabel: string,
+  acc: MemoryEntry[],
+  baseDir: string,
+  familiarId?: string,
+) {
   let items;
   try {
     items = await readdir(dir, { withFileTypes: true });
@@ -42,17 +51,18 @@ async function walk(dir: string, root: string, rootLabel: string, acc: MemoryEnt
     if (item.name.startsWith(".")) continue;
     const full = path.join(dir, item.name);
     if (item.isDirectory()) {
-      await walk(full, root, rootLabel, acc);
+      await walk(full, root, rootLabel, acc, baseDir, familiarId);
     } else if (item.isFile() && /\.(md|markdown|txt|json)$/i.test(item.name)) {
       try {
         const s = await stat(full);
         acc.push({
           root,
           rootLabel,
-          relPath: path.relative(MEMORY_ROOTS.find((r) => r.id === root)?.path ?? dir, full),
+          relPath: path.relative(baseDir, full),
           fullPath: full,
           size: s.size,
           modified: s.mtime.toISOString(),
+          ...(familiarId ? { familiarId } : {}),
         });
       } catch {
         /* skip */
@@ -61,16 +71,52 @@ async function walk(dir: string, root: string, rootLabel: string, acc: MemoryEnt
   }
 }
 
+async function scanFamiliarWorkspaces(acc: MemoryEntry[]) {
+  const workspacesDir = path.join(homedir(), ".openclaw", "workspace");
+  let items;
+  try {
+    items = await readdir(workspacesDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const item of items) {
+    if (!item.isDirectory() || item.name.startsWith(".")) continue;
+    const familiarId = item.name;
+    const memDir = path.join(workspacesDir, familiarId, "memory");
+    // Also include top-level MEMORY.md for this familiar
+    const indexFile = path.join(workspacesDir, familiarId, "MEMORY.md");
+    try {
+      const s = await stat(/* turbopackIgnore: true */ indexFile);
+      acc.push({
+        root: `familiar:${familiarId}`,
+        rootLabel: familiarId,
+        relPath: "MEMORY.md",
+        fullPath: indexFile,
+        size: s.size,
+        modified: s.mtime.toISOString(),
+        familiarId,
+      });
+    } catch {
+      /* no MEMORY.md for this familiar */
+    }
+    await walk(memDir, `familiar:${familiarId}`, familiarId, acc, memDir, familiarId);
+  }
+}
+
 export async function GET() {
   const entries: MemoryEntry[] = [];
-  for (const root of MEMORY_ROOTS) {
-    await walk(root.path, root.id, root.label, entries);
+
+  // Shared workspace/coven memory dirs
+  for (const root of SHARED_MEMORY_ROOTS) {
+    await walk(root.path, root.id, root.label, entries, root.path);
   }
+
+  // Per-familiar agent workspace memory dirs
+  await scanFamiliarWorkspaces(entries);
+
+  // Top-level shared MEMORY.md index
   for (const idx of MEMORY_INDEX_FILES) {
     try {
-      // idx is one of the absolute homedir-prefixed paths in
-      // MEMORY_INDEX_FILES. turbopackIgnore prevents bundling all matching
-      // candidates as static patterns.
       const s = await stat(/* turbopackIgnore: true */ idx);
       entries.push({
         root: "index",
@@ -84,6 +130,7 @@ export async function GET() {
       /* missing */
     }
   }
+
   entries.sort((a, b) => (a.modified < b.modified ? 1 : -1));
   return NextResponse.json({ ok: true, entries });
 }

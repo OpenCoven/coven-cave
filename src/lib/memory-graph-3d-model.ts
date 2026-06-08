@@ -16,6 +16,8 @@ export type MemoryGraphFileEntry = {
   fullPath: string;
   size: number;
   modified: string;
+  /** Familiar id when this entry belongs to a specific agent workspace */
+  familiarId?: string;
 };
 
 export type MemoryGraphHubNode = {
@@ -219,7 +221,7 @@ function addCappedLeaves({
 export function buildMemoryGraphModel({
   familiars,
   covenEntries,
-  fileEntries: _fileEntries,
+  fileEntries,
   query = "",
   familiarFilter = "all",
   maxLeavesPerHub = 30,
@@ -238,7 +240,9 @@ export function buildMemoryGraphModel({
 
   const selectedFamiliarId = familiarFilter !== "all"
     ? familiarFilter
-    : covenEntries.find((entry) => matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q))?.familiar_id ?? familiars[0]?.id;
+    : covenEntries.find((entry) => matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q))?.familiar_id
+      ?? fileEntries.find((entry) => entry.familiarId && matchesQuery([entry.relPath, entry.familiarId], q))?.familiarId
+      ?? familiars[0]?.id;
   const selectedFamiliar = familiars.find((familiar) => familiar.id === selectedFamiliarId);
 
   const matchingCovenEntries = covenEntries
@@ -253,6 +257,19 @@ export function buildMemoryGraphModel({
     matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q),
   ).length;
 
+  // File entries for the selected familiar from agent workspace memory dirs
+  const matchingFileEntries = fileEntries
+    .filter((entry) => entry.familiarId === selectedFamiliarId)
+    .filter((entry) => matchesQuery([entry.relPath, entry.rootLabel, entry.familiarId ?? ""], q))
+    .sort((a, b) => compareIsoDesc(a.modified, b.modified));
+
+  const totalFileEntries = fileEntries.filter((entry) =>
+    entry.familiarId === selectedFamiliarId &&
+    matchesQuery([entry.relPath, entry.rootLabel, entry.familiarId ?? ""], q),
+  ).length;
+
+  const totalMemoryCount = totalMatchingForFamiliar + totalFileEntries;
+
   if (selectedFamiliar) {
     const hubId = `familiar:${selectedFamiliar.id}`;
     nodes.push({
@@ -262,9 +279,10 @@ export function buildMemoryGraphModel({
       label: selectedFamiliar.display_name ?? selectedFamiliar.name ?? selectedFamiliar.id,
       glyph: selectedFamiliar.icon ?? selectedFamiliar.emoji,
       familiarId: selectedFamiliar.id,
-      memoryCount: totalMatchingForFamiliar,
-      latestAt: matchingCovenEntries[0]?.updated_at,
+      memoryCount: totalMemoryCount,
+      latestAt: matchingCovenEntries[0]?.updated_at ?? matchingFileEntries[0]?.modified,
     });
+    // Coven (daemon-indexed) memory leaves
     addCappedLeaves({
       hubId,
       familiarId: selectedFamiliar.id,
@@ -289,6 +307,51 @@ export function buildMemoryGraphModel({
       },
     });
     hiddenEntries += Math.max(matchingCovenEntries.length - maxLeavesPerHub, 0);
+    // File-based memory leaves (agent workspace memory/ dirs)
+    if (matchingFileEntries.length > 0) {
+      const fileHubId = `familiar-files:${selectedFamiliar.id}`;
+      nodes.push({
+        kind: "hub",
+        hubKind: "files",
+        id: fileHubId,
+        label: `${selectedFamiliar.display_name ?? selectedFamiliar.id} files`,
+        familiarId: selectedFamiliar.id,
+        memoryCount: totalFileEntries,
+        latestAt: matchingFileEntries[0]?.modified,
+      });
+      edges.push({
+        id: edgeId(fileHubId, hubId),
+        kind: "belongs_to",
+        source: fileHubId,
+        target: hubId,
+        count: totalFileEntries,
+      });
+      addCappedLeaves({
+        hubId: fileHubId,
+        familiarId: selectedFamiliar.id,
+        source: "file",
+        entries: matchingFileEntries,
+        maxLeavesPerHub,
+        nodes,
+        edges,
+        toMemoryNode: (entry) => {
+          const file = entry as MemoryGraphFileEntry;
+          return {
+            kind: "memory",
+            id: `file:${file.fullPath}`,
+            source: "file",
+            hubId: fileHubId,
+            familiarId: file.familiarId,
+            title: file.relPath,
+            path: file.fullPath,
+            updatedAt: file.modified,
+            rootLabel: file.rootLabel,
+            relPath: file.relPath,
+          };
+        },
+      });
+      hiddenEntries += Math.max(matchingFileEntries.length - maxLeavesPerHub, 0);
+    }
   }
 
   return {
@@ -296,9 +359,9 @@ export function buildMemoryGraphModel({
     edges,
     metrics: {
       familiarHubs: selectedFamiliar ? 1 : 0,
-      fileHubs: 0,
+      fileHubs: selectedFamiliar && matchingFileEntries.length > 0 ? 1 : 0,
       visibleCovenEntries: matchingCovenEntries.length,
-      visibleFileEntries: 0,
+      visibleFileEntries: matchingFileEntries.length,
       hiddenEntries,
     },
   };
