@@ -48,6 +48,24 @@ assert.match(
 
 assert.match(
   source,
+  /className="relative min-w-0 flex-1"/,
+  "FamiliarSwitcher should fill the available top header row",
+);
+
+assert.match(
+  source,
+  /className=\{triggerClassName\}/,
+  "FamiliarSwitcher trigger should use the full-width trigger class",
+);
+
+assert.match(
+  source,
+  /"focus-ring group flex w-full min-w-0 items-center justify-between/,
+  "FamiliarSwitcher trigger should stretch full width while preserving text truncation",
+);
+
+assert.match(
+  source,
   /role="menu"/,
   "Switcher popup should use menu semantics",
 );

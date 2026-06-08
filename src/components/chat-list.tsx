@@ -7,9 +7,6 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 
 type Props = {
   familiar: Familiar;
@@ -45,11 +42,11 @@ function repoName(p: string): string {
 }
 
 const STATUS_STYLES: Record<string, { dot: string; label: string; preview: string }> = {
-  running:   { dot: "bg-[var(--color-success)] animate-pulse", label: "running",   preview: "text-[var(--color-success)]" },
-  completed: { dot: "bg-[var(--text-muted)]",        label: "done",      preview: "text-[var(--text-muted)]" },
-  failed:    { dot: "bg-[var(--color-danger)]",                   label: "failed",    preview: "text-[var(--color-danger)]" },
-  queued:    { dot: "bg-[var(--color-warning)]",                  label: "queued",    preview: "text-[var(--color-warning)]" },
-  paused:    { dot: "bg-[var(--accent-presence-soft)]",                    label: "paused",    preview: "text-[var(--accent-presence-soft)]" },
+  running: { dot: "bg-[var(--color-success)] animate-pulse", label: "running", preview: "text-[var(--color-success)]" },
+  completed: { dot: "bg-[var(--text-muted)]", label: "done", preview: "text-[var(--text-muted)]" },
+  failed: { dot: "bg-[var(--color-danger)]", label: "failed", preview: "text-[var(--color-danger)]" },
+  queued: { dot: "bg-[var(--color-warning)]", label: "queued", preview: "text-[var(--color-warning)]" },
+  paused: { dot: "bg-[var(--accent-presence-soft)]", label: "paused", preview: "text-[var(--accent-presence-soft)]" },
 };
 
 function statusStyle(s: string) {
@@ -66,8 +63,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [activeId, setActiveId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
-  const glyphOverrides = useGlyphOverrides();
-  const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -151,16 +146,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       {/* ── Agent dossier + command strip ── */}
       <header className="agent-panel-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-3">
         <div className="flex min-w-0 items-start gap-3">
-
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
               <span
-                className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  daemonRunning
-                    ? "bg-[color-mix(in_oklch,var(--color-success)_60%,transparent)] text-[var(--color-success)]"
-                    : "bg-[color-mix(in_oklch,var(--color-danger)_60%,transparent)] text-[var(--color-danger)]"
-                }`}
+                className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${daemonRunning
+                  ? "bg-[color-mix(in_oklch,var(--color-success)_60%,transparent)] text-[var(--color-success)]"
+                  : "bg-[color-mix(in_oklch,var(--color-danger)_60%,transparent)] text-[var(--color-danger)]"
+                  }`}
               >
                 <span className={`inline-block h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--color-success)] animate-pulse" : "bg-[var(--color-danger)]"}`} />
                 {daemonRunning ? "online" : "offline"}
@@ -317,96 +310,96 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                   </div>
                 )}
                 <ul className="divide-y divide-[var(--border-hairline)]">
-                {rows.map((s) => {
-                  const st = statusStyle(s.status);
-                  const project = repoName(s.project_root ?? "");
-                  const isActive = activeId === s.id;
+                  {rows.map((s) => {
+                    const st = statusStyle(s.status);
+                    const project = repoName(s.project_root ?? "");
+                    const isActive = activeId === s.id;
 
-                  return (
-                    <li key={s.id}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => { setActiveId(s.id); onOpen(s.id); }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id); }
-                    }}
-                    className={[
-                      "group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
-                      isActive
-                        ? "bg-[var(--bg-raised)]"
-                        : "hover:bg-[var(--bg-raised)]/50",
-                    ].join(" ")}
-                  >
-                    {/* Active indicator */}
-                    {isActive && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-8 rounded-r-full bg-[var(--accent-presence)]" />
-                    )}
+                    return (
+                      <li key={s.id}>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => { setActiveId(s.id); onOpen(s.id); }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id); }
+                          }}
+                          className={[
+                            "group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
+                            isActive
+                              ? "bg-[var(--bg-raised)]"
+                              : "hover:bg-[var(--bg-raised)]/50",
+                          ].join(" ")}
+                        >
+                          {/* Active indicator */}
+                          {isActive && (
+                            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-8 rounded-r-full bg-[var(--accent-presence)]" />
+                          )}
 
-                    {/* Status dot (top-aligned) */}
-                    <span className="mt-[5px] shrink-0">
-                      <span
-                        className={`block h-2 w-2 rounded-full ${st.dot}`}
-                        title={st.label}
-                      />
-                    </span>
-
-                    {/* Content */}
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      {/* Row 1: familiar/project name + timestamp */}
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          <span className="truncate text-[12px] font-medium text-[var(--text-secondary)]">
-                            {project || familiar.display_name}
+                          {/* Status dot (top-aligned) */}
+                          <span className="mt-[5px] shrink-0">
+                            <span
+                              className={`block h-2 w-2 rounded-full ${st.dot}`}
+                              title={st.label}
+                            />
                           </span>
-                          {s.origin ? <OriginChip origin={s.origin} /> : null}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
-                          {age(s.updated_at)}
-                        </span>
-                      </span>
 
-                      {/* Row 2: session title (bold subject line)
+                          {/* Content */}
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            {/* Row 1: familiar/project name + timestamp */}
+                            <span className="flex items-baseline justify-between gap-2">
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                <span className="truncate text-[12px] font-medium text-[var(--text-secondary)]">
+                                  {project || familiar.display_name}
+                                </span>
+                                {s.origin ? <OriginChip origin={s.origin} /> : null}
+                              </span>
+                              <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                                {age(s.updated_at)}
+                              </span>
+                            </span>
+
+                            {/* Row 2: session title (bold subject line)
                            Running sessions get full white; others are slightly muted
                            — mirrors the unread/read convention in email clients. */}
-                      <span className={[
-                        "truncate text-[13px] font-semibold",
-                        s.status === "running"
-                          ? "text-white"
-                          : "text-[var(--text-primary)]",
-                      ].join(" ")}>
-                        {stripLeadingTrailingEmoji(s.title || "(untitled chat)")}
-                      </span>
+                            <span className={[
+                              "truncate text-[13px] font-semibold",
+                              s.status === "running"
+                                ? "text-white"
+                                : "text-[var(--text-primary)]",
+                            ].join(" ")}>
+                              {stripLeadingTrailingEmoji(s.title || "(untitled chat)")}
+                            </span>
 
-                      {/* Row 3: status preview */}
-                      <span className={`truncate text-[12px] ${st.preview}`}>
-                        {st.label === "running"
-                          ? "Active now…"
-                          : st.label === "failed"
-                            ? "Ended with an error"
-                            : st.label === "queued"
-                              ? "Waiting to start"
-                              : st.label === "paused"
-                                ? "Paused"
-                                : project
-                                  ? `${familiar.display_name} · ${project}`
-                                  : `${familiar.display_name}`}
-                      </span>
-                    </span>
+                            {/* Row 3: status preview */}
+                            <span className={`truncate text-[12px] ${st.preview}`}>
+                              {st.label === "running"
+                                ? "Active now…"
+                                : st.label === "failed"
+                                  ? "Ended with an error"
+                                  : st.label === "queued"
+                                    ? "Waiting to start"
+                                    : st.label === "paused"
+                                      ? "Paused"
+                                      : project
+                                        ? `${familiar.display_name} · ${project}`
+                                        : `${familiar.display_name}`}
+                            </span>
+                          </span>
 
-                    {/* TUI button — revealed on hover */}
-                    <button
-                      onClick={(e) => openInTui(e, s.id)}
-                      disabled={busyTuiId === s.id}
-                      title="Open in Coven Code TUI"
-                      className="self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-all hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
-                    >
-                      {busyTuiId === s.id ? "…" : "tui →"}
-                    </button>
-                    </div>
-                  </li>
-                  );
-                })}
+                          {/* TUI button — revealed on hover */}
+                          <button
+                            onClick={(e) => openInTui(e, s.id)}
+                            disabled={busyTuiId === s.id}
+                            title="Open in Coven Code TUI"
+                            className="self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-all hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
+                          >
+                            {busyTuiId === s.id ? "…" : "tui →"}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </li>
             ))}

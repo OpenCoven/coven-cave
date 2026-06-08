@@ -25,6 +25,7 @@ import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { HomeComposer } from "@/components/home-composer";
 import { AgentsView } from "@/components/agents-view";
+import { SessionsView } from "@/components/sessions-view";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -584,7 +585,7 @@ export function Workspace() {
           showAgentChatList();
           return;
         case "/sessions":
-          showAgentChatList();
+          setMode("sessions");
           return;
         case "/familiar": {
           const name = (intent.args ?? "").trim().toLowerCase();
@@ -784,6 +785,20 @@ export function Workspace() {
         onOpenInboxItem={openInspectorInboxItem}
         onInboxItemChanged={refreshInbox}
         onOpenMode={(nextMode) => setMode(nextMode as WorkspaceMode)}
+      />
+    ) : mode === "sessions" ? (
+      <SessionsView
+        familiars={familiars}
+        sessions={sessions}
+        activeFamiliarId={null}
+        activeSessionId={routerRef.current?.currentSessionId() ?? null}
+        onOpenSession={(sessionId, familiarId) => {
+          openAgentSession(sessionId, familiarId);
+        }}
+        onNewChat={(familiarId) => {
+          startAgentChat(familiarId ?? activeId);
+        }}
+        onSessionsChanged={loadSessions}
       />
     ) : mode === "library" ? (
       <LibraryView onOpenUrl={(url) => {

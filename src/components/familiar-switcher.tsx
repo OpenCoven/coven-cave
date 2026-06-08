@@ -24,6 +24,10 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
   const ref = useRef<HTMLDivElement>(null);
   const glyphOverrides = useGlyphOverrides();
   const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
+  const triggerClassName = [
+    "focus-ring group flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-1.5 -ml-2 transition-colors",
+    "hover:bg-[var(--bg-raised)]/60",
+  ].join(" ");
 
   // Close on outside click / Esc
   useEffect(() => {
@@ -45,25 +49,47 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
   // Don't render a switcher if there's only one familiar
   if (familiars.length <= 1) {
     return (
-      <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
-        {familiar.display_name}
-      </h2>
+      <div className="relative min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+            aria-hidden
+          >
+            <FamiliarGlyph glyph={glyph} size="sm" />
+          </span>
+          <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+            {familiar.display_name}
+          </h2>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0 flex-1">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="focus-ring group flex items-center gap-2 rounded-lg px-2 py-1 -ml-2 transition-colors hover:bg-[var(--bg-raised)]/60"
+        className={triggerClassName}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Switch familiar from ${familiar.display_name}`}
       >
-        <FamiliarGlyph glyph={glyph} size="sm" className="shrink-0 text-[var(--text-muted)]" />
-        <span className="text-[15px] font-semibold text-[var(--text-primary)]">
-          {familiar.display_name}
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+            aria-hidden
+          >
+            <FamiliarGlyph glyph={glyph} size="sm" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]">
+              {familiar.display_name}
+            </span>
+            <span className="block truncate text-[10px] leading-tight text-[var(--text-muted)]">
+              {familiar.role || familiar.harness || "Familiar"}
+            </span>
+          </span>
         </span>
         <Icon
           name="ph:caret-up-down-bold"
@@ -75,7 +101,7 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
       {open ? (
         <div
           role="menu"
-          className="absolute left-0 top-full z-40 mt-1.5 min-w-[200px] overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
+          className="absolute left-0 right-0 top-full z-40 mt-1.5 min-w-[220px] overflow-hidden rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
         >
           <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
             Switch familiar
@@ -100,7 +126,12 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
                     : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
                 ].join(" ")}
               >
-                <FamiliarGlyph glyph={fGlyph} size="sm" className="shrink-0 text-[var(--text-muted)]" />
+                <span
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+                  aria-hidden
+                >
+                  <FamiliarGlyph glyph={fGlyph} size="sm" />
+                </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium leading-tight">
                     {f.display_name}
