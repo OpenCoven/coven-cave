@@ -42,21 +42,45 @@ assert.match(
   "Unmatched closing reasoning tags should be hidden instead of leaking raw markup into chat",
 );
 
-assert.doesNotMatch(
+assert.match(
   turnRow,
   /<ToolGroup|<ReasoningBlock/,
-  "Assistant turns should hide tool-use and reasoning chrome from the transcript",
+  "Assistant turns should render tool-use and reasoning chrome in collapsed transcript blocks",
 );
 
 assert.match(
   turnRow,
-  /const \{ visible \} = splitReasoning\(turn\.text\)/,
+  /const \{ visible, reasoning: inlineReasoning \} = splitReasoning\(turn\.text\)/,
+  "Assistant turns should split visible content from collapsible reasoning",
+);
+
+assert.match(
+  source,
+  /function ReasoningBlock[\s\S]*<details[\s\S]*Reasoning[\s\S]*<RichText text=\{reasoning\}/,
+  "ReasoningBlock should render reasoning in a collapsed disclosure with formatted text",
+);
+
+assert.match(
+  source,
+  /function ToolGroup[\s\S]*<details[\s\S]*Tool use[\s\S]*tools\.map[\s\S]*<ToolBlock/,
+  "ToolGroup should render tool calls in a collapsed disclosure",
+);
+
+assert.match(
+  source,
+  /function ToolBlock[\s\S]*<SyntaxBlock text=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{tool\.output\}/,
+  "ToolBlock should format tool input and output with SyntaxBlock",
+);
+
+assert.match(
+  turnRow,
+  /const \{ visible, reasoning: inlineReasoning \} = splitReasoning\(turn\.text\)/,
   "Assistant turns should render only reasoning-filtered visible content",
 );
 
 assert.match(
   source,
-  /<header className="flex w-full items-center gap-2/,
+  /<header className="flex w-full (?:items-center|flex-col) gap-2/,
   "Chat header should span the full side-panel width",
 );
 

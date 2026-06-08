@@ -9,6 +9,15 @@ export type ChatTurn = {
   role: "user" | "assistant" | "system";
   text: string;
   attachments?: import("./chat-attachments").ChatAttachment[];
+  reasoning?: string;
+  tools?: Array<{
+    id: string;
+    name: string;
+    input?: string;
+    output?: string;
+    status: "running" | "ok" | "error";
+    durationMs?: number;
+  }>;
   createdAt: string;
   durationMs?: number;
   isError?: boolean;

@@ -1,13 +1,14 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { Familiar } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble } from "@/components/message-bubble";
+import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
+import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
   MAX_ATTACHMENT_TEXT_CHARS,
   stripPreviewOnlyAttachmentFields,
@@ -39,6 +40,7 @@ type Turn = {
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
+  session?: SessionRow | null;
   projectRoot?: string;
   daemonRunning?: boolean;
   onSessionStarted?: (sessionId: string) => void;
@@ -61,6 +63,7 @@ type StreamEvent =
   | { kind: "error"; message: string; code?: string };
 
 type ComposerAttachment = ChatAttachment & { id: string };
+type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
 
 function fmtDuration(ms?: number): string | null {
   if (!ms || ms < 0) return null;
@@ -78,6 +81,20 @@ function fmtTime(iso: string): string {
   } catch {
     return "";
   }
+}
+
+function repoName(p?: string | null): string {
+  if (!p) return "";
+  const parts = p.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? p;
+}
+
+function githubLabel(kind: string): string {
+  if (kind === "pr") return "PR";
+  if (kind === "issue") return "Issue";
+  if (kind === "review_request") return "Review";
+  if (kind === "discussion") return "Discussion";
+  return "GitHub";
 }
 
 function fmtBytes(size?: number): string {
@@ -260,13 +277,83 @@ function ChatEmptyState({
   );
 }
 
+function ChatHistoryNotice({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center justify-center rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-5 py-6 text-center">
+      <Icon name="ph:chats" width={18} className="mb-2 text-[var(--text-muted)]" />
+      <p className="text-[13px] font-semibold text-[var(--text-primary)]">{title}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">{body}</p>
+    </div>
+  );
+}
+
+function ChatContextStrip({
+  session,
+  linkedContext,
+  historyState,
+}: {
+  session: SessionRow | null;
+  linkedContext: ChatLinkedContext | null;
+  historyState: ChatHistoryState;
+}) {
+  const task = linkedContext?.task ?? null;
+  const github = linkedContext?.github ?? [];
+  if (!session && !task && github.length === 0 && historyState === "idle") return null;
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      {session ? (
+        <span className="inline-flex min-w-0 max-w-[22rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)]">
+          <Icon name="ph:chats-circle" width={12} className="shrink-0 text-[var(--text-muted)]" />
+          <span className="min-w-0 truncate">{session.title || session.id}</span>
+          <span className="shrink-0 text-[var(--text-muted)]">{session.status}</span>
+          {session.project_root ? (
+            <span className="shrink-0 font-mono text-[var(--text-muted)]">{repoName(session.project_root)}</span>
+          ) : null}
+        </span>
+      ) : session === null && historyState !== "idle" ? (
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2 py-1 text-[11px] text-[var(--text-muted)]">
+          <Icon name="ph:clock" width={12} />
+          {historyState}
+        </span>
+      ) : null}
+      {task ? (
+        <span className="inline-flex min-w-0 max-w-[24rem] items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-2 py-1 text-[11px] text-[var(--text-secondary)]">
+          <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
+          <span className="shrink-0 font-medium">Task</span>
+          <span className="min-w-0 truncate">{task.title}</span>
+          <span className="shrink-0 text-[var(--text-muted)]">{task.status}</span>
+          <span className="shrink-0 text-[var(--text-muted)]">{task.priority}</span>
+        </span>
+      ) : null}
+      {github.map((item) => (
+        <a
+          key={item.id}
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          title={`Open on GitHub: ${item.title}`}
+          className="inline-flex min-w-0 max-w-[18rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name={item.kind === "issue" ? "ph:bug-bold" : "ph:git-pull-request"} width={12} className="shrink-0 text-[var(--text-muted)]" />
+          <span className="shrink-0">{githubLabel(item.kind)}</span>
+          <span className="min-w-0 truncate">{item.repo}{item.number ? ` #${item.number}` : ""}</span>
+          {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
+  { familiar, sessionId, session, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
+  const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -295,38 +382,86 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Load history on attach; new chats open with a clean empty state
   useEffect(() => {
     currentSessionRef.current = sessionId;
+    setLinkedContext(null);
     if (!sessionId) {
       setTurns([]);
+      setHistoryState("idle");
       return;
     }
+    let cancelled = false;
     void (async () => {
+      setHistoryState("loading");
       try {
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
-          setTurns([]);
+          if (!cancelled) {
+            setTurns([]);
+            setHistoryState("missing");
+          }
           return;
         }
-        const json = await res.json();
+        const json = await res.json() as {
+          ok?: boolean;
+          context?: ChatLinkedContext | null;
+          conversation?: {
+            turns?: Array<{
+              id: string;
+              role: string;
+              text: string;
+              attachments?: ChatAttachment[];
+              reasoning?: string;
+              tools?: ToolEvent[];
+              durationMs?: number;
+              isError?: boolean;
+              createdAt?: string;
+            }>;
+          };
+        };
+        if (cancelled) return;
+        setLinkedContext(json.context ?? null);
         if (json.ok && json.conversation) {
           setTurns(
-            json.conversation.turns
-              .filter((t: { role: string }) => t.role === "user" || t.role === "assistant")
-              .map(
-                (t: { id: string; role: "user" | "assistant"; text: string; attachments?: ChatAttachment[]; durationMs?: number; createdAt?: string }) => ({
+            (json.conversation.turns ?? [])
+              .filter(
+                (t): t is {
+                  id: string;
+                  role: "user" | "assistant";
+                  text: string;
+                  attachments?: ChatAttachment[];
+                  reasoning?: string;
+                  tools?: ToolEvent[];
+                  durationMs?: number;
+                  isError?: boolean;
+                  createdAt?: string;
+                } => t.role === "user" || t.role === "assistant",
+              )
+              .map((t) => ({
                   id: t.id,
                   role: t.role,
                   text: t.text,
                   attachments: t.attachments,
+                  reasoning: t.reasoning,
+                  tools: t.tools,
                   durationMs: t.durationMs,
+                  error: t.isError,
                   createdAt: t.createdAt ?? new Date().toISOString(),
-                }),
-              ),
+                })),
           );
+          setHistoryState("loaded");
+        } else {
+          setTurns([]);
+          setHistoryState("missing");
         }
       } catch {
-        /* fall through */
+        if (!cancelled) {
+          setTurns([]);
+          setHistoryState("error");
+        }
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   useEffect(() => {
@@ -711,26 +846,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Chat header: familiar name + harness badge (switch from the rail) */}
-      <header className="flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-        <div className="min-w-0 flex-1">
-          <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
-            {familiar.display_name}
-          </h2>
+      <header className="flex w-full flex-col gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+              {familiar.display_name}
+            </h2>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className={[
+              "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+              "bg-[var(--bg-raised)]/60 text-[var(--text-muted)]",
+            ].join(" ")}>
+              <span className="font-mono">{familiar.harness ?? "—"}</span>
+            </span>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <span className={[
-            "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-            "bg-[var(--bg-raised)]/60 text-[var(--text-muted)]",
-          ].join(" ")}>
-            <span className="font-mono">{familiar.harness ?? "—"}</span>
-          </span>
-        </div>
+        <ChatContextStrip
+          session={session ?? null}
+          linkedContext={linkedContext}
+          historyState={historyState}
+        />
       </header>
       {/* Transcript */}
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="space-y-6">
           {turns.length === 0 ? (
-            <ChatEmptyState familiar={familiar} modKey={keys.mod} />
+            historyState === "loading" ? (
+              <ChatHistoryNotice title="Loading chat history" body="Restoring this session transcript..." />
+            ) : historyState === "missing" ? (
+              <ChatHistoryNotice title="Chat history unavailable" body="This session exists, but CovenCave could not find a saved transcript for it yet." />
+            ) : historyState === "error" ? (
+              <ChatHistoryNotice title="Could not load chat history" body="The transcript request failed. You can still continue this session." />
+            ) : (
+              <ChatEmptyState familiar={familiar} modKey={keys.mod} />
+            )
           ) : null}
           {turns.map((t, i) => {
             const prev = turns[i - 1];
@@ -949,10 +1099,9 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
       </div>
     );
   }
-  // Assistant — Codex-style transcript: hide internal reasoning/tool events and
-  // render only the visible assistant answer.
   const duration = fmtDuration(turn.durationMs);
-  const { visible } = splitReasoning(turn.text);
+  const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
+  const reasoning = turn.reasoning?.trim() || inlineReasoning;
 
   return (
     <div className="cave-turn-assistant">
@@ -970,6 +1119,8 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
             isError={turn.error}
           />
         )}
+        {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
+        {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
         {duration && !turn.pending ? (
           <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)] opacity-0 transition-opacity group-hover/turn:opacity-100">
             <span>·</span>
@@ -977,6 +1128,70 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function ReasoningBlock({ reasoning }: { reasoning: string }) {
+  return (
+    <details className="mt-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-3 py-2 text-[12px] text-[var(--text-muted)]">
+      <summary className="cursor-pointer select-none text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
+        Reasoning
+      </summary>
+      <div className="mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+        <RichText text={reasoning} />
+      </div>
+    </details>
+  );
+}
+
+function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+  return (
+    <details className="mt-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-3 py-2">
+      <summary className="cursor-pointer select-none text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
+        Tool use
+        <span className="ml-2 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+          {tools.length}
+        </span>
+      </summary>
+      <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
+        {tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+      </div>
+    </details>
+  );
+}
+
+function ToolBlock({ tool }: { tool: ToolEvent }) {
+  return (
+    <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
+        <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
+        <span className={[
+          "rounded-full px-1.5 py-0.5 font-mono text-[10px]",
+          tool.status === "error"
+            ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
+            : tool.status === "running"
+              ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
+              : "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]",
+        ].join(" ")}>
+          {tool.status}
+        </span>
+        {tool.durationMs ? (
+          <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(tool.durationMs)}</span>
+        ) : null}
+      </div>
+      {tool.input ? (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Input</div>
+          <SyntaxBlock text={tool.input} />
+        </div>
+      ) : null}
+      {tool.output ? (
+        <div className="mt-2">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Output</div>
+          <SyntaxBlock text={tool.output} />
+        </div>
+      ) : null}
     </div>
   );
 }

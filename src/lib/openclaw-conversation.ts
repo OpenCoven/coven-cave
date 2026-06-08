@@ -22,6 +22,10 @@ type OpenclawMessage = {
   role: "user" | "assistant" | "system" | "tool";
   content?: string | Array<{ type: string; text?: string; [key: string]: unknown }>;
   timestamp?: number;
+  name?: string;
+  toolName?: string;
+  tool_call_id?: string;
+  status?: string;
   /** Present on user messages from channel sources */
   senderName?: string;
   sourceChannel?: string;
@@ -34,6 +38,37 @@ function extractText(content: OpenclawMessage["content"]): string {
     .filter((c) => c.type === "text" && typeof c.text === "string")
     .map((c) => c.text as string)
     .join("");
+}
+
+function stringifyUnknown(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function extractToolEvent(
+  id: string,
+  msg: OpenclawMessage & { role: "tool" },
+): NonNullable<ChatTurn["tools"]>[number] {
+  const content = msg.content;
+  const arrayContent = Array.isArray(content) ? content : [];
+  const firstStructured = arrayContent.find((item) => /tool|function/i.test(item.type));
+  const output = extractText(content) || stringifyUnknown(firstStructured?.output ?? firstStructured?.result);
+  const name =
+    msg.name ??
+    msg.toolName ??
+    (typeof firstStructured?.name === "string" ? firstStructured.name : undefined) ??
+    "tool";
+  return {
+    id: msg.tool_call_id ?? id,
+    name,
+    output,
+    status: msg.status === "error" ? "error" : "ok",
+  };
 }
 
 /**
@@ -68,6 +103,7 @@ export async function loadConversationFromJsonl(
 
   const lines = raw.split("\n").filter((l) => l.trim());
   const turns: ChatTurn[] = [];
+  let lastAssistant: ChatTurn | null = null;
   let createdAt: string | null = null;
   let updatedAt: string | null = null;
 
@@ -93,6 +129,18 @@ export async function loadConversationFromJsonl(
       message: OpenclawMessage;
     };
     const msg = msgRecord.message;
+    if (msg.role === "tool") {
+      const tool = extractToolEvent(msgRecord.id, msg as OpenclawMessage & { role: "tool" });
+      if (lastAssistant) {
+        lastAssistant.tools = [...(lastAssistant.tools ?? []), tool];
+      }
+      updatedAt =
+        typeof msg.timestamp === "number"
+          ? new Date(msg.timestamp).toISOString()
+          : msgRecord.timestamp;
+      continue;
+    }
+
     if (msg.role !== "user" && msg.role !== "assistant") continue;
 
     const text = extractText(msg.content);
@@ -103,12 +151,14 @@ export async function loadConversationFromJsonl(
         ? new Date(msg.timestamp).toISOString()
         : msgRecord.timestamp;
 
-    turns.push({
+    const turn: ChatTurn = {
       id: msgRecord.id,
       role: msg.role as "user" | "assistant",
       text,
       createdAt: iso,
-    });
+    };
+    turns.push(turn);
+    lastAssistant = msg.role === "assistant" ? turn : null;
 
     updatedAt = iso;
   }
