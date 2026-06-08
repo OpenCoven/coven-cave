@@ -12,7 +12,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /<ChatSurface[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("schedules"\)\}[\s\S]*onCreateReminder=\{openReminderForFamiliar\}[\s\S]*onOpenInboxItem=\{openInspectorInboxItem\}[\s\S]*onInboxItemChanged=\{refreshInbox\}/,
+  /<ChatSurface[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("inbox"\)\}[\s\S]*onCreateReminder=\{openReminderForFamiliar\}[\s\S]*onOpenInboxItem=\{openInspectorInboxItem\}[\s\S]*onInboxItemChanged=\{refreshInbox\}/,
   "Chat mode should mount ChatSurface with fully wired familiar Inbox controls",
 );
 

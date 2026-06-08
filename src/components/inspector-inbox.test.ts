@@ -74,6 +74,6 @@ assert.match(
 
 assert.match(
   workspace,
-  /const openInspectorInboxItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*openAgentSession\(sessionId, item\.familiarId\)[\s\S]*setMode\("schedules"\)/,
-  "Workspace should route Inspector Inbox items to chat sessions when possible and Schedules otherwise",
+  /const openInspectorInboxItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*openAgentSession\(sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
+  "Workspace should route Inspector Inbox items to chat sessions when possible and Inbox otherwise",
 );

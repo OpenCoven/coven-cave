@@ -2512,3 +2512,26 @@ body {
 .rail-memory__open-full:hover {
   background: var(--bg-hover);
 }
+
+.inbox-view__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.inbox-view__tab {
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.inbox-view__tab--active {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--text-primary);
+}

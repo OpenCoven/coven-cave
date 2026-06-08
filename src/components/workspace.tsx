@@ -29,7 +29,6 @@ import {
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
-import { AutomationsView } from "@/components/automations-view";
 import { ComuxView } from "@/components/comux-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
@@ -485,7 +484,7 @@ export function Workspace() {
       return;
     }
     if (item.familiarId) setActiveId(item.familiarId);
-    setMode("schedules");
+    setMode("inbox");
   }, [openAgentSession]);
 
   const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
@@ -810,7 +809,7 @@ export function Workspace() {
           return true;
         }}
         onOpenOnboarding={openOnboarding}
-        onOpenInbox={() => setMode("schedules")}
+        onOpenInbox={() => setMode("inbox")}
         onCreateReminder={openReminderForFamiliar}
         onOpenInboxItem={openInspectorInboxItem}
         onInboxItemChanged={refreshInbox}
@@ -847,9 +846,6 @@ export function Workspace() {
             window.open(item.sourceUrl, "_blank", "noopener");
           }
         }}
-      />
-    ) : mode === "schedules" ? (
-      <AutomationsView
         familiars={familiars}
         onNewReminder={() => openReminderModal()}
         onOpenSession={(sessionId, familiarId) => {
