@@ -100,13 +100,13 @@ You'll need the `coven` daemon running locally so Cave has something to talk to.
 
 ### Mobile over Tailscale
 
-For private phone testing on the same tailnet:
+For private phone testing on the same tailnet, start Cave with a one-time access token:
 
 ```bash
 pnpm mobile:tailscale
 ```
 
-Then open the HTTPS URL from `tailscale serve status` on the phone. See `docs/mobile-tailscale.md`.
+Open the HTTPS URL from `tailscale serve status` with the `?coven_access_token=...` query parameter printed by the script. Do not bind the dev server to `0.0.0.0`; Cave's local APIs can drive your workspace and should not be exposed without the access token. See `docs/mobile-tailscale.md`.
 
 ### Pre-commit hook
 
