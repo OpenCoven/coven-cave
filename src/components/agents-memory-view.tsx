@@ -8,14 +8,22 @@ import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory
 import type { MemoryGraphMemoryNode } from "@/lib/memory-graph-3d-model";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 
-type FileMemoryEntry = {
+export type FileMemoryEntry = {
   root: string;
   rootLabel: string;
   relPath: string;
   fullPath: string;
   size: number;
   modified: string;
+  sourceId: string;
+  sourceKind: "coven-origin" | "external-harness" | "runtime";
+  sourceKindLabel: string;
+  rootPath: string;
+  origin?: "coven";
+  harnessId?: string;
+  runtimeId?: string;
   sourceContext?: string;
+  familiarId?: string;
 };
 
 type Props = {
@@ -67,6 +75,11 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   }
   return [
     entry.rootLabel,
+    entry.sourceKindLabel,
+    entry.harnessId ?? "",
+    entry.runtimeId ?? "",
+    entry.origin ?? "",
+    entry.familiarId ?? "",
     entry.relPath,
     entry.fullPath,
     entry.sourceContext ?? "",
@@ -143,6 +156,12 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     const ids = new Set(covenEntries.map((entry) => entry.familiar_id));
     return familiars.filter((familiar) => ids.has(familiar.id));
   }, [covenEntries, familiars]);
+
+  const fileSourceCounts = useMemo(() => ({
+    covenOrigin: fileEntries.filter((entry) => entry.sourceKind === "coven-origin").length,
+    externalHarnesses: fileEntries.filter((entry) => entry.sourceKind === "external-harness").length,
+    runtimeMemory: fileEntries.filter((entry) => entry.sourceKind === "runtime").length,
+  }), [fileEntries]);
 
   useEffect(() => {
     const next = resolveMemoryFamiliarFilter({
@@ -232,18 +251,22 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agent memories</div>
             <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{visibleCoven.length}</div>
           </div>
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Memory files</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileEntries.length}</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Coven origin</div>
+            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.covenOrigin}</div>
           </div>
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agents with memory</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{familiarsWithMemory.length}</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">External harnesses</div>
+            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.externalHarnesses}</div>
+          </div>
+          <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Runtime memory</div>
+            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.runtimeMemory}</div>
           </div>
         </div>
 
@@ -527,8 +550,16 @@ export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: Memor
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.relPath}</span>
                   <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
-                    {entry.rootLabel} · {compactPath(entry.fullPath)}
+                    {entry.sourceKindLabel} · {entry.rootLabel} · {compactPath(entry.fullPath)}
                   </span>
+                  {(entry.harnessId || entry.runtimeId || entry.origin || entry.familiarId) ? (
+                    <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--text-muted)]">
+                      {entry.origin ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">origin:{entry.origin}</span> : null}
+                      {entry.harnessId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">harness:{entry.harnessId}</span> : null}
+                      {entry.runtimeId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.runtimeId}</span> : null}
+                      {entry.familiarId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">familiar:{entry.familiarId}</span> : null}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
               </button>

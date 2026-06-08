@@ -4,20 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { AgentsMemoryView, MemoryFilesList } from "@/components/agents-memory-view";
+import type { FileMemoryEntry } from "@/components/agents-memory-view";
 import {
   buildAgentCardStats,
   type AgentCardStats,
   type CovenMemoryEntry,
 } from "@/components/agents-view-stats";
-
-type FileMemoryEntry = {
-  root: string;
-  rootLabel: string;
-  relPath: string;
-  fullPath: string;
-  size: number;
-  modified: string;
-};
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }

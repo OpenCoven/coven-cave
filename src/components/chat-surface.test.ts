@@ -100,8 +100,8 @@ assert.match(
 
 assert.match(
   agentsMemoryView,
-  /Agent memories[\s\S]*Memory files[\s\S]*Agents with memory/,
-  "Agents memory view should summarize the focused agent surface and supporting file source",
+  /Agent memories[\s\S]*Coven origin[\s\S]*External harnesses[\s\S]*Runtime memory/,
+  "Agents memory view should summarize native Coven, external harness, and runtime memory sources",
 );
 
 assert.match(

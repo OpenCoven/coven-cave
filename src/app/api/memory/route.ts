@@ -3,25 +3,13 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { parseMemorySourceContext } from "@/lib/memory-source-context";
+import {
+  classifyMemoryFilePath,
+  memoryFileSourcesForHome,
+  type MemorySourceKind,
+} from "@/lib/server/memory-file-sources";
 
 export const dynamic = "force-dynamic";
-
-const SHARED_MEMORY_ROOTS: Array<{ id: string; label: string; path: string }> = [
-  {
-    id: "workspace",
-    label: "Workspace memory",
-    path: path.join(homedir(), ".openclaw", "workspace", "memory"),
-  },
-  {
-    id: "coven",
-    label: "Coven memory",
-    path: path.join(homedir(), ".coven", "memory"),
-  },
-];
-
-const MEMORY_INDEX_FILES = [
-  path.join(homedir(), ".openclaw", "workspace", "MEMORY.md"),
-];
 
 export type MemoryEntry = {
   root: string;
@@ -30,6 +18,13 @@ export type MemoryEntry = {
   fullPath: string;
   size: number;
   modified: string;
+  sourceId: string;
+  sourceKind: MemorySourceKind;
+  sourceKindLabel: string;
+  rootPath: string;
+  origin?: "coven";
+  harnessId?: string;
+  runtimeId?: string;
   sourceContext?: string;
   /** Familiar id when this entry belongs to a specific agent workspace */
   familiarId?: string;
@@ -45,11 +40,8 @@ async function readSourceContext(filePath: string): Promise<string | undefined> 
 
 async function walk(
   dir: string,
-  root: string,
-  rootLabel: string,
   acc: MemoryEntry[],
   baseDir: string,
-  familiarId?: string,
 ) {
   let items;
   try {
@@ -61,20 +53,29 @@ async function walk(
     if (item.name.startsWith(".")) continue;
     const full = path.join(dir, item.name);
     if (item.isDirectory()) {
-      await walk(full, root, rootLabel, acc, baseDir, familiarId);
+      await walk(full, acc, baseDir);
     } else if (item.isFile() && /\.(md|markdown|txt|json)$/i.test(item.name)) {
       try {
         const s = await stat(full);
+        const classification = classifyMemoryFilePath(full);
+        if (!classification) continue;
         const sourceContext = await readSourceContext(full);
         acc.push({
-          root,
-          rootLabel,
+          root: classification.root,
+          rootLabel: classification.rootLabel,
           relPath: path.relative(baseDir, full),
           fullPath: full,
           size: s.size,
           modified: s.mtime.toISOString(),
+          sourceId: classification.sourceId,
+          sourceKind: classification.sourceKind,
+          sourceKindLabel: classification.sourceKindLabel,
+          rootPath: classification.rootPath,
+          ...(classification.origin ? { origin: classification.origin } : {}),
+          ...(classification.harnessId ? { harnessId: classification.harnessId } : {}),
+          ...(classification.runtimeId ? { runtimeId: classification.runtimeId } : {}),
           ...(sourceContext ? { sourceContext } : {}),
-          ...(familiarId ? { familiarId } : {}),
+          ...(classification.familiarId ? { familiarId: classification.familiarId } : {}),
         });
       } catch {
         /* skip */
@@ -99,53 +100,69 @@ async function scanFamiliarWorkspaces(acc: MemoryEntry[]) {
     const indexFile = path.join(workspacesDir, familiarId, "MEMORY.md");
     try {
       const s = await stat(/* turbopackIgnore: true */ indexFile);
+      const classification = classifyMemoryFilePath(indexFile);
+      if (!classification) continue;
       const sourceContext = await readSourceContext(indexFile);
       acc.push({
-        root: `familiar:${familiarId}`,
-        rootLabel: familiarId,
+        root: classification.root,
+        rootLabel: classification.rootLabel,
         relPath: "MEMORY.md",
         fullPath: indexFile,
         size: s.size,
         modified: s.mtime.toISOString(),
+        sourceId: classification.sourceId,
+        sourceKind: classification.sourceKind,
+        sourceKindLabel: classification.sourceKindLabel,
+        rootPath: classification.rootPath,
+        ...(classification.harnessId ? { harnessId: classification.harnessId } : {}),
         ...(sourceContext ? { sourceContext } : {}),
-        familiarId,
+        familiarId: classification.familiarId ?? familiarId,
       });
     } catch {
       /* no MEMORY.md for this familiar */
     }
-    await walk(memDir, `familiar:${familiarId}`, familiarId, acc, memDir, familiarId);
+    await walk(memDir, acc, memDir);
   }
 }
 
 export async function GET() {
   const entries: MemoryEntry[] = [];
 
-  // Shared workspace/coven memory dirs
-  for (const root of SHARED_MEMORY_ROOTS) {
-    await walk(root.path, root.id, root.label, entries, root.path);
+  for (const source of memoryFileSourcesForHome()) {
+    try {
+      const s = await stat(/* turbopackIgnore: true */ source.rootPath);
+      if (s.isDirectory()) {
+        await walk(source.rootPath, entries, source.rootPath);
+        continue;
+      }
+      if (!s.isFile()) continue;
+      const classification = classifyMemoryFilePath(source.rootPath);
+      if (!classification) continue;
+      const sourceContext = await readSourceContext(source.rootPath);
+      entries.push({
+        root: classification.root,
+        rootLabel: classification.rootLabel,
+        relPath: path.basename(source.rootPath),
+        fullPath: source.rootPath,
+        size: s.size,
+        modified: s.mtime.toISOString(),
+        sourceId: classification.sourceId,
+        sourceKind: classification.sourceKind,
+        sourceKindLabel: classification.sourceKindLabel,
+        rootPath: classification.rootPath,
+        ...(classification.origin ? { origin: classification.origin } : {}),
+        ...(classification.harnessId ? { harnessId: classification.harnessId } : {}),
+        ...(classification.runtimeId ? { runtimeId: classification.runtimeId } : {}),
+        ...(sourceContext ? { sourceContext } : {}),
+      });
+    } catch {
+      /* missing memory source */
+      continue;
+    }
   }
 
   // Per-familiar agent workspace memory dirs
   await scanFamiliarWorkspaces(entries);
-
-  // Top-level shared MEMORY.md index
-  for (const idx of MEMORY_INDEX_FILES) {
-    try {
-      const s = await stat(/* turbopackIgnore: true */ idx);
-      const sourceContext = await readSourceContext(idx);
-      entries.push({
-        root: "index",
-        rootLabel: "Index",
-        relPath: path.basename(idx),
-        fullPath: idx,
-        size: s.size,
-        modified: s.mtime.toISOString(),
-        ...(sourceContext ? { sourceContext } : {}),
-      });
-    } catch {
-      /* missing */
-    }
-  }
 
   entries.sort((a, b) => (a.modified < b.modified ? 1 : -1));
   return NextResponse.json({ ok: true, entries });
