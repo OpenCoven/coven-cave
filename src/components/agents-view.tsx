@@ -344,11 +344,6 @@ function AgentRosterCard({
             {familiar.role || familiar.harness || familiar.id}
           </span>
         </span>
-        <Icon
-          name="ph:caret-right"
-          width={12}
-          className="text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100"
-        />
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
