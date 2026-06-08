@@ -10,8 +10,9 @@ import { LibraryReadingList } from "@/components/library-reading-list";
 import { LibraryGitHubList } from "@/components/library-github-list";
 import { LibraryDocPreview, type SelectedItem } from "@/components/library-doc-preview";
 import { LibraryTimeline } from "@/components/library-timeline";
+import { ComuxView } from "@/components/comux-view";
 import type { TimelineEntry } from "@/app/api/library/all/route";
-import type { Familiar } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import type {
   LibraryCollection,
   LibraryDoc,
@@ -22,7 +23,14 @@ import type {
   LibrarySectionKind,
 } from "@/lib/library-types";
 
-export function LibraryView({ onOpenUrl }: { onOpenUrl?: (url: string) => void } = {}) {
+type LibraryViewProps = {
+  onOpenUrl?: (url: string) => void;
+  sessions?: SessionRow[];
+  onOpenSession?: (sessionId: string, familiarId?: string | null) => void;
+  onNewProjectChat?: (projectRoot: string) => void;
+};
+
+export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectChat }: LibraryViewProps = {}) {
   const [activeSection, setActiveSection] = useState<LibrarySectionKind>("all");
   const [activeCollection, setActiveCollection] = useState("all");
   const [collections, setCollections] = useState<LibraryCollection[]>([]);
@@ -198,6 +206,14 @@ export function LibraryView({ onOpenUrl }: { onOpenUrl?: (url: string) => void }
                 setSelectedItem({ kind: "github", item });
               }}
               onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
+            />
+          )}
+          {activeSection === "projects" && (
+            <ComuxView
+              view="projects"
+              sessions={sessions ?? []}
+              onOpenSession={onOpenSession ?? (() => undefined)}
+              onNewChat={onNewProjectChat ?? (() => undefined)}
             />
           )}
         </div>

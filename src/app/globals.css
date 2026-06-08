@@ -2221,3 +2221,570 @@ body {
   --ring-focus: color-mix(in oklch, #6DA9FF 55%, transparent);
   --brand: var(--accent-presence);
 }
+
+/* ────────────────────────────────────────────────
+   Familiar avatar rail — leftmost 52px zone
+   (Phase 1, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.familiar-avatar-rail {
+  width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 12px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-hairline);
+  user-select: none;
+}
+
+.familiar-avatar-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  align-items: center;
+  scrollbar-width: thin;
+}
+
+.familiar-avatar-rail__avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-raised);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-avatar-rail__avatar:hover {
+  transform: scale(1.06);
+}
+
+.familiar-avatar-rail__avatar--active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent-presence);
+}
+
+.familiar-avatar-rail__presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-panel);
+}
+
+.familiar-avatar-rail__unread {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  border: 2px solid var(--bg-panel);
+}
+
+.familiar-avatar-rail__add,
+.familiar-avatar-rail__toggle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-avatar-rail__add:hover,
+.familiar-avatar-rail__toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.familiar-avatar-rail__toggle {
+  border-style: none;
+  margin-top: auto;
+}
+
+/* ────────────────────────────────────────────────
+   Companion rail — right-side per-familiar pane
+   (Phase 2, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.companion-rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border-hairline);
+}
+
+.companion-rail--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.companion-rail__empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.companion-rail__empty-title {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.companion-rail__empty-sub {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.companion-rail__empty-cta {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.companion-rail__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.companion-rail__glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.companion-rail__name {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-base);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.companion-rail__status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.companion-rail__status--off {
+  background: var(--text-muted);
+}
+
+.companion-rail__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.companion-rail__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.companion-rail__tab--active {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--text-primary);
+}
+
+.companion-rail__body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.companion-rail__pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.companion-rail__pane[hidden] {
+  display: none;
+}
+
+/* ────────────────────────────────────────────────
+   Rail-pane empty + memory styles
+   (Phase 2, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.rail-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rail-empty__title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.rail-empty__sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rail-memory {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.rail-memory__open-full {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  border: 0;
+}
+
+.rail-memory__open-full:hover {
+  background: var(--bg-hover);
+}
+
+.inbox-view__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.inbox-view__tab {
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.inbox-view__tab--active {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--text-primary);
+}
+
+/* ────────────────────────────────────────────────
+   Shell banner strip — system state surface
+   (Phase 4, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.shell-banner-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.shell-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.shell-banner--error {
+  background: color-mix(in oklch, var(--color-danger) 12%, var(--bg-base));
+  color: var(--color-danger);
+}
+
+.shell-banner--warning {
+  background: color-mix(in oklch, var(--color-warning) 10%, var(--bg-base));
+  color: var(--color-warning);
+}
+
+.shell-banner--info {
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-base));
+  color: var(--text-primary);
+}
+
+.shell-banner__title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-banner__cta {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: currentColor;
+  border-radius: var(--radius-control);
+  padding: 3px 10px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.shell-banner__dismiss {
+  background: transparent;
+  border: 0;
+  color: currentColor;
+  opacity: 0.6;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.shell-banner__dismiss:hover {
+  opacity: 1;
+}
+
+/* ────────────────────────────────────────────────
+   Top bar — brand · breadcrumb · search · bell · settings
+   (Phase 4, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 36px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: var(--text-sm);
+  user-select: none;
+}
+
+.top-bar__brand {
+  color: var(--accent-presence);
+  font-weight: 600;
+}
+
+.top-bar__sep {
+  color: var(--text-muted);
+}
+
+.top-bar__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top-bar__crumb-surface {
+  color: var(--text-primary);
+}
+
+.top-bar__crumb-sep {
+  color: var(--text-muted);
+}
+
+.top-bar__crumb-sub {
+  color: var(--text-secondary);
+}
+
+.top-bar__search {
+  margin-left: auto;
+  margin-right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  min-width: 240px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__search:hover {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.top-bar__search kbd {
+  margin-left: auto;
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.top-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.top-bar__icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.top-bar__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ────────────────────────────────────────────────
+   Settings · Familiars panel
+   (Phase 5, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.settings-familiars-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.settings-familiars-panel__empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: 24px;
+}
+
+.settings-familiars-panel__card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.settings-familiars-panel__card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-familiars-panel__glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.settings-familiars-panel__name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+}
+
+.settings-familiars-panel__harness-pill {
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-elevated);
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.settings-familiars-panel__dl {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 6px 12px;
+  font-size: var(--text-sm);
+}
+
+.settings-familiars-panel__dl dt {
+  color: var(--text-muted);
+}
+
+.settings-familiars-panel__dl dd {
+  color: var(--text-primary);
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-xs);
+}
+
+.settings-familiars-panel__version {
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+
+.settings-familiars-panel__presence {
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}

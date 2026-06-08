@@ -13,9 +13,15 @@ import {
   sortEscalations,
 } from "@/lib/escalations-types";
 import { DEMO_MODE, DEMO_ESCALATIONS } from "@/lib/demo-seed";
+import type { Familiar } from "@/lib/types";
+import { AutomationsView } from "@/components/automations-view";
 
 type Props = {
   onOpenSource?: (item: Escalation) => void;
+  familiars?: Familiar[];
+  onNewReminder?: () => void;
+  onOpenSession?: (sessionId: string, familiarId?: string | null) => void;
+  defaultTab?: "escalations" | "schedules";
 };
 
 const SEVERITY_LABEL: Record<EscalationSeverity, string> = {
@@ -59,7 +65,14 @@ function age(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-export function InboxEscalationsView({ onOpenSource }: Props) {
+export function InboxEscalationsView({
+  onOpenSource,
+  familiars,
+  onNewReminder,
+  onOpenSession,
+  defaultTab,
+}: Props) {
+  const [tab, setTab] = useState<"escalations" | "schedules">(defaultTab ?? "escalations");
   const [items, setItems] = useState<Escalation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
@@ -187,103 +200,130 @@ export function InboxEscalationsView({ onOpenSource }: Props) {
       ref={rootRef}
       className="flex h-full flex-col bg-background text-foreground"
     >
-      <header
-        className="flex items-center gap-3 px-5 py-3 text-[11px]"
-        style={{ borderBottom: "1px solid var(--border-hairline)" }}
-      >
-        <span className="font-medium text-foreground">Inbox</span>
-        <span className="text-muted-foreground">
-          {newCount} new · {criticalCount} critical
-        </span>
-        <span className="ml-auto flex items-center gap-2 text-muted-foreground">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showResolved}
-              onChange={(e) => setShowResolved(e.target.checked)}
-              className="accent-foreground"
-            />
-            Show resolved
-          </label>
-          <button
-            onClick={() => void refresh()}
-            className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted"
-            title="Refresh"
-          >
-            <Icon name="ph:arrows-clockwise-bold" width={11} height={11} aria-hidden />
-          </button>
-        </span>
-      </header>
-
-      {error ? (
-        <div
-          className="px-5 py-1.5 text-xs text-[var(--color-danger)]"
-          style={{ background: "rgba(244,184,184,0.08)", borderBottom: "1px solid var(--border-hairline)" }}
+      <nav className="inbox-view__tabs">
+        <button
+          type="button"
+          className={`inbox-view__tab${tab === "escalations" ? " inbox-view__tab--active" : ""}`}
+          onClick={() => setTab("escalations")}
         >
-          {error}
-        </div>
-      ) : null}
+          Escalations
+        </button>
+        <button
+          type="button"
+          className={`inbox-view__tab${tab === "schedules" ? " inbox-view__tab--active" : ""}`}
+          onClick={() => setTab("schedules")}
+        >
+          Schedules
+        </button>
+      </nav>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <div className="mx-auto w-full max-w-[1200px]">
-          {visible.length === 0 ? (
+      {tab === "schedules" ? (
+        <AutomationsView
+          familiars={familiars ?? []}
+          onNewReminder={onNewReminder ?? (() => {})}
+          onOpenSession={onOpenSession}
+        />
+      ) : (
+        <>
+          <header
+            className="flex items-center gap-3 px-5 py-3 text-[11px]"
+            style={{ borderBottom: "1px solid var(--border-hairline)" }}
+          >
+            <span className="font-medium text-foreground">Inbox</span>
+            <span className="text-muted-foreground">
+              {newCount} new · {criticalCount} critical
+            </span>
+            <span className="ml-auto flex items-center gap-2 text-muted-foreground">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showResolved}
+                  onChange={(e) => setShowResolved(e.target.checked)}
+                  className="accent-foreground"
+                />
+                Show resolved
+              </label>
+              <button
+                onClick={() => void refresh()}
+                className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted"
+                title="Refresh"
+              >
+                <Icon name="ph:arrows-clockwise-bold" width={11} height={11} aria-hidden />
+              </button>
+            </span>
+          </header>
+
+          {error ? (
             <div
-              className="rounded-2xl border px-6 py-12 text-center"
-              style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}
+              className="px-5 py-1.5 text-xs text-[var(--color-danger)]"
+              style={{ background: "rgba(244,184,184,0.08)", borderBottom: "1px solid var(--border-hairline)" }}
             >
-              <p className="text-sm text-foreground">Nothing needs you.</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                The Inbox surfaces items when a familiar (or a system signal) decides the user should look. Quiet means everything is handled.
-              </p>
+              {error}
             </div>
-          ) : (
-            <ul
-              className="divide-y"
-              style={{ borderColor: "var(--border-hairline)" }}
-            >
-              {visible.map((it, idx) => {
-                const isActive = idx === activeIdx;
-                return (
-                  <li
-                    key={it.id}
-                    onClick={() => setActiveIdx(idx)}
-                    className={`cursor-pointer px-3 py-3 transition-colors ${
-                      isActive
-                        ? "bg-muted"
-                        : "hover:bg-muted/50"
-                    }`}
-                    aria-current={isActive ? "true" : undefined}
-                  >
-                    <EscalationRow
-                      item={it}
-                      isActive={isActive}
-                      onPatch={(body) => void patchItem(it.id, body)}
-                      onOpenSource={() => onOpenSource?.(it)}
-                      onAskSnooze={() => setSnoozeMenuFor(it.id)}
-                    />
-                    {snoozeMenuFor === it.id ? (
-                      <SnoozeMenu
-                        onClose={() => setSnoozeMenuFor(null)}
-                        onPick={(preset) => {
-                          setSnoozeMenuFor(null);
-                          void patchItem(it.id, { state: "snoozed", snoozePreset: preset });
-                        }}
-                      />
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </div>
+          ) : null}
 
-      <footer
-        className="px-5 py-2 text-[10px] text-muted-foreground"
-        style={{ borderTop: "1px solid var(--border-hairline)" }}
-      >
-        j/k navigate · e acknowledge · r resolve · x dismiss · s snooze · o open source
-      </footer>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div className="mx-auto w-full max-w-[1200px]">
+              {visible.length === 0 ? (
+                <div
+                  className="rounded-2xl border px-6 py-12 text-center"
+                  style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}
+                >
+                  <p className="text-sm text-foreground">Nothing needs you.</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    The Inbox surfaces items when a familiar (or a system signal) decides the user should look. Quiet means everything is handled.
+                  </p>
+                </div>
+              ) : (
+                <ul
+                  className="divide-y"
+                  style={{ borderColor: "var(--border-hairline)" }}
+                >
+                  {visible.map((it, idx) => {
+                    const isActive = idx === activeIdx;
+                    return (
+                      <li
+                        key={it.id}
+                        onClick={() => setActiveIdx(idx)}
+                        className={`cursor-pointer px-3 py-3 transition-colors ${
+                          isActive
+                            ? "bg-muted"
+                            : "hover:bg-muted/50"
+                        }`}
+                        aria-current={isActive ? "true" : undefined}
+                      >
+                        <EscalationRow
+                          item={it}
+                          isActive={isActive}
+                          onPatch={(body) => void patchItem(it.id, body)}
+                          onOpenSource={() => onOpenSource?.(it)}
+                          onAskSnooze={() => setSnoozeMenuFor(it.id)}
+                        />
+                        {snoozeMenuFor === it.id ? (
+                          <SnoozeMenu
+                            onClose={() => setSnoozeMenuFor(null)}
+                            onPick={(preset) => {
+                              setSnoozeMenuFor(null);
+                              void patchItem(it.id, { state: "snoozed", snoozePreset: preset });
+                            }}
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <footer
+            className="px-5 py-2 text-[10px] text-muted-foreground"
+            style={{ borderTop: "1px solid var(--border-hairline)" }}
+          >
+            j/k navigate · e acknowledge · r resolve · x dismiss · s snooze · o open source
+          </footer>
+        </>
+      )}
     </section>
   );
 }

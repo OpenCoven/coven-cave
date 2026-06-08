@@ -46,6 +46,8 @@ type Props = {
   onCreateReminder?: (familiarId: string) => void;
   onOpenInboxItem?: (item: InboxItem) => void;
   onInboxItemChanged?: () => void | Promise<void>;
+  /** When true, drop the tab nav and outer border so the pane fits in 296px rail. */
+  compact?: boolean;
 };
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -73,6 +75,7 @@ export function InspectorPane({
   onCreateReminder,
   onOpenInboxItem,
   onInboxItemChanged,
+  compact = false,
 }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
 
@@ -95,26 +98,28 @@ export function InspectorPane({
 
   return (
     <aside className="flex h-full flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40">
-      <nav className="flex border-b border-[var(--border-hairline)] text-[11px]">
-        {(["memory", "familiar", "inbox", "vault"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 px-3 py-3 uppercase tracking-widest transition-colors ${
-              tab === t
-                ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
-                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-            }`}
-          >
-            {TAB_LABEL[t]}
-            {t === "inbox" && inboxBadge > 0 ? (
-              <span className="ml-1 rounded-full bg-[var(--color-danger)] px-1 text-[9px] font-bold text-white">
-                {inboxBadge}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </nav>
+      {!compact && (
+        <nav className="flex border-b border-[var(--border-hairline)] text-[11px]">
+          {(["memory", "familiar", "inbox", "vault"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 px-3 py-3 uppercase tracking-widest transition-colors ${
+                tab === t
+                  ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+              }`}
+            >
+              {TAB_LABEL[t]}
+              {t === "inbox" && inboxBadge > 0 ? (
+                <span className="ml-1 rounded-full bg-[var(--color-danger)] px-1 text-[9px] font-bold text-white">
+                  {inboxBadge}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "memory" ? <MemoryTab familiar={familiar} /> : null}
@@ -1257,6 +1262,31 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
           familiarName={familiar.display_name}
         />
       </section>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Rail variant — used by the CompanionRail's Inspector tab.
+// Renders the active familiar's memory tab only — drops the tab nav and
+// outer border so it fits in 296px.
+// ────────────────────────────────────────────────────────────────────────────
+
+export function RailInspector({
+  familiar,
+}: {
+  familiar: Familiar | null;
+}) {
+  if (!familiar) {
+    return (
+      <div className="rail-empty">
+        <p>Pick a familiar.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rail-inspector">
+      <InspectorPane familiar={familiar} compact={true} />
     </div>
   );
 }

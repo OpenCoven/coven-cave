@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const inspectorPane = await readFile(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
-const agentsView = await readFile(new URL("./agents-view.tsx", import.meta.url), "utf8");
+const agentsView = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
@@ -63,7 +63,7 @@ assert.match(
 assert.match(
   agentsView,
   /onCreateReminder=\{onCreateReminder\}[\s\S]*onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*onInboxItemChanged=\{onInboxItemChanged\}/,
-  "AgentsView should thread Inspector Inbox callbacks into the right panel",
+  "ChatSurface should thread Inspector Inbox callbacks into the right panel",
 );
 
 assert.match(
@@ -74,6 +74,6 @@ assert.match(
 
 assert.match(
   workspace,
-  /const openInspectorInboxItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*openAgentSession\(sessionId, item\.familiarId\)[\s\S]*setMode\("schedules"\)/,
-  "Workspace should route Inspector Inbox items to chat sessions when possible and Schedules otherwise",
+  /const openInspectorInboxItem = useCallback\(\(item: InboxItem\) => \{[\s\S]*openAgentSession\(sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
+  "Workspace should route Inspector Inbox items to chat sessions when possible and Inbox otherwise",
 );

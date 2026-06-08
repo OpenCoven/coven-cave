@@ -28,6 +28,10 @@ type Props = {
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
   onOpenMemoryFile?: (path: string) => void;
+  /** Lock to a specific view mode; when set, hides the mode toggle. */
+  mode?: "list" | "graph";
+  /** Cap the number of entries rendered per section. */
+  limit?: number;
 };
 
 type CovenMemoryResponse =
@@ -71,12 +75,14 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }: Props) {
+export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, mode, limit }: Props) {
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
+  const effectiveViewMode = mode ?? viewMode;
+  const effectiveLimit = limit ?? Infinity;
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -183,24 +189,26 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
-              {(["list", "graph"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                  className={[
-                    "inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
-                    viewMode === mode
-                      ? "bg-[var(--accent-presence)] text-white"
-                      : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
-                  ].join(" ")}
-                >
-                  <Icon name={mode === "list" ? "ph:list-bullets" : "ph:graph"} width={12} />
-                  {mode}
-                </button>
-              ))}
-            </div>
+            {!mode && (
+              <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
+                {(["list", "graph"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setViewMode(m)}
+                    className={[
+                      "inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
+                      viewMode === m
+                        ? "bg-[var(--accent-presence)] text-white"
+                        : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
+                    ].join(" ")}
+                  >
+                    <Icon name={m === "list" ? "ph:list-bullets" : "ph:graph"} width={12} />
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
             <button type="button" onClick={() => void load()} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
               <Icon name="ph:arrows-clockwise" width={12} />
               Refresh
@@ -246,7 +254,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
 
-      {viewMode === "graph" ? (
+      {effectiveViewMode === "graph" ? (
         <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <section className="min-h-[520px] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
             <MemoryGraph3D
@@ -300,7 +308,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
             </div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
-              {visibleCoven.slice(0, 80).map((entry) => {
+              {visibleCoven.slice(0, effectiveLimit === Infinity ? 80 : effectiveLimit).map((entry) => {
                 const familiar = familiarById.get(entry.familiar_id);
                 return (
                   <article key={entry.id} className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3">
@@ -346,7 +354,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
               </div>
             ) : (
               <ul className="max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto">
-                {visibleFiles.slice(0, 160).map((entry) => (
+                {visibleFiles.slice(0, effectiveLimit === Infinity ? 160 : effectiveLimit).map((entry) => (
                   <li key={entry.fullPath}>
                     <button
                       type="button"
@@ -370,6 +378,49 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
         </section>
       </div>
       )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Rail variant — most-recent memory writes, no graph.
+// The full 3D constellation stays as the detail-pane Memory view; the rail
+// tab is a quick "what changed" feed.
+// ────────────────────────────────────────────────────────────────────────────
+
+export function RailMemoryList({
+  familiar,
+  familiars = [],
+  onOpenFullView,
+}: {
+  familiar: Familiar | null;
+  familiars?: Familiar[];
+  onOpenFullView?: () => void;
+}) {
+  if (!familiar) {
+    return (
+      <div className="rail-empty">
+        <p>Pick a familiar.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rail-memory">
+      <AgentsMemoryView
+        familiars={familiars}
+        activeFamiliar={familiar}
+        mode="list"
+        limit={20}
+      />
+      {onOpenFullView ? (
+        <button
+          type="button"
+          className="rail-memory__open-full"
+          onClick={onOpenFullView}
+        >
+          Open full memory →
+        </button>
+      ) : null}
     </div>
   );
 }

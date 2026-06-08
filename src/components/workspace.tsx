@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SidebarMinimal, FOLDER_MODES, UTILITY_MODES } from "@/components/sidebar-minimal";
-import { Icon } from "@/lib/icon";
+import { SidebarMinimal } from "@/components/sidebar-minimal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
-import { PluginsView } from "@/components/plugins-view";
 import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
@@ -16,82 +14,66 @@ import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
+import { FamiliarAvatarRail } from "@/components/familiar-avatar-rail";
+import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
+import { RailInspector } from "@/components/inspector-pane";
+import { RailMemoryList } from "@/components/agents-memory-view";
+import {
+  getActiveFamiliar,
+  setActiveFamiliar,
+  getLastSurface,
+  setLastSurface,
+} from "@/lib/familiar-memory";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
-import { AutomationsView } from "@/components/automations-view";
 import { ComuxView } from "@/components/comux-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { HomeComposer } from "@/components/home-composer";
-import { AgentsView } from "@/components/agents-view";
-import { SessionsView } from "@/components/sessions-view";
+import { ChatSurface } from "@/components/chat-surface";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
+import { useShellBanners } from "@/lib/shell-banners";
+import { TopBar } from "@/components/top-bar";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
-// Icon-only nav strip shown when the sidebar is collapsed
-function IconNavStrip({
-  mode,
-  onModeChange,
-}: {
-  mode: string;
-  onModeChange: (m: string) => void;
-}) {
-  return (
-    <>
-      {FOLDER_MODES.map((fm) => {
-        return (
-          <button
-            key={fm.id}
-            type="button"
-            title={fm.label}
-            aria-label={fm.label}
-            onClick={() => onModeChange(fm.id)}
-            className={`shell-nav-tab-icon-btn${mode === fm.id ? " shell-nav-tab-icon-btn--active" : ""}`}
-          >
-            <Icon name={fm.iconName} width={15} />
-          </button>
-        );
-      })}
-      <span className="my-1 h-px w-5 bg-[var(--border-hairline)]" />
-      {UTILITY_MODES.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          title={item.label}
-          aria-label={item.label}
-          onClick={() => onModeChange(item.id)}
-        >
-          <Icon name={item.iconName} width={15} />
-        </button>
-      ))}
-    </>
-  );
-}
+const SURFACE_LABELS: Record<WorkspaceMode, string> = {
+  home: "Home",
+  chat: "Chat",
+  board: "Board",
+  calendar: "Calendar",
+  inbox: "Inbox",
+  library: "Library",
+  browser: "Browser",
+  terminal: "Terminal",
+  github: "GitHub",
+};
 
 export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() => getActiveFamiliar());
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
+  const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<"inspector" | "chat" | null>(null);
-  const [shellAgentPane, setShellAgentPane] = useState<"browser" | "chat">("browser");
-  // "browser" = top locks to browser; "chat" = top locks to chat
-  const [stripLock, setStripLock] = useState<"browser" | "chat">("browser");
+  const [railTab, setRailTab] = useState<CompanionTab>(() => {
+    if (typeof window === "undefined") return "chat";
+    return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";
+  });
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
@@ -113,6 +95,31 @@ export function Workspace() {
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
+
+  // One-shot legacy localStorage key sweep: runs once per browser profile,
+  // then marks itself done so it never re-runs.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const swept = window.localStorage.getItem("cave:legacy-keys-swept");
+    if (swept === "1") return;
+    const orphans = [
+      "cave:agent-pane-lock",     // stripLock
+      "cave:agent-pane",          // shellAgentPane
+      "cave:sidebar-icon-strip",  // legacy strip state, if any
+    ];
+    for (const k of orphans) {
+      try { window.localStorage.removeItem(k); } catch { /* ignore */ }
+    }
+    window.localStorage.setItem("cave:legacy-keys-swept", "1");
+  }, []);
+
+  useEffect(() => {
+    setActiveFamiliar(activeId);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("cave:rail.tab", railTab);
+  }, [railTab]);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
@@ -140,6 +147,26 @@ export function Workspace() {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
+  // Push / dismiss the daemon-offline banner into the shared shell channel so
+  // it appears at the top of every surface, not just Chat.
+  useEffect(() => {
+    if (daemonRunning) {
+      dismissBanner("daemon-offline");
+    } else {
+      pushBanner({
+        id: "daemon-offline",
+        severity: "warning",
+        title: "Daemon offline — existing sessions visible but new tasks may not start.",
+        cta: {
+          label: "Start daemon",
+          onClick: () => {
+            void fetch("/api/daemon/start", { method: "POST" });
+          },
+        },
+      });
+    }
+  }, [daemonRunning, pushBanner, dismissBanner]);
+
   const loadFamiliars = useCallback(async () => {
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
@@ -165,6 +192,12 @@ export function Workspace() {
       setFamiliarsError(DEMO_MODE ? null : (err instanceof Error ? err.message : "fetch failed"));
       if (DEMO_MODE) setActiveId((curr) => curr ?? fallback[0]?.id ?? null);
     }
+  }, []);
+
+  const selectFamiliar = useCallback((id: string) => {
+    setActiveId(id);
+    const last = getLastSurface(id);
+    if (last) setMode(last as WorkspaceMode);
   }, []);
 
   const loadSessions = useCallback(async () => {
@@ -223,6 +256,39 @@ export function Workspace() {
       unlistenNew?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeId) setLastSurface(activeId, mode);
+  }, [activeId, mode]);
+
+  // Auto-collapse the bottom slide-up terminal slot when the Terminal surface
+  // is active. Prevents the double-terminal state where the surface PTY and
+  // the slide-up PTY both render at once.
+  useEffect(() => {
+    if (mode !== "terminal") return;
+    requestAnimationFrame(() => {
+      if (typeof window === "undefined") return;
+      const raw = window.localStorage.getItem("cave.shell.bottom.v1");
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        const bottomLayout = parsed?.["cave.shell.bottom.v1"]?.layout;
+        const bottomSize = Array.isArray(bottomLayout) ? bottomLayout[1] : 0;
+        if (typeof bottomSize === "number" && bottomSize > 0) {
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "`",
+              code: "Backquote",
+              ctrlKey: true,
+              bubbles: true,
+            }),
+          );
+        }
+      } catch {
+        /* ignore corrupted layout */
+      }
+    });
+  }, [mode]);
 
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
@@ -439,7 +505,7 @@ export function Workspace() {
 
   const openAgentSession = useCallback((sessionId: string, familiarId?: string | null) => {
     if (familiarId) setActiveId(familiarId);
-    setMode("agents");
+    setMode("chat");
     setTimeout(() => {
       window.dispatchEvent(
         new CustomEvent("cave:agents-open-session", {
@@ -457,13 +523,13 @@ export function Workspace() {
       return;
     }
     if (item.familiarId) setActiveId(item.familiarId);
-    setMode("schedules");
+    setMode("inbox");
   }, [openAgentSession]);
 
   const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
-    setMode("agents");
+    setMode("chat");
     setTimeout(() => {
       window.dispatchEvent(
         new CustomEvent("cave:agents-new-chat", {
@@ -473,8 +539,61 @@ export function Workspace() {
     }, 0);
   }, []);
 
+  useEffect(() => {
+    const SURFACE_ORDER: WorkspaceMode[] = [
+      "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",
+    ];
+
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      const alt = e.altKey;
+
+      // ⌘1..⌘8 → sidebar surface
+      if (meta && !alt && /^[1-8]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = SURFACE_ORDER[idx];
+        if (target) {
+          e.preventDefault();
+          setMode(target);
+        }
+        return;
+      }
+
+      // ⌥1..⌥9 → Nth familiar
+      if (alt && !meta && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = familiars[idx];
+        if (target) {
+          e.preventDefault();
+          selectFamiliar(target.id);
+        }
+        return;
+      }
+
+      // ⌘↑ / ⌘↓ → cycle familiars
+      if (meta && (e.key === "ArrowUp" || e.key === "ArrowDown") && familiars.length > 0) {
+        e.preventDefault();
+        const idx = familiars.findIndex((f) => f.id === activeId);
+        const step = e.key === "ArrowUp" ? -1 : 1;
+        const next = (idx === -1 ? 0 : (idx + step + familiars.length) % familiars.length);
+        selectFamiliar(familiars[next].id);
+        return;
+      }
+
+      // ⌘N → new chat (only on Chat surface)
+      if (meta && !alt && e.key.toLowerCase() === "n" && mode === "chat") {
+        e.preventDefault();
+        startAgentChat(activeId);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [familiars, activeId, mode, selectFamiliar, startAgentChat]);
+
   const showAgentChatList = useCallback(() => {
-    setMode("agents");
+    setMode("chat");
     setTimeout(() => window.dispatchEvent(new CustomEvent("cave:agents-list")), 0);
   }, []);
 
@@ -538,7 +657,7 @@ export function Workspace() {
       // Switch to Agents view (memory inspector lives in the right pane), and
       // surface the path via a hash that InspectorPane can wire to in a
       // follow-up commit; for now this is a no-op visual placeholder.
-      setMode("agents");
+      setMode("chat");
       window.location.hash = `memory:${encodeURIComponent(intent.path)}`;
       return;
     }
@@ -553,6 +672,7 @@ export function Workspace() {
           return;
         case "/chats":
         case "/agents":
+        case "/chat":
           showAgentChatList();
           return;
         case "/inbox":
@@ -573,7 +693,8 @@ export function Workspace() {
           setMode("terminal");
           return;
         case "/projects":
-          setMode("projects");
+          setMode("library");
+          window.location.hash = "library:projects";
           return;
         case "/library":
           setMode("library");
@@ -585,7 +706,8 @@ export function Workspace() {
           showAgentChatList();
           return;
         case "/sessions":
-          setMode("sessions");
+          setMode("chat");
+          showAgentChatList();
           return;
         case "/familiar": {
           const name = (intent.args ?? "").trim().toLowerCase();
@@ -689,6 +811,9 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
+  const surfaceLabel = SURFACE_LABELS[mode] ?? "Home";
+  const subContext = active ? active.display_name : undefined;
+
   const openProjectChat = useCallback((projectRoot: string) => {
     startAgentChat(activeId, projectRoot);
   }, [activeId, startAgentChat]);
@@ -730,17 +855,6 @@ export function Workspace() {
     />
   );
 
-  const iconNav = (
-    <IconNavStrip
-      mode={mode}
-      onModeChange={(m) => {
-        shellRef.current?.openNav();
-        if (m === "browser") { setMode("browser"); return; }
-        setMode(m as WorkspaceMode);
-      }}
-    />
-  );
-
   const list = undefined;
 
   const detail = (
@@ -757,8 +871,8 @@ export function Workspace() {
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
       />
-    ) : mode === "agents" ? (
-      <AgentsView
+    ) : mode === "chat" ? (
+      <ChatSurface
         familiars={familiars}
         sessions={sessions}
         activeFamiliar={active}
@@ -780,18 +894,11 @@ export function Workspace() {
           return true;
         }}
         onOpenOnboarding={openOnboarding}
-        onOpenInbox={() => setMode("schedules")}
+        onOpenInbox={() => setMode("inbox")}
         onCreateReminder={openReminderForFamiliar}
         onOpenInboxItem={openInspectorInboxItem}
         onInboxItemChanged={refreshInbox}
         onOpenMode={(nextMode) => setMode(nextMode as WorkspaceMode)}
-      />
-    ) : mode === "sessions" ? (
-      <SessionsView
-        familiars={familiars}
-        sessions={sessions}
-        activeFamiliarId={null}
-        activeSessionId={routerRef.current?.currentSessionId() ?? null}
         onOpenSession={(sessionId, familiarId) => {
           openAgentSession(sessionId, familiarId);
         }}
@@ -801,11 +908,16 @@ export function Workspace() {
         onSessionsChanged={loadSessions}
       />
     ) : mode === "library" ? (
-      <LibraryView onOpenUrl={(url) => {
-        setMode("browser");
-        // Give the pane one frame to mount/become active, then navigate
-        requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
-      }} />
+      <LibraryView
+        onOpenUrl={(url) => {
+          setMode("browser");
+          // Give the pane one frame to mount/become active, then navigate
+          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
+        }}
+        sessions={sessions}
+        onOpenSession={openAgentSession}
+        onNewProjectChat={openProjectChat}
+      />
     ) : mode === "board" ? (
       <BoardView
         familiars={familiars}
@@ -824,9 +936,6 @@ export function Workspace() {
             window.open(item.sourceUrl, "_blank", "noopener");
           }
         }}
-      />
-    ) : mode === "schedules" ? (
-      <AutomationsView
         familiars={familiars}
         onNewReminder={() => openReminderModal()}
         onOpenSession={(sessionId, familiarId) => {
@@ -838,15 +947,6 @@ export function Workspace() {
     ) : mode === "terminal" ? (
       <ComuxView
         view="terminal"
-        sessions={sessions}
-        onOpenSession={(sessionId, familiarId) => {
-          openAgentSession(sessionId, familiarId);
-        }}
-        onNewChat={openProjectChat}
-      />
-    ) : mode === "projects" ? (
-      <ComuxView
-        view="projects"
         sessions={sessions}
         onOpenSession={(sessionId, familiarId) => {
           openAgentSession(sessionId, familiarId);
@@ -875,17 +975,14 @@ export function Workspace() {
         }}
       />
     ) : (
-      <PluginsView
-        onOpenChat={() => {
-          startAgentChat(activeId);
-        }}
-        onCreateSkill={() => {
-          startAgentChat(activeId);
-        }}
-        onCreatePlugin={() => {
-          startAgentChat(activeId);
-        }}
-        familiars={familiars.map((f) => ({ id: f.id, display_name: f.display_name }))}
+      <HomeComposer
+        familiars={familiars}
+        activeFamiliarId={activeId}
+        sessions={sessions}
+        onNavigateToChat={(sessionId, fid) => openAgentSession(sessionId, fid)}
+        onNavigateToBoard={() => setMode("board")}
+        onNavigateToInbox={() => setMode("inbox")}
+        onToast={pushToast}
       />
     )}
     </div>
@@ -895,77 +992,73 @@ export function Workspace() {
     <>
       <Shell
         ref={shellRef}
+        topBar={
+          <TopBar
+            surfaceLabel={surfaceLabel}
+            subContext={subContext}
+            onOpenPalette={() => setPaletteOpen(true)}
+            onOpenInbox={() => setMode("inbox")}
+            onOpenSettings={() => nextRouter.push("/settings")}
+            inboxItems={inboxItemsWithEphemeral}
+            familiars={familiars}
+            inboxPrefs={inboxPrefs}
+            inboxBadgeCount={inboxBadgeCount}
+            onOpenInboxItem={(item) => {
+              if (item.sessionId) openAgentSession(item.sessionId, item.familiarId);
+              else setMode("inbox");
+            }}
+            onNotificationPrefsChanged={refreshPrefs}
+          />
+        }
+        familiarRail={
+          <FamiliarAvatarRail
+            familiars={familiars}
+            activeId={activeId}
+            sessions={sessions}
+            responseNeeded={responseNeeded}
+            onSelect={selectFamiliar}
+            onAddFamiliar={openOnboarding}
+            onToggleSidebar={() => shellRef.current?.toggleNav()}
+          />
+        }
         nav={sidebar}
-        iconNav={iconNav}
         list={list}
         detail={detail}
         agent={
-          mode === "browser" ? undefined : shellAgentPane === "chat" ? (
-            <AgentPanel
+          mode === "browser" ? undefined : (
+            <CompanionRail
               familiar={active}
-              familiars={familiars}
-              activeId={activeId}
-              sessions={sessions}
+              defaultTab={railTab}
+              onTabChange={setRailTab}
               daemonRunning={daemonRunning}
-              onSessionStarted={loadSessions}
-              onSlashFromChat={(command, args) => {
-                onPaletteIntent({ kind: "slash", command, args });
-                return true;
-              }}
-              onOpenOnboarding={openOnboarding}
-              onFamiliarSelect={setActiveId}
+              onCreateFamiliar={openOnboarding}
+              chatSlot={
+                <AgentPanel
+                  familiar={active}
+                  familiars={familiars}
+                  activeId={activeId}
+                  sessions={sessions}
+                  daemonRunning={daemonRunning}
+                  onSessionStarted={loadSessions}
+                  onSlashFromChat={(command, args) => {
+                    onPaletteIntent({ kind: "slash", command, args });
+                    return true;
+                  }}
+                  onOpenOnboarding={openOnboarding}
+                  onFamiliarSelect={selectFamiliar}
+                />
+              }
+              inspectorSlot={
+                <RailInspector familiar={active} />
+              }
+              memorySlot={
+                <RailMemoryList
+                  familiar={active}
+                  onOpenFullView={() => setMode("memory" as WorkspaceMode)}
+                />
+              }
             />
-          ) : (
-            <BrowserPane label="default" activeFamiliarId={active?.id ?? null} />
           )
-        }
-        agentLabel={stripLock === "chat" ? "Chat" : "Browser"}
-        agentIcon={stripLock === "chat" ? "ph:chats" : "ph:globe"}
-        agentExtra={
-          <>
-            {/* Drag-handle between buttons: drag up → lock browser, drag down → lock chat */}
-            <div
-              className="shell-agent-strip-drag"
-              title={stripLock === "browser" ? "Drag ↓ to lock Chat" : "Drag ↑ to lock Browser"}
-              onPointerDown={(e) => {
-                const startY = e.clientY;
-                (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-                let committed = false;
-                const onMove = (ev: PointerEvent) => {
-                  if (committed) return;
-                  const dy = ev.clientY - startY;
-                  if (dy < -14) { setStripLock("browser"); committed = true; }
-                  else if (dy > 14) { setStripLock("chat"); committed = true; }
-                };
-                const onUp = () => {
-                  window.removeEventListener("pointermove", onMove);
-                  window.removeEventListener("pointerup", onUp);
-                };
-                window.addEventListener("pointermove", onMove);
-                window.addEventListener("pointerup", onUp);
-              }}
-            >
-              <span className={`shell-agent-strip-lock-dot${stripLock === "chat" ? " shell-agent-strip-lock-dot--down" : " shell-agent-strip-lock-dot--up"}`} />
-            </div>
-            {/* Bottom chat button */}
-            <button
-              type="button"
-              className={`shell-agent-strip-btn shell-agent-strip-btn--bottom${shellAgentPane === "chat" ? " shell-agent-strip-btn--active" : ""}`}
-              title={stripLock === "chat" ? "Toggle Chat (locked)" : "Open Chat"}
-              aria-label={shellAgentPane === "chat" ? "Close chat panel" : "Open chat panel"}
-              onClick={() => {
-                if (shellAgentPane === "chat") {
-                  shellRef.current?.closeAgent();
-                  setShellAgentPane("browser");
-                } else {
-                  setShellAgentPane("chat");
-                  shellRef.current?.openAgent();
-                }
-              }}
-            >
-              <Icon name="ph:chats" width={15} />
-            </button>
-          </>
         }
       />
 

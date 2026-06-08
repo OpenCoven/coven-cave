@@ -305,3 +305,11 @@
 @media (prefers-reduced-motion: reduce) {
   .hc-suggestion-skeleton { animation: none; opacity: 0.65; }
 }
+
+/* ── Floor widget ─────────────────────────────────────────────────────────── */
+.home-composer__floor {
+  margin-top: 32px;
+  max-width: 720px;
+  margin-inline: auto;
+  width: 100%;
+}

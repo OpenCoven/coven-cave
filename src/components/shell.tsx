@@ -11,6 +11,7 @@ import {
   type PanelImperativeHandle,
 } from "react-resizable-panels";
 import { Icon, type IconName } from "@/lib/icon";
+import { useShellBanners } from "@/lib/shell-banners";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -90,25 +91,19 @@ export type ShellHandle = {
 };
 
 function ShellInner({
+  familiarRail,
   nav,
-  iconNav,
   list,
   detail,
   agent,
-  agentLabel,
-  agentIcon,
-  agentExtra,
   bottom,
   topBar,
 }: {
+  familiarRail?: ReactNode;
   nav: ReactNode;
-  iconNav?: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
   agent?: ReactNode;
-  agentLabel?: string;
-  agentIcon?: IconName;
-  agentExtra?: ReactNode;
   bottom?: ReactNode;
   topBar?: ReactNode;
 }, ref: ForwardedRef<ShellHandle>) {
@@ -140,7 +135,6 @@ function ShellInner({
 
   const twoPane = !list;
   const hasAgent = !!agent;
-  const hasIconNav = !!iconNav;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
@@ -216,7 +210,10 @@ function ShellInner({
     return (
       <div className="flex h-full w-full flex-col">
         {topBar}
-        <div className="shell-root flex-1 min-h-0" />
+        <div className="flex flex-1 min-h-0">
+          {familiarRail}
+          <div className="shell-root flex-1 min-h-0" />
+        </div>
       </div>
     );
   }
@@ -260,7 +257,10 @@ function ShellInner({
         </>
       )}
       <Panel id="detail" className="shell-detail-panel">
-        <main className="shell-detail">{detail}</main>
+        <main className="shell-detail">
+          <ShellBannerStrip />
+          {detail}
+        </main>
       </Panel>
       {hasAgent && (
         <>
@@ -287,21 +287,7 @@ function ShellInner({
     <div className="flex h-full w-full flex-col">
       {topBar}
       <div className="flex flex-1 min-h-0">
-        {/* Left nav tab — persistent full-height strip, mirrors agent tab on the right */}
-        {hasIconNav && (
-          <button
-            type="button"
-            className={`shell-nav-tab${navOpen ? " shell-nav-tab--open" : ""}`}
-            title={navOpen ? "Collapse sidebar (⌘B)" : "Expand sidebar (⌘B)"}
-            aria-label={navOpen ? "Close sidebar" : "Open sidebar"}
-            onClick={() => {
-              if (navOpen) { navRef.current?.collapse(); setNavOpen(false); }
-              else { navRef.current?.expand(); setNavOpen(true); }
-            }}
-          >
-            <Icon name="ph:sidebar-simple" width={15} />
-          </button>
-        )}
+        {familiarRail}
         {hasBottom ? (
           <Group
             className="flex-1 min-h-0"
@@ -327,27 +313,6 @@ function ShellInner({
           </Group>
         ) : (
           horizontalGroup
-        )}
-        {hasAgent && (
-          <div className={`shell-agent-tab${agentOpen ? " shell-agent-tab--open" : ""}`}>
-            {/* Primary button — globe / browser */}
-            <button
-              type="button"
-              className="shell-agent-strip-btn"
-              aria-label={agentOpen ? `Close ${agentLabel ?? "Browser"}` : `Open ${agentLabel ?? "Browser"}`}
-              title={`${agentLabel ?? "Browser"} (⌘J)`}
-              onClick={() => {
-                const panel = agentRef.current;
-                if (!panel) return;
-                if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
-                else { panel.collapse(); setAgentOpen(false); }
-              }}
-            >
-              <Icon name={agentIcon ?? "ph:globe"} width={15} />
-            </button>
-            {/* Extra buttons (e.g. chat) */}
-            {agentExtra}
-          </div>
         )}
       </div>
     </div>
@@ -421,5 +386,41 @@ export function ShellNavHeader({
         className="ml-auto opacity-60"
       />
     </button>
+  );
+}
+
+function ShellBannerStrip() {
+  const { banners, dismissBanner } = useShellBanners();
+  if (banners.length === 0) return null;
+  return (
+    <div className="shell-banner-strip">
+      {banners.map((b) => (
+        <div
+          key={b.id}
+          className={`shell-banner shell-banner--${b.severity}`}
+          role={b.severity === "error" ? "alert" : "status"}
+        >
+          <span className="shell-banner__title">{b.title}</span>
+          {b.cta ? (
+            <button
+              type="button"
+              className="shell-banner__cta"
+              onClick={b.cta.onClick}
+            >
+              {b.cta.label}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="shell-banner__dismiss"
+            aria-label="Dismiss"
+            onClick={() => dismissBanner(b.id)}
+            title="Dismiss"
+          >
+            <Icon name="ph:x" width={11} />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

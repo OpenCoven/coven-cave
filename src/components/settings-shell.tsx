@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { PluginsView } from "@/components/plugins-view";
+import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,13 +16,14 @@ type DaemonStatus = {
   daemon?: { pid: number; startedAt: string; socket: string };
 };
 
-type Section = "general" | "daemon" | "familiars" | "addons" | "appearance" | "about";
+type Section = "general" | "daemon" | "familiars" | "addons" | "appearance" | "about" | "plugins";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
   { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
   { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
   { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
+  { id: "plugins",    label: "Plugins",    icon: "ph:sparkle" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
   { id: "about",      label: "About",      icon: "ph:info" },
 ];
@@ -29,7 +32,17 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
 
 export function SettingsShell() {
   const router = useRouter();
-  const [section, setSection] = useState<Section>("general");
+
+  // Support hash-based deep-linking, e.g. /settings#plugins
+  const initialSection = (): Section => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "") as Section;
+      if (SECTIONS.some((s) => s.id === hash)) return hash;
+    }
+    return "general";
+  };
+
+  const [section, setSection] = useState<Section>(initialSection);
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
@@ -81,6 +94,7 @@ export function SettingsShell() {
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
           {section === "addons"   && <AddonsSection />}
+          {section === "plugins"  && <PluginsSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "about"    && <AboutSection />}
         </main>
@@ -319,17 +333,42 @@ function AddonsSection() {
   );
 }
 
+// ─── Section: Plugins ─────────────────────────────────────────────────────────
+
+function PluginsSection() {
+  // Settings doesn't yet have familiar context — familiars are stubbed as []
+  // until a follow-up spec threads real familiars through SettingsShell.
+  // onOpenChat navigates back to the workspace home where the user can start a
+  // chat; the workspace's full startAgentChat binding is not available here.
+  return (
+    <PluginsView
+      familiars={[]}
+      onOpenChat={() => {
+        // Navigate to workspace home; user can select a familiar and start a chat
+        window.location.href = "/";
+      }}
+      onCreateSkill={() => {
+        window.location.href = "/";
+      }}
+      onCreatePlugin={() => {
+        window.location.href = "/";
+      }}
+    />
+  );
+}
+
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
 function FamiliarsSection() {
+  // Settings doesn't yet have workspace context — familiars/sessions/responseNeeded
+  // are stubbed as empty until a follow-up spec threads real data through SettingsShell.
+  // Same compromise as PluginsSection above.
   return (
-    <SettingsPage title="Familiars" description="Configure which familiars are visible and their defaults.">
-      <SettingsGroup label="Familiars">
-        <p className="text-[12px] text-[var(--text-muted)]">
-          Familiar configuration lives in the daemon workspace. Edit familiar TOML files directly for now — a UI is coming.
-        </p>
-      </SettingsGroup>
-    </SettingsPage>
+    <SettingsFamiliarsPanel
+      familiars={[]}
+      sessions={[]}
+      responseNeeded={new Set()}
+    />
   );
 }
 

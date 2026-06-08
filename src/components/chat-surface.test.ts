@@ -2,80 +2,80 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const agentsView = await readFile(new URL("./agents-view.tsx", import.meta.url), "utf8");
+const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const agentsMemoryView = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
-  agentsView,
-  /export function AgentsView/,
-  "AgentsView should be the integrated top-level agents surface",
+  chatSurface,
+  /export function ChatSurface/,
+  "ChatSurface should be the integrated top-level chat surface",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /Search chats…/,
-  "AgentsView should keep chat search in the primary command row",
+  "ChatSurface should keep chat search in the primary command row",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /Chat/,
-  "AgentsView should expose the primary chat launch action without a separate composer block",
+  "ChatSurface should expose the primary chat launch action without a separate composer block",
 );
 
 assert.match(
-  agentsView,
+  workspace,
   /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/,
-  "AgentsView should make the offline daemon state actionable from the main Agents surface",
+  "Workspace should make the offline daemon state actionable via the shared banner channel",
 );
 
 assert.match(
-  agentsView,
+  workspace,
   /Start daemon/,
-  "AgentsView should show a clear start button when the daemon is offline",
+  "Workspace should push a start-daemon CTA into the shared banner channel when daemon is offline",
 );
 
 assert.doesNotMatch(
-  agentsView,
+  chatSurface,
   /Get started with agents|Give an agent a background task to work on/,
-  "AgentsView should not reintroduce the busy GitHub-style hero/composer cards",
+  "ChatSurface should not reintroduce the busy GitHub-style hero/composer cards",
+);
+
+assert.doesNotMatch(
+  chatSurface,
+  /import.*CovenFloor/,
+  "ChatSurface should not import CovenFloor — Floor is now an ambient widget in HomeComposer",
 );
 
 assert.match(
-  agentsView,
-  /<CovenFloor \/>/,
-  "AgentsView should integrate the Floor directly",
-);
-
-assert.match(
-  agentsView,
+  chatSurface,
   /<AgentsMemoryView[\s\S]*familiars=\{familiars\}[\s\S]*activeFamiliar=\{activeFamiliar\}/,
-  "AgentsView should surface comprehensive memory as a first-class tab",
+  "ChatSurface should surface comprehensive memory as a first-class tab",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /memory: "Memory"/,
-  "AgentsView should label the third primary tab Memory instead of Traces",
+  "ChatSurface should label the third primary tab Memory instead of Traces",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /groupBy[\s\S]*Familiar[\s\S]*Status[\s\S]*Date[\s\S]*None/,
-  "AgentsView should preserve the Chats group-by controls while replacing traces with memory",
+  "ChatSurface should preserve the Chats group-by controls while replacing traces with memory",
 );
 
 assert.doesNotMatch(
-  agentsView,
+  chatSurface,
   /Traces/,
-  "AgentsView should not foreground trace terminology in the primary tabs",
+  "ChatSurface should not foreground trace terminology in the primary tabs",
 );
 
 assert.doesNotMatch(
-  agentsView,
+  chatSurface,
   /fetch\("\/api\/coven-calls"|buildDelegationGraph|loadDelegations/,
-  "AgentsView should not load trace graph data just to render the primary agents surface",
+  "ChatSurface should not load trace graph data just to render the primary chat surface",
 );
 
 assert.match(
@@ -103,45 +103,45 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  agentsView,
+  chatSurface,
   /Left nav|w-\[44px\]/,
-  "AgentsView should not render a second persistent left navigation rail inside the app shell",
+  "ChatSurface should not render a second persistent left navigation rail inside the app shell",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /<ChatRouter/,
-  "AgentsView should keep live chat available inside the Agents tab",
+  "ChatSurface should keep live chat available inside the Chat tab",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /<InspectorPane\s+familiar=\{activeFamiliar\}\s+inboxItems=\{inboxItems\}\s+onOpenInbox=\{onOpenInbox\}/,
-  "AgentsView should preserve the inbox-backed inspector entry point",
+  "ChatSurface should preserve the inbox-backed inspector entry point",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /<aside className="relative hidden h-full min-h-0 w-\[320px\] shrink-0 border-l border-\[var\(--border-hairline\)\] lg:flex lg:flex-col">/,
-  "AgentsView right side panel should be height-bounded so its body can scroll vertically",
+  "ChatSurface right side panel should be height-bounded so its body can scroll vertically",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /<div className="min-h-0 flex-1 overflow-hidden">\s*\{panel === "inspector" &&/,
-  "AgentsView right side panel should put tab content in a min-height-zero scroll boundary",
+  "ChatSurface right side panel should put tab content in a min-height-zero scroll boundary",
 );
 
 assert.match(
-  agentsView,
+  chatSurface,
   /scope === "conversation" \? \(\s*<div className="flex min-h-0 min-w-0 flex-1">/,
-  "AgentsView conversation row should use remaining height below the tab bar instead of h-full",
+  "ChatSurface conversation row should use remaining height below the tab bar instead of h-full",
 );
 
 assert.match(
   workspace,
-  /mode === "agents"[\s\S]*<AgentsView/,
-  "Workspace should mount AgentsView for agents mode",
+  /mode === "chat"[\s\S]*<ChatSurface/,
+  "Workspace should mount ChatSurface for chat mode",
 );
 
 assert.match(
