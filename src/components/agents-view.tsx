@@ -121,7 +121,7 @@ function RightPanel({
   onOpenInbox: () => void;
 }) {
   return (
-    <aside className="relative hidden h-full w-[320px] shrink-0 border-l border-[var(--border-hairline)] lg:flex lg:flex-col">
+    <aside className="relative hidden h-full min-h-0 w-[320px] shrink-0 border-l border-[var(--border-hairline)] lg:flex lg:flex-col">
       <div className="right-panel-tabs">
         <button
           type="button"
@@ -143,23 +143,25 @@ function RightPanel({
           <Icon name="ph:x-bold" width={11} />
         </button>
       </div>
-      {panel === "inspector" && (
-        <InspectorPane familiar={activeFamiliar} inboxItems={inboxItems} onOpenInbox={onOpenInbox} />
-      )}
-      {panel === "chat" && (
-        <AgentPanel
-          ref={null}
-          familiar={activeFamiliar}
-          familiars={familiars}
-          activeId={activeFamiliarId}
-          sessions={sessions}
-          daemonRunning={daemonRunning}
-          onSessionStarted={onSessionStarted}
-          onSlashFromChat={onSlashFromChat}
-          onOpenOnboarding={onOpenOnboarding}
-          onFamiliarSelect={onSetActiveFamiliar}
-        />
-      )}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {panel === "inspector" && (
+          <InspectorPane familiar={activeFamiliar} inboxItems={inboxItems} onOpenInbox={onOpenInbox} />
+        )}
+        {panel === "chat" && (
+          <AgentPanel
+            ref={null}
+            familiar={activeFamiliar}
+            familiars={familiars}
+            activeId={activeFamiliarId}
+            sessions={sessions}
+            daemonRunning={daemonRunning}
+            onSessionStarted={onSessionStarted}
+            onSlashFromChat={onSlashFromChat}
+            onOpenOnboarding={onOpenOnboarding}
+            onFamiliarSelect={onSetActiveFamiliar}
+          />
+        )}
+      </div>
     </aside>
   );
 }
@@ -452,8 +454,8 @@ export function AgentsView({
             }}
           />
         ) : scope === "conversation" ? (
-          <div className="flex h-full min-w-0">
-            <div className="min-w-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <div className="min-h-0 min-w-0 flex-1">
               <ChatRouter
                 ref={routerRef}
                 familiar={activeFamiliar}

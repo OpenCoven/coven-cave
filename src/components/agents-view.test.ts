@@ -121,6 +121,24 @@ assert.match(
 );
 
 assert.match(
+  agentsView,
+  /<aside className="relative hidden h-full min-h-0 w-\[320px\] shrink-0 border-l border-\[var\(--border-hairline\)\] lg:flex lg:flex-col">/,
+  "AgentsView right side panel should be height-bounded so its body can scroll vertically",
+);
+
+assert.match(
+  agentsView,
+  /<div className="min-h-0 flex-1 overflow-hidden">\s*\{panel === "inspector" &&/,
+  "AgentsView right side panel should put tab content in a min-height-zero scroll boundary",
+);
+
+assert.match(
+  agentsView,
+  /scope === "conversation" \? \(\s*<div className="flex min-h-0 min-w-0 flex-1">/,
+  "AgentsView conversation row should use remaining height below the tab bar instead of h-full",
+);
+
+assert.match(
   workspace,
   /mode === "agents"[\s\S]*<AgentsView/,
   "Workspace should mount AgentsView for agents mode",
