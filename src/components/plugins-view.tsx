@@ -425,7 +425,7 @@ export function PluginsView({
                 key={t}
                 type="button"
                 onClick={() => handleTabChange(t)}
-                className={`relative flex h-full shrink-0 items-center px-3 text-[13px] font-medium transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-full after:transition-colors ${
+                className={`focus-ring relative flex h-full shrink-0 items-center px-3 text-[13px] font-medium transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-full after:transition-colors ${
                   tab === t
                     ? "text-foreground after:bg-foreground"
                     : "text-muted-foreground hover:text-foreground after:bg-transparent"
@@ -524,14 +524,14 @@ export function PluginsView({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={HERO_SEARCH_PLACEHOLDER[tab]}
-                className="h-10 w-full rounded-lg border border-border bg-card pl-9 pr-4 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border-strong"
+                className="focus-ring h-10 w-full rounded-lg border border-border bg-card pl-9 pr-4 text-[13px] text-foreground transition-colors placeholder:text-muted-foreground focus:border-border-strong"
               />
             </div>
           </div>
 
           {/* ── Section label + grid ──────────────────────────────────────── */}
           <section>
-            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
               {SECTION_LABEL[tab]}
               {tab === "plugins" && marketplaceLoaded && !marketplaceError && (
                 <span className="ml-2 font-normal normal-case tracking-normal text-[var(--text-muted)]">
@@ -768,7 +768,7 @@ function RoleGrid({
             <button
               type="button"
               onClick={() => toggleCollapse(fam)}
-              className="mb-2 flex w-full items-center gap-2 text-left"
+              className="focus-ring mb-2 flex w-full items-center gap-2 rounded text-left"
             >
               <Icon
                 name="ph:caret-right-bold"
@@ -924,7 +924,7 @@ function RoleCard({
         }
       }}
       className={[
-        "group flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+        "focus-ring group flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
         selected
           ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/10"
           : role.active
@@ -986,7 +986,7 @@ function RoleCard({
         disabled={toggling}
         onClick={handleToggle}
         className={[
-          "ml-auto shrink-0 rounded-md p-1.5 transition-colors disabled:opacity-40",
+          "focus-ring ml-auto shrink-0 rounded-md p-1.5 transition-colors disabled:opacity-40",
           role.active
             ? "text-[var(--color-success)] hover:bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)]"
             : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]",
@@ -1178,7 +1178,7 @@ function RoleActionsRow({ role, onOpenChat }: { role: RoleEntry; onOpenChat: () 
   };
 
   const btnClass =
-    "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]";
+    "focus-ring inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]";
 
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -1214,7 +1214,7 @@ function RoleRelationItem({
     <li className="overflow-hidden rounded-md bg-[var(--bg-elevated)]/60">
       <button
         type="button"
-        className="flex min-w-0 w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-elevated)]"
+        className="focus-ring flex min-w-0 w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--bg-elevated)]"
         onClick={() => hasDetail && setOpen((v) => !v)}
         aria-expanded={hasDetail ? open : undefined}
       >
@@ -1534,7 +1534,7 @@ function CreateDropdown({
         <button
           key={item.id}
           role="menuitem"
-          className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-muted ${
+          className={`focus-ring flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-muted ${
             i < CREATE_ITEMS.length - 1 ? "border-b border-border" : ""
           }`}
           onClick={() => {

@@ -23,7 +23,7 @@ const CATEGORY_ICON: Record<string, IconName> = {
 };
 
 const ROW_CLASS =
-  "flex w-full items-center gap-4 px-3 py-3 border-b border-[var(--border-hairline)] last:border-b-0 transition-colors hover:bg-[var(--bg-raised)]";
+  "focus-ring flex w-full items-center gap-4 px-3 py-3 border-b border-[var(--border-hairline)] last:border-b-0 transition-colors hover:bg-[var(--bg-raised)]";
 
 function recommendedFor(plugin: MarketplacePluginWithState): string {
   const familiars = plugin.roleAffinity.map((entry) => entry.familiar);
@@ -96,7 +96,7 @@ export function PluginCard({
           Installed
         </span>
       ) : (
-        <span className="flex shrink-0 items-center gap-1 text-[11px] text-[oklch(0.65_0.18_280)]">
+        <span className="flex shrink-0 items-center gap-1 text-[11px] text-[var(--accent-presence)]">
           <Icon name="ph:plug-bold" width={10} />
           {setupLabel(plugin)}
         </span>
