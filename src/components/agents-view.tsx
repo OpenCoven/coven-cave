@@ -172,7 +172,7 @@ export function AgentsView({
             <button
               type="button"
               onClick={() => setViewMode("global-memory")}
-              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[11px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
+              className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[11px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
             >
               <Icon name="ph:graph" width={12} />
               Memory across all agents
@@ -180,7 +180,7 @@ export function AgentsView({
             <button
               type="button"
               onClick={() => void loadMemory()}
-              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             >
               <Icon name="ph:arrows-clockwise" width={12} />
               Refresh
@@ -198,7 +198,7 @@ export function AgentsView({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search agents…"
-              className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
           </div>
           {memoryError ? (
@@ -331,7 +331,7 @@ function AgentRosterCard({
     <button
       type="button"
       onClick={onSelect}
-      className="agents-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
+      className="focus-ring agents-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
       aria-label={`Open ${familiar.display_name}`}
     >
       <div className="flex items-center gap-2">
@@ -340,7 +340,7 @@ function AgentRosterCard({
           <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
             {familiar.display_name}
           </span>
-          <span className="block truncate text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+          <span className="block truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
             {familiar.role || familiar.harness || familiar.id}
           </span>
         </span>
@@ -435,7 +435,7 @@ function GlobalMemoryOverlay({ familiars, onClose, onOpenMemoryFile }: GlobalMem
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 z-10 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/80"
+          className="focus-ring absolute right-3 top-3 z-10 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/80"
           aria-label="Close"
         >
           <Icon name="ph:x" width={12} />
@@ -469,7 +469,7 @@ function AgentDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetai
       <button
         type="button"
         onClick={onBack}
-        className="agents-view__rail-back inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        className="focus-ring agents-view__rail-back inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
         aria-label="Back to roster"
         title="Back to roster"
       >
@@ -484,7 +484,7 @@ function AgentDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetai
               <button
                 type="button"
                 onClick={() => onSelect(f.id)}
-                className={`agents-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                className={`focus-ring agents-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
                   active
                     ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--accent-presence)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -552,7 +552,7 @@ function AgentDetailPanel({
             <h2 className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
               {familiar.display_name}
             </h2>
-            <p className="truncate text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+            <p className="truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
               {familiar.role || familiar.harness || familiar.id}
             </p>
           </div>
@@ -561,7 +561,7 @@ function AgentDetailPanel({
           <button
             type="button"
             onClick={onStartChat}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80"
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80"
           >
             <Icon name="ph:chat-circle-dots" width={12} />
             Start chat
@@ -569,7 +569,7 @@ function AgentDetailPanel({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             aria-label="Back to roster"
           >
             <Icon name="ph:x" width={12} />
@@ -584,7 +584,7 @@ function AgentDetailPanel({
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`agents-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] capitalize transition-colors ${
+            className={`focus-ring agents-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] capitalize transition-colors ${
               tab === id
                 ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
                 : "border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -608,7 +608,7 @@ function AgentDetailPanel({
         ) : tab === "files" ? (
           <div className="h-full overflow-y-auto p-4">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 Memory files
               </h3>
               <span className="text-[10px] text-[var(--text-muted)]">
@@ -628,7 +628,7 @@ function AgentDetailPanel({
         ) : (
           <div className="h-full overflow-y-auto p-4">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 Sessions
               </h3>
               <span className="text-[10px] text-[var(--text-muted)]">
@@ -646,7 +646,7 @@ function AgentDetailPanel({
                     <button
                       type="button"
                       onClick={() => onOpenSession(s.id)}
-                      className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                      className="focus-ring-inset flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
                     >
                       <Icon name="ph:terminal-window" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                       <span className="min-w-0 flex-1">

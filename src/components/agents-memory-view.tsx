@@ -191,7 +191,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     type="button"
                     onClick={() => setViewMode(m)}
                     className={[
-                      "inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
+                      "focus-ring-inset inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
                       viewMode === m
                         ? "bg-[var(--accent-presence)] text-white"
                         : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
@@ -203,7 +203,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                 ))}
               </div>
             )}
-            <button type="button" onClick={() => void load()} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+            <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
               <Icon name="ph:arrows-clockwise" width={12} />
               Refresh
             </button>
@@ -212,15 +212,15 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Agent memories</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agent memories</div>
             <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{visibleCoven.length}</div>
           </div>
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Memory files</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Memory files</div>
             <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileEntries.length}</div>
           </div>
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Agents with memory</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agents with memory</div>
             <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{familiarsWithMemory.length}</div>
           </div>
         </div>
@@ -232,7 +232,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search memory..."
-              className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
           </div>
           {lockToFamiliar ? (
@@ -246,7 +246,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             <select
               value={familiarFilter}
               onChange={(event) => setFamiliarFilter(event.target.value)}
-              className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
             >
               {familiarOptions.map((familiar) => (
                 <option key={familiar.id} value={familiar.id}>{familiar.display_name}</option>
@@ -270,7 +270,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </section>
           <aside className="hidden min-h-0 xl:block">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 {selectedFamiliar?.display_name ?? "Selected agent"}
               </h3>
               <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
@@ -281,7 +281,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                   key={entry.id}
                   type="button"
                   onClick={() => onOpenMemoryFile?.(entry.path)}
-                  className="flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                  className="focus-ring-inset flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
                 >
                   <Icon name="ph:brain" width={13} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
                   <span className="min-w-0 flex-1">
@@ -302,7 +302,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
       <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Familiar memory</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
             <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
           </div>
           {visibleCoven.length === 0 ? (
@@ -333,7 +333,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     <button
                       type="button"
                       onClick={() => onOpenMemoryFile?.(entry.path)}
-                      className="mt-3 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      className="focus-ring mt-3 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                     >
                       <Icon name="ph:file-text" width={12} />
                       Open memory
@@ -347,7 +347,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
 
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Memory files</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
             <span className="text-[10px] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
           </div>
           <MemoryFilesList
@@ -397,7 +397,7 @@ export function RailMemoryList({
       {onOpenFullView ? (
         <button
           type="button"
-          className="rail-memory__open-full"
+          className="focus-ring rail-memory__open-full"
           onClick={onOpenFullView}
         >
           Open full memory →
@@ -439,7 +439,7 @@ export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: Memor
               <button
                 type="button"
                 onClick={() => onOpen?.(entry.fullPath)}
-                className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                className="focus-ring-inset flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
               >
                 <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                 <span className="min-w-0 flex-1">
