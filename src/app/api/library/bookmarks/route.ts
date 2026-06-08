@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createLibraryStore } from "@/lib/library-store";
-import type { LibraryBookmark, LinkCapture } from "@/lib/library-types";
-import { enrichTitle, fallbackTitle } from "@/lib/title-enricher";
+import fs from "node:fs";
+import path from "node:path";
+import { homedir } from "node:os";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { isSafeHttpUrl } from "@/lib/url-safety";
+import type { LibraryBookmark } from "@/lib/library-types";
 
 const store = createLibraryStore();
 
@@ -29,6 +32,7 @@ export async function POST(req: NextRequest) {
     capture?: LinkCapture;
   };
   if (!body.url) return NextResponse.json({ ok: false, error: "url required" }, { status: 400 });
+  if (!isSafeHttpUrl(body.url)) return NextResponse.json({ ok: false, error: "http(s) url required" }, { status: 400 });
 
   const domain = domainFrom(body.url);
   let resolvedTitle = body.title;
