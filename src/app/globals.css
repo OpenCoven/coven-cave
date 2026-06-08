@@ -19,28 +19,35 @@
 
    Brand: OpenCoven lavender (#9A8ECD) lives at --accent-presence.
    Reserved for familiar presence dots and the health strip — not
-   for primary CTAs. */
+   for primary CTAs.
+
+   Palette v1.1 — dark surfaces now carry enough purple chroma (0.022)
+   to read as clean brand-violet rather than the near-neutral warm-grey
+   that the previous near-zero chroma (0.005–0.006) produced on some
+   displays. All hue values are pinned to 293 (close to #9A8ECD's
+   natural hue) so surfaces, panels, and the accent all share the same
+   colour axis. */
 
 :root {
   /* ---- Palette (oklch — same colour science as shadcn) ---- */
-  --background: oklch(0.18 0.005 285.823);
+  --background: oklch(0.16 0.022 293);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
+  --card: oklch(0.19 0.022 293);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
+  --popover: oklch(0.19 0.022 293);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
+  --primary: oklch(0.92 0.004 293);
+  --primary-foreground: oklch(0.19 0.022 293);
+  --secondary: oklch(0.25 0.022 293);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
+  --muted: oklch(0.25 0.022 293);
+  --muted-foreground: oklch(0.68 0.022 293);
+  --accent: oklch(0.25 0.022 293);
   --accent-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 5%);
-  --border-strong: oklch(1 0 0 / 8%);
+  --border: oklch(1 0 0 / 6%);
+  --border-strong: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.552 0.016 285.938);
+  --ring: oklch(0.55 0.08 293);
 
   /* ---- Coven brand ----
      Lavender presence accent. Use sparingly — familiar dots,
@@ -54,10 +61,10 @@
      Semantic names called out in the spec. Resolve to the same
      palette as above so either vocabulary works. */
   --bg-base: var(--background);
-  --bg-panel: oklch(0.17 0.006 285.885);    /* slightly darker than --card */
+  --bg-panel: oklch(0.145 0.022 293);       /* slightly darker than --card */
   --bg-raised: var(--card);
-  --bg-elevated: oklch(0.24 0.008 285.885); /* lighter than --card, for dropdowns/popovers */
-  --bg-hover: oklch(0.27 0.008 285.885);    /* hover state */
+  --bg-elevated: oklch(0.22 0.022 293);     /* lighter than --card, for dropdowns/popovers */
+  --bg-hover: oklch(0.27 0.024 293);        /* hover state */
   --border-hairline: var(--border);
   --fg-base: var(--text-primary);
   --fg-muted: var(--text-secondary);

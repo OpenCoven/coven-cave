@@ -507,8 +507,8 @@ export function BrowserPane({ label = "default", activeFamiliarId = null }: { la
       {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
       {/* Collapsed by default to a 6px edge handle so the page gets the
          full viewport width; expands to 48px on hover or keyboard focus.
-         No right border — the rail's #080809 already provides enough
-         contrast against #0c0c0e without a hairline.
+         No right border — the rail's oklch(0.11 0.022 293) already provides enough
+         contrast against oklch(0.13 0.022 293) without a hairline.
          Cmd+K (handled below) remains the primary tab-switcher. */}
       <div
         className={[

@@ -561,7 +561,7 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect, memoryCoun
   }
 
   return (
-    <div ref={shellRef} className="relative min-h-[430px] flex-1 overflow-hidden bg-[#050509]">
+    <div ref={shellRef} className="relative min-h-[430px] flex-1 overflow-hidden bg-[oklch(0.11_0.022_293)]">
       <canvas
         ref={canvasRef}
         data-testid="trace-graph-3d-canvas"

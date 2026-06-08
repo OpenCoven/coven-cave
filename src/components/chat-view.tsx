@@ -966,7 +966,7 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
       aria-label={`Preview ${attachment.name}`}
     >
       <div
-        className="relative max-h-[90vh] w-[90vw] max-w-screen-2xl overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[#050409] shadow-2xl"
+        className="relative max-h-[90vh] w-[90vw] max-w-screen-2xl overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
