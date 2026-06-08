@@ -119,7 +119,7 @@ function retrieveTopK(chunks: DocChunk[], query: string, k: number): DocChunk[] 
 function quickReply(message: string): string | null {
   const lower = message.toLowerCase();
   if (lower.match(/\bwho are you\b|\bwhat are you\b|\bsalem\b/)) {
-    return `I'm **Salem** — your docs familiar. Sassy black cat, preloaded with the full OpenCoven docs corpus, here to save you from reading 300KB of markdown yourself. Ask me anything about familiars, roles, skills, the daemon, Cave, or how any of this works.`;
+    return `I'm **Salem** — your docs familiar. Sassy male black cat, preloaded with the full OpenCoven docs corpus, here to save you from reading 300KB of markdown yourself. Ask me anything about familiars, plugins, roles, skills, the daemon, Cave, or how any of this works.`;
   }
   return null;
 }

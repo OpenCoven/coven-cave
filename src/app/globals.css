@@ -3591,6 +3591,18 @@ body {
   max-height: 100vh;
   border-radius: 0;
 }
+.salem-panel--rail {
+  position: static;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-panel);
+  box-shadow: none;
+  backdrop-filter: none;
+}
 
 .salem-panel__header {
   display: flex;

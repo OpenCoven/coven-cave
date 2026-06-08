@@ -37,6 +37,7 @@ import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
+import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -132,6 +133,15 @@ export function Workspace() {
   useEffect(() => {
     if (typeof window !== "undefined") window.localStorage.setItem("cave:rail.tab", railTab);
   }, [railTab]);
+
+  useEffect(() => {
+    const openSalem = () => {
+      setRailTab("salem");
+      requestAnimationFrame(() => shellRef.current?.openAgent());
+    };
+    window.addEventListener("cave:salem-open", openSalem);
+    return () => window.removeEventListener("cave:salem-open", openSalem);
+  }, []);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
@@ -820,6 +830,7 @@ export function Workspace() {
 
   const surfaceLabel = SURFACE_LABELS[mode] ?? "Home";
   const subContext = active ? active.display_name : undefined;
+  const showCompanionRail = railTab === "salem" || (mode !== "browser" && mode !== "agents");
 
   const openProjectChat = useCallback((projectRoot: string) => {
     startAgentChat(activeId, projectRoot);
@@ -1058,10 +1069,11 @@ export function Workspace() {
         list={list}
         detail={detail}
         agent={
-          mode === "browser" || mode === "agents" ? undefined : (
+          showCompanionRail ? (
             <CompanionRail
               familiar={active}
               defaultTab={railTab}
+              activeTab={railTab}
               onTabChange={setRailTab}
               daemonRunning={daemonRunning}
               onCreateFamiliar={openOnboarding}
@@ -1088,8 +1100,9 @@ export function Workspace() {
                   onOpenFullView={() => setMode("agents")}
                 />
               }
+              salemSlot={<SalemChatPanel />}
             />
-          )
+          ) : undefined
         }
       />
 
