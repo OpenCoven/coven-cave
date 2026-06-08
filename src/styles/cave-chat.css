@@ -40,7 +40,7 @@
 .cave-md h2 {
   font-size: 1.08em;
   padding-bottom: 0.2em;
-  border-bottom: 1px solid oklch(1 0 0 / 4%);
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 4%, transparent);
 }
 .cave-md h3 { font-size: 0.97em; }
 .cave-md h4 { font-size: 0.9em; color: var(--text-secondary); font-weight: 600; }
@@ -166,9 +166,9 @@
   background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
   color: var(--text-secondary);
 }
-.cave-md tr:nth-child(even) td { background: oklch(1 0 0 / 2%); }
+.cave-md tr:nth-child(even) td { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
 .cave-md tr:hover td {
-  background: oklch(1 0 0 / 4%);
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
   transition: background 0.1s;
 }
 
@@ -198,7 +198,7 @@
   background: oklch(0.1 0.01 280 / 60%);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
-    inset 0 1px 0 oklch(1 0 0 / 4%);
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
   overflow: hidden;
   font-size: 12px;
   margin: 0.6em 0;
@@ -295,7 +295,7 @@
   min-height: 1.6em;
   transition: background 0.08s;
 }
-.cave-line:hover { background: oklch(1 0 0 / 2.5%); }
+.cave-line:hover { background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    LINE NUMBERS
@@ -500,7 +500,7 @@
   background: oklch(0.1 0.01 280 / 60%);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
-    inset 0 1px 0 oklch(1 0 0 / 4%);
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
   overflow: hidden;
 }
 

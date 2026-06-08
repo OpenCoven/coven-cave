@@ -635,7 +635,7 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--backdrop-scrim);
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
