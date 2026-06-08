@@ -38,6 +38,13 @@ assert.deepEqual(LEGACY_THEME_RENAME, {
   "midnight": "slate",
 });
 
+// Inverse coverage: no stray THEME_META keys outside THEME_IDS.
+assert.deepEqual(
+  Object.keys(THEME_META).sort(),
+  [...THEME_IDS].sort(),
+  "THEME_META keys must exactly match THEME_IDS",
+);
+
 // Storage keys are stable strings.
 assert.equal(COVEN_THEME_KEY, "coven-theme");
 assert.equal(COVEN_MODE_KEY, "coven-mode");
