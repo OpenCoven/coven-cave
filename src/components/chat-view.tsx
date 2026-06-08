@@ -839,40 +839,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       <header className="cave-chat-linear-header">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="cave-agent-marker" aria-hidden>
+        {/* Single compact bar: avatar · name · status · meta · context strip */}
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="cave-agent-marker cave-agent-marker--xs" aria-hidden>
             <FamiliarIcon familiar={familiar} size="sm" />
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
-                {familiar.display_name}
-              </h2>
-              <span className={[
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                daemonRunning === false
-                  ? "bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]"
-                  : "bg-[color-mix(in_oklch,var(--color-success)_16%,transparent)] text-[var(--color-success)]",
-              ].join(" ")}>
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                {daemonRunning === false ? "offline" : "ready"}
-              </span>
-            </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-              <span className="font-mono text-[var(--text-secondary)]">{familiar.harness ?? "harness unknown"}</span>
-              <span aria-hidden>·</span>
-              <span className="font-mono text-[var(--text-secondary)]">{familiar.model ?? "model unknown"}</span>
-              {(session?.project_root ?? projectRoot) ? (
-                <>
-                  <span aria-hidden>·</span>
-                  <span className="min-w-0 truncate">{repoName(session?.project_root ?? projectRoot)}</span>
-                </>
-              ) : null}
-            </div>
-          </div>
-          <div className="ml-auto hidden items-center gap-2 md:flex">
-            {/* session mode implicit — pill removed */}
-          </div>
+          <h2 className="shrink-0 text-[13px] font-semibold text-[var(--text-primary)] leading-none">
+            {familiar.display_name}
+          </h2>
+          <span className={[
+            "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+            daemonRunning === false
+              ? "bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]"
+              : "bg-[color-mix(in_oklch,var(--color-success)_16%,transparent)] text-[var(--color-success)]",
+          ].join(" ")}>
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {daemonRunning === false ? "offline" : "ready"}
+          </span>
+          <span className="text-[var(--border-hairline)]" aria-hidden>|</span>
+          <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)] font-mono">
+            {familiar.harness ?? ""}
+            {familiar.model ? <> · {familiar.model}</> : null}
+            {(session?.project_root ?? projectRoot) ? <> · {repoName(session?.project_root ?? projectRoot)}</> : null}
+          </span>
         </div>
         <ChatContextStrip
           session={session ?? null}
