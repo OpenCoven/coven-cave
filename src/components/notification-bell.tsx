@@ -142,7 +142,7 @@ export function NotificationBell({
       {open ? (
         <div className="absolute right-0 top-full z-50 mt-1 w-[360px] rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl">
           <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
-            <span className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+            <span className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
               Notifications
             </span>
             <div className="flex items-center gap-2">
@@ -168,7 +168,7 @@ export function NotificationBell({
 
           {settingsOpen ? (
             <div className="border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-3 text-[11px]">
-              <div className="mb-2 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+              <div className="mb-2 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
                 Sound
               </div>
               <div className="mb-3 flex flex-wrap gap-1">
@@ -203,7 +203,7 @@ export function NotificationBell({
                 })}
               </div>
 
-              <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+              <div className="mb-1.5 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
                 Muted familiars
               </div>
               <ul className="max-h-32 space-y-0.5 overflow-y-auto">
