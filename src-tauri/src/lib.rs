@@ -393,6 +393,15 @@ fn validate_shell_open_url(url: &str) -> Result<(), String> {
     }
 }
 
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn windows_system32_binary(binary: &str) -> std::path::PathBuf {
+    let system_root = std::env::var_os("SystemRoot")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
+    system_root.join("System32").join(binary)
+}
+
 /// Open an http(s) URL in the system default browser.
 #[tauri::command]
 fn shell_open(url: String) -> Result<(), String> {
@@ -407,7 +416,7 @@ fn shell_open(url: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("rundll32.exe")
+        std::process::Command::new(windows_system32_binary("rundll32.exe"))
             .args(["url.dll,FileProtocolHandler", &url])
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -442,6 +451,14 @@ mod shell_open_tests {
     fn rejects_invalid_urls() {
         assert!(validate_shell_open_url("example.test").is_err());
         assert!(validate_shell_open_url("https://").is_err());
+    }
+
+    #[test]
+    fn windows_system32_binary_uses_an_absolute_system_path() {
+        let path = super::windows_system32_binary("rundll32.exe");
+        let path = path.to_string_lossy();
+        assert!(path.starts_with(r"C:\") || path.contains(r":\"));
+        assert!(path.ends_with(r"System32\rundll32.exe") || path.ends_with("System32/rundll32.exe"));
     }
 }
 
