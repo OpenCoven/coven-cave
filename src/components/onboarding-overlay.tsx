@@ -164,16 +164,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [prune, setPrune] = useState<PruneState>({ idle: true });
+  const [statusFailures, setStatusFailures] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/onboarding/status", { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setStatusFailures((n) => n + 1);
+        return;
+      }
       const json = (await res.json()) as OnboardingStatus & { ok: boolean };
       setStatus(json);
+      setStatusFailures(0);
     } catch {
-      /* ignore; the next poll will retry */
+      // Track consecutive failures so the UI can move past "checking..." once
+      // we're sure the poll isn't just slow. One blip stays silent.
+      setStatusFailures((n) => n + 1);
     }
   }, []);
 
@@ -524,6 +531,27 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </section>
         ) : null}
 
+        {statusFailures >= 3 ? (
+          <section
+            role="alert"
+            className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] p-4 text-[13px] text-[var(--color-warning)]"
+          >
+            <div>
+              <div className="font-semibold">Setup status is unreachable.</div>
+              <p className="mt-1 leading-6 text-[var(--text-secondary)]">
+                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The coven CLI may not be installed, or the local sidecar may be blocked. The cards below will stay on &ldquo;checking…&rdquo; until this clears.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
+            >
+              Retry now
+            </button>
+          </section>
+        ) : null}
+
         {setupError ? (
           <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]">
             {setupError}
@@ -706,7 +734,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               disabled={
                 picking !== null ||
                 !selectedHarnessId ||
-                !confirmCreateNewFamiliar
+                !confirmCreateNewFamiliar ||
+                (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
               }
               className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
             >
@@ -845,8 +874,18 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   value={familiarGlyph}
                   onChange={(e) => setFamiliarGlyph(e.target.value)}
                   placeholder="ph:sparkle-fill"
-                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
+                  className={`mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none ${
+                    familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")
+                      ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
+                      : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
+                  }`}
                 />
+                {familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:") ? (
+                  <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
+                    Must start with <code className="font-mono">ph:</code> — see <a href="https://phosphoricons.com" target="_blank" rel="noreferrer" className="underline">phosphoricons.com</a>.
+                  </span>
+                ) : null}
               </label>
               <label className="block">
                 <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
@@ -867,7 +906,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 disabled={
                   picking !== null ||
                   !selectedAgentId ||
-                  familiarName.trim().length === 0
+                  familiarName.trim().length === 0 ||
+                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
                 }
                 className="inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
               >
