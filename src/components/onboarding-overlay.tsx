@@ -509,14 +509,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => void refresh()}
-              className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
             >
               <Icon name="ph:arrows-clockwise-bold" />
               Re-check
             </button>
             <button
               onClick={() => void copyDiagnostics()}
-              className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
             >
               <Icon name="ph:clipboard-text" />
               Copy diagnostics
@@ -557,7 +557,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <button
               type="button"
               onClick={() => void refresh()}
-              className="shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
+              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
             >
               Retry now
             </button>
@@ -638,7 +638,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               </div>
               <button
                 onClick={() => void copyText(platformCopy.installCommand)}
-                className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               >
                 Copy
               </button>
@@ -672,7 +672,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               </div>
               <button
                 onClick={() => void loadHarnesses()}
-                className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               >
                 Refresh
               </button>
@@ -749,7 +749,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 !confirmCreateNewFamiliar ||
                 (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
               }
-              className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
+              className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
             >
               <Icon name="ph:terminal-window" />
               {picking === "local"
@@ -773,7 +773,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               <button
                 onClick={() => void loadOpenClawAgents()}
                 disabled={agentsLoading}
-                className="rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
               >
                 {agentsLoading ? "Loading..." : "Refresh"}
               </button>
@@ -849,7 +849,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               <button
                 onClick={scaffoldOnly}
                 disabled={picking !== null}
-                className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
               >
                 {picking === "scaffold" ? "Creating..." : "Create folder only"}
               </button>
@@ -857,29 +857,29 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
                   Name
                 </span>
                 <input
                   value={familiarName}
                   onChange={(e) => setFamiliarName(e.target.value)}
                   placeholder="Example: Riley"
-                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
                   Role
                 </span>
                 <input
                   value={familiarRole}
                   onChange={(e) => setFamiliarRole(e.target.value)}
                   placeholder="Research, Code, Ops..."
-                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
                 />
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
                   Glyph
                 </span>
                 <input
@@ -887,7 +887,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   onChange={(e) => setFamiliarGlyph(e.target.value)}
                   placeholder="ph:sparkle-fill"
                   aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
-                  className={`mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] outline-none ${
+                  className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
                     familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")
                       ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
                       : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
@@ -900,14 +900,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 ) : null}
               </label>
               <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
                   Description
                 </span>
                 <input
                   value={familiarDescription}
                   onChange={(e) => setFamiliarDescription(e.target.value)}
                   placeholder="What should this familiar help with?"
-                  className="mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
                 />
               </label>
             </div>
@@ -921,7 +921,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   familiarName.trim().length === 0 ||
                   (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
                 }
-                className="inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
+                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
               >
                 <Icon name="ph:sparkle" />
                 {picking === "familiar"
@@ -931,7 +931,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               <button
                 onClick={startDaemon}
                 disabled={startingDaemon || !status?.steps.covenCli.ok}
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
                 title={
                   !status?.steps.covenCli.ok
                     ? "Install coven CLI first"
@@ -989,7 +989,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           {status?.complete ? (
             <button
               onClick={onDismiss}
-              className="rounded-md bg-[color-mix(in_oklch,var(--color-success)_90%,transparent)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--color-success)_85%,white)]"
+              className="focus-ring rounded-md bg-[color-mix(in_oklch,var(--color-success)_90%,transparent)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--color-success)_85%,#000)]"
             >
               Open Cave
             </button>
@@ -1038,7 +1038,7 @@ function MaintenancePanel({
 }) {
   return (
     <div className={`${BENTO_CARD_SOFT} ${className}`}>
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
         Maintenance
       </div>
       <div className="flex items-center justify-between gap-3">
@@ -1093,7 +1093,7 @@ function MaintenancePanel({
             <>
               <button
                 onClick={() => setPrune({ idle: true })}
-                className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                className="focus-ring rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               >
                 Cancel
               </button>
@@ -1124,7 +1124,7 @@ function MaintenancePanel({
                       });
                     }
                   }}
-                  className="rounded bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] px-2.5 py-1 text-[11px] text-white hover:bg-[color-mix(in_oklch,var(--color-danger)_85%,white)]"
+                  className="focus-ring rounded bg-[color-mix(in_oklch,var(--color-danger)_80%,transparent)] px-2.5 py-1 text-[11px] text-white hover:bg-[color-mix(in_oklch,var(--color-danger)_85%,#000)]"
                 >
                   Delete {prune.count}
                 </button>
