@@ -15,7 +15,7 @@
 - Use HEREDOC commit messages so multi-line bodies stay intact.
 - One task = one commit (the final step of each task).
 - Co-author line: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-- Tests run via the codebase's existing pattern (top-level `await` in `.test.ts` files imported via `tsx` or similar — CI does not run them, so verify by running them locally with the same command the engineer uses for the existing tests, typically `pnpm tsx <path>` or `node --experimental-strip-types <path>`).
+- Tests run via the codebase's existing pattern (top-level `await` in `.test.ts` files imported via `tsx` or similar — CI does not run them, so verify by running them locally with the same command the engineer uses for the existing tests, typically `node --experimental-strip-types --no-warnings <path>` or `node --experimental-strip-types <path>`).
 
 ---
 
@@ -93,7 +93,7 @@ console.log("familiar-glyph.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/lib/familiar-glyph.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/familiar-glyph.test.ts`
 Expected: FAIL — `inferGlyphFromRole is not a function` (or similar import error).
 
 - [ ] **Step 3: Implement `inferGlyphFromRole` and update `resolveFamiliarGlyph`**
@@ -164,7 +164,7 @@ Note: `Pick<Familiar, ...>` now must include `role`. This is the only API change
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/lib/familiar-glyph.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/familiar-glyph.test.ts`
 Expected: PASS — prints `familiar-glyph.test.ts: ok`.
 
 - [ ] **Step 5: Commit**
@@ -277,7 +277,7 @@ console.log("cave-familiar-overrides.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/lib/cave-familiar-overrides.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/cave-familiar-overrides.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement the store**
@@ -425,7 +425,7 @@ export function readFamiliarOverridesSnapshot(): OverrideMap {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/lib/cave-familiar-overrides.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/cave-familiar-overrides.test.ts`
 Expected: PASS — prints `cave-familiar-overrides.test.ts: ok`.
 
 - [ ] **Step 5: Commit**
@@ -514,7 +514,7 @@ console.log("cave-familiar-images.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/lib/cave-familiar-images.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/cave-familiar-images.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement the store**
@@ -649,7 +649,7 @@ export function readFamiliarImagesSnapshot(): ImageMap {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/lib/cave-familiar-images.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/cave-familiar-images.test.ts`
 Expected: PASS — prints `cave-familiar-images.test.ts: ok`.
 
 - [ ] **Step 5: Commit**
@@ -735,7 +735,7 @@ console.log("cave-familiar-archive.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/lib/cave-familiar-archive.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/cave-familiar-archive.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement the store**
@@ -835,7 +835,7 @@ export function readArchivedFamiliarsSnapshot(): ArchiveMap {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/lib/cave-familiar-archive.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/cave-familiar-archive.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -947,7 +947,7 @@ console.log("familiar-resolve.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/lib/familiar-resolve.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/familiar-resolve.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement the resolver**
@@ -1037,7 +1037,7 @@ export function useResolvedFamiliars(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/lib/familiar-resolve.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/familiar-resolve.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1089,7 +1089,7 @@ console.log("familiar-avatar.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-avatar.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-avatar.test.ts`
 Expected: FAIL — file not found.
 
 - [ ] **Step 3: Implement the component**
@@ -1140,7 +1140,7 @@ export function FamiliarAvatar({ familiar, size = "md", className, title }: Prop
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/components/familiar-avatar.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-avatar.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1192,7 +1192,7 @@ console.log("familiar-studio-context.test.ts: ok");
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `pnpm tsx src/lib/familiar-studio-context.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/familiar-studio-context.test.ts`
 Expected: FAIL — file not found.
 
 - [ ] **Step 3: Implement the provider**
@@ -1304,7 +1304,7 @@ export function useFamiliarStudio(): Ctx {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `pnpm tsx src/lib/familiar-studio-context.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/lib/familiar-studio-context.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1415,10 +1415,10 @@ Expected: clean. Address any type errors (missing `role` in mocked `Familiar` ob
 
 Run:
 ```
-pnpm tsx src/components/familiar-avatar-rail.test.ts
-pnpm tsx src/components/familiar-switcher.test.ts
-pnpm tsx src/components/board-table-familiar-select.test.ts
-pnpm tsx src/components/library-timeline.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-switcher.test.ts
+node --experimental-strip-types --no-warnings src/components/board-table-familiar-select.test.ts
+node --experimental-strip-types --no-warnings src/components/library-timeline.test.ts
 ```
 
 Expected: all pass. (These are source-regex tests; they verify the components still export the same names and carry the right classes. Migration must not break them.)
@@ -1489,7 +1489,7 @@ assert.match(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-avatar-rail.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts`
 Expected: FAIL on the new assertions.
 
 - [ ] **Step 3: Update the rail component**
@@ -1547,7 +1547,7 @@ Important: the **presence dot** continues to use its own status-derived color vi
 
 - [ ] **Step 4: Run the rail test**
 
-Run: `pnpm tsx src/components/familiar-avatar-rail.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
@@ -1600,7 +1600,7 @@ assert.match(source, /setFamiliarOrder/, "Must call setFamiliarOrder on drop");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-avatar-rail.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts`
 Expected: FAIL on the new assertions.
 
 - [ ] **Step 3: Implement DnD**
@@ -1682,7 +1682,7 @@ Add CSS to your rail stylesheet:
 
 - [ ] **Step 4: Run the rail test**
 
-Run: `pnpm tsx src/components/familiar-avatar-rail.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
@@ -1747,7 +1747,7 @@ console.log("familiar-glyph-picker-panel.test.ts: ok");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-glyph-picker-panel.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-glyph-picker-panel.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Extract the panel**
@@ -1806,7 +1806,7 @@ Then in `src/components/familiar-glyph-picker.tsx`, replace the body of the moda
 
 - [ ] **Step 4: Run the panel test**
 
-Run: `pnpm tsx src/components/familiar-glyph-picker-panel.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-glyph-picker-panel.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Run the modal's existing tests / smoke**
@@ -1868,7 +1868,7 @@ console.log("familiar-studio.test.ts: ok");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-studio.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the drawer shell**
@@ -2095,7 +2095,7 @@ Confirm by reading `src/components/shell.tsx` and `src/app/layout.tsx` first to 
 
 - [ ] **Step 5: Run the drawer test**
 
-Run: `pnpm tsx src/components/familiar-studio.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
@@ -2162,7 +2162,7 @@ console.log("familiar-studio-identity-tab.test.ts: ok");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-studio-identity-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-identity-tab.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the tab**
@@ -2342,7 +2342,7 @@ Replace the `{activeTab === "identity" && familiar ? <div data-testid="identity-
 
 - [ ] **Step 5: Run the identity tab test**
 
-Run: `pnpm tsx src/components/familiar-studio-identity-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-identity-tab.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
@@ -2409,7 +2409,7 @@ console.log("familiar-studio-look-tab.test.ts: ok");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-studio-look-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-look-tab.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the tab**
@@ -2587,7 +2587,7 @@ Replace the look-tab slot:
 
 - [ ] **Step 5: Run the look tab test**
 
-Run: `pnpm tsx src/components/familiar-studio-look-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-look-tab.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
@@ -2653,7 +2653,7 @@ console.log("familiar-studio-brain-tab.test.ts: ok");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-studio-brain-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-brain-tab.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the tab**
@@ -2812,7 +2812,7 @@ import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
 
 - [ ] **Step 5: Run the brain tab test**
 
-Run: `pnpm tsx src/components/familiar-studio-brain-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-brain-tab.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
@@ -2878,7 +2878,7 @@ console.log("familiar-studio-lifecycle-tab.test.ts: ok");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `pnpm tsx src/components/familiar-studio-lifecycle-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-lifecycle-tab.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement the tab**
@@ -3081,7 +3081,7 @@ const resolvedIncludingArchived = useResolvedFamiliars(familiars, { includeArchi
 
 - [ ] **Step 5: Run the lifecycle tab test**
 
-Run: `pnpm tsx src/components/familiar-studio-lifecycle-tab.test.ts`
+Run: `node --experimental-strip-types --no-warnings src/components/familiar-studio-lifecycle-tab.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
@@ -3205,7 +3205,7 @@ assert.match(source, /openFamiliarStudioListView/, "Right-click on + opens list 
 
 Run:
 ```
-pnpm tsx src/components/familiar-avatar-rail.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts
 ```
 
 (There is no `settings-familiars-panel.test.ts` today; skip if absent.)
@@ -3249,20 +3249,20 @@ EOF
 Run each test file added or modified by this plan:
 
 ```
-pnpm tsx src/lib/familiar-glyph.test.ts
-pnpm tsx src/lib/cave-familiar-overrides.test.ts
-pnpm tsx src/lib/cave-familiar-images.test.ts
-pnpm tsx src/lib/cave-familiar-archive.test.ts
-pnpm tsx src/lib/familiar-resolve.test.ts
-pnpm tsx src/lib/familiar-studio-context.test.ts
-pnpm tsx src/components/familiar-avatar.test.ts
-pnpm tsx src/components/familiar-avatar-rail.test.ts
-pnpm tsx src/components/familiar-glyph-picker-panel.test.ts
-pnpm tsx src/components/familiar-studio.test.ts
-pnpm tsx src/components/familiar-studio-identity-tab.test.ts
-pnpm tsx src/components/familiar-studio-look-tab.test.ts
-pnpm tsx src/components/familiar-studio-brain-tab.test.ts
-pnpm tsx src/components/familiar-studio-lifecycle-tab.test.ts
+node --experimental-strip-types --no-warnings src/lib/familiar-glyph.test.ts
+node --experimental-strip-types --no-warnings src/lib/cave-familiar-overrides.test.ts
+node --experimental-strip-types --no-warnings src/lib/cave-familiar-images.test.ts
+node --experimental-strip-types --no-warnings src/lib/cave-familiar-archive.test.ts
+node --experimental-strip-types --no-warnings src/lib/familiar-resolve.test.ts
+node --experimental-strip-types --no-warnings src/lib/familiar-studio-context.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-avatar.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-avatar-rail.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-glyph-picker-panel.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-studio.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-studio-identity-tab.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-studio-look-tab.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-studio-brain-tab.test.ts
+node --experimental-strip-types --no-warnings src/components/familiar-studio-lifecycle-tab.test.ts
 ```
 
 Expected: every line prints `<name>.test.ts: ok` and exits 0.
