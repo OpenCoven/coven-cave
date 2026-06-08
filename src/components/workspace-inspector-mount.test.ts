@@ -12,8 +12,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /<AgentsView[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("inbox"\)\}/,
-  "Agents mode should mount the integrated view with the inbox-backed inspector data",
+  /<AgentsView[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("schedules"\)\}[\s\S]*onCreateReminder=\{openReminderForFamiliar\}[\s\S]*onOpenInboxItem=\{openInspectorInboxItem\}[\s\S]*onInboxItemChanged=\{refreshInbox\}/,
+  "Agents mode should mount the integrated view with fully wired familiar Inbox controls",
 );
 
 assert.match(

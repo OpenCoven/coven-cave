@@ -36,6 +36,9 @@ type Props = {
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
   onOpenInbox: () => void;
+  onCreateReminder: (familiarId: string) => void;
+  onOpenInboxItem: (item: InboxItem) => void;
+  onInboxItemChanged: () => void | Promise<void>;
   onOpenMode: (mode: string) => void;
 };
 
@@ -105,6 +108,9 @@ function RightPanel({
   onOpenOnboarding,
   onSetActiveFamiliar,
   onOpenInbox,
+  onCreateReminder,
+  onOpenInboxItem,
+  onInboxItemChanged,
 }: {
   panel: "inspector" | "chat";
   activeFamiliar: Familiar | null;
@@ -119,6 +125,9 @@ function RightPanel({
   onOpenOnboarding: () => void;
   onSetActiveFamiliar: (id: string) => void;
   onOpenInbox: () => void;
+  onCreateReminder: (familiarId: string) => void;
+  onOpenInboxItem: (item: InboxItem) => void;
+  onInboxItemChanged: () => void | Promise<void>;
 }) {
   return (
     <aside className="relative hidden h-full min-h-0 w-[320px] shrink-0 border-l border-[var(--border-hairline)] lg:flex lg:flex-col">
@@ -145,7 +154,14 @@ function RightPanel({
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {panel === "inspector" && (
-          <InspectorPane familiar={activeFamiliar} inboxItems={inboxItems} onOpenInbox={onOpenInbox} />
+          <InspectorPane
+            familiar={activeFamiliar}
+            inboxItems={inboxItems}
+            onOpenInbox={onOpenInbox}
+            onCreateReminder={onCreateReminder}
+            onOpenInboxItem={onOpenInboxItem}
+            onInboxItemChanged={onInboxItemChanged}
+          />
         )}
         {panel === "chat" && (
           <AgentPanel
@@ -188,6 +204,9 @@ export function AgentsView({
   onSlashFromChat,
   onOpenOnboarding,
   onOpenInbox,
+  onCreateReminder,
+  onOpenInboxItem,
+  onInboxItemChanged,
   onOpenMode,
 }: Props) {
   const [scope, setScope] = useState<AgentsScope>("sessions");
@@ -491,6 +510,9 @@ export function AgentsView({
                 onOpenOnboarding={onOpenOnboarding}
                 onSetActiveFamiliar={onSetActiveFamiliar}
                 onOpenInbox={onOpenInbox}
+                onCreateReminder={onCreateReminder}
+                onOpenInboxItem={onOpenInboxItem}
+                onInboxItemChanged={onInboxItemChanged}
               />
             )}
           </div>

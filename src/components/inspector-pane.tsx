@@ -8,6 +8,7 @@ import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 import { VaultPanel } from "@/components/vault-panel";
+import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon } from "@/lib/icon";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
@@ -42,6 +43,9 @@ type Props = {
   familiar: Familiar | null;
   inboxItems?: InboxItem[];
   onOpenInbox?: () => void;
+  onCreateReminder?: (familiarId: string) => void;
+  onOpenInboxItem?: (item: InboxItem) => void;
+  onInboxItemChanged?: () => void | Promise<void>;
 };
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -62,7 +66,14 @@ function age(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-export function InspectorPane({ familiar, inboxItems = [], onOpenInbox }: Props) {
+export function InspectorPane({
+  familiar,
+  inboxItems = [],
+  onOpenInbox,
+  onCreateReminder,
+  onOpenInboxItem,
+  onInboxItemChanged,
+}: Props) {
   const [tab, setTab] = useState<Tab>("memory");
 
   const familiarInbox = useMemo(() => {
@@ -113,6 +124,9 @@ export function InspectorPane({ familiar, inboxItems = [], onOpenInbox }: Props)
             familiar={familiar}
             items={familiarInbox}
             onOpenInbox={onOpenInbox}
+            onCreateReminder={onCreateReminder}
+            onOpenInboxItem={onOpenInboxItem}
+            onInboxItemChanged={onInboxItemChanged}
           />
         ) : null}
         {tab === "vault" ? <VaultPanel /> : null}
@@ -127,11 +141,54 @@ function InboxTab({
   familiar,
   items,
   onOpenInbox,
+  onCreateReminder,
+  onOpenInboxItem,
+  onInboxItemChanged,
 }: {
   familiar: Familiar | null;
   items: InboxItem[];
   onOpenInbox?: () => void;
+  onCreateReminder?: (familiarId: string) => void;
+  onOpenInboxItem?: (item: InboxItem) => void;
+  onInboxItemChanged?: () => void | Promise<void>;
 }) {
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function runItemAction(
+    item: InboxItem,
+    action: "snooze" | "dismiss" | "done",
+    untilIso?: string,
+  ) {
+    if (item.id.startsWith("eph:")) {
+      onOpenInboxItem?.(item);
+      return;
+    }
+
+    setBusyItemId(item.id);
+    setError(null);
+    try {
+      const init: RequestInit =
+        action === "snooze"
+          ? {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(untilIso ? { untilIso } : { minutes: 10 }),
+            }
+          : { method: "POST" };
+      const res = await fetch(`/api/inbox/${item.id}/${action}`, init);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error ?? `${action} failed`);
+      }
+      await onInboxItemChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${action} failed`);
+    } finally {
+      setBusyItemId(null);
+    }
+  }
+
   if (!familiar) {
     return (
       <p className="p-4 text-xs text-[var(--text-muted)]">
@@ -139,91 +196,144 @@ function InboxTab({
       </p>
     );
   }
-  if (items.length === 0) {
-    return (
-      <div className="p-4 text-xs text-[var(--text-muted)]">
-        Nothing scheduled for {familiar.display_name}.
+
+  const header = (
+    <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
+      <div className="min-w-0">
+        <div className="truncate text-[11px] font-medium text-[var(--text-primary)]">
+          {familiar.display_name} Inbox
+        </div>
+        <div className="text-[10px] text-[var(--text-muted)]">
+          {items.length} active item{items.length === 1 ? "" : "s"}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
         {onOpenInbox ? (
           <button
+            type="button"
             onClick={onOpenInbox}
-            className="ml-1 text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
+            className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
-            Create →
+            Schedules
           </button>
         ) : null}
+        {onCreateReminder ? (
+          <button
+            type="button"
+            onClick={() => onCreateReminder(familiar.id)}
+            className="rounded bg-[var(--accent-presence)] px-2 py-1 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,white)]"
+          >
+            New
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  if (items.length === 0) {
+    return (
+      <div className="text-xs">
+        {header}
+        <div className="p-4 text-[var(--text-muted)]">
+          Nothing scheduled for {familiar.display_name}.
+          {onCreateReminder ? (
+            <button
+              type="button"
+              onClick={() => onCreateReminder(familiar.id)}
+              className="ml-1 text-[var(--accent-presence)] hover:text-[var(--text-primary)]"
+            >
+              Create one
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
   return (
-    <ul className="p-2 text-xs">
-      {items.map((it) => (
-        <li
-          key={it.id}
-          className="mb-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-2"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <span className="flex-1 truncate text-[var(--text-primary)]">{it.title}</span>
-            <span
-              className={`shrink-0 rounded px-1 py-px text-[9px] uppercase tracking-widest ${
-                it.status === "fired"
-                  ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-                  : "bg-[color-mix(in_oklch,var(--accent-presence-soft)_20%,transparent)] text-[var(--accent-presence-soft)]"
-              }`}
+    <div className="text-xs">
+      {header}
+      {error ? (
+        <div className="border-b border-[color-mix(in_oklch,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-3 py-1.5 text-[10px] text-[var(--color-danger)]">
+          {error}
+        </div>
+      ) : null}
+      <ul className="p-2">
+        {items.map((it) => {
+          const busy = busyItemId === it.id;
+          const canOpen = !!onOpenInboxItem;
+          return (
+            <li
+              key={it.id}
+              className="mb-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-2"
             >
-              {it.status}
-            </span>
-          </div>
-          {it.body ? (
-            <p className="mt-1 line-clamp-2 text-[10px] text-[var(--text-muted)]">{it.body}</p>
-          ) : null}
-          <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-            {it.status === "fired"
-              ? `fired ${age(it.firedAt ?? it.updatedAt)} ago`
-              : `in ${age(it.fireAt ?? it.updatedAt)}`}
-          </div>
-          <div className="mt-1.5 flex gap-1">
-            {it.id.startsWith("eph:") ? (
-              <span className="text-[10px] italic text-[var(--text-muted)]">
-                respond in chat to clear
-              </span>
-            ) : (
-              <>
-                <button
-                  onClick={() =>
-                    void fetch(`/api/inbox/${it.id}/snooze`, {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ minutes: 10 }),
-                    })
-                  }
-                  className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              <div className="flex items-start justify-between gap-2">
+                <span className="flex-1 truncate text-[var(--text-primary)]">{it.title}</span>
+                <span
+                  className={`shrink-0 rounded px-1 py-px text-[9px] uppercase tracking-widest ${
+                    it.status === "fired"
+                      ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
+                      : "bg-[color-mix(in_oklch,var(--accent-presence-soft)_20%,transparent)] text-[var(--accent-presence-soft)]"
+                  }`}
                 >
-                  Snooze 10m
-                </button>
-                <button
-                  onClick={() =>
-                    void fetch(`/api/inbox/${it.id}/dismiss`, { method: "POST" })
-                  }
-                  className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                >
-                  Dismiss
-                </button>
-                {it.status === "fired" ? (
+                  {it.status}
+                </span>
+              </div>
+              {it.body ? (
+                <p className="mt-1 line-clamp-2 text-[10px] text-[var(--text-muted)]">{it.body}</p>
+              ) : null}
+              <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                {it.status === "fired"
+                  ? `fired ${age(it.firedAt ?? it.updatedAt)} ago`
+                  : it.kind === "response-needed"
+                    ? "waiting on you"
+                    : `in ${age(it.fireAt ?? it.updatedAt)}`}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {canOpen ? (
                   <button
-                    onClick={() =>
-                      void fetch(`/api/inbox/${it.id}/done`, { method: "POST" })
-                    }
+                    type="button"
+                    onClick={() => onOpenInboxItem?.(it)}
                     className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                   >
-                    Done
+                    Open
                   </button>
                 ) : null}
-              </>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
+                {it.id.startsWith("eph:") ? (
+                  <span className="text-[10px] italic text-[var(--text-muted)]">
+                    respond in chat to clear
+                  </span>
+                ) : (
+                  <>
+                    <SnoozeMenu
+                      size="xs"
+                      onSnooze={(untilIso) => runItemAction(it, "snooze", untilIso)}
+                    />
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void runItemAction(it, "dismiss")}
+                      className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                    {it.status === "fired" ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void runItemAction(it, "done")}
+                        className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                      >
+                        Done
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

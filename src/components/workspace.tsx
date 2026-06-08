@@ -405,6 +405,11 @@ export function Workspace() {
     setReminderModalOpen(true);
   }, []);
 
+  const openReminderForFamiliar = useCallback((familiarId: string) => {
+    setActiveId(familiarId);
+    openReminderModal();
+  }, [openReminderModal]);
+
   const pushToast = useCallback((title: string) => {
     const id = `eph:adhoc-${Date.now()}`;
     setToasts((prev) => [...prev, { id, title }]);
@@ -441,6 +446,17 @@ export function Workspace() {
       );
     }, 0);
   }, []);
+
+  const openInspectorInboxItem = useCallback((item: InboxItem) => {
+    const sessionId =
+      item.sessionId ?? (item.link?.kind === "session" ? item.link.ref : null);
+    if (sessionId) {
+      openAgentSession(sessionId, item.familiarId);
+      return;
+    }
+    if (item.familiarId) setActiveId(item.familiarId);
+    setMode("schedules");
+  }, [openAgentSession]);
 
   const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
     if (familiarId) setActiveId(familiarId);
@@ -762,7 +778,10 @@ export function Workspace() {
           return true;
         }}
         onOpenOnboarding={openOnboarding}
-        onOpenInbox={() => setMode("inbox")}
+        onOpenInbox={() => setMode("schedules")}
+        onCreateReminder={openReminderForFamiliar}
+        onOpenInboxItem={openInspectorInboxItem}
+        onInboxItemChanged={refreshInbox}
         onOpenMode={(nextMode) => setMode(nextMode as WorkspaceMode)}
       />
     ) : mode === "library" ? (
