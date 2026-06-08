@@ -1,9 +1,11 @@
 /**
  * Storage keys + legacy id-rename map for the theme system.
  *
- * Extracted so the rename map is unit-testable and so the inline
- * <ThemeScript> body can stay a self-contained string while still
- * referencing the canonical keys via build-time substitution.
+ * Extracted so the rename map is unit-testable. NOTE: the inline
+ * <ThemeScript> body in src/components/theme-script.tsx inlines the
+ * same key strings and rename map verbatim (the script body is a
+ * string literal that runs before module code resolves, so it cannot
+ * import). Keep both in sync.
  */
 
 export const COVEN_THEME_KEY = "coven-theme";

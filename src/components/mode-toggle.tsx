@@ -8,7 +8,7 @@
  */
 
 import { Icon, type IconName } from "@/lib/icon";
-import type { Mode } from "../lib/theme-storage";
+import type { Mode } from "@/lib/theme-storage";
 
 interface ModeToggleProps {
   value: Mode;

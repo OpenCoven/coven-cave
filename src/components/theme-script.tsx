@@ -24,11 +24,15 @@ const THEME_SCRIPT = `
 (function () {
   try {
     var rename = { "mood-c": "coven", "sky": "tide", "orchid": "dusk", "midnight": "slate" };
+    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","slate","custom"];
     var theme = localStorage.getItem("coven-theme") || "coven";
     if (rename[theme]) {
       theme = rename[theme];
       localStorage.setItem("coven-theme", theme);
     }
+    // Allowlist: corrupt or attacker-written localStorage values must not
+    // land as data-theme attribute content. Unknown ids fall back to coven.
+    if (valid.indexOf(theme) === -1) theme = "coven";
     var mode = localStorage.getItem("coven-mode") || "dark";
     if (mode !== "light" && mode !== "dark") mode = "dark";
 
