@@ -96,9 +96,6 @@ function ShellInner({
   list,
   detail,
   agent,
-  agentLabel,
-  agentIcon,
-  agentExtra,
   bottom,
   topBar,
 }: {
@@ -108,9 +105,6 @@ function ShellInner({
   list?: ReactNode;
   detail: ReactNode;
   agent?: ReactNode;
-  agentLabel?: string;
-  agentIcon?: IconName;
-  agentExtra?: ReactNode;
   bottom?: ReactNode;
   topBar?: ReactNode;
 }, ref: ForwardedRef<ShellHandle>) {
@@ -333,27 +327,6 @@ function ShellInner({
           </Group>
         ) : (
           horizontalGroup
-        )}
-        {hasAgent && (
-          <div className={`shell-agent-tab${agentOpen ? " shell-agent-tab--open" : ""}`}>
-            {/* Primary button — globe / browser */}
-            <button
-              type="button"
-              className="shell-agent-strip-btn"
-              aria-label={agentOpen ? `Close ${agentLabel ?? "Browser"}` : `Open ${agentLabel ?? "Browser"}`}
-              title={`${agentLabel ?? "Browser"} (⌘J)`}
-              onClick={() => {
-                const panel = agentRef.current;
-                if (!panel) return;
-                if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
-                else { panel.collapse(); setAgentOpen(false); }
-              }}
-            >
-              <Icon name={agentIcon ?? "ph:globe"} width={15} />
-            </button>
-            {/* Extra buttons (e.g. chat) */}
-            {agentExtra}
-          </div>
         )}
       </div>
     </div>

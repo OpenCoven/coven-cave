@@ -17,6 +17,9 @@ import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-t
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
 import { FamiliarAvatarRail } from "@/components/familiar-avatar-rail";
+import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
+import { RailInspector } from "@/components/inspector-pane";
+import { RailMemoryList } from "@/components/agents-memory-view";
 import {
   getActiveFamiliar,
   setActiveFamiliar,
@@ -96,9 +99,10 @@ export function Workspace() {
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<"inspector" | "chat" | null>(null);
-  const [shellAgentPane, setShellAgentPane] = useState<"browser" | "chat">("browser");
-  // "browser" = top locks to browser; "chat" = top locks to chat
-  const [stripLock, setStripLock] = useState<"browser" | "chat">("browser");
+  const [railTab, setRailTab] = useState<CompanionTab>(() => {
+    if (typeof window === "undefined") return "chat";
+    return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";
+  });
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
@@ -124,6 +128,10 @@ export function Workspace() {
   useEffect(() => {
     setActiveFamiliar(activeId);
   }, [activeId]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem("cave:rail.tab", railTab);
+  }, [railTab]);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
@@ -931,72 +939,40 @@ export function Workspace() {
         list={list}
         detail={detail}
         agent={
-          mode === "browser" ? undefined : shellAgentPane === "chat" ? (
-            <AgentPanel
+          mode === "browser" ? undefined : (
+            <CompanionRail
               familiar={active}
-              familiars={familiars}
-              activeId={activeId}
-              sessions={sessions}
+              defaultTab={railTab}
+              onTabChange={setRailTab}
               daemonRunning={daemonRunning}
-              onSessionStarted={loadSessions}
-              onSlashFromChat={(command, args) => {
-                onPaletteIntent({ kind: "slash", command, args });
-                return true;
-              }}
-              onOpenOnboarding={openOnboarding}
-              onFamiliarSelect={setActiveId}
+              onCreateFamiliar={openOnboarding}
+              chatSlot={
+                <AgentPanel
+                  familiar={active}
+                  familiars={familiars}
+                  activeId={activeId}
+                  sessions={sessions}
+                  daemonRunning={daemonRunning}
+                  onSessionStarted={loadSessions}
+                  onSlashFromChat={(command, args) => {
+                    onPaletteIntent({ kind: "slash", command, args });
+                    return true;
+                  }}
+                  onOpenOnboarding={openOnboarding}
+                  onFamiliarSelect={selectFamiliar}
+                />
+              }
+              inspectorSlot={
+                <RailInspector familiar={active} />
+              }
+              memorySlot={
+                <RailMemoryList
+                  familiar={active}
+                  onOpenFullView={() => setMode("memory" as WorkspaceMode)}
+                />
+              }
             />
-          ) : (
-            <BrowserPane label="default" activeFamiliarId={active?.id ?? null} />
           )
-        }
-        agentLabel={stripLock === "chat" ? "Chat" : "Browser"}
-        agentIcon={stripLock === "chat" ? "ph:chats" : "ph:globe"}
-        agentExtra={
-          <>
-            {/* Drag-handle between buttons: drag up → lock browser, drag down → lock chat */}
-            <div
-              className="shell-agent-strip-drag"
-              title={stripLock === "browser" ? "Drag ↓ to lock Chat" : "Drag ↑ to lock Browser"}
-              onPointerDown={(e) => {
-                const startY = e.clientY;
-                (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-                let committed = false;
-                const onMove = (ev: PointerEvent) => {
-                  if (committed) return;
-                  const dy = ev.clientY - startY;
-                  if (dy < -14) { setStripLock("browser"); committed = true; }
-                  else if (dy > 14) { setStripLock("chat"); committed = true; }
-                };
-                const onUp = () => {
-                  window.removeEventListener("pointermove", onMove);
-                  window.removeEventListener("pointerup", onUp);
-                };
-                window.addEventListener("pointermove", onMove);
-                window.addEventListener("pointerup", onUp);
-              }}
-            >
-              <span className={`shell-agent-strip-lock-dot${stripLock === "chat" ? " shell-agent-strip-lock-dot--down" : " shell-agent-strip-lock-dot--up"}`} />
-            </div>
-            {/* Bottom chat button */}
-            <button
-              type="button"
-              className={`shell-agent-strip-btn shell-agent-strip-btn--bottom${shellAgentPane === "chat" ? " shell-agent-strip-btn--active" : ""}`}
-              title={stripLock === "chat" ? "Toggle Chat (locked)" : "Open Chat"}
-              aria-label={shellAgentPane === "chat" ? "Close chat panel" : "Open chat panel"}
-              onClick={() => {
-                if (shellAgentPane === "chat") {
-                  shellRef.current?.closeAgent();
-                  setShellAgentPane("browser");
-                } else {
-                  setShellAgentPane("chat");
-                  shellRef.current?.openAgent();
-                }
-              }}
-            >
-              <Icon name="ph:chats" width={15} />
-            </button>
-          </>
         }
       />
 
