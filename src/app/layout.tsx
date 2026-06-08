@@ -5,6 +5,7 @@ import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
 import { SidecarAuthMonitor } from "@/components/security/sidecar-auth-monitor";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { SalemWidget } from "@/components/salem/salem-widget";
+import { LiveRegionProvider } from "@/components/ui/live-region";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,10 +40,12 @@ export default function RootLayout({
     >
       <body className="h-full flex flex-col">
         <ShellBannersProvider>
-          <SidecarAuthBridge />
-          <SidecarAuthMonitor />
-          {children}
-          <SalemWidget />
+          <LiveRegionProvider>
+            <SidecarAuthBridge />
+            <SidecarAuthMonitor />
+            {children}
+            <SalemWidget />
+          </LiveRegionProvider>
         </ShellBannersProvider>
       </body>
     </html>
