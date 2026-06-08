@@ -10,7 +10,6 @@ const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
-const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -85,6 +84,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
   assert.match(libRust, /pty::trust_main_origin\(&main_url\);/);
   assert.match(ptyRust, /if webview\.label\(\) != "main"/);
+  assert.match(ptyRust, /trusted\.clear\(\);/);
   assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
 
   for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
