@@ -248,7 +248,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
             type="button"
             onClick={() => setUnreadsOnly((v) => !v)}
             className={[
-              "flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
+              "focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
               unreadsOnly
                 ? "border-[color-mix(in_oklch,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
@@ -362,7 +362,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                             if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id); }
                           }}
                           className={[
-                            "group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
+                            "focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
                               ? "bg-[var(--bg-raised)]"
                               : "hover:bg-[var(--bg-raised)]/50",
