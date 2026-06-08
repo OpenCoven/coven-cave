@@ -2946,10 +2946,6 @@ body {
   font-weight: 600;
 }
 
-.top-bar__sep {
-  color: var(--text-muted);
-}
-
 .top-bar__crumb {
   display: inline-flex;
   align-items: center;
@@ -2962,6 +2958,7 @@ body {
 
 .top-bar__crumb-sep {
   color: var(--text-muted);
+  opacity: 0.55;
 }
 
 .top-bar__crumb-sub {
@@ -2982,7 +2979,8 @@ body {
   color: var(--text-muted);
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
 }
 
 .top-bar__search:hover {
@@ -2990,11 +2988,21 @@ body {
   color: var(--text-secondary);
 }
 
+.top-bar__search:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
 .top-bar__search kbd {
   margin-left: auto;
   font-family: var(--font-geist-mono);
   font-size: 10px;
+  line-height: 1;
   color: var(--text-muted);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
 }
 
 .top-bar__actions {
@@ -3013,11 +3021,18 @@ body {
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
 }
 
 .top-bar__icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.top-bar__icon-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 
 /* ────────────────────────────────────────────────

@@ -38,12 +38,12 @@ export function TopBar(props: Props) {
   return (
     <header className="top-bar">
       <span className="top-bar__brand">CovenCave</span>
-      <span className="top-bar__sep">·</span>
       <span className="top-bar__crumb">
+        <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
         <span className="top-bar__crumb-surface">{surfaceLabel}</span>
         {subContext ? (
           <>
-            <span className="top-bar__crumb-sep">›</span>
+            <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
             <span className="top-bar__crumb-sub">{subContext}</span>
           </>
         ) : null}
@@ -56,7 +56,7 @@ export function TopBar(props: Props) {
         aria-label="Search and jump to anything"
       >
         <Icon name="ph:magnifying-glass" width={12} />
-        <span>Search · jump to anything</span>
+        <span>Jump to anything…</span>
         <kbd>⌘K</kbd>
       </button>
 
