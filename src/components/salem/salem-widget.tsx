@@ -12,16 +12,31 @@ type PreloadSummary = { docs: number; tools: number; skills: number; context: nu
 
 const GREETING = "I'm Salem, your sassy Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
+function openSalemPanel() {
+  window.dispatchEvent(new CustomEvent("cave:salem-open"));
+}
+
 /**
- * Salem — floating bottom-right docs familiar for CovenCave.
- *
- * Three states:
- * - perch: tiny 3D kitty sitting quietly, click to open
- * - open: 360×480 docs chat panel anchored bottom-right
- * - expanded: full-viewport panel
+ * Salem launcher — floating bottom-right docs familiar for CovenCave.
+ * The chat itself lives in the shell right panel via `SalemChatPanel`.
  */
 export function SalemWidget() {
-  const [state, setState] = useState<"perch" | "open" | "expanded">("perch");
+  const [mood, setMood] = useState<SalemMood>("idle");
+  const open = () => {
+    openSalemPanel();
+    setMood("happy");
+    setTimeout(() => setMood("idle"), 1800);
+  };
+
+  return (
+    <div className="salem-perch" onClick={open} role="button" tabIndex={0} aria-label="Open Salem docs familiar" onKeyDown={(e) => e.key === "Enter" && open()}>
+      <SalemCat3D mood={mood} size={88} />
+      <span className="salem-perch__label">Salem</span>
+    </div>
+  );
+}
+
+export function SalemChatPanel() {
   const [mood, setMood] = useState<SalemMood>("idle");
   const [messages, setMessages] = useState<Message[]>([
     { role: "salem", text: GREETING },
@@ -92,20 +107,8 @@ export function SalemWidget() {
     }
   };
 
-  // Perch state — tiny floating kitty
-  if (state === "perch") {
-    return (
-      <div className="salem-perch" onClick={() => { setState("open"); setMood("happy"); setTimeout(() => setMood("idle"), 1800); }} role="button" tabIndex={0} aria-label="Open Salem docs familiar" onKeyDown={(e) => e.key === "Enter" && setState("open")}>
-        <SalemCat3D mood={mood} size={88} />
-        <span className="salem-perch__label">Salem</span>
-      </div>
-    );
-  }
-
-  const isExpanded = state === "expanded";
-
   return (
-    <div className={`salem-panel${isExpanded ? " salem-panel--expanded" : ""}`} role="dialog" aria-label="Salem docs familiar">
+    <section className="salem-panel salem-panel--rail" aria-label="Salem docs familiar">
       {/* Header */}
       <div className="salem-panel__header">
         <div className="salem-panel__header-identity">
@@ -118,24 +121,7 @@ export function SalemWidget() {
           </div>
         </div>
         <div className="salem-panel__header-actions">
-          <button
-            type="button"
-            className="salem-btn-icon"
-            onClick={() => setState(isExpanded ? "open" : "expanded")}
-            aria-label={isExpanded ? "Shrink" : "Expand"}
-            title={isExpanded ? "Shrink" : "Expand"}
-          >
-            <Icon name={isExpanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={14} />
-          </button>
-          <button
-            type="button"
-            className="salem-btn-icon"
-            onClick={() => { setState("perch"); setMood("idle"); }}
-            aria-label="Close Salem"
-            title="Close"
-          >
-            <Icon name="ph:x" width={14} />
-          </button>
+          <Icon name="ph:book-open" width={14} />
         </div>
       </div>
 
@@ -185,6 +171,6 @@ export function SalemWidget() {
           <Icon name="ph:arrow-up" width={14} />
         </button>
       </form>
-    </div>
+    </section>
   );
 }

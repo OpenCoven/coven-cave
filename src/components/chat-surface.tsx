@@ -7,7 +7,6 @@ import { SessionsView } from "@/components/sessions-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
 import { Icon } from "@/lib/icon";
-import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { inferOrigin } from "@/lib/session-origin";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -74,17 +73,6 @@ function statusPill(s: SessionRow): { label: string; cls: string } | null {
   if (s.status === "failed" || (s.exit_code !== null && s.exit_code !== 0))
     return { label: "failed", cls: "border-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] text-[var(--color-danger)]" };
   return null; // orphaned / created / idle = no pill
-}
-
-// ── Agents command bar ────────────────────────────────────────────────────────
-
-function softButton(active = false): string {
-  return [
-    "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] transition-colors",
-    active
-      ? "bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-      : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
-  ].join(" ");
 }
 
 // ── Origin icon map ───────────────────────────────────────────────────────────
@@ -385,7 +373,7 @@ export function ChatSurface({
     <section className="flex h-full min-w-0 bg-[var(--bg-base)]">
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* ── Tab bar — underline style matching roles/plugins view ─────── */}
+        {/* ── Ultra-minimalist header ────────────────────────────────────── */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
           <div className="flex items-end gap-0">
@@ -394,10 +382,6 @@ export function ChatSurface({
                 sessions: "Chats",
                 memory: "Memory",
               };
-              const icons: Record<string, string> = {
-                sessions: "ph:users",
-                memory: "ph:brain-bold",
-              };
               const isActive = scope === s || (s === "sessions" && scope === "conversation");
               return (
                 <button
@@ -405,67 +389,94 @@ export function ChatSurface({
                   type="button"
                   onClick={() => setScope(s)}
                   className={[
-                    "relative flex items-center gap-1.5 px-3 py-2.5 text-[12px] font-medium transition-colors",
+                    "relative px-2 py-2.5 text-[12px] transition-colors",
                     isActive
-                      ? "text-[var(--text-primary)] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-t after:bg-[oklch(0.65_0.18_280)]"
+                      ? "text-[var(--text-primary)] after:absolute after:bottom-0 after:left-2 after:right-2 after:h-[1px] after:bg-[var(--text-primary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
                   ].join(" ")}
                 >
-                  <Icon name={icons[s] as IconName} width={12} />
                   {labels[s]}
                 </button>
               );
             })}
           </div>
 
-          {/* Actions flush right */}
-          <div className="flex items-center gap-1.5 py-1.5">
+          {/* Actions flush right — chromeless */}
+          <div className="flex items-center gap-3 py-1.5">
             {(scope === "sessions" || scope === "conversation") && (
-              <div className="relative">
-                <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search chats…"
-                  className="h-7 w-[140px] rounded-md border border-[var(--border-hairline)] bg-transparent pl-7 pr-3 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:border-[oklch(0.65_0.18_280/60%)] focus:w-[200px] transition-all"
-                />
-              </div>
-            )}
-            {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Show active or done sessions" role="group" aria-label="Filter sessions by state">
-                <button type="button" onClick={() => setShowClosed(false)} className={softButton(!showClosed)} aria-pressed={!showClosed}>
-                  <Icon name="ph:circle" width={11} />
-                  Active <span className="opacity-50 font-normal">{openCount}</span>
-                </button>
-                <button type="button" onClick={() => setShowClosed(true)} className={softButton(showClosed)} aria-pressed={showClosed}>
-                  <Icon name="ph:check-circle" width={11} />
-                  Done <span className="opacity-50 font-normal">{closedCount}</span>
-                </button>
-              </div>
-            )}
-            {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Group by" role="group" aria-label="Group by">
-                <span className="px-1.5 text-[var(--text-muted)]" aria-hidden><Icon name="ph:rows" width={11} /></span>
-                <button type="button" onClick={() => setGroupBy("date")} aria-pressed={groupBy === "date"} className={softButton(groupBy === "date")}>
-                  Date
-                </button>
-                <button type="button" onClick={() => setGroupBy("status")} aria-pressed={groupBy === "status"} className={softButton(groupBy === "status")}>
-                  Status
-                </button>
-                <button type="button" onClick={() => setGroupBy("none")} aria-pressed={groupBy === "none"} className={softButton(groupBy === "none")}>
-                  Flat
-                </button>
-              </div>
+              <>
+                <div className="relative">
+                  <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search"
+                    className="h-7 w-[90px] bg-transparent pl-5 pr-1 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:w-[160px] transition-all"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px]" role="group" aria-label="Filter sessions by state">
+                  <button
+                    type="button"
+                    onClick={() => setShowClosed(false)}
+                    aria-pressed={!showClosed}
+                    className={!showClosed ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
+                  >
+                    Active <span className="opacity-50">{openCount}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowClosed(true)}
+                    aria-pressed={showClosed}
+                    className={showClosed ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
+                  >
+                    Done <span className="opacity-50">{closedCount}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px]" role="group" aria-label="Group by">
+                  <button
+                    type="button"
+                    onClick={() => setGroupBy("date")}
+                    aria-pressed={groupBy === "date"}
+                    className={groupBy === "date" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
+                  >
+                    Date
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupBy("status")}
+                    aria-pressed={groupBy === "status"}
+                    className={groupBy === "status" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
+                  >
+                    Status
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupBy("none")}
+                    aria-pressed={groupBy === "none"}
+                    className={groupBy === "none" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
+                  >
+                    Flat
+                  </button>
+                </div>
+              </>
             )}
             <button
               type="button"
               onClick={() => startConversation(activeFamiliarId)}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-[oklch(0.65_0.18_280)] px-3 text-[11px] font-semibold text-white shadow-sm hover:bg-[oklch(0.6_0.18_280)] transition-colors"
+              title="New chat"
+              className="inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               <Icon name="ph:plus-bold" width={11} />
-              Chat
+              New
             </button>
-            <button type="button" title="Configure plugins" onClick={() => onOpenMode("plugins")} className={softButton()}>
+            <button
+              type="button"
+              title="Configure plugins"
+              onClick={() => onOpenMode("plugins")}
+              className="inline-flex h-7 items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
               <Icon name="ph:plug" width={12} />
             </button>
           </div>

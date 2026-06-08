@@ -14,13 +14,13 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /Search chats…/,
+  /placeholder="Search"/,
   "ChatSurface should keep chat search in the primary command row",
 );
 
 assert.match(
   chatSurface,
-  /Chat/,
+  /New/,
   "ChatSurface should expose the primary chat launch action without a separate composer block",
 );
 

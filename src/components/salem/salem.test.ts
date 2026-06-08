@@ -18,12 +18,13 @@ assert.match(cat3d, /idle.*happy.*thinking.*listening/s, "must handle all four m
 assert.match(cat3d, /color:\s*0x171520/, "black cat material must retain visible contrast on dark Cave chrome");
 assert.match(cat3d, /rimLight.*1\.15/s, "cat must keep a visible purple rim light");
 
-// 2. SalemWidget exists and wires the cat + chat panel + API
+// 2. SalemWidget launches the right panel; SalemChatPanel wires chat + API
 const widget = await readFile(path.join(root, "src/components/salem/salem-widget.tsx"), "utf8");
 assert.match(widget, /SalemCat3D/, "widget must embed SalemCat3D");
+assert.match(widget, /SalemChatPanel/, "must export SalemChatPanel for the right rail");
+assert.match(widget, /cave:salem-open/, "launcher must request the shell right panel");
 assert.match(widget, /\/api\/salem/, "widget must call /api/salem");
-assert.match(widget, /perch.*open.*expanded/s, "widget must have three states");
-assert.match(widget, /setState\("perch"\)/, "widget must be dismissable back to perch");
+assert.match(widget, /salem-panel--rail/, "chat must render in the shell right panel");
 assert.match(widget, /size=\{88\}/, "perch cat must be large enough to read on dark backgrounds");
 assert.doesNotMatch(widget, /salem-msg__glyph|🐱|😅/, "open Salem chat must not render emoji glyphs");
 
@@ -47,7 +48,7 @@ assert.match(route, /SALEM_PRELOAD_CONTEXT/, "must use shared preload context");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
 assert.match(route, /plugin|Plugin/, "must know about plugins");
-assert.match(route, /sassy male black cat/, "must answer with Salem's persona");
+assert.match(route, /Sassy male black cat/, "must answer with Salem's persona");
 assert.doesNotMatch(route, /🐱|😅/, "Salem API replies must stay emoji-free inside chat");
 
 // 5. SalemWidget surfaces preload status
@@ -55,18 +56,26 @@ assert.match(widget, /preload/, "widget must load Salem preload metadata");
 assert.match(widget, /salem-panel__preload/, "widget must render preload metadata");
 assert.match(widget, /Docs|Tools|Skills|Context/, "widget must label loaded docs/tools/skills/context");
 
-// 6. Layout mounts Salem
+// 6. Layout mounts Salem; Workspace routes it into the right panel
 const layout = await readFile(path.join(root, "src/app/layout.tsx"), "utf8");
+const workspace = await readFile(path.join(root, "src/components/workspace.tsx"), "utf8");
+const companionRail = await readFile(path.join(root, "src/components/companion-rail.tsx"), "utf8");
 assert.match(layout, /SalemWidget/, "layout must mount SalemWidget");
 assert.match(layout, /from "@\/components\/salem\/salem-widget"/, "layout must import from salem dir");
+assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
+assert.match(workspace, /shellRef\.current\?\.openAgent\(\)/, "Salem launcher must expand the right panel");
+assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
+assert.match(workspace, /salemSlot=\{<SalemChatPanel \/>\}/, "workspace must render Salem in the companion rail");
+assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
 
 // 7. CSS classes present
 const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
 assert.match(css, /\.salem-perch/, "must have .salem-perch CSS");
 assert.match(css, /\.salem-panel/, "must have .salem-panel CSS");
+assert.match(css, /\.salem-panel--rail/, "must support Salem inside the right rail");
 assert.match(css, /\.salem-msg/, "must have .salem-msg CSS");
 assert.match(css, /\.salem-panel__preload/, "must style Salem preload metadata");
-assert.match(css, /--background:\s*oklch\(0\.09/, "default dark app background must be lifted for black-cat contrast");
+assert.match(css, /--background:\s*#19191c;/, "default dark app background must be lifted for black-cat contrast");
 assert.match(css, /\.salem-perch::before/, "Salem perch must include a visibility halo");
 assert.doesNotMatch(css, /\.salem-msg__glyph/, "open Salem chat must not keep unused emoji glyph CSS");
 assert.match(css, /position:\s*fixed/, "salem perch must be position fixed");

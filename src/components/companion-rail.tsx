@@ -1,20 +1,22 @@
 "use client";
 
-import { forwardRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { Familiar } from "@/lib/types";
 
-export type CompanionTab = "chat" | "inspector" | "memory";
+export type CompanionTab = "chat" | "inspector" | "memory" | "salem";
 
 type Props = {
   familiar: Familiar | null;
   defaultTab?: CompanionTab;
+  activeTab?: CompanionTab;
   chatSlot: ReactNode;
   inspectorSlot: ReactNode;
   memorySlot: ReactNode;
+  salemSlot?: ReactNode;
   onOpenSwitcher?: () => void;
   onCreateFamiliar?: () => void;
   daemonRunning: boolean;
@@ -27,9 +29,11 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     const {
       familiar,
       defaultTab = "chat",
+      activeTab,
       chatSlot,
       inspectorSlot,
       memorySlot,
+      salemSlot,
       onOpenSwitcher,
       onCreateFamiliar,
       daemonRunning,
@@ -38,6 +42,11 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     const resolvedFamiliars = useResolvedFamiliars(familiar ? [familiar] : [], { includeArchived: true });
     const resolvedFamiliar = resolvedFamiliars[0];
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
+    const selectedTab = activeTab ?? tab;
+
+    useEffect(() => {
+      if (activeTab) setTab(activeTab);
+    }, [activeTab]);
 
     if (!familiar) {
       return (
@@ -92,39 +101,54 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
         <nav className="companion-rail__tabs" aria-label="Companion sections">
           <button
             type="button"
-            className={`companion-rail__tab${tab === "chat" ? " companion-rail__tab--active" : ""}`}
+            className={`companion-rail__tab${selectedTab === "chat" ? " companion-rail__tab--active" : ""}`}
             onClick={() => switchTab("chat")}
-            aria-current={tab === "chat"}
+            aria-current={selectedTab === "chat"}
           >
             <Icon name="ph:chats" width={11} /> Chat
           </button>
           <button
             type="button"
-            className={`companion-rail__tab${tab === "inspector" ? " companion-rail__tab--active" : ""}`}
+            className={`companion-rail__tab${selectedTab === "inspector" ? " companion-rail__tab--active" : ""}`}
             onClick={() => switchTab("inspector")}
-            aria-current={tab === "inspector"}
+            aria-current={selectedTab === "inspector"}
           >
             <Icon name="ph:magnifying-glass" width={11} /> Inspector
           </button>
           <button
             type="button"
-            className={`companion-rail__tab${tab === "memory" ? " companion-rail__tab--active" : ""}`}
+            className={`companion-rail__tab${selectedTab === "memory" ? " companion-rail__tab--active" : ""}`}
             onClick={() => switchTab("memory")}
-            aria-current={tab === "memory"}
+            aria-current={selectedTab === "memory"}
           >
             <Icon name="ph:brain" width={11} /> Memory
           </button>
+          {salemSlot ? (
+            <button
+              type="button"
+              className={`companion-rail__tab${selectedTab === "salem" ? " companion-rail__tab--active" : ""}`}
+              onClick={() => switchTab("salem")}
+              aria-current={selectedTab === "salem"}
+            >
+              <Icon name="ph:book-open" width={11} /> Salem
+            </button>
+          ) : null}
         </nav>
         <div className="companion-rail__body">
-          <div hidden={tab !== "chat"} className="companion-rail__pane">
+          <div hidden={selectedTab !== "chat"} className="companion-rail__pane">
             {chatSlot}
           </div>
-          <div hidden={tab !== "inspector"} className="companion-rail__pane">
+          <div hidden={selectedTab !== "inspector"} className="companion-rail__pane">
             {inspectorSlot}
           </div>
-          <div hidden={tab !== "memory"} className="companion-rail__pane">
+          <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
             {memorySlot}
           </div>
+          {salemSlot ? (
+            <div hidden={selectedTab !== "salem"} className="companion-rail__pane">
+              {selectedTab === "salem" ? salemSlot : null}
+            </div>
+          ) : null}
         </div>
       </aside>
     );

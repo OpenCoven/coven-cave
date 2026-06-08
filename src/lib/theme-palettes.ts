@@ -36,7 +36,7 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     name: "Coven",
     description: "OpenCoven violet — the default lavender field manual",
     hue: 293, accentDark: "#9A8ECD", accentLight: "#6F62A8",
-    bgDark: "oklch(0.07 0.004 293)", bgLight: "oklch(0.99 0.003 293)",
+    bgDark: "#19191c", bgLight: "oklch(0.99 0.003 293)",
   },
   tide: {
     name: "Tide",
