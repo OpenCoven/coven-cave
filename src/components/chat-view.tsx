@@ -870,7 +870,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       </header>
       <div ref={scrollRef} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
-        <div className="cave-chat-thread">
+        <div
+          className="cave-chat-thread"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Conversation"
+        >
           {turns.length === 0 ? (
             historyState === "loading" ? (
               <ChatHistoryNotice title="Loading chat history" body="Restoring this session transcript..." />
