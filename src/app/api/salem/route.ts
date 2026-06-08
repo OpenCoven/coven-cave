@@ -2,104 +2,142 @@ import { NextResponse } from "next/server";
 import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/salem-context";
 
 /**
- * Salem docs API — Ask Molty pattern adapted for CovenCave.
+ * Salem docs API — v1: live retrieval from llms-full.txt
  *
- * v0: static knowledge + keyword routing.
- * v1: will fetch https://docs.coven.ai/llms-full.txt + embed via Upstash Vector
- *     (same pipeline as OpenKnots/openclaw-chat-api).
+ * On first request the full docs corpus is fetched and split into chunks by
+ * `Source:` headers. Subsequent requests are served from the module-level
+ * cache (no TTL — process restart refreshes). Top-K chunks are matched by
+ * token overlap and injected as context for Salem's reply.
  */
 
-const DOCS_BASE = "https://docs.coven.ai";
+const DOCS_URL = "https://docs.opencoven.ai/llms-full.txt";
+const DOCS_BASE = "https://docs.opencoven.ai";
+const TOP_K = 5;
+const MAX_CHUNK_CHARS = 1200;
 
-type KnowledgeEntry = {
-  patterns: string[];
-  reply: string;
-  contextIds?: string[];
+// ── Module-level cache ────────────────────────────────────────────────────────
+
+type DocChunk = {
+  source: string;
+  heading: string;
+  text: string;
+  tokens: Set<string>;
 };
 
-const STATIC_KNOWLEDGE: KnowledgeEntry[] = [
-  {
-    patterns: ["familiar", "agent", "what is a familiar"],
-    reply: `A **familiar** is a persistent AI agent with its own identity, memory, skills, and roles in Coven. Each familiar lives in a workspace directory and has a \`SOUL.md\`, \`IDENTITY.md\`, and optional \`MEMORY.md\`.\n\n→ [Familiars docs](${DOCS_BASE}/familiars)`,
-    contextIds: ["familiars", "concept-translator"],
-  },
-  {
-    patterns: ["role", "roles", "what is a role"],
-    reply: `A **Role** is a composition bundle that tells a familiar *what it's being* for a class of work — identity context, skills, tools, workflows, plugins, and permission declarations. Roles live in \`~/.coven/roles/familiars/<familiar>/<role>/\` and are activated per-familiar in Cave config.\n\n→ [Roles docs](${DOCS_BASE}/roles)`,
-    contextIds: ["roles", "role-index", "concept-translator"],
-  },
-  {
-    patterns: ["skill", "skills"],
-    reply: `A **Skill** is a focused SKILL.md procedure that teaches a familiar *how to do* one specific capability. Skills live in \`~/.coven/skills/\` or per-familiar workspace skill directories.\n\n→ [Skills docs](${DOCS_BASE}/skills)`,
-    contextIds: ["skills", "concept-translator"],
-  },
-  {
-    patterns: ["plugin", "plugins", "marketplace", "mcp"],
-    reply: `CovenCave has a first-party **Plugin Marketplace** seeded with integrations like GitHub, Gmail, Google Calendar, Linear, Vercel, Canva, and core MCP servers (Filesystem, Git, Fetch, Memory, Sequential Thinking, Time). Each plugin can bundle MCP server config, Skills, and role-affinity metadata.\n\n→ Settings → Plugins to browse & install.`,
-    contextIds: ["plugins-marketplace", "marketplace-index", "settings-plugins"],
-  },
-  {
-    patterns: ["salem", "who are you", "what are you"],
-    reply: `I'm **Salem** - your sassy male black cat docs familiar. I'm modeled after that Sabrina the Teenage Witch talking-cat energy: dry, clever, dramatic, and unfortunately useful.\n\nI live in the bottom-right of CovenCave as a quiet 3D perch, then open into a compact docs chat when invited. I'm preloaded with ${SALEM_PRELOAD_CONTEXT.docsCorpus.length} docs areas, ${SALEM_PRELOAD_CONTEXT.toolLoadout.length} tool contexts, ${SALEM_PRELOAD_CONTEXT.skillLoadout.length} guide skills, and ${SALEM_PRELOAD_CONTEXT.routeContext.length} Cave route contexts.`,
-    contextIds: ["docs-guide", "cave-route-awareness"],
-  },
-  {
-    patterns: ["daemon", "coven daemon", "coven.sock"],
-    reply: `The **Coven Daemon** is the local substrate that manages familiars, sessions, memory, and tool execution. It communicates over \`~/.coven/coven.sock\` using the \`coven.daemon.v1\` protocol. Cave shows daemon status in the familiar rail header.\n\n→ [Daemon docs](${DOCS_BASE}/daemon)`,
-    contextIds: ["daemon", "setup-helper"],
-  },
-  {
-    patterns: ["memory", "memory tab", "constellation"],
-    reply: `Each familiar has a **Memory** tab in Cave that shows curated memory files (\`MEMORY.md\` + \`memory/*.md\`). The Memory Constellation view renders a 3D graph of familiar hubs connected to memory entry nodes.\n\n→ [Memory docs](${DOCS_BASE}/memory)`,
-    contextIds: ["cave"],
-  },
-  {
-    patterns: ["install", "setup", "getting started", "how do i start"],
-    reply: `To get started with Coven:\n1. Install the Coven daemon: \`brew install opencoven/tap/coven\`\n2. Open CovenCave and complete the onboarding.\n3. Connect or create your first familiar.\n4. Browse the Plugin Marketplace under Settings → Plugins.\n\n→ [Getting Started](${DOCS_BASE}/getting-started)`,
-    contextIds: ["setup-helper", "settings-plugins"],
-  },
-  {
-    patterns: ["cave", "coven cave", "what is cave"],
-    reply: `**CovenCave** is the desktop-web UI for the Coven ecosystem — your workspace for familiar chat, memory inspection, task management, sessions, tools, roles, and the plugin marketplace.\n\n→ [CovenCave docs](${DOCS_BASE}/cave)`,
-    contextIds: ["cave", "cave-route-awareness"],
-  },
-];
+let docsCache: DocChunk[] | null = null;
+let docsFetchedAt: number | null = null;
+let docsFetchError: string | null = null;
 
-function describeLoadedContext(contextIds: string[] = []) {
-  if (contextIds.length === 0) {
-    return "";
-  }
+// Re-fetch at most once per hour so a long-lived process picks up new docs.
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
-  const labels = [
-    ...SALEM_PRELOAD_CONTEXT.docsCorpus,
-    ...SALEM_PRELOAD_CONTEXT.toolLoadout,
-    ...SALEM_PRELOAD_CONTEXT.skillLoadout,
-    ...SALEM_PRELOAD_CONTEXT.routeContext,
-  ]
-    .filter((item) => contextIds.includes(item.id))
-    .map((item) => item.label);
-
-  if (labels.length === 0) {
-    return "";
-  }
-
-  return `\n\nLoaded context: ${labels.join(", ")}`;
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 2),
+  );
 }
 
-function findReply(message: string): string | null {
+function parseChunks(raw: string): DocChunk[] {
+  // Split on "Source:" lines — each new Source: starts a new chunk.
+  const sections = raw.split(/\nSource:\s*/);
+  const chunks: DocChunk[] = [];
+
+  for (const section of sections) {
+    if (!section.trim()) continue;
+    const lines = section.split("\n");
+    const source = lines[0]?.trim() ?? "";
+    const rest = lines.slice(1).join("\n").trim();
+    if (!rest) continue;
+
+    // Extract leading heading (first # line)
+    const headingMatch = rest.match(/^#+\s+(.+)/m);
+    const heading = headingMatch?.[1] ?? source;
+
+    // Truncate for context budget
+    const text = rest.slice(0, MAX_CHUNK_CHARS);
+    chunks.push({ source, heading, text, tokens: tokenize(heading + " " + text) });
+  }
+
+  return chunks;
+}
+
+async function getDocsChunks(): Promise<{ chunks: DocChunk[]; error: string | null }> {
+  const now = Date.now();
+  if (docsCache && docsFetchedAt && now - docsFetchedAt < CACHE_TTL_MS) {
+    return { chunks: docsCache, error: null };
+  }
+
+  try {
+    const res = await fetch(DOCS_URL, {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.text();
+    docsCache = parseChunks(raw);
+    docsFetchedAt = now;
+    docsFetchError = null;
+    return { chunks: docsCache, error: null };
+  } catch (err) {
+    docsFetchError = err instanceof Error ? err.message : String(err);
+    // Return stale cache if available
+    if (docsCache) return { chunks: docsCache, error: docsFetchError };
+    return { chunks: [], error: docsFetchError };
+  }
+}
+
+// ── Retrieval ─────────────────────────────────────────────────────────────────
+
+function scoreChunk(chunk: DocChunk, queryTokens: Set<string>): number {
+  let score = 0;
+  for (const token of queryTokens) {
+    if (chunk.tokens.has(token)) score++;
+  }
+  return score;
+}
+
+function retrieveTopK(chunks: DocChunk[], query: string, k: number): DocChunk[] {
+  const qTokens = tokenize(query);
+  return chunks
+    .map((c) => ({ chunk: c, score: scoreChunk(c, qTokens) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map(({ chunk }) => chunk);
+}
+
+// ── Reply generation ──────────────────────────────────────────────────────────
+// SALEM_PERSONA and buildPrompt reserved for future LLM-proxy integration.
+// For now, retrieval returns formatted chunk text directly.
+
+// ── Fallback static replies (keep for instant no-fetch responses) ─────────────
+
+function quickReply(message: string): string | null {
   const lower = message.toLowerCase();
-  for (const entry of STATIC_KNOWLEDGE) {
-    if (entry.patterns.some((p) => lower.includes(p))) {
-      return `${entry.reply}${describeLoadedContext(entry.contextIds)}`;
-    }
+  if (lower.match(/\bwho are you\b|\bwhat are you\b|\bsalem\b/)) {
+    return `I'm **Salem** — your docs familiar. Sassy black cat, preloaded with the full OpenCoven docs corpus, here to save you from reading 300KB of markdown yourself. Ask me anything about familiars, roles, skills, the daemon, Cave, or how any of this works.`;
   }
   return null;
 }
 
+// ── Route handlers ────────────────────────────────────────────────────────────
+
 export async function GET() {
+  const { chunks, error } = await getDocsChunks();
   return NextResponse.json({
     preload: SALEM_PRELOAD_CONTEXT,
     summary: summarizePreload(),
+    docsStatus: {
+      loaded: chunks.length > 0,
+      chunkCount: chunks.length,
+      fetchedAt: docsFetchedAt ? new Date(docsFetchedAt).toISOString() : null,
+      error: error ?? null,
+      source: DOCS_URL,
+    },
   });
 }
 
@@ -112,15 +150,58 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No message provided." }, { status: 400 });
     }
 
-    const reply = findReply(message);
-    if (reply) {
-      return NextResponse.json({ reply, preloadSummary: summarizePreload() });
+    // Quick self-identity reply — no fetch needed
+    const quick = quickReply(message);
+    if (quick) {
+      return NextResponse.json({ reply: quick, preloadSummary: summarizePreload(), source: "static" });
     }
 
-    // Fallback — graceful until v1 vector retrieval lands
+    // Fetch + retrieve
+    const { chunks, error: fetchError } = await getDocsChunks();
+
+    if (chunks.length === 0) {
+      return NextResponse.json({
+        reply: `I tried to consult the scrolls but the docs fetch failed (${fetchError ?? "unknown error"}). Try the full docs at **${DOCS_BASE}** directly — I'll be back once the connection clears.`,
+        preloadSummary: summarizePreload(),
+        source: "error",
+      });
+    }
+
+    const topChunks = retrieveTopK(chunks, message, TOP_K);
+
+    if (topChunks.length === 0) {
+      return NextResponse.json({
+        reply: `I checked the scrolls but couldn't find anything matching that. Try rephrasing or check the full docs at **${DOCS_BASE}**.`,
+        preloadSummary: summarizePreload(),
+        source: "retrieval-miss",
+      });
+    }
+
+    // Format top chunks as a grounded answer.
+    // If an LLM proxy becomes available at /api/llm, wire it in here.
+    const primary = topChunks[0];
+    const extras = topChunks.slice(1, 3);
+
+    const extraLinks = extras
+      .map((c) => `- [${c.heading}](${c.source || DOCS_BASE})`)
+      .join("\n");
+
+    const reply = [
+      `**${primary.heading}**\n`,
+      primary.text.slice(0, 800),
+      primary.text.length > 800 ? "..." : "",
+      primary.source ? `\n\n→ [Full docs](${primary.source})` : "",
+      extras.length > 0 ? `\n\n**Related:**\n${extraLinks}` : "",
+    ]
+      .filter(Boolean)
+      .join("");
+
     return NextResponse.json({
-      reply: `I don't have a confident answer for that yet - try the full docs at **${DOCS_BASE}** or ask me about familiars, roles, skills, plugins, the daemon, or how Cave works.`,
+      reply,
       preloadSummary: summarizePreload(),
+      source: "retrieval",
+      context: topChunks.map((c) => ({ heading: c.heading, source: c.source })),
+      fetchError: fetchError ?? null,
     });
   } catch {
     return NextResponse.json({ error: "Salem had a hairball moment." }, { status: 500 });
