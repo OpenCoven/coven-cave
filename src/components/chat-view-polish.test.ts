@@ -80,8 +80,14 @@ assert.match(
 
 assert.match(
   source,
-  /<header className="cave-chat-workbench-header"/,
-  "Chat header should use the full-width workbench header",
+  /<header className="cave-chat-messenger-header"/,
+  "Chat header should use the premium messenger header",
+);
+
+assert.match(
+  turnRow,
+  /cave-turn-avatar[\s\S]*cave-turn-assistant-meta[\s\S]*cave-turn-assistant-bubble/,
+  "Assistant turns should use avatar-led messenger anatomy",
 );
 
 assert.doesNotMatch(

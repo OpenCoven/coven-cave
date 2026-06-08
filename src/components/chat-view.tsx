@@ -937,7 +937,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ) : null}
 
       <footer className="cave-composer-dock">
-        <div className="relative mx-auto w-full max-w-[1180px]">
+        <div className="relative mx-auto w-full max-w-[940px]">
           {slashSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1">

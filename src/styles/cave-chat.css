@@ -411,32 +411,34 @@
    BUBBLE VARIANTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* Workbench shell */
-.cave-chat-workbench {
+/* Messenger shell */
+.cave-chat-messenger {
   background:
-    linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 28%, transparent), transparent 180px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 20%, transparent), transparent 210px),
     var(--bg-base);
 }
 
-.cave-chat-workbench-header {
+.cave-chat-messenger-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
   border-bottom: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-panel) 82%, transparent);
-  padding: 14px 18px 12px;
+  background: color-mix(in oklch, var(--bg-panel) 72%, transparent);
+  padding: 13px 18px 11px;
   box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
 }
 
-.cave-agent-glyph {
+.cave-agent-avatar {
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 28%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in oklch, var(--foreground) 18%, transparent), transparent 34%),
+    color-mix(in oklch, var(--accent-presence) 11%, var(--bg-raised));
   color: var(--accent-presence);
   box-shadow: 0 1px 8px oklch(0 0 0 / 18%);
 }
@@ -455,7 +457,7 @@
 }
 
 .cave-chat-transcript {
-  padding: 26px clamp(16px, 3vw, 34px) 30px;
+  padding: 28px clamp(16px, 4vw, 44px) 30px;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hairline) transparent;
 }
@@ -463,8 +465,8 @@
 .cave-chat-thread {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  width: min(100%, 1180px);
+  gap: 24px;
+  width: min(100%, 940px);
   margin: 0 auto;
 }
 
@@ -490,7 +492,7 @@
   color: var(--accent-presence);
 }
 
-/* User turn — compact operator input, right-aligned */
+/* User turn — polished right-aligned message */
 .cave-turn-user,
 .cave-turn-system {
   display: flex;
@@ -517,17 +519,21 @@
 }
 
 .cave-bubble-user {
-  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent-presence) 21%, var(--bg-raised)),
+    color-mix(in oklch, var(--bg-raised) 88%, transparent)
+  );
   color: var(--text-primary);
-  border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  padding: 10px 13px;
-  max-width: min(78%, 640px);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
+  border-radius: 16px 16px 4px 16px;
+  padding: 11px 14px;
+  max-width: min(76%, 680px);
   word-break: break-word;
   overflow-wrap: anywhere;
   box-shadow:
-    0 1px 3px oklch(0 0 0 / 18%),
-    inset 2px 0 0 color-mix(in oklch, var(--accent-presence) 62%, transparent);
+    0 8px 22px oklch(0 0 0 / 16%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -555,7 +561,7 @@
   border-color: color-mix(in oklch, var(--accent-presence) 20%, transparent);
 }
 
-/* Assistant bubble — transparent, full width */
+/* Assistant bubble — readable message body */
 .cave-bubble-assistant {
   width: 100%;
 }
@@ -566,42 +572,9 @@
 
 .cave-turn-assistant {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 11px;
   width: 100%;
-}
-
-.cave-turn-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  padding-top: 3px;
-}
-
-.cave-turn-ordinal {
-  color: var(--text-muted);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 10px;
-  line-height: 1;
-}
-
-.cave-turn-node {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
-  color: var(--accent-presence);
-}
-
-.cave-turn-rail-line {
-  width: 1px;
-  min-height: 18px;
-  flex: 1;
-  background: linear-gradient(to bottom, var(--border-hairline), transparent);
 }
 
 .cave-turn-avatar {
@@ -616,8 +589,10 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, color-mix(in oklch, var(--foreground) 18%, transparent), transparent 34%),
+    color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 20%, transparent);
   flex-shrink: 0;
   color: var(--accent-presence);
@@ -625,32 +600,30 @@
 
 .cave-turn-content {
   min-width: 0;
-  width: min(100%, 920px);
-  max-width: 920px;
+  width: min(100%, 760px);
+  max-width: 760px;
 }
 
-.cave-turn-card {
-  overflow: hidden;
-  border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
-  box-shadow:
-    0 10px 30px oklch(0 0 0 / 12%),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
-}
-
-.cave-turn-card-header {
+.cave-turn-assistant-meta {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  min-height: 44px;
-  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
-  background: color-mix(in oklch, var(--bg-panel) 48%, transparent);
-  padding: 10px 13px;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
-.cave-turn-card-body {
-  padding: 13px;
+.cave-turn-assistant-bubble {
+  border: 1px solid var(--border-hairline);
+  border-radius: 16px 16px 16px 4px;
+  background: color-mix(in oklch, var(--bg-raised) 58%, transparent);
+  padding: 13px 14px;
+  box-shadow:
+    0 8px 24px oklch(0 0 0 / 12%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
 }
 
 .cave-turn-status {
@@ -681,8 +654,8 @@
 .cave-reasoning-block,
 .cave-tool-group {
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-panel) 36%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 32%, transparent);
   padding: 9px 10px;
 }
 
@@ -731,13 +704,13 @@
   border-top: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
   background:
     linear-gradient(to top, var(--bg-base), color-mix(in oklch, var(--bg-base) 82%, transparent));
-  padding: 10px clamp(16px, 3vw, 34px) 18px;
+  padding: 12px clamp(16px, 4vw, 44px) 18px;
 }
 
 .cave-composer-panel {
   overflow: hidden;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: 16px;
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
   box-shadow:
     0 14px 42px oklch(0 0 0 / 22%),
@@ -753,21 +726,8 @@
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 
-.cave-composer-topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 30px;
-  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
-  background: color-mix(in oklch, var(--bg-panel) 40%, transparent);
-  padding: 0 12px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
 @media (max-width: 720px) {
-  .cave-chat-workbench-header {
+  .cave-chat-messenger-header {
     padding: 12px 14px 10px;
   }
 
@@ -779,7 +739,7 @@
     grid-template-columns: 1fr;
   }
 
-  .cave-turn-rail {
+  .cave-turn-avatar {
     display: none;
   }
 
