@@ -247,7 +247,7 @@ export function InboxEscalationsView({
               </label>
               <button
                 onClick={() => void refresh()}
-                className="rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted"
+                className="focus-ring rounded border border-border px-2 py-0.5 transition-colors hover:bg-muted"
                 title="Refresh"
               >
                 <Icon name="ph:arrows-clockwise-bold" width={11} height={11} aria-hidden />
@@ -257,8 +257,8 @@ export function InboxEscalationsView({
 
           {error ? (
             <div
-              className="px-5 py-1.5 text-xs text-[var(--color-danger)]"
-              style={{ background: "rgba(244,184,184,0.08)", borderBottom: "1px solid var(--border-hairline)" }}
+              className="border-b border-[var(--border-hairline)] px-5 py-1.5 text-xs text-[var(--color-danger)]"
+              style={{ background: "color-mix(in oklch, var(--color-danger) 10%, var(--bg-base))" }}
             >
               {error}
             </div>
@@ -426,7 +426,7 @@ function ActionButton({
         onClick();
       }}
       disabled={disabled}
-      className={`rounded border px-2 py-0.5 transition-colors disabled:opacity-40 ${
+      className={`focus-ring rounded border px-2 py-0.5 transition-colors disabled:opacity-40 ${
         primary
           ? "border-border-strong bg-muted text-foreground hover:bg-card"
           : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -451,21 +451,21 @@ function SnoozeMenu({
       className="mt-2 flex flex-col gap-1 rounded border bg-card p-2 text-[11px]"
       style={{ borderColor: "var(--border-hairline)" }}
     >
-      <div className="px-1 text-[9px] uppercase tracking-widest text-muted-foreground">
+      <div className="px-1 text-[9px] uppercase tracking-widest text-[var(--text-secondary)]">
         Snooze until
       </div>
       {SNOOZE_PRESETS.map((p) => (
         <button
           key={p.id}
           onClick={() => onPick(p.id)}
-          className="rounded px-2 py-1 text-left text-foreground transition-colors hover:bg-muted"
+          className="focus-ring rounded px-2 py-1 text-left text-foreground transition-colors hover:bg-muted"
         >
           {p.label}
         </button>
       ))}
       <button
         onClick={onClose}
-        className="mt-1 rounded px-2 py-1 text-left text-muted-foreground transition-colors hover:bg-muted"
+        className="focus-ring mt-1 rounded px-2 py-1 text-left text-muted-foreground transition-colors hover:bg-muted"
       >
         Cancel
       </button>
