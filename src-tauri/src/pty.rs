@@ -26,7 +26,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Url, Webview};
 use log::{debug, info, warn};
 
 struct PtySession {
@@ -38,6 +38,38 @@ struct PtySession {
 static SESSIONS: Lazy<Mutex<HashMap<String, PtySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 static STARTING_SESSIONS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+fn url_origin(url: &Url) -> Option<String> {
+    let host = url.host_str()?;
+    let port = url.port_or_known_default()?;
+    Some(format!("{}://{}:{}", url.scheme(), host, port))
+}
+
+pub fn trust_main_origin(url: &Url) {
+    if let Some(origin) = url_origin(url) {
+        info!("trusting main webview origin for PTY IPC: {}", origin);
+        TRUSTED_MAIN_ORIGINS.lock().insert(origin);
+    } else {
+        warn!("not trusting main webview origin for PTY IPC: {}", url);
+    }
+}
+
+fn ensure_trusted_pty_caller(webview: &Webview) -> Result<(), String> {
+    if webview.label() != "main" {
+        warn!("denied PTY IPC from non-main webview: {}", webview.label());
+        return Err("PTY commands are only available to the main app webview".to_string());
+    }
+
+    let url = webview.url().map_err(|e| format!("could not resolve caller URL: {e}"))?;
+    let origin = url_origin(&url).ok_or_else(|| format!("untrusted PTY caller URL: {url}"))?;
+    if TRUSTED_MAIN_ORIGINS.lock().contains(&origin) {
+        Ok(())
+    } else {
+        warn!("denied PTY IPC from untrusted main webview origin: {}", origin);
+        Err("PTY commands are not available to this origin".to_string())
+    }
+}
 
 /// RAII guard: makes sure a thread_id we reserved in STARTING_SESSIONS
 /// is always removed even if start fails partway through.
@@ -89,7 +121,8 @@ pub struct PtyExitEvent {
 }
 
 #[tauri::command]
-pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
+pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Result<(), String> {
+    ensure_trusted_pty_caller(&webview)?;
     let thread_id = options.thread_id.clone();
     info!("pty_start: thread_id={} project_root={:?} cols={:?} rows={:?}",
         thread_id, options.project_root, options.cols, options.rows);
@@ -229,7 +262,8 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn pty_write(thread_id: String, bytes: Vec<u8>) -> Result<(), String> {
+pub fn pty_write(webview: Webview, thread_id: String, bytes: Vec<u8>) -> Result<(), String> {
+    ensure_trusted_pty_caller(&webview)?;
     debug!("pty_write[{}]: {} bytes", thread_id, bytes.len());
     let writer = {
         let sessions = SESSIONS.lock();
@@ -247,7 +281,8 @@ pub fn pty_write(thread_id: String, bytes: Vec<u8>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn pty_resize(thread_id: String, cols: u16, rows: u16) -> Result<(), String> {
+pub fn pty_resize(webview: Webview, thread_id: String, cols: u16, rows: u16) -> Result<(), String> {
+    ensure_trusted_pty_caller(&webview)?;
     let sessions = SESSIONS.lock();
     let session = sessions
         .get(&thread_id)
@@ -264,17 +299,20 @@ pub fn pty_resize(thread_id: String, cols: u16, rows: u16) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn pty_stop(thread_id: String) {
+pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
+    ensure_trusted_pty_caller(&webview)?;
     // Dropping the PtySession drops the master, which closes the slave's
     // controlling tty; the child receives SIGHUP and exits. The waiter
     // thread cleans up SESSIONS and emits pty:exit.
     let mut sessions = SESSIONS.lock();
     sessions.remove(&thread_id);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn pty_list() -> Vec<String> {
-    SESSIONS.lock().keys().cloned().collect()
+pub fn pty_list(webview: Webview) -> Result<Vec<String>, String> {
+    ensure_trusted_pty_caller(&webview)?;
+    Ok(SESSIONS.lock().keys().cloned().collect())
 }
 
 /// Diagnostic: spawn a one-shot known-good PTY (`/bin/echo hello && exit`),
@@ -282,7 +320,12 @@ pub fn pty_list() -> Vec<String> {
 /// the PTY plumbing works end-to-end without depending on the React layer
 /// or on any user shell config.
 #[tauri::command]
-pub fn pty_diagnose() -> Result<DiagnoseReport, String> {
+pub fn pty_diagnose(webview: Webview) -> Result<DiagnoseReport, String> {
+    ensure_trusted_pty_caller(&webview)?;
+    run_pty_diagnose()
+}
+
+fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
     info!("pty_diagnose: starting");
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -446,7 +489,7 @@ mod tests {
 
     #[test]
     fn pty_diagnose_spawns_shell_and_reads_output() {
-        let report = pty_diagnose().expect("pty diagnostic should run");
+        let report = run_pty_diagnose().expect("pty diagnostic should run");
 
         assert!(
             report.output.contains("coven-cave-pty-ok"),
