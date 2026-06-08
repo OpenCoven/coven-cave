@@ -6,6 +6,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
+import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import type { Familiar } from "@/lib/types";
 
 type Props = {
@@ -136,7 +137,7 @@ export function FamiliarStudio({ familiars }: Props) {
               }}
             />
           ) : null}
-          {activeTab === "look" && familiar ? <div data-testid="look-tab" /> : null}
+          {activeTab === "look" && familiar ? <FamiliarStudioLookTab familiar={familiar} /> : null}
           {activeTab === "brain" && familiar ? <div data-testid="brain-tab" /> : null}
           {activeTab === "lifecycle" ? <div data-testid="lifecycle-tab" /> : null}
         </div>
