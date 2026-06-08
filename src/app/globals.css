@@ -158,6 +158,20 @@
 
   /* ---- Surface alphas ---- */
   --backdrop-scrim: oklch(0 0 0 / 60%);
+
+  /* Foundations PR — disabled state */
+  --opacity-disabled: 0.4;
+
+  /* Foundations PR — scrollbar tokens (consumed by all themed scrollbars) */
+  --scrollbar-thumb: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  --scrollbar-track: transparent;
+}
+
+/* Foundations PR — themed text selection.
+   Derived from --accent-presence so every theme inherits without override. */
+::selection {
+  background: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  color: var(--foreground);
 }
 
 /* ============================================================
@@ -197,8 +211,8 @@
   /* --border, --border-strong, --input, --text-muted are derived from --foreground;
      they auto-invert. No override needed. */
 
-  --ring-focus: color-mix(in oklch, #6F62A8 55%, transparent);
-  --ring-focus-soft: color-mix(in oklch, #6F62A8 30%, transparent);
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
   --backdrop-scrim: oklch(0 0 0 / 40%);
 
   /* Semantic state colors retuned for AA contrast on near-white surfaces.
@@ -1389,6 +1403,48 @@ body {
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+/* Foundations PR — ErrorState primitive (mirrors .ui-empty-state layout
+   with a danger accent). role="alert" announces via assistive tech. */
+.ui-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.ui-error-state--compact {
+  padding: 16px 12px;
+  gap: 4px;
+}
+.ui-error-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+.ui-error-state-headline {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.ui-error-state-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  max-width: 36ch;
+}
+.ui-error-state-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 /* ---- Skeleton ----------------------------------------------- */
@@ -3690,7 +3746,7 @@ body {
   flex-direction: column;
   gap: 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(124, 77, 255, 0.3) transparent;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 .salem-msg {
@@ -3842,4 +3898,19 @@ body {
 .salem-panel__send:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+/* Foundations PR — visually-hidden utility for screen-reader-only content.
+   Standard pattern: positioned offscreen, zero size, but still in the
+   accessibility tree. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type ModalProps = {
   open: boolean;
@@ -21,15 +22,6 @@ type ModalProps = {
   ariaLabel?: string;
 };
 
-const FOCUSABLE = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
-
 export function Modal({
   open,
   onClose,
@@ -42,44 +34,8 @@ export function Modal({
   ariaLabel,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    returnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
-    const dialog = dialogRef.current;
-    if (dialog) {
-      const first = dialog.querySelector<HTMLElement>(FOCUSABLE);
-      first?.focus();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (e.key === "Tab" && dialog) {
-        const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-          (el) => !el.hasAttribute("disabled"),
-        );
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const active = document.activeElement as HTMLElement | null;
-        if (e.shiftKey && active === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && active === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      returnFocusRef.current?.focus();
-    };
-  }, [open, onClose]);
+  useFocusTrap(open, dialogRef, { onEscape: onClose });
 
   if (!open || typeof document === "undefined") return null;
 
@@ -96,6 +52,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
+        tabIndex={-1}
       >
         {breadcrumb ? (
           <header className="ui-modal-header">

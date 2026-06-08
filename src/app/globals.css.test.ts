@@ -52,3 +52,45 @@ for (const old of ["midnight", "orchid", "sky"]) {
 }
 
 console.log("globals.css.test.ts (task 4) OK");
+
+// --- Foundations PR tokens ------------------------------------------------
+
+// (a) Light-mode --ring-focus derives from --accent-presence, not a hex literal.
+const lightBlockRaw = css.match(/:root\[data-mode="light"\]\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+assert.match(
+  lightBlockRaw,
+  /--ring-focus\s*:\s*color-mix\(in oklch,\s*var\(--accent-presence\)/,
+  "light --ring-focus must derive from --accent-presence (no hex)",
+);
+assert.doesNotMatch(
+  lightBlockRaw,
+  /--ring-focus\s*:\s*color-mix\(in oklch,\s*#/,
+  "light --ring-focus must not hardcode a hex literal",
+);
+
+// (b) Disabled opacity token exists on :root.
+assert.match(
+  css,
+  /--opacity-disabled\s*:\s*0\.4/,
+  "--opacity-disabled token defined on :root",
+);
+
+// (c) Scrollbar tokens exist on :root.
+assert.match(css, /--scrollbar-thumb\s*:/, "--scrollbar-thumb token defined on :root");
+assert.match(css, /--scrollbar-track\s*:/, "--scrollbar-track token defined on :root");
+
+// (d) Salem scrollbar consumes the token, not raw rgba.
+assert.doesNotMatch(
+  css,
+  /scrollbar-color:\s*rgba\(124,\s*77,\s*255,\s*0\.3\)/,
+  "salem must not use the hardcoded purple rgba scrollbar (use var(--scrollbar-thumb))",
+);
+
+// (e) Global ::selection rule exists and uses --accent-presence.
+assert.match(
+  css,
+  /::selection\s*\{[\s\S]*?background:\s*color-mix\(in oklch,\s*var\(--accent-presence\)/,
+  "::selection rule must exist and derive from --accent-presence",
+);
+
+console.log("globals.css.test.ts (foundations) OK");
