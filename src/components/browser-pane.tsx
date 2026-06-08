@@ -534,7 +534,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
         <span
           aria-hidden
           className={[
-            "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-r-full bg-white/20",
+            "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-r-full bg-[var(--fg-base)]/20",
             "transition-opacity duration-150",
             railExpanded ? "opacity-0" : "opacity-100",
           ].join(" ")}
@@ -556,7 +556,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             onClick={() => setRailPinned((v) => !v)}
             title={railPinned ? "Auto-hide tabs" : "Pin tabs open"}
             className={[
-              "mb-1 grid h-7 w-7 shrink-0 place-items-center rounded transition-colors",
+              "focus-ring mb-1 grid h-7 w-7 shrink-0 place-items-center rounded transition-colors",
               railPinned
                 ? "text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)]",
@@ -582,7 +582,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               }}
               title={tabTitles[tab.id] ?? tab.title ?? tab.url}
               className={[
-                "browser-tab group relative flex flex-col items-center justify-center gap-0.5 w-full cursor-pointer select-none transition-colors py-2.5",
+                "focus-ring-inset browser-tab group relative flex flex-col items-center justify-center gap-0.5 w-full cursor-pointer select-none transition-colors py-2.5",
                 isActive
                   ? "bg-[var(--bg-elevated)] text-[var(--fg-base)]"
                   : "text-[var(--fg-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--fg-base)]",
@@ -590,7 +590,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             >
               {/* Active indicator bar */}
               {isActive && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-6 rounded-r-full bg-white/70" />
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-6 rounded-r-full bg-[var(--accent-presence)]" />
               )}
               {/* Favicon / indicator */}
               <span className="relative flex shrink-0 items-center justify-center">
@@ -605,7 +605,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
                 <button
                   onClick={(e) => removeTab(tab.id, e)}
-                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 text-[var(--fg-muted)] transition-opacity"
+                  className="focus-ring absolute top-1 right-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 text-[var(--fg-muted)] transition-opacity"
                   title="Close tab"
                 >
                   <Icon name="ph:x-bold" width={7} />
@@ -619,7 +619,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
         {/* Pin current page */}
         <button
           onClick={pinCurrentPage}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] transition-colors"
+          className="focus-ring grid h-8 w-8 shrink-0 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] transition-colors"
           title="Pin current page as a tab"
         >
           <Icon name="ph:plus" width={13} />
@@ -633,13 +633,13 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       <header className="relative z-10 flex min-h-10 shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5">
         {/* Back */}
         <button type="button" onClick={goBack} disabled={!canBack}
-          className="grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
           title="Back" aria-label="Back">
           <Icon name="ph:arrow-left-bold" width={13} />
         </button>
         {/* Forward */}
         <button type="button" onClick={goForward} disabled={!canForward}
-          className="grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
           title="Forward" aria-label="Forward">
           <Icon name="ph:arrow-right-bold" width={13} />
         </button>
@@ -649,7 +649,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             if (bridge) void bridge.invoke("browser_reload", { label: tabLabel(activeTabId) });
             else navigateTo(activeUrl);
           }}
-          className="grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
           title={loading ? "Stop" : "Reload"} aria-label={loading ? "Stop" : "Reload"}>
           {loading
             ? <Icon name="ph:x-bold" width={12} />
@@ -669,12 +669,12 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             onChange={(e) => setAddressBar(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
             placeholder="Search or enter address"
-            className="flex-1 bg-transparent text-[12px] text-[var(--fg-base)] outline-none"
+            className="focus-ring-inset flex-1 rounded bg-transparent text-[12px] text-[var(--fg-base)]"
           />
         </form>
         {/* Home */}
         <button type="button" onClick={() => navigateTo(HOME_URL)}
-          className="grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
           title="Home" aria-label="Home">
           <Icon name="ph:house-bold" width={13} />
         </button>
@@ -695,7 +695,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               window.open(activeUrl, "_blank", "noopener");
             }
           }}
-          className="grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
           title="Open in system browser" aria-label="Open in system browser">
           <Icon name="ph:arrow-square-out" width={13} />
         </button>
