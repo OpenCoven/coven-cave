@@ -5,6 +5,7 @@ import type {
   LinkCapture, LinkSource, LibraryBookmark, LibraryReadingItem,
   LibraryGitHubItem, LibrarySectionKind,
 } from "../../../../lib/library-types.ts";
+import { enrichTitle, fallbackTitle } from "../../../../lib/title-enricher.ts";
 
 type RouteList = "bookmarks" | "reading" | "github";
 
@@ -102,7 +103,9 @@ export async function routeLinkHandler(body: RouteLinkInput): Promise<RouteLinkR
       const repo = gp?.repo ?? "";
       const number = gp?.number;
       const kind = gp?.kind ?? "repo";
-      const title = number ? `${repo} #${number}` : repo || domainFrom(parsed);
+      const rawTitle = number ? `${repo} #${number}` : repo || domainFrom(parsed);
+      const enriched = await enrichTitle(body.url);
+      const title = enriched?.title ?? rawTitle;
       const ghItem: LibraryGitHubItem = {
         id: generateId("gh"),
         kind, repo, number, title, url: body.url,
@@ -119,7 +122,7 @@ export async function routeLinkHandler(body: RouteLinkInput): Promise<RouteLinkR
         classify.rule === "article-host" ? "article" : "article";
       const rdItem: LibraryReadingItem = {
         id: generateId("rd"),
-        title: titleFromReadingPath(parsed),
+        title: (await enrichTitle(body.url))?.title ?? titleFromReadingPath(parsed),
         url: body.url,
         sourceType: readingKind,
         status: "want-to-read",
@@ -134,8 +137,9 @@ export async function routeLinkHandler(body: RouteLinkInput): Promise<RouteLinkR
       const bmItem: LibraryBookmark = {
         id: generateId("bm"),
         url: body.url,
-        title: domainFrom(parsed),
+        title: (await enrichTitle(body.url))?.title ?? fallbackTitle(body.url),
         domain: domainFrom(parsed),
+        favicon: `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=32`,
         tags: body.tags ?? [],
         savedAt: capture.capturedAt,
         familiar: body.familiar,

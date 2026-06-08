@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLibraryStore } from "@/lib/library-store";
 import type { LibraryBookmark, LinkCapture } from "@/lib/library-types";
+import { enrichTitle, fallbackTitle } from "@/lib/title-enricher";
 
 const store = createLibraryStore();
 
 function domainFrom(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ""); }
   catch { return url; }
-}
-
-function faviconUrl(url: string): string {
-  try {
-    const { hostname } = new URL(url);
-    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
-  } catch { return ""; }
 }
 
 function generateId(): string {
@@ -37,12 +31,20 @@ export async function POST(req: NextRequest) {
   if (!body.url) return NextResponse.json({ ok: false, error: "url required" }, { status: 400 });
 
   const domain = domainFrom(body.url);
+  let resolvedTitle = body.title;
+  if (!resolvedTitle || resolvedTitle === domain) {
+    const enriched = await enrichTitle(body.url);
+    resolvedTitle = enriched?.title ?? fallbackTitle(body.url);
+  }
+  let favicon: string;
+  try { favicon = `https://www.google.com/s2/favicons?domain=${new URL(body.url).hostname}&sz=32`; }
+  catch { favicon = ""; }
   const item: LibraryBookmark = {
     id: generateId(),
     url: body.url,
-    title: body.title ?? domain,
+    title: resolvedTitle,
     domain,
-    favicon: faviconUrl(body.url),
+    favicon,
     notes: body.notes,
     tags: body.tags ?? [],
     savedAt: new Date().toISOString(),
