@@ -83,3 +83,31 @@ test("macOS release signing includes nested executables like bundled Node", asyn
     "release signing must include executable files, not only dylib/so/node modules",
   );
 });
+
+test("macOS release signing preserves bundled Node JIT entitlement", async () => {
+  const [releaseScript, nodeEntitlements] = await Promise.all([
+    readFile(new URL("../scripts/release.sh", import.meta.url), "utf8"),
+    readFile(new URL("./entitlements/node.plist", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(
+    releaseScript,
+    /NODE_ENTITLEMENTS=/,
+    "release signing must have a dedicated entitlement file for the bundled Node runtime",
+  );
+  assert.match(
+    releaseScript,
+    /--entitlements "\$NODE_ENTITLEMENTS"/,
+    "bundled Node must be re-signed with its JIT entitlements instead of plain hardened runtime",
+  );
+  assert.match(
+    nodeEntitlements,
+    /com\.apple\.security\.cs\.allow-jit/,
+    "Node needs allow-jit under hardened runtime or V8 crashes before the sidecar can bind",
+  );
+  assert.match(
+    nodeEntitlements,
+    /com\.apple\.security\.cs\.allow-unsigned-executable-memory/,
+    "Node needs executable memory permission under hardened runtime for V8-generated code",
+  );
+});

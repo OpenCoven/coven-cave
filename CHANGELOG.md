@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.54] — 2026-06-08
+
+Release repair for macOS sidecar startup after 0.0.53.
+
+### Fixed
+
+- **Signed macOS sidecar Node startup.** Re-signs the bundled Node runtime with
+  the hardened-runtime executable-memory entitlements V8 needs, so the packaged
+  sidecar can bind its local port instead of crashing before producing server
+  output. Thanks @BunsDev
+- **Native Apple Silicon DMG.** Adds an `macos-15` (aarch64) leg to the release
+  matrix alongside the existing `macos-15-intel` (x86_64) leg and tags each
+  produced DMG with its arch suffix (`-x86_64.dmg`, `-aarch64.dmg`). M-series
+  Macs no longer run the bundled Node through Rosetta, where V8 baseline-JIT
+  tier-up could crash the sidecar before it bound its port.
+
 ## [0.0.53] — 2026-06-08
 
 Release repair for clean CI packaging after 0.0.52.

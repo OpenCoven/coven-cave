@@ -16,6 +16,7 @@ NOTARY_ISSUER="${NOTARY_ISSUER:-${APPLE_API_ISSUER:-}}"
 NOTARY_APPLE_ID="${NOTARY_APPLE_ID:-${APPLE_ID:-}}"
 NOTARY_APPLE_PASSWORD="${NOTARY_APPLE_PASSWORD:-${APPLE_PASSWORD:-}}"
 NOTARY_TEAM_ID="${NOTARY_TEAM_ID:-${APPLE_TEAM_ID:-}}"
+NODE_ENTITLEMENTS="src-tauri/entitlements/node.plist"
 
 require_tool() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing required tool: $1" >&2; exit 1; }
@@ -36,6 +37,7 @@ require_tool hdiutil
 require_tool spctl
 require_tool shasum
 require_tool openssl
+require_file "$NODE_ENTITLEMENTS"
 
 if [ -n "$NOTARY_APPLE_ID" ] && [ -n "$NOTARY_APPLE_PASSWORD" ] && [ -n "$NOTARY_TEAM_ID" ]; then
   NOTARY_AUTH_MODE="apple-id"
@@ -103,10 +105,18 @@ find "$APP_PATH" \
 NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"
 while IFS= read -r f; do
-  codesign --force --options runtime --timestamp \
-    --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
-      echo "    ! failed to sign: $f" >&2
-    }
+  if [ "$f" = "$APP_PATH/Contents/Resources/resources/node/bin/node" ]; then
+    codesign --force --options runtime --timestamp \
+      --entitlements "$NODE_ENTITLEMENTS" \
+      --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
+        echo "    ! failed to sign bundled Node with entitlements: $f" >&2
+      }
+  else
+    codesign --force --options runtime --timestamp \
+      --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
+        echo "    ! failed to sign: $f" >&2
+      }
+  fi
 done < "$NATIVE_FILES_TMP"
 rm "$NATIVE_FILES_TMP"
 

@@ -75,12 +75,19 @@ jobs:
           - platform: macos-15-intel
             label: macOS Intel (DMG, signed + notarized)
             args: "--bundles dmg"
+            arch_suffix: x86_64
+          - platform: macos-15
+            label: macOS Apple Silicon (DMG, signed + notarized)
+            args: "--bundles dmg"
+            arch_suffix: aarch64
           - platform: ubuntu-22.04
             label: Linux (AppImage)
             args: "--bundles appimage"
+            arch_suffix: ""
           - platform: windows-latest
             label: Windows (MSI)
             args: "--bundles msi"
+            arch_suffix: ""
 
     runs-on: ${{ matrix.platform }}
 
@@ -139,7 +146,7 @@ jobs:
       # steps. Runs only on the macOS leg.
       - name: Stage Apple API key
         if: >-
-          matrix.platform == 'macos-15-intel' &&
+          startsWith(matrix.platform, 'macos-') &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -160,7 +167,7 @@ jobs:
 
       - name: Import Apple signing certificate
         if: >-
-          matrix.platform == 'macos-15-intel' &&
+          startsWith(matrix.platform, 'macos-') &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -224,7 +231,7 @@ jobs:
 
       - name: Build macOS DMG with custom release script
         if: >-
-          matrix.platform == 'macos-15-intel' &&
+          startsWith(matrix.platform, 'macos-') &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         env:
@@ -242,6 +249,27 @@ jobs:
           set -euo pipefail
           bash scripts/release.sh "$RELEASE_VERSION"
 
+      # Disambiguate the produced DMG by host arch so the Intel and Apple
+      # Silicon legs upload distinct artifacts. v0.0.53 shipped an x86_64-only
+      # node sidecar that crashed under Rosetta on M-series Macs; running both
+      # legs gives users a native binary per arch.
+      - name: Suffix macOS DMG with arch
+        if: >-
+          startsWith(matrix.platform, 'macos-') &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="release/CovenCave-v${RELEASE_VERSION}.dmg"
+          DST="release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.dmg"
+          if [ ! -f "$SRC" ]; then
+            echo "::error::Expected $SRC from release.sh but it was not produced"
+            ls -la release/ || true
+            exit 1
+          fi
+          mv "$SRC" "$DST"
+          echo "Renamed to $DST"
+
       # Hard gate: fail the macOS leg if the produced DMG is not accepted
       # by Gatekeeper as a notarized Developer ID app. This is what makes
       # "require notarization" a build-time invariant rather than a
@@ -250,7 +278,7 @@ jobs:
       # v0.0.13–v0.0.15.
       - name: Verify macOS DMG is notarized
         if: >-
-          matrix.platform == 'macos-15-intel' &&
+          startsWith(matrix.platform, 'macos-') &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -275,12 +303,12 @@ jobs:
 
       - name: Upload macOS DMG to GitHub Release
         if: >-
-          matrix.platform == 'macos-15-intel' &&
+          startsWith(matrix.platform, 'macos-') &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: release/CovenCave-v${{ env.RELEASE_VERSION }}.dmg
+          files: release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
 
   checksums:
     name: Publish SHA256SUMS
