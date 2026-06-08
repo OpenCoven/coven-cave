@@ -8,7 +8,6 @@ import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
-import { PluginsView } from "@/components/plugins-view";
 import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
@@ -894,17 +893,14 @@ export function Workspace() {
         }}
       />
     ) : (
-      <PluginsView
-        onOpenChat={() => {
-          startAgentChat(activeId);
-        }}
-        onCreateSkill={() => {
-          startAgentChat(activeId);
-        }}
-        onCreatePlugin={() => {
-          startAgentChat(activeId);
-        }}
-        familiars={familiars.map((f) => ({ id: f.id, display_name: f.display_name }))}
+      <HomeComposer
+        familiars={familiars}
+        activeFamiliarId={activeId}
+        sessions={sessions}
+        onNavigateToChat={(sessionId, fid) => openAgentSession(sessionId, fid)}
+        onNavigateToBoard={() => setMode("board")}
+        onNavigateToInbox={() => setMode("inbox")}
+        onToast={pushToast}
       />
     )}
     </div>
