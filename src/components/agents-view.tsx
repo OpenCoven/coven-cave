@@ -471,8 +471,6 @@ export function AgentsView({
                     const root = pendingProjectRoot;
                     onClearPendingProjectRoot();
                     window.setTimeout(() => routerRef.current?.newChat(root), 0);
-                  } else {
-                    window.setTimeout(() => routerRef.current?.goToList(), 0);
                   }
                 }}
                 pendingProjectRoot={pendingProjectRoot}

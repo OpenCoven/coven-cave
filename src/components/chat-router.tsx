@@ -54,7 +54,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const viewHandle = useRef<ChatViewHandle | null>(null);
 
   useEffect(() => {
-    setView({ kind: "list" });
+    setView((prev) =>
+      prev.kind === "chat"
+        ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot }
+        : { kind: "list" },
+    );
   }, [familiar?.id]);
 
   useImperativeHandle(

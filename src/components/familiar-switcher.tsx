@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 
 type Props = {
   familiar: Familiar;
@@ -19,6 +22,8 @@ type Props = {
 export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const glyphOverrides = useGlyphOverrides();
+  const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
 
   // Close on outside click / Esc
   useEffect(() => {
@@ -56,6 +61,7 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
         aria-expanded={open}
         aria-label={`Switch familiar from ${familiar.display_name}`}
       >
+        <FamiliarGlyph glyph={glyph} size="sm" className="shrink-0 text-[var(--text-muted)]" />
         <span className="text-[15px] font-semibold text-[var(--text-primary)]">
           {familiar.display_name}
         </span>
@@ -76,6 +82,7 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
           </div>
           {familiars.map((f) => {
             const isActive = f.id === familiar.id;
+            const fGlyph = resolveFamiliarGlyph(f, glyphOverrides);
             return (
               <button
                 key={f.id}
@@ -93,6 +100,7 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
                     : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]",
                 ].join(" ")}
               >
+                <FamiliarGlyph glyph={fGlyph} size="sm" className="shrink-0 text-[var(--text-muted)]" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium leading-tight">
                     {f.display_name}
