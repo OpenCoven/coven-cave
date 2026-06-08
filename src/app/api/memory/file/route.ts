@@ -1,25 +1,9 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { homedir } from "node:os";
 import { redact } from "@/lib/redact";
+import { isAllowedMemoryFilePath } from "@/lib/server/memory-file-paths";
 
 export const dynamic = "force-dynamic";
-
-// Files outside these roots are never readable through this endpoint.
-const ALLOWED_ROOTS = [
-  path.join(homedir(), ".openclaw", "workspace", "memory"),
-  path.join(homedir(), ".coven", "memory"),
-  path.join(homedir(), ".openclaw", "workspace", "MEMORY.md"),
-];
-
-function isAllowed(fullPath: string): boolean {
-  const resolved = path.resolve(fullPath);
-  return ALLOWED_ROOTS.some((root) => {
-    if (resolved === root) return true;
-    return resolved.startsWith(root + path.sep);
-  });
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -28,7 +12,7 @@ export async function GET(req: Request) {
   if (!target) {
     return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
   }
-  if (!isAllowed(target)) {
+  if (!isAllowedMemoryFilePath(target)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
   let raw: string;
