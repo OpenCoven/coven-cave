@@ -32,6 +32,8 @@ type Props = {
   mode?: "list" | "graph";
   /** Cap the number of entries rendered per section. */
   limit?: number;
+  /** Suppress the familiar <select>; render the active familiar as a chip. */
+  lockToFamiliar?: boolean;
 };
 
 type CovenMemoryResponse =
@@ -75,7 +77,7 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, mode, limit }: Props) {
+export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, mode, limit, lockToFamiliar }: Props) {
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
@@ -241,15 +243,24 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
           </div>
-          <select
-            value={familiarFilter}
-            onChange={(event) => setFamiliarFilter(event.target.value)}
-            className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-presence)]"
-          >
-            {familiarOptions.map((familiar) => (
-              <option key={familiar.id} value={familiar.id}>{familiar.display_name}</option>
-            ))}
-          </select>
+          {lockToFamiliar ? (
+            <span
+              className="inline-flex h-8 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)]"
+              aria-label="Locked to familiar"
+            >
+              {selectedFamiliar?.display_name ?? "—"}
+            </span>
+          ) : (
+            <select
+              value={familiarFilter}
+              onChange={(event) => setFamiliarFilter(event.target.value)}
+              className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-presence)]"
+            >
+              {familiarOptions.map((familiar) => (
+                <option key={familiar.id} value={familiar.id}>{familiar.display_name}</option>
+              ))}
+            </select>
+          )}
         </div>
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
@@ -347,34 +358,13 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Memory files</h3>
             <span className="text-[10px] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
           </div>
-          <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
-            {visibleFiles.length === 0 ? (
-              <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-                {loaded ? (error ? "Couldn’t load memory files. See the error above and try again." : "No memory files match this view.") : "Loading files..."}
-              </div>
-            ) : (
-              <ul className="max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto">
-                {visibleFiles.slice(0, effectiveLimit === Infinity ? 160 : effectiveLimit).map((entry) => (
-                  <li key={entry.fullPath}>
-                    <button
-                      type="button"
-                      onClick={() => onOpenMemoryFile?.(entry.fullPath)}
-                      className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
-                    >
-                      <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.relPath}</span>
-                        <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
-                          {entry.rootLabel} · {compactPath(entry.fullPath)}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <MemoryFilesList
+            entries={visibleFiles}
+            onOpen={onOpenMemoryFile}
+            loaded={loaded}
+            error={error}
+            limit={effectiveLimit === Infinity ? 160 : effectiveLimit}
+          />
         </section>
       </div>
       )}
@@ -421,6 +411,57 @@ export function RailMemoryList({
           Open full memory →
         </button>
       ) : null}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Standalone file-list — reusable by the Agents detail panel without the
+// coven-memory half or the familiar <select>.
+// ────────────────────────────────────────────────────────────────────────────
+
+type MemoryFilesListProps = {
+  entries: FileMemoryEntry[];
+  onOpen?: (path: string) => void;
+  loaded: boolean;
+  error: string | null;
+  limit?: number;
+};
+
+export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: MemoryFilesListProps) {
+  const sliced = entries.slice(0, limit ?? entries.length);
+  return (
+    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+      {sliced.length === 0 ? (
+        <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+          {loaded
+            ? error
+              ? "Couldn't load memory files. See the error above and try again."
+              : "No memory files match this view."
+            : "Loading files..."}
+        </div>
+      ) : (
+        <ul className="max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto">
+          {sliced.map((entry) => (
+            <li key={entry.fullPath}>
+              <button
+                type="button"
+                onClick={() => onOpen?.(entry.fullPath)}
+                className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+              >
+                <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.relPath}</span>
+                  <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
+                    {entry.rootLabel} · {compactPath(entry.fullPath)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
