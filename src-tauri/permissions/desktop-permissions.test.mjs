@@ -174,6 +174,23 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
   }
 });
 
+test("privileged PTY commands require the trusted main webview at runtime", () => {
+  assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
+  assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
+  assert.match(libRust, /pty::trust_main_origin\(&main_url\);/);
+  assert.match(ptyRust, /if webview\.label\(\) != "main"/);
+  assert.match(ptyRust, /TRUSTED_MAIN_ORIGINS\.lock\(\)\.contains\(&origin\)/);
+
+  for (const command of ["pty_start", "pty_write", "pty_resize", "pty_stop", "pty_list", "pty_diagnose"]) {
+    const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.match(
+      ptyRust,
+      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
+    );
+  }
+});
+
 test("browser event labels use the same native prefix in Rust and React", () => {
   assert.match(browserRust, /const BROWSER_LABEL_PREFIX: &str = "cave-browser-";/);
   assert.match(browserPane, /const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";/);
