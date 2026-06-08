@@ -118,7 +118,7 @@ export function CapabilitiesViewSurface({
               type="button"
               onClick={() => void load(true)}
               disabled={refreshing}
-              className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              className="focus-ring flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             >
               <Icon
                 name="ph:arrows-clockwise-bold"
@@ -205,7 +205,7 @@ export function CapabilitiesViewSurface({
 
           {loaded && !error && covenSkills.length > 0 && filter === null && (
             <section className="mt-8">
-              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 Coven skills · {covenSkills.length}
               </h3>
               <p className="mb-3 text-[12px] text-muted-foreground">
@@ -259,7 +259,7 @@ function SummaryTile({
 }) {
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
         <Icon name={icon} width={11} />
         <span className="text-[10px] uppercase tracking-widest">{label}</span>
       </div>
@@ -285,7 +285,7 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+      className={`focus-ring flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
         active
           ? "border-foreground bg-foreground text-background"
           : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"

@@ -62,7 +62,7 @@ export function CapabilitiesView({
         </p>
         <button
           onClick={onRefresh}
-          className="rounded-md border border-border bg-card px-3 py-1.5 text-[12px] text-foreground hover:bg-muted"
+          className="focus-ring rounded-md border border-border bg-card px-3 py-1.5 text-[12px] text-foreground hover:bg-muted"
         >
           Retry
         </button>
@@ -86,7 +86,7 @@ export function CapabilitiesView({
       <div className="flex items-center justify-end">
         <button
           onClick={onRefresh}
-          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          className="focus-ring flex items-center gap-1.5 rounded text-[11px] text-muted-foreground hover:text-foreground"
         >
           <Icon name="ph:arrows-clockwise-bold" width="0.75rem" />
           <span>Refresh</span>
@@ -174,7 +174,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
 
         {manifest.skills.length > 0 ? (
           <div className="px-4 py-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]">
               Automations / skills · {manifest.skills.length}
             </p>
             <ul className="space-y-1.5">
@@ -195,7 +195,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
 
         {manifest.plugins.length > 0 ? (
           <div className="px-4 py-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]">
               Plugins · {manifest.plugins.length}
             </p>
             <ul className="space-y-1.5">
