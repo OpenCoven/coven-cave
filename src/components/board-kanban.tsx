@@ -118,13 +118,21 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
                 {label}
                 <span className="board-swimlane-badge">{gc.length}</span>
                 {isMultiSwimlane && (
-                  <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); scroll(key, -1); }}
-                      style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: 4, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
+                  <div className="board-swimlane-scroll-group">
+                    <button
+                      type="button"
+                      className="board-swimlane-scroll-btn"
+                      aria-label="Scroll lane left"
+                      onClick={(e) => { e.stopPropagation(); scroll(key, -1); }}
+                    >
                       <Icon name="ph:arrow-left-bold" width={10} />
                     </button>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); scroll(key, 1); }}
-                      style={{ display: "grid", placeItems: "center", width: 20, height: 20, borderRadius: 4, border: "none", background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}>
+                    <button
+                      type="button"
+                      className="board-swimlane-scroll-btn"
+                      aria-label="Scroll lane right"
+                      onClick={(e) => { e.stopPropagation(); scroll(key, 1); }}
+                    >
                       <Icon name="ph:arrow-right-bold" width={10} />
                     </button>
                   </div>
