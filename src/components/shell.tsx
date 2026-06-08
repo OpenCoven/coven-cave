@@ -98,6 +98,7 @@ function ShellInner({
   agent,
   bottom,
   topBar,
+  onNavOpenChange,
 }: {
   familiarRail?: ReactNode;
   nav: ReactNode;
@@ -106,6 +107,7 @@ function ShellInner({
   agent?: ReactNode;
   bottom?: ReactNode;
   topBar?: ReactNode;
+  onNavOpenChange?: (open: boolean) => void;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
@@ -166,6 +168,10 @@ function ShellInner({
     const pct = defaultLayout[navPanelIdx];
     return typeof pct !== "number" || pct > 0;
   });
+
+  useEffect(() => {
+    onNavOpenChange?.(navOpen);
+  }, [navOpen, onNavOpenChange]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

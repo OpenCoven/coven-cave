@@ -69,6 +69,7 @@ export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
+  const [navOpen, setNavOpen] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(() => getActiveFamiliar());
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
@@ -1042,6 +1043,7 @@ export function Workspace() {
     <FamiliarStudioProvider>
       <Shell
         ref={shellRef}
+        onNavOpenChange={setNavOpen}
         topBar={
           <TopBar
             surfaceLabel={surfaceLabel}
@@ -1069,6 +1071,7 @@ export function Workspace() {
             onSelect={selectFamiliar}
             onAddFamiliar={openOnboarding}
             onToggleSidebar={() => shellRef.current?.toggleNav()}
+            sidebarOpen={navOpen}
           />
         }
         nav={sidebar}

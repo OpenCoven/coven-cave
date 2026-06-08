@@ -18,6 +18,7 @@ type Props = {
   onSelect: (id: string) => void;
   onAddFamiliar: () => void;
   onToggleSidebar: () => void;
+  sidebarOpen?: boolean;
 };
 
 export function FamiliarAvatarRail({
@@ -29,6 +30,7 @@ export function FamiliarAvatarRail({
   onSelect,
   onAddFamiliar,
   onToggleSidebar,
+  sidebarOpen,
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
 
@@ -231,6 +233,7 @@ export function FamiliarAvatarRail({
         type="button"
         className="familiar-avatar-rail__toggle"
         aria-label="Toggle sidebar"
+        aria-expanded={sidebarOpen ?? true}
         title="Toggle sidebar (⌘B)"
         onClick={onToggleSidebar}
       >

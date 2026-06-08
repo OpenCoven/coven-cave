@@ -77,10 +77,10 @@ export function SalemWidget() {
   if (docked) return null;
 
   return (
-    <div className="salem-perch" onClick={open} role="button" tabIndex={0} aria-label="Open Salem docs familiar" onKeyDown={(e) => e.key === "Enter" && open()}>
+    <button type="button" className="salem-perch" onClick={open} aria-label="Open Salem docs familiar">
       <SalemCat3D mood={mood} size={88} />
       <span className="salem-perch__label">Salem</span>
-    </div>
+    </button>
   );
 }
 
