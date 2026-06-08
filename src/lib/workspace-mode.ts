@@ -1,14 +1,10 @@
 export type WorkspaceMode =
-  | "agents"
-  | "sessions"
-  | "board"
-  | "inbox"
-  | "plugins"
-  | "browser"
-  | "schedules"
-  | "terminal"
-  | "projects"
   | "home"
-  | "github"
+  | "chat"
+  | "board"
   | "calendar"
-  | "library";
+  | "inbox"
+  | "library"
+  | "browser"
+  | "terminal"
+  | "github";
