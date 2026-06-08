@@ -96,6 +96,12 @@ assert.match(
   "Chat turns should use the dense linear transcript anatomy",
 );
 
+assert.match(
+  source,
+  /<div className="cave-composer-shell">/,
+  "Composer should use the CSS-controlled shell so linear chat can run full width",
+);
+
 assert.doesNotMatch(
   source,
   /FamiliarSwitcher/,

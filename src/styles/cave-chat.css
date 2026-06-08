@@ -801,7 +801,7 @@
 
 .cave-chat-linear .cave-chat-thread {
   gap: 0;
-  width: min(100%, 1180px);
+  width: 100%;
 }
 
 .cave-linear-turn {
@@ -877,6 +877,17 @@
 
 .cave-chat-linear .cave-composer-dock {
   padding: 10px clamp(16px, 3vw, 34px) 16px;
+}
+
+.cave-composer-shell {
+  position: relative;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.cave-chat-linear .cave-composer-shell {
+  max-width: none;
 }
 
 .cave-chat-linear .cave-composer-panel {
