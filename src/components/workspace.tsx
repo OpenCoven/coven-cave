@@ -928,7 +928,6 @@ export function Workspace() {
           />
         }
         nav={sidebar}
-        iconNav={iconNav}
         list={list}
         detail={detail}
         agent={

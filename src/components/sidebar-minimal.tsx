@@ -79,7 +79,13 @@ const FOLDER_MODES: Array<{
 ];
 
 // Empty — Roles/Schedules/Plugins all fold into other surfaces or Settings.
-const UTILITY_MODES: Array<never> = [];
+// Typed shape preserved so IconNavStrip's UTILITY_MODES.map() still
+// typechecks while the legacy strip lingers (removed in Phase 5).
+const UTILITY_MODES: Array<{
+  id: string;
+  label: string;
+  iconName: Parameters<typeof Icon>[0]["name"];
+}> = [];
 
 export { FOLDER_MODES, UTILITY_MODES };
 
