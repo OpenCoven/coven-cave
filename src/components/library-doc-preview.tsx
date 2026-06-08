@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { sanitizeHtml } from "@/lib/html-sanitize";
 import type {
   LibraryDocBody,
   LibraryBookmark,
@@ -98,15 +99,7 @@ function RenderedMarkdown({ text, containerRef }: RenderedMarkdownProps) {
       const fn = await getMdFn();
       const raw = await fn(text);
       if (cancelled) return;
-      const doc = new DOMParser().parseFromString(raw, "text/html");
-      for (const el of Array.from(doc.querySelectorAll("script,iframe,object,embed,link,style"))) el.remove();
-      for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
-        for (const attr of Array.from(el.attributes)) {
-          if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-          if ((attr.name === "href" || attr.name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        }
-      }
-      setHtml(doc.body.innerHTML);
+      setHtml(sanitizeHtml(raw));
       setLoading(false);
     })();
     return () => { cancelled = true; };

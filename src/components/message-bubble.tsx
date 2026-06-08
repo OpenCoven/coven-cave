@@ -33,6 +33,7 @@ import type { Block } from "@create-markdown/core";
 import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
+import { sanitizeHtml } from "@/lib/html-sanitize";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -225,6 +226,7 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
   );
 }
 
+
 // ---------------------------------------------------------------------------
 // Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
 // ---------------------------------------------------------------------------
@@ -236,16 +238,7 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
     if (!text) return;
     let cancelled = false;
     void mdToHtml(text).then((h) => {
-      if (cancelled) return;
-      const doc = new DOMParser().parseFromString(h, "text/html");
-      for (const el of Array.from(doc.querySelectorAll("script, iframe, object, embed, link, style"))) el.remove();
-      for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
-        for (const attr of Array.from(el.attributes)) {
-          if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-          if ((attr.name === "href" || attr.name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        }
-      }
-      setHtml(doc.body.innerHTML);
+      if (!cancelled) setHtml(h);
     });
     return () => { cancelled = true; };
   }, [text]);
@@ -327,8 +320,9 @@ async function mdToHtml(markdown: string): Promise<string> {
     html = html.replace(re, replacement);
   }
 
-  renderCache.set(markdown, html);
-  return html;
+  const sanitizedHtml = sanitizeHtml(html);
+  renderCache.set(markdown, sanitizedHtml);
+  return sanitizedHtml;
 }
 
 function regEsc(s: string): string {
@@ -401,7 +395,7 @@ function MarkdownContent({ text, pending }: { text: string; pending?: boolean })
     <div
       ref={containerRef}
       className="cave-md"
-      // Content originates from our own Coven daemon — fully trusted.
+      // Markdown output is sanitized in mdToHtml before DOM insertion.
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
