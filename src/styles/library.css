@@ -72,6 +72,11 @@
   color: var(--text-primary);
 }
 
+.library-rail-item:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}
+
 .library-rail-item--active {
   background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
   color: var(--text-primary);
@@ -147,6 +152,10 @@
   color: var(--text-primary);
   background: var(--bg-hover);
 }
+.library-list-toggle-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
 .library-list-panel--open .library-list-toggle-btn {
   color: var(--text-secondary);
 }
@@ -210,6 +219,11 @@
   color: var(--text-primary);
 }
 
+.library-doclist-search-clear:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
 .library-doclist-items {
   flex: 1;
   overflow-y: auto;
@@ -247,8 +261,14 @@
   background: var(--bg-hover);
 }
 
+.library-doclist-item:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}
+
 .library-doclist-item--active {
-  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-base));
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+  box-shadow: inset 3px 0 0 var(--accent-presence);
 }
 
 .library-doclist-item-header {
@@ -437,6 +457,21 @@
   color: var(--text-primary);
 }
 
+.library-preview-action-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.library-preview-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.library-preview-action-btn:disabled:hover {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+}
+
 .library-preview-body {
   flex: 1;
   overflow-y: auto;
@@ -455,12 +490,18 @@
   padding: 2px;
   transition: opacity 0.1s, color 0.1s;
 }
-tr:hover .library-row-delete {
+tr:hover .library-row-delete,
+tr:focus-within .library-row-delete {
   opacity: 1;
 }
 .library-row-delete:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+.library-row-delete:focus-visible {
+  opacity: 1;
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 
 /* ── rail icon wrap ───────────────────────────────────────────── */
@@ -1001,6 +1042,10 @@ tr:hover .library-row-delete,
   color: rgba(255, 255, 255, 0.9);
   background: rgba(255, 255, 255, 0.1);
 }
+.library-reader-close:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
 
 /* Scrollable body */
 .library-reader-body {
@@ -1044,8 +1089,8 @@ tr:hover .library-row-delete,
   background: transparent;
 }
 .board-table tbody tr.gh-row-action-strip-row.selected {
-  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-base));
-  box-shadow: inset 2px 0 0 var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+  box-shadow: inset 3px 0 0 var(--accent-presence);
 }
 .gh-row-action-strip-row td {
   padding: 0 10px 9px;
@@ -1077,6 +1122,11 @@ tr:hover .library-row-delete,
   color: var(--text-primary);
   background: var(--bg-hover);
   border-color: var(--border-strong);
+}
+
+.gh-row-action-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 
 /* ── GitHub modals (shared shell) ─────────────────────────────── */
@@ -1286,12 +1336,13 @@ tr:hover .library-row-delete,
   transition: color 0.1s, background 0.1s;
 }
 .gh-modal-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.gh-modal-btn:focus-visible { outline: var(--ring-width) solid var(--ring-focus); outline-offset: 1px; }
 .gh-modal-btn--primary {
   background: var(--accent-presence);
   border-color: var(--accent-presence);
-  color: #fff;
+  color: var(--text-primary);
 }
-.gh-modal-btn--primary:hover { background: color-mix(in oklch, var(--accent-presence) 88%, white); border-color: color-mix(in oklch, var(--accent-presence) 88%, white); }
+.gh-modal-btn--primary:hover { background: color-mix(in oklch, var(--accent-presence) 85%, #000); border-color: color-mix(in oklch, var(--accent-presence) 85%, #000); }
 .gh-modal-btn--primary:disabled { opacity: 0.5; cursor: default; }
 
 .gh-modal-done {
@@ -1352,6 +1403,12 @@ tr:hover .library-row-delete,
 
 .library-toc-item:hover {
   color: var(--text-secondary);
+}
+
+.library-toc-item:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+  border-radius: 4px;
 }
 
 .library-toc-item--active {
