@@ -43,6 +43,30 @@ assert.match(
 
 assert.match(
   themeScript,
-  /existingStyle\.endsWith\(";"\)/,
-  "ThemeScript should preserve valid CSS when appending custom vars to existing inline style",
+  /html\.style\.setProperty\(cssName, group\[name\]\)/,
+  "ThemeScript should apply custom vars via setProperty so existing inline styles are preserved",
+);
+
+assert.match(
+  themeScript,
+  /applyGroup\(cssVars\.theme\)[\s\S]*applyGroup\(cssVars\.dark\)/,
+  "ThemeScript should apply both theme-level (fonts/radius) and dark-mode CSS var groups",
+);
+
+assert.match(
+  themeScript,
+  /name\.indexOf\("--"\) === 0 \? name : "--" \+ name/,
+  "ThemeScript should accept tweakcn's bare-name keys by prefixing -- when missing",
+);
+
+assert.match(
+  settings,
+  /apply\(cssVars\.theme\)[\s\S]*apply\(cssVars\.dark\)/,
+  "applyCustomVars should apply both theme-level and dark-mode CSS var groups, not just a whitelist",
+);
+
+assert.match(
+  settings,
+  /name\.startsWith\("--"\) \? name : `--\$\{name\}`/,
+  "applyCustomVars should accept tweakcn's bare-name keys by prefixing -- when missing",
 );

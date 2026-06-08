@@ -2140,7 +2140,7 @@ body {
 .right-panel-close:hover { color: var(--text-primary); background: var(--bg-hover); }
 
 /* ============================================================
-   Preset themes — Midnight + Orchid
+   Preset themes — Midnight + Orchid + Sky
    Applied via data-theme attribute on <html>.
    Mood C (default) lives in :root above.
    ============================================================ */
@@ -2192,5 +2192,32 @@ body {
   --border-strong: oklch(1 0 0 / 12%);
   --ring: oklch(0.60 0.12 293);
   --ring-focus: color-mix(in oklch, #D26BFF 55%, transparent);
+  --brand: var(--accent-presence);
+}
+
+[data-theme="sky"] {
+  /* Cool slate-blue night. Hue pinned to 245 so surfaces, panels, and the
+     daybreak accent all sit on the same blue axis (mirrors how the other
+     presets pin to 293 violet). */
+  --background: oklch(0.15 0.028 245);
+  --card: oklch(0.18 0.028 245);
+  --muted: oklch(0.23 0.030 245);
+  --accent-presence: #6DA9FF;
+
+  /* Keep aliases in sync */
+  --bg-base: var(--background);
+  --bg-raised: var(--card);
+  --bg-panel: oklch(0.13 0.026 245);
+  --bg-elevated: oklch(0.25 0.032 245);
+  --bg-hover: oklch(0.28 0.034 245);
+  --secondary: oklch(0.25 0.030 245);
+  --secondary-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.25 0.030 245);
+  --popover: oklch(0.18 0.028 245);
+  --muted-foreground: oklch(0.70 0.028 245);
+  --border: oklch(1 0 0 / 7%);
+  --border-strong: oklch(1 0 0 / 12%);
+  --ring: oklch(0.62 0.14 245);
+  --ring-focus: color-mix(in oklch, #6DA9FF 55%, transparent);
   --brand: var(--accent-presence);
 }

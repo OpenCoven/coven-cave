@@ -335,33 +335,28 @@ function FamiliarsSection() {
 
 // ─── Theme helpers ───────────────────────────────────────────────────────────────────────
 
-type PresetTheme = "mood-c" | "midnight" | "orchid";
+type PresetTheme = "mood-c" | "midnight" | "orchid" | "sky";
 type ActiveTheme = PresetTheme | "custom";
 
 interface CustomThemeData {
   name: string;
-  cssVars: { light?: Record<string, string>; dark?: Record<string, string> };
+  cssVars: {
+    theme?: Record<string, string>;
+    light?: Record<string, string>;
+    dark?: Record<string, string>;
+  };
 }
 
-const CSS_VAR_MAP: Record<string, string> = {
-  "--background": "--background",
-  "--foreground": "--foreground",
-  "--card": "--card",
-  "--primary": "--primary",
-  "--muted": "--muted",
-  "--muted-foreground": "--muted-foreground",
-  "--border": "--border",
-  "--accent": "--accent",
-  "--ring": "--ring",
-  "--secondary": "--secondary",
-};
+function clearCustomCssVars(html: HTMLElement) {
+  const style = html.getAttribute("style") ?? "";
+  const cleaned = style.replace(/--[\w-]+\s*:[^;]+;?/g, "").trim();
+  if (cleaned) html.setAttribute("style", cleaned);
+  else html.removeAttribute("style");
+}
 
 function applyPreset(theme: PresetTheme) {
   const html = document.documentElement;
-  const style = html.getAttribute("style") ?? "";
-  const cleaned = style.replace(/--[\w-]+:[^;]+;/g, "").trim();
-  if (cleaned) html.setAttribute("style", cleaned);
-  else html.removeAttribute("style");
+  clearCustomCssVars(html);
 
   if (theme === "mood-c") {
     html.removeAttribute("data-theme");
@@ -371,14 +366,25 @@ function applyPreset(theme: PresetTheme) {
   localStorage.setItem("coven-theme", theme);
 }
 
-function applyCustomVars(vars: Record<string, string>) {
+function applyCustomVars(cssVars: CustomThemeData["cssVars"]) {
   const html = document.documentElement;
   html.removeAttribute("data-theme");
-  let style = "";
-  for (const [src, dest] of Object.entries(CSS_VAR_MAP)) {
-    if (vars[src]) style += `${dest}:${vars[src]};`;
-  }
-  html.setAttribute("style", style);
+  clearCustomCssVars(html);
+
+  const apply = (group?: Record<string, string>) => {
+    if (!group) return;
+    for (const [name, value] of Object.entries(group)) {
+      if (typeof value !== "string" || !name) continue;
+      // tweakcn returns bare names ("background", "font-sans"); shadcn schema
+      // does not prefix with --. We prefix here when needed.
+      const cssName = name.startsWith("--") ? name : `--${name}`;
+      html.style.setProperty(cssName, value);
+    }
+  };
+  // theme: mode-agnostic vars (fonts, radius, shadows, tracking).
+  // dark: mode-specific colors (the app runs dark-only).
+  apply(cssVars.theme);
+  apply(cssVars.dark);
 }
 
 function clearCustomTheme() {
@@ -415,6 +421,12 @@ const PRESETS: ThemePreset[] = [
     label: "Orchid",
     description: "Warm violet, lighter surface",
     swatches: { bg: "oklch(0.13 0.030 293)", accent: "#D26BFF", border: "oklch(1 0 0 / 7%)" },
+  },
+  {
+    id: "sky",
+    label: "Sky",
+    description: "Cool slate-blue night, daybreak accent",
+    swatches: { bg: "oklch(0.15 0.028 245)", accent: "#6DA9FF", border: "oklch(1 0 0 / 7%)" },
   },
 ];
 
@@ -519,6 +531,11 @@ function AppearanceSection() {
         if (themeId)
           return `https://tweakcn.com/r/themes/${encodeURIComponent(themeId)}`;
       }
+      if (url.pathname.startsWith("/themes/")) {
+        const themeId = url.pathname.replace("/themes/", "").split("/")[0];
+        if (themeId)
+          return `https://tweakcn.com/r/themes/${encodeURIComponent(themeId)}`;
+      }
       if (url.pathname.startsWith("/editor/theme")) {
         const themeName = url.searchParams.get("theme")?.trim();
         if (themeName)
@@ -535,7 +552,7 @@ function AppearanceSection() {
     const canonical = normalizeTweakcnUrl(importUrl);
     if (!canonical) {
       setImportError(
-        "Invalid tweakcn URL. Expected https://tweakcn.com/r/themes/{id} or /editor/theme?theme={name}.",
+        "Invalid tweakcn URL. Expected https://tweakcn.com/themes/{id}, /r/themes/{id}, or /editor/theme?theme={name}.",
       );
       return;
     }
@@ -547,19 +564,20 @@ function AppearanceSection() {
 
       // biome-ignore lint/suspicious/noExplicitAny: tweakcn response shape
       const json = (await res.json()) as any;
-      if (!json?.cssVars?.dark || typeof json.cssVars.dark !== "object") {
-        throw new Error("Response missing cssVars.dark — not a valid tweakcn theme JSON.");
+      const cssVars = json?.cssVars;
+      const hasTheme = cssVars?.theme && typeof cssVars.theme === "object";
+      const hasDark = cssVars?.dark && typeof cssVars.dark === "object";
+      const hasLight = cssVars?.light && typeof cssVars.light === "object";
+      if (!cssVars || (!hasTheme && !hasDark && !hasLight)) {
+        throw new Error("Response missing cssVars — not a valid tweakcn theme JSON.");
       }
 
       const data: CustomThemeData = {
         name: (json.name as string) || canonical.split("/").pop() || "custom",
-        cssVars: json.cssVars as {
-          light?: Record<string, string>;
-          dark?: Record<string, string>;
-        },
+        cssVars: cssVars as CustomThemeData["cssVars"],
       };
 
-      applyCustomVars(data.cssVars.dark as Record<string, string>);
+      applyCustomVars(data.cssVars);
       localStorage.setItem("coven-custom-theme", JSON.stringify(data));
       localStorage.setItem("coven-theme", "custom");
       setCustomData(data);
@@ -616,9 +634,13 @@ function AppearanceSection() {
           <p className="text-[12px] text-[var(--text-muted)]">
             Paste a tweakcn URL to apply a community theme. Supports{" "}
             <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
+              /themes/&#123;id&#125;
+            </code>
+            ,{" "}
+            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
               /r/themes/&#123;id&#125;
-            </code>{" "}
-            and{" "}
+            </code>
+            , and{" "}
             <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
               /editor/theme?theme=&#123;name&#125;
             </code>
