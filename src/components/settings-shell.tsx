@@ -56,7 +56,7 @@ export function SettingsShell() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className="focus-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:arrow-left" width={13} />
           Back
@@ -76,7 +76,7 @@ export function SettingsShell() {
                 key={s.id}
                 type="button"
                 onClick={() => setSection(s.id)}
-                className={`flex w-full items-center gap-2 rounded-[5px] px-2.5 py-[6px] text-left text-[12px] transition-colors ${
+                className={`focus-ring flex w-full items-center gap-2 rounded-[5px] px-2.5 py-[6px] text-left text-[12px] transition-colors ${
                   section === s.id
                     ? "bg-[var(--accent-presence)] text-white"
                     : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
@@ -201,7 +201,7 @@ function DaemonSection() {
               type="button"
               onClick={startDaemon}
               disabled={starting}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+              className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-60"
               title="coven daemon start"
             >
               <Icon name="ph:rocket-launch-bold" width={12} />
@@ -211,7 +211,7 @@ function DaemonSection() {
           <button
             type="button"
             onClick={refresh}
-            className={`${status?.running ? "ml-auto" : ""} flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]`}
+            className={`focus-ring ${status?.running ? "ml-auto" : ""} flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]`}
           >
             <Icon name="ph:arrow-clockwise" width={11} />
             Refresh
@@ -319,7 +319,7 @@ function AddonsSection() {
                 role="switch"
                 aria-checked={addons[row.key]}
                 onClick={() => void toggle(row.key)}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 focus:outline-none ${
+                className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
                   addons[row.key]
                     ? "bg-[var(--accent-presence)]"
                     : "bg-[var(--bg-elevated)]"
@@ -489,7 +489,7 @@ function ThemePresetCard({
       type="button"
       onClick={() => onSelect(preset.id)}
       aria-pressed={active}
-      className={`relative flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
+      className={`focus-ring relative flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
         active
           ? "border-[var(--accent-presence)] bg-[var(--bg-raised)] ring-1 ring-[var(--accent-presence)]"
           : "border-[var(--border-hairline)] bg-[var(--bg-base)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)]"
@@ -665,7 +665,7 @@ function AppearanceSection() {
               <button
                 type="button"
                 onClick={handleResetCustom}
-                className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full opacity-70 hover:opacity-100"
+                className="focus-ring ml-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full opacity-70 hover:opacity-100"
                 aria-label="Reset to Mood C"
               >
                 <Icon name="ph:x-bold" width={9} />
@@ -718,7 +718,7 @@ function AppearanceSection() {
                 setImportError(null);
               }}
               placeholder="https://tweakcn.com/r/themes/amethyst-haze"
-              className="flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] transition-colors"
+              className="focus-ring flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] transition-colors"
               onKeyDown={(e) => {
                 if (e.key === "Enter") void handleImport();
               }}
@@ -727,7 +727,7 @@ function AppearanceSection() {
               type="button"
               onClick={() => void handleImport()}
               disabled={importing || !importUrl.trim()}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-4 py-2 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-4 py-2 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {importing ? (
                 <>
