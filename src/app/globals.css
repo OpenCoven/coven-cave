@@ -2895,9 +2895,10 @@ body {
 .shell-banner__title {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  /* Wrap on narrow widths instead of truncating mid-sentence — the
+   * second half of these messages often carries the operative info
+   * (e.g. "…but new tasks may not start"). */
 }
 
 .shell-banner__cta {
@@ -2908,6 +2909,16 @@ body {
   padding: 3px 10px;
   font-size: var(--text-xs);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.shell-banner__cta:hover {
+  background: color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.shell-banner__cta:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
 
 .shell-banner__dismiss {
@@ -2918,9 +2929,16 @@ body {
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .shell-banner__dismiss:hover {
+  opacity: 1;
+}
+
+.shell-banner__dismiss:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
   opacity: 1;
 }
 
