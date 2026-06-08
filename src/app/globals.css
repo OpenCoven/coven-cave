@@ -2136,3 +2136,57 @@ body {
   transition: color 0.1s, background 0.1s;
 }
 .right-panel-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* ============================================================
+   Preset themes — Midnight + Orchid
+   Applied via data-theme attribute on <html>.
+   Mood C (default) lives in :root above.
+   ============================================================ */
+
+[data-theme="midnight"] {
+  --background: oklch(0.10 0.004 293);
+  --card: oklch(0.13 0.005 293);
+  --muted: oklch(0.18 0.005 293);
+  --accent-presence: #7B73BD;
+
+  /* Keep aliases in sync */
+  --bg-base: var(--background);
+  --bg-raised: var(--card);
+  --bg-panel: oklch(0.09 0.004 293);
+  --bg-elevated: oklch(0.20 0.006 293);
+  --bg-hover: oklch(0.23 0.006 293);
+  --secondary: oklch(0.20 0.005 293);
+  --secondary-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.20 0.005 293);
+  --popover: oklch(0.13 0.005 293);
+  --muted-foreground: oklch(0.62 0.012 293);
+  --border: oklch(1 0 0 / 5%);
+  --border-strong: oklch(1 0 0 / 9%);
+  --ring: oklch(0.50 0.07 293);
+  --ring-focus: color-mix(in oklch, #7B73BD 55%, transparent);
+  --brand: var(--accent-presence);
+}
+
+[data-theme="orchid"] {
+  --background: oklch(0.13 0.030 293);
+  --card: oklch(0.17 0.030 293);
+  --muted: oklch(0.22 0.032 293);
+  --accent-presence: #D26BFF;
+
+  /* Keep aliases in sync */
+  --bg-base: var(--background);
+  --bg-raised: var(--card);
+  --bg-panel: oklch(0.11 0.028 293);
+  --bg-elevated: oklch(0.24 0.034 293);
+  --bg-hover: oklch(0.27 0.036 293);
+  --secondary: oklch(0.24 0.032 293);
+  --secondary-foreground: oklch(0.985 0 0);
+  --accent: oklch(0.24 0.032 293);
+  --popover: oklch(0.17 0.030 293);
+  --muted-foreground: oklch(0.70 0.030 293);
+  --border: oklch(1 0 0 / 7%);
+  --border-strong: oklch(1 0 0 / 12%);
+  --ring: oklch(0.60 0.12 293);
+  --ring-focus: color-mix(in oklch, #D26BFF 55%, transparent);
+  --brand: var(--accent-presence);
+}

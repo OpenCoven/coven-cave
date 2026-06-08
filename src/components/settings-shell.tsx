@@ -333,22 +333,336 @@ function FamiliarsSection() {
   );
 }
 
-// ─── Section: Appearance ─────────────────────────────────────────────────────
+// ─── Theme helpers ───────────────────────────────────────────────────────────────────────
+
+type PresetTheme = "mood-c" | "midnight" | "orchid";
+type ActiveTheme = PresetTheme | "custom";
+
+interface CustomThemeData {
+  name: string;
+  cssVars: { light?: Record<string, string>; dark?: Record<string, string> };
+}
+
+const CSS_VAR_MAP: Record<string, string> = {
+  "--background": "--background",
+  "--foreground": "--foreground",
+  "--card": "--card",
+  "--primary": "--primary",
+  "--muted": "--muted",
+  "--muted-foreground": "--muted-foreground",
+  "--border": "--border",
+  "--accent": "--accent",
+  "--ring": "--ring",
+  "--secondary": "--secondary",
+};
+
+function applyPreset(theme: PresetTheme) {
+  const html = document.documentElement;
+  const style = html.getAttribute("style") ?? "";
+  const cleaned = style.replace(/--[\w-]+:[^;]+;/g, "").trim();
+  if (cleaned) html.setAttribute("style", cleaned);
+  else html.removeAttribute("style");
+
+  if (theme === "mood-c") {
+    html.removeAttribute("data-theme");
+  } else {
+    html.setAttribute("data-theme", theme);
+  }
+  localStorage.setItem("coven-theme", theme);
+}
+
+function applyCustomVars(vars: Record<string, string>) {
+  const html = document.documentElement;
+  html.removeAttribute("data-theme");
+  let style = "";
+  for (const [src, dest] of Object.entries(CSS_VAR_MAP)) {
+    if (vars[src]) style += `${dest}:${vars[src]};`;
+  }
+  html.setAttribute("style", style);
+}
+
+function clearCustomTheme() {
+  document.documentElement.removeAttribute("data-theme");
+  document.documentElement.removeAttribute("style");
+  localStorage.removeItem("coven-custom-theme");
+  localStorage.setItem("coven-theme", "mood-c");
+}
+
+// ─── Preset cards ─────────────────────────────────────────────────────────────────────────────
+
+interface ThemePreset {
+  id: PresetTheme;
+  label: string;
+  description: string;
+  swatches: { bg: string; accent: string; border: string };
+}
+
+const PRESETS: ThemePreset[] = [
+  {
+    id: "mood-c",
+    label: "Mood C",
+    description: "Arcane field manual — dark violet glass",
+    swatches: { bg: "oklch(0.16 0.022 293)", accent: "#9a8ecd", border: "oklch(1 0 0 / 6%)" },
+  },
+  {
+    id: "midnight",
+    label: "Midnight",
+    description: "Deep black, near-zero chroma, minimal",
+    swatches: { bg: "oklch(0.10 0.004 293)", accent: "#7B73BD", border: "oklch(1 0 0 / 5%)" },
+  },
+  {
+    id: "orchid",
+    label: "Orchid",
+    description: "Warm violet, lighter surface",
+    swatches: { bg: "oklch(0.13 0.030 293)", accent: "#D26BFF", border: "oklch(1 0 0 / 7%)" },
+  },
+];
+
+function ThemePresetCard({
+  preset,
+  active,
+  onSelect,
+}: {
+  preset: ThemePreset;
+  active: boolean;
+  onSelect: (id: PresetTheme) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(preset.id)}
+      className={`relative flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
+        active
+          ? "border-[var(--accent-presence)] bg-[var(--bg-raised)] ring-1 ring-[var(--accent-presence)]"
+          : "border-[var(--border-hairline)] bg-[var(--bg-base)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)]"
+      }`}
+    >
+      {/* Swatch row */}
+      <div className="flex items-center gap-1.5">
+        <span
+          className="h-5 w-5 rounded-full border border-white/10"
+          style={{ background: preset.swatches.bg }}
+          title="Background"
+        />
+        <span
+          className="h-5 w-5 rounded-full"
+          style={{ background: preset.swatches.accent }}
+          title="Accent"
+        />
+        <span
+          className="h-5 w-5 rounded-full border-2"
+          style={{ background: preset.swatches.bg, borderColor: preset.swatches.accent + "40" }}
+          title="Border"
+        />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-[13px] font-semibold text-[var(--text-primary)]">{preset.label}</p>
+        <p className="text-[11px] text-[var(--text-muted)] leading-snug">{preset.description}</p>
+      </div>
+
+      {active && (
+        <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-white">
+          <Icon name="ph:check-bold" width={11} />
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ─── Section: Appearance ───────────────────────────────────────────────────────────────────────
 
 function AppearanceSection() {
+  const [activeTheme, setActiveTheme] = useState<ActiveTheme>("mood-c");
+  const [customData, setCustomData] = useState<CustomThemeData | null>(null);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Read persisted theme on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("coven-theme") as ActiveTheme | null;
+    if (saved) setActiveTheme(saved);
+    if (saved === "custom") {
+      const raw = localStorage.getItem("coven-custom-theme");
+      if (raw) {
+        try {
+          setCustomData(JSON.parse(raw) as CustomThemeData);
+        } catch {
+          // malformed — ignore
+        }
+      }
+    }
+  }, []);
+
+  const handleSelectPreset = (id: PresetTheme) => {
+    setActiveTheme(id);
+    setCustomData(null);
+    applyPreset(id);
+  };
+
+  const handleResetCustom = () => {
+    clearCustomTheme();
+    setActiveTheme("mood-c");
+    setCustomData(null);
+  };
+
+  function normalizeTweakcnUrl(raw: string): string | null {
+    try {
+      const url = new URL(raw.trim());
+      if (!url.hostname.endsWith("tweakcn.com")) return null;
+      if (url.pathname.startsWith("/r/themes/")) {
+        const id = url.pathname.replace("/r/themes/", "").split("/")[0];
+        if (id) return `https://tweakcn.com/r/themes/${id}`;
+      }
+      if (url.pathname.startsWith("/editor/theme")) {
+        const name = url.searchParams.get("theme");
+        if (name) return `https://tweakcn.com/r/themes/${name}`;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  const handleImport = async () => {
+    setImportError(null);
+    const canonical = normalizeTweakcnUrl(importUrl);
+    if (!canonical) {
+      setImportError(
+        "Invalid tweakcn URL. Expected https://tweakcn.com/r/themes/{id} or /editor/theme?theme={name}.",
+      );
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const res = await fetch(canonical);
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+
+      // biome-ignore lint/suspicious/noExplicitAny: tweakcn response shape
+      const json = (await res.json()) as any;
+      if (!json?.cssVars?.dark || typeof json.cssVars.dark !== "object") {
+        throw new Error("Response missing cssVars.dark — not a valid tweakcn theme JSON.");
+      }
+
+      const data: CustomThemeData = {
+        name: (json.name as string) || canonical.split("/").pop() || "custom",
+        cssVars: json.cssVars as {
+          light?: Record<string, string>;
+          dark?: Record<string, string>;
+        },
+      };
+
+      applyCustomVars(data.cssVars.dark as Record<string, string>);
+      localStorage.setItem("coven-custom-theme", JSON.stringify(data));
+      localStorage.setItem("coven-theme", "custom");
+      setCustomData(data);
+      setActiveTheme("custom");
+      setImportUrl("");
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
-    <SettingsPage title="Appearance" description="Colors, density, and font preferences.">
+    <SettingsPage title="Appearance" description="Colors and visual style.">
+      {/* ── Preset themes ── */}
       <SettingsGroup label="Theme">
-        <SettingsRow label="Color scheme" description="Light, dark, or system." comingSoon />
-        <SettingsRow label="Accent color"  description="Primary highlight color." comingSoon />
+        {/* Custom theme chip */}
+        {activeTheme === "custom" && customData && (
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-hairline)]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-3 py-0.5 text-[11px] font-medium text-[var(--accent-presence)]">
+              <Icon name="ph:sparkle" width={11} />
+              Custom: {customData.name}
+              <button
+                type="button"
+                onClick={handleResetCustom}
+                className="ml-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full opacity-70 hover:opacity-100"
+                aria-label="Reset to Mood C"
+              >
+                <Icon name="ph:x-bold" width={9} />
+              </button>
+            </span>
+            <span className="text-[11px] text-[var(--text-muted)]">
+              Active — presets below will override.
+            </span>
+          </div>
+        )}
+
+        {/* Preset grid */}
+        <div className="grid grid-cols-3 gap-3 p-4">
+          {PRESETS.map((p) => (
+            <ThemePresetCard
+              key={p.id}
+              preset={p}
+              active={activeTheme === p.id}
+              onSelect={handleSelectPreset}
+            />
+          ))}
+        </div>
       </SettingsGroup>
-      <SettingsGroup label="Density">
-        <SettingsRow label="Sidebar density" description="Compact or relaxed sidebar rows." comingSoon />
+
+      {/* ── tweakcn import ── */}
+      <SettingsGroup label="Import from tweakcn">
+        <div className="flex flex-col gap-2 px-4 py-3">
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Paste a tweakcn URL to apply a community theme. Supports{" "}
+            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
+              /r/themes/&#123;id&#125;
+            </code>{" "}
+            and{" "}
+            <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
+              /editor/theme?theme=&#123;name&#125;
+            </code>
+            .
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="url"
+              value={importUrl}
+              onChange={(e) => {
+                setImportUrl(e.target.value);
+                setImportError(null);
+              }}
+              placeholder="https://tweakcn.com/r/themes/amethyst-haze"
+              className="flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] transition-colors"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleImport();
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => void handleImport()}
+              disabled={importing || !importUrl.trim()}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-4 py-2 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {importing ? (
+                <>
+                  <Icon name="ph:arrows-clockwise-bold" width={12} className="animate-spin" />
+                  Importing…
+                </>
+              ) : (
+                <>
+                  <Icon name="ph:arrow-down-bold" width={12} />
+                  Import
+                </>
+              )}
+            </button>
+          </div>
+          {importError && (
+            <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-danger)]">
+              <Icon name="ph:warning-circle" width={12} className="mt-px shrink-0" />
+              {importError}
+            </p>
+          )}
+        </div>
       </SettingsGroup>
     </SettingsPage>
   );
 }
-
 // ─── Section: About ───────────────────────────────────────────────────────────
 
 function AboutSection() {
