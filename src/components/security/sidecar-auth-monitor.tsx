@@ -13,6 +13,18 @@ export function SidecarAuthMonitor() {
   const { pushBanner, dismissBanner } = useShellBanners();
 
   useEffect(() => {
+    // No sidecar exists in plain-browser dev (next dev outside Tauri), so a
+    // missing token there is expected — skip the check to avoid noisy console
+    // errors and a permanently-pinned banner during web preview.
+    const inTauri =
+      typeof window !== "undefined" &&
+      // @ts-expect-error Tauri injects this at runtime
+      Boolean(window.__TAURI_INTERNALS__);
+    if (!inTauri) {
+      dismissBanner(BANNER_ID);
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const token =
       params.get(TOKEN_PARAM) ?? window.sessionStorage.getItem(STORAGE_KEY);
