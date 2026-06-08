@@ -4,6 +4,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
+use rand::{rngs::OsRng, RngCore};
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -305,6 +306,12 @@ fn find_coven() -> Option<PathBuf> {
     }
 }
 
+fn sidecar_auth_token() -> String {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
 struct SidecarState(Mutex<Option<Child>>);
 
 fn find_free_port() -> Option<u16> {
@@ -349,6 +356,14 @@ fn node_arg_path(path: &Path) -> PathBuf {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    #[test]
+    fn sidecar_auth_token_is_256_bit_hex() {
+        let token = sidecar_auth_token();
+
+        assert_eq!(token.len(), 64);
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
 
     #[cfg(target_os = "windows")]
     #[test]
@@ -545,6 +560,7 @@ pub fn run() {
                 Some(p) => p,
                 None => fatal_exit("no free local port available"),
             };
+            let auth_token = sidecar_auth_token();
             log::info!("[cave] starting sidecar on port {}", port);
 
             let node = match find_node() {
@@ -637,7 +653,8 @@ pub fn run() {
                 .env("PORT", port.to_string())
                 .env("HOSTNAME", "127.0.0.1")
                 .env("NODE_ENV", "production")
-                .env("COVEN_CAVE_BUNDLE", "1");
+                .env("COVEN_CAVE_BUNDLE", "1")
+                .env("COVEN_CAVE_AUTH_TOKEN", &auth_token);
 
             // Inject the openclaw workspace root so the Next.js project-tree
             // and project-file API routes allow paths under ~/.openclaw in the
@@ -699,9 +716,7 @@ pub fn run() {
                 ));
             }
 
-            let url = format!("http://127.0.0.1:{}/", port);
-            let main_url = url.parse().expect("valid url");
-            pty::trust_main_origin(&main_url);
+            let url = format!("http://127.0.0.1:{}/?covenCaveToken={}", port, auth_token);
             if let Err(e) = WebviewWindowBuilder::new(
                 app,
                 "main",
