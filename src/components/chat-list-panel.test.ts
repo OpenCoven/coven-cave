@@ -18,6 +18,18 @@ assert.match(
 
 assert.match(
   source,
+  /<FamiliarGlyph glyph=\{resolveFamiliarGlyph\(familiar, glyphOverrides\)\} size="md" \/>/,
+  "ChatList dossier header should render the familiar glyph as the primary avatar",
+);
+
+assert.match(
+  source,
+  /familiar\.role[\s\S]*Agent runtime/,
+  "ChatList dossier header should keep the familiar role and runtime subtitle together",
+);
+
+assert.match(
+  source,
   /const runningCount = mine\.filter\(\(s\) => s\.status === "running"\)\.length/,
   "ChatList should summarize running chats in the side-panel header",
 );
