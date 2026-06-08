@@ -16,6 +16,7 @@
 import assert from "node:assert/strict";
 import {
   isLoopbackHost,
+  isAllowedApiHost,
   sameOrigin,
   bearerFromReferer,
   timingSafeEqualString,
@@ -47,6 +48,21 @@ assert.equal(
   isLoopbackHost("localhost.evil.com"),
   false,
   "must not be fooled by subdomain smuggling",
+);
+
+// ─── isAllowedApiHost ──────────────────────────────────────────────────────
+assert.equal(isAllowedApiHost("localhost:3000", false), true);
+assert.equal(isAllowedApiHost("127.0.0.1:3000", false), true);
+assert.equal(isAllowedApiHost("cave.tailnet.example.ts.net", false), false);
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net", true),
+  true,
+  "valid mobile access token should allow documented Tailscale hostnames",
+);
+assert.equal(
+  isAllowedApiHost(null, true),
+  true,
+  "mobile token authentication should not depend on a loopback Host header",
 );
 
 // ─── sameOrigin ────────────────────────────────────────────────────────────

@@ -1,23 +1,24 @@
-// Drive a headless Chromium against http://localhost:3000 and run the
+// Drive a headless Chromium against a running Cave dev server and run the
 // Familiar Studio smoke checklist from the PR description for
 // feat/familiar-studio (#218).
 //
 // Run: node scripts/smoke-familiar-studio.mjs
 //
 // Requires:
-//   - pnpm dev already running on :3000
+//   - pnpm dev already running on :3000, or set COVEN_CAVE_SMOKE_URL
 //   - NEXT_PUBLIC_DEMO=true so the rail has seeded familiars
 //
 // Output: prints PASS/FAIL per checklist step. Screenshots are written to
 // /tmp/familiar-studio-smoke/ for forensic inspection.
 
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 
 const OUT = "/tmp/familiar-studio-smoke";
 const VIEWPORT = { width: 1440, height: 900 };
+const BASE_URL = process.env.COVEN_CAVE_SMOKE_URL ?? "http://localhost:3000";
 
 const results = [];
 function rec(step, status, detail = "") {
@@ -67,7 +68,7 @@ async function main() {
     if (msg.type() === "error") consoleErrors.push("[console] " + msg.text());
   });
 
-  await page.goto("http://localhost:3000", { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page.waitForTimeout(3500); // hydrate + initial data
 
   // Dismiss any onboarding "Open Cave" if it slipped through.
@@ -219,7 +220,7 @@ async function main() {
   await page.waitForTimeout(300);
 
   // ─── Step 9: Archive hides familiar from rail ───────────────────────
-  const archiveBtn = page.locator(".familiar-studio-lifecycle__btn").filter({ hasText: /^archive$/i }).first();
+  const archiveBtn = page.locator(".familiar-studio-lifecycle__btn").filter({ hasText: /^\s*archive\s*$/i }).first();
   const railBefore = await avatars.count();
   if (await archiveBtn.count() > 0) {
     await archiveBtn.click();
@@ -277,21 +278,30 @@ async function main() {
   await page.waitForTimeout(200);
   await shot(page, "12-right-click");
 
-  // ─── Step 12: Right-click + button opens list view ──────────────────
+  // ─── Step 12: Right-click + button exposes manage action ────────────
   const addBtn = page.locator(".familiar-avatar-rail__add").first();
   if (await addBtn.count() > 0) {
     await addBtn.click({ button: "right" });
     await page.waitForTimeout(300);
+    const addMenu = page.locator(".familiar-avatar-rail__add-menu").first();
+    const manageItem = page.locator(".familiar-avatar-rail__add-menu-item").filter({ hasText: /manage familiars/i }).first();
+    if (await addMenu.isVisible().catch(() => false) && await manageItem.count() > 0) {
+      rec("Right-click + opens actions menu", "PASS");
+      await manageItem.click();
+      await page.waitForTimeout(300);
+    } else {
+      rec("Right-click + opens actions menu", "FAIL");
+    }
     if (await drawer.isVisible()) {
       const activeTabText3 = (await activeTab.first().textContent() || "").trim();
-      if (/lifecycle/i.test(activeTabText3)) rec("Right-click + opens list view (Lifecycle tab)", "PASS");
-      else rec("Right-click + opens list view (Lifecycle tab)", "FAIL", `active=${activeTabText3}`);
+      if (/lifecycle/i.test(activeTabText3)) rec("Manage familiars opens list view (Lifecycle tab)", "PASS");
+      else rec("Manage familiars opens list view (Lifecycle tab)", "FAIL", `active=${activeTabText3}`);
       // Non-lifecycle tabs should be disabled
       const identityDisabled = await page.locator(".familiar-studio__tab").filter({ hasText: /identity/i }).first().isDisabled();
       if (identityDisabled) rec("List view disables non-Lifecycle tabs", "PASS");
       else rec("List view disables non-Lifecycle tabs", "FAIL");
     } else {
-      rec("Right-click + opens list view", "FAIL");
+      rec("Manage familiars opens list view", "FAIL");
     }
   } else {
     rec("Add (+) button present", "FAIL");

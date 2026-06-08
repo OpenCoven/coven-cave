@@ -13,7 +13,7 @@
 // Run: node scripts/smoke-familiar-studio-extras.mjs
 // Pre-flight: caller MUST have backed up ~/.coven/cave-config.json.
 
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 const OUT = "/tmp/familiar-studio-smoke-extras";
 const CONFIG_PATH = join(homedir(), ".coven", "cave-config.json");
 const BACKUP_PATH = "/tmp/cave-config.backup.json";
+const BASE_URL = process.env.COVEN_CAVE_SMOKE_URL ?? "http://localhost:3000";
 
 const results = [];
 function rec(step, status, detail = "") {
@@ -91,7 +92,7 @@ async function main() {
     if (msg.type() === "error") consoleErrors.push(msg.text());
   });
 
-  await page.goto("http://localhost:3000", {
+  await page.goto(BASE_URL, {
     waitUntil: "domcontentloaded",
     timeout: 60_000,
   });

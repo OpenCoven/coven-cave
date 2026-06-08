@@ -8,6 +8,7 @@ import {
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
   isLoopbackHost,
+  isAllowedApiHost,
   sameOrigin,
   bearerFromReferer,
 } from "./proxy-helpers";
@@ -17,6 +18,7 @@ import {
 export {
   timingSafeEqualString,
   isLoopbackHost,
+  isAllowedApiHost,
   sameOrigin,
   bearerFromReferer,
 };
@@ -87,6 +89,7 @@ function hasSafeContentType(req: NextRequest) {
 }
 
 export function proxy(req: NextRequest) {
+  const mobileAccessToken = configuredMobileAccessToken();
   const mobileRes = mobileAccessGate(req);
   if (mobileRes) return mobileRes;
 
@@ -102,7 +105,10 @@ export function proxy(req: NextRequest) {
   // 127.0.0.1. The token equality check below is the only thing
   // legitimately optional in browser-dev mode.
   const expectedOrigin = req.nextUrl.origin;
-  if (!isLoopbackHost(req.headers.get("host"))) {
+  const mobileAccessAuthenticated = mobileAccessToken
+    ? hasValidMobileAccessToken(req, mobileAccessToken)
+    : false;
+  if (!isAllowedApiHost(req.headers.get("host"), mobileAccessAuthenticated)) {
     return jsonError(403, "forbidden host");
   }
   if (!sameOrigin(req.headers.get("origin"), expectedOrigin)) {
