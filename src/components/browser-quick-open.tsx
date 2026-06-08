@@ -101,17 +101,10 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
       style={{ background: "transparent" }}
       onMouseDown={handleBackdrop}
     >
-      <div
-        className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl shadow-2xl"
-        style={{
-          background: "var(--bg-elevated)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
-        }}
-      >
+      <div className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
         {/* Search input */}
-        <div className="flex items-center gap-2.5 border-b px-4 py-3" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-          <span className="text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>⌘</span>
+        <div className="flex items-center gap-2.5 border-b border-[var(--border-hairline)] px-4 py-3">
+          <span className="text-sm text-[var(--text-muted)]">⌘</span>
           <input
             ref={inputRef}
             type="text"
@@ -119,8 +112,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
             onChange={(e) => { setQuery(e.target.value); setHighlightIdx(0); }}
             onKeyDown={handleKey}
             placeholder="Jump to tab…"
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-[rgba(255,255,255,0.25)]"
-            style={{ color: "rgba(255,255,255,0.9)" }}
+            className="focus-ring-inset flex-1 rounded bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             spellCheck={false}
             autoComplete="off"
           />
@@ -128,8 +120,8 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
             <button
               type="button"
               onClick={() => { setQuery(""); setHighlightIdx(0); inputRef.current?.focus(); }}
-              className="text-xs"
-              style={{ color: "rgba(255,255,255,0.3)" }}
+              className="focus-ring rounded text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Clear search"
             >
               x
             </button>
@@ -138,7 +130,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
 
         {/* Tab list */}
         {filtered.length === 0 ? (
-          <p className="px-4 py-6 text-center text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
+          <p className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
             No tabs match &ldquo;{query}&rdquo;
           </p>
         ) : (
@@ -152,10 +144,9 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
                 <li key={tab.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-none"
-                    style={{
-                      background: isHighlighted ? "rgba(255,255,255,0.06)" : "transparent",
-                    }}
+                    className={`focus-ring-inset flex w-full items-center gap-3 px-4 py-2.5 text-left transition-none ${
+                      isHighlighted ? "bg-[var(--bg-hover)]" : ""
+                    }`}
                     onMouseEnter={() => setHighlightIdx(i)}
                     onClick={() => { onSelect(tab.id); onClose(); }}
                   >
@@ -168,29 +159,27 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
                     {/* Title + hint */}
                     <span className="min-w-0 flex-1">
                       <span
-                        className="block truncate text-sm"
-                        style={{ color: isHighlighted ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.75)" }}
+                        className={`block truncate text-sm ${
+                          isHighlighted ? "text-[var(--text-primary)]" : "text-[var(--text-secondary)]"
+                        }`}
                       >
                         {tab.title || tabHint(tab)}
                       </span>
-                      <span className="block truncate text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+                      <span className="block truncate text-[11px] text-[var(--text-muted)]">
                         {tabHint(tab)}
                       </span>
                     </span>
 
                     {/* Active indicator */}
                     {isActive && (
-                      <span
-                        className="shrink-0 rounded-full text-[10px] px-1.5 py-0.5"
-                        style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.4)" }}
-                      >
+                      <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
                         current
                       </span>
                     )}
 
                     {/* Highlight arrow */}
                     {isHighlighted && !isActive && (
-                      <span className="shrink-0 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>↵</span>
+                      <span className="shrink-0 text-xs text-[var(--text-muted)]">↵</span>
                     )}
                   </button>
                 </li>
@@ -200,10 +189,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
         )}
 
         {/* Footer hint */}
-        <div
-          className="flex items-center gap-3 border-t px-4 py-2"
-          style={{ borderColor: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.25)" }}
-        >
+        <div className="flex items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[var(--text-muted)]">
           <span className="text-[10px]">↑↓ navigate</span>
           <span className="text-[10px]">↵ open</span>
           <span className="text-[10px]">esc close</span>
