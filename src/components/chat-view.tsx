@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import type { Familiar } from "@/lib/types";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
+import { MessageBubble } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon } from "@/lib/icon";
@@ -131,18 +131,50 @@ async function fileToAttachment(file: File): Promise<ComposerAttachment> {
  * Split assistant text into visible body + accumulated reasoning. We treat any
  * `<thinking>...</thinking>` or `<reasoning>...</reasoning>` block (both
  * commonly emitted by Claude/Codex harnesses) as reasoning to be collapsed.
- * Unclosed blocks fall through as visible text — they become reasoning once
- * the closing tag arrives in a later chunk.
+ * Unclosed reasoning blocks are captured while streaming instead of leaking
+ * raw internal tags into the transcript.
  */
 function splitReasoning(text: string): { visible: string; reasoning: string } {
   const reasoningParts: string[] = [];
-  const visible = text.replace(
-    /<(thinking|reasoning)>([\s\S]*?)<\/\1>/g,
-    (_m, _tag, inner) => {
-      reasoningParts.push(inner.trim());
-      return "";
-    },
-  );
+  const visibleParts: string[] = [];
+  const tagRe = /<(\/?)(thinking|reasoning)>/gi;
+  let activeTag: string | null = null;
+  let reasoningStart = 0;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRe.exec(text)) !== null) {
+    const closing = match[1] === "/";
+    const tag = match[2].toLowerCase();
+
+    if (!activeTag && closing) {
+      visibleParts.push(text.slice(cursor, match.index));
+      cursor = tagRe.lastIndex;
+      continue;
+    }
+
+    if (!activeTag && !closing) {
+      visibleParts.push(text.slice(cursor, match.index));
+      activeTag = tag;
+      reasoningStart = tagRe.lastIndex;
+      cursor = tagRe.lastIndex;
+      continue;
+    }
+
+    if (activeTag === tag && closing) {
+      reasoningParts.push(text.slice(reasoningStart, match.index).trim());
+      activeTag = null;
+      cursor = tagRe.lastIndex;
+    }
+  }
+
+  if (activeTag) {
+    reasoningParts.push(text.slice(reasoningStart).trim());
+  } else {
+    visibleParts.push(text.slice(cursor));
+  }
+
+  const visible = visibleParts.join("");
   return {
     visible: visible.replace(/\n{3,}/g, "\n\n").trimStart(),
     reasoning: reasoningParts.join("\n\n").trim(),
@@ -916,17 +948,15 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
       </div>
     );
   }
-  // Assistant — preserve tool blocks + reasoning collapsible above the bubble
+  // Assistant — Codex-style transcript: hide internal reasoning/tool events and
+  // render only the visible assistant answer.
   const duration = fmtDuration(turn.durationMs);
-  const { visible, reasoning } = splitReasoning(turn.text);
-  const tools = turn.tools ?? [];
+  const { visible } = splitReasoning(turn.text);
 
   return (
     <div className="cave-turn-assistant">
       {/* Content column */}
       <div className="cave-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
-        {tools.length > 0 ? <ToolGroup tools={tools} /> : null}
-        {reasoning ? <ReasoningBlock text={reasoning} /> : null}
         {turn.pending && !visible ? (
           <ThinkingIndicator since={turn.createdAt} />
         ) : (
@@ -1037,199 +1067,5 @@ function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
         <AttachmentLightbox attachment={selected} onClose={() => setSelected(null)} />
       ) : null}
     </>
-  );
-}
-
-function ReasoningBlock({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const lines = text.split("\n").filter((l) => l.trim());
-  const preview = lines[0] ? lines[0].slice(0, 72) + (lines[0].length > 72 ? "…" : "") : "";
-  return (
-    <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
-      >
-        <Icon name="ph:brain" width="0.8rem" height="0.8rem" className="shrink-0 text-[var(--text-muted)]/70" />
-        <span className="text-[11px] text-[var(--text-muted)]">reasoning</span>
-        {!open && preview ? (
-          <span className="flex-1 truncate font-mono text-[11px] italic text-[var(--text-muted)]/60">{preview}</span>
-        ) : (
-          <span className="text-[11px] text-[var(--text-muted)]/50">{lines.length} line{lines.length === 1 ? "" : "s"}</span>
-        )}
-        <Icon
-          name="ph:caret-right-bold"
-          width="0.65rem"
-          height="0.65rem"
-          className={`shrink-0 text-[var(--text-muted)]/50 transition-transform ${open ? "rotate-90" : ""}`}
-        />
-      </button>
-      {open ? (
-        <div className="border-t border-[var(--border-hairline)]/60 px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[var(--text-secondary)]">
-          {text}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// ── ToolGroup ──────────────────────────────────────────────────────────────────
-// When a turn has 3+ tool calls, collapse them under a summary row.
-// 1-2 tools always show expanded (they don't clutter).
-
-// All tool groups are collapsed by default — expand on demand.
-// Running tools auto-open so the user sees live progress.
-function ToolGroup({ tools }: { tools: ToolEvent[] }) {
-  const anyRunning = tools.some((t) => t.status === "running");
-  const anyError   = tools.some((t) => t.status === "error");
-  const [open, setOpen] = useState(anyRunning);
-  const [manuallyToggled, setManuallyToggled] = useState(false);
-
-  // Auto-open while running; auto-close when all settle (unless user manually toggled)
-  const prevRunning = useRef(anyRunning);
-  useEffect(() => {
-    if (anyRunning && !prevRunning.current) {
-      setOpen(true);
-      setManuallyToggled(false);
-    }
-    if (!anyRunning && prevRunning.current && !manuallyToggled) {
-      setOpen(false);
-    }
-    prevRunning.current = anyRunning;
-  }, [anyRunning, manuallyToggled]);
-
-  const doneCount = tools.filter((t) => t.status === "ok").length;
-  const errCount  = tools.filter((t) => t.status === "error").length;
-
-  const statusDot = anyError
-    ? "bg-[var(--color-danger)]"
-    : anyRunning
-    ? "bg-[var(--color-warning)] animate-pulse"
-    : "bg-[color-mix(in_oklch,var(--color-success)_70%,transparent)]";
-
-  const label = anyRunning
-    ? `${tools.length} tool call${tools.length > 1 ? "s" : ""} · running`
-    : errCount > 0
-    ? `${tools.length} tool call${tools.length > 1 ? "s" : ""} · ${errCount} error${errCount > 1 ? "s" : ""}`
-    : tools.length === 1
-    ? tools[0].name
-    : `${tools.length} tool calls · done`;
-
-  return (
-    <div className="mb-2 overflow-hidden rounded-md border border-[var(--border-hairline)]/60 bg-[var(--bg-raised)]/20 text-[12px]">
-      <button
-        type="button"
-        onClick={() => { setManuallyToggled(true); setOpen((v) => !v); }}
-        className="flex w-full items-center gap-2 px-2.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/50"
-      >
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
-        <Icon name="ph:wrench" width="0.8rem" height="0.8rem" className="shrink-0 text-[var(--text-muted)]/70" />
-        <span className="flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">{label}</span>
-        <Icon
-          name="ph:caret-right-bold"
-          width="0.65rem"
-          height="0.65rem"
-          className={`shrink-0 text-[var(--text-muted)]/50 transition-transform ${open ? "rotate-90" : ""}`}
-        />
-      </button>
-      {open ? (
-        <div className="space-y-1.5 border-t border-[var(--border-hairline)]/60 p-1.5">
-          {tools.map((t) => <ToolBlock key={t.id} tool={t} />)}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// ── ToolBlock ──────────────────────────────────────────────────────────────────
-
-/** Lines above this threshold get a max-height + fade + expand toggle */
-const TOOL_BODY_COLLAPSE_LINES = 12;
-
-function ToolBodySection({ label, text }: { label: string; text: string }) {
-  const lineCount = text.split("\n").length;
-  const isLong = lineCount > TOOL_BODY_COLLAPSE_LINES;
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div>
-      <div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{label}</div>
-      <div className="relative">
-        <div
-          style={isLong && !expanded
-            ? { maxHeight: "12rem", overflow: "hidden" }
-            : undefined}
-        >
-          <SyntaxBlock text={text} />
-        </div>
-        {isLong && !expanded && (
-          <div
-            className="absolute inset-x-0 bottom-0 flex items-end justify-center"
-            style={{ height: "3.5rem", background: "linear-gradient(to bottom, transparent, var(--bg-raised, #1a1a1a) 85%)" }}
-          >
-            <button
-              type="button"
-              onClick={() => setExpanded(true)}
-              className="mb-1 rounded border border-[var(--border-hairline)]/70 px-2.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]"
-            >
-              Show {lineCount - TOOL_BODY_COLLAPSE_LINES} more lines
-            </button>
-          </div>
-        )}
-        {isLong && expanded && (
-          <button
-            type="button"
-            onClick={() => setExpanded(false)}
-            className="mt-1 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
-          >
-            ↑ collapse
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ToolBlock({ tool }: { tool: ToolEvent }) {
-  const [open, setOpen] = useState(false);
-  const statusDot =
-    tool.status === "running"
-      ? "bg-[var(--color-warning)] animate-pulse"
-      : tool.status === "error"
-      ? "bg-[var(--color-danger)]"
-      : "bg-[var(--color-success)]";
-  const hasBody = !!(tool.input || tool.output);
-  const dur = fmtDuration(tool.durationMs);
-  return (
-    <div className="overflow-hidden rounded-lg border border-[var(--border-hairline)]/70 bg-[var(--bg-raised)]/30 text-[12px]">
-      <button
-        onClick={() => hasBody && setOpen((v) => !v)}
-        disabled={!hasBody}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
-          hasBody ? "transition-colors hover:bg-[var(--bg-raised)]/60" : "cursor-default"
-        }`}
-      >
-        <Icon
-          name="ph:caret-right-bold"
-          width="0.7rem"
-          height="0.7rem"
-          className={`text-[var(--text-muted)] transition-transform ${open ? "rotate-90" : ""} ${
-            hasBody ? "" : "opacity-30"
-          }`}
-        />
-        <Icon name="ph:wrench-bold" width="0.85rem" height="0.85rem" className="text-[var(--accent-presence)]" />
-        <span className="font-mono text-[var(--text-primary)]">{tool.name}</span>
-        <span className={`ml-auto h-1.5 w-1.5 rounded-full ${statusDot}`} />
-        {dur && tool.status !== "running" ? (
-          <span className="font-mono text-[var(--text-muted)]">{dur}</span>
-        ) : null}
-      </button>
-      {open && hasBody ? (
-        <div className="space-y-2 border-t border-[var(--border-hairline)]/70 px-3 py-2 font-mono text-[12px] leading-relaxed">
-          {tool.input ? <ToolBodySection label="input" text={tool.input} /> : null}
-          {tool.output ? <ToolBodySection label="output" text={tool.output} /> : null}
-        </div>
-      ) : null}
-    </div>
   );
 }

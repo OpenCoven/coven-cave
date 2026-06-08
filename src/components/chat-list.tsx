@@ -159,7 +159,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 {daemonRunning ? "online" : "offline"}
               </span>
             </div>
-
+            <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">
+              Agent runtime{" "}
+              <span className="font-mono text-[var(--text-secondary)]">
+                {familiar.harness ?? "unknown"} / {familiar.model ?? "unknown"}
+              </span>
+            </p>
           </div>
           <button
             type="button"
