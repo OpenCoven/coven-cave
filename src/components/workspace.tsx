@@ -144,6 +144,12 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
+    if (railTab !== "salem") {
+      window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+    }
+  }, [railTab]);
+
+  useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
       .then((r) => r.json())
       .then((j: { ok?: boolean; config?: { addons?: { github?: boolean; library?: boolean } } }) => {

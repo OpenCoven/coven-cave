@@ -7,7 +7,7 @@
     "frontendDist": "../src-tauri/frontend-stub",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "bash scripts/sidecar-bundle.sh"
+    "beforeBundleCommand": "bash scripts/sidecar-bundle.sh"
   },
   "app": {
     "windows": [],
@@ -24,7 +24,8 @@
       "msi"
     ],
     "resources": [
-      "resources/server/**/*"
+      "resources/server/**/*",
+      "resources/node/**/*"
     ],
     "icon": [
       "icons/32x32.png",

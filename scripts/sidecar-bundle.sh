@@ -6,12 +6,30 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"
+BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 STATIC="$ROOT/.next/static"
 PUBLIC="$ROOT/public"
 NPM_STAGE="$ROOT/.next/sidecar-npm-stage"
 
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
+
+echo "==> staging Node runtime for bundled sidecar"
+if [ "${OS:-}" = "Windows_NT" ]; then
+  NODE_BIN="$(command -v node.exe || command -v node || true)"
+  NODE_NAME="node.exe"
+else
+  NODE_BIN="$(command -v node || true)"
+  NODE_NAME="node"
+fi
+if [ -z "$NODE_BIN" ] || [ ! -f "$NODE_BIN" ]; then
+  echo "ERROR: node binary not found; release sidecar cannot boot without a bundled runtime" >&2
+  exit 1
+fi
+rm -rf "$BUNDLED_NODE_DIR"
+mkdir -p "$BUNDLED_NODE_DIR/bin"
+cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
+chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
 
 STANDALONE="$ROOT/.next/standalone"
 if [ ! -f "$STANDALONE/server.js" ]; then

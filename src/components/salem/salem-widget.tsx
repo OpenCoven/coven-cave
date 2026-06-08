@@ -22,11 +22,27 @@ function openSalemPanel() {
  */
 export function SalemWidget() {
   const [mood, setMood] = useState<SalemMood>("idle");
+  const [docked, setDocked] = useState(false);
+
+  useEffect(() => {
+    const dock = () => setDocked(true);
+    const undock = () => setDocked(false);
+    window.addEventListener("cave:salem-open", dock);
+    window.addEventListener("cave:salem-undock", undock);
+    return () => {
+      window.removeEventListener("cave:salem-open", dock);
+      window.removeEventListener("cave:salem-undock", undock);
+    };
+  }, []);
+
   const open = () => {
+    setDocked(true);
     openSalemPanel();
     setMood("happy");
     setTimeout(() => setMood("idle"), 1800);
   };
+
+  if (docked) return null;
 
   return (
     <div className="salem-perch" onClick={open} role="button" tabIndex={0} aria-label="Open Salem docs familiar" onKeyDown={(e) => e.key === "Enter" && open()}>
