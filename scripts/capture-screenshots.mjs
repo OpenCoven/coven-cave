@@ -17,15 +17,20 @@ const OUT = resolve(ROOT, "screenshots");
 const VIEWPORT = { width: 1440, height: 900 };
 const DPR = 2;
 
+// Sidebar IA after the redesign (commit 040e7be): "Familiars" / "Tasks"
+// modes were folded into Chat / Board respectively. "Floor" no longer has
+// its own tab — it's an ambient surface inside HomeComposer. The capture
+// loop falls through to "home" for floor and just captures the shell with
+// the floor mini visible.
 const CAPTURES = [
-  { file: "home.png",     label: "HomeComposer cold-start", click: "Home" },
-  { file: "shell.png",    label: "Three-pane shell + chat", click: "Familiars" },
-  { file: "chat.png",     label: "Chat view (same as shell — falls back to chat)", click: "Familiars" },
-  { file: "board.png",    label: "Board view",              click: "Tasks" },
-  { file: "library.png",  label: "Library",                 click: "Library" },
-  { file: "calendar.png", label: "Calendar (week view)",    click: "Calendar" },
-  { file: "terminal.png", label: "Bottom terminal",         click: "Terminal" },
-  { file: "floor.png",    label: "Coven Floor",             click: "Familiars" /* with floor sub-tab */ },
+  { file: "home.png",     label: "HomeComposer cold-start",      click: "Home" },
+  { file: "shell.png",    label: "Three-pane shell + chat",      click: "Chat" },
+  { file: "chat.png",     label: "Chat view",                    click: "Chat" },
+  { file: "board.png",    label: "Board view",                   click: "Board" },
+  { file: "library.png",  label: "Library",                      click: "Library" },
+  { file: "calendar.png", label: "Calendar (week view)",         click: "Calendar" },
+  { file: "terminal.png", label: "Terminal surface",             click: "Terminal" },
+  { file: "floor.png",    label: "Coven Floor (Home ambient)",   click: "Home" },
 ];
 
 async function main() {
@@ -81,40 +86,45 @@ async function main() {
   for (const cap of CAPTURES) {
     console.log(`→ ${cap.file} (${cap.label})`);
     try {
-      // Click the sidebar item for this mode.
-      const btn = page.getByRole("button", { name: cap.click, exact: true }).first();
+      // Click the sidebar folder row for this mode. The row contains an
+      // icon + label + optional <kbd>⌘N</kbd>, so the accessible name is
+      // "Home ⌘1" rather than just "Home" — match by CSS class + visible
+      // label instead of role+exact-name.
+      const btn = page
+        .locator(`.sidebar-folder-row:has(.sidebar-folder-label:text-is("${cap.click}"))`)
+        .first();
       const hit = await btn.count();
       if (hit > 0) {
         await btn.click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(800);
       } else {
-        console.warn(`  no sidebar button "${cap.click}" — capturing current state`);
+        console.warn(`  no sidebar folder row "${cap.click}" — capturing current state`);
       }
 
       // Surface-specific tweaks
-      if (cap.file === "floor.png") {
-        // CovenFloor lives as a tab inside the agents view — rendered as a
-        // <button> with text "Floor".
-        const floorTab = page.getByRole("button", { name: "Floor", exact: true }).first();
-        if (await floorTab.count()) {
-          await floorTab.click().catch(() => {});
-          await page.waitForTimeout(800);
-        } else {
-          console.warn("  no Floor tab found");
-        }
-      }
       if (cap.file === "chat.png") {
-        // After landing on Familiars (Chats tab is the default), click the
-        // first chat row in the center list so the right pane shows a
-        // real conversation thread.
-        const firstChat = page.locator("main button, [role='main'] button, table tbody tr")
-          .filter({ hasText: /update to|enable adding|hello|Patch|Task chat/i })
+        // After landing on Chat, click the first session row in the chat
+        // list so the right pane shows a real conversation thread.
+        // The session rows are buttons with the session title; any text
+        // works since we just want SOMETHING populated.
+        const firstChat = page
+          .locator(".cave-mode-fade button:has-text('Codex'), .cave-mode-fade button:has-text('Chat'), main [role='button']:has-text('Codex')")
           .first();
         if (await firstChat.count()) {
           await firstChat.click({ timeout: 3000 }).catch(() => {});
-          await page.waitForTimeout(1200);
+          await page.waitForTimeout(1500);
         } else {
-          console.warn("  no chat row matched");
+          // Fallback: click the first session row by its session title.
+          const anyRow = page
+            .locator("main button, [role='main'] button")
+            .filter({ hasText: /update|task|hello|Patch|please|context|why|what|how|fix|feat/i })
+            .first();
+          if (await anyRow.count()) {
+            await anyRow.click({ timeout: 3000 }).catch(() => {});
+            await page.waitForTimeout(1500);
+          } else {
+            console.warn("  no chat row matched");
+          }
         }
       }
 
