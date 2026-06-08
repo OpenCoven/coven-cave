@@ -98,15 +98,21 @@ function writeRecent(next: string[]) {
  */
 async function syncToDaemon(familiarId: string, glyph: string | null): Promise<void> {
   if (typeof window === "undefined") return;
+  const { reportDaemonSyncFailure, reportDaemonSyncSuccess } = await import(
+    "./daemon-sync-status"
+  );
   try {
-    await fetch(`/api/familiars/${encodeURIComponent(familiarId)}/icon`, {
+    const res = await fetch(`/api/familiars/${encodeURIComponent(familiarId)}/icon`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ icon: glyph }),
     });
-  } catch {
+    if (res.ok) reportDaemonSyncSuccess();
+    else reportDaemonSyncFailure(`daemon icon write: HTTP ${res.status}`);
+  } catch (err) {
     // Daemon offline or transient network blip — the localStorage override
     // still wins on render until the next pick or until it's manually cleared.
+    reportDaemonSyncFailure(`daemon icon write: ${(err as Error).message}`);
   }
 }
 

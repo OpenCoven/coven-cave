@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import {
+  reportDaemonSyncFailure,
+  reportDaemonSyncSuccess,
+} from "@/lib/daemon-sync-status";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -44,13 +48,17 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       const json = await res.json();
       if (!res.ok || !json.ok) {
         setToast(`Couldn't save: ${json.error ?? res.statusText}`);
+        reportDaemonSyncFailure(`cave-config write: ${json.error ?? res.statusText}`);
         // Revert local draft to last-known value on failure.
         if ("harness" in patch) setDraftHarness(familiar.harness ?? "");
         if ("model" in patch) setDraftModel(familiar.model ?? "");
         if ("note" in patch) setDraftNote(familiar.note ?? "");
+      } else {
+        reportDaemonSyncSuccess();
       }
     } catch (err) {
       setToast(`Couldn't save: ${(err as Error).message}`);
+      reportDaemonSyncFailure(`cave-config write: ${(err as Error).message}`);
     }
   }
 

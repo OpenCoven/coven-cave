@@ -15,5 +15,7 @@ assert.match(source, /aria-label/, "Drawer must have an accessible name");
 assert.match(source, /function HeaderName/, "Header must use inline-edit HeaderName component");
 assert.match(source, /Click to rename/, "Static name button must hint at edit affordance");
 assert.match(source, /familiar-studio__name--editing/, "Editing-state class must exist");
+assert.match(source, /useDaemonSyncStatus/, "Footer subscribes to daemon sync status");
+assert.match(source, /Saved locally, daemon offline/, "Daemon-offline indicator text present");
 
 console.log("familiar-studio.test.ts: ok");

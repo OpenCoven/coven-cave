@@ -9,6 +9,7 @@ import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
 } from "@/lib/cave-familiar-overrides";
+import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
 import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
 import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
@@ -34,6 +35,7 @@ export function FamiliarStudio({ familiars }: Props) {
     setActiveTab,
     closeFamiliarStudio,
   } = useFamiliarStudio();
+  const daemonSync = useDaemonSyncStatus();
 
   // Resolve with archived included so the Lifecycle list view can show them.
   const resolved = useResolvedFamiliars(familiars, { includeArchived: true });
@@ -152,6 +154,16 @@ export function FamiliarStudio({ familiars }: Props) {
 
         <footer className="familiar-studio__footer">
           <span className="familiar-studio__autosave">Changes save automatically</span>
+          {daemonSync.offline ? (
+            <span
+              className="familiar-studio__sync-warn"
+              title={daemonSync.reason ?? undefined}
+              aria-live="polite"
+            >
+              <Icon name="ph:warning-circle" width={11} />
+              Saved locally, daemon offline
+            </span>
+          ) : null}
         </footer>
       </div>
     </aside>

@@ -2907,7 +2907,8 @@ body {
 .familiar-studio__close { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--text-secondary); background: transparent; border: none; cursor: pointer; }
 .familiar-studio__close:hover { background: var(--bg-raised); color: var(--text-primary); }
 .familiar-studio__body { padding: 16px; overflow-y: auto; min-height: 0; }
-.familiar-studio__footer { padding: 10px 16px; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--text-muted); }
+.familiar-studio__footer { padding: 10px 16px; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.familiar-studio__sync-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-warning, #f59e0b); }
 .familiar-studio__empty { padding: 32px 16px; text-align: center; color: var(--text-muted); }
 .familiar-studio-identity { display: flex; flex-direction: column; gap: 14px; }
 .familiar-studio-identity__row { display: flex; flex-direction: column; gap: 4px; }
