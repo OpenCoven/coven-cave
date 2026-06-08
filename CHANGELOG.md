@@ -7,6 +7,23 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.55] — 2026-06-08
+
+Release repair for the packaged macOS sidecar after 0.0.54.
+
+### Fixed
+
+- **Loopback-tolerant referer check.** The sidecar's CSRF guard now treats
+  `127.0.0.1`, `localhost`, and `[::1]` as the same origin when scheme and
+  port match. Tauri's WKWebView on macOS sends a referer whose loopback
+  hostname can differ from the one the sidecar bound to (e.g. webview
+  loaded at `http://127.0.0.1:<port>/`, request comes in with
+  `Referer: http://localhost:<port>/…`), which made every `/api/…` call
+  fail with `forbidden referer` once the sidecar successfully booted on
+  Apple Silicon. The loopback host gate and token check still run first,
+  so the relaxation only widens what counts as "same origin" inside the
+  already-loopback envelope.
+
 ## [0.0.54] — 2026-06-08
 
 Release repair for macOS sidecar startup after 0.0.53.

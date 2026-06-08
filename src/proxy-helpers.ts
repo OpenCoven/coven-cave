@@ -33,7 +33,19 @@ export function isAllowedApiHost(host: string | null, mobileAccessAuthenticated 
 export function sameOrigin(value: string | null, expectedOrigin: string) {
   if (!value) return true;
   try {
-    return new URL(value).origin === expectedOrigin;
+    const url = new URL(value);
+    if (url.origin === expectedOrigin) return true;
+    // Tauri's WKWebView on macOS occasionally normalizes the referer's
+    // loopback hostname (127.0.0.1 ↔ localhost ↔ [::1]) differently from the
+    // host the sidecar bound. The host gate above already requires a loopback
+    // request URL, so accept any same-scheme, same-port loopback referer.
+    const expected = new URL(expectedOrigin);
+    return (
+      url.protocol === expected.protocol &&
+      url.port === expected.port &&
+      isLoopbackHost(url.host) &&
+      isLoopbackHost(expected.host)
+    );
   } catch {
     return false;
   }

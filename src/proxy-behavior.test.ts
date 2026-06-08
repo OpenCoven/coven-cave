@@ -77,6 +77,43 @@ assert.equal(sameOrigin(null, expected), true, "absent origin header passes thro
 assert.equal(sameOrigin("not a url", expected), false, "malformed url is rejected");
 assert.equal(sameOrigin("", expected), true, "empty origin is treated as absent");
 
+// Loopback hostnames (127.0.0.1 / localhost / ::1) must be treated as
+// interchangeable on the same scheme + port. Tauri's WKWebView on macOS sends
+// a referer whose hostname can differ from the loopback host the sidecar
+// bound, so requiring an exact origin match falsely rejects same-machine
+// traffic. Cross-loopback variants here, with port mismatches and
+// non-loopback hosts still rejected, guards both ends.
+assert.equal(
+  sameOrigin("http://127.0.0.1:3000", expected),
+  true,
+  "127.0.0.1 ↔ localhost on same port should be treated as same origin",
+);
+assert.equal(
+  sameOrigin("http://[::1]:3000", expected),
+  true,
+  "IPv6 loopback ↔ localhost on same port should be treated as same origin",
+);
+assert.equal(
+  sameOrigin("http://localhost:3000", "http://127.0.0.1:3000"),
+  true,
+  "loopback variant tolerance is symmetric",
+);
+assert.equal(
+  sameOrigin("http://127.0.0.1:3001", expected),
+  false,
+  "loopback variant with port mismatch must still be rejected",
+);
+assert.equal(
+  sameOrigin("https://127.0.0.1:3000", expected),
+  false,
+  "loopback variant with scheme mismatch must still be rejected",
+);
+assert.equal(
+  sameOrigin("http://example.com:3000", expected),
+  false,
+  "non-loopback hostname must still be rejected",
+);
+
 // ─── bearerFromReferer ─────────────────────────────────────────────────────
 assert.equal(
   bearerFromReferer("http://localhost:3000/foo?covenCaveToken=abc", expected),
