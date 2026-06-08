@@ -49,8 +49,8 @@ assert.match(
 
 assert.match(
   themeScript,
-  /applyGroup\(cssVars\.theme\)[\s\S]*applyGroup\(cssVars\.dark\)/,
-  "ThemeScript should apply both theme-level (fonts/radius) and dark-mode CSS var groups",
+  /applyGroup\(cssVars\.theme\)[\s\S]*modeGroup[\s\S]*applyGroup\(modeGroup\)/,
+  "ThemeScript should apply both theme-level (fonts/radius) and selected-mode CSS var groups",
 );
 
 assert.match(
@@ -61,8 +61,8 @@ assert.match(
 
 assert.match(
   settings,
-  /apply\(cssVars\.theme\)[\s\S]*apply\(cssVars\.dark\)/,
-  "applyCustomVars should apply both theme-level and dark-mode CSS var groups, not just a whitelist",
+  /apply\(cssVars\.theme\)[\s\S]*modeGroup[\s\S]*apply\(modeGroup\)/,
+  "applyCustomVars should apply both theme-level and selected-mode CSS var groups, not just a whitelist",
 );
 
 assert.match(
