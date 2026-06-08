@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, type RefObject } from "react";
+import React, { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { SessionsView } from "@/components/sessions-view";
@@ -11,6 +11,7 @@ import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { inferOrigin } from "@/lib/session-origin";
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -28,10 +29,12 @@ type Props = {
   inspectorOpen: boolean;
   rightPanel?: "inspector" | "chat" | null;
   pendingProjectRoot: string | null;
+  pendingChatAction?: PendingChatAction;
   onSetInspectorOpen: (open: boolean) => void;
   onSetRightPanel?: (panel: "inspector" | "chat" | null) => void;
   onSetActiveFamiliar: (id: string) => void;
   onClearPendingProjectRoot: () => void;
+  onPendingChatActionHandled: () => void;
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
@@ -190,10 +193,12 @@ export function ChatSurface({
   inspectorOpen,
   rightPanel: rightPanelProp,
   pendingProjectRoot,
+  pendingChatAction,
   onSetInspectorOpen,
   onSetRightPanel,
   onSetActiveFamiliar,
   onClearPendingProjectRoot,
+  onPendingChatActionHandled,
   onSessionStarted,
   onSlashFromChat,
   onOpenOnboarding,
@@ -209,6 +214,7 @@ export function ChatSurface({
   const [scope, setScope] = useState<AgentsScope>("sessions");
   const [query, setQuery] = useState("");
   const [showClosed, setShowClosed] = useState(false);
+  const consumedPendingActionNonce = useRef<number | null>(null);
   // groupBy intentionally omits "familiar": Chats is already filtered to the
   // active agent, so grouping by familiar would always produce one group.
   const [groupBy, setGroupBy] = useState<"status" | "date" | "none">("date");
@@ -255,6 +261,32 @@ export function ChatSurface({
       window.removeEventListener("cave:agents-list", onShowList);
     };
   }, [onSetActiveFamiliar, routerRef]);
+
+  useEffect(() => {
+    if (!pendingChatAction) return;
+    if (consumedPendingActionNonce.current === pendingChatAction.nonce) return;
+    consumedPendingActionNonce.current = pendingChatAction.nonce;
+    if (pendingChatAction.kind === "new") {
+      if (pendingChatAction.familiarId) onSetActiveFamiliar(pendingChatAction.familiarId);
+      setScope("conversation");
+      window.setTimeout(
+        () => routerRef.current?.newChat(pendingChatAction.projectRoot ?? undefined),
+        0,
+      );
+      onPendingChatActionHandled();
+      return;
+    }
+    if (pendingChatAction.kind === "open") {
+      if (pendingChatAction.familiarId) onSetActiveFamiliar(pendingChatAction.familiarId);
+      setScope("conversation");
+      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId), 0);
+      onPendingChatActionHandled();
+      return;
+    }
+    setScope("conversation");
+    window.setTimeout(() => routerRef.current?.goToList(), 0);
+    onPendingChatActionHandled();
+  }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
 
   const filteredSessions = useMemo(() => {
     const q = query.trim().toLowerCase();

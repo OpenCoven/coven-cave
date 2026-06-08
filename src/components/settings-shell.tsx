@@ -8,6 +8,7 @@ import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
+import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export function SettingsShell() {
   const [section, setSection] = useState<Section>(initialSection);
 
   return (
+    <FamiliarStudioProvider>
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Header */}
       <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-2.5">
@@ -103,6 +105,7 @@ export function SettingsShell() {
         </main>
       </div>
     </div>
+    </FamiliarStudioProvider>
   );
 }
 

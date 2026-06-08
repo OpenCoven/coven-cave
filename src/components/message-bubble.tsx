@@ -105,15 +105,16 @@ async function renderCodeBlock(
   info: string,
 ): Promise<string> {
   const { lang, filename } = parseFenceInfo(info);
-  const hl = await getHighlighter();
 
   let highlighted: string;
   try {
+    const hl = await getHighlighter();
     highlighted = hl.codeToHtml(code, {
       lang: LANGS.includes(lang as (typeof LANGS)[number]) ? lang : "text",
       theme: "mood-c-dark",
     });
-  } catch {
+  } catch (err) {
+    console.error("[renderCodeBlock] Shiki highlight failed", err);
     highlighted = `<pre><code>${escHtml(code)}</code></pre>`;
   }
 
@@ -237,9 +238,9 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
   useEffect(() => {
     if (!text) return;
     let cancelled = false;
-    void mdToHtml(text).then((h) => {
-      if (!cancelled) setHtml(h);
-    });
+    mdToHtml(text)
+      .then((h) => { if (!cancelled) setHtml(h); })
+      .catch((err) => { console.error("[MarkdownBlock] mdToHtml failed", err); });
     return () => { cancelled = true; };
   }, [text]);
 
@@ -261,7 +262,14 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
 }
 
 function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Match @create-markdown/preview's escapeHtml (also escapes " and ') so the
+  // regex substitution against proseHtml lines up when code contains quotes.
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 function escAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -370,9 +378,9 @@ function MarkdownContent({ text, pending }: { text: string; pending?: boolean })
     if (!text || text === lastTextRef.current) return;
     lastTextRef.current = text;
     let cancelled = false;
-    void mdToHtml(text).then((h) => {
-      if (!cancelled) setHtml(h);
-    });
+    mdToHtml(text)
+      .then((h) => { if (!cancelled) setHtml(h); })
+      .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
     return () => { cancelled = true; };
   }, [text, pending]);
 
