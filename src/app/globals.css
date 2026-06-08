@@ -200,6 +200,16 @@
   --ring-focus: color-mix(in oklch, #6F62A8 55%, transparent);
   --ring-focus-soft: color-mix(in oklch, #6F62A8 30%, transparent);
   --backdrop-scrim: oklch(0 0 0 / 40%);
+
+  /* Semantic state colors retuned for AA contrast on near-white surfaces.
+     The :root values above are tuned for dark backgrounds and read too
+     pale on light. */
+  --color-success: oklch(0.52 0.16 158);
+  --color-success-soft: oklch(0.66 0.10 158);
+  --color-warning: oklch(0.58 0.16 78);
+  --color-warning-soft: oklch(0.72 0.10 78);
+  --color-danger: oklch(0.52 0.20 24);
+  --color-danger-soft: oklch(0.70 0.12 24);
 }
 
 /* Respect OS-level reduced-motion preference by collapsing every
