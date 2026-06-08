@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Fredoka, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { SidecarAuthBridge, SidecarAuthMonitor } from "@/components/security/sidecar-auth-bridge";
+import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
+import { SidecarAuthMonitor } from "@/components/security/sidecar-auth-monitor";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 
 const geistSans = Geist({
