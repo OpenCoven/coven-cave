@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
@@ -15,7 +16,7 @@ import {
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { familiarWorkspace } from "@/lib/coven-paths";
+import { covenHome, familiarWorkspace } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import {
   type ChatTurn,
@@ -147,6 +148,321 @@ function sse(event: StreamEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+type OpenClawAgentJson = {
+  status?: string;
+  summary?: string;
+  sessionId?: string;
+  result?: {
+    payloads?: Array<{ text?: string; content?: unknown }>;
+    sessionId?: string;
+    meta?: { agentMeta?: { sessionId?: string } };
+  };
+  meta?: { agentMeta?: { sessionId?: string } };
+};
+
+type OpenClawAgentSummary = {
+  id?: string;
+  name?: string;
+  identityName?: string;
+  isDefault?: boolean;
+};
+
+function readTomlString(block: string, key: string): string | null {
+  const quoted = block.match(new RegExp(`^\\s*${key}\\s*=\\s*(['"])(.*?)\\1\\s*(?:#.*)?$`, "m"));
+  if (quoted) return quoted[2];
+  const bare = block.match(new RegExp(`^\\s*${key}\\s*=\\s*([^\\s#]+)\\s*(?:#.*)?$`, "m"));
+  return bare?.[1] ?? null;
+}
+
+function slugifyAgentName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+async function readOpenClawAgentBinding(familiarId: string): Promise<string | null> {
+  try {
+    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
+    const blocks = raw.split(/^\s*\[\[familiar\]\]\s*$/m).slice(1);
+    for (const block of blocks) {
+      if (readTomlString(block, "id") !== familiarId) continue;
+      return readTomlString(block, "openclaw_agent");
+    }
+  } catch {
+    /* no familiar binding file */
+  }
+  return null;
+}
+
+function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
+  return new Promise((resolve) => {
+    const child = spawn("openclaw", ["agents", "list", "--json"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      env: covenSpawnEnv(),
+    });
+    let stdout = "";
+    child.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString("utf8");
+    });
+    child.on("error", () => resolve([]));
+    child.on("close", () => {
+      try {
+        const parsed = JSON.parse(stdout.trim()) as OpenClawAgentSummary[];
+        resolve(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
+
+async function resolveOpenClawAgentId(familiarId: string): Promise<string> {
+  const explicit = await readOpenClawAgentBinding(familiarId);
+  if (explicit) return explicit;
+
+  const agents = await listOpenClawAgents();
+  const exact = agents.find((agent) => agent.id === familiarId)?.id;
+  if (exact) return exact;
+
+  const named = agents.find(
+    (agent) =>
+      (agent.name && slugifyAgentName(agent.name) === familiarId) ||
+      (agent.identityName && slugifyAgentName(agent.identityName) === familiarId),
+  )?.id;
+  if (named) return named;
+
+  return familiarId;
+}
+
+function extractOpenClawText(json: OpenClawAgentJson): string {
+  const payloads = json.result?.payloads ?? [];
+  const text = payloads
+    .map((payload) => {
+      if (typeof payload.text === "string") return payload.text;
+      if (Array.isArray(payload.content)) {
+        return payload.content
+          .map((part) =>
+            part &&
+            typeof part === "object" &&
+            "text" in part &&
+            typeof part.text === "string"
+              ? part.text
+              : "",
+          )
+          .join("");
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+  return text || json.summary?.trim() || "";
+}
+
+function extractOpenClawSessionId(
+  json: OpenClawAgentJson,
+  fallback?: string,
+): string | null {
+  return (
+    json.sessionId ??
+    json.result?.sessionId ??
+    json.result?.meta?.agentMeta?.sessionId ??
+    json.meta?.agentMeta?.sessionId ??
+    fallback ??
+    null
+  );
+}
+
+function openClawAgentArgs(
+  body: SendBody,
+  harnessPrompt: string,
+  agentId: string,
+): string[] {
+  const args = [
+    "agent",
+    "--agent",
+    agentId,
+    "--message",
+    harnessPrompt,
+    "--json",
+  ];
+  if (body.sessionId) args.push("--session-id", body.sessionId);
+  return args;
+}
+
+function openClawChatResponse(args: {
+  req: Request;
+  body: SendBody;
+  promptText: string;
+  harnessPrompt: string;
+  attachments: ChatAttachment[];
+}): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start: async (controller) => {
+      const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          /* already */
+        }
+      };
+
+      push({ kind: "user", text: args.promptText });
+
+      const startedAt = Date.now();
+      const agentId = await resolveOpenClawAgentId(args.body.familiarId);
+      const argv = openClawAgentArgs(args.body, args.harnessPrompt, agentId);
+      const child = spawn("openclaw", argv, {
+        cwd: await resolveCwd(args.body.projectRoot),
+        stdio: ["ignore", "pipe", "pipe"],
+        env: covenSpawnEnv(),
+      });
+
+      let stdout = "";
+      let stderr = "";
+      const onAbort = () => {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          /* ignore */
+        }
+      };
+      args.req.signal.addEventListener("abort", onAbort, { once: true });
+
+      child.stdout.on("data", (data: Buffer) => {
+        stdout += data.toString("utf8");
+      });
+      child.stderr.on("data", (data: Buffer) => {
+        stderr += stripAnsi(data.toString("utf8"));
+      });
+      child.on("error", (err: NodeJS.ErrnoException) => {
+        const message =
+          err.code === "ENOENT"
+            ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
+            : err.message;
+        push({ kind: "error", code: err.code, message });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        args.req.signal.removeEventListener("abort", onAbort);
+        close();
+      });
+      child.on("close", async (code) => {
+        args.req.signal.removeEventListener("abort", onAbort);
+        const durationMs = Date.now() - startedAt;
+        let sessionId: string | null = args.body.sessionId ?? null;
+        let assistantText = "";
+        let isError = code !== 0;
+
+        if (stdout.trim()) {
+          try {
+            const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
+            sessionId = extractOpenClawSessionId(parsed, args.body.sessionId);
+            assistantText = extractOpenClawText(parsed);
+            isError = isError || parsed.status === "error";
+          } catch {
+            assistantText = stdout.trim();
+          }
+        }
+
+        if (!assistantText.trim()) {
+          const tail = stderr
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .slice(-5)
+            .join("\n");
+          assistantText = tail
+            ? `_The "openclaw" agent bridge returned no text._\n\n\`\`\`\n${tail}\n\`\`\``
+            : `_The "openclaw" agent bridge returned no text._`;
+          isError = true;
+        }
+
+        if (sessionId) push({ kind: "session", sessionId });
+        push({ kind: "assistant_chunk", text: assistantText });
+
+        if (sessionId) {
+          await recordSessionFamiliar(sessionId, args.body.familiarId);
+          const existing = await loadConversation(sessionId);
+          const now = new Date().toISOString();
+          const userTurnId = crypto.randomUUID();
+          const assistantTurnId = crypto.randomUUID();
+          const chatTitle = (
+            args.promptText ||
+            args.attachments[0]?.name ||
+            "Attached files"
+          ).slice(0, 60);
+          const conv = existing ?? {
+            sessionId,
+            familiarId: args.body.familiarId,
+            harness: "openclaw",
+            title: chatTitle,
+            createdAt: now,
+            updatedAt: now,
+            turns: [],
+          };
+          conv.turns.push(
+            {
+              id: userTurnId,
+              role: "user",
+              text: args.promptText,
+              ...(args.attachments.length ? { attachments: args.attachments } : {}),
+              createdAt: now,
+            },
+            {
+              id: assistantTurnId,
+              role: "assistant",
+              text: assistantText.trim(),
+              createdAt: new Date().toISOString(),
+              durationMs,
+              isError,
+            },
+          );
+          await saveConversation(conv);
+          scheduleLinkRoute({
+            prompt: args.promptText,
+            sessionId,
+            turnId: userTurnId,
+            chatTitle,
+            familiar: args.body.familiarId,
+          });
+          scheduleLinkRoute({
+            prompt: assistantText.trim(),
+            sessionId,
+            turnId: assistantTurnId,
+            chatTitle,
+            familiar: args.body.familiarId,
+          });
+        }
+
+        push({
+          kind: "done",
+          durationMs,
+          isError,
+          sessionId: sessionId ?? undefined,
+        });
+        await sleep(20);
+        close();
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    },
+  });
+}
+
 export async function POST(req: Request) {
   let body: SendBody;
   try {
@@ -212,6 +528,15 @@ export async function POST(req: Request) {
       }),
       { status: 403, headers: { "content-type": "application/json" } },
     );
+  }
+  if (binding.harness === "openclaw") {
+    return openClawChatResponse({
+      req,
+      body,
+      promptText,
+      harnessPrompt,
+      attachments,
+    });
   }
 
   // Build coven run argv.

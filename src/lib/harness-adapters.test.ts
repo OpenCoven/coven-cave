@@ -21,7 +21,7 @@ assert.deepEqual(openClawAdapterReport(2), {
   id: "openclaw",
   label: "OpenClaw",
   binary: "openclaw",
-  chatSupported: false,
+  chatSupported: true,
   installed: true,
   path: null,
   version: "2 agents",
@@ -114,7 +114,7 @@ assert.equal(mergedExternal[0]?.chatSupported, false);
 assert.equal(mergedExternal[0]?.installed, true);
 assert.equal(isTrustedChatHarness("codex"), true);
 assert.equal(isTrustedChatHarness("hermes"), true);
-assert.equal(isTrustedChatHarness("openclaw"), false);
+assert.equal(isTrustedChatHarness("openclaw"), true);
 assert.equal(isTrustedChatHarness("attacker-adapter"), false);
 assert.equal(isTrustedOnboardingHarness("openclaw"), true);
 assert.equal(isTrustedOnboardingHarness("attacker-adapter"), false);

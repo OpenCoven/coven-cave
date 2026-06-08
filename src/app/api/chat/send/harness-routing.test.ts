@@ -31,8 +31,32 @@ assert.match(
 
 assert.doesNotMatch(
   chatRoute,
-  /binding\.harness === "openclaw"/,
-  "Native chat should enforce chat support metadata instead of special-casing OpenClaw",
+  /const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*binding\.harness === "openclaw"/,
+  "OpenClaw should not be special-cased inside the generic coven run argv builder",
+);
+
+assert.match(
+  chatRoute,
+  /if \(binding\.harness === "openclaw"\)/,
+  "OpenClaw native chat should use its agent CLI bridge instead of coven run",
+);
+
+assert.match(
+  chatRoute,
+  /resolveOpenClawAgentId\(args\.body\.familiarId\)/,
+  "OpenClaw native chat should resolve Cave familiar ids to real OpenClaw agent ids",
+);
+
+assert.match(
+  chatRoute,
+  /"agent"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
+  "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
+);
+
+assert.match(
+  chatRoute,
+  /"--session-id"[\s\S]*body\.sessionId/,
+  "OpenClaw native chat should pass the current session id when resuming",
 );
 
 assert.match(

@@ -6,6 +6,7 @@ const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url),
 
 const assistantTurnRule = styles.match(/\.cave-turn-assistant\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
 const assistantContentRule = styles.match(/\.cave-turn-content\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
 assert.ok(assistantTurnRule, "Assistant turn styles should exist");
 assert.ok(assistantContentRule, "Assistant content styles should exist");
@@ -26,4 +27,16 @@ assert.match(
   assistantContentRule,
   /width\s*:\s*min\(100%,\s*920px\)/,
   "Assistant responses should use a wide readable content column",
+);
+
+assert.match(
+  source,
+  /familiarId: familiar\.id/,
+  "ChatView should send the active familiar id to /api/chat/send",
+);
+
+assert.doesNotMatch(
+  source,
+  /native Cave chat only supports Codex, Claude Code, and Hermes right now/,
+  "ChatView should allow OpenClaw familiars through native chat send",
 );

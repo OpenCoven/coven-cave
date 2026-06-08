@@ -34,3 +34,15 @@ assert.doesNotMatch(
   /id: "call"[\s\S]*label: "Call"/,
   "HomeComposer should not offer Call as an original chat launch destination",
 );
+
+assert.match(
+  source,
+  /body: JSON\.stringify\(\{ familiarId: fid, prompt \}\)/,
+  "HomeComposer should POST selected familiar chats to /api/chat/send",
+);
+
+assert.doesNotMatch(
+  source,
+  /native Cave chat only supports Codex, Claude Code, and Hermes right now/,
+  "HomeComposer should allow OpenClaw familiars through native chat send",
+);

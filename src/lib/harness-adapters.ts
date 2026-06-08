@@ -81,7 +81,7 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     id: "openclaw",
     label: "OpenClaw",
     binary: "openclaw",
-    chatSupported: false,
+    chatSupported: true,
     installHint: "Connect or create an OpenClaw agent under ~/.openclaw/agents.",
     source: "bundled",
   },
@@ -110,7 +110,7 @@ export function openClawAdapterReport(openclawAgentCount: number): AdapterReport
     id: "openclaw",
     label: "OpenClaw",
     binary: "openclaw",
-    chatSupported: false,
+    chatSupported: true,
     installed: openclawAgentCount > 0,
     path: null,
     version: openclawAgentCount > 0
