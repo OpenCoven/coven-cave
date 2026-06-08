@@ -87,6 +87,24 @@ assert.match(
 
 assert.match(
   source,
+  /const chatHarnesses = harnesses\.filter\(\(adapter\) => adapter\.chatSupported\);/,
+  "Setup should restrict the local chat harness picker to daemon-backed chat-capable harnesses",
+);
+
+assert.match(
+  source,
+  /chatHarnesses\.find\([\s\S]*adapter\.id === selectedHarnessId && adapter\.installed/,
+  "Creating a local familiar should resolve only from the chat-capable harness list",
+);
+
+assert.match(
+  source,
+  /chatHarnesses\.map\(\(adapter\) =>/,
+  "Setup should render only chat-capable harnesses in the local harness picker",
+);
+
+assert.match(
+  source,
   /Connect selected existing agent/,
   "OpenClaw action should say it connects an existing agent",
 );

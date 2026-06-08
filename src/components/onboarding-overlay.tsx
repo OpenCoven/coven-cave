@@ -227,7 +227,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       setSelectedHarnessId((current) => {
         if (
           current &&
-          next.some((adapter) => adapter.id === current && adapter.installed)
+          next.some(
+            (adapter) =>
+              adapter.id === current && adapter.installed && adapter.chatSupported,
+          )
         )
           return current;
         return null;
@@ -256,6 +259,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   }, [open, status?.complete, onDismiss]);
 
   const platformCopy = PLATFORM_COPY[platform];
+  const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
 
   const copyText = async (text: string) => {
     try {
@@ -358,7 +362,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   const createLocalFamiliar = async () => {
     const selectedHarness =
-      harnesses.find(
+      chatHarnesses.find(
         (adapter) => adapter.id === selectedHarnessId && adapter.installed,
       ) ?? null;
     if (!selectedHarness) {
@@ -674,7 +678,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               </button>
             </div>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              {harnesses.map((adapter) => {
+              {chatHarnesses.map((adapter) => {
                 const active = selectedHarnessId === adapter.id;
                 return (
                   <button
