@@ -17,7 +17,7 @@
 //   pty:data { thread_id, bytes }
 //   pty:exit { thread_id, code }
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::thread;
@@ -138,17 +138,18 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
         })
         .map_err(|e| e.to_string())?;
 
+    // Do not accept renderer-supplied command/args/env. PTY permissions are
+    // available to the main webview, so keeping process authority native-side
+    // prevents injected renderer JS from turning pty_start into an arbitrary
+    // process launcher. The terminal still opens the platform default shell.
     let command = default_shell();
     let args = default_shell_args();
     info!("pty_start[{}]: spawning {} {:?}", thread_id, command, args);
     let mut cmd = CommandBuilder::new(&command);
     cmd.args(&args);
-    if let Some(root) = &options.project_root {
-        // Normalize bare Windows drive letters like "C:" → "C:\"
-        // so portable-pty / Node's lstat doesn't hit EISDIR on the root.
-        let normalized = normalize_cwd(root);
-        info!("pty_start[{}]: cwd={}", thread_id, normalized);
-        cmd.cwd(&normalized);
+    if let Some(root) = validated_cwd(options.project_root.as_deref())? {
+        info!("pty_start[{}]: cwd={}", thread_id, root);
+        cmd.cwd(&root);
     }
     // Sensible defaults so xterm.js renders unicode + truecolor; when launched
     // from Finder, launchd hands us a stripped PATH so we backfill with the
@@ -362,6 +363,27 @@ pub struct DiagnoseReport {
     pub output: String,
 }
 
+/// Validate and normalize the optional working directory supplied by the UI.
+///
+/// The renderer may choose which known project root a terminal opens in, but it
+/// must not be able to smuggle command-line authority through cwd edge cases.
+/// Invalid or non-directory values are rejected before process spawn.
+fn validated_cwd(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+
+    let normalized = normalize_cwd(raw);
+    let path = std::path::Path::new(&normalized);
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("invalid project_root '{}': {}", normalized, e))?;
+    if !metadata.is_dir() {
+        return Err(format!("invalid project_root '{}': not a directory", normalized));
+    }
+
+    Ok(Some(normalized))
+}
+
 /// Normalize a working directory path so portable-pty / Node's lstat
 /// doesn't trip on edge cases.
 ///
@@ -477,6 +499,53 @@ fn augmented_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn start_options_rejects_renderer_supplied_process_authority() {
+        let payload = r#"{
+            "thread_id": "cave.comux.test",
+            "command": "/bin/sh",
+            "args": ["-c", "echo owned"],
+            "env": { "PATH": "/tmp" }
+        }"#;
+
+        let err = serde_json::from_str::<StartOptions>(payload)
+            .expect_err("process authority fields must not deserialize");
+        assert!(
+            err.to_string().contains("unknown field"),
+            "unexpected serde error: {err}"
+        );
+    }
+
+    #[test]
+    fn start_options_accepts_terminal_shape() {
+        let payload = r#"{
+            "thread_id": "cave.comux.test",
+            "project_root": null,
+            "cols": 120,
+            "rows": 40
+        }"#;
+
+        let options = serde_json::from_str::<StartOptions>(payload)
+            .expect("terminal pty_start options should deserialize");
+        assert_eq!(options.thread_id, "cave.comux.test");
+        assert_eq!(options.cols, Some(120));
+        assert_eq!(options.rows, Some(40));
+    }
+
+    #[test]
+    fn validated_cwd_rejects_non_directories() {
+        let file = std::env::temp_dir().join(format!(
+            "coven-cave-pty-test-{}",
+            std::process::id()
+        ));
+        std::fs::write(&file, b"not a directory").expect("write temp file");
+
+        let err = validated_cwd(file.to_str()).expect_err("files are not valid cwd roots");
+        assert!(err.contains("not a directory"), "unexpected error: {err}");
+
+        let _ = std::fs::remove_file(file);
+    }
 
     #[test]
     fn pty_diagnose_spawns_shell_and_reads_output() {

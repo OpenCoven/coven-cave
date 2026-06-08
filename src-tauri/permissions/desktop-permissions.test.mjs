@@ -10,6 +10,7 @@ const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
+const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -139,4 +140,17 @@ test("terminal commands use Tauri camelCase command arguments", () => {
     /invoke\("pty_(?:write|resize|stop)", \{[\s\S]{0,120}thread_id:/,
     "direct Tauri command args should not use snake_case without rename_all",
   );
+});
+
+test("pty_start keeps process authority native-side", () => {
+  const startOptions =
+    ptyRust.match(/#\[serde\(deny_unknown_fields\)\][\s\S]*?pub struct StartOptions \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(startOptions, /#\[serde\(deny_unknown_fields\)\]/);
+  assert.doesNotMatch(startOptions, /command:/, "renderer must not choose the executable");
+  assert.doesNotMatch(startOptions, /args:/, "renderer must not choose process arguments");
+  assert.doesNotMatch(startOptions, /env:/, "renderer must not choose process environment");
+  assert.match(ptyRust, /let command = default_shell\(\);/);
+  assert.match(ptyRust, /let args = default_shell_args\(\);/);
+  assert.doesNotMatch(ptyRust, /options\.command|options\.args|options\.env/);
 });
