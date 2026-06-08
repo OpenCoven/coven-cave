@@ -871,10 +871,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </div>
           </div>
           <div className="ml-auto hidden items-center gap-2 md:flex">
-            <span className="cave-header-stat">
-              <Icon name="ph:list-bullets" width={12} aria-hidden />
-              linear session
-            </span>
+            {/* session mode implicit — pill removed */}
           </div>
         </div>
         <ChatContextStrip

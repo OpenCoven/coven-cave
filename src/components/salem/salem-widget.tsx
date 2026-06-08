@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
 import { SalemCat3D } from "./salem-cat-3d";
+import { MarkdownBlock } from "@/components/message-bubble";
 
 type Message = { role: "user" | "salem"; text: string };
 
@@ -12,14 +13,45 @@ type PreloadSummary = { docs: number; tools: number; skills: number; context: nu
 
 const GREETING = "I'm Salem, your sassy Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
+// ---------------------------------------------------------------------------
+// Strip raw <Cards>...</Cards> and <Card .../> JSX blobs from Salem replies
+// and replace with clean markdown links.
+// ---------------------------------------------------------------------------
+
+function cleanSalemMarkdown(text: string): string {
+  // Replace full <Cards>...</Cards> block with extracted Card links
+  text = text.replace(/<Cards>([\s\S]*?)<\/Cards>/g, (_match, inner: string) => {
+    const links: string[] = [];
+    const cardRe = /<Card\s[^>]*title="([^"]*)"[^>]*href="([^"]*)"[^>]*(?:description="([^"]*)")?[^>]*\/?>/g;
+    let m: RegExpExecArray | null;
+    while ((m = cardRe.exec(inner)) !== null) {
+      const title = m[1];
+      const href = m[2];
+      const desc = m[3] ? ` — ${m[3]}` : "";
+      links.push(`- [${title}](${href})${desc}`);
+    }
+    return links.length ? links.join("\n") : "";
+  });
+
+  // Also strip any self-closing <Card .../> that leaked outside a <Cards> wrapper
+  text = text.replace(/<Card\s[^>]*title="([^"]*)"[^>]*href="([^"]*)"[^>]*(?:description="([^"]*)")?[^>]*\/>/g,
+    (_m, title: string, href: string, desc?: string) =>
+      `- [${title}](${href})${desc ? ` — ${desc}` : ""}`
+  );
+
+  // Strip any remaining stray XML-like tags that aren't standard markdown/html
+  text = text.replace(/<\/?Cards>/g, "");
+
+  // Clean up heading anchors like [#some-id] that appear after heading text
+  text = text.replace(/\s\[#[\w-]+\]/g, "");
+
+  return text.trim();
+}
+
 function openSalemPanel() {
   window.dispatchEvent(new CustomEvent("cave:salem-open"));
 }
 
-/**
- * Salem launcher — floating bottom-right docs familiar for CovenCave.
- * The chat itself lives in the shell right panel via `SalemChatPanel`.
- */
 export function SalemWidget() {
   const [mood, setMood] = useState<SalemMood>("idle");
   const [docked, setDocked] = useState(false);
@@ -71,7 +103,6 @@ export function SalemChatPanel() {
 
   useEffect(() => {
     let alive = true;
-
     fetch("/api/salem")
       .then((res) => res.json())
       .then((data: { summary?: PreloadSummary; preload?: SalemPreloadContext }) => {
@@ -79,15 +110,8 @@ export function SalemChatPanel() {
           setPreload({ summary: data.summary, preload: data.preload });
         }
       })
-      .catch(() => {
-        if (alive) {
-          setPreload(null);
-        }
-      });
-
-    return () => {
-      alive = false;
-    };
+      .catch(() => { if (alive) setPreload(null); });
+    return () => { alive = false; };
   }, []);
 
   const send = async (e?: FormEvent) => {
@@ -106,17 +130,12 @@ export function SalemChatPanel() {
         body: JSON.stringify({ message: text }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };
-      setMessages((m) => [
-        ...m,
-        { role: "salem", text: data.reply ?? data.error ?? "Hmm, I couldn't find that one. Try rephrasing?" },
-      ]);
+      const raw = data.reply ?? data.error ?? "Hmm, I couldn't find that one. Try rephrasing?";
+      setMessages((m) => [...m, { role: "salem", text: cleanSalemMarkdown(raw) }]);
       setMood("happy");
       setTimeout(() => setMood("idle"), 2000);
     } catch {
-      setMessages((m) => [
-        ...m,
-        { role: "salem", text: "I had a hairball moment - couldn't reach my docs brain right now." },
-      ]);
+      setMessages((m) => [...m, { role: "salem", text: "I had a hairball moment — couldn't reach my docs brain right now." }]);
       setMood("idle");
     } finally {
       setLoading(false);
@@ -162,7 +181,13 @@ export function SalemChatPanel() {
       <div className="salem-panel__messages">
         {messages.map((m, i) => (
           <div key={i} className={`salem-msg salem-msg--${m.role}`}>
-            <span className="salem-msg__text">{m.text}</span>
+            {m.role === "salem" ? (
+              <div className="salem-msg__md">
+                <MarkdownBlock text={m.text} />
+              </div>
+            ) : (
+              <span className="salem-msg__text">{m.text}</span>
+            )}
           </div>
         ))}
         {loading && (
@@ -183,7 +208,8 @@ export function SalemChatPanel() {
           disabled={loading}
           autoFocus
         />
-        <button type="submit" className="salem-panel__send" disabled={loading || !input.trim()} aria-label="Send">
+        <button type="submit" className="salem-panel__send salem-panel__send--label" disabled={loading || !input.trim()} aria-label="Send">
+          <span className="salem-panel__send-text">SALEM</span>
           <Icon name="ph:arrow-up" width={14} />
         </button>
       </form>
