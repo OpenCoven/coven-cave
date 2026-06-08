@@ -7,6 +7,37 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.51] — 2026-06-08
+
+Small stopping-point release for the CovenCave polish wave after 0.0.50.
+
+### Added
+
+- **Salem docs familiar.** Adds Salem as a bottom-right 3D black-cat docs
+  familiar with a quiet perch, expandable docs chat, preloaded docs/tool/skill
+  context, Cave route awareness, and he/him Sabrina-style sassy persona
+  guardrails.
+- **Collapsed transcript internals.** Thinking and tool activity now stay
+  collapsed by default, including individual tool input/output payloads, so
+  the assistant reply remains the first thing users read.
+
+### Changed
+
+- **Linear chat polish.** Chat layout now runs full width with denser turn
+  numbering, cleaner metadata, themed ThinkingIndicator colors, send-button
+  hover repair, and stronger focus rings.
+- **Dark Cave visibility.** Lifts the default dark background slightly and
+  tunes Salem's material/rim light so his black-cat silhouette remains visible
+  without turning into a glow blob.
+
+### Fixed
+
+- **UI contrast and focus pass.** Repairs focus rings, hover states, and
+  eyebrow/label contrast across Settings, Familiar Studio, Plugins,
+  Onboarding, Calendar, Capabilities, and chat surfaces.
+- **Salem chat surface.** Removes emoji glyphs from the open chat panel while
+  keeping the 3D Salem presence in the perch and header.
+
 ## [0.0.50] — 2026-06-08
 
 Agents page, light/dark themes, full UI polish pass, memory constellation
