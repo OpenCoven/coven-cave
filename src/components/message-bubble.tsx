@@ -224,6 +224,48 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
   );
 }
 
+
+const DANGEROUS_ELEMENTS_SELECTOR = "script, iframe, object, embed, link, style, meta, base";
+const URL_ATTRS = new Set(["href", "src", "xlink:href", "formaction", "poster"]);
+const SAFE_URL_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+
+function isSafeUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+
+  // Browsers ignore ASCII whitespace/control chars while resolving URL schemes,
+  // so normalize before checking for javascript:/data:/vbscript: payloads.
+  const normalized = trimmed.replace(/[\u0000-\u001F\u007F\s]+/g, "");
+  const schemeMatch = /^([a-zA-Z][a-zA-Z\d+.-]*):/.exec(normalized);
+  if (!schemeMatch) return true;
+
+  return SAFE_URL_PROTOCOLS.has(`${schemeMatch[1].toLowerCase()}:`);
+}
+
+function sanitizeHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+
+  for (const el of Array.from(doc.querySelectorAll(DANGEROUS_ELEMENTS_SELECTOR))) {
+    el.remove();
+  }
+
+  for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
+    for (const attr of Array.from(el.attributes)) {
+      const attrName = attr.name.toLowerCase();
+      if (attrName.startsWith("on")) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+
+      if (URL_ATTRS.has(attrName) && !isSafeUrl(attr.value)) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+
+  return doc.body.innerHTML;
+}
+
 // ---------------------------------------------------------------------------
 // Public: MarkdownBlock — renders full markdown (prose + code) via @create-markdown/preview
 // ---------------------------------------------------------------------------
@@ -235,16 +277,7 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
     if (!text) return;
     let cancelled = false;
     void mdToHtml(text).then((h) => {
-      if (cancelled) return;
-      const doc = new DOMParser().parseFromString(h, "text/html");
-      for (const el of Array.from(doc.querySelectorAll("script, iframe, object, embed, link, style"))) el.remove();
-      for (const el of Array.from(doc.querySelectorAll<HTMLElement>("*"))) {
-        for (const attr of Array.from(el.attributes)) {
-          if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-          if ((attr.name === "href" || attr.name === "src") && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        }
-      }
-      setHtml(doc.body.innerHTML);
+      if (!cancelled) setHtml(h);
     });
     return () => { cancelled = true; };
   }, [text]);
@@ -326,8 +359,9 @@ async function mdToHtml(markdown: string): Promise<string> {
     html = html.replace(re, replacement);
   }
 
-  renderCache.set(markdown, html);
-  return html;
+  const sanitizedHtml = sanitizeHtml(html);
+  renderCache.set(markdown, sanitizedHtml);
+  return sanitizedHtml;
 }
 
 function regEsc(s: string): string {
@@ -400,7 +434,7 @@ function MarkdownContent({ text, pending }: { text: string; pending?: boolean })
     <div
       ref={containerRef}
       className="cave-md"
-      // Content originates from our own Coven daemon — fully trusted.
+      // Markdown output is sanitized in mdToHtml before DOM insertion.
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
