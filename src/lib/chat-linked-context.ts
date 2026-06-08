@@ -40,7 +40,7 @@ export async function linkedContextForSession(sessionId: string): Promise<ChatLi
       lifecycle: card.lifecycle,
       labels: card.labels,
       cwd: card.cwd,
-      notes: card.notes.trim() ? card.notes : null,
+      notes: card.notes.trim() || null,
     },
     github: card.github.map((item) => ({
       id: item.id,

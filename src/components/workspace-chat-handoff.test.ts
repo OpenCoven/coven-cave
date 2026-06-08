@@ -4,11 +4,36 @@ import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const pendingChatActionLib = await readFile(new URL("../lib/pending-chat-action.ts", import.meta.url), "utf8");
+
+assert.match(
+  pendingChatActionLib,
+  /export type PendingChatAction =[\s\S]*kind: "new"[\s\S]*kind: "open"[\s\S]*kind: "list"/,
+  "PendingChatAction should be defined once in the shared lib so Workspace and ChatSurface cannot drift",
+);
 
 assert.match(
   workspace,
-  /type PendingChatAction =[\s\S]*kind: "new"[\s\S]*kind: "open"[\s\S]*kind: "list"/,
-  "Workspace should model chat launch/open/list handoffs as pending state instead of fire-and-forget events",
+  /import type \{ PendingChatAction \} from "@\/lib\/pending-chat-action"/,
+  "Workspace should import the shared PendingChatAction type instead of redeclaring it",
+);
+
+assert.match(
+  chatSurface,
+  /import type \{ PendingChatAction \} from "@\/lib\/pending-chat-action"/,
+  "ChatSurface should import the shared PendingChatAction type instead of redeclaring it",
+);
+
+assert.doesNotMatch(
+  workspace,
+  /^type PendingChatAction =/m,
+  "Workspace must not redeclare PendingChatAction locally",
+);
+
+assert.doesNotMatch(
+  chatSurface,
+  /^type PendingChatAction =/m,
+  "ChatSurface must not redeclare PendingChatAction locally",
 );
 
 assert.match(

@@ -11,16 +11,11 @@ import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { inferOrigin } from "@/lib/session-origin";
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type AgentsScope = "sessions" | "conversation" | "memory";
-
-type PendingChatAction =
-  | { kind: "new"; familiarId?: string | null; projectRoot?: string | null; nonce: number }
-  | { kind: "open"; sessionId: string; familiarId?: string | null; nonce: number }
-  | { kind: "list"; nonce: number }
-  | null;
 
 type Props = {
   familiars: Familiar[];

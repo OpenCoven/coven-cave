@@ -6,7 +6,7 @@ import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
@@ -95,6 +95,15 @@ function githubLabel(kind: string): string {
   if (kind === "review_request") return "Review";
   if (kind === "discussion") return "Discussion";
   return "GitHub";
+}
+
+function githubIcon(kind: string): IconName {
+  if (kind === "issue") return "ph:bug-bold";
+  if (kind === "discussion") return "ph:chats";
+  if (kind === "review_request") return "ph:check-circle";
+  if (kind === "notification") return "ph:bell";
+  if (kind === "repo") return "ph:git-fork-bold";
+  return "ph:git-pull-request";
 }
 
 function fmtBytes(size?: number): string {
@@ -335,7 +344,7 @@ function ChatContextStrip({
           title={`Open on GitHub: ${item.title}`}
           className="inline-flex min-w-0 max-w-[18rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
         >
-          <Icon name={item.kind === "issue" ? "ph:bug-bold" : "ph:git-pull-request"} width={12} className="shrink-0 text-[var(--text-muted)]" />
+          <Icon name={githubIcon(item.kind)} width={12} className="shrink-0 text-[var(--text-muted)]" />
           <span className="shrink-0">{githubLabel(item.kind)}</span>
           <span className="min-w-0 truncate">{item.repo}{item.number ? ` #${item.number}` : ""}</span>
           {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
@@ -396,7 +405,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (!res.ok) {
           if (!cancelled) {
             setTurns([]);
-            setHistoryState("missing");
+            setHistoryState(res.status === 404 ? "missing" : "error");
           }
           return;
         }

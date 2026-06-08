@@ -43,14 +43,9 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
+import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
-
-type PendingChatAction =
-  | { kind: "new"; familiarId?: string | null; projectRoot?: string | null; nonce: number }
-  | { kind: "open"; sessionId: string; familiarId?: string | null; nonce: number }
-  | { kind: "list"; nonce: number }
-  | null;
 
 const SURFACE_LABELS: Record<WorkspaceMode, string> = {
   home: "Home",

@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const context = await linkedContextForSession(id);
 
   // Primary: cave-conversations JSON (written by chat/send for UI-originated chats)
   const conv = await loadConversation(id);
   if (conv) {
+    const context = await linkedContextForSession(id);
     return NextResponse.json({ ok: true, conversation: conv, context });
   }
 
@@ -24,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (familiarId) {
     const jsonlConv = await loadConversationFromJsonl(id, familiarId);
     if (jsonlConv) {
+      const context = await linkedContextForSession(id);
       return NextResponse.json({ ok: true, conversation: jsonlConv, context });
     }
   }
