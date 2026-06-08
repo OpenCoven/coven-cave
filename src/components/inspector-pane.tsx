@@ -96,8 +96,12 @@ export function InspectorPane({
 
   const inboxBadge = familiarInbox.filter((i) => i.status === "fired").length;
 
+  const shellClassName = compact
+    ? "flex h-full min-h-0 flex-col bg-[var(--bg-base)]"
+    : "flex h-full min-h-0 flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40";
+
   return (
-    <aside className="flex h-full flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40">
+    <aside className={shellClassName}>
       {!compact && (
         <nav className="flex border-b border-[var(--border-hairline)] text-[11px]">
           {(["memory", "familiar", "inbox", "vault"] as const).map((t) => (
@@ -408,7 +412,7 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
   );
 
   const inlineView = (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
       {header}
       {toolbar}
       {body}
@@ -595,7 +599,7 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="inspector-memory-tab-surface flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
       <div className="flex items-center gap-1 border-b border-[var(--border-hairline)] px-2 py-1.5">
         {(["inspector", "coven", "files"] as const).map((m) => (
           <button
