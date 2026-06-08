@@ -11,6 +11,7 @@ import {
   type PanelImperativeHandle,
 } from "react-resizable-panels";
 import { Icon, type IconName } from "@/lib/icon";
+import { useShellBanners } from "@/lib/shell-banners";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -259,7 +260,10 @@ function ShellInner({
         </>
       )}
       <Panel id="detail" className="shell-detail-panel">
-        <main className="shell-detail">{detail}</main>
+        <main className="shell-detail">
+          <ShellBannerStrip />
+          {detail}
+        </main>
       </Panel>
       {hasAgent && (
         <>
@@ -400,5 +404,41 @@ export function ShellNavHeader({
         className="ml-auto opacity-60"
       />
     </button>
+  );
+}
+
+function ShellBannerStrip() {
+  const { banners, dismissBanner } = useShellBanners();
+  if (banners.length === 0) return null;
+  return (
+    <div className="shell-banner-strip">
+      {banners.map((b) => (
+        <div
+          key={b.id}
+          className={`shell-banner shell-banner--${b.severity}`}
+          role={b.severity === "error" ? "alert" : "status"}
+        >
+          <span className="shell-banner__title">{b.title}</span>
+          {b.cta ? (
+            <button
+              type="button"
+              className="shell-banner__cta"
+              onClick={b.cta.onClick}
+            >
+              {b.cta.label}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="shell-banner__dismiss"
+            aria-label="Dismiss"
+            onClick={() => dismissBanner(b.id)}
+            title="Dismiss"
+          >
+            <Icon name="ph:x" width={11} />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

@@ -2535,3 +2535,71 @@ body {
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
   color: var(--text-primary);
 }
+
+/* ────────────────────────────────────────────────
+   Shell banner strip — system state surface
+   (Phase 4, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.shell-banner-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.shell-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.shell-banner--error {
+  background: color-mix(in oklch, var(--color-danger) 12%, var(--bg-base));
+  color: var(--color-danger);
+}
+
+.shell-banner--warning {
+  background: color-mix(in oklch, var(--color-warning) 10%, var(--bg-base));
+  color: var(--color-warning);
+}
+
+.shell-banner--info {
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-base));
+  color: var(--text-primary);
+}
+
+.shell-banner__title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-banner__cta {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: currentColor;
+  border-radius: var(--radius-control);
+  padding: 3px 10px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.shell-banner__dismiss {
+  background: transparent;
+  border: 0;
+  color: currentColor;
+  opacity: 0.6;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.shell-banner__dismiss:hover {
+  opacity: 1;
+}

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fredoka, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
+import { ShellBannersProvider } from "@/lib/shell-banners";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,8 +36,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${fredoka.variable} h-full antialiased`}
     >
       <body className="h-full flex flex-col">
-        <SidecarAuthBridge />
-        {children}
+        <ShellBannersProvider>
+          <SidecarAuthBridge />
+          {children}
+        </ShellBannersProvider>
       </body>
     </html>
   );
