@@ -203,10 +203,9 @@
   padding: 0 10px 5px;
   font-size: 10px;
   font-weight: 650;
-  letter-spacing: 0;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  opacity: 0.76;
   user-select: none;
 }
 
@@ -226,7 +225,7 @@
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
@@ -235,7 +234,7 @@
 
 .sidebar-folder-row:hover {
   background: var(--bg-raised);
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .sidebar-folder-row--active {
@@ -610,7 +609,7 @@
   min-height: 34px;
   border-radius: 8px;
   padding: 0 8px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .sidebar-folder-icon,
