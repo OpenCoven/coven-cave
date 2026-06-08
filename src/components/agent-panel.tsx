@@ -2,65 +2,15 @@
 
 import { forwardRef } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar, SessionRow } from "@/lib/types";
-
-// ---------------------------------------------------------------------------
-// FamiliarStrip — 28px avatar circles at the top of the AgentPanel.
-// Active familiar gets a Mood C violet ring. Badge text (QUEEN/RESEARCH/etc.)
-// appears as a native title tooltip on hover.
-// ---------------------------------------------------------------------------
-
-function FamiliarStrip({
-  familiars,
-  activeId,
-  onSelect,
-}: {
-  familiars: Familiar[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const resolved = useResolvedFamiliars(familiars);
-
-  if (resolved.length === 0) return null;
-
-  return (
-    <div className="familiar-strip">
-      {resolved.map((f) => {
-        const isActive = f.id === activeId;
-        return (
-          <button
-            key={f.id}
-            type="button"
-            title={`${f.display_name}${f.role ? ` · ${f.role}` : ""}`}
-            aria-label={f.display_name}
-            aria-pressed={isActive}
-            onClick={() => onSelect(f.id)}
-            className={`familiar-strip-avatar${isActive ? " familiar-strip-avatar--active" : ""}`}
-          >
-            <FamiliarAvatar familiar={f} size="sm" />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AgentPanel
-// ---------------------------------------------------------------------------
 
 type Props = {
   familiar: Familiar | null;
-  familiars: Familiar[];
-  activeId: string | null;
   sessions: SessionRow[];
   daemonRunning: boolean;
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
-  onFamiliarSelect: (id: string) => void;
 };
 
 export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPanel(
@@ -69,9 +19,6 @@ export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPane
 ) {
   const {
     familiar,
-    familiars,
-    activeId,
-    onFamiliarSelect,
     onOpenOnboarding,
     sessions,
     daemonRunning,
@@ -81,10 +28,9 @@ export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPane
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Chat area */}
       {!familiar ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[12px] text-[var(--text-muted)]">
-          <p className="text-[var(--text-secondary)]">Pick a familiar above.</p>
+          <p className="text-[var(--text-secondary)]">Pick a familiar from the rail.</p>
           <p className="mt-1">Their live chat lives here.</p>
           <button
             type="button"

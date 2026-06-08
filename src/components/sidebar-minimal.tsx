@@ -27,7 +27,8 @@ export type FolderMode =
   | "terminal"
   | "browser"
   | "github"
-  | "library";
+  | "library"
+  | "capabilities";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -73,6 +74,7 @@ const FOLDER_MODES: Array<{
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" },
+  { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons" },
 ];

@@ -32,6 +32,7 @@ import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import { ComuxView } from "@/components/comux-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
+import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { nativeNotify } from "@/lib/native-notify";
@@ -55,6 +56,7 @@ const SURFACE_LABELS: Record<WorkspaceMode, string> = {
   browser: "Browser",
   terminal: "Terminal",
   github: "GitHub",
+  capabilities: "Capabilities",
 };
 
 export function Workspace() {
@@ -959,6 +961,8 @@ export function Workspace() {
       />
     ) : mode === "github" ? (
       <GitHubView />
+    ) : mode === "capabilities" ? (
+      <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (
       <CalendarView
         items={inboxItems}
@@ -1039,8 +1043,6 @@ export function Workspace() {
               chatSlot={
                 <AgentPanel
                   familiar={active}
-                  familiars={familiars}
-                  activeId={activeId}
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   onSessionStarted={loadSessions}
@@ -1049,7 +1051,6 @@ export function Workspace() {
                     return true;
                   }}
                   onOpenOnboarding={openOnboarding}
-                  onFamiliarSelect={selectFamiliar}
                 />
               }
               inspectorSlot={

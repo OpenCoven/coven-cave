@@ -2,7 +2,6 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble } from "@/components/message-bubble";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
@@ -39,7 +38,6 @@ type Turn = {
 
 type Props = {
   familiar: Familiar;
-  familiars?: Familiar[];
   sessionId: string | null;
   projectRoot?: string;
   daemonRunning?: boolean;
@@ -47,7 +45,6 @@ type Props = {
   onBack?: () => void;
   onSlashCommand?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
-  onFamiliarSelect?: (id: string) => void;
 };
 
 export type ChatViewHandle = {
@@ -266,7 +263,7 @@ function ChatEmptyState({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, familiars = [], sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding, onFamiliarSelect },
+  { familiar, sessionId, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -713,9 +710,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
-      {/* Chat header: familiar switcher + harness badge */}
+      {/* Chat header: familiar name + harness badge (switch from the rail) */}
       <header className="flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-        <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
+        <div className="min-w-0 flex-1">
+          <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+            {familiar.display_name}
+          </h2>
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <span className={[
             "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",

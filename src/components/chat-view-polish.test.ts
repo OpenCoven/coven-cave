@@ -60,8 +60,8 @@ assert.match(
   "Chat header should span the full side-panel width",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /<FamiliarSwitcher familiar=\{familiar\} familiars=\{familiars\} onSelect=\{onFamiliarSelect\} \/>/,
-  "Chat header should expose familiar switching through the side-panel picker",
+  /FamiliarSwitcher/,
+  "Chat header should not duplicate the avatar rail's familiar switcher",
 );

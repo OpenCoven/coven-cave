@@ -7,4 +7,5 @@ export type WorkspaceMode =
   | "library"
   | "browser"
   | "terminal"
-  | "github";
+  | "github"
+  | "capabilities";

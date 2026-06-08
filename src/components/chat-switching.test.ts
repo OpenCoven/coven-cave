@@ -8,20 +8,14 @@ const chatRouterBlock =
 
 assert.ok(chatRouterBlock, "ChatSurface should render ChatRouter in conversation mode");
 
-assert.match(
+assert.doesNotMatch(
   chatRouterBlock,
-  /onSetActiveFamiliar\(id\)/,
-  "ChatRouter familiar selection should update the active familiar",
+  /onFamiliarSelect/,
+  "ChatRouter should no longer expose an inline familiar selector — the avatar rail is the only switcher",
 );
 
 assert.doesNotMatch(
   chatRouterBlock,
-  /goToList\(\)/,
-  "Switching familiar from the conversation surface should not force the chat list",
-);
-
-assert.match(
-  chatRouterBlock,
-  /routerRef\.current\?\.newChat\(root\)/,
-  "Switching familiar with pending project context should start the new familiar in that project chat",
+  /familiars=/,
+  "ChatRouter should not receive the familiar list — it never renders a picker now",
 );

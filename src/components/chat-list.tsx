@@ -6,18 +6,15 @@ import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 type Props = {
   familiar: Familiar;
-  familiars?: Familiar[];
   sessions: SessionRow[];
   daemonRunning?: boolean;
   onOpen: (sessionId: string) => void;
   onNewChat: (projectRoot?: string) => void;
-  onFamiliarSelect?: (id: string) => void;
 };
 
 function age(iso: string): string {
@@ -57,7 +54,7 @@ function statusStyle(s: string) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onFamiliarSelect }: Props) {
+export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat }: Props) {
   const [busyTuiId, setBusyTuiId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -170,7 +167,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             {/* Name + subtitle */}
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex min-w-0 items-center gap-2">
-                <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />
+                <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+                  {familiar.display_name}
+                </h2>
               </div>
               <p className="mt-0.5 truncate text-[11px] leading-snug text-[var(--text-muted)]">
                 {familiar.role ? (
