@@ -35,3 +35,20 @@ assert.doesNotMatch(
 assert.match(css, /:root\s*\{[\s\S]*?--background\s*:\s*oklch\(0\.07/, "coven dark background");
 
 console.log("globals.css.test.ts (task 3) OK");
+
+// Task 4 assertions: the 7 non-default themes each have dark + light blocks.
+const otherThemes = ["tide", "grove", "ember", "bloom", "dusk", "mist", "slate"];
+for (const id of otherThemes) {
+  const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
+  const lightRe = new RegExp(`\\[data-theme="${id}"\\]\\[data-mode="light"\\]\\s*\\{`);
+  assert.match(css, darkRe, `${id} dark block exists`);
+  assert.match(css, lightRe, `${id} light block exists`);
+}
+
+// Old preset ids no longer present as CSS selectors.
+for (const old of ["midnight", "orchid", "sky"]) {
+  const re = new RegExp(`\\[data-theme="${old}"\\]`);
+  assert.doesNotMatch(css, re, `old preset ${old} removed`);
+}
+
+console.log("globals.css.test.ts (task 4) OK");
