@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
+import { MemoryGraph3D } from "@/components/memory-graph-3d";
+import { buildMemoryGraphModel } from "@/lib/memory-graph-3d-model";
 
 type CovenMemoryEntry = {
   id: string;
@@ -74,6 +76,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [familiarFilter, setFamiliarFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -136,6 +139,19 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
     return familiars.filter((familiar) => ids.has(familiar.id));
   }, [covenEntries, familiars]);
 
+  const memoryGraph = useMemo(
+    () =>
+      buildMemoryGraphModel({
+        familiars,
+        covenEntries,
+        fileEntries,
+        query,
+        familiarFilter,
+        maxLeavesPerHub: familiarFilter === "all" ? 30 : 90,
+      }),
+    [covenEntries, familiarFilter, familiars, fileEntries, query],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
@@ -149,10 +165,30 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
               Comprehensive Coven memory, familiar recall, and local memory files.
             </p>
           </div>
-          <button type="button" onClick={() => void load()} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
-            <Icon name="ph:arrows-clockwise" width={12} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
+              {(["list", "graph"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
+                  className={[
+                    "inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
+                    viewMode === mode
+                      ? "bg-[var(--accent-presence)] text-white"
+                      : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
+                  ].join(" ")}
+                >
+                  <Icon name={mode === "list" ? "ph:list-bullets" : "ph:graph"} width={12} />
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => void load()} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+              <Icon name="ph:arrows-clockwise" width={12} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -194,6 +230,62 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
 
+      {viewMode === "graph" ? (
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <section className="min-h-[520px] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
+            <MemoryGraph3D
+              graph={memoryGraph}
+              familiars={familiarById}
+              selectedFamiliarId={familiarFilter}
+              onSelectFamiliar={(familiarId) => setFamiliarFilter(familiarId)}
+              onOpenMemoryFile={onOpenMemoryFile}
+            />
+          </section>
+          <aside className="hidden min-h-0 xl:block">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                {familiarFilter === "all" ? "Constellation index" : familiarById.get(familiarFilter)?.display_name ?? familiarFilter}
+              </h3>
+              <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length + visibleFiles.length} visible</span>
+            </div>
+            <div className="max-h-[640px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+              {visibleCoven.slice(0, 18).map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => onOpenMemoryFile?.(entry.path)}
+                  className="flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                >
+                  <Icon name="ph:brain" width={13} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block line-clamp-2 text-[12px] text-[var(--text-primary)]">{entry.title}</span>
+                    <span className="mt-0.5 block text-[10px] text-[var(--text-muted)]">{familiarById.get(entry.familiar_id)?.display_name ?? entry.familiar_id} · {age(entry.updated_at)}</span>
+                  </span>
+                </button>
+              ))}
+              {visibleFiles.slice(0, 18).map((entry) => (
+                <button
+                  key={entry.fullPath}
+                  type="button"
+                  onClick={() => onOpenMemoryFile?.(entry.fullPath)}
+                  className="flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                >
+                  <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.relPath}</span>
+                    <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{entry.rootLabel} · {age(entry.modified)}</span>
+                  </span>
+                </button>
+              ))}
+              {visibleCoven.length + visibleFiles.length === 0 ? (
+                <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+                  {loaded ? "No memories match this constellation." : "Loading memories..."}
+                </div>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      ) : (
       <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
@@ -275,6 +367,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
           </div>
         </section>
       </div>
+      )}
     </div>
   );
 }
