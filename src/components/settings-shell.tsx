@@ -510,7 +510,8 @@ function AppearanceSection() {
   function normalizeTweakcnUrl(raw: string): string | null {
     try {
       const url = new URL(raw.trim());
-      if (!url.hostname.endsWith("tweakcn.com")) return null;
+      const host = url.hostname.toLowerCase();
+      if (!(host === "tweakcn.com" || host.endsWith(".tweakcn.com"))) return null;
       if (url.pathname.startsWith("/r/themes/")) {
         const id = url.pathname.replace("/r/themes/", "").split("/")[0];
         if (id) return `https://tweakcn.com/r/themes/${id}`;
