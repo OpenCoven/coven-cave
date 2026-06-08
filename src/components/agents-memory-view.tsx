@@ -15,6 +15,7 @@ type FileMemoryEntry = {
   fullPath: string;
   size: number;
   modified: string;
+  sourceContext?: string;
 };
 
 type Props = {
@@ -61,12 +62,14 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
       entry.excerpt ?? "",
       entry.familiar_id,
       entry.path,
+      entry.source_context ?? "",
     ].some((value) => value.toLowerCase().includes(query));
   }
   return [
     entry.rootLabel,
     entry.relPath,
     entry.fullPath,
+    entry.sourceContext ?? "",
   ].some((value) => value.toLowerCase().includes(query));
 }
 
@@ -319,6 +322,16 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     <p className="mt-3 line-clamp-6 text-[12px] leading-5 text-[var(--text-secondary)]">
                       {selectedMemory.excerpt}
                     </p>
+                  ) : null}
+                  {selectedMemory.sourceContext ? (
+                    <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 px-2.5 py-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                        Provenance
+                      </div>
+                      <code className="mt-1 block break-all font-mono text-[11px] leading-4 text-[var(--text-primary)]">
+                        {selectedMemory.sourceContext}
+                      </code>
+                    </div>
                   ) : null}
                   <button
                     type="button"

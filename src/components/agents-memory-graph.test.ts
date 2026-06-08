@@ -58,6 +58,18 @@ assert.match(
 
 assert.match(
   memoryViewSource,
+  /Provenance[\s\S]*selectedMemory\.sourceContext/,
+  "Selected-memory detail panel should show source_context provenance when available",
+);
+
+assert.doesNotMatch(
+  memoryViewSource,
+  /sourceContext[\s\S]*window\.location|window\.location[\s\S]*sourceContext/,
+  "source_context should be visible text in this slice, not an unverified click-through route",
+);
+
+assert.match(
+  memoryViewSource,
   /onSelectMemory=\{setSelectedMemoryId\}/,
   "Clicking a memory node in the graph should select it for the detail panel",
 );
@@ -96,6 +108,18 @@ assert.match(
   graphSource,
   /aria-label="3D familiar memory map"/,
   "MemoryGraph3D should expose an accessible canvas label",
+);
+
+assert.match(
+  graphSource,
+  /Source:[\s\S]*sourceContext/,
+  "Memory graph tooltip should show source_context provenance for traced memory nodes",
+);
+
+assert.match(
+  graphSource,
+  /hasSourceContext[\s\S]*tracked source|tracked source[\s\S]*hasSourceContext/,
+  "Memory graph legend should distinguish traced memory nodes without changing graph topology",
 );
 
 assert.match(

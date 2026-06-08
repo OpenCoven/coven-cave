@@ -7,6 +7,7 @@ export type MemoryGraphCovenEntry = {
   path: string;
   updated_at: string;
   excerpt?: string;
+  source_context?: string;
 };
 
 export type MemoryGraphFileEntry = {
@@ -16,6 +17,7 @@ export type MemoryGraphFileEntry = {
   fullPath: string;
   size: number;
   modified: string;
+  sourceContext?: string;
   /** Familiar id when this entry belongs to a specific agent workspace */
   familiarId?: string;
 };
@@ -41,6 +43,7 @@ export type MemoryGraphMemoryNode = {
   path: string;
   updatedAt: string;
   excerpt?: string;
+  sourceContext?: string;
   rootLabel?: string;
   relPath?: string;
 };
@@ -240,32 +243,32 @@ export function buildMemoryGraphModel({
 
   const selectedFamiliarId = familiarFilter !== "all"
     ? familiarFilter
-    : covenEntries.find((entry) => matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q))?.familiar_id
-      ?? fileEntries.find((entry) => entry.familiarId && matchesQuery([entry.relPath, entry.familiarId], q))?.familiarId
+    : covenEntries.find((entry) => matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path, entry.source_context], q))?.familiar_id
+      ?? fileEntries.find((entry) => entry.familiarId && matchesQuery([entry.relPath, entry.familiarId, entry.sourceContext], q))?.familiarId
       ?? familiars[0]?.id;
   const selectedFamiliar = familiars.find((familiar) => familiar.id === selectedFamiliarId);
 
   const matchingCovenEntries = covenEntries
     .filter((entry) => entry.familiar_id === selectedFamiliarId)
     .filter((entry) =>
-      matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q),
+      matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path, entry.source_context], q),
     )
     .sort((a, b) => compareIsoDesc(a.updated_at, b.updated_at));
 
   const totalMatchingForFamiliar = covenEntries.filter((entry) =>
     entry.familiar_id === selectedFamiliarId &&
-    matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path], q),
+    matchesQuery([entry.title, entry.excerpt, entry.familiar_id, entry.path, entry.source_context], q),
   ).length;
 
   // File entries for the selected familiar from agent workspace memory dirs
   const matchingFileEntries = fileEntries
     .filter((entry) => entry.familiarId === selectedFamiliarId)
-    .filter((entry) => matchesQuery([entry.relPath, entry.rootLabel, entry.familiarId ?? ""], q))
+    .filter((entry) => matchesQuery([entry.relPath, entry.rootLabel, entry.familiarId ?? "", entry.sourceContext], q))
     .sort((a, b) => compareIsoDesc(a.modified, b.modified));
 
   const totalFileEntries = fileEntries.filter((entry) =>
     entry.familiarId === selectedFamiliarId &&
-    matchesQuery([entry.relPath, entry.rootLabel, entry.familiarId ?? ""], q),
+    matchesQuery([entry.relPath, entry.rootLabel, entry.familiarId ?? "", entry.sourceContext], q),
   ).length;
 
   const totalMemoryCount = totalMatchingForFamiliar + totalFileEntries;
@@ -303,6 +306,7 @@ export function buildMemoryGraphModel({
           path: coven.path,
           updatedAt: coven.updated_at,
           excerpt: coven.excerpt,
+          sourceContext: coven.source_context,
         };
       },
     });
@@ -345,6 +349,7 @@ export function buildMemoryGraphModel({
             title: file.relPath,
             path: file.fullPath,
             updatedAt: file.modified,
+            sourceContext: file.sourceContext,
             rootLabel: file.rootLabel,
             relPath: file.relPath,
           };

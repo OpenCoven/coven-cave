@@ -7,6 +7,7 @@ export type CovenMemoryEntry = {
   path: string;
   updated_at: string;
   excerpt?: string;
+  source_context?: string;
 };
 
 export type AgentCardStats = {
