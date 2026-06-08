@@ -55,6 +55,12 @@ assert.match(
 );
 
 assert.match(
+  inspectorPane,
+  /fetch\(`\/api\/inbox\/\$\{encodeURIComponent\(item\.id\)\}\/\$\{action\}`/,
+  "Inspector Inbox should URL-encode item ids before calling per-item action routes",
+);
+
+assert.match(
   agentsView,
   /onCreateReminder=\{onCreateReminder\}[\s\S]*onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*onInboxItemChanged=\{onInboxItemChanged\}/,
   "AgentsView should thread Inspector Inbox callbacks into the right panel",

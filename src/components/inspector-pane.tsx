@@ -176,7 +176,7 @@ function InboxTab({
               body: JSON.stringify(untilIso ? { untilIso } : { minutes: 10 }),
             }
           : { method: "POST" };
-      const res = await fetch(`/api/inbox/${item.id}/${action}`, init);
+      const res = await fetch(`/api/inbox/${encodeURIComponent(item.id)}/${action}`, init);
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.ok === false) {
         throw new Error(json?.error ?? `${action} failed`);
