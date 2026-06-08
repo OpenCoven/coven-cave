@@ -49,7 +49,9 @@ fn url_origin(url: &Url) -> Option<String> {
 pub fn trust_main_origin(url: &Url) {
     if let Some(origin) = url_origin(url) {
         info!("trusting main webview origin for PTY IPC: {}", origin);
-        TRUSTED_MAIN_ORIGINS.lock().insert(origin);
+        let mut trusted = TRUSTED_MAIN_ORIGINS.lock();
+        trusted.clear();
+        trusted.insert(origin);
     } else {
         warn!("not trusting main webview origin for PTY IPC: {}", url);
     }
