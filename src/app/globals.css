@@ -3200,7 +3200,7 @@ body {
   grid-template-columns: 60px 1fr;
   background: var(--bg-base);
   border-left: 1px solid var(--border-hairline);
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
+  box-shadow: -8px 0 32px color-mix(in oklch, var(--text-primary) 14%, transparent);
   z-index: 45;
   animation: familiar-studio-slide 180ms ease-out;
 }
@@ -3246,12 +3246,12 @@ body {
 .familiar-studio__close { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--text-secondary); background: transparent; border: none; cursor: pointer; }
 .familiar-studio__close:hover { background: var(--bg-raised); color: var(--text-primary); }
 .familiar-studio__body { padding: 16px; overflow-y: auto; min-height: 0; }
-.familiar-studio__footer { padding: 10px 16px; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.familiar-studio__sync-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-warning, #f59e0b); }
+.familiar-studio__footer { padding: 12px 16px; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.familiar-studio__sync-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--color-warning); }
 .familiar-studio__empty { padding: 32px 16px; text-align: center; color: var(--text-muted); }
 .familiar-studio-identity { display: flex; flex-direction: column; gap: 14px; }
 .familiar-studio-identity__row { display: flex; flex-direction: column; gap: 4px; }
-.familiar-studio-identity__label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.familiar-studio-identity__label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .familiar-studio-identity__control { display: flex; gap: 6px; align-items: flex-start; }
 .familiar-studio-identity__input {
   flex: 1;
@@ -3279,7 +3279,7 @@ body {
 
 .familiar-studio-look { display: flex; flex-direction: column; gap: 18px; }
 .familiar-studio-look__section { display: flex; flex-direction: column; gap: 8px; }
-.familiar-studio-look__heading { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
+.familiar-studio-look__heading { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
 .familiar-studio-look__swatches { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .familiar-studio-look__swatch { width: 22px; height: 22px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; padding: 0; }
 .familiar-studio-look__swatch--active { border-color: var(--text-primary); }
@@ -3290,11 +3290,11 @@ body {
 .familiar-studio-look__hint { font-size: 12px; color: var(--text-muted); }
 .familiar-studio-look__upload { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary); cursor: pointer; }
 .familiar-studio-look__remove { font-size: 11px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border-hairline); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
-.familiar-studio-look__toast { font-size: 11px; color: var(--accent-warning, #f59e0b); margin: 0; }
+.familiar-studio-look__toast { font-size: 11px; color: var(--color-warning); margin: 0; }
 
 .familiar-studio-brain { display: flex; flex-direction: column; gap: 14px; }
 .familiar-studio-brain__row { display: flex; flex-direction: column; gap: 4px; }
-.familiar-studio-brain__label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.familiar-studio-brain__label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .familiar-studio-brain__control { display: flex; gap: 6px; align-items: flex-start; }
 .familiar-studio-brain__input {
   flex: 1;
@@ -3307,7 +3307,7 @@ body {
   font-family: inherit;
 }
 .familiar-studio-brain__input:focus { outline: none; border-color: var(--border-strong); }
-.familiar-studio-brain__toast { font-size: 11px; color: var(--accent-warning, #f59e0b); margin: 0; }
+.familiar-studio-brain__toast { font-size: 11px; color: var(--color-warning); margin: 0; }
 .familiar-studio-brain__capabilities {
   border: 1px solid var(--border-hairline);
   border-radius: 6px;
@@ -3323,7 +3323,7 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   list-style: none;
   padding: 4px 0;
 }
@@ -3359,27 +3359,54 @@ body {
   color: var(--text-primary);
   font-weight: 500;
 }
-.familiar-studio-brain__capabilities-line--warn { color: var(--accent-warning, #f59e0b); }
+.familiar-studio-brain__capabilities-line--warn { color: var(--color-warning); }
 .familiar-studio-brain__capabilities-empty {
   margin: 6px 0 0;
   font-size: 12px;
   color: var(--text-muted);
 }
-.familiar-studio-identity__reset:disabled { opacity: 0.3; cursor: not-allowed; }
 .familiar-studio-lifecycle { display: flex; flex-direction: column; gap: 18px; }
 .familiar-studio-lifecycle__section { display: flex; flex-direction: column; gap: 6px; }
-.familiar-studio-lifecycle__heading { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
+.familiar-studio-lifecycle__heading { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
 .familiar-studio-lifecycle__hint { font-size: 12px; color: var(--text-muted); line-height: 1.4; margin: 0; }
 .familiar-studio-lifecycle__btn { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; background: var(--bg-raised); border: 1px solid var(--border-hairline); border-radius: 6px; padding: 6px 10px; color: var(--text-primary); font-size: 12px; cursor: pointer; }
 .familiar-studio-lifecycle__btn:hover { background: color-mix(in oklch, var(--text-primary) 8%, var(--bg-raised)); }
-.familiar-studio-lifecycle__btn--danger { color: var(--accent-danger, #ef4444); }
-.familiar-studio-lifecycle__btn--confirm { background: var(--accent-danger, #ef4444); color: var(--bg-base); border-color: transparent; }
+.familiar-studio-lifecycle__btn--danger { color: var(--color-danger); }
+.familiar-studio-lifecycle__btn--confirm { background: var(--color-danger); color: var(--bg-base); border-color: transparent; }
 .familiar-studio-lifecycle__row { display: flex; gap: 4px; padding: 4px; border-radius: 6px; }
 .familiar-studio-lifecycle__row:hover { background: var(--bg-raised); }
 .familiar-studio-lifecycle__row-main { display: flex; gap: 8px; align-items: center; flex: 1; background: transparent; border: none; padding: 4px 6px; cursor: pointer; color: var(--text-primary); font-size: 13px; }
 .familiar-studio-lifecycle__row-action { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
 .familiar-studio-lifecycle__row-action:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-base); }
 .familiar-studio-lifecycle__row-action:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* Focus-visible rings for every interactive control in the studio drawer.
+   Keyboard Tab landed invisibly across the modal before this. */
+.familiar-studio__tab:focus-visible,
+.familiar-studio__close:focus-visible,
+.familiar-studio__name:focus-visible,
+.familiar-studio-identity__reset:focus-visible,
+.familiar-studio-look__swatch:focus-visible,
+.familiar-studio-look__custom:focus-visible,
+.familiar-studio-look__reset:focus-visible,
+.familiar-studio-look__remove:focus-visible,
+.familiar-studio-look__upload:focus-visible,
+.familiar-studio-brain__capabilities-summary:focus-visible,
+.familiar-studio-lifecycle__btn:focus-visible,
+.familiar-studio-lifecycle__row-main:focus-visible,
+.familiar-studio-lifecycle__row-action:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+/* Inputs and textareas — keep the existing border-color shift on :focus
+   for typing affordance, but add a focus-visible ring so keyboard users
+   see what they're editing. */
+.familiar-studio-identity__input:focus-visible,
+.familiar-studio-brain__input:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
 
 /* ─── Mobile shell collapse ────────────────────────────────────────────
    Below 768px (phone-class viewports), collapse the chrome to a single
