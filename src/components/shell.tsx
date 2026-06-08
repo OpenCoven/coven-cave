@@ -90,6 +90,7 @@ export type ShellHandle = {
 };
 
 function ShellInner({
+  familiarRail,
   nav,
   iconNav,
   list,
@@ -101,6 +102,7 @@ function ShellInner({
   bottom,
   topBar,
 }: {
+  familiarRail?: ReactNode;
   nav: ReactNode;
   iconNav?: ReactNode;
   list?: ReactNode;
@@ -216,7 +218,10 @@ function ShellInner({
     return (
       <div className="flex h-full w-full flex-col">
         {topBar}
-        <div className="shell-root flex-1 min-h-0" />
+        <div className="flex flex-1 min-h-0">
+          {familiarRail}
+          <div className="shell-root flex-1 min-h-0" />
+        </div>
       </div>
     );
   }
@@ -287,6 +292,7 @@ function ShellInner({
     <div className="flex h-full w-full flex-col">
       {topBar}
       <div className="flex flex-1 min-h-0">
+        {familiarRail}
         {/* Left nav tab — persistent full-height strip, mirrors agent tab on the right */}
         {hasIconNav && (
           <button
