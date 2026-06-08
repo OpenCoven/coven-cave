@@ -2325,3 +2325,143 @@ body {
   border-style: none;
   margin-top: auto;
 }
+
+/* ────────────────────────────────────────────────
+   Companion rail — right-side per-familiar pane
+   (Phase 2, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.companion-rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--border-hairline);
+}
+
+.companion-rail--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.companion-rail__empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.companion-rail__empty-title {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-base);
+}
+
+.companion-rail__empty-sub {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+.companion-rail__empty-cta {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.companion-rail__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.companion-rail__glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.companion-rail__name {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-base);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.companion-rail__status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+
+.companion-rail__status--off {
+  background: var(--text-muted);
+}
+
+.companion-rail__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+}
+
+.companion-rail__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.companion-rail__tab--active {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  color: var(--text-primary);
+}
+
+.companion-rail__body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.companion-rail__pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.companion-rail__pane[hidden] {
+  display: none;
+}
