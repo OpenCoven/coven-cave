@@ -7,6 +7,17 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.53] — 2026-06-08
+
+Release repair for clean CI packaging after 0.0.52.
+
+### Fixed
+
+- **Clean release resource staging.** Tracks minimal placeholder files for the
+  generated server and bundled Node resource trees so Tauri validates resource
+  globs on clean Linux and Windows release runners before the sidecar bundler
+  replaces them with real packaged contents.
+
 ## [0.0.52] — 2026-06-08
 
 Release repair for 0.0.51.

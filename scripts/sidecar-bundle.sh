@@ -30,6 +30,7 @@ rm -rf "$BUNDLED_NODE_DIR"
 mkdir -p "$BUNDLED_NODE_DIR/bin"
 cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
+printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
 STANDALONE="$ROOT/.next/standalone"
 if [ ! -f "$STANDALONE/server.js" ]; then
@@ -53,6 +54,7 @@ cp "$STANDALONE/package.json" "$NPM_STAGE/package.json"
 echo "==> copying standalone tree → $DEST"
 rm -rf "$DEST"
 mkdir -p "$DEST"
+printf "generated at release build time\n" > "$DEST/placeholder.txt"
 # Skip the standalone's broken pnpm-style node_modules; we'll bring in the
 # fresh npm one instead.
 (cd "$STANDALONE" && find . -mindepth 1 -maxdepth 1 ! -name node_modules \

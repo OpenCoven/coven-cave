@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("release bundle includes and prefers a bundled Node runtime", async () => {
@@ -16,8 +16,8 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
   );
   assert.match(
     tauriConfig,
-    /"beforeBundleCommand": "bash scripts\/sidecar-bundle\.sh"/,
-    "sidecar resources must be generated immediately before Tauri bundles the app",
+    /"beforeBuildCommand": "bash scripts\/sidecar-bundle\.sh"/,
+    "sidecar resources must be generated before Tauri validates bundle resource globs",
   );
   assert.match(
     bundleScript,
@@ -38,6 +38,26 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
     launcher,
     /resources[\s\S]*node[\s\S]*bin[\s\S]*node/,
     "launcher must know the bundled Node resource path",
+  );
+});
+
+test("clean release runners have resource glob placeholders", async () => {
+  const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
+
+  await Promise.all([
+    access(new URL("./resources/server/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/node/placeholder.txt", import.meta.url)),
+  ]);
+
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/server\/placeholder\.txt/,
+    "server placeholder must be tracked so resources/server/**/* matches in clean CI",
+  );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/node\/placeholder\.txt/,
+    "node placeholder must be tracked so resources/node/**/* matches in clean CI",
   );
 });
 

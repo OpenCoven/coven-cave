@@ -1,13 +1,13 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "CovenCave",
-  "version": "0.0.52",
+  "version": "0.0.53",
   "identifier": "ai.opencoven.cave",
   "build": {
     "frontendDist": "../src-tauri/frontend-stub",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "pnpm dev",
-    "beforeBundleCommand": "bash scripts/sidecar-bundle.sh"
+    "beforeBuildCommand": "bash scripts/sidecar-bundle.sh"
   },
   "app": {
     "windows": [],
