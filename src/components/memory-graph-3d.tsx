@@ -21,7 +21,9 @@ type Props = {
   graph: MemoryGraph;
   familiars: Map<string, Familiar>;
   selectedFamiliarId: string;
+  selectedMemoryId?: string | null;
   onSelectFamiliar: (familiarId: string) => void;
+  onSelectMemory?: (memoryId: string) => void;
   onOpenMemoryFile?: (path: string) => void;
 };
 
@@ -135,7 +137,9 @@ export function MemoryGraph3D({
   graph,
   familiars,
   selectedFamiliarId,
+  selectedMemoryId,
   onSelectFamiliar,
+  onSelectMemory,
   onOpenMemoryFile,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -363,7 +367,8 @@ export function MemoryGraph3D({
       } else if (node.kind === "hub") {
         if (node.familiarId) onSelectFamiliar(node.familiarId);
       } else if (node.kind === "memory") {
-        onOpenMemoryFile?.(node.path);
+        if (onSelectMemory) onSelectMemory(node.id);
+        else onOpenMemoryFile?.(node.path);
       } else if (node.familiarId) {
         onSelectFamiliar(node.familiarId);
       } else {
@@ -421,7 +426,7 @@ export function MemoryGraph3D({
       disposeObject(root);
       renderer.dispose();
     };
-  }, [familiars, graph, onOpenMemoryFile, onSelectFamiliar, reducedMotion, sceneModel, selectedFamiliarId]);
+  }, [familiars, graph, onOpenMemoryFile, onSelectFamiliar, onSelectMemory, reducedMotion, sceneModel, selectedFamiliarId]);
 
   const selectedLabel = `Selected agent ${familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}; ${graph.metrics.visibleCovenEntries} memories in view.`;
 
@@ -456,6 +461,7 @@ export function MemoryGraph3D({
           <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-white/70">
             <span>{familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}</span>
             <span>{graph.metrics.visibleCovenEntries} memories</span>
+            {selectedMemoryId ? <span>1 selected</span> : null}
           </div>
         </div>
         <button

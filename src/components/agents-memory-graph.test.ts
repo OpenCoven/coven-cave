@@ -22,8 +22,8 @@ assert.match(
 
 assert.match(
   memoryViewSource,
-  /viewMode, setViewMode.*"list"/,
-  "Memory tab should keep a List/Graph view toggle with List as the default retrieval surface",
+  /viewMode, setViewMode.*"graph"/,
+  "Memory tab should default to the graph as the primary memory surface",
 );
 
 assert.match(
@@ -46,8 +46,26 @@ assert.match(
 
 assert.match(
   memoryViewSource,
-  /onOpenMemoryFile=\{onOpenMemoryFile\}/,
-  "Clicking a memory node should use the existing memory-file opening path",
+  /selectedMemoryId[\s\S]*setSelectedMemoryId/,
+  "Graph-first memory view should keep a selected-memory detail state",
+);
+
+assert.match(
+  memoryViewSource,
+  /Selected memory[\s\S]*Open memory/,
+  "Graph-first memory view should render a selected-memory detail panel with an explicit open action",
+);
+
+assert.match(
+  memoryViewSource,
+  /onSelectMemory=\{setSelectedMemoryId\}/,
+  "Clicking a memory node in the graph should select it for the detail panel",
+);
+
+assert.match(
+  graphSource,
+  /onSelectMemory\?: \(memoryId: string\) => void/,
+  "MemoryGraph3D should expose an optional memory-selection callback",
 );
 
 assert.doesNotMatch(

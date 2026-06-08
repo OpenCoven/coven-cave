@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { MemoryGraph3D } from "@/components/memory-graph-3d";
 import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory-graph-3d-model";
+import type { MemoryGraphMemoryNode } from "@/lib/memory-graph-3d-model";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 
 type FileMemoryEntry = {
@@ -74,7 +75,8 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
-  const [viewMode, setViewMode] = useState<"list" | "graph">("list");
+  const [viewMode, setViewMode] = useState<"list" | "graph">("graph");
+  const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
   const effectiveViewMode = mode ?? viewMode;
   const effectiveLimit = limit ?? Infinity;
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +171,23 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     [covenEntries, familiarFilter, familiars, fileEntries, query],
   );
 
+  const selectedMemory = useMemo(
+    () =>
+      memoryGraph.nodes.find(
+        (node): node is MemoryGraphMemoryNode => node.kind === "memory" && node.id === selectedMemoryId,
+      ) ?? null,
+    [memoryGraph, selectedMemoryId],
+  );
+  const firstMemoryId = useMemo(
+    () => memoryGraph.nodes.find((node) => node.kind === "memory")?.id ?? null,
+    [memoryGraph],
+  );
+
+  useEffect(() => {
+    if (selectedMemoryId && selectedMemory) return;
+    setSelectedMemoryId(firstMemoryId);
+  }, [firstMemoryId, selectedMemory, selectedMemoryId]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
@@ -258,29 +277,78 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
       </div>
 
       {effectiveViewMode === "graph" ? (
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="min-h-[520px] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="min-h-[560px] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
             <MemoryGraph3D
               graph={memoryGraph}
               familiars={familiarById}
               selectedFamiliarId={familiarFilter}
+              selectedMemoryId={selectedMemoryId}
               onSelectFamiliar={(familiarId) => setFamiliarFilter(familiarId)}
+              onSelectMemory={setSelectedMemoryId}
               onOpenMemoryFile={onOpenMemoryFile}
             />
           </section>
-          <aside className="hidden min-h-0 xl:block">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                {selectedFamiliar?.display_name ?? "Selected agent"}
-              </h3>
-              <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
-            </div>
-            <div className="max-h-[640px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+          <aside className="min-h-0">
+            <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                Selected memory
+              </div>
+              {selectedMemory ? (
+                <div className="mt-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="line-clamp-3 text-[15px] font-semibold leading-5 text-[var(--text-primary)]">
+                      {selectedMemory.title}
+                    </h3>
+                    <Icon
+                      name={selectedMemory.source === "file" ? "ph:file-text" : "ph:brain"}
+                      width={15}
+                      className="mt-0.5 shrink-0 text-[var(--accent-presence)]"
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
+                    <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
+                      {selectedFamiliar?.display_name ?? selectedMemory.familiarId ?? "Memory"}
+                    </span>
+                    <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">
+                      {selectedMemory.source === "file" ? selectedMemory.rootLabel ?? "File" : "Coven memory"}
+                    </span>
+                    <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(selectedMemory.updatedAt)}</span>
+                  </div>
+                  {selectedMemory.excerpt ? (
+                    <p className="mt-3 line-clamp-6 text-[12px] leading-5 text-[var(--text-secondary)]">
+                      {selectedMemory.excerpt}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onOpenMemoryFile?.(selectedMemory.path)}
+                    className="focus-ring mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:file-text" width={13} />
+                    Open memory
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-6 text-center text-[12px] text-[var(--text-muted)]">
+                  {loaded ? "Select a memory card in the graph." : "Loading memories..."}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                  Recent in view
+                </h3>
+                <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
+              </div>
+              <div className="max-h-[420px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
               {visibleCoven.slice(0, 18).map((entry) => (
                 <button
                   key={entry.id}
                   type="button"
-                  onClick={() => onOpenMemoryFile?.(entry.path)}
+                  onClick={() => setSelectedMemoryId(`memory:coven:${entry.id}`)}
                   className="focus-ring-inset flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
                 >
                   <Icon name="ph:brain" width={13} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
@@ -295,7 +363,8 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                   {loaded ? (error ? "Couldn’t load memories. See the error above and try again." : "No memories match this agent view.") : "Loading memories..."}
                 </div>
               ) : null}
-            </div>
+              </div>
+            </section>
           </aside>
         </div>
       ) : (
