@@ -14,6 +14,7 @@ import {
 } from "@/lib/chat-attachments";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import {
@@ -189,15 +190,16 @@ export async function POST(req: Request) {
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
 
-  // Native Cave chat only drives bundled, reviewed Coven harnesses through
-  // `coven run <harness> --stream-json`. OpenClaw and external adapter
-  // manifests use their own bridges instead of this privileged local runner.
-  if (!isTrustedChatHarness(binding.harness)) {
+  // Native Cave chat can drive Coven harnesses that resolve through
+  // `coven run <harness> --stream-json`, including external adapter manifests.
+  // Bundled adapters may opt out when they require a bridge instead of the
+  // generic local runner.
+  const adapter = COMPATIBILITY_ADAPTERS.find((h) => h.id === binding.harness);
+  if (adapter && !adapter.chatSupported) {
     return new Response(
       JSON.stringify({
         ok: false,
-        error:
-          "This familiar's harness is not supported by native Cave chat. Pick Codex, Claude Code, or Hermes here, or open the familiar from its own runtime.",
+        error: `${adapter.label} is not supported by native Cave chat. Use its bridge integration instead.`,
       }),
       { status: 501, headers: { "content-type": "application/json" } },
     );
