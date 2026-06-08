@@ -94,3 +94,13 @@ assert.match(
 );
 
 console.log("globals.css.test.ts (foundations) OK");
+
+// Salem surfaces should inherit shared Cave tokens instead of hardcoded purple
+// literals, so theme/background tuning reaches the rail and perch consistently.
+const salemBlock = css.match(/\.salem-perch[\s\S]*?\/\* Foundations PR/)?.[0] ?? "";
+assert.match(salemBlock, /var\(--bg-panel\)/, "salem panel should derive surfaces from --bg-panel");
+assert.match(salemBlock, /var\(--accent-presence\)/, "salem glow/accent should derive from --accent-presence");
+assert.doesNotMatch(salemBlock, /rgba\(124,\s*77,\s*255/, "salem surfaces should not hardcode old purple rgba");
+assert.doesNotMatch(salemBlock, /#(?:d1c4e9|e8e0f0|c9a7ff|d26bff|a855f7|a89ac0)\b/i, "salem surfaces should not hardcode old purple hex colors");
+
+console.log("globals.css.test.ts (salem tokens) OK");
