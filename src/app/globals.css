@@ -3381,6 +3381,34 @@ body {
 .familiar-studio-lifecycle__row-action:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-base); }
 .familiar-studio-lifecycle__row-action:disabled { opacity: 0.25; cursor: not-allowed; }
 
+/* Focus-visible rings for every interactive control in the studio drawer.
+   Keyboard Tab landed invisibly across the modal before this. */
+.familiar-studio__tab:focus-visible,
+.familiar-studio__close:focus-visible,
+.familiar-studio__name:focus-visible,
+.familiar-studio-identity__reset:focus-visible,
+.familiar-studio-look__swatch:focus-visible,
+.familiar-studio-look__custom:focus-visible,
+.familiar-studio-look__reset:focus-visible,
+.familiar-studio-look__remove:focus-visible,
+.familiar-studio-look__upload:focus-visible,
+.familiar-studio-brain__capabilities-summary:focus-visible,
+.familiar-studio-lifecycle__btn:focus-visible,
+.familiar-studio-lifecycle__row-main:focus-visible,
+.familiar-studio-lifecycle__row-action:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+/* Inputs and textareas — keep the existing border-color shift on :focus
+   for typing affordance, but add a focus-visible ring so keyboard users
+   see what they're editing. */
+.familiar-studio-identity__input:focus-visible,
+.familiar-studio-brain__input:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
 /* ─── Mobile shell collapse ────────────────────────────────────────────
    Below 768px (phone-class viewports), collapse the chrome to a single
    visible pane: avatar rail becomes a top horizontal strip, the
