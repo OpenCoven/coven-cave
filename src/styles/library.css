@@ -40,7 +40,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding: 0 14px 8px;
 }
 
@@ -529,7 +529,7 @@ tr:focus-within .library-row-delete {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .library-field-val {
   font-size: 13px;
@@ -947,7 +947,6 @@ tr:hover .library-row-delete,
   letter-spacing: 0.05em;
   color: var(--text-muted);
   flex-shrink: 0;
-  opacity: 0.7;
 }
 
 /* ── Reader mode ──────────────────────────────────────────────────────────── */
@@ -1374,7 +1373,7 @@ tr:hover .library-row-delete,
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-bottom: 10px;
 }
 
