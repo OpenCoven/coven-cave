@@ -8,6 +8,9 @@ import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/s
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
+import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
   MAX_ATTACHMENT_TEXT_CHARS,
@@ -838,7 +841,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <header className="cave-chat-linear-header">
         <div className="flex min-w-0 items-start gap-3">
           <div className="cave-agent-marker" aria-hidden>
-            <Icon name="ph:sparkle-bold" width={15} />
+            <FamiliarIcon familiar={familiar} size="sm" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -1096,6 +1099,12 @@ function ThinkingIndicator({ since }: { since: string }) {
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
 
+function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" }) {
+  const overrides = useGlyphOverrides();
+  const glyph = resolveFamiliarGlyph(familiar, overrides);
+  return <FamiliarGlyph glyph={glyph} size={size} />;
+}
+
 function TurnRow({
   turn,
   familiar,
@@ -1107,19 +1116,14 @@ function TurnRow({
   showTimestamp?: boolean;
   index: number;
 }) {
-  const turnNumber = String(index + 1).padStart(2, "0");
-
   if (turn.role === "system" || turn.role === "user") {
     return (
       <div className={`cave-linear-turn cave-linear-turn--${turn.role}`}>
-        <aside className="cave-linear-turn-index" aria-label={`Turn ${turnNumber}`}>
-          {turnNumber}
-        </aside>
         <div className="cave-linear-turn-content">
           <div className="cave-linear-turn-meta">
-            <span>{turn.role === "user" ? "You" : "System"}</span>
-            {showTimestamp && turn.createdAt ? <span>{fmtTime(turn.createdAt)}</span> : null}
-            {turn.attachments?.length ? <span>{turn.attachments.length} files</span> : null}
+            <span className="font-medium text-[var(--text-secondary)]">{turn.role === "user" ? "You" : "System"}</span>
+            {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
+            {turn.attachments?.length ? <span className="opacity-60">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
           </div>
           <MessageBubble
             role={turn.role}
@@ -1133,6 +1137,7 @@ function TurnRow({
       </div>
     );
   }
+
   const duration = fmtDuration(turn.durationMs);
   const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
@@ -1141,38 +1146,42 @@ function TurnRow({
 
   return (
     <div className="cave-linear-turn cave-linear-turn--assistant">
-      <aside className="cave-linear-turn-index" aria-label={`Turn ${turnNumber}`}>
-        {turnNumber}
-      </aside>
-
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
-        <div className="cave-linear-turn-meta">
-          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{familiar.display_name}</span>
-          <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
-            {turnStatus}
-          </span>
-          {showTimestamp && turn.createdAt ? <span>{fmtTime(turn.createdAt)}</span> : null}
-          {duration && !turn.pending ? <span>worked {duration}</span> : null}
-          {toolCount ? <span>{toolCount} tool{toolCount === 1 ? "" : "s"}</span> : null}
-          {reasoning ? <span>reasoning</span> : null}
+        {/* Avatar + right column */}
+        <div className="cave-linear-turn-avatar" aria-hidden>
+          <FamiliarIcon familiar={familiar} size="sm" />
         </div>
+        <div className="cave-linear-turn-right">
+          <div className="cave-linear-turn-meta">
+            <span className="cave-linear-turn-name">{familiar.display_name}</span>
+            {turnStatus === "error" && (
+              <span className="cave-turn-status cave-turn-status--error">error</span>
+            )}
+            {turnStatus === "running" && (
+              <span className="cave-turn-status cave-turn-status--running">writing…</span>
+            )}
+            {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
+            {duration && !turn.pending ? <span className="opacity-50">{duration}</span> : null}
+            {toolCount ? <span className="opacity-60">{toolCount} tool{toolCount === 1 ? "" : "s"}</span> : null}
+          </div>
 
-        <div className="cave-linear-turn-body">
-          {turn.pending && !visible ? (
-            <ThinkingIndicator since={turn.createdAt} />
-          ) : (
-            <MessageBubble
-              role="assistant"
-              content={visible || (turn.pending ? "…" : "")}
-              timestamp={turn.createdAt}
-              showTimestamp={false}
-              pending={turn.pending}
-              isError={turn.error}
-              label={familiar.display_name}
-            />
-          )}
-          {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
-          {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+          <div className="cave-linear-turn-body">
+            {turn.pending && !visible ? (
+              <ThinkingIndicator since={turn.createdAt} />
+            ) : (
+              <MessageBubble
+                role="assistant"
+                content={visible || (turn.pending ? "…" : "")}
+                timestamp={turn.createdAt}
+                showTimestamp={false}
+                pending={turn.pending}
+                isError={turn.error}
+                label={familiar.display_name}
+              />
+            )}
+            {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
+            {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+          </div>
         </div>
       </div>
     </div>
