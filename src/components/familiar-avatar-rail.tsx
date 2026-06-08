@@ -30,7 +30,7 @@ export function FamiliarAvatarRail({
   onAddFamiliar,
   onToggleSidebar,
 }: Props) {
-  const { openFamiliarStudio } = useFamiliarStudio();
+  const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -160,8 +160,12 @@ export function FamiliarAvatarRail({
         type="button"
         className="familiar-avatar-rail__add"
         aria-label="Add familiar"
-        title="Add familiar"
+        title="Add familiar (right-click to manage)"
         onClick={onAddFamiliar}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openFamiliarStudioListView();
+        }}
       >
         <Icon name="ph:plus-bold" width={12} />
       </button>

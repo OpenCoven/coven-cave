@@ -79,3 +79,4 @@ assert.match(source, /onDragStart/, "onDragStart handler must be present");
 assert.match(source, /onDragOver/, "onDragOver handler must be present");
 assert.match(source, /onDrop/, "onDrop handler must be present");
 assert.match(source, /setFamiliarOrder/, "Must call setFamiliarOrder on drop");
+assert.match(source, /openFamiliarStudioListView/, "Right-click on + opens list view");

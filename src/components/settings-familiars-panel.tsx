@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
+import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -22,6 +23,7 @@ type Props = {
 };
 
 export function SettingsFamiliarsPanel({ familiars, sessions, responseNeeded }: Props) {
+  const { openFamiliarStudio } = useFamiliarStudio();
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
 
   useEffect(() => {
@@ -97,6 +99,15 @@ export function SettingsFamiliarsPanel({ familiars, sessions, responseNeeded }: 
                       : "tui only"}
                 </span>
               ) : null}
+              <button
+                type="button"
+                onClick={() => openFamiliarStudio(f.id, "identity")}
+                className="settings-familiars-panel__edit"
+                aria-label={`Edit ${f.display_name}`}
+              >
+                <Icon name="ph:pencil-simple" width={12} />
+                Edit
+              </button>
             </header>
             <dl className="settings-familiars-panel__dl">
               <dt>Harness</dt>

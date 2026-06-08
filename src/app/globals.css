@@ -2832,6 +2832,21 @@ body {
   font-weight: 700;
 }
 
+.settings-familiars-panel__edit {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.settings-familiars-panel__edit:hover { color: var(--text-primary); background: var(--bg-raised); }
+
 /* ────────────────────────────────────────────────
    Familiar Studio drawer
    ──────────────────────────────────────────────── */
