@@ -40,6 +40,8 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
         <div
           key={t.id}
           role="status"
+          aria-live="polite"
+          aria-atomic="true"
           className="pointer-events-auto rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
           style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
         >
