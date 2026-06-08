@@ -6,7 +6,6 @@ import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { SessionsView } from "@/components/sessions-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -101,8 +100,6 @@ const ORIGIN_ICONS: Record<string, string> = {
 function RightPanel({
   panel,
   activeFamiliar,
-  activeFamiliarId,
-  familiars,
   sessions,
   daemonRunning,
   inboxItems,
@@ -110,7 +107,6 @@ function RightPanel({
   onSessionStarted,
   onSlashFromChat,
   onOpenOnboarding,
-  onSetActiveFamiliar,
   onOpenInbox,
   onCreateReminder,
   onOpenInboxItem,
@@ -118,8 +114,6 @@ function RightPanel({
 }: {
   panel: "inspector" | "chat";
   activeFamiliar: Familiar | null;
-  activeFamiliarId: string | null;
-  familiars: Familiar[];
   sessions: SessionRow[];
   daemonRunning: boolean;
   inboxItems: InboxItem[];
@@ -127,7 +121,6 @@ function RightPanel({
   onSessionStarted: () => void;
   onSlashFromChat: (cmd: string, args: string) => boolean;
   onOpenOnboarding: () => void;
-  onSetActiveFamiliar: (id: string) => void;
   onOpenInbox: () => void;
   onCreateReminder: (familiarId: string) => void;
   onOpenInboxItem: (item: InboxItem) => void;
@@ -171,14 +164,11 @@ function RightPanel({
           <AgentPanel
             ref={null}
             familiar={activeFamiliar}
-            familiars={familiars}
-            activeId={activeFamiliarId}
             sessions={sessions}
             daemonRunning={daemonRunning}
             onSessionStarted={onSessionStarted}
             onSlashFromChat={onSlashFromChat}
             onOpenOnboarding={onOpenOnboarding}
-            onFamiliarSelect={onSetActiveFamiliar}
           />
         )}
       </div>
@@ -398,18 +388,6 @@ export function ChatSurface({
 
           {/* Actions flush right */}
           <div className="flex items-center gap-1.5 py-1.5">
-            {scope === "conversation" && activeFamiliar && (
-              <FamiliarSwitcher
-                familiar={activeFamiliar}
-                familiars={familiars}
-                onSelect={(id) => {
-                  onSetActiveFamiliar(id);
-                  setScope("sessions");
-                  window.setTimeout(() => routerRef.current?.goToList(), 0);
-                }}
-                compact
-              />
-            )}
             {(scope === "sessions" || scope === "conversation") && (
               <div className="relative">
                 <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
@@ -473,20 +451,11 @@ export function ChatSurface({
               <ChatRouter
                 ref={routerRef}
                 familiar={activeFamiliar}
-                familiars={familiars}
                 sessions={sessions}
                 daemonRunning={daemonRunning}
                 onSessionStarted={onSessionStarted}
                 onSlashFromChat={onSlashFromChat}
                 onOpenOnboarding={onOpenOnboarding}
-                onFamiliarSelect={(id) => {
-                  onSetActiveFamiliar(id);
-                  if (pendingProjectRoot) {
-                    const root = pendingProjectRoot;
-                    onClearPendingProjectRoot();
-                    window.setTimeout(() => routerRef.current?.newChat(root), 0);
-                  }
-                }}
                 pendingProjectRoot={pendingProjectRoot}
               />
             </div>
@@ -494,8 +463,6 @@ export function ChatSurface({
               <RightPanel
                 panel={rightPanel}
                 activeFamiliar={activeFamiliar}
-                activeFamiliarId={activeFamiliarId}
-                familiars={familiars}
                 sessions={sessions}
                 daemonRunning={daemonRunning}
                 inboxItems={inboxItems}
@@ -503,7 +470,6 @@ export function ChatSurface({
                 onSessionStarted={onSessionStarted}
                 onSlashFromChat={onSlashFromChat}
                 onOpenOnboarding={onOpenOnboarding}
-                onSetActiveFamiliar={onSetActiveFamiliar}
                 onOpenInbox={onOpenInbox}
                 onCreateReminder={onCreateReminder}
                 onOpenInboxItem={onOpenInboxItem}

@@ -3,12 +3,9 @@
 /**
  * HomeComposer — universal intent surface; the Cave's cold-start view.
  *
- * Design goals:
- *   - No agent chip grid up top — clean hero → composer flow
- *   - Familiar selector inside the composer action bar (icon + name, minimal)
- *   - Destination pills small + integrated, not a separate header row
- *   - Send button always has a visible arrow icon
- *   - Suggestions as compact horizontal chips, not full-width rows
+ * Familiar is always the one currently selected in the avatar rail —
+ * the rail is the single switcher for active focus, so this composer
+ * never duplicates that control.
  */
 
 import {
@@ -61,18 +58,12 @@ export function HomeComposer({
 }: Props) {
   const [text, setText] = useState("");
   const [destination, setDestination] = useState<Destination>("chat");
-  const [familiarId, setFamiliarId] = useState<string | null>(activeFamiliarId);
   const [sending, setSending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Sync activeFamiliarId → local when parent changes
-  useEffect(() => {
-    if (activeFamiliarId && !familiarId) setFamiliarId(activeFamiliarId);
-  }, [activeFamiliarId, familiarId]);
 
   // Focus on mount
   useEffect(() => {
@@ -158,7 +149,7 @@ export function HomeComposer({
     try {
       switch (destination) {
         case "chat": {
-          const fid = familiarId ?? familiars[0]?.id;
+          const fid = activeFamiliarId ?? familiars[0]?.id;
           if (!fid) { onToast("No familiar selected — add one in Settings."); break; }
           const res = await fetch("/api/chat/send", {
             method: "POST",
@@ -203,7 +194,7 @@ export function HomeComposer({
           const res = await fetch("/api/board", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: prompt, familiarId: familiarId ?? null }),
+            body: JSON.stringify({ title: prompt, familiarId: activeFamiliarId ?? null }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
           if (json.ok) { setText(""); onNavigateToBoard(); }
@@ -214,7 +205,7 @@ export function HomeComposer({
           const res = await fetch("/api/inbox", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ kind: "reminder", title: prompt, source: "user", familiarId: familiarId ?? null }),
+            body: JSON.stringify({ kind: "reminder", title: prompt, source: "user", familiarId: activeFamiliarId ?? null }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
           if (json.ok) { setText(""); onNavigateToInbox(); }
@@ -226,9 +217,7 @@ export function HomeComposer({
       setSending(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, destination, familiarId, familiars, sending]);
-
-  const active = familiars.find((f) => f.id === familiarId) ?? familiars[0] ?? null;
+  }, [text, destination, activeFamiliarId, familiars, sending]);
 
   return (
     <div className="home-composer-root">
@@ -236,7 +225,7 @@ export function HomeComposer({
       {/* Headline */}
       <div className="home-composer-hero">
         <h1 className="home-composer-headline">What can the Coven do?</h1>
-        <p className="home-composer-sub">Choose a familiar, pick a destination, and go.</p>
+        <p className="home-composer-sub">Pick a destination, and go.</p>
       </div>
 
       {/* Composer card */}
@@ -257,23 +246,7 @@ export function HomeComposer({
         {/* Action bar */}
         <div className="hc-action-bar">
 
-          {/* Left: familiar selector */}
-          <div className="hc-familiar-selector">
-            <select
-              className="hc-familiar-select"
-              value={familiarId ?? ""}
-              onChange={(e) => setFamiliarId(e.target.value || null)}
-              aria-label="Select familiar"
-            >
-              {familiars.length === 0 && <option value="">No familiars</option>}
-              {familiars.map((f) => (
-                <option key={f.id} value={f.id}>{f.display_name}</option>
-              ))}
-            </select>
-            <Icon name="ph:caret-down" width={10} className="hc-select-caret" aria-hidden />
-          </div>
-
-          {/* Center: destination pills */}
+          {/* Destination pills */}
           <div className="hc-dest-pills">
             {DESTINATIONS.map((d) => (
               <button

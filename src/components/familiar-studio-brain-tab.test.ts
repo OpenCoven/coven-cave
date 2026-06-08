@@ -14,5 +14,15 @@ assert.match(source, /note/);
 assert.match(source, /\/api\/harnesses/);
 assert.match(source, /\/api\/config/);
 assert.match(source, /method.*PATCH/);
+assert.match(
+  source,
+  /\/api\/capabilities\?harness=/,
+  "Brain tab should fetch the daemon capabilities manifest for the selected harness",
+);
+assert.match(
+  source,
+  /familiar-studio-brain__capabilities/,
+  "Brain tab should expose a per-familiar capabilities accordion",
+);
 
 console.log("familiar-studio-brain-tab.test.ts: ok");

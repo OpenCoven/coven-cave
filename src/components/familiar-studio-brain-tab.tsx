@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   reportDaemonSyncFailure,
   reportDaemonSyncSuccess,
 } from "@/lib/daemon-sync-status";
+import type { HarnessCapabilityManifest } from "@/components/capability-card";
 
 type Props = { familiar: ResolvedFamiliar };
 
 type HarnessReport = { id: string; label: string; installed: boolean };
+
+type CapabilitiesResponse = {
+  ok: boolean;
+  harness_capabilities?: HarnessCapabilityManifest[];
+  scanned_at?: string;
+  error?: string;
+};
 
 const MODEL_SUGGESTIONS = [
   "anthropic/claude-opus-4-7",
@@ -24,6 +32,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
   const [toast, setToast] = useState<string | null>(null);
+  const [manifest, setManifest] = useState<HarnessCapabilityManifest | null>(null);
+  const [manifestState, setManifestState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [capsOpen, setCapsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +47,50 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const harnessId = draftHarness || familiar.harness || "";
+
+  useEffect(() => {
+    if (!harnessId) {
+      setManifest(null);
+      setManifestState("idle");
+      return;
+    }
+    let cancelled = false;
+    setManifestState("loading");
+    void (async () => {
+      try {
+        const res = await fetch(`/api/capabilities?harness=${encodeURIComponent(harnessId)}`, {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as CapabilitiesResponse;
+        if (cancelled) return;
+        if (json.ok) {
+          const m = json.harness_capabilities?.[0] ?? null;
+          setManifest(m);
+          setManifestState("ready");
+        } else {
+          setManifest(null);
+          setManifestState("error");
+        }
+      } catch {
+        if (!cancelled) {
+          setManifest(null);
+          setManifestState("error");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [harnessId]);
+
+  const capabilityCount = useMemo(() => {
+    if (!manifest) return 0;
+    return (
+      (manifest.global_instructions.present ? 1 : 0) +
+      manifest.skills.length +
+      manifest.plugins.length
+    );
+  }, [manifest]);
 
   async function save(patch: Record<string, unknown>) {
     setToast(null);
@@ -118,6 +173,65 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       </label>
 
       {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}
+
+      {harnessId ? (
+        <details
+          className="familiar-studio-brain__capabilities"
+          open={capsOpen}
+          onToggle={(e) => setCapsOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary className="familiar-studio-brain__capabilities-summary">
+            <span>Capabilities</span>
+            {manifestState === "loading" ? (
+              <span className="familiar-studio-brain__capabilities-meta">scanning…</span>
+            ) : manifestState === "error" ? (
+              <span className="familiar-studio-brain__capabilities-meta">daemon offline</span>
+            ) : manifest ? (
+              <span className="familiar-studio-brain__capabilities-meta">
+                {capabilityCount} item{capabilityCount === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </summary>
+          {manifest ? (
+            <div className="familiar-studio-brain__capabilities-body">
+              <p className="familiar-studio-brain__capabilities-line">
+                <strong>AGENTS.md:</strong>{" "}
+                {manifest.global_instructions.present
+                  ? manifest.global_instructions.path?.replace(/^\/Users\/[^/]+/, "~") ?? "present"
+                  : "not present"}
+              </p>
+              <p className="familiar-studio-brain__capabilities-line">
+                <strong>Skills:</strong> {manifest.skills.length}
+                {manifest.skills.length > 0 && (
+                  <> · {manifest.skills.slice(0, 3).map((s) => s.name).join(", ")}
+                    {manifest.skills.length > 3 ? ` +${manifest.skills.length - 3} more` : ""}</>
+                )}
+              </p>
+              <p className="familiar-studio-brain__capabilities-line">
+                <strong>Plugins:</strong> {manifest.plugins.length}
+                {manifest.plugins.length > 0 && (
+                  <> · {manifest.plugins.slice(0, 3).map((p) => p.name).join(", ")}
+                    {manifest.plugins.length > 3 ? ` +${manifest.plugins.length - 3} more` : ""}</>
+                )}
+              </p>
+              {manifest.warnings.length > 0 && (
+                <p className="familiar-studio-brain__capabilities-line familiar-studio-brain__capabilities-line--warn">
+                  {manifest.warnings.length} parse warning
+                  {manifest.warnings.length === 1 ? "" : "s"}
+                </p>
+              )}
+            </div>
+          ) : manifestState === "error" ? (
+            <p className="familiar-studio-brain__capabilities-empty">
+              Coven daemon is offline — capabilities require the daemon.
+            </p>
+          ) : manifestState === "ready" ? (
+            <p className="familiar-studio-brain__capabilities-empty">
+              No capabilities reported for {harnessId}.
+            </p>
+          ) : null}
+        </details>
+      ) : null}
     </div>
   );
 }

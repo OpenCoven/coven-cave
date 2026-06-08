@@ -65,6 +65,12 @@ assert.match(
   "Terminal remains a Tools surface",
 );
 
+assert.match(
+  source,
+  /\{ id: "capabilities", label: "Capabilities"/,
+  "Capabilities is a Tools surface routing to the daemon /v1/capabilities endpoint",
+);
+
 assert.doesNotMatch(
   source,
   /\{ id: "sessions"/,
