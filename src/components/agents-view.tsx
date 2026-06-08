@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { AgentsMemoryView, MemoryFilesList } from "@/components/agents-memory-view";
 import {
   buildAgentCardStats,
   type AgentCardStats,
@@ -74,12 +75,8 @@ export function AgentsView({
   onOpenMemoryFile,
   onOpenOnboarding,
 }: AgentsViewProps) {
-  void onStartChat;
-  void onOpenSession;
-  void onOpenMemoryFile;
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
-  void fileEntries;
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [query, setQuery] = useState("");
@@ -91,8 +88,6 @@ export function AgentsView({
     if (typeof window === "undefined") return "roster";
     return window.localStorage.getItem(LAST_SELECTED_KEY) ? "detail" : "roster";
   });
-  void viewMode;
-  void setViewMode;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -137,6 +132,28 @@ export function AgentsView({
     () => familiars.filter((f) => familiarMatches(f, query)),
     [familiars, query],
   );
+
+  const selectedFamiliar = useMemo(
+    () => familiars.find((f) => f.id === selectedFamiliarId) ?? null,
+    [familiars, selectedFamiliarId],
+  );
+
+  useEffect(() => {
+    if (selectedFamiliarId && !selectedFamiliar) {
+      setSelectedFamiliarId(null);
+      setViewMode("roster");
+    }
+  }, [selectedFamiliar, selectedFamiliarId]);
+
+  const enterDetail = useCallback((id: string) => {
+    setSelectedFamiliarId(id);
+    setViewMode("detail");
+  }, []);
+
+  const backToRoster = useCallback(() => {
+    setViewMode("roster");
+    setSelectedFamiliarId(null);
+  }, []);
 
   return (
     <div className="agents-view flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
@@ -192,22 +209,47 @@ export function AgentsView({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {familiars.length === 0 ? (
-          <AgentsEmptyState onOpenOnboarding={onOpenOnboarding} />
+          <div className="p-4">
+            <AgentsEmptyState onOpenOnboarding={onOpenOnboarding} />
+          </div>
+        ) : viewMode === "detail" && selectedFamiliar ? (
+          <div className="agents-view__detail flex h-full min-h-0">
+            <AgentDetailRail
+              familiars={familiars}
+              selectedId={selectedFamiliar.id}
+              onSelect={enterDetail}
+              onBack={backToRoster}
+            />
+            <AgentDetailPanel
+              familiar={selectedFamiliar}
+              familiars={familiars}
+              sessions={sessions}
+              fileEntries={fileEntries}
+              memoryError={memoryError}
+              memoryLoaded={memoryLoaded}
+              onClose={backToRoster}
+              onStartChat={() => onStartChat(selectedFamiliar.id)}
+              onOpenSession={(sid) => onOpenSession(sid, selectedFamiliar.id)}
+              onOpenMemoryFile={onOpenMemoryFile}
+            />
+          </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visibleFamiliars.map((familiar) => (
-              <AgentRosterCard
-                key={familiar.id}
-                familiar={familiar}
-                stats={stats.get(familiar.id) ?? emptyStats()}
-                daemonRunning={daemonRunning}
-                responseNeeded={responseNeeded.has(familiar.id)}
-                memoryStatus={memoryError ? "error" : memoryLoaded ? "ready" : "loading"}
-                onSelect={() => setSelectedFamiliarId(familiar.id)}
-              />
-            ))}
+          <div className="p-4">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {visibleFamiliars.map((familiar) => (
+                <AgentRosterCard
+                  key={familiar.id}
+                  familiar={familiar}
+                  stats={stats.get(familiar.id) ?? emptyStats()}
+                  daemonRunning={daemonRunning}
+                  responseNeeded={responseNeeded.has(familiar.id)}
+                  memoryStatus={memoryError ? "error" : memoryLoaded ? "ready" : "loading"}
+                  onSelect={() => enterDetail(familiar.id)}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -338,5 +380,225 @@ function AgentRosterCard({
         )}
       </div>
     </button>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// AgentDetailRail — thin left avatar column in detail mode
+// ────────────────────────────────────────────────────────────────────────────
+
+type AgentDetailRailProps = {
+  familiars: Familiar[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onBack: () => void;
+};
+
+function AgentDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetailRailProps) {
+  return (
+    <nav className="agents-view__rail flex w-[64px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 py-3">
+      <button
+        type="button"
+        onClick={onBack}
+        className="agents-view__rail-back inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        aria-label="Back to roster"
+        title="Back to roster"
+      >
+        <Icon name="ph:arrow-left" width={14} />
+      </button>
+      <div className="mt-1 h-px w-8 bg-[var(--border-hairline)]" aria-hidden="true" />
+      <ul className="flex flex-col items-center gap-1.5">
+        {familiars.map((f) => {
+          const active = f.id === selectedId;
+          return (
+            <li key={f.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(f.id)}
+                className={`agents-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                  active
+                    ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--accent-presence)]"
+                    : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                }`}
+                title={f.display_name}
+                aria-label={f.display_name}
+                aria-current={active ? "true" : undefined}
+              >
+                <Icon name={(f.icon ?? "ph:circle-half-tilt") as IconName} width={14} />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// AgentDetailPanel — right-side panel with Memory / Files / Sessions tabs
+// ────────────────────────────────────────────────────────────────────────────
+
+type DetailTab = "memory" | "files" | "sessions";
+
+type AgentDetailPanelProps = {
+  familiar: Familiar;
+  familiars: Familiar[];
+  sessions: SessionRow[];
+  fileEntries: FileMemoryEntry[];
+  memoryError: string | null;
+  memoryLoaded: boolean;
+  onClose: () => void;
+  onStartChat: () => void;
+  onOpenSession: (sessionId: string) => void;
+  onOpenMemoryFile: (path: string) => void;
+};
+
+function AgentDetailPanel({
+  familiar,
+  familiars,
+  sessions,
+  fileEntries,
+  memoryError,
+  memoryLoaded,
+  onClose,
+  onStartChat,
+  onOpenSession,
+  onOpenMemoryFile,
+}: AgentDetailPanelProps) {
+  const [tab, setTab] = useState<DetailTab>("memory");
+  const familiarSessions = useMemo(
+    () =>
+      sessions
+        .filter((s) => s.familiarId === familiar.id)
+        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
+    [sessions, familiar.id],
+  );
+
+  return (
+    <section className="agents-view__panel flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
+      <header className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Icon name={(familiar.icon ?? "ph:circle-half-tilt") as IconName} width={18} className="text-[var(--accent-presence)]" />
+          <div className="min-w-0">
+            <h2 className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
+              {familiar.display_name}
+            </h2>
+            <p className="truncate text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+              {familiar.role || familiar.harness || familiar.id}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onStartChat}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80"
+          >
+            <Icon name="ph:chat-circle-dots" width={12} />
+            Start chat
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+            aria-label="Back to roster"
+          >
+            <Icon name="ph:x" width={12} />
+            Close
+          </button>
+        </div>
+      </header>
+
+      <div className="flex shrink-0 border-b border-[var(--border-hairline)] px-3">
+        {(["memory", "files", "sessions"] as const).map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={`agents-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] capitalize transition-colors ${
+              tab === id
+                ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
+                : "border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+            aria-current={tab === id ? "page" : undefined}
+          >
+            {id}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {tab === "memory" ? (
+          <AgentsMemoryView
+            familiars={familiars}
+            activeFamiliar={familiar}
+            mode="list"
+            lockToFamiliar
+            onOpenMemoryFile={onOpenMemoryFile}
+          />
+        ) : tab === "files" ? (
+          <div className="h-full overflow-y-auto p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                Memory files
+              </h3>
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {fileEntries.length} total
+              </span>
+            </div>
+            <MemoryFilesList
+              entries={fileEntries}
+              loaded={memoryLoaded}
+              error={memoryError}
+              onOpen={onOpenMemoryFile}
+            />
+            <p className="mt-2 text-[10px] text-[var(--text-muted)]">
+              Note: /api/memory is global today, so this list is the same for every familiar.
+            </p>
+          </div>
+        ) : (
+          <div className="h-full overflow-y-auto p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                Sessions
+              </h3>
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {familiarSessions.length} total
+              </span>
+            </div>
+            {familiarSessions.length === 0 ? (
+              <div className="grid min-h-[120px] place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] text-[12px] text-[var(--text-muted)]">
+                No sessions for this familiar yet.
+              </div>
+            ) : (
+              <ul className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+                {familiarSessions.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenSession(s.id)}
+                      className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                    >
+                      <Icon name="ph:terminal-window" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12px] text-[var(--text-primary)]">
+                          {s.title || s.id}
+                        </span>
+                        <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
+                          {s.harness} · {s.status}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                        {age(s.updated_at)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
