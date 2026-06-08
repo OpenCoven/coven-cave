@@ -551,7 +551,7 @@ export function Workspace() {
 
   useEffect(() => {
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "agents", "home", "chat", "board", "calendar", "inbox", "library", "browser",
+      "home", "agents", "chat", "board", "calendar", "inbox", "library", "browser",
     ];
 
     const onKey = (e: KeyboardEvent) => {
