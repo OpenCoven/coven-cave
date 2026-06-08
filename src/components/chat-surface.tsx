@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { CovenFloor } from "@/components/coven-floor";
+import { SessionsView } from "@/components/sessions-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
@@ -41,6 +42,9 @@ type Props = {
   onOpenInboxItem: (item: InboxItem) => void;
   onInboxItemChanged: () => void | Promise<void>;
   onOpenMode: (mode: string) => void;
+  onOpenSession?: (sessionId: string, familiarId?: string) => void;
+  onNewChat?: (familiarId?: string) => void;
+  onSessionsChanged?: () => void;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -337,6 +341,9 @@ export function ChatSurface({
   onOpenInboxItem,
   onInboxItemChanged,
   onOpenMode,
+  onOpenSession,
+  onNewChat,
+  onSessionsChanged,
 }: Props) {
   const [scope, setScope] = useState<AgentsScope>("sessions");
   const [query, setQuery] = useState("");
@@ -675,7 +682,7 @@ export function ChatSurface({
             )}
           </div>
         ) : (
-          /* Sessions list */
+          /* History fallback — SessionsView when no thread is open */
           <div className="flex min-h-0 flex-1 flex-col">
             {!daemonRunning && (
               <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]">
@@ -695,118 +702,29 @@ export function ChatSurface({
                 </button>
               </div>
             )}
-
-            {/* Chats list */}
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {filteredSessions.length === 0 ? (
-                <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-3 text-center">
-                  <Icon name="ph:chats-circle" width={28} className="text-[var(--text-muted)]" />
-                  <p className="text-[13px] text-[var(--text-secondary)]">No chats yet</p>
-                  <button
-                    type="button"
-                    onClick={() => startConversation(activeFamiliarId)}
-                    className="rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-                  >
-                    Start a chat
-                  </button>
-                </div>
-              ) : (
-                <div className="divide-y divide-[var(--border-hairline)]">
-                  {groupedSessions.map(({ label, sessions: groupSessions }) => {
-                    // Hide the group header when it's redundant with the top filter:
-                    // grouping by familiar while a single familiar is already selected
-                    // produces exactly one group whose label matches the toolbar pill.
-                    const hideLabel =
-                      label === null ||
-                      (groupBy === "familiar" && chatFilterId !== null);
-                    return (
-                    <React.Fragment key={label ?? "__ungrouped__"}>
-                      {!hideLabel && (
-                        <div className="sticky top-0 z-10 bg-[var(--bg-canvas)]/95 backdrop-blur-sm px-5 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border-hairline)]">
-                          {label}
-                          <span className="ml-1.5 font-normal opacity-40">{groupSessions.length}</span>
-                        </div>
-                      )}
-                      {groupSessions.map((session) => {
-                        const familiar = session.familiarId ? famById.get(session.familiarId) : undefined;
-                        const isActive = session.id === activeSessionId;
-                        const pill = statusPill(session);
-                        return (
-                          <div
-                            key={session.id}
-                            role="button"
-                            tabIndex={0}
-                            className={[
-                              "group relative flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-[var(--bg-raised)]",
-                              isActive ? "bg-[var(--bg-raised)]" : "",
-                            ].join(" ")}
-                            onClick={() => openConversation(session)}
-                            onKeyDown={(e) => e.key === "Enter" && openConversation(session)}
-                          >
-                            {/* Active indicator */}
-                            {isActive && <div className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r bg-[oklch(0.65_0.18_280)]" />}
-                            {/* Content */}
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-baseline gap-2">
-                                <span className={[
-                                  "flex-1 truncate text-[13px] leading-snug",
-                                  isActive ? "font-semibold text-[var(--text-primary)]" : "font-medium text-[var(--text-primary)]",
-                                ].join(" ")}>
-                                  {session.title || "Untitled"}
-                                </span>
-                                <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">{relTime(session.updated_at ?? session.created_at)}</span>
-                              </div>
-                              <div className="mt-0.5 flex items-center gap-1.5">
-                                <span className="truncate text-[11.5px] text-[var(--text-muted)]">
-                                  {familiar?.display_name ?? session.familiarId ?? ""}
-                                </span>
-                                {pill && (
-                                  <span className={`shrink-0 inline-block rounded-full border px-1.5 py-px text-[10px] capitalize ${pill.cls}`}>
-                                    {pill.label}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {/* Hover actions */}
-                            <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                              <button
-                                type="button"
-                                title="Archive"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  await fetch(`/api/sessions/${session.id}`, {
-                                    method: "PATCH",
-                                    headers: { "content-type": "application/json" },
-                                    body: JSON.stringify({ archived: true }),
-                                  });
-                                  onSessionStarted();
-                                }}
-                                className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                              >
-                                <Icon name="ph:archive" width={14} />
-                              </button>
-                              <button
-                                type="button"
-                                title="Delete"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!window.confirm("Delete this chat? This cannot be undone.")) return;
-                                  await fetch(`/api/sessions/${session.id}`, { method: "DELETE" });
-                                  onSessionStarted();
-                                }}
-                                className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--color-danger)]"
-                              >
-                                <Icon name="ph:trash" width={14} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </React.Fragment>
-                    );
-                  })}
-                </div>
-              )}
+              <SessionsView
+                familiars={familiars}
+                sessions={sessions}
+                activeFamiliarId={activeFamiliarId}
+                activeSessionId={activeSessionId ?? null}
+                onOpenSession={(sessionId, familiarId) => {
+                  if (onOpenSession) {
+                    onOpenSession(sessionId, familiarId);
+                  } else {
+                    const session = sessions.find((s) => s.id === sessionId);
+                    if (session) openConversation(session);
+                  }
+                }}
+                onNewChat={(familiarId) => {
+                  if (onNewChat) {
+                    onNewChat(familiarId);
+                  } else {
+                    startConversation(familiarId ?? activeFamiliarId);
+                  }
+                }}
+                onSessionsChanged={onSessionsChanged ?? onSessionStarted}
+              />
             </div>
           </div>
         )}
