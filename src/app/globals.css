@@ -2899,7 +2899,9 @@ body {
   position: fixed;
   top: 0;
   right: 0;
-  height: 100vh;
+  /* Use dynamic viewport height so the drawer respects the iOS Safari
+     keyboard / address bar instead of getting cut off below the fold. */
+  height: 100dvh;
   width: min(480px, 92vw);
   display: grid;
   grid-template-columns: 60px 1fr;
@@ -3085,3 +3087,71 @@ body {
 .familiar-studio-lifecycle__row-action { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
 .familiar-studio-lifecycle__row-action:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-base); }
 .familiar-studio-lifecycle__row-action:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* ─── Mobile shell collapse ────────────────────────────────────────────
+   Below 768px (phone-class viewports), collapse the chrome to a single
+   visible pane: avatar rail becomes a top horizontal strip, the
+   sidebar nav + companion rail are hidden, and detail takes the full
+   width. Resizable-panels manages inline width styles; the !important
+   overrides win against those for the small-viewport case.
+   Restore on tablet+. */
+@media (max-width: 767px) {
+  .shell-body {
+    flex-direction: column;
+  }
+
+  /* Avatar rail → horizontal top strip with scrolling avatars. */
+  .familiar-avatar-rail {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    padding: 8px 12px;
+    gap: 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+  .familiar-avatar-rail__list {
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: auto;
+    flex: 1;
+  }
+  /* Vertical accent line on the active avatar becomes a horizontal one. */
+  .familiar-avatar-rail__avatar--active::before {
+    left: 50% !important;
+    top: auto !important;
+    bottom: -4px !important;
+    transform: translateX(-50%) !important;
+    width: 14px !important;
+    height: 2px !important;
+  }
+  /* Sidebar nav, list pane, companion rail: hidden on phone. The
+     ⌘B / ⌘\\ / ⌘J keyboard shortcuts still toggle them programmatically
+     for accessibility, but they don't take up screen space by default. */
+  .shell-nav-panel,
+  .shell-list-panel,
+  .shell-agent-panel {
+    display: none !important;
+  }
+  /* Hide separators that would otherwise be orphaned. */
+  .shell-root > [data-resizable-handle] {
+    display: none !important;
+  }
+  /* Detail takes the full width. */
+  .shell-detail-panel {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* Treat phone keyboard pop-in: use dynamic viewport units in places
+   that previously assumed 100vh. Modal/portal content avoids being
+   pushed off-screen when the keyboard opens. */
+@supports (height: 100dvh) {
+  .ui-modal-shell {
+    max-height: calc(100dvh - 2 * var(--space-4));
+  }
+}

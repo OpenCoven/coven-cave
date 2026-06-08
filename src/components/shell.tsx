@@ -208,9 +208,9 @@ function ShellInner({
 
   if (!mounted) {
     return (
-      <div className="flex h-full w-full flex-col">
+      <div className="shell-frame flex h-full w-full flex-col">
         {topBar}
-        <div className="flex flex-1 min-h-0">
+        <div className="shell-body flex flex-1 min-h-0">
           {familiarRail}
           <div className="shell-root flex-1 min-h-0" />
         </div>
@@ -284,9 +284,9 @@ function ShellInner({
   );
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="shell-frame flex h-full w-full flex-col">
       {topBar}
-      <div className="flex flex-1 min-h-0">
+      <div className="shell-body flex flex-1 min-h-0">
         {familiarRail}
         {hasBottom ? (
           <Group
