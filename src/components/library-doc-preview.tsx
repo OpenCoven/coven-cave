@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
-import { sanitizeHtml } from "@/lib/html-sanitize";
+import { isSafeGitHubUrl, isSafeHttpUrl } from "@/lib/url-safety";
 import type {
   LibraryDocBody,
   LibraryBookmark,
@@ -31,7 +31,8 @@ function fmtDate(iso?: string): string {
   try { return dateFmt.format(new Date(iso)); } catch { return iso; }
 }
 
-async function openUrl(url: string) {
+async function openUrl(url: string, options: { requireGitHub?: boolean } = {}) {
+  if (options.requireGitHub ? !isSafeGitHubUrl(url) : !isSafeHttpUrl(url)) return;
   // Use Tauri shell_open when running as desktop app
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     try {
@@ -60,9 +61,10 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-function OpenBtn({ url, label }: { url: string; label?: string }) {
+function OpenBtn({ url, label, requireGitHub = false }: { url: string; label?: string; requireGitHub?: boolean }) {
+  const safe = requireGitHub ? isSafeGitHubUrl(url) : isSafeHttpUrl(url);
   return (
-    <button type="button" className="library-preview-action-btn" onClick={() => { void openUrl(url); }}>
+    <button type="button" className="library-preview-action-btn" disabled={!safe} title={safe ? undefined : "Unsafe URL blocked"} onClick={() => { void openUrl(url, { requireGitHub }); }}>
       <Icon name="ph:arrow-square-out" width={13} />
       <span>{label ?? "Open"}</span>
     </button>
@@ -201,7 +203,7 @@ function BookmarkDetail({ item }: { item: LibraryBookmark }) {
           <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>No notes saved.</div>
         )}
         <FieldRow label="URL">
-          <a href={item.url} target="_blank" rel="noopener noreferrer" className="library-preview-link"
+          <a href={isSafeHttpUrl(item.url) ? item.url : undefined} target="_blank" rel="noopener noreferrer" className="library-preview-link"
             onClick={(e) => { e.preventDefault(); void openUrl(item.url); }}>{item.url}</a>
         </FieldRow>
       </div>
@@ -289,7 +291,7 @@ function GitHubDetail({ item }: { item: LibraryGitHubItem }) {
           </div>
         )}
         <div className="library-preview-actions">
-          <OpenBtn url={item.url} label="Open on GitHub" />
+          <OpenBtn url={item.url} label="Open on GitHub" requireGitHub />
           <CopyButton text={item.url} label="Copy URL" />
         </div>
       </div>

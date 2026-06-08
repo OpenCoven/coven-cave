@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createLibraryStore } from "@/lib/library-store";
-import type { LibraryReadingItem, ReadingStatus, LinkCapture } from "@/lib/library-types";
+import fs from "node:fs";
+import path from "node:path";
+import { homedir } from "node:os";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { isSafeHttpUrl } from "@/lib/url-safety";
+import type { LibraryReadingItem, ReadingStatus } from "@/lib/library-types";
 
 const store = createLibraryStore();
 
@@ -26,6 +30,7 @@ export async function POST(req: NextRequest) {
     capture?: LinkCapture;
   };
   if (!body.title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
+  if (body.url && !isSafeHttpUrl(body.url)) return NextResponse.json({ ok: false, error: "http(s) url required" }, { status: 400 });
 
   const item: LibraryReadingItem = {
     id: generateId(),
@@ -51,7 +56,8 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
   const patch = await req.json() as Partial<LibraryReadingItem>;
-  const items = await store.readReading();
+  if (patch.url && !isSafeHttpUrl(patch.url)) return NextResponse.json({ ok: false, error: "http(s) url required" }, { status: 400 });
+  const items = readItems();
   const idx = items.findIndex((i) => i.id === id);
   if (idx === -1) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
