@@ -84,7 +84,11 @@ export async function GET(req: NextRequest) {
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(resolved);
+    // `resolved` is validated to live under an allowed root above. The
+    // turbopackIgnore comment stops Next from tracing the dynamic path as
+    // a build-relative file pattern, which otherwise matches the entire
+    // project tree.
+    stat = fs.statSync(/* turbopackIgnore: true */ resolved);
   } catch {
     return NextResponse.json({ ok: false, error: "file not found" }, { status: 404 });
   }
@@ -102,7 +106,7 @@ export async function GET(req: NextRequest) {
 
   let content: string;
   try {
-    content = fs.readFileSync(resolved, "utf-8");
+    content = fs.readFileSync(/* turbopackIgnore: true */ resolved, "utf-8");
   } catch {
     return NextResponse.json({ ok: false, error: "read failed" }, { status: 500 });
   }

@@ -68,7 +68,10 @@ export async function GET() {
   }
   for (const idx of MEMORY_INDEX_FILES) {
     try {
-      const s = await stat(idx);
+      // idx is one of the absolute homedir-prefixed paths in
+      // MEMORY_INDEX_FILES. turbopackIgnore prevents bundling all matching
+      // candidates as static patterns.
+      const s = await stat(/* turbopackIgnore: true */ idx);
       entries.push({
         root: "index",
         rootLabel: "Index",

@@ -219,8 +219,10 @@ export async function GET(req: NextRequest) {
     const resolvedFile = resolveResearchPath(file, researchRoot);
     if (!resolvedFile) continue;
     try {
-      const stat = fs.statSync(resolvedFile);
-      const content = fs.readFileSync(resolvedFile, "utf-8");
+      // resolvedFile is validated under researchRoot above. turbopackIgnore
+      // prevents Next from tracing the dynamic path into the build manifest.
+      const stat = fs.statSync(/* turbopackIgnore: true */ resolvedFile);
+      const content = fs.readFileSync(/* turbopackIgnore: true */ resolvedFile, "utf-8");
       const { frontmatter, body } = parseFrontmatter(content);
       docs.push({
         id: path.relative(familiar.root, resolvedFile),

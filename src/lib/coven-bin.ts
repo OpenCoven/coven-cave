@@ -78,7 +78,12 @@ function candidateDirs(): string[] {
 }
 
 function loginShellPath(): string | null {
-  const shell = process.env.SHELL || "/bin/zsh";
+  // Read SHELL through a deliberately opaque accessor so Turbopack's static
+  // analysis can't union the value with a string literal like "/bin/zsh"
+  // and treat it as a file pattern that matches the whole project tree.
+  // The fallback below uses a runtime concatenation for the same reason.
+  const env = process.env as Record<string, string | undefined>;
+  const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
     const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
       encoding: "utf-8",
