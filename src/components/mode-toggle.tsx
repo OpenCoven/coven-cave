@@ -7,7 +7,7 @@
  * Caller is responsible for persistence + applying `data-mode` on <html>.
  */
 
-import { Icon } from "@iconify/react";
+import { Icon, type IconName } from "@/lib/icon";
 import type { Mode } from "../lib/theme-storage";
 
 interface ModeToggleProps {
@@ -15,9 +15,9 @@ interface ModeToggleProps {
   onChange: (next: Mode) => void;
 }
 
-const OPTIONS: { id: Mode; label: string; name: string }[] = [
-  { id: "light", label: "Light", name: "ph:sun" },
-  { id: "dark", label: "Dark", name: "ph:moon" },
+const OPTIONS: { id: Mode; label: string; icon: IconName }[] = [
+  { id: "light", label: "Light", icon: "ph:sun" },
+  { id: "dark", label: "Dark", icon: "ph:moon" },
 ];
 
 export function ModeToggle({ value, onChange }: ModeToggleProps) {
@@ -41,7 +41,7 @@ export function ModeToggle({ value, onChange }: ModeToggleProps) {
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
           >
-            <Icon icon={opt.name} width={14} />
+            <Icon name={opt.icon} width={14} />
             {opt.label}
           </button>
         );

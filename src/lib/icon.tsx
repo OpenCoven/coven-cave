@@ -152,6 +152,7 @@ export const ICON_NAMES = [
   "ph:linkedin-logo",
   "ph:twitter-logo",
   "ph:sun",
+  "ph:moon",
   "ph:bell",
   "ph:book-open-bold",
   "ph:book-open",
