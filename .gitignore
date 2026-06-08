@@ -73,6 +73,9 @@ credentials/
 .worktrees/
 .env.local
 
+# Playwright debug artifacts (console/page dumps from headless runs)
+.playwright-cli/
+
 # npm lockfile — project uses pnpm
 package-lock.json
 /.superpowers

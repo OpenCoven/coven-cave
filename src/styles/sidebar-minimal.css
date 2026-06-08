@@ -2,21 +2,23 @@
  * Appended to globals via @import in globals.css.
  * Uses only existing CSS custom properties.
  */
-
 /* ── Sidebar shell ────────────────────────────────────────────────────────── */
 .sidebar-minimal {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 6px 0 0;
+  padding: 10px 8px 10px;
   font-size: 13px;
   color: var(--text-secondary);
+  gap: 10px;
+  background: linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 55%, transparent), transparent 42%),
+    var(--bg-base);
 }
 
 /* ── Header CTA ──────────────────────────────────────────────────────────── */
 .sidebar-actions {
-  padding: 0 8px 8px;
+  padding: 0 7px 6px;
   flex-shrink: 0;
 }
 
@@ -24,16 +26,16 @@
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 9px;
-  padding: 7px 10px;
-  border-radius: 7px;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
 .sidebar-action-row:hover {
@@ -42,7 +44,7 @@
 }
 
 .sidebar-action-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--text-primary);
 }
 
@@ -52,6 +54,7 @@
   color: var(--text-secondary);
   border: 1px solid var(--border-hairline);
 }
+
 .sidebar-actions:first-child .sidebar-action-row:hover {
   background: var(--bg-elevated);
   color: var(--text-primary);
@@ -60,11 +63,11 @@
 
 .sidebar-action-icon {
   flex-shrink: 0;
-  width: 16px;
+  width: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.65;
+  opacity: 0.7;
 }
 
 .sidebar-action-row:hover .sidebar-action-icon,
@@ -85,7 +88,7 @@
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color: var(--text-muted);
   flex-shrink: 0;
-  opacity: 0.6;
+  opacity: 0.7;
   padding: 1px 5px;
   border-radius: 4px;
   border: 1px solid var(--border-hairline);
@@ -101,9 +104,10 @@
 
 /* Stack the top-level Search + New chat actions tightly */
 .sidebar-action-stack {
-  display: flex;
+  display: grid;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 0 6px;
 }
 
 /* Middle nav region scrolls if the user has lots of sections */
@@ -115,16 +119,18 @@
   flex-direction: column;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hairline) transparent;
+  gap: 11px;
+  padding: 0 4px 2px;
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
 .sidebar-foot {
   flex-shrink: 0;
-  padding: 8px;
+  padding: 8px 6px 0;
   border-top: 1px solid var(--border-hairline);
-  display: flex;
+  display: grid;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .sidebar-foot-bell,
@@ -132,10 +138,10 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  border-radius: 7px;
-  border: none;
+  gap: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 0;
   background: transparent;
   color: var(--text-muted);
   font-size: 13px;
@@ -143,6 +149,7 @@
   text-align: left;
   transition: background 0.12s ease, color 0.12s ease;
   width: 100%;
+  min-height: 34px;
 }
 
 .sidebar-foot-bell:hover,
@@ -167,6 +174,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  min-width: 0;
+  color: inherit;
 }
 
 /* NotificationBell renders an absolutely-positioned popover anchored at the
@@ -181,7 +190,7 @@
 
 /* ── Folder mode rows ────────────────────────────────────────────────────── */
 .sidebar-folders {
-  padding: 4px 8px;
+  padding: 0 0 10px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-hairline);
 }
@@ -191,36 +200,36 @@
 }
 
 .sidebar-section-label {
-  padding: 6px 10px 2px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  padding: 0 10px 5px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  opacity: 0.5;
   user-select: none;
 }
 
 .sidebar-divider {
   height: 1px;
   background: var(--border-hairline);
-  margin: 3px 10px;
+  margin: 4px 9px;
+  display: none;
 }
 
 .sidebar-folder-row {
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 9px;
-  padding: 5px 10px;
+  gap: 10px;
+  padding: 6px 9px;
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.1s ease, color 0.1s ease;
 }
 
 .sidebar-folder-row:hover {
@@ -229,13 +238,13 @@
 }
 
 .sidebar-folder-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--text-primary);
 }
 
 .sidebar-folder-icon {
   flex-shrink: 0;
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .sidebar-folder-row--active .sidebar-folder-icon,
@@ -254,7 +263,7 @@
   font-size: 10px;
   padding: 0.05em 0.45em;
   border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
   color: var(--accent-presence);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
@@ -281,7 +290,10 @@
   scrollbar-color: var(--border-hairline) transparent;
 }
 
-.sidebar-recents::-webkit-scrollbar { width: 3px; }
+.sidebar-recents::-webkit-scrollbar {
+  width: 3px;
+}
+
 .sidebar-recents::-webkit-scrollbar-thumb {
   background: var(--border-hairline);
   border-radius: 2px;
@@ -339,9 +351,12 @@
 
 /* ── Bottom utility footer ───────────────────────────────────────────────── */
 .sidebar-actions--footer {
-  margin-top: auto;
-  border-top: 1px solid var(--border-hairline);
-  padding: 6px 8px 10px;
+  margin-top: 0;
+  border-top: 0;
+  padding: 0 0 10px;
+  padding-top: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-hairline);
 }
 
 /* Footer rows slightly smaller/dimmer than header rows */
@@ -398,7 +413,9 @@
   scrollbar-width: none;
 }
 
-.familiar-strip::-webkit-scrollbar { display: none; }
+.familiar-strip::-webkit-scrollbar {
+  display: none;
+}
 
 .familiar-strip-avatar {
   display: flex;
@@ -426,7 +443,6 @@
 }
 
 /* ── Familiars section (left nav) ────────────────────────────────────────── */
-
 .sidebar-familiar-section-label {
   padding: 5px 8px 2px;
   font-size: 10px;
@@ -445,14 +461,17 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-hairline) transparent;
 }
-.sidebar-familiar-list::-webkit-scrollbar { width: 3px; }
+
+.sidebar-familiar-list::-webkit-scrollbar {
+  width: 3px;
+}
+
 .sidebar-familiar-list::-webkit-scrollbar-thumb {
   background: var(--border-hairline);
   border-radius: 2px;
 }
 
 /* ── Familiar nav rows ───────────────────────────────────────────────────── */
-
 .sidebar-familiar-row {
   display: flex;
   align-items: center;
@@ -467,14 +486,17 @@
   text-align: left;
   color: var(--text-secondary);
 }
+
 .sidebar-familiar-row:hover {
   background: var(--bg-hover, var(--bg-raised));
   color: var(--text-primary);
 }
+
 .sidebar-familiar-row--active {
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
   color: var(--text-primary);
 }
+
 .sidebar-familiar-row-glyph {
   flex-shrink: 0;
   width: 20px;
@@ -484,10 +506,12 @@
   justify-content: center;
   opacity: 0.8;
 }
+
 .sidebar-familiar-row:hover .sidebar-familiar-row-glyph,
 .sidebar-familiar-row--active .sidebar-familiar-row-glyph {
   opacity: 1;
 }
+
 .sidebar-familiar-row-name {
   flex: 1;
   font-size: 12px;
@@ -496,10 +520,12 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+
 .sidebar-familiar-row--active .sidebar-familiar-row-name {
   color: var(--accent-presence);
   font-weight: 500;
 }
+
 .sidebar-familiar-row-count {
   font-size: 10px;
   color: var(--text-muted);
@@ -509,390 +535,14 @@
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+
 .sidebar-familiar-row--active .sidebar-familiar-row-count {
   background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
   color: var(--accent-presence);
-}
-
-/* ── 4 primary actions ───────────────────────────────────────────────────── */
-.sidebar-actions {
-  padding: 0 7px 6px;
-  flex-shrink: 0;
-}
-
-.sidebar-action-row {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.sidebar-action-row:hover {
-  background: var(--bg-raised);
-  color: var(--text-primary);
-}
-
-.sidebar-action-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-  color: var(--text-primary);
-}
-
-.sidebar-action-icon {
-  flex-shrink: 0;
-  width: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.7;
 }
 
 .sidebar-action-row:hover .sidebar-action-icon {
   opacity: 1;
-}
-
-.sidebar-action-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-action-kbd {
-  font-size: 10px;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-
-/* ── Folder mode rows ────────────────────────────────────────────────────── */
-.sidebar-folders {
-  padding: 6px 7px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.sidebar-addins {
-  padding-top: 4px;
-}
-
-.sidebar-section-label {
-  padding: 8px 9px 3px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  opacity: 0.6;
-  user-select: none;
-}
-
-.sidebar-divider {
-  height: 1px;
-  background: var(--border-hairline);
-  margin: 4px 9px;
-}
-
-.sidebar-folder-row {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 10px;
-  padding: 6px 9px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.sidebar-folder-row:hover {
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-}
-
-.sidebar-folder-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-  color: var(--text-primary);
-}
-
-.sidebar-folder-icon {
-  flex-shrink: 0;
-  opacity: 0.6;
-}
-
-.sidebar-folder-row--active .sidebar-folder-icon,
-.sidebar-folder-row:hover .sidebar-folder-icon {
-  opacity: 1;
-}
-
-.sidebar-folder-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-badge {
-  font-size: 10px;
-  padding: 0.05em 0.45em;
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
-  color: var(--accent-presence);
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Recents header ──────────────────────────────────────────────────────── */
-.sidebar-recents-header {
-  padding: 8px 14px 3px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  user-select: none;
-}
-
-/* ── Flat recents list ───────────────────────────────────────────────────── */
-.sidebar-recents {
-  flex: 1;
-  overflow-y: auto;
-  padding: 2px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hairline) transparent;
-}
-
-.sidebar-recents::-webkit-scrollbar { width: 3px; }
-.sidebar-recents::-webkit-scrollbar-thumb {
-  background: var(--border-hairline);
-  border-radius: 2px;
-}
-
-.sidebar-recents-empty {
-  padding: 6px 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.sidebar-recent-row {
-  display: flex;
-  align-items: baseline;
-  width: 100%;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s ease, color 0.1s ease;
-  min-width: 0;
-}
-
-.sidebar-recent-row:hover {
-  background: var(--bg-raised);
-  color: var(--text-primary);
-}
-
-.sidebar-recent-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.sidebar-recent-title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.sidebar-recent-ts {
-  flex-shrink: 0;
-  font-size: 10px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Bottom settings row ─────────────────────────────────────────────────── */
-.sidebar-actions--footer {
-  margin-top: auto;
-  border-top: 1px solid var(--border-hairline);
-  padding-top: 6px;
-  padding-bottom: 8px;
-}
-.sidebar-bottom {
-  flex-shrink: 0;
-  padding: 6px 7px 8px;
-  border-top: 1px solid var(--border-hairline);
-}
-
-.sidebar-settings-row {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.sidebar-settings-row:hover {
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-}
-
-/* ── FamiliarStrip (AgentPanel top) ──────────────────────────────────────── */
-.familiar-strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px 6px;
-  border-bottom: 1px solid var(--border-hairline);
-  flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.familiar-strip::-webkit-scrollbar { display: none; }
-
-.familiar-strip-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1.5px solid transparent;
-  background: var(--bg-raised);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: border-color 0.12s ease, background 0.12s ease;
-  padding: 0;
-}
-
-.familiar-strip-avatar:hover {
-  border-color: var(--border-strong);
-}
-
-.familiar-strip-avatar--active {
-  border-color: var(--accent-presence);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 35%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
-}
-
-/* ── Familiars section (left nav, replaces emoji strip) ─────────────────── */
-/* duplicate .sidebar-familiar-section rule removed; see line 372 for canonical rule */
-
-.sidebar-familiar-section-label {
-  padding: 5px 8px 2px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  user-select: none;
-}
-
-/* ── Familiar list container ─────────────────────────────────────── */
-.sidebar-familiar-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hairline) transparent;
-}
-.sidebar-familiar-list::-webkit-scrollbar { width: 3px; }
-.sidebar-familiar-list::-webkit-scrollbar-thumb {
-  background: var(--border-hairline);
-  border-radius: 2px;
-}
-
-/* ── Familiar nav rows (flat, click to show sessions in center) ─────────────── */
-
-.sidebar-familiar-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 5px 10px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: background 0.12s;
-  text-align: left;
-  color: var(--text-secondary);
-}
-.sidebar-familiar-row:hover {
-  background: var(--bg-hover, var(--bg-raised));
-  color: var(--text-primary);
-}
-.sidebar-familiar-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
-  color: var(--text-primary);
-}
-.sidebar-familiar-row-glyph {
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.8;
-}
-.sidebar-familiar-row:hover .sidebar-familiar-row-glyph,
-.sidebar-familiar-row--active .sidebar-familiar-row-glyph {
-  opacity: 1;
-}
-.sidebar-familiar-row-name {
-  flex: 1;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-.sidebar-familiar-row--active .sidebar-familiar-row-name {
-  color: var(--accent-presence);
-  font-weight: 500;
-}
-.sidebar-familiar-row-count {
-  font-size: 10px;
-  color: var(--text-muted);
-  background: var(--bg-raised);
-  border-radius: 8px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-.sidebar-familiar-row--active .sidebar-familiar-row-count {
-  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
-  color: var(--accent-presence);
 }
 
 /* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
@@ -904,6 +554,7 @@
 .familiar-strip-avatar {
   outline: none;
 }
+
 .sidebar-action-row:focus-visible,
 .sidebar-folder-row:focus-visible,
 .sidebar-recent-row:focus-visible,
@@ -912,6 +563,7 @@
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: -1px;
 }
+
 .familiar-strip-avatar:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 2px;
@@ -921,21 +573,6 @@
 .sidebar-addins .sidebar-section-label {
   padding-top: var(--space-2);
   opacity: 0.7;
-}
-
-/* ── Left panel polish: compact command stack + continuous navigation ────── */
-.sidebar-minimal {
-  gap: 10px;
-  padding: 10px 8px 10px;
-  background:
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 55%, transparent), transparent 42%),
-    var(--bg-base);
-}
-
-.sidebar-action-stack {
-  display: grid;
-  gap: 6px;
-  padding: 0 6px;
 }
 
 .sidebar-action-stack .sidebar-action-row {
@@ -957,45 +594,13 @@
   background: var(--bg-elevated);
 }
 
-.sidebar-action-trailing {
-  margin-left: auto;
-  flex-shrink: 0;
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 3px;
 }
 
-.sidebar-nav-scroll {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 11px;
-  overflow-y: auto;
-  padding: 0 4px 2px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-hairline) transparent;
-}
-
-.sidebar-nav-scroll::-webkit-scrollbar { width: 3px; }
 .sidebar-nav-scroll::-webkit-scrollbar-thumb {
   border-radius: 3px;
   background: var(--border-hairline);
-}
-
-.sidebar-folders {
-  border-bottom: 1px solid var(--border-hairline);
-  padding: 0 0 10px;
-}
-
-.sidebar-section-label {
-  padding: 0 10px 5px;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0;
-  opacity: 0.76;
-}
-
-.sidebar-divider {
-  display: none;
 }
 
 .sidebar-folder-row,
@@ -1004,7 +609,7 @@
   min-height: 34px;
   border-radius: 8px;
   padding: 0 8px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .sidebar-folder-icon,
@@ -1025,43 +630,6 @@
   color: var(--text-primary);
 }
 
-.sidebar-actions--footer {
-  margin-top: 0;
-  border-top: 0;
-  border-bottom: 1px solid var(--border-hairline);
-  padding: 0 0 10px;
-}
-
-.sidebar-foot {
-  display: grid;
-  flex-shrink: 0;
-  gap: 4px;
-  border-top: 1px solid var(--border-hairline);
-  padding: 8px 6px 0;
-}
-
-.sidebar-foot-bell,
-.sidebar-foot-btn {
-  display: flex;
-  min-height: 34px;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  padding: 0 8px;
-  color: var(--text-muted);
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.sidebar-foot-bell:hover,
-.sidebar-foot-btn:hover {
-  background: var(--bg-raised);
-  color: var(--text-primary);
-}
-
 .sidebar-foot-bell > .relative,
 .sidebar-foot-icon-cell {
   display: grid;
@@ -1069,19 +637,6 @@
   height: 28px;
   flex: 0 0 28px;
   place-items: center;
-}
-
-.sidebar-foot-icon {
-  flex-shrink: 0;
-}
-
-.sidebar-foot-label {
-  min-width: 0;
-  overflow: hidden;
-  color: inherit;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .sidebar-folder-kbd {
@@ -1095,6 +650,7 @@
 .sidebar-folder-row:hover .sidebar-folder-kbd {
   opacity: 1;
 }
+
 
 @media (max-height: 760px) {
   .sidebar-minimal {
@@ -1113,3 +669,4 @@
     min-height: 31px;
   }
 }
+

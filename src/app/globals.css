@@ -2542,15 +2542,15 @@ body {
 
 .familiar-avatar-rail__edit {
   position: absolute;
-  top: -4px;
-  right: 6px;
+  top: -3px;
+  right: 4px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 4px;
   background: var(--bg-raised);
   color: var(--text-secondary);
@@ -2565,9 +2565,25 @@ body {
   pointer-events: auto;
 }
 
+/* Pointer-less devices (touch) can't hover — keep the customize affordance
+ * visible at rest so it's actually reachable. */
+@media (hover: none) {
+  .familiar-avatar-rail__edit {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
 .familiar-avatar-rail__edit:hover {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 18%, var(--bg-raised));
+}
+
+.familiar-avatar-rail__edit:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 .familiar-avatar-rail__list > li[data-dragging="true"] {
   opacity: 0.4;
@@ -2626,24 +2642,35 @@ body {
   height: 26px;
   border-radius: 50%;
   background: transparent;
-  border: 1px dashed var(--border-strong);
   color: var(--text-muted);
   display: grid;
   place-items: center;
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard),
-              background var(--duration-fast) var(--ease-standard);
+              background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-avatar-rail__add {
+  border: 1px dashed var(--border-strong);
+}
+
+.familiar-avatar-rail__toggle {
+  border: 1px solid var(--border-hairline);
+  margin-top: auto;
 }
 
 .familiar-avatar-rail__add:hover,
 .familiar-avatar-rail__toggle:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
-.familiar-avatar-rail__toggle {
-  border-style: none;
-  margin-top: auto;
+.familiar-avatar-rail__add:focus-visible,
+.familiar-avatar-rail__toggle:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
 
 /* ────────────────────────────────────────────────
@@ -2895,9 +2922,10 @@ body {
 .shell-banner__title {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  /* Wrap on narrow widths instead of truncating mid-sentence — the
+   * second half of these messages often carries the operative info
+   * (e.g. "…but new tasks may not start"). */
 }
 
 .shell-banner__cta {
@@ -2908,6 +2936,16 @@ body {
   padding: 3px 10px;
   font-size: var(--text-xs);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.shell-banner__cta:hover {
+  background: color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.shell-banner__cta:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
 
 .shell-banner__dismiss {
@@ -2918,9 +2956,16 @@ body {
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .shell-banner__dismiss:hover {
+  opacity: 1;
+}
+
+.shell-banner__dismiss:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
   opacity: 1;
 }
 
@@ -2946,10 +2991,6 @@ body {
   font-weight: 600;
 }
 
-.top-bar__sep {
-  color: var(--text-muted);
-}
-
 .top-bar__crumb {
   display: inline-flex;
   align-items: center;
@@ -2962,6 +3003,7 @@ body {
 
 .top-bar__crumb-sep {
   color: var(--text-muted);
+  opacity: 0.55;
 }
 
 .top-bar__crumb-sub {
@@ -2982,7 +3024,8 @@ body {
   color: var(--text-muted);
   font-size: var(--text-sm);
   cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
 }
 
 .top-bar__search:hover {
@@ -2990,11 +3033,21 @@ body {
   color: var(--text-secondary);
 }
 
+.top-bar__search:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
 .top-bar__search kbd {
   margin-left: auto;
   font-family: var(--font-geist-mono);
   font-size: 10px;
+  line-height: 1;
   color: var(--text-muted);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
 }
 
 .top-bar__actions {
@@ -3013,11 +3066,18 @@ body {
   display: grid;
   place-items: center;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
 }
 
 .top-bar__icon-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.top-bar__icon-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 
 /* ────────────────────────────────────────────────
@@ -3387,4 +3447,212 @@ body {
   .ui-modal-shell {
     max-height: calc(100dvh - 2 * var(--space-4));
   }
+}
+
+/* ───────────────────────────────────────────────
+   Salem — floating bottom-right docs familiar
+   ─────────────────────────────────────────────── */
+
+.salem-perch {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  filter: drop-shadow(0 4px 18px rgba(124, 77, 255, 0.45));
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.salem-perch:hover {
+  transform: translateY(-4px) scale(1.06);
+  filter: drop-shadow(0 8px 28px rgba(124, 77, 255, 0.65));
+}
+.salem-perch__label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(209, 196, 233, 0.75);
+  text-transform: uppercase;
+}
+
+.salem-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9000;
+  width: 360px;
+  max-height: 500px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(14, 11, 24, 0.96);
+  border: 1px solid rgba(124, 77, 255, 0.3);
+  border-radius: 18px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(124, 77, 255, 0.12);
+  backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+.salem-panel--expanded {
+  bottom: 0;
+  right: 0;
+  width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+}
+
+.salem-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(124, 77, 255, 0.15);
+  background: rgba(26, 18, 46, 0.7);
+  flex-shrink: 0;
+}
+.salem-panel__header-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.salem-panel__name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #d1c4e9;
+  letter-spacing: 0.02em;
+}
+.salem-panel__subtitle {
+  font-size: 10px;
+  color: rgba(179, 136, 255, 0.6);
+  margin-top: 1px;
+}
+.salem-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.salem-btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(209, 196, 233, 0.5);
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.14s, background 0.14s;
+}
+.salem-btn-icon:hover {
+  color: #d1c4e9;
+  background: rgba(124, 77, 255, 0.15);
+}
+
+.salem-panel__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 77, 255, 0.3) transparent;
+}
+
+.salem-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+}
+.salem-msg__glyph {
+  font-size: 16px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.salem-msg__text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #e8e0f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.salem-msg--user {
+  flex-direction: row-reverse;
+}
+.salem-msg--user .salem-msg__text {
+  background: rgba(124, 77, 255, 0.2);
+  border: 1px solid rgba(124, 77, 255, 0.25);
+  border-radius: 12px 12px 4px 12px;
+  padding: 7px 11px;
+  color: #e8e0f0;
+}
+.salem-msg--salem .salem-msg__text {
+  background: rgba(26, 18, 46, 0.6);
+  border: 1px solid rgba(179, 136, 255, 0.12);
+  border-radius: 4px 12px 12px 12px;
+  padding: 7px 11px;
+}
+
+.salem-thinking .dots::after {
+  content: '';
+  display: inline-block;
+  animation: salem-dots 1.2s steps(4, end) infinite;
+}
+@keyframes salem-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+
+.salem-panel__input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(124, 77, 255, 0.15);
+  background: rgba(14, 11, 24, 0.9);
+  flex-shrink: 0;
+}
+.salem-panel__input {
+  flex: 1;
+  background: rgba(26, 18, 46, 0.7);
+  border: 1px solid rgba(124, 77, 255, 0.2);
+  border-radius: 10px;
+  color: #e8e0f0;
+  font-size: 12.5px;
+  padding: 7px 11px;
+  outline: none;
+  transition: border-color 0.14s;
+}
+.salem-panel__input:focus {
+  border-color: rgba(124, 77, 255, 0.55);
+}
+.salem-panel__input::placeholder {
+  color: rgba(179, 136, 255, 0.35);
+}
+.salem-panel__send {
+  background: rgba(124, 77, 255, 0.75);
+  border: none;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 15px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.14s;
+  flex-shrink: 0;
+}
+.salem-panel__send:hover:not(:disabled) {
+  background: rgba(124, 77, 255, 1);
+}
+.salem-panel__send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

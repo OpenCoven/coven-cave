@@ -170,7 +170,7 @@ export function FamiliarAvatarRail({
                 title="Customize"
                 onClick={(e) => { e.stopPropagation(); openFamiliarStudio(f.id, "identity"); }}
               >
-                <Icon name="ph:dots-three-bold" width={10} />
+                <Icon name="ph:dots-three-bold" width={12} />
               </button>
             </li>
           );
