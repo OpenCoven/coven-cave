@@ -20,6 +20,7 @@ const covenEntries = [
     path: "/Users/buns/.coven/memory/nova.md",
     updated_at: "2026-06-08T05:00:00.000Z",
     excerpt: "routing architecture",
+    source_context: "session://nova-routing-2026-06-08",
   },
   {
     id: "mem-2",
@@ -100,6 +101,27 @@ assert.deepEqual(
   filtered.nodes.filter((node) => node.kind === "memory" && node.source === "coven").map((node) => node.id),
   ["memory:coven:mem-1"],
   "query and familiar filters should apply to familiar memory leaves",
+);
+
+assert.equal(
+  filtered.nodes.find((node) => node.id === "memory:coven:mem-1")?.sourceContext,
+  "session://nova-routing-2026-06-08",
+  "coven memory nodes should preserve source_context as sourceContext provenance",
+);
+
+const provenanceFiltered = buildMemoryGraphModel({
+  familiars,
+  covenEntries,
+  fileEntries,
+  query: "session://nova-routing",
+  familiarFilter: "nova",
+  maxLeavesPerHub: 10,
+});
+
+assert.deepEqual(
+  provenanceFiltered.nodes.filter((node) => node.kind === "memory").map((node) => node.id),
+  ["memory:coven:mem-1"],
+  "memory graph search should match source_context provenance URIs",
 );
 
 assert.equal(

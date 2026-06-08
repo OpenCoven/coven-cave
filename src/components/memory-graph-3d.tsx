@@ -121,6 +121,10 @@ function nodeIsDimmed(node: MemoryGraphSceneNode, selectedFamiliarId: string): b
   return node.familiarId !== selectedFamiliarId;
 }
 
+function hasSourceContext(node: MemoryGraphSceneNode): boolean {
+  return node.kind === "memory" && Boolean(node.sourceContext);
+}
+
 function compactAge(iso: string | undefined): string {
   if (!iso) return "";
   const ms = Date.now() - new Date(iso).getTime();
@@ -261,6 +265,21 @@ export function MemoryGraph3D({
       instanced.userData.nodes = leaves;
       root.add(instanced);
       pickables.push(instanced as Pickable);
+
+      leaves.filter(hasSourceContext).forEach((node) => {
+        const ring = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.28, 0.58),
+          new THREE.MeshBasicMaterial({
+            color: 0x7dd3fc,
+            transparent: true,
+            opacity: 0.26,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          }),
+        );
+        ring.position.copy(asVector(node.position).add(new THREE.Vector3(0, 0, -0.035)));
+        root.add(ring);
+      });
 
       leaves.slice(0, 6).forEach((node) => {
         const label = makeLabelSprite(node.label, "#dffbea");
@@ -476,6 +495,7 @@ export function MemoryGraph3D({
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/45 px-3 py-2 text-[10px] text-white/65 shadow-2xl backdrop-blur">
         <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#8E3DFF]" /> agent</span>
         <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#62d08f]" /> memory card</span>
+        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#7dd3fc]" /> tracked source</span>
         <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#f59e0b]" /> older stack</span>
       </div>
       {graph.metrics.hiddenEntries > 0 ? (
@@ -512,6 +532,9 @@ function MemoryGraphTooltip({
       <div className="mt-1 text-white/65">{detail}</div>
       {node.kind === "memory" && node.excerpt ? (
         <div className="mt-2 line-clamp-3 text-white/55">{node.excerpt}</div>
+      ) : null}
+      {node.kind === "memory" && node.sourceContext ? (
+        <div className="mt-2 break-all font-mono text-[10px] text-white/50">Source: {node.sourceContext}</div>
       ) : null}
     </div>
   );

@@ -21,6 +21,7 @@ const covenEntries = [
     path: "/Users/buns/.coven/memory/nova/memory-map.md",
     updated_at: now,
     excerpt: "Focus one agent at a time and keep the list as the retrieval surface.",
+    source_context: "session://smoke-nova-memory-map",
   },
   {
     id: "smoke-nova-2",

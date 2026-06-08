@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { parseMemorySourceContext } from "@/lib/memory-source-context";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,18 @@ export type MemoryEntry = {
   fullPath: string;
   size: number;
   modified: string;
+  sourceContext?: string;
   /** Familiar id when this entry belongs to a specific agent workspace */
   familiarId?: string;
 };
+
+async function readSourceContext(filePath: string): Promise<string | undefined> {
+  try {
+    return parseMemorySourceContext(await readFile(/* turbopackIgnore: true */ filePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
 
 async function walk(
   dir: string,
@@ -55,6 +65,7 @@ async function walk(
     } else if (item.isFile() && /\.(md|markdown|txt|json)$/i.test(item.name)) {
       try {
         const s = await stat(full);
+        const sourceContext = await readSourceContext(full);
         acc.push({
           root,
           rootLabel,
@@ -62,6 +73,7 @@ async function walk(
           fullPath: full,
           size: s.size,
           modified: s.mtime.toISOString(),
+          ...(sourceContext ? { sourceContext } : {}),
           ...(familiarId ? { familiarId } : {}),
         });
       } catch {
@@ -87,6 +99,7 @@ async function scanFamiliarWorkspaces(acc: MemoryEntry[]) {
     const indexFile = path.join(workspacesDir, familiarId, "MEMORY.md");
     try {
       const s = await stat(/* turbopackIgnore: true */ indexFile);
+      const sourceContext = await readSourceContext(indexFile);
       acc.push({
         root: `familiar:${familiarId}`,
         rootLabel: familiarId,
@@ -94,6 +107,7 @@ async function scanFamiliarWorkspaces(acc: MemoryEntry[]) {
         fullPath: indexFile,
         size: s.size,
         modified: s.mtime.toISOString(),
+        ...(sourceContext ? { sourceContext } : {}),
         familiarId,
       });
     } catch {
@@ -118,6 +132,7 @@ export async function GET() {
   for (const idx of MEMORY_INDEX_FILES) {
     try {
       const s = await stat(/* turbopackIgnore: true */ idx);
+      const sourceContext = await readSourceContext(idx);
       entries.push({
         root: "index",
         rootLabel: "Index",
@@ -125,6 +140,7 @@ export async function GET() {
         fullPath: idx,
         size: s.size,
         modified: s.mtime.toISOString(),
+        ...(sourceContext ? { sourceContext } : {}),
       });
     } catch {
       /* missing */
