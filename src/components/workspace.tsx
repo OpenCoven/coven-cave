@@ -534,6 +534,59 @@ export function Workspace() {
     }, 0);
   }, []);
 
+  useEffect(() => {
+    const SURFACE_ORDER: WorkspaceMode[] = [
+      "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",
+    ];
+
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      const alt = e.altKey;
+
+      // ⌘1..⌘8 → sidebar surface
+      if (meta && !alt && /^[1-8]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = SURFACE_ORDER[idx];
+        if (target) {
+          e.preventDefault();
+          setMode(target);
+        }
+        return;
+      }
+
+      // ⌥1..⌥9 → Nth familiar
+      if (alt && !meta && /^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = familiars[idx];
+        if (target) {
+          e.preventDefault();
+          selectFamiliar(target.id);
+        }
+        return;
+      }
+
+      // ⌘↑ / ⌘↓ → cycle familiars
+      if (meta && (e.key === "ArrowUp" || e.key === "ArrowDown") && familiars.length > 0) {
+        e.preventDefault();
+        const idx = familiars.findIndex((f) => f.id === activeId);
+        const step = e.key === "ArrowUp" ? -1 : 1;
+        const next = (idx === -1 ? 0 : (idx + step + familiars.length) % familiars.length);
+        selectFamiliar(familiars[next].id);
+        return;
+      }
+
+      // ⌘N → new chat (only on Chat surface)
+      if (meta && !alt && e.key.toLowerCase() === "n" && mode === "chat") {
+        e.preventDefault();
+        startAgentChat(activeId);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [familiars, activeId, mode, selectFamiliar, startAgentChat]);
+
   const showAgentChatList = useCallback(() => {
     setMode("chat");
     setTimeout(() => window.dispatchEvent(new CustomEvent("cave:agents-list")), 0);
