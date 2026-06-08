@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const inspectorPane = await readFile(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
-const agentsView = await readFile(new URL("./agents-view.tsx", import.meta.url), "utf8");
+const agentsView = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
@@ -63,7 +63,7 @@ assert.match(
 assert.match(
   agentsView,
   /onCreateReminder=\{onCreateReminder\}[\s\S]*onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*onInboxItemChanged=\{onInboxItemChanged\}/,
-  "AgentsView should thread Inspector Inbox callbacks into the right panel",
+  "ChatSurface should thread Inspector Inbox callbacks into the right panel",
 );
 
 assert.match(

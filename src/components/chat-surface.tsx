@@ -313,7 +313,7 @@ function ChatFilterDropdown({
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 
-export function AgentsView({
+export function ChatSurface({
   familiars,
   sessions,
   activeFamiliar,

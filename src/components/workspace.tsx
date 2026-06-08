@@ -34,7 +34,7 @@ import { ComuxView } from "@/components/comux-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { HomeComposer } from "@/components/home-composer";
-import { AgentsView } from "@/components/agents-view";
+import { ChatSurface } from "@/components/chat-surface";
 import { SessionsView } from "@/components/sessions-view";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -468,7 +468,7 @@ export function Workspace() {
 
   const openAgentSession = useCallback((sessionId: string, familiarId?: string | null) => {
     if (familiarId) setActiveId(familiarId);
-    setMode("agents");
+    setMode("chat");
     setTimeout(() => {
       window.dispatchEvent(
         new CustomEvent("cave:agents-open-session", {
@@ -492,7 +492,7 @@ export function Workspace() {
   const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
-    setMode("agents");
+    setMode("chat");
     setTimeout(() => {
       window.dispatchEvent(
         new CustomEvent("cave:agents-new-chat", {
@@ -503,7 +503,7 @@ export function Workspace() {
   }, []);
 
   const showAgentChatList = useCallback(() => {
-    setMode("agents");
+    setMode("chat");
     setTimeout(() => window.dispatchEvent(new CustomEvent("cave:agents-list")), 0);
   }, []);
 
@@ -567,7 +567,7 @@ export function Workspace() {
       // Switch to Agents view (memory inspector lives in the right pane), and
       // surface the path via a hash that InspectorPane can wire to in a
       // follow-up commit; for now this is a no-op visual placeholder.
-      setMode("agents");
+      setMode("chat");
       window.location.hash = `memory:${encodeURIComponent(intent.path)}`;
       return;
     }
@@ -582,6 +582,7 @@ export function Workspace() {
           return;
         case "/chats":
         case "/agents":
+        case "/chat":
           showAgentChatList();
           return;
         case "/inbox":
@@ -786,8 +787,8 @@ export function Workspace() {
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
       />
-    ) : mode === "agents" ? (
-      <AgentsView
+    ) : mode === "chat" ? (
+      <ChatSurface
         familiars={familiars}
         sessions={sessions}
         activeFamiliar={active}

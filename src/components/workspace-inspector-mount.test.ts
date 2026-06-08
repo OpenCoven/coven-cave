@@ -6,14 +6,14 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 
 assert.match(
   workspace,
-  /import \{ AgentsView \} from "@\/components\/agents-view";/,
-  "Workspace should import AgentsView so agent sessions and the inspector are integrated",
+  /import \{ ChatSurface \} from "@\/components\/chat-surface";/,
+  "Workspace should import ChatSurface so agent sessions and the inspector are integrated",
 );
 
 assert.match(
   workspace,
-  /<AgentsView[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("schedules"\)\}[\s\S]*onCreateReminder=\{openReminderForFamiliar\}[\s\S]*onOpenInboxItem=\{openInspectorInboxItem\}[\s\S]*onInboxItemChanged=\{refreshInbox\}/,
-  "Agents mode should mount the integrated view with fully wired familiar Inbox controls",
+  /<ChatSurface[\s\S]*inboxItems=\{inboxItemsWithEphemeral\}[\s\S]*onOpenInbox=\{\(\) => setMode\("schedules"\)\}[\s\S]*onCreateReminder=\{openReminderForFamiliar\}[\s\S]*onOpenInboxItem=\{openInspectorInboxItem\}[\s\S]*onInboxItemChanged=\{refreshInbox\}/,
+  "Chat mode should mount ChatSurface with fully wired familiar Inbox controls",
 );
 
 assert.match(
