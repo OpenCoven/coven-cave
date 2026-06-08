@@ -25,6 +25,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm test:api
+
       # Next 16.2.6 / Turbopack has non-deterministic chunking errors on
       # the same SHA (~50% pass rate observed on this codebase). Retry up
       # to 3 times with a clean .next between attempts. Remove once we
