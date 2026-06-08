@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
@@ -30,6 +30,14 @@ export function FamiliarAvatarRail({
   onToggleSidebar,
 }: Props) {
   const overrides = useGlyphOverrides();
+
+  useEffect(() => {
+    if (!activeId) return;
+    const el = document.querySelector(
+      `.familiar-avatar-rail__avatar[data-id="${activeId}"]`,
+    );
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeId]);
 
   const liveCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -61,6 +69,7 @@ export function FamiliarAvatarRail({
             <li key={f.id}>
               <button
                 type="button"
+                data-id={f.id}
                 className={`familiar-avatar-rail__avatar${active ? " familiar-avatar-rail__avatar--active" : ""}`}
                 aria-label={`${f.display_name}${needsReply ? ` — reply needed` : ""}${liveCount ? ` — ${liveCount} live` : ""}`}
                 aria-pressed={active}
