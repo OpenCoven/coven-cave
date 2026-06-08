@@ -285,6 +285,35 @@ export function Workspace() {
     if (activeId) setLastSurface(activeId, mode);
   }, [activeId, mode]);
 
+  // Auto-collapse the bottom slide-up terminal slot when the Terminal surface
+  // is active. Prevents the double-terminal state where the surface PTY and
+  // the slide-up PTY both render at once.
+  useEffect(() => {
+    if (mode !== "terminal") return;
+    requestAnimationFrame(() => {
+      if (typeof window === "undefined") return;
+      const raw = window.localStorage.getItem("cave.shell.bottom.v1");
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        const bottomLayout = parsed?.["cave.shell.bottom.v1"]?.layout;
+        const bottomSize = Array.isArray(bottomLayout) ? bottomLayout[1] : 0;
+        if (typeof bottomSize === "number" && bottomSize > 0) {
+          window.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "`",
+              code: "Backquote",
+              ctrlKey: true,
+              bubbles: true,
+            }),
+          );
+        }
+      } catch {
+        /* ignore corrupted layout */
+      }
+    });
+  }, [mode]);
+
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
   const inboxPrefsRef = useRef(inboxPrefs);
