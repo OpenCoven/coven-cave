@@ -94,9 +94,11 @@ echo "==> Signing every native binary inside the bundle"
 # Apple deprecated --deep; sign inner native binaries explicitly so each one
 # gets a hardened runtime + secure timestamp before we seal the envelope.
 # Find: shared libs (.dylib), Node native modules (.node), and any nested
-# executables that aren't already symlinks.
+# executable files that aren't already symlinks, including the bundled Node
+# runtime staged for the sidecar.
 NATIVE_FILES_TMP=$(mktemp)
-find "$APP_PATH" \( -name "*.dylib" -o -name "*.so" -o -name "*.node" \) \
+find "$APP_PATH" \
+  \( -name "*.dylib" -o -name "*.so" -o -name "*.node" -o -perm +111 \) \
   -type f -print > "$NATIVE_FILES_TMP"
 NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"

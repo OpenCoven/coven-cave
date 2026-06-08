@@ -115,11 +115,33 @@ fn check_app_translocation() {
     }
 }
 
-/// Find a usable `node` binary. GUI launches often do NOT inherit the user's
-/// full shell PATH, so a bare `Command::new("node")` will fail. We probe
-/// well-known install locations per platform, plus a last-ditch shell/where
-/// invocation.
-fn find_node() -> Option<PathBuf> {
+#[cfg(target_os = "windows")]
+fn bundled_node_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("node")
+        .join("bin")
+        .join("node.exe")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn bundled_node_path(resource_dir: &Path) -> PathBuf {
+    resource_dir
+        .join("resources")
+        .join("node")
+        .join("bin")
+        .join("node")
+}
+
+/// Find a usable `node` binary. Release builds include a Node runtime under
+/// bundled resources so clean user machines can boot the sidecar. Development
+/// builds can still fall back to common local Node installs.
+fn find_node(resource_dir: &Path) -> Option<PathBuf> {
+    let bundled = bundled_node_path(resource_dir);
+    if bundled.exists() {
+        return Some(bundled);
+    }
+
     #[cfg(target_os = "windows")]
     {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
@@ -249,9 +271,9 @@ fn find_coven() -> Option<PathBuf> {
     {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
         let candidates = [
-            PathBuf::from(format!("{}\\.cargo\\bin\\coven.exe", home)),
-            PathBuf::from(format!("{}\\.bun\\bin\\coven.exe", home)),
             PathBuf::from(format!("{}\\.volta\\bin\\coven.exe", home)),
+            PathBuf::from(format!("{}\\.bun\\bin\\coven.exe", home)),
+            PathBuf::from(format!("{}\\.cargo\\bin\\coven.exe", home)),
         ];
         for c in candidates.iter() {
             if c.exists() {
@@ -278,12 +300,29 @@ fn find_coven() -> Option<PathBuf> {
     #[cfg(not(target_os = "windows"))]
     {
         let home = std::env::var("HOME").ok()?;
+        let nvm_root = PathBuf::from(format!("{}/.nvm/versions/node", home));
+        if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+            let mut versions: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            versions.sort();
+            if let Some(latest) = versions.into_iter().next_back() {
+                let coven = latest.join("bin").join("coven");
+                if coven.exists() {
+                    return Some(coven);
+                }
+            }
+        }
+
         let candidates = [
-            PathBuf::from(format!("{}/.cargo/bin/coven", home)),
-            PathBuf::from(format!("{}/.local/bin/coven", home)),
             PathBuf::from(format!("{}/.bun/bin/coven", home)),
             PathBuf::from("/opt/homebrew/bin/coven"),
             PathBuf::from("/usr/local/bin/coven"),
+            PathBuf::from(format!("{}/.local/bin/coven", home)),
+            // ~/.cargo/bin often holds an older Rust-installed Coven CLI.
+            PathBuf::from(format!("{}/.cargo/bin/coven", home)),
         ];
         for c in candidates.iter() {
             if c.exists() {
@@ -566,7 +605,7 @@ pub fn run() {
             let auth_token = sidecar_auth_token();
             log::info!("[cave] starting sidecar on port {}", port);
 
-            let node = match find_node() {
+            let node = match find_node(&resource_dir) {
                 Some(p) => p,
                 None => fatal_exit(
                     "Could not find a `node` binary. Install Node.js from \
@@ -659,18 +698,6 @@ pub fn run() {
                 .env("COVEN_CAVE_BUNDLE", "1")
                 .env("COVEN_CAVE_AUTH_TOKEN", &auth_token);
 
-            // Inject the openclaw workspace root so the Next.js project-tree
-            // and project-file API routes allow paths under ~/.openclaw in the
-            // packaged app (where process.cwd() is the bundle dir, not the
-            // user's workspace).
-            if let Some(home) = std::env::var("HOME")
-                .ok()
-                .or_else(|| std::env::var("USERPROFILE").ok())
-            {
-                let workspace_root = format!("{}/.openclaw", home);
-                cmd.env("WORKSPACE_ROOT", &workspace_root);
-                log::info!("[cave] sidecar WORKSPACE_ROOT -> {}", workspace_root);
-            }
             if let Some(out) = stdout_log {
                 cmd.stdout(Stdio::from(out));
             } else {

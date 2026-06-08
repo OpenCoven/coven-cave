@@ -3592,10 +3592,13 @@ body {
   border-radius: 0;
 }
 .salem-panel--rail {
+  flex: 1;
+  align-self: stretch;
   position: static;
   z-index: auto;
   width: 100%;
   height: 100%;
+  min-height: 0;
   max-height: none;
   border: 0;
   border-radius: 0;
