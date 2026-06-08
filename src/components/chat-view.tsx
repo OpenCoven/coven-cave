@@ -1182,11 +1182,11 @@ function TurnRow({
 
 function ReasoningBlock({ reasoning }: { reasoning: string }) {
   return (
-    <details className="cave-reasoning-block mt-3">
+    <details className="cave-reasoning-block mt-3" data-default-collapsed="true">
       <summary className="cave-tool-summary">
         <span className="inline-flex items-center gap-1.5">
           <Icon name="ph:brain" width={12} aria-hidden />
-          Reasoning
+          Thinking
         </span>
       </summary>
       <div className="mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1202,7 +1202,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   const completed = tools.length - running - errors;
 
   return (
-    <details className="cave-tool-group mt-3">
+    <details className="cave-tool-group mt-3" data-default-collapsed="true">
       <summary className="cave-tool-summary">
         <span className="inline-flex items-center gap-1.5">
           <Icon name="ph:wrench" width={12} aria-hidden />
@@ -1223,8 +1223,8 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   return (
-    <div className="cave-tool-block">
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
+    <details className="cave-tool-block" data-default-collapsed="true">
+      <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
         <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
         <span className={[
@@ -1240,7 +1240,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         {tool.durationMs ? (
           <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(tool.durationMs)}</span>
         ) : null}
-      </div>
+      </summary>
       {tool.input ? (
         <div className="mt-2">
           <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Input</div>
@@ -1253,7 +1253,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
           <SyntaxBlock text={tool.output} />
         </div>
       ) : null}
-    </div>
+    </details>
   );
 }
 

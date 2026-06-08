@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
+import { Icon } from "@/lib/icon";
+import type { SalemPreloadContext } from "./salem-context";
 import { SalemCat3D } from "./salem-cat-3d";
 
 type Message = { role: "user" | "salem"; text: string };
 
 type SalemMood = "idle" | "thinking" | "happy" | "listening";
+type PreloadSummary = { docs: number; tools: number; skills: number; context: number };
 
-const GREETING = "Hey there ✨ I'm Salem, your Coven docs familiar. Ask me anything about familiars, plugins, roles, the marketplace, or how Cave works!";
+const GREETING = "I'm Salem, your sassy Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
 /**
  * Salem — floating bottom-right docs familiar for CovenCave.
@@ -25,11 +28,36 @@ export function SalemWidget() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [preload, setPreload] = useState<{
+    summary: PreloadSummary;
+    preload: SalemPreloadContext;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    let alive = true;
+
+    fetch("/api/salem")
+      .then((res) => res.json())
+      .then((data: { summary?: PreloadSummary; preload?: SalemPreloadContext }) => {
+        if (alive && data.summary && data.preload) {
+          setPreload({ summary: data.summary, preload: data.preload });
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setPreload(null);
+        }
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const send = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -56,7 +84,7 @@ export function SalemWidget() {
     } catch {
       setMessages((m) => [
         ...m,
-        { role: "salem", text: "I had a hairball moment 😅 — couldn't reach my docs brain right now." },
+        { role: "salem", text: "I had a hairball moment - couldn't reach my docs brain right now." },
       ]);
       setMood("idle");
     } finally {
@@ -68,7 +96,7 @@ export function SalemWidget() {
   if (state === "perch") {
     return (
       <div className="salem-perch" onClick={() => { setState("open"); setMood("happy"); setTimeout(() => setMood("idle"), 1800); }} role="button" tabIndex={0} aria-label="Open Salem docs familiar" onKeyDown={(e) => e.key === "Enter" && setState("open")}>
-        <SalemCat3D mood={mood} size={80} />
+        <SalemCat3D mood={mood} size={88} />
         <span className="salem-perch__label">Salem</span>
       </div>
     );
@@ -84,7 +112,9 @@ export function SalemWidget() {
           <SalemCat3D mood={mood} size={40} />
           <div>
             <div className="salem-panel__name">Salem</div>
-            <div className="salem-panel__subtitle">Coven docs familiar</div>
+            <div className="salem-panel__subtitle">
+              {preload?.preload.persona.archetype ?? "Sassy male docs familiar"}
+            </div>
           </div>
         </div>
         <div className="salem-panel__header-actions">
@@ -95,7 +125,7 @@ export function SalemWidget() {
             aria-label={isExpanded ? "Shrink" : "Expand"}
             title={isExpanded ? "Shrink" : "Expand"}
           >
-            {isExpanded ? "⊡" : "⊞"}
+            <Icon name={isExpanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={14} />
           </button>
           <button
             type="button"
@@ -104,22 +134,37 @@ export function SalemWidget() {
             aria-label="Close Salem"
             title="Close"
           >
-            ✕
+            <Icon name="ph:x" width={14} />
           </button>
         </div>
       </div>
+
+      {preload ? (
+        <div className="salem-panel__preload" aria-label="Salem loaded context">
+          <span title={preload.preload.docsCorpus.map((item) => item.label).join(", ")}>
+            Docs {preload.summary.docs}
+          </span>
+          <span title={preload.preload.toolLoadout.map((item) => item.label).join(", ")}>
+            Tools {preload.summary.tools}
+          </span>
+          <span title={preload.preload.skillLoadout.map((item) => item.label).join(", ")}>
+            Skills {preload.summary.skills}
+          </span>
+          <span title={preload.preload.routeContext.map((item) => item.label).join(", ")}>
+            Context {preload.summary.context}
+          </span>
+        </div>
+      ) : null}
 
       {/* Messages */}
       <div className="salem-panel__messages">
         {messages.map((m, i) => (
           <div key={i} className={`salem-msg salem-msg--${m.role}`}>
-            {m.role === "salem" && <span className="salem-msg__glyph">🐱</span>}
             <span className="salem-msg__text">{m.text}</span>
           </div>
         ))}
         {loading && (
           <div className="salem-msg salem-msg--salem">
-            <span className="salem-msg__glyph">🐱</span>
             <span className="salem-msg__text salem-thinking">thinking<span className="dots" /></span>
           </div>
         )}
@@ -137,7 +182,7 @@ export function SalemWidget() {
           autoFocus
         />
         <button type="submit" className="salem-panel__send" disabled={loading || !input.trim()} aria-label="Send">
-          ↑
+          <Icon name="ph:arrow-up" width={14} />
         </button>
       </form>
     </div>

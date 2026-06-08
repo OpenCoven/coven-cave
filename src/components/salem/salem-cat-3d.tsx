@@ -48,12 +48,12 @@ export function SalemCat3D({ mood = "idle", size = 96 }: Props) {
     camera.lookAt(0, 0, 0);
 
     // Lighting
-    const ambLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambLight = new THREE.AmbientLight(0xffffff, 0.72);
     scene.add(ambLight);
     const pointLight = new THREE.PointLight(0xb39ddb, 1.8, 10);
     pointLight.position.set(2, 3, 2);
     scene.add(pointLight);
-    const rimLight = new THREE.PointLight(0x9c6fe4, 0.7, 8);
+    const rimLight = new THREE.PointLight(0x9c6fe4, 1.15, 8);
     rimLight.position.set(-2, -1, 1);
     scene.add(rimLight);
 
@@ -61,8 +61,8 @@ export function SalemCat3D({ mood = "idle", size = 96 }: Props) {
     scene.add(cat);
 
     // Material palette
-    const blackMat = new THREE.MeshStandardMaterial({ color: 0x0d0d12, roughness: 0.5, metalness: 0.15 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x14121e, roughness: 0.6 });
+    const blackMat = new THREE.MeshStandardMaterial({ color: 0x171520, roughness: 0.52, metalness: 0.12 });
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x211d31, roughness: 0.62 });
     const glowMat = new THREE.MeshStandardMaterial({ color: 0xb388ff, emissive: 0x7c4dff, emissiveIntensity: 0.9, roughness: 0.2 });
     const pupilMat = new THREE.MeshStandardMaterial({ color: 0x1a0a2e, roughness: 0.9 });
     const noseMat = new THREE.MeshStandardMaterial({ color: 0xce93d8, roughness: 0.4 });

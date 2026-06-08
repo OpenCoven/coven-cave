@@ -56,20 +56,26 @@ assert.match(
 
 assert.match(
   source,
-  /function ReasoningBlock[\s\S]*<details[\s\S]*Reasoning[\s\S]*<RichText text=\{reasoning\}/,
-  "ReasoningBlock should render reasoning in a collapsed disclosure with formatted text",
+  /function ReasoningBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Thinking[\s\S]*<RichText text=\{reasoning\}/,
+  "ReasoningBlock should render thinking in a collapsed disclosure with formatted text",
 );
 
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*Tool activity[\s\S]*tools\.map[\s\S]*<ToolBlock/,
+  /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Tool activity[\s\S]*tools\.map[\s\S]*<ToolBlock/,
   "ToolGroup should render tool calls in a collapsed disclosure",
 );
 
 assert.match(
   source,
-  /function ToolBlock[\s\S]*<SyntaxBlock text=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{tool\.output\}/,
-  "ToolBlock should format tool input and output with SyntaxBlock",
+  /function ToolBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*<summary[\s\S]*tool\.name[\s\S]*<SyntaxBlock text=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{tool\.output\}/,
+  "ToolBlock should keep individual tool payloads collapsed and format input/output with SyntaxBlock",
+);
+
+assert.doesNotMatch(
+  source.match(/function ReasoningBlock[\s\S]*?function ToolBlock/)?.[0] ?? "",
+  /<details[^>]*\sopen(?:=|\s|>)/,
+  "Thinking and tool-use disclosures must not default open",
 );
 
 assert.match(
