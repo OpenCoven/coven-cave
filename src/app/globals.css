@@ -158,6 +158,20 @@
 
   /* ---- Surface alphas ---- */
   --backdrop-scrim: oklch(0 0 0 / 60%);
+
+  /* Foundations PR — disabled state */
+  --opacity-disabled: 0.4;
+
+  /* Foundations PR — scrollbar tokens (consumed by all themed scrollbars) */
+  --scrollbar-thumb: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  --scrollbar-track: transparent;
+}
+
+/* Foundations PR — themed text selection.
+   Derived from --accent-presence so every theme inherits without override. */
+::selection {
+  background: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  color: var(--foreground);
 }
 
 /* ============================================================
@@ -197,8 +211,8 @@
   /* --border, --border-strong, --input, --text-muted are derived from --foreground;
      they auto-invert. No override needed. */
 
-  --ring-focus: color-mix(in oklch, #6F62A8 55%, transparent);
-  --ring-focus-soft: color-mix(in oklch, #6F62A8 30%, transparent);
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
   --backdrop-scrim: oklch(0 0 0 / 40%);
 
   /* Semantic state colors retuned for AA contrast on near-white surfaces.
@@ -3685,7 +3699,7 @@ body {
   flex-direction: column;
   gap: 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(124, 77, 255, 0.3) transparent;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 .salem-msg {
