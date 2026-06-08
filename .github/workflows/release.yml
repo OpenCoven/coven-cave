@@ -91,8 +91,15 @@ jobs:
 
       - name: Set release metadata
         shell: bash
+        env:
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          set -euo pipefail
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
+            exit 1
+          fi
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
 
