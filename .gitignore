@@ -77,3 +77,4 @@ credentials/
 package-lock.json
 /.superpowers
 /docs/superpowers
+/.playwright-cli

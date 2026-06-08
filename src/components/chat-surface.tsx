@@ -432,17 +432,20 @@ export function ChatSurface({
               </div>
             )}
             {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Open / Closed">
-                <button type="button" onClick={() => setShowClosed(false)} className={softButton(!showClosed)}>
-                  Open <span className="opacity-50 font-normal">{openCount}</span>
+              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Show open or closed sessions">
+                <button type="button" onClick={() => setShowClosed(false)} className={softButton(!showClosed)} aria-pressed={!showClosed}>
+                  <Icon name="ph:circle" width={11} />
+                  Active <span className="opacity-50 font-normal">{openCount}</span>
                 </button>
-                <button type="button" onClick={() => setShowClosed(true)} className={softButton(showClosed)}>
-                  Closed <span className="opacity-50 font-normal">{closedCount}</span>
+                <button type="button" onClick={() => setShowClosed(true)} className={softButton(showClosed)} aria-pressed={showClosed}>
+                  <Icon name="ph:check-circle" width={11} />
+                  Done <span className="opacity-50 font-normal">{closedCount}</span>
                 </button>
               </div>
             )}
             {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Group by" role="group" aria-label="Group by">
+              <div className="inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Group by" role="group" aria-label="Group by">
+                <span className="px-1.5 text-[var(--text-muted)]" aria-hidden><Icon name="ph:rows" width={11} /></span>
                 <button type="button" onClick={() => setGroupBy("date")} aria-pressed={groupBy === "date"} className={softButton(groupBy === "date")}>
                   Date
                 </button>
@@ -450,7 +453,7 @@ export function ChatSurface({
                   Status
                 </button>
                 <button type="button" onClick={() => setGroupBy("none")} aria-pressed={groupBy === "none"} className={softButton(groupBy === "none")}>
-                  None
+                  Flat
                 </button>
               </div>
             )}
