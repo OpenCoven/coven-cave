@@ -70,7 +70,7 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
             {onOpen ? (
               <button
                 onClick={() => onOpen(t)}
-                className="focus-ring rounded bg-[var(--accent-presence)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,white)]"
+                className="focus-ring rounded bg-[var(--accent-presence)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
               >
                 Open
               </button>
