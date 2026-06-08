@@ -4,9 +4,12 @@
  * SidebarMinimal -- the redesigned Cave sidebar.
  *
  * Layout (top to bottom):
- *   1. New chat CTA
- *   2. App destinations (Chats / Sessions / Tasks -- Terminal / Browser -- GitHub)
- *   3. Utility actions footer (Plugins / Automations / Calendar)
+ *   1. Search + New chat CTA
+ *   2. App destinations grouped by purpose:
+ *      Work  (Home / Chat / Board / Calendar / Inbox)
+ *      Knowledge (Library)
+ *      Tools (Browser / Terminal / GitHub)
+ *   3. Footer: Notifications + Settings
  */
 
 import React from "react";
@@ -17,11 +20,12 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import { NotificationBell } from "@/components/notification-bell";
 
 export type FolderMode =
-  | "agents"
-  | "sessions"
+  | "home"
+  | "chat"
   | "board"
+  | "calendar"
+  | "inbox"
   | "terminal"
-  | "projects"
   | "browser"
   | "github"
   | "library";
@@ -56,30 +60,26 @@ const FOLDER_MODES: Array<{
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
-  dividerBefore?: boolean;
+  group: "work" | "knowledge" | "tools" | "addons";
+  kbd?: string;
 }> = [
-  // Primary loop
-  { id: "agents", label: "Chats", iconName: "ph:chats" },
-  { id: "sessions", label: "Sessions", iconName: "ph:rows" },
-  { id: "board", label: "Tasks", iconName: "ph:kanban" },
-  // Tools
-  { id: "terminal", label: "Terminal",   iconName: "ph:terminal-window", dividerBefore: true },
-  { id: "browser",  label: "Browser",    iconName: "ph:globe" },
-  // Integrations
-  { id: "github", label: "GitHub",       iconName: "ph:github-logo", dividerBefore: true },
+  // Work
+  { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1" },
+  { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2" },
+  { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3" },
+  { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4" },
+  { id: "inbox", label: "Inbox", iconName: "ph:tray", group: "work", kbd: "⌘5" },
   // Knowledge
-  { id: "library", label: "Library",     iconName: "ph:books",            dividerBefore: true },
+  { id: "library", label: "Library", iconName: "ph:books", group: "knowledge", kbd: "⌘6" },
+  // Tools
+  { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" },
+  { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" },
+  // Add-ons (gated)
+  { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons" },
 ];
 
-const UTILITY_MODES: Array<{
-  id: "plugins" | "schedules" | "calendar";
-  label: string;
-  iconName: Parameters<typeof Icon>[0]["name"];
-}> = [
-  { id: "plugins", label: "Roles", iconName: "ph:sparkle" },
-  { id: "schedules", label: "Automations", iconName: "ph:clock" },
-  { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank" },
-];
+// Empty — Roles/Schedules/Plugins all fold into other surfaces or Settings.
+const UTILITY_MODES: Array<never> = [];
 
 export { FOLDER_MODES, UTILITY_MODES };
 
@@ -133,6 +133,7 @@ function FolderRow({
   iconName,
   active,
   badge,
+  kbd,
   onClick,
 }: {
   id: string;
@@ -140,6 +141,7 @@ function FolderRow({
   iconName: Parameters<typeof Icon>[0]["name"];
   active: boolean;
   badge?: string;
+  kbd?: string;
   onClick: () => void;
 }) {
   return (
@@ -152,6 +154,7 @@ function FolderRow({
       <Icon name={iconName} width={15} className="sidebar-folder-icon" />
       <span className="sidebar-folder-label">{label}</span>
       {badge && <span className="sidebar-badge">{badge}</span>}
+      {kbd && !badge && <kbd className="sidebar-folder-kbd">{kbd}</kbd>}
     </button>
   );
 }
@@ -173,18 +176,18 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onNotificationPrefsChanged,
   } = props;
 
-  // Filter out disabled add-on items. Default to hiding when addons is undefined.
+  // Filter out disabled add-on items. GitHub is gated; library is always shown.
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
-    if (fm.id === "library") return addons?.library === true;
     return true;
   });
 
   const showNotifications =
     !!onOpenInbox && !!onNotificationPrefsChanged && !!inboxPrefs;
-  const primaryFolderModes = visibleFolderModes.filter((fm) => fm.id === "agents" || fm.id === "sessions" || fm.id === "board");
-  const toolFolderModes = visibleFolderModes.filter((fm) => fm.id === "terminal" || fm.id === "browser");
-  const addinFolderModes = visibleFolderModes.filter((fm) => fm.id === "github" || fm.id === "library");
+
+  const workModes = visibleFolderModes.filter((fm) => fm.group === "work");
+  const knowledgeModes = visibleFolderModes.filter((fm) => fm.group === "knowledge");
+  const toolsModes = visibleFolderModes.filter((fm) => fm.group === "tools" || fm.group === "addons");
 
   return (
     <nav className="sidebar-minimal">
@@ -205,7 +208,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
       <div className="sidebar-nav-scroll">
         <SidebarSection label="Work">
-          {primaryFolderModes.map((fm) => (
+          {workModes.map((fm) => (
             <FolderRow
               key={fm.id}
               id={fm.id}
@@ -213,13 +216,29 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               iconName={fm.iconName}
               active={mode === fm.id}
               badge={fm.badge?.(props)}
+              kbd={fm.kbd}
+              onClick={() => onModeChange(fm.id)}
+            />
+          ))}
+        </SidebarSection>
+
+        <SidebarSection label="Knowledge">
+          {knowledgeModes.map((fm) => (
+            <FolderRow
+              key={fm.id}
+              id={fm.id}
+              label={fm.label}
+              iconName={fm.iconName}
+              active={mode === fm.id}
+              badge={fm.badge?.(props)}
+              kbd={fm.kbd}
               onClick={() => onModeChange(fm.id)}
             />
           ))}
         </SidebarSection>
 
         <SidebarSection label="Tools">
-          {toolFolderModes.map((fm) => (
+          {toolsModes.map((fm) => (
             <FolderRow
               key={fm.id}
               id={fm.id}
@@ -227,35 +246,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               iconName={fm.iconName}
               active={mode === fm.id}
               badge={fm.badge?.(props)}
+              kbd={fm.kbd}
               onClick={() => onModeChange(fm.id)}
-            />
-          ))}
-        </SidebarSection>
-
-        {addinFolderModes.length > 0 ? (
-          <SidebarSection label="Add-ins" className="sidebar-addins">
-            {addinFolderModes.map((fm) => (
-              <FolderRow
-                key={fm.id}
-                id={fm.id}
-                label={fm.label}
-                iconName={fm.iconName}
-                active={mode === fm.id}
-                badge={fm.badge?.(props)}
-                onClick={() => onModeChange(fm.id)}
-              />
-            ))}
-          </SidebarSection>
-        ) : null}
-
-        <SidebarSection label="Manage" className="sidebar-actions sidebar-actions--footer">
-          {UTILITY_MODES.map((item) => (
-            <ActionRow
-              key={item.id}
-              icon={<Icon name={item.iconName} width={14} />}
-              label={item.label}
-              active={mode === item.id}
-              onClick={() => onModeChange(item.id)}
             />
           ))}
         </SidebarSection>

@@ -5,24 +5,6 @@ import { readFileSync } from "node:fs";
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 
-const addinsRule = styles.match(/\.sidebar-addins\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
-const footerRules = [...styles.matchAll(/\.sidebar-actions--footer\s*\{(?<body>[^}]*)\}/g)];
-const lastFooterRule = footerRules.at(-1)?.groups?.body ?? "";
-
-assert.ok(addinsRule, "Sidebar add-ins styles should exist");
-
-assert.doesNotMatch(
-  addinsRule,
-  /border-top\s*:/,
-  "Add-ins should rely on the primary sidebar-folders bottom border instead of adding a second divider",
-);
-
-assert.doesNotMatch(
-  addinsRule,
-  /margin-top\s*:\s*auto/,
-  "Add-ins should sit directly below the main side-panel options instead of being pushed to the footer",
-);
-
 assert.match(
   source,
   /<div className="sidebar-nav-scroll">/,
@@ -31,32 +13,74 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "agents",\s+label: "Chats"/,
-  "Sidebar should expose Chats as the familiar chat browser",
+  /fm\.group === "work"/,
+  'Sidebar Work section must filter on group === "work"',
 );
 
 assert.match(
   source,
-  /\{ id: "sessions",\s+label: "Sessions"/,
-  "Sidebar should expose Sessions as a top-level cross-harness session browser",
+  /fm\.group === "knowledge"/,
+  'Sidebar Knowledge section must filter on group === "knowledge"',
 );
 
 assert.match(
   source,
-  /fm\.id === "agents" \|\| fm\.id === "sessions" \|\| fm\.id === "board"/,
-  "Sidebar Work section should include Chats, Sessions, and Tasks",
+  /fm\.group === "tools"/,
+  'Sidebar Tools section must filter on group === "tools"',
 );
 
 assert.match(
   source,
-  /<SidebarSection label="Manage" className="sidebar-actions sidebar-actions--footer">/,
-  "Utility navigation should sit with the main sidebar sections instead of floating at the bottom",
+  /\{ id: "home", label: "Home"/,
+  "Home is the first Work surface",
 );
 
 assert.match(
-  lastFooterRule,
-  /margin-top\s*:\s*0/,
-  "Final footer styles should prevent the utility section from creating a large empty gap",
+  source,
+  /\{ id: "chat", label: "Chat"/,
+  "Agents renamed to Chat",
+);
+
+assert.match(
+  source,
+  /\{ id: "board", label: "Board"/,
+  "Tasks renamed to Board",
+);
+
+assert.match(
+  source,
+  /\{ id: "library", label: "Library"/,
+  "Library remains the sole Knowledge surface",
+);
+
+assert.match(
+  source,
+  /\{ id: "browser", label: "Browser"/,
+  "Browser remains a Tools surface",
+);
+
+assert.match(
+  source,
+  /\{ id: "terminal", label: "Terminal"/,
+  "Terminal remains a Tools surface",
+);
+
+assert.doesNotMatch(
+  source,
+  /\{ id: "sessions"/,
+  "Sessions row removed — folded into Chat surface as History sub-view",
+);
+
+assert.doesNotMatch(
+  source,
+  /\{ id: "schedules"/,
+  "Schedules row removed — folded into Inbox as a tab",
+);
+
+assert.doesNotMatch(
+  source,
+  /\{ id: "plugins"/,
+  "Plugins row removed — moved into Settings · Plugins",
 );
 
 assert.match(
