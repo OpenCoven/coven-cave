@@ -42,19 +42,46 @@ export function serializeGlyph(glyph: FamiliarGlyph): string {
 }
 
 /**
+ * Deterministic keyword → Phosphor glyph mapping. Used as the final fallback
+ * before DEFAULT_FAMILIAR_GLYPH when a familiar has no override, no daemon
+ * icon, and no daemon emoji. Case-insensitive substring match on `role`.
+ *
+ * The first matching keyword wins, so order keys most-specific → most-generic
+ * if you extend this.
+ */
+const ROLE_GLYPH_MAP: Array<[string, string]> = [
+  ["code", "ph:code-bold"],
+  ["chat", "ph:chat-circle-fill"],
+  ["music", "ph:music-notes-fill"],
+  ["research", "ph:books-fill"],
+  ["art", "ph:palette-fill"],
+  ["data", "ph:chart-bar-fill"],
+  ["ops", "ph:gear-fill"],
+  ["writer", "ph:pencil-fill"],
+  ["design", "ph:pen-nib-fill"],
+];
+
+export function inferGlyphFromRole(role: string | undefined): FamiliarGlyph | null {
+  if (!role) return null;
+  const lower = role.toLowerCase();
+  for (const [kw, name] of ROLE_GLYPH_MAP) {
+    if (lower.includes(kw)) return { kind: "icon", name };
+  }
+  return null;
+}
+
+/**
  * Resolve the glyph to render for a familiar.
  *
  * Precedence (highest first):
- *   1. Cave-local override (`overrides[familiar.id]`) — picks that haven't
- *      finished syncing to the daemon yet, or that exist on this Cave only.
- *   2. Daemon-provided `familiar.icon` — the canonical source written by the
- *      `PUT /api/v1/familiars/{id}/icon` endpoint and persisted to TOML.
- *   3. Legacy daemon glyph field — accepted only when it already stores
- *      a `ph:` icon name; other values are ignored.
- *   4. `DEFAULT_FAMILIAR_GLYPH`.
+ *   1. Cave-local override (`overrides[familiar.id]`).
+ *   2. Daemon-provided `familiar.icon` (must be `ph:*`).
+ *   3. Legacy daemon `emoji` field (only when it stores a `ph:*` name).
+ *   4. `inferGlyphFromRole(familiar.role)` — keyword inference.
+ *   5. `DEFAULT_FAMILIAR_GLYPH`.
  */
 export function resolveFamiliarGlyph(
-  familiar: Pick<Familiar, "id" | "emoji" | "icon">,
+  familiar: Pick<Familiar, "id" | "emoji" | "icon" | "role">,
   overrides: Record<string, string>,
 ): FamiliarGlyph {
   const override = parseGlyphString(overrides[familiar.id]);
@@ -63,5 +90,7 @@ export function resolveFamiliarGlyph(
   if (daemonIcon) return daemonIcon;
   const daemonEmoji = parseGlyphString(familiar.emoji);
   if (daemonEmoji) return daemonEmoji;
+  const inferred = inferGlyphFromRole(familiar.role);
+  if (inferred) return inferred;
   return DEFAULT_FAMILIAR_GLYPH;
 }
