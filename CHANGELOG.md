@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.52] — 2026-06-08
+
+Release repair for 0.0.51.
+
+### Fixed
+
+- **Packaged sidecar startup.** Bundles the Node runtime into release artifacts
+  and generates the standalone Next.js sidecar immediately before Tauri
+  packaging, so fresh installs no longer depend on a user-installed Node binary
+  or ship placeholder-only sidecar resources.
+- **Packaged workspace/daemon status.** Stops overriding Cave's Coven workspace
+  with the OpenClaw workspace in packaged mode, and prefers the npm-installed
+  `coven` CLI over stale Rust-installed binaries when resolving daemon helpers.
+
 ## [0.0.51] — 2026-06-08
 
 Small stopping-point release for the CovenCave polish wave after 0.0.50.
