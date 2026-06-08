@@ -54,4 +54,24 @@ import {
   assert.equal(resolveFamiliarGlyph(fam, {}).name, DEFAULT_FAMILIAR_GLYPH.name);
 }
 
+// inferGlyphFromRole — word-boundary discipline
+{
+  // 'art' must NOT match 'chart' or 'smart'
+  assert.equal(inferGlyphFromRole("Chart analyst"), null);
+  assert.equal(inferGlyphFromRole("Smartbot"), null);
+  // 'data' must NOT match 'update' or 'validator'
+  assert.equal(inferGlyphFromRole("Update wizard"), null);
+  // 'art' does not match 'artist' — no word boundary after 'art' in 'artist'
+  assert.equal(inferGlyphFromRole("artist in residence"), null);
+  // But standalone 'Art' at the start of a word does match
+  assert.equal(inferGlyphFromRole("Art curator")?.name, "ph:palette-fill");
+  assert.equal(inferGlyphFromRole("data scientist")?.name, "ph:chart-bar-fill");
+}
+
+// resolveFamiliarGlyph — daemon emoji (step 3) beats role inference (step 4)
+{
+  const fam = { id: "x", role: "code reviewer", emoji: "ph:cat-fill" } as any;
+  assert.equal(resolveFamiliarGlyph(fam, {}).name, "ph:cat-fill");
+}
+
 console.log("familiar-glyph.test.ts: ok");

@@ -44,7 +44,8 @@ export function serializeGlyph(glyph: FamiliarGlyph): string {
 /**
  * Deterministic keyword → Phosphor glyph mapping. Used as the final fallback
  * before DEFAULT_FAMILIAR_GLYPH when a familiar has no override, no daemon
- * icon, and no daemon emoji. Case-insensitive substring match on `role`.
+ * icon, and no daemon emoji. Matched via whole-word, case-insensitive regex
+ * (`\bkeyword\b`), so "art" matches "Art director" but not "Chart analyst".
  *
  * The first matching keyword wins, so order keys most-specific → most-generic
  * if you extend this.
@@ -58,14 +59,14 @@ const ROLE_GLYPH_MAP: Array<[string, string]> = [
   ["data", "ph:chart-bar-fill"],
   ["ops", "ph:gear-fill"],
   ["writer", "ph:pencil-fill"],
-  ["design", "ph:pen-nib-fill"],
+  ["designer", "ph:pen-nib-fill"],
 ];
 
 export function inferGlyphFromRole(role: string | undefined): FamiliarGlyph | null {
-  if (!role) return null;
-  const lower = role.toLowerCase();
+  if (!role || !role.trim()) return null;
   for (const [kw, name] of ROLE_GLYPH_MAP) {
-    if (lower.includes(kw)) return { kind: "icon", name };
+    const re = new RegExp(`\\b${kw}\\b`, "i");
+    if (re.test(role)) return { kind: "icon", name };
   }
   return null;
 }
