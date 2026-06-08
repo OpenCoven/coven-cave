@@ -66,8 +66,8 @@ const FOLDER_MODES: Array<{
   kbd?: string;
 }> = [
   // Work
-  { id: "agents", label: "Agents", iconName: "ph:users-three", group: "work", kbd: "⌘1" },
-  { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘2" },
+  { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1" },
+  { id: "agents", label: "Agents", iconName: "ph:users-three", group: "work", kbd: "⌘2" },
   { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘3" },
   { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘4" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘5" },
