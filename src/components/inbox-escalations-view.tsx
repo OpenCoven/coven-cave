@@ -86,16 +86,18 @@ export function InboxEscalationsView({
       const json = await res.json();
       if (json.ok) {
         const loaded = json.items as Escalation[];
-        // In demo mode, seed with demo items if the inbox is empty.
+        // Demo mode only seeds when the API actually returned ok+empty —
+        // never when the API errored. Otherwise demo dogfooding silently
+        // hides production failures from the developer.
         setItems(DEMO_MODE && loaded.length === 0 ? DEMO_ESCALATIONS : loaded);
         setError(null);
       } else {
-        setItems(DEMO_MODE ? DEMO_ESCALATIONS : []);
-        setError(DEMO_MODE ? null : (json.error ?? "load failed"));
+        setItems([]);
+        setError(json.error ?? "load failed");
       }
     } catch (err) {
-      setItems(DEMO_MODE ? DEMO_ESCALATIONS : []);
-      setError(DEMO_MODE ? null : (err instanceof Error ? err.message : "load failed"));
+      setItems([]);
+      setError(err instanceof Error ? err.message : "load failed");
     }
   }, []);
 
