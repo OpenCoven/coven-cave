@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { PluginsView } from "@/components/plugins-view";
 import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
+import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
+import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
+import { ModeToggle } from "@/components/mode-toggle";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -374,7 +377,7 @@ function FamiliarsSection() {
 
 // ─── Theme helpers ───────────────────────────────────────────────────────────────────────
 
-type PresetTheme = "mood-c" | "midnight" | "orchid" | "sky";
+type PresetTheme = ThemeId;
 type ActiveTheme = PresetTheme | "custom";
 
 interface CustomThemeData {
@@ -396,88 +399,86 @@ function clearCustomCssVars(html: HTMLElement) {
 function applyPreset(theme: PresetTheme) {
   const html = document.documentElement;
   clearCustomCssVars(html);
-
-  if (theme === "mood-c") {
-    html.removeAttribute("data-theme");
-  } else {
-    html.setAttribute("data-theme", theme);
-  }
-  localStorage.setItem("coven-theme", theme);
+  html.setAttribute("data-theme", theme);
+  localStorage.setItem(COVEN_THEME_KEY, theme);
 }
 
-function applyCustomVars(cssVars: CustomThemeData["cssVars"]) {
+function applyMode(mode: Mode) {
   const html = document.documentElement;
-  html.removeAttribute("data-theme");
+  html.setAttribute("data-mode", mode);
+  localStorage.setItem(COVEN_MODE_KEY, mode);
+}
+
+function applyCustomVars(cssVars: CustomThemeData["cssVars"], mode: Mode) {
+  const html = document.documentElement;
+  html.setAttribute("data-theme", "custom");
   clearCustomCssVars(html);
 
   const apply = (group?: Record<string, string>) => {
     if (!group) return;
     for (const [name, value] of Object.entries(group)) {
       if (typeof value !== "string" || !name) continue;
-      // tweakcn returns bare names ("background", "font-sans"); shadcn schema
-      // does not prefix with --. We prefix here when needed.
       const cssName = name.startsWith("--") ? name : `--${name}`;
       html.style.setProperty(cssName, value);
     }
   };
   // theme: mode-agnostic vars (fonts, radius, shadows, tracking).
-  // dark: mode-specific colors (the app runs dark-only).
+  // light/dark: mode-specific colors. Fall back to the opposite group
+  // when the import only ships one mode.
   apply(cssVars.theme);
-  apply(cssVars.dark);
+  const modeGroup =
+    (mode === "light" ? cssVars.light : cssVars.dark) ??
+    (mode === "light" ? cssVars.dark : cssVars.light);
+  apply(modeGroup);
 }
 
 function clearCustomTheme() {
-  document.documentElement.removeAttribute("data-theme");
+  document.documentElement.setAttribute("data-theme", "coven");
   document.documentElement.removeAttribute("style");
-  localStorage.removeItem("coven-custom-theme");
-  localStorage.setItem("coven-theme", "mood-c");
+  localStorage.removeItem(COVEN_CUSTOM_THEME_KEY);
+  localStorage.setItem(COVEN_THEME_KEY, "coven");
+}
+
+function readPersistedTheme(): ActiveTheme {
+  const raw = localStorage.getItem(COVEN_THEME_KEY);
+  if (!raw) return "coven";
+  if (LEGACY_THEME_RENAME[raw]) return LEGACY_THEME_RENAME[raw] as ActiveTheme;
+  if (raw === "custom") return "custom";
+  if ((THEME_IDS as readonly string[]).includes(raw)) return raw as ActiveTheme;
+  return "coven";
+}
+
+function readPersistedMode(): Mode {
+  const raw = localStorage.getItem(COVEN_MODE_KEY);
+  return raw === "light" ? "light" : "dark";
 }
 
 // ─── Preset cards ─────────────────────────────────────────────────────────────────────────────
 
-interface ThemePreset {
-  id: PresetTheme;
+interface ThemePresetEntry {
+  id: ThemeId;
   label: string;
   description: string;
-  swatches: { bg: string; accent: string; border: string };
 }
 
-const PRESETS: ThemePreset[] = [
-  {
-    id: "mood-c",
-    label: "Mood C",
-    description: "Arcane field manual — dark violet glass",
-    swatches: { bg: "oklch(0.16 0.022 293)", accent: "#9a8ecd", border: "oklch(1 0 0 / 6%)" },
-  },
-  {
-    id: "midnight",
-    label: "Midnight",
-    description: "Deep black, near-zero chroma, minimal",
-    swatches: { bg: "oklch(0.10 0.004 293)", accent: "#7B73BD", border: "oklch(1 0 0 / 5%)" },
-  },
-  {
-    id: "orchid",
-    label: "Orchid",
-    description: "Warm violet, lighter surface",
-    swatches: { bg: "oklch(0.13 0.030 293)", accent: "#D26BFF", border: "oklch(1 0 0 / 7%)" },
-  },
-  {
-    id: "sky",
-    label: "Sky",
-    description: "Cool slate-blue night, daybreak accent",
-    swatches: { bg: "oklch(0.15 0.028 245)", accent: "#6DA9FF", border: "oklch(1 0 0 / 7%)" },
-  },
-];
+const PRESETS: ThemePresetEntry[] = THEME_IDS.map((id) => ({
+  id,
+  label: THEME_META[id].name,
+  description: THEME_META[id].description,
+}));
 
 function ThemePresetCard({
   preset,
+  mode,
   active,
   onSelect,
 }: {
-  preset: ThemePreset;
+  preset: ThemePresetEntry;
+  mode: Mode;
   active: boolean;
-  onSelect: (id: PresetTheme) => void;
+  onSelect: (id: ThemeId) => void;
 }) {
+  const swatches = getSwatches(preset.id, mode);
   return (
     <button
       type="button"
@@ -489,21 +490,20 @@ function ThemePresetCard({
           : "border-[var(--border-hairline)] bg-[var(--bg-base)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)]"
       }`}
     >
-      {/* Swatch row */}
       <div className="flex items-center gap-1.5">
         <span
-          className="h-5 w-5 rounded-full border border-white/10"
-          style={{ background: preset.swatches.bg }}
+          className="h-5 w-5 rounded-full border border-[var(--border-hairline)]"
+          style={{ background: swatches.bg }}
           title="Background"
         />
         <span
           className="h-5 w-5 rounded-full"
-          style={{ background: preset.swatches.accent }}
+          style={{ background: swatches.accent }}
           title="Accent"
         />
         <span
           className="h-5 w-5 rounded-full border-2"
-          style={{ background: preset.swatches.bg, borderColor: preset.swatches.accent + "40" }}
+          style={{ background: swatches.bg, borderColor: swatches.border }}
           title="Border"
         />
       </div>
@@ -525,23 +525,25 @@ function ThemePresetCard({
 // ─── Section: Appearance ───────────────────────────────────────────────────────────────────────
 
 function AppearanceSection() {
-  const [activeTheme, setActiveTheme] = useState<ActiveTheme>("mood-c");
+  const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
+  const [mode, setMode] = useState<Mode>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Read persisted theme on mount
+  // Read persisted theme + mode on mount
   useEffect(() => {
-    const saved = localStorage.getItem("coven-theme") as ActiveTheme | null;
-    if (saved) setActiveTheme(saved);
+    setActiveTheme(readPersistedTheme());
+    setMode(readPersistedMode());
+    const saved = localStorage.getItem(COVEN_THEME_KEY);
     if (saved === "custom") {
-      const raw = localStorage.getItem("coven-custom-theme");
+      const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
       if (raw) {
         try {
           setCustomData(JSON.parse(raw) as CustomThemeData);
         } catch {
-          // malformed — ignore
+          /* malformed — ignore */
         }
       }
     }
@@ -553,9 +555,18 @@ function AppearanceSection() {
     applyPreset(id);
   };
 
+  const handleSetMode = (next: Mode) => {
+    setMode(next);
+    applyMode(next);
+    // If a custom theme is active, re-apply with the new mode group.
+    if (activeTheme === "custom" && customData) {
+      applyCustomVars(customData.cssVars, next);
+    }
+  };
+
   const handleResetCustom = () => {
     clearCustomTheme();
-    setActiveTheme("mood-c");
+    setActiveTheme("coven");
     setCustomData(null);
   };
 
@@ -616,9 +627,9 @@ function AppearanceSection() {
         cssVars: cssVars as CustomThemeData["cssVars"],
       };
 
-      applyCustomVars(data.cssVars);
-      localStorage.setItem("coven-custom-theme", JSON.stringify(data));
-      localStorage.setItem("coven-theme", "custom");
+      applyCustomVars(data.cssVars, mode);
+      localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
+      localStorage.setItem(COVEN_THEME_KEY, "custom");
       setCustomData(data);
       setActiveTheme("custom");
       setImportUrl("");
@@ -631,6 +642,13 @@ function AppearanceSection() {
 
   return (
     <SettingsPage title="Appearance" description="Colors and visual style.">
+      {/* ── Mode toggle ── */}
+      <SettingsGroup label="Mode">
+        <div className="px-4 py-3">
+          <ModeToggle value={mode} onChange={handleSetMode} />
+        </div>
+      </SettingsGroup>
+
       {/* ── Preset themes ── */}
       <SettingsGroup label="Theme">
         {/* Custom theme chip */}
@@ -655,12 +673,13 @@ function AppearanceSection() {
         )}
 
         {/* Preset grid */}
-        <div className="grid grid-cols-3 gap-3 p-4">
-          {PRESETS.map((p) => (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4">
+          {PRESETS.map((preset) => (
             <ThemePresetCard
-              key={p.id}
-              preset={p}
-              active={activeTheme === p.id}
+              key={preset.id}
+              preset={preset}
+              mode={mode}
+              active={activeTheme === preset.id}
               onSelect={handleSelectPreset}
             />
           ))}
