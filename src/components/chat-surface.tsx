@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
-import { CovenFloor } from "@/components/coven-floor";
 import { SessionsView } from "@/components/sessions-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
@@ -16,7 +15,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type AgentsScope = "sessions" | "conversation" | "floor" | "memory";
+type AgentsScope = "sessions" | "conversation" | "memory";
 
 type Props = {
   familiars: Familiar[];
@@ -522,15 +521,13 @@ export function ChatSurface({
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
           <div className="flex items-end gap-0">
-            {(["sessions", "floor", "memory"] as const).map((s) => {
+            {(["sessions", "memory"] as const).map((s) => {
               const labels: Record<string, string> = {
                 sessions: "Chats",
-                floor: "Floor",
                 memory: "Memory",
               };
               const icons: Record<string, string> = {
                 sessions: "ph:users",
-                floor: "ph:users-three",
                 memory: "ph:brain-bold",
               };
               const isActive = scope === s || (s === "sessions" && scope === "conversation");
@@ -626,9 +623,7 @@ export function ChatSurface({
           </div>
         </div>
 
-        {scope === "floor" ? (
-          <CovenFloor />
-        ) : scope === "memory" ? (
+        {scope === "memory" ? (
           <AgentsMemoryView
             familiars={familiars}
             activeFamiliar={activeFamiliar}

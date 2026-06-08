@@ -42,10 +42,10 @@ assert.doesNotMatch(
   "ChatSurface should not reintroduce the busy GitHub-style hero/composer cards",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /<CovenFloor \/>/,
-  "ChatSurface should integrate the Floor directly",
+  /import.*CovenFloor/,
+  "ChatSurface should not import CovenFloor — Floor is now an ambient widget in HomeComposer",
 );
 
 assert.match(
