@@ -457,9 +457,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     setAddressBar(next);
 
     if (!bridge) {
-      useImperativeHandle(ref, () => ({ navigateTo }), [navigateTo]);
-
-  const h = historyRef.current[activeTabId] ?? { stack: [activeUrl], idx: 0 };
+      const h = historyRef.current[activeTabId] ?? { stack: [activeUrl], idx: 0 };
       if (h.stack[h.idx] !== next) {
         const stack = [...h.stack.slice(0, h.idx + 1), next];
         historyRef.current[activeTabId] = { stack, idx: stack.length - 1 };

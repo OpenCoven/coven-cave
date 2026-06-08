@@ -43,6 +43,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
+import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -81,6 +82,7 @@ export function Workspace() {
     return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";
   });
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
+  const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
@@ -511,14 +513,13 @@ export function Workspace() {
 
   const openAgentSession = useCallback((sessionId: string, familiarId?: string | null) => {
     if (familiarId) setActiveId(familiarId);
+    setPendingChatAction({
+      kind: "open",
+      sessionId,
+      familiarId,
+      nonce: Date.now(),
+    });
     setMode("chat");
-    setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("cave:agents-open-session", {
-          detail: { sessionId, familiarId },
-        }),
-      );
-    }, 0);
   }, []);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
@@ -535,14 +536,13 @@ export function Workspace() {
   const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
+    setPendingChatAction({
+      kind: "new",
+      familiarId,
+      projectRoot,
+      nonce: Date.now(),
+    });
     setMode("chat");
-    setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("cave:agents-new-chat", {
-          detail: { familiarId, projectRoot },
-        }),
-      );
-    }, 0);
   }, []);
 
   useEffect(() => {
@@ -599,8 +599,8 @@ export function Workspace() {
   }, [familiars, activeId, mode, selectFamiliar, startAgentChat]);
 
   const showAgentChatList = useCallback(() => {
+    setPendingChatAction({ kind: "list", nonce: Date.now() });
     setMode("chat");
-    setTimeout(() => window.dispatchEvent(new CustomEvent("cave:agents-list")), 0);
   }, []);
 
   const openToastTarget = useCallback((toast: Toast) => {
@@ -890,10 +890,12 @@ export function Workspace() {
         inspectorOpen={inspectorOpen}
         rightPanel={rightPanel}
         pendingProjectRoot={pendingProjectChatRoot}
+        pendingChatAction={pendingChatAction}
         onSetInspectorOpen={setInspectorOpen}
         onSetRightPanel={setRightPanel}
         onSetActiveFamiliar={setActiveId}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
+        onPendingChatActionHandled={() => setPendingChatAction(null)}
         onSessionStarted={loadSessions}
         onSlashFromChat={(command, args) => {
           onPaletteIntent({ kind: "slash", command, args });

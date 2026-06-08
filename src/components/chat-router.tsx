@@ -48,8 +48,18 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
   const viewHandle = useRef<ChatViewHandle | null>(null);
+  const previousFamiliarIdRef = useRef<string | null>(null);
+  const activeSession = view.kind === "chat" && view.sessionId
+    ? sessions.find((s) => s.id === view.sessionId) ?? null
+    : null;
 
   useEffect(() => {
+    if (previousFamiliarIdRef.current === null) {
+      previousFamiliarIdRef.current = familiar?.id ?? null;
+      return;
+    }
+    if (previousFamiliarIdRef.current === (familiar?.id ?? null)) return;
+    previousFamiliarIdRef.current = familiar?.id ?? null;
     setView((prev) =>
       prev.kind === "chat"
         ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot }
@@ -112,6 +122,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       ref={viewHandle}
       familiar={familiar}
       sessionId={view.sessionId}
+      session={activeSession}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
       daemonRunning={daemonRunning}
       onBack={() => setView({ kind: "list" })}
