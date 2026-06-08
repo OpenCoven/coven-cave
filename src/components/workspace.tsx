@@ -16,6 +16,13 @@ import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
+import { FamiliarAvatarRail } from "@/components/familiar-avatar-rail";
+import {
+  getActiveFamiliar,
+  setActiveFamiliar,
+  getLastSurface,
+  setLastSurface,
+} from "@/lib/familiar-memory";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
@@ -78,7 +85,7 @@ export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(() => getActiveFamiliar());
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -113,6 +120,10 @@ export function Workspace() {
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
+
+  useEffect(() => {
+    setActiveFamiliar(activeId);
+  }, [activeId]);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
@@ -165,6 +176,12 @@ export function Workspace() {
       setFamiliarsError(DEMO_MODE ? null : (err instanceof Error ? err.message : "fetch failed"));
       if (DEMO_MODE) setActiveId((curr) => curr ?? fallback[0]?.id ?? null);
     }
+  }, []);
+
+  const selectFamiliar = useCallback((id: string) => {
+    setActiveId(id);
+    const last = getLastSurface(id);
+    if (last) setMode(last as WorkspaceMode);
   }, []);
 
   const loadSessions = useCallback(async () => {
@@ -223,6 +240,10 @@ export function Workspace() {
       unlistenNew?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeId) setLastSurface(activeId, mode);
+  }, [activeId, mode]);
 
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
@@ -895,6 +916,17 @@ export function Workspace() {
     <>
       <Shell
         ref={shellRef}
+        familiarRail={
+          <FamiliarAvatarRail
+            familiars={familiars}
+            activeId={activeId}
+            sessions={sessions}
+            responseNeeded={responseNeeded}
+            onSelect={selectFamiliar}
+            onAddFamiliar={openOnboarding}
+            onToggleSidebar={() => shellRef.current?.toggleNav()}
+          />
+        }
         nav={sidebar}
         iconNav={iconNav}
         list={list}
