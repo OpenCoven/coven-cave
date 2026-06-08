@@ -15,6 +15,30 @@ assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing side
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
+
+// Ordering guard: dev-mode token-bypass (NextResponse.next() when no token is set)
+// must sit AFTER the host / origin / referer / content-type checks. Pre-fix,
+// the bypass ran first and silently let non-loopback callers through during
+// `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
+{
+  const hostIdx = source.indexOf('isLoopbackHost(req.headers.get("host"))');
+  const originIdx = source.indexOf('sameOrigin(req.headers.get("origin")');
+  const refererIdx = source.indexOf('sameOrigin(req.headers.get("referer")');
+  const contentTypeIdx = source.indexOf("unsupported content-type");
+  const bypassIdx = source.indexOf("missing sidecar auth token");
+  assert.ok(hostIdx > 0, "host check should be present");
+  assert.ok(originIdx > 0, "origin check should be present");
+  assert.ok(refererIdx > 0, "referer check should be present");
+  assert.ok(contentTypeIdx > 0, "content-type check should be present");
+  assert.ok(bypassIdx > 0, "token-bypass branch should be present");
+  assert.ok(
+    bypassIdx > hostIdx &&
+      bypassIdx > originIdx &&
+      bypassIdx > refererIdx &&
+      bypassIdx > contentTypeIdx,
+    "dev-mode token bypass must run AFTER host/origin/referer/content-type guards",
+  );
+}
 assert.match(source, /timingSafeEqualString\(queryToken, expected\)/, "mobile token bootstrap should only store verified query tokens");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
 assert.match(sidecarBridgeSource, /window\.history\.replaceState/, "sidecar token bootstrap should remove the token from the visible URL");

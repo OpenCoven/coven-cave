@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
-import type { Familiar, SessionRow } from "@/lib/types";
+import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { SessionRow } from "@/lib/types";
 
 type HarnessReport = {
   id: string;
@@ -17,13 +17,13 @@ type HarnessReport = {
 };
 
 type Props = {
-  familiars: Familiar[];
+  familiars: ResolvedFamiliar[];
   sessions: SessionRow[];
   responseNeeded: Set<string>;
 };
 
 export function SettingsFamiliarsPanel({ familiars, sessions, responseNeeded }: Props) {
-  const overrides = useGlyphOverrides();
+  const { openFamiliarStudio } = useFamiliarStudio();
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export function SettingsFamiliarsPanel({ familiars, sessions, responseNeeded }: 
           <section key={f.id} className="settings-familiars-panel__card">
             <header className="settings-familiars-panel__card-head">
               <span className="settings-familiars-panel__glyph">
-                <FamiliarGlyph glyph={resolveFamiliarGlyph(f, overrides)} size="sm" />
+                <FamiliarAvatar familiar={f} size="sm" />
               </span>
               <span className="settings-familiars-panel__name">{f.display_name}</span>
               {harnessReport ? (
@@ -99,6 +99,15 @@ export function SettingsFamiliarsPanel({ familiars, sessions, responseNeeded }: 
                       : "tui only"}
                 </span>
               ) : null}
+              <button
+                type="button"
+                onClick={() => openFamiliarStudio(f.id, "identity")}
+                className="settings-familiars-panel__edit"
+                aria-label={`Edit ${f.display_name}`}
+              >
+                <Icon name="ph:pencil-simple" width={12} />
+                Edit
+              </button>
             </header>
             <dl className="settings-familiars-panel__dl">
               <dt>Harness</dt>

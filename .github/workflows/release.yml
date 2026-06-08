@@ -281,3 +281,65 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: release/CovenCave-v${{ env.RELEASE_VERSION }}.dmg
+
+  checksums:
+    name: Publish SHA256SUMS
+    needs: build
+    runs-on: ubuntu-22.04
+    if: success()
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve release tag
+        shell: bash
+        env:
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
+            exit 1
+          fi
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      # Pull the artifacts that the build matrix just uploaded to the
+      # GitHub release and produce a single SHA256SUMS asset alongside
+      # them. README's "Release standard" promises "SHA256 checksums for
+      # all artifacts" — this job is what makes that automatic instead
+      # of operator-memory.
+      - name: Download release artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _release
+          gh release download "$RELEASE_TAG" \
+            --dir _release \
+            --pattern 'CovenCave-*.dmg' \
+            --pattern 'CovenCave-*.AppImage' \
+            --pattern 'CovenCave_*.AppImage' \
+            --pattern 'CovenCave-*.msi' \
+            --pattern 'CovenCave_*.msi'
+          ls -la _release
+
+      - name: Compute SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd _release
+          # shasum's default two-space format matches `shasum -a 256 -c`
+          # so users can verify with:
+          #   shasum -a 256 -c SHA256SUMS
+          shasum -a 256 CovenCave* | sort > SHA256SUMS
+          echo "SHA256SUMS contents:"
+          cat SHA256SUMS
+
+      - name: Upload SHA256SUMS to GitHub Release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: _release/SHA256SUMS

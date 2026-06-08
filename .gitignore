@@ -15,6 +15,9 @@ src-tauri/resources/server/
 # Notarized release artifacts
 release/
 
+# Local Playwright verification outputs (e.g. scripts/verify-trace-graph-3d.mjs)
+artifacts/
+
 # Logs
 *.log
 

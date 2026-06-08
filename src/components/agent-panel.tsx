@@ -2,9 +2,8 @@
 
 import { forwardRef } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -22,14 +21,13 @@ function FamiliarStrip({
   activeId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const overrides = useGlyphOverrides();
+  const resolved = useResolvedFamiliars(familiars);
 
-  if (familiars.length === 0) return null;
+  if (resolved.length === 0) return null;
 
   return (
     <div className="familiar-strip">
-      {familiars.map((f) => {
-        const glyph = resolveFamiliarGlyph(f, overrides);
+      {resolved.map((f) => {
         const isActive = f.id === activeId;
         return (
           <button
@@ -41,7 +39,7 @@ function FamiliarStrip({
             onClick={() => onSelect(f.id)}
             className={`familiar-strip-avatar${isActive ? " familiar-strip-avatar--active" : ""}`}
           >
-            <FamiliarGlyph glyph={glyph} size="sm" />
+            <FamiliarAvatar familiar={f} size="sm" />
           </button>
         );
       })}

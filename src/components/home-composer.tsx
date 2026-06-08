@@ -21,7 +21,6 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { Icon, type IconName } from "@/lib/icon";
-import { CovenFloorMini } from "@/components/coven-floor-mini";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -329,11 +328,6 @@ export function HomeComposer({
           ))}
         </div>
       ) : null}
-
-      {/* Ambient floor widget */}
-      <section className="home-composer__floor" aria-label="Coven floor">
-        <CovenFloorMini onSelectFamiliar={(id) => setFamiliarId(id)} />
-      </section>
     </div>
   );
 }

@@ -57,7 +57,15 @@ Use demo mode only for local testing or demos. It intentionally injects sample f
 
 ![Cave — Shell view](screenshots/shell.png)
 ![Cave — Chat view](screenshots/chat.png)
+![Cave — Board view](screenshots/board.png)
+![Cave — Library](screenshots/library.png)
+![Cave — Calendar](screenshots/calendar.png)
 ![Cave — Terminal](screenshots/terminal.png)
+
+The full set lives in [`screenshots/`](screenshots/) — see
+[`screenshots/CONTRIBUTING.md`](screenshots/CONTRIBUTING.md) for capture
+guidance and [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)
+to refresh against a running dev server.
 
 ## What it is
 
@@ -75,17 +83,21 @@ Use demo mode only for local testing or demos. It intentionally injects sample f
 
 ## Features
 
-- **Familiar rail** — persistent sidebar with all your named agents, glyphs, and live health status
+- **Familiar avatar rail** — leftmost 52px stack of named familiars with per-familiar accent ring, presence dots, unread badges, and drag-to-reorder
+- **Familiar Studio** — Cave-local customization drawer per familiar: identity (name / role / pronouns / description), look (glyph picker / accent color / uploaded image avatar), brain (harness / model / note), lifecycle (archive / reset)
+- **Companion rail** — Chat / Inspector / Memory tabs slot in alongside any surface so the familiar context is always one click away
 - **Chat** — threaded conversations with full markdown, inline code, syntax-highlighted blocks, and copy buttons
 - **Inspector pane** — dig into memory, tool calls, and agent internals without leaving the app
-- **Board view** — kanban-style overview of active work across familiars
-- **Delegation cards** — see what your familiars are doing and hand off tasks
-- **Schedules & reminders** — manage cron jobs and one-shot reminders from the UI
-- **Plugins** — install skills and plugins directly from the app
+- **Board** — kanban or table view of active work across familiars, with zero-card hero CTA
 - **HomeComposer** — universal intent surface on cold start; describe what you need and let the Coven route it
-- **Inbox** — cross-familiar notification feed with snooze and quick-reply
+- **Inbox** — cross-familiar notification feed with snooze and quick-reply; reminders fire via the system tray
+- **Memory inspector + 3D graph** — list and constellation views of every familiar's memory entries
+- **Schedules & reminders** — manage cron jobs and one-shot reminders from the UI
+- **Plugins / skills** — install and view from the app
+- **Terminal & Browser panes** — embedded xterm.js terminal and Tauri-driven browser
 - **System tray** — always accessible, even when the window is closed
 - **Cross-platform fatal error dialogs** — startup failures surface clearly on macOS, Windows, and Linux
+- **Mobile over Tailscale** — token-gated access from your phone on the same tailnet
 
 ## Develop
 
@@ -118,11 +130,17 @@ Bypass a confirmed false positive with `git commit --no-verify`.
 
 ## Keybinds
 
-| Shortcut       | Action                |
-| -------------- | --------------------- |
-| `⌘B`           | Toggle familiar rail  |
-| `⇧⌘B`          | Toggle inspector pane |
-| _drag handles_ | Resize side panels    |
+| Shortcut       | Action                                              |
+| -------------- | --------------------------------------------------- |
+| `⌘K`           | Command palette                                     |
+| `⌘1`–`⌘8`      | Switch surface (Home / Chat / Board / Calendar / Inbox / Library / Browser / Terminal) |
+| `⌥1`–`⌥9`      | Switch to the Nth familiar in the avatar rail       |
+| `⌘↑` / `⌘↓`    | Cycle to the previous / next familiar               |
+| `⌘N`           | New chat with the active familiar (on the Chat surface) |
+| `⌘B`           | Toggle nav/sidebar                                  |
+| `⇧⌘B`          | Toggle inspector pane                               |
+| _drag handles_ | Resize side panels                                  |
+| _right-click_  | On a familiar avatar — open Familiar Studio         |
 
 ## Stack
 
@@ -163,8 +181,8 @@ _The Coven lives in the Cave._
 
 Every release ships with:
 
-- A comprehensive changelog describing features, fixes, and install instructions
-- Screenshots updated to reflect the current UI
-- SHA256 checksums for all artifacts
+- A comprehensive [CHANGELOG](CHANGELOG.md) describing features, fixes, and install instructions
+- Screenshots updated to reflect the current UI (see [`screenshots/`](screenshots/))
+- SHA256 checksums for all artifacts — `scripts/release.sh` writes `release/SHA256SUMS` automatically on each successful build
 
 See [Releases](https://github.com/OpenCoven/coven-cave/releases) for the full history.

@@ -14,8 +14,8 @@ import {
 } from "@/lib/task-github";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { parseGlyphString, DEFAULT_FAMILIAR_GLYPH } from "@/lib/familiar-glyph";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -730,9 +730,8 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
-  const familiarGlyph = currentFamiliar
-    ? parseGlyphString(currentFamiliar.icon) ?? parseGlyphString(currentFamiliar.emoji) ?? DEFAULT_FAMILIAR_GLYPH
-    : null;
+  const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
+  const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
@@ -826,8 +825,8 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
               <div className="board-drawer-field-label">Familiar</div>
               <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                 <span className="board-drawer-familiar-avatar" aria-hidden>
-                  {familiarGlyph ? (
-                    <FamiliarGlyph glyph={familiarGlyph} size="sm" />
+                  {resolvedFamiliar ? (
+                    <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
                   ) : (
                     <Icon name="ph:user" width={12} className="text-[var(--text-muted)]" />
                   )}

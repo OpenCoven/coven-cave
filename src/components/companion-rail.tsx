@@ -2,9 +2,8 @@
 
 import { forwardRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { Familiar } from "@/lib/types";
 
@@ -36,7 +35,8 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       daemonRunning,
       onTabChange,
     } = props;
-    const overrides = useGlyphOverrides();
+    const resolvedFamiliars = useResolvedFamiliars(familiar ? [familiar] : [], { includeArchived: true });
+    const resolvedFamiliar = resolvedFamiliars[0];
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
 
     if (!familiar) {
@@ -70,10 +70,9 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       <aside className="companion-rail">
         <header className="companion-rail__header">
           <span className="companion-rail__glyph">
-            <FamiliarGlyph
-              glyph={resolveFamiliarGlyph(familiar, overrides)}
-              size="sm"
-            />
+            {resolvedFamiliar ? (
+              <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
+            ) : null}
           </span>
           <button
             type="button"

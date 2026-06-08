@@ -5,8 +5,8 @@ import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { parseGlyphString } from "@/lib/familiar-glyph";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 export type GroupBy = "status" | "familiar";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "cwd" | "links" | "lifecycle" | "updatedAt";
@@ -87,6 +87,12 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));
 
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
+  const resolvedByIdMap = useMemo(() => {
+    const m = new Map(resolvedFamiliars.map((f) => [f.id, f]));
+    return m;
+  }, [resolvedFamiliars]);
+
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
   const groups = useMemo(() => groupCards(sorted, groupBy, familiars), [sorted, groupBy, familiars]);
 
@@ -142,10 +148,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
                 </td>
               </tr>
               {!collapsed.has(key) && gc.map((card) => {
-                const familiar = familiars.find((f) => f.id === card.familiarId);
-                const familiarGlyph = familiar
-                  ? parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? null
-                  : null;
+                const resolvedFamiliar = card.familiarId ? resolvedByIdMap.get(card.familiarId) ?? null : null;
                 return (
                   <tr key={card.id} className={selectedCardId === card.id ? "selected" : ""}
                     onClick={() => onSelect(card.id)}>
@@ -164,8 +167,8 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
                     </td>
                     <td>
                       <span className="board-table-cell-familiar">
-                        <span className={`board-table-familiar-avatar${familiarGlyph ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
-                          {familiarGlyph ? <FamiliarGlyph glyph={familiarGlyph} size="sm" /> : <Icon name="ph:user" width={9} />}
+                        <span className={`board-table-familiar-avatar${resolvedFamiliar ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
+                          {resolvedFamiliar ? <FamiliarAvatar familiar={resolvedFamiliar} size="sm" /> : <Icon name="ph:user" width={9} />}
                         </span>
                         <select
                           className="board-table-familiar-select"

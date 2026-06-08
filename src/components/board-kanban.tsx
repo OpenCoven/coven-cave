@@ -6,8 +6,8 @@ import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { parseGlyphString } from "@/lib/familiar-glyph";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },
@@ -207,12 +207,11 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
   chatLinking?: boolean;
 }) {
   const draggedRef = useRef(false);
-  const familiar = familiars.find((f) => f.id === card.familiarId) ?? null;
+  const rawFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
+  const resolvedFamiliars = useResolvedFamiliars(rawFamiliar ? [rawFamiliar] : [], { includeArchived: true });
+  const resolvedFamiliar = resolvedFamiliars[0] ?? null;
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const pri = PRIORITIES.find((p) => p.id === card.priority)!;
-  const familiarGlyph = familiar
-    ? parseGlyphString(familiar.icon) ?? parseGlyphString(familiar.emoji) ?? null
-    : null;
   const hasChips = !!card.cwd || card.links.length > 0 || card.labels.length > 0;
 
   return (
@@ -256,10 +255,10 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
       )}
       <div className="board-kanban-card-footer">
         <span className="board-kanban-card-familiar">
-          <span className={`board-kanban-card-familiar-avatar${familiarGlyph ? "" : " board-kanban-card-familiar-avatar--empty"}`}>
-            {familiarGlyph ? <FamiliarGlyph glyph={familiarGlyph} size="sm" /> : <Icon name="ph:user" width={9} />}
+          <span className={`board-kanban-card-familiar-avatar${resolvedFamiliar ? "" : " board-kanban-card-familiar-avatar--empty"}`}>
+            {resolvedFamiliar ? <FamiliarAvatar familiar={resolvedFamiliar} size="sm" /> : <Icon name="ph:user" width={9} />}
           </span>
-          <span className="board-kanban-card-familiar-name">{familiar?.display_name ?? "Unassigned"}</span>
+          <span className="board-kanban-card-familiar-name">{resolvedFamiliar?.display_name ?? "Unassigned"}</span>
         </span>
         {session ? (
           <button

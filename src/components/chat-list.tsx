@@ -7,9 +7,8 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 type Props = {
   familiar: Familiar;
@@ -66,7 +65,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [activeId, setActiveId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
-  const glyphOverrides = useGlyphOverrides();
+  const resolvedFamiliars = useResolvedFamiliars([familiar], { includeArchived: true });
+  const resolvedFamiliar = resolvedFamiliars[0];
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -158,7 +158,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             {/* Avatar — larger + glyph-forward */}
             <div className="relative shrink-0">
               <div className="grid h-11 w-11 place-items-center rounded-xl border border-[var(--accent-presence)]/30 bg-[color-mix(in_oklch,var(--accent-presence)_12%,var(--bg-raised))] shadow-[0_0_12px_color-mix(in_oklch,var(--accent-presence)_18%,transparent)]">
-                <FamiliarGlyph glyph={resolveFamiliarGlyph(familiar, glyphOverrides)} size="md" />
+                {resolvedFamiliar ? <FamiliarAvatar familiar={resolvedFamiliar} size="md" /> : null}
               </div>
               {/* Online/offline dot */}
               <span

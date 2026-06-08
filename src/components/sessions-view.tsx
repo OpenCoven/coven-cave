@@ -3,9 +3,9 @@
 import "@/styles/sessions-view.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar, SessionRow, SessionOrigin } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 
@@ -274,8 +274,8 @@ function SessionCard({
   onRenameSubmit: (next: string) => void;
   onRenameCancel: () => void;
 }) {
-  const overrides = useGlyphOverrides();
-  const glyph = familiar ? resolveFamiliarGlyph(familiar, overrides) : null;
+  const resolvedList = useResolvedFamiliars(familiar ? [familiar] : [], { includeArchived: true });
+  const resolvedFamiliar: ResolvedFamiliar | undefined = resolvedList[0];
   const ts = shortRelTime(session.updated_at || session.created_at);
   const title = stripLeadingTrailingEmoji(session.title || "Untitled session");
   const label = originLabel(session.origin);
@@ -300,8 +300,8 @@ function SessionCard({
     >
       <div className="session-card-top">
         <div className="session-card-familiar-chip">
-          {glyph ? (
-            <FamiliarGlyph glyph={glyph} size="sm" />
+          {resolvedFamiliar ? (
+            <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
           ) : (
             <Icon name="ph:user" width={11} />
           )}
@@ -378,8 +378,8 @@ function SessionRowItem({
   onRenameSubmit: (next: string) => void;
   onRenameCancel: () => void;
 }) {
-  const overrides = useGlyphOverrides();
-  const glyph = familiar ? resolveFamiliarGlyph(familiar, overrides) : null;
+  const resolvedList = useResolvedFamiliars(familiar ? [familiar] : [], { includeArchived: true });
+  const resolvedFamiliar: ResolvedFamiliar | undefined = resolvedList[0];
   const ts = shortRelTime(session.updated_at || session.created_at);
   const title = stripLeadingTrailingEmoji(session.title || "Untitled session");
   const label = originLabel(session.origin);
@@ -403,8 +403,8 @@ function SessionRowItem({
       title={title}
     >
       <div className="session-row-familiar-chip">
-        {glyph ? (
-          <FamiliarGlyph glyph={glyph} size="sm" />
+        {resolvedFamiliar ? (
+          <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
         ) : (
           <Icon name="ph:user" width={11} />
         )}
@@ -669,7 +669,6 @@ export function SessionsView({
   onSessionsChanged,
   hideFamiliarFilter = false,
 }: SessionsViewProps) {
-  const overrides = useGlyphOverrides();
   const [layoutMode, setLayoutMode] = useState<SessionsLayoutMode>("rows");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -685,6 +684,12 @@ export function SessionsView({
 
   const effectiveFilterId = filterFamiliarId ?? activeFamiliarId;
   const activeFamiliar = familiars.find((f) => f.id === effectiveFilterId) ?? null;
+
+  const resolvedActiveFamiliarList = useResolvedFamiliars(
+    activeFamiliar ? [activeFamiliar] : [],
+    { includeArchived: true },
+  );
+  const resolvedActiveFamiliar: ResolvedFamiliar | null = resolvedActiveFamiliarList[0] ?? null;
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -956,11 +961,8 @@ export function SessionsView({
         {filtered.length === 0 && archivedFiltered.length === 0 ? (
           <div className="sessions-empty">
             <div className="sessions-empty-glyph">
-              {activeFamiliar ? (
-                <FamiliarGlyph
-                  glyph={resolveFamiliarGlyph(activeFamiliar, overrides)}
-                  size="sm"
-                />
+              {resolvedActiveFamiliar ? (
+                <FamiliarAvatar familiar={resolvedActiveFamiliar} size="sm" />
               ) : (
                 <Icon name="ph:sparkle" width={22} />
               )}

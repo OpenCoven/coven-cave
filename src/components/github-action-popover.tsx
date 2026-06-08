@@ -10,7 +10,8 @@ import {
   createBoardCardFromGitHubItem,
   itemToContext,
 } from "@/lib/github-tasks";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -178,6 +179,7 @@ function FamiliarPicker({
   mode: "chat" | "assign";
   onClose: () => void;
 }) {
+  const resolved = useResolvedFamiliars(familiars);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<{
     status: "success" | "error";
@@ -242,8 +244,7 @@ function FamiliarPicker({
       )}
 
       <ul className="max-h-44 overflow-y-auto space-y-0.5">
-        {familiars.map((f) => {
-          const glyph = resolveFamiliarGlyph(f, {});
+        {resolved.map((f) => {
           const isSelected = selected === f.id;
           return (
             <li key={f.id}>
@@ -258,11 +259,7 @@ function FamiliarPicker({
                 ].join(" ")}
               >
                 <span className="shrink-0 w-4 text-center text-[14px] leading-none">
-                  <Icon
-                    name={glyph.name as Parameters<typeof Icon>[0]["name"]}
-                    width={14}
-                    className="text-[var(--text-muted)]"
-                  />
+                  <FamiliarAvatar familiar={f} size="sm" />
                 </span>
                 <span className="truncate">{f.display_name}</span>
                 {isSelected && (
@@ -276,7 +273,7 @@ function FamiliarPicker({
             </li>
           );
         })}
-        {familiars.length === 0 && (
+        {resolved.length === 0 && (
           <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
             No familiars available.
           </li>

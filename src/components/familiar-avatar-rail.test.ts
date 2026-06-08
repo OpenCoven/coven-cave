@@ -54,3 +54,29 @@ assert.match(
   /aria-label/,
   "Buttons must have aria-labels for screen readers",
 );
+assert.match(
+  source,
+  /--familiar-accent/,
+  "Avatars must set a --familiar-accent CSS custom property",
+);
+assert.match(
+  source,
+  /familiar-avatar-rail__edit/,
+  "Hover-reveal edit (…) affordance must be present per avatar",
+);
+assert.match(
+  source,
+  /onContextMenu/,
+  "Right-click handler must be wired",
+);
+assert.match(
+  source,
+  /useFamiliarStudio/,
+  "Rail must call into the Familiar Studio context",
+);
+assert.match(source, /draggable/, "Avatars must be draggable for reorder");
+assert.match(source, /onDragStart/, "onDragStart handler must be present");
+assert.match(source, /onDragOver/, "onDragOver handler must be present");
+assert.match(source, /onDrop/, "onDrop handler must be present");
+assert.match(source, /setFamiliarOrder/, "Must call setFamiliarOrder on drop");
+assert.match(source, /openFamiliarStudioListView/, "Right-click on + opens list view");

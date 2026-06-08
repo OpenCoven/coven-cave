@@ -64,6 +64,6 @@ assert.match(
 );
 assert.match(
   chatSendRoute,
-  /buildTaskAwarePrompt\(buildPromptWithAttachments/,
+  /buildTaskAwarePrompt\(\s*buildPromptWithAttachments/,
   "Chat send should include task context in the harness prompt only",
 );

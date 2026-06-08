@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { SessionRow } from "@/lib/types";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 
 type HarnessReport = {
   id: string;
@@ -16,7 +15,7 @@ type HarnessReport = {
 };
 
 type Props = {
-  familiars: Familiar[];
+  familiars: ResolvedFamiliar[];
   activeId: string | null;
   sessions: SessionRow[];
   responseNeeded: Set<string>;
@@ -32,7 +31,6 @@ export function SidebarFamiliars({
   onSelect,
   error,
 }: Props) {
-  const glyphOverrides = useGlyphOverrides();
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
 
   useEffect(() => {
@@ -102,8 +100,8 @@ export function SidebarFamiliars({
             }`}
           >
             <span className="grid h-5 w-5 shrink-0 place-items-center">
-              <FamiliarGlyph
-                glyph={resolveFamiliarGlyph(f, glyphOverrides)}
+              <FamiliarAvatar
+                familiar={f}
                 size="sm"
               />
             </span>

@@ -165,6 +165,24 @@ echo ""
 echo "Release built: $DMG_PATH"
 SHA=$(shasum -a 256 "$DMG_PATH" | cut -d ' ' -f1)
 echo "SHA256: $SHA"
+
+# Maintain a SHA256SUMS file alongside the artifacts so the README's
+# "SHA256 checksums for all artifacts" promise is automatic. Each entry
+# uses the shasum-default format (`<hash>  <filename>`) so callers can
+# verify with `cd release && shasum -a 256 -c SHA256SUMS`.
+SUMS_PATH="$DMG_DIR/SHA256SUMS"
+DMG_BASENAME=$(basename "$DMG_PATH")
+if [ -f "$SUMS_PATH" ]; then
+  # Replace the entry for this artifact in place; append if absent.
+  TMP_PATH=$(mktemp)
+  grep -v "  $DMG_BASENAME$" "$SUMS_PATH" > "$TMP_PATH" || true
+  echo "$SHA  $DMG_BASENAME" >> "$TMP_PATH"
+  sort "$TMP_PATH" > "$SUMS_PATH"
+  rm "$TMP_PATH"
+else
+  echo "$SHA  $DMG_BASENAME" > "$SUMS_PATH"
+fi
+echo "Wrote checksum entry to $SUMS_PATH"
 echo ""
 echo "Signature:"
 codesign -d --verbose=2 "$APP_PATH" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier|Timestamp"

@@ -60,10 +60,18 @@ assert.match(
   "ChatSurface should label the third primary tab Memory instead of Traces",
 );
 
+// b05fba5 dropped the redundant group-by-Familiar option (familiar scoping
+// lives in the avatar rail now). Status/Date/None remain. Lock the removal
+// in so a regression that adds "Familiar" back surfaces immediately.
 assert.match(
   chatSurface,
-  /groupBy[\s\S]*Familiar[\s\S]*Status[\s\S]*Date[\s\S]*None/,
-  "ChatSurface should preserve the Chats group-by controls while replacing traces with memory",
+  /useState<"status" \| "date" \| "none">/,
+  "ChatSurface group-by must only support status/date/none — Familiar option removed by b05fba5",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /setGroupBy\("familiar"\)/,
+  "ChatSurface should not reintroduce a Familiar group-by button",
 );
 
 assert.doesNotMatch(

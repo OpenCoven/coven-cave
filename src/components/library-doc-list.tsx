@@ -10,6 +10,10 @@ type Props = {
   onSearchChange: (q: string) => void;
   onSelect: (doc: LibraryDoc) => void;
   loading: boolean;
+  /** Error message from the last load attempt, if any. */
+  error?: string | null;
+  /** Triggered when the user clicks Retry in the error state. */
+  onRetry?: () => void;
 };
 
 const relDateFmt = new Intl.RelativeTimeFormat([], { numeric: "auto" });
@@ -46,6 +50,8 @@ export function LibraryDocList({
   onSearchChange,
   onSelect,
   loading,
+  error,
+  onRetry,
 }: Props) {
   const filtered = filterDocs(docs, searchQuery);
 
@@ -78,6 +84,21 @@ export function LibraryDocList({
       <div className="library-doclist-items">
         {loading ? (
           <div className="library-doclist-empty">Loading…</div>
+        ) : error ? (
+          <div className="library-doclist-empty" role="alert">
+            <div className="text-[var(--color-warning)]">Couldn&rsquo;t load documents.</div>
+            <div className="mt-1 text-[11px] text-[var(--text-muted)]">{error}</div>
+            {onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-3 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:arrow-clockwise" width={11} />
+                Retry
+              </button>
+            ) : null}
+          </div>
         ) : filtered.length === 0 ? (
           <div className="library-doclist-empty">
             {searchQuery ? "No documents match your search." : "No documents found."}

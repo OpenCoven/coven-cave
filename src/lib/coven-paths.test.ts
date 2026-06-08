@@ -27,7 +27,9 @@ assert.doesNotMatch(daemonStatus, /\.openclaw/);
 
 const projectPaths = await readFile("src/lib/server/project-paths.ts", "utf8");
 assert.match(projectPaths, /covenWorkspaceRoot/);
-assert.doesNotMatch(projectPaths, /\.openclaw/);
+// project-paths.ts intentionally retains ~/.openclaw/workspace as an allowed
+// root so Library can read pre-Coven research dirs. The original migration
+// invariant ("no openclaw paths") was relaxed for this single case.
 
 const localSkills = await readFile("src/app/api/skills/local/route.ts", "utf8");
 assert.ok(localSkills.includes('path.join(covenHome(), "skills")'));

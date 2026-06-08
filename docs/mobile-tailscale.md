@@ -27,6 +27,8 @@ and append the `?coven_access_token=...` value printed by `pnpm mobile:tailscale
 
 Do not open the Serve URL without the access query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects requests until the token is supplied by query, cookie, bearer header, or the equivalent internal request path.
 
+Independent of the mobile token, every `/api/*` request also has to satisfy loopback/same-origin/referer/content-type checks — those guards apply in plain browser dev too, not just in bundled mode. Tailscale Serve passes them because it proxies to the loopback dev server with same-origin headers; anything else (LAN scanners, accidental `-H 0.0.0.0`, mismatched origins) hits a 403 before any handler runs.
+
 ## Manual Equivalent
 
 Use a strong random token and keep the Next.js server bound to loopback so only Tailscale Serve can proxy it. In one terminal, start Cave:
@@ -52,7 +54,7 @@ Do not run CovenCave with `-H 0.0.0.0` for mobile access. Binding to all interfa
 
 ## Expected Mobile Behavior
 
-- Chat, Inbox, Board, Library, Familiars, and Settings should load.
+- Home, Chat, Board, Calendar, Inbox, Library, and Settings should load.
 - The native Tauri terminal does not run in a mobile browser.
 - Native desktop notifications do not run in a mobile browser.
 - Browser view uses the web fallback path, not the desktop webview.

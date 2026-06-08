@@ -47,15 +47,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       const json = await res.json();
       if (json.ok) {
         const loaded = json.cards as Card[];
+        // Demo mode only seeds when the API actually returned ok+empty.
+        // On error, fall through so the user sees the failure.
         setCards(DEMO_MODE && loaded.length === 0 ? DEMO_BOARD_CARDS : loaded);
         setError(null);
       } else {
-        setCards(DEMO_MODE ? DEMO_BOARD_CARDS : []);
-        setError(DEMO_MODE ? null : (json.error ?? "load failed"));
+        setCards([]);
+        setError(json.error ?? "load failed");
       }
     } catch (err) {
-      setCards(DEMO_MODE ? DEMO_BOARD_CARDS : []);
-      setError(DEMO_MODE ? null : (err instanceof Error ? err.message : "load failed"));
+      setCards([]);
+      setError(err instanceof Error ? err.message : "load failed");
     }
   }, []);
 
@@ -274,7 +276,27 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        {viewMode === "kanban" ? (
+        {cards.length === 0 && !error ? (
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="max-w-md rounded-xl border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-6 text-center">
+              <span className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-muted)]">
+                <Icon name="ph:kanban" width={18} aria-hidden />
+              </span>
+              <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Queue your first task</h2>
+              <p className="mt-2 text-[12px] leading-5 text-[var(--text-muted)]">
+                The board collects work in flight across your familiars. Add a task and assign it to whoever should pick it up &mdash; chat threads can link back to it later.
+              </p>
+              <button
+                type="button"
+                onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
+              >
+                <Icon name="ph:plus-bold" width={12} />
+                New task
+              </button>
+            </div>
+          </div>
+        ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} sessions={sessions}
             groupBy={groupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}

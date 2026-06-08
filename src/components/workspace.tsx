@@ -15,6 +15,8 @@ import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-t
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
 import { FamiliarAvatarRail } from "@/components/familiar-avatar-rail";
+import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import { FamiliarStudio } from "@/components/familiar-studio";
 import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { RailMemoryList } from "@/components/agents-memory-view";
@@ -36,6 +38,7 @@ import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
@@ -60,6 +63,7 @@ export function Workspace() {
   const shellRef = useRef<ShellHandle | null>(null);
   const [activeId, setActiveId] = useState<string | null>(() => getActiveFamiliar());
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
@@ -989,7 +993,7 @@ export function Workspace() {
   );
 
   return (
-    <>
+    <FamiliarStudioProvider>
       <Shell
         ref={shellRef}
         topBar={
@@ -1012,7 +1016,7 @@ export function Workspace() {
         }
         familiarRail={
           <FamiliarAvatarRail
-            familiars={familiars}
+            familiars={resolvedFamiliars}
             activeId={activeId}
             sessions={sessions}
             responseNeeded={responseNeeded}
@@ -1145,6 +1149,7 @@ export function Workspace() {
         }}
       />
 
-    </>
+      <FamiliarStudio familiars={familiars} />
+    </FamiliarStudioProvider>
   );
 }

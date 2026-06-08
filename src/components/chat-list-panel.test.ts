@@ -18,8 +18,8 @@ assert.match(
 
 assert.match(
   source,
-  /<FamiliarGlyph glyph=\{resolveFamiliarGlyph\(familiar, glyphOverrides\)\} size="md" \/>/,
-  "ChatList dossier header should render the familiar glyph as the primary avatar",
+  /<FamiliarAvatar familiar=\{resolvedFamiliar\} size="md" \/>/,
+  "ChatList dossier header should render the familiar avatar (post-FamiliarAvatar migration in 0244b6a)",
 );
 
 assert.match(

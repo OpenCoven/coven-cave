@@ -289,7 +289,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               ))}
               {visibleCoven.length === 0 ? (
                 <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-                  {loaded ? "No memories match this agent view." : "Loading memories..."}
+                  {loaded ? (error ? "Couldn’t load memories. See the error above and try again." : "No memories match this agent view.") : "Loading memories..."}
                 </div>
               ) : null}
             </div>
@@ -304,7 +304,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </div>
           {visibleCoven.length === 0 ? (
             <div className="grid min-h-[180px] place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] text-center text-[12px] text-[var(--text-muted)]">
-              {loaded ? "No familiar memories match this view." : "Loading memories..."}
+              {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
             </div>
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
@@ -350,7 +350,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
             {visibleFiles.length === 0 ? (
               <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-                {loaded ? "No memory files match this view." : "Loading files..."}
+                {loaded ? (error ? "Couldn’t load memory files. See the error above and try again." : "No memory files match this view.") : "Loading files..."}
               </div>
             ) : (
               <ul className="max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto">

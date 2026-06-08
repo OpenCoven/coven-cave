@@ -54,17 +54,27 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
       .catch(() => undefined);
   }, []);
 
+  const [docsError, setDocsError] = useState<string | null>(null);
+
   const loadDocs = useCallback(async (collectionId: string) => {
     setLoading(true);
+    setDocsError(null);
     try {
       const res = await fetch(`/api/library?collection=${encodeURIComponent(collectionId)}`, { cache: "no-store" });
-      const json = await res.json() as { ok: boolean; docs?: LibraryDoc[]; collections?: LibraryCollection[] };
+      const json = await res.json() as { ok: boolean; docs?: LibraryDoc[]; collections?: LibraryCollection[]; error?: string };
       if (json.ok) {
         setDocs(json.docs ?? []);
         if (json.collections?.length) setCollections(json.collections);
-      } else setDocs([]);
-    } catch { setDocs([]); }
-    finally { setLoading(false); }
+      } else {
+        setDocs([]);
+        setDocsError(json.error ?? "Library API returned an error.");
+      }
+    } catch (err) {
+      setDocs([]);
+      setDocsError(err instanceof Error ? err.message : "Network error loading library.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { void loadDocs(activeCollection); }, [activeCollection, loadDocs]);
@@ -176,6 +186,8 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
               onSearchChange={setSearchQuery}
               onSelect={handleSelectDoc}
               loading={loading}
+              error={docsError}
+              onRetry={() => void loadDocs(activeCollection)}
             />
           )}
           {activeSection === "bookmarks" && (
