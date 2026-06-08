@@ -4,6 +4,7 @@ import {
   buildMemoryGraphModel,
   buildMemoryGraphSceneModel,
   memorySelectionObjectKey,
+  resolveMemoryFamiliarFilter,
 } from "./memory-graph-3d-model.ts";
 
 const familiars = [
@@ -52,20 +53,21 @@ const graph = buildMemoryGraphModel({
   covenEntries,
   fileEntries,
   query: "",
-  familiarFilter: "all",
+  familiarFilter: "nova",
   maxLeavesPerHub: 1,
 });
 
 const familiarHubs = graph.nodes.filter((node) => node.kind === "hub" && node.hubKind === "familiar");
 assert.deepEqual(
   familiarHubs.map((node) => node.id),
-  ["familiar:nova", "familiar:cody"],
-  "all familiar hubs should render even when their visible memory leaf count is capped",
+  ["familiar:nova"],
+  "memory graph should render one selected familiar hub instead of a cross-agent constellation",
 );
 
-assert.ok(
-  graph.nodes.some((node) => node.kind === "hub" && node.hubKind === "files" && node.label === "Memory Files"),
-  "filesystem memory entries should be represented under a neutral Memory Files hub",
+assert.equal(
+  graph.nodes.some((node) => node.kind === "hub" && node.hubKind === "files"),
+  false,
+  "agent-level memory graph should not render a global Memory Files hub",
 );
 
 assert.ok(
@@ -73,15 +75,10 @@ assert.ok(
   "coven memory leaves should connect to their familiar hub",
 );
 
-assert.ok(
-  graph.edges.some((edge) => edge.source.startsWith("memory:file:") && edge.target === "hub:memory-files"),
-  "filesystem memory leaves should connect to the neutral files hub",
-);
-
 assert.equal(
-  graph.nodes.find((node) => node.kind === "memory" && node.source === "file")?.familiarId,
-  undefined,
-  "filesystem memory leaves must not fake a familiar relationship",
+  graph.nodes.some((node) => node.kind === "memory" && node.source === "file"),
+  false,
+  "agent-level memory graph should not render filesystem leaves",
 );
 
 assert.equal(
@@ -122,10 +119,76 @@ assert.ok(novaLeaf, "scene model should include memory leaf positions");
 assert.notDeepEqual(
   novaHub?.position,
   novaLeaf?.position,
-  "memory leaves should be positioned on a shell around their hub, not on top of it",
+  "memory leaves should be positioned in a focused agent-level field, not on top of the hub",
 );
 assert.equal(
   scene.nodes.find((node) => node.id === "familiar:nova")?.memoryCount,
   2,
   "hub memory count should reflect total matching entries before visual leaf caps",
+);
+assert.ok(
+  Math.min(...scene.nodes.filter((node) => node.kind !== "hub").map((node) => node.position.x)) > (novaHub?.position.x ?? 0),
+  "memory cards should fan forward from the selected familiar instead of orbiting around multiple agents",
+);
+
+assert.equal(
+  resolveMemoryFamiliarFilter({
+    familiars: [
+      { id: "empty", display_name: "Empty", role: "Quiet" },
+      ...familiars,
+    ],
+    covenEntries,
+    currentFamiliarId: "empty",
+    activeFamiliarId: null,
+  }),
+  "nova",
+  "initial memory selection should prefer a familiar with memory over a blank default familiar",
+);
+
+assert.equal(
+  resolveMemoryFamiliarFilter({
+    familiars: [
+      { id: "empty", display_name: "Empty", role: "Quiet" },
+      ...familiars,
+    ],
+    covenEntries,
+    currentFamiliarId: "empty",
+    activeFamiliarId: "empty",
+  }),
+  "empty",
+  "explicit active familiar selection should be preserved even when that familiar has no memory",
+);
+
+const denseEntries = Array.from({ length: 96 }, (_, index) => ({
+  id: `dense-${index}`,
+  familiar_id: "nova",
+  title: `Dense memory ${index}`,
+  path: `/Users/buns/.coven/memory/nova/dense-${index}.md`,
+  updated_at: `2026-06-08T05:${String(59 - (index % 60)).padStart(2, "0")}:00.000Z`,
+}));
+
+const denseGraph = buildMemoryGraphModel({
+  familiars,
+  covenEntries: denseEntries,
+  fileEntries,
+  query: "",
+  familiarFilter: "nova",
+  maxLeavesPerHub: 24,
+});
+const denseScene = buildMemoryGraphSceneModel(denseGraph);
+const denseCardY = denseScene.nodes.filter((node) => node.kind === "memory").map((node) => node.position.y);
+
+assert.equal(
+  denseGraph.nodes.filter((node) => node.kind === "memory").length,
+  24,
+  "dense memory maps should cluster before the card field exceeds the initial camera framing",
+);
+assert.equal(
+  denseGraph.nodes.find((node) => node.kind === "cluster")?.count,
+  72,
+  "dense memory maps should expose older entries as a stack when cards are capped",
+);
+assert.ok(
+  Math.max(...denseCardY) <= 3,
+  "dense memory card fields should stay within the first-frame vertical framing",
 );

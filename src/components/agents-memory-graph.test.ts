@@ -28,8 +28,20 @@ assert.match(
 
 assert.match(
   memoryViewSource,
-  /onSelectFamiliar=\{\(familiarId\) => setFamiliarFilter\(familiarId\)\}/,
-  "Clicking a familiar hub should sync the existing familiar filter",
+  /<option key=\{familiar\.id\} value=\{familiar\.id\}>/,
+  "Memory graph should choose one familiar at a time instead of offering an all-familiars graph",
+);
+
+assert.match(
+  memoryViewSource,
+  /resolveMemoryFamiliarFilter/,
+  "Memory graph should repair blank initial selections when another familiar has memory",
+);
+
+assert.match(
+  memoryViewSource,
+  /maxLeavesPerHub:\s*24/,
+  "Memory graph should cluster dense agent memories before the first-frame card field gets too tall",
 );
 
 assert.match(
@@ -56,9 +68,15 @@ assert.match(
   "MemoryGraph3D should use InstancedMesh for memory leaves",
 );
 
+assert.doesNotMatch(
+  graphSource,
+  /SphereGeometry/,
+  "MemoryGraph3D should avoid sphere geometry for the memory map",
+);
+
 assert.match(
   graphSource,
-  /aria-label="3D memory constellation"/,
+  /aria-label="3D familiar memory map"/,
   "MemoryGraph3D should expose an accessible canvas label",
 );
 
@@ -68,10 +86,10 @@ assert.match(
   "MemoryGraph3D should respect reduced motion preferences",
 );
 
-assert.match(
+assert.doesNotMatch(
   modelSource,
   /hub:memory-files/,
-  "The model should preserve filesystem memory entries under a neutral Memory Files hub",
+  "The graph model should not render a cross-agent/global memory files hub",
 );
 
 assert.doesNotMatch(

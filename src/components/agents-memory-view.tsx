@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { MemoryGraph3D } from "@/components/memory-graph-3d";
-import { buildMemoryGraphModel } from "@/lib/memory-graph-3d-model";
+import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory-graph-3d-model";
 
 type CovenMemoryEntry = {
   id: string;
@@ -75,7 +75,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
-  const [familiarFilter, setFamiliarFilter] = useState<string>("all");
+  const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [viewMode, setViewMode] = useState<"list" | "graph">("list");
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -120,7 +120,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
   const visibleCoven = useMemo(
     () =>
       covenEntries
-        .filter((entry) => familiarFilter === "all" || entry.familiar_id === familiarFilter)
+        .filter((entry) => entry.familiar_id === familiarFilter)
         .filter((entry) => memoryMatches(entry, q))
         .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
     [covenEntries, familiarFilter, q],
@@ -139,6 +139,23 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
     return familiars.filter((familiar) => ids.has(familiar.id));
   }, [covenEntries, familiars]);
 
+  useEffect(() => {
+    const next = resolveMemoryFamiliarFilter({
+      familiars,
+      covenEntries,
+      currentFamiliarId: familiarFilter,
+      activeFamiliarId: activeFamiliar?.id ?? null,
+    });
+    if (next && next !== familiarFilter) setFamiliarFilter(next);
+  }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars]);
+
+  const selectedFamiliar = familiarById.get(familiarFilter) ?? null;
+  const familiarOptions = useMemo(() => {
+    const options = familiarsWithMemory.length > 0 ? familiarsWithMemory : familiars;
+    if (!selectedFamiliar || options.some((familiar) => familiar.id === selectedFamiliar.id)) return options;
+    return [selectedFamiliar, ...options];
+  }, [familiars, familiarsWithMemory, selectedFamiliar]);
+
   const memoryGraph = useMemo(
     () =>
       buildMemoryGraphModel({
@@ -147,7 +164,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
         fileEntries,
         query,
         familiarFilter,
-        maxLeavesPerHub: familiarFilter === "all" ? 30 : 90,
+        maxLeavesPerHub: 24,
       }),
     [covenEntries, familiarFilter, familiars, fileEntries, query],
   );
@@ -159,10 +176,10 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
           <div>
             <div className="flex items-center gap-2">
               <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
-              <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Memories</h2>
+              <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Agent Memory</h2>
             </div>
             <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-              Comprehensive Coven memory, familiar recall, and local memory files.
+              Focused recall for one agent at a time, with local memory files kept in the list surface.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -193,15 +210,15 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
 
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Coven entries</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{covenEntries.length}</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Agent memories</div>
+            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{visibleCoven.length}</div>
           </div>
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
             <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Memory files</div>
             <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileEntries.length}</div>
           </div>
           <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Familiars</div>
+            <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Agents with memory</div>
             <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{familiarsWithMemory.length}</div>
           </div>
         </div>
@@ -221,8 +238,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
             onChange={(event) => setFamiliarFilter(event.target.value)}
             className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-presence)]"
           >
-            <option value="all">All familiars</option>
-            {familiarsWithMemory.map((familiar) => (
+            {familiarOptions.map((familiar) => (
               <option key={familiar.id} value={familiar.id}>{familiar.display_name}</option>
             ))}
           </select>
@@ -244,9 +260,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
           <aside className="hidden min-h-0 xl:block">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-                {familiarFilter === "all" ? "Constellation index" : familiarById.get(familiarFilter)?.display_name ?? familiarFilter}
+                {selectedFamiliar?.display_name ?? "Selected agent"}
               </h3>
-              <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length + visibleFiles.length} visible</span>
+              <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
             </div>
             <div className="max-h-[640px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
               {visibleCoven.slice(0, 18).map((entry) => (
@@ -263,23 +279,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile }
                   </span>
                 </button>
               ))}
-              {visibleFiles.slice(0, 18).map((entry) => (
-                <button
-                  key={entry.fullPath}
-                  type="button"
-                  onClick={() => onOpenMemoryFile?.(entry.fullPath)}
-                  className="flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
-                >
-                  <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.relPath}</span>
-                    <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{entry.rootLabel} · {age(entry.modified)}</span>
-                  </span>
-                </button>
-              ))}
-              {visibleCoven.length + visibleFiles.length === 0 ? (
+              {visibleCoven.length === 0 ? (
                 <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-                  {loaded ? "No memories match this constellation." : "Loading memories..."}
+                  {loaded ? "No memories match this agent view." : "Loading memories..."}
                 </div>
               ) : null}
             </div>
