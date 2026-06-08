@@ -3135,7 +3135,7 @@ body {
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .settings-familiars-panel__dl {
