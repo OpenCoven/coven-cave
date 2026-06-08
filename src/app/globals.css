@@ -2542,15 +2542,15 @@ body {
 
 .familiar-avatar-rail__edit {
   position: absolute;
-  top: -4px;
-  right: 6px;
+  top: -3px;
+  right: 4px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 4px;
   background: var(--bg-raised);
   color: var(--text-secondary);
@@ -2565,9 +2565,25 @@ body {
   pointer-events: auto;
 }
 
+/* Pointer-less devices (touch) can't hover — keep the customize affordance
+ * visible at rest so it's actually reachable. */
+@media (hover: none) {
+  .familiar-avatar-rail__edit {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
 .familiar-avatar-rail__edit:hover {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 18%, var(--bg-raised));
+}
+
+.familiar-avatar-rail__edit:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 .familiar-avatar-rail__list > li[data-dragging="true"] {
   opacity: 0.4;
@@ -2626,24 +2642,35 @@ body {
   height: 26px;
   border-radius: 50%;
   background: transparent;
-  border: 1px dashed var(--border-strong);
   color: var(--text-muted);
   display: grid;
   place-items: center;
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard),
-              background var(--duration-fast) var(--ease-standard);
+              background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-avatar-rail__add {
+  border: 1px dashed var(--border-strong);
+}
+
+.familiar-avatar-rail__toggle {
+  border: 1px solid var(--border-hairline);
+  margin-top: auto;
 }
 
 .familiar-avatar-rail__add:hover,
 .familiar-avatar-rail__toggle:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
-.familiar-avatar-rail__toggle {
-  border-style: none;
-  margin-top: auto;
+.familiar-avatar-rail__add:focus-visible,
+.familiar-avatar-rail__toggle:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
 
 /* ────────────────────────────────────────────────
