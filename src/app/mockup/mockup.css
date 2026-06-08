@@ -1,3 +1,8 @@
+/* TODO: light-mode-audit — this file ships hardcoded dark-mode color
+   literals (oklch(1 0 0 / N%) / rgba(255,...)) that need migrating to
+   color-mix(in oklch, var(--foreground) N%, transparent) for a clean
+   light-mode appearance. Tracked in the light-mode pass-2 follow-up. */
+
 /* mockup.css — multica-inspired design tokens, scoped to the /mockup route
    via the `.multica-theme` class on the route's root element. This keeps
    the rest of the app untouched until we decide to roll the tokens out
