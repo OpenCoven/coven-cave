@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import {
   setFamiliarOverride,
@@ -35,7 +35,7 @@ export function FamiliarStudioIdentityTab({ familiar, rawDaemonValues }: Props) 
     <div className="familiar-studio-identity">
       {FIELDS.map((f) => (
         <IdentityField
-          key={f.key}
+          key={`${familiar.id}:${f.key}`}
           field={f.key}
           label={f.label}
           textarea={f.textarea}
@@ -69,6 +69,10 @@ function IdentityField({
   const [draft, setDraft] = useState(value ?? "");
   const placeholder = daemonValue ?? "—";
   const hasOverride = value !== undefined;
+
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [field, value]);
 
   function commit() {
     if (draft.trim() === "") {

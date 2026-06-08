@@ -14,6 +14,7 @@ assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should requir
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
+assert.match(source, /isAllowedApiHost\(req\.headers\.get\("host"\), mobileAccessAuthenticated\)/, "valid mobile access should satisfy the API host gate");
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
 
 // Ordering guard: dev-mode token-bypass (NextResponse.next() when no token is set)
@@ -21,7 +22,7 @@ assert.match(source, /unsupported content-type/, "middleware should reject unsaf
 // the bypass ran first and silently let non-loopback callers through during
 // `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
 {
-  const hostIdx = source.indexOf('isLoopbackHost(req.headers.get("host"))');
+  const hostIdx = source.indexOf('isAllowedApiHost(req.headers.get("host"), mobileAccessAuthenticated)');
   const originIdx = source.indexOf('sameOrigin(req.headers.get("origin")');
   const refererIdx = source.indexOf('sameOrigin(req.headers.get("referer")');
   const contentTypeIdx = source.indexOf("unsupported content-type");

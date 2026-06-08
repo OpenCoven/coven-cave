@@ -1,23 +1,24 @@
-// Drive a headless Chromium against http://localhost:3000 and run the
+// Drive a headless Chromium against a running Cave dev server and run the
 // Familiar Studio smoke checklist from the PR description for
 // feat/familiar-studio (#218).
 //
 // Run: node scripts/smoke-familiar-studio.mjs
 //
 // Requires:
-//   - pnpm dev already running on :3000
+//   - pnpm dev already running on :3000, or set COVEN_CAVE_SMOKE_URL
 //   - NEXT_PUBLIC_DEMO=true so the rail has seeded familiars
 //
 // Output: prints PASS/FAIL per checklist step. Screenshots are written to
 // /tmp/familiar-studio-smoke/ for forensic inspection.
 
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 
 const OUT = "/tmp/familiar-studio-smoke";
 const VIEWPORT = { width: 1440, height: 900 };
+const BASE_URL = process.env.COVEN_CAVE_SMOKE_URL ?? "http://localhost:3000";
 
 const results = [];
 function rec(step, status, detail = "") {
@@ -67,7 +68,7 @@ async function main() {
     if (msg.type() === "error") consoleErrors.push("[console] " + msg.text());
   });
 
-  await page.goto("http://localhost:3000", { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page.waitForTimeout(3500); // hydrate + initial data
 
   // Dismiss any onboarding "Open Cave" if it slipped through.
@@ -219,7 +220,7 @@ async function main() {
   await page.waitForTimeout(300);
 
   // ─── Step 9: Archive hides familiar from rail ───────────────────────
-  const archiveBtn = page.locator(".familiar-studio-lifecycle__btn").filter({ hasText: /^archive$/i }).first();
+  const archiveBtn = page.locator(".familiar-studio-lifecycle__btn").filter({ hasText: /^\s*archive\s*$/i }).first();
   const railBefore = await avatars.count();
   if (await archiveBtn.count() > 0) {
     await archiveBtn.click();

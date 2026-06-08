@@ -26,6 +26,10 @@ export function isLoopbackHost(host: string | null) {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
 }
 
+export function isAllowedApiHost(host: string | null, mobileAccessAuthenticated = false) {
+  return mobileAccessAuthenticated || isLoopbackHost(host);
+}
+
 export function sameOrigin(value: string | null, expectedOrigin: string) {
   if (!value) return true;
   try {

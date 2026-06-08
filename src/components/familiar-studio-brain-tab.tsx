@@ -33,6 +33,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [capsOpen, setCapsOpen] = useState(false);
 
   useEffect(() => {
+    setDraftHarness(familiar.harness ?? "");
+    setDraftModel(familiar.model ?? "");
+    setDraftNote(familiar.note ?? "");
+    setToast(null);
+  }, [familiar.id, familiar.harness, familiar.model, familiar.note]);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
