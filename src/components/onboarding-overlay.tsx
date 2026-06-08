@@ -158,6 +158,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
     null,
   );
+  const [confirmCreateNewFamiliar, setConfirmCreateNewFamiliar] =
+    useState(false);
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -191,15 +193,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         throw new Error(json.error ?? "failed to load OpenClaw agents");
       const agents = json.agents ?? [];
       setOpenclawAgents(agents);
-      setSelectedAgentId((current) => {
-        if (current || !agents[0]) return current;
-        setFamiliarName(agents[0].displayName);
-        setFamiliarRole(agents[0].role);
-        setFamiliarDescription(
-          `Connected to OpenClaw agent "${agents[0].id}".`,
-        );
-        return agents[0].id;
-      });
+      setSelectedAgentId((current) =>
+        current && agents.some((agent) => agent.id === current)
+          ? current
+          : null,
+      );
     } catch (err) {
       setAgentsError(
         err instanceof Error ? err.message : "failed to load OpenClaw agents",
@@ -225,12 +223,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           next.some((adapter) => adapter.id === current && adapter.installed)
         )
           return current;
-        return (
-          next.find((adapter) => adapter.installed && adapter.chatSupported)
-            ?.id ??
-          next.find((adapter) => adapter.installed)?.id ??
-          current
-        );
+        return null;
       });
     } catch {
       /* harness availability is advisory; status cards carry setup hints */
@@ -316,7 +309,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
     if (!selectedAgent) {
       setSetupError(
-        "Pick an existing OpenClaw agent, or choose Codex, Claude Code, or Hermes from Available harnesses.",
+        "Pick an existing OpenClaw agent first. Use Available harnesses only when you want to create a new Coven familiar.",
       );
       return;
     }
@@ -356,6 +349,12 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     if (!selectedHarness) {
       setSetupError(
         "Pick an installed harness first, or choose an existing OpenClaw agent.",
+      );
+      return;
+    }
+    if (!confirmCreateNewFamiliar) {
+      setSetupError(
+        "Confirm that you want to create a new Coven familiar before continuing.",
       );
       return;
     }
@@ -626,8 +625,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   Available harnesses
                 </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Pick Codex, Claude Code, Hermes, or any installed Coven
-                  adapter already on this machine.
+                  Choose Codex, Claude Code, Hermes, or another installed Coven
+                  adapter only when you want to create a new familiar bound to
+                  that runtime.
                 </p>
               </div>
               <button
@@ -646,6 +646,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                     onClick={() => {
                       if (!adapter.installed) return;
                       setSelectedHarnessId(adapter.id);
+                      setSelectedAgentId(null);
+                      setConfirmCreateNewFamiliar(false);
                       setFamiliarName(adapter.label);
                       setFamiliarRole("Code Familiar");
                       setFamiliarDescription(
@@ -684,13 +686,34 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 );
               })}
             </div>
+            <label className="mt-3 flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={confirmCreateNewFamiliar}
+                onChange={(e) =>
+                  setConfirmCreateNewFamiliar(e.currentTarget.checked)
+                }
+                disabled={!selectedHarnessId || picking !== null}
+                className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
+              />
+              <span>
+                I understand this creates a new Coven familiar instead of
+                connecting an existing OpenClaw agent.
+              </span>
+            </label>
             <button
               onClick={createLocalFamiliar}
-              disabled={picking !== null || !selectedHarnessId}
+              disabled={
+                picking !== null ||
+                !selectedHarnessId ||
+                !confirmCreateNewFamiliar
+              }
               className="mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[var(--accent-presence)] disabled:opacity-50"
             >
               <Icon name="ph:terminal-window" />
-              {picking === "local" ? "Creating..." : "Use selected harness"}
+              {picking === "local"
+                ? "Creating..."
+                : "Create new Coven familiar"}
             </button>
           </section>
 
@@ -701,8 +724,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   Existing OpenClaw agents
                 </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Pick an existing OpenClaw agent instead when that is the
-                  runtime you already have.
+                  Choose an agent that already exists under ~/.openclaw. This
+                  connects the agent as a familiar without creating a new
+                  OpenClaw agent.
                 </p>
               </div>
               <button
@@ -730,6 +754,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       key={agent.id}
                       onClick={() => {
                         setSelectedAgentId(agent.id);
+                        setSelectedHarnessId(null);
+                        setConfirmCreateNewFamiliar(false);
                         setFamiliarName(agent.displayName);
                         setFamiliarRole(agent.role);
                         setFamiliarDescription(
@@ -773,10 +799,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   Familiar details
                 </h2>
                 <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Name the familiar, describe the job, then bind it to the
-                  selected harness or OpenClaw agent. This is the same setup
-                  path no matter whether the source is Codex, Claude Code,
-                  Hermes, or OpenClaw.
+                  Name the familiar and describe the job after choosing either
+                  an existing OpenClaw agent or a new local harness familiar.
+                  Cave will only create a new familiar after the explicit
+                  confirmation above.
                 </p>
               </div>
               <button
@@ -848,7 +874,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 <Icon name="ph:sparkle" />
                 {picking === "familiar"
                   ? "Connecting..."
-                  : "Connect as familiar"}
+                  : "Connect selected existing agent"}
               </button>
               <button
                 onClick={startDaemon}

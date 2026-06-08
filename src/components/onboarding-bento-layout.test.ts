@@ -55,6 +55,42 @@ assert.match(
   "Setup copy should present Codex, Claude Code, Hermes, and OpenClaw as peer ways to create a first familiar",
 );
 
+assert.doesNotMatch(
+  source,
+  /setSelectedAgentId\(\(current\) => \{[\s\S]*agents\[0\]/,
+  "Setup should not auto-select the first OpenClaw agent",
+);
+
+assert.doesNotMatch(
+  source,
+  /next\.find\(\(adapter\) => adapter\.installed && adapter\.chatSupported\)/,
+  "Setup should not auto-select the first installed harness",
+);
+
+assert.match(
+  source,
+  /confirmCreateNewFamiliar/,
+  "Creating a new local familiar should require an explicit confirmation state",
+);
+
+assert.match(
+  source,
+  /I understand this creates a new Coven familiar/,
+  "Harness creation copy should make new familiar creation explicit",
+);
+
+assert.match(
+  source,
+  /Create new Coven familiar/,
+  "Harness action should say it creates a new familiar",
+);
+
+assert.match(
+  source,
+  /Connect selected existing agent/,
+  "OpenClaw action should say it connects an existing agent",
+);
+
 assert.match(
   source,
   /xl:col-span-8[\s\S]*Familiar details/,
