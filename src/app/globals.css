@@ -2699,3 +2699,92 @@ body {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ────────────────────────────────────────────────
+   Settings · Familiars panel
+   (Phase 5, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.settings-familiars-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.settings-familiars-panel__empty {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: 24px;
+}
+
+.settings-familiars-panel__card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.settings-familiars-panel__card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-familiars-panel__glyph {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.settings-familiars-panel__name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+}
+
+.settings-familiars-panel__harness-pill {
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-elevated);
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.settings-familiars-panel__dl {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 6px 12px;
+  font-size: var(--text-sm);
+}
+
+.settings-familiars-panel__dl dt {
+  color: var(--text-muted);
+}
+
+.settings-familiars-panel__dl dd {
+  color: var(--text-primary);
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-xs);
+}
+
+.settings-familiars-panel__version {
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+
+.settings-familiars-panel__presence {
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}

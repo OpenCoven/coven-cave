@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { PluginsView } from "@/components/plugins-view";
+import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,14 +360,15 @@ function PluginsSection() {
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
 function FamiliarsSection() {
+  // Settings doesn't yet have workspace context — familiars/sessions/responseNeeded
+  // are stubbed as empty until a follow-up spec threads real data through SettingsShell.
+  // Same compromise as PluginsSection above.
   return (
-    <SettingsPage title="Familiars" description="Configure which familiars are visible and their defaults.">
-      <SettingsGroup label="Familiars">
-        <p className="text-[12px] text-[var(--text-muted)]">
-          Familiar configuration lives in the daemon workspace. Edit familiar TOML files directly for now — a UI is coming.
-        </p>
-      </SettingsGroup>
-    </SettingsPage>
+    <SettingsFamiliarsPanel
+      familiars={[]}
+      sessions={[]}
+      responseNeeded={new Set()}
+    />
   );
 }
 
