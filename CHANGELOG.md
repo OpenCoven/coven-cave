@@ -49,6 +49,12 @@ internal audit.
 - **Inbox & Board** demo-mode seeding now only fires when the API returned
   `ok: true` with an empty list. Real API failures render the error and
   empty state instead of being silently masked by `DEMO_*` fixtures.
+- **Phone-class viewport (<768px)** collapses the shell to a single
+  pane. Avatar rail becomes a horizontal top strip with overflow
+  scroll, sidebar nav / list / companion rail hide (⌘B / ⌘\\ / ⌘J
+  still flip the React state for keyboard recall), detail panel
+  takes the full width, Studio drawer height switches to 100dvh so
+  the iOS keyboard doesn't clip its tabs.
 
 ### Fixed
 
