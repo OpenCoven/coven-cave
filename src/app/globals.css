@@ -29,7 +29,7 @@
 
 :root {
   /* ---- Palette (oklch — same colour science as shadcn) ---- */
-  --background: oklch(0.07 0.004 293);
+  --background: #19191c;
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.135 0.005 293);
   --card-foreground: oklch(0.985 0 0);
