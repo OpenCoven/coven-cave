@@ -5,7 +5,7 @@
  *
  * Layout (top to bottom):
  *   1. New chat CTA
- *   2. App destinations (Agents / Inbox / Tasks -- Terminal / Browser -- GitHub)
+ *   2. App destinations (Chats / Sessions / Tasks -- Terminal / Browser -- GitHub)
  *   3. Utility actions footer (Plugins / Automations / Calendar)
  */
 
@@ -18,6 +18,7 @@ import { NotificationBell } from "@/components/notification-bell";
 
 export type FolderMode =
   | "agents"
+  | "sessions"
   | "board"
   | "terminal"
   | "projects"
@@ -58,8 +59,9 @@ const FOLDER_MODES: Array<{
   dividerBefore?: boolean;
 }> = [
   // Primary loop
-  { id: "agents",  label: "Familiars",   iconName: "ph:robot" },
-  { id: "board",   label: "Tasks",       iconName: "ph:kanban" },
+  { id: "agents", label: "Chats", iconName: "ph:chats" },
+  { id: "sessions", label: "Sessions", iconName: "ph:rows" },
+  { id: "board", label: "Tasks", iconName: "ph:kanban" },
   // Tools
   { id: "terminal", label: "Terminal",   iconName: "ph:terminal-window", dividerBefore: true },
   { id: "browser",  label: "Browser",    iconName: "ph:globe" },
@@ -180,7 +182,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   const showNotifications =
     !!onOpenInbox && !!onNotificationPrefsChanged && !!inboxPrefs;
-  const primaryFolderModes = visibleFolderModes.filter((fm) => fm.id === "agents" || fm.id === "board");
+  const primaryFolderModes = visibleFolderModes.filter((fm) => fm.id === "agents" || fm.id === "sessions" || fm.id === "board");
   const toolFolderModes = visibleFolderModes.filter((fm) => fm.id === "terminal" || fm.id === "browser");
   const addinFolderModes = visibleFolderModes.filter((fm) => fm.id === "github" || fm.id === "library");
 

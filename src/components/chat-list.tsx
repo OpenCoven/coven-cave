@@ -7,9 +7,6 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 
 type Props = {
   familiar: Familiar;
@@ -66,8 +63,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [activeId, setActiveId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
-  const glyphOverrides = useGlyphOverrides();
-  const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -151,12 +146,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       {/* ── Agent dossier + command strip ── */}
       <header className="agent-panel-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
-            aria-hidden
-          >
-            <FamiliarGlyph glyph={glyph} size="md" />
-          </span>
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-2">
               <FamiliarSwitcher familiar={familiar} familiars={familiars} onSelect={onFamiliarSelect} />

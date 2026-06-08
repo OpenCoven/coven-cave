@@ -31,7 +31,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/daemon", hint: "daemon status", description: "Show `coven daemon status` inline.", section: "daemon" },
 
   // Sessions
-  { name: "/sessions", hint: "open list", description: "Back to the chat list (this familiar's sessions).", section: "view" },
+  { name: "/sessions", hint: "all sessions", description: "Open all sessions across familiars and harnesses.", section: "view" },
   { name: "/attach", hint: "open session", description: "Open a specific daemon session by id.", argPlaceholder: "session-id", section: "view" },
   { name: "/tui", hint: "open in Coven Code", description: "Open the current session in the external Coven Code TUI.", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },

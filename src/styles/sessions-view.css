@@ -16,12 +16,30 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 
+.sessions-view-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
 .sessions-view-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-  flex: 1;
+  display: block;
   min-width: 0;
+}
+
+.sessions-view-subtitle {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-muted);
 }
 
 .sessions-view-actions {
@@ -253,6 +271,15 @@
   border-radius: 4px;
   padding: 1px 5px;
   text-transform: capitalize;
+}
+.session-card-harness {
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-panel));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
 }
 .session-card-ts {
   font-size: 10px;

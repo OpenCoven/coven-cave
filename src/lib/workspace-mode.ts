@@ -1,5 +1,6 @@
 export type WorkspaceMode =
   | "agents"
+  | "sessions"
   | "board"
   | "inbox"
   | "plugins"

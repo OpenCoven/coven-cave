@@ -8,8 +8,14 @@ const comuxView = await readFile(new URL("./comux-view.tsx", import.meta.url), "
 
 assert.match(
   sidebar,
-  /\{ id: "agents",\s+label: "Familiars"/,
-  "Sidebar should expose Familiars as the first-class familiar work destination",
+  /\{ id: "agents",\s+label: "Chats"/,
+  "Sidebar should expose Chats as the first-class familiar chat destination",
+);
+
+assert.match(
+  sidebar,
+  /\{ id: "sessions",\s+label: "Sessions"/,
+  "Sidebar should expose Sessions as a cross-harness session destination",
 );
 
 assert.doesNotMatch(
@@ -126,7 +132,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /shellAgentPane === "chat" \? \([\s\S]*<AgentPanel[\s\S]*\) : \([\s\S]*<BrowserPane label="default" \/>/,
+  /shellAgentPane === "chat" \? \([\s\S]*<AgentPanel[\s\S]*\) : \([\s\S]*<BrowserPane[\s\S]*label="default"[\s\S]*\/>/,
   "Workspace should render chat directly in the shell sidepanel instead of routing through Agents",
 );
 

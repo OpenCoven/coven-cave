@@ -40,3 +40,15 @@ assert.match(
   /onClick=\{\(\) => \{ setManuallyToggled\(true\); setOpen\(\(v\) => !v\); \}\}/,
   "Tool group header clicks should pin manual open/closed state",
 );
+
+assert.match(
+  source,
+  /<header className="flex w-full items-center gap-2/,
+  "Chat header should span the full side-panel width",
+);
+
+assert.match(
+  source,
+  /<FamiliarSwitcher familiar=\{familiar\} familiars=\{familiars\} onSelect=\{onFamiliarSelect\} \/>/,
+  "Chat header should expose familiar switching through the side-panel picker",
+);

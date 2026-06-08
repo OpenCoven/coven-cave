@@ -47,6 +47,22 @@ function originLabel(origin: SessionOrigin | undefined): string {
   return map[origin] ?? origin;
 }
 
+function harnessLabel(harness: string | undefined): string {
+  if (!harness) return "";
+  const key = harness.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (key === "openclaw" || key === "coven" || key === "covendaemon") return "OpenClaw";
+  if (key === "hermes") return "Hermes";
+  if (key === "codex" || key === "openaicodex") return "Codex";
+  if (key === "claude" || key === "claudecode" || key === "anthropicclaude") return "Claude Code";
+  return harness
+    .split(/[-_\s/]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+const ALL_HARNESS_SCOPE = "OpenClaw · Hermes · Codex · Claude Code";
+
 // ── ViewSwitcher ──────────────────────────────────────────────────────────────
 
 function ViewSwitcher({
@@ -263,6 +279,7 @@ function SessionCard({
   const ts = shortRelTime(session.updated_at || session.created_at);
   const title = stripLeadingTrailingEmoji(session.title || "Untitled session");
   const label = originLabel(session.origin);
+  const harness = harnessLabel(session.harness);
   const archived = !!session.archived_at;
 
   return (
@@ -326,6 +343,7 @@ function SessionCard({
       )}
       <div className="session-card-footer">
         {archived && <span className="session-card-archived-badge">archived</span>}
+        {harness && <span className="session-card-harness">{harness}</span>}
         {label && <span className="session-card-origin">{label}</span>}
         {ts && <span className="session-card-ts">{ts}</span>}
       </div>
@@ -365,6 +383,7 @@ function SessionRowItem({
   const ts = shortRelTime(session.updated_at || session.created_at);
   const title = stripLeadingTrailingEmoji(session.title || "Untitled session");
   const label = originLabel(session.origin);
+  const harness = harnessLabel(session.harness);
   const archived = !!session.archived_at;
 
   return (
@@ -407,6 +426,7 @@ function SessionRowItem({
         </div>
       </div>
       <div className="session-row-meta">
+        {harness && <span className="session-card-harness">{harness}</span>}
         {label && <span className="session-card-origin">{label}</span>}
         {ts && <span className="session-card-ts">{ts}</span>}
         <div className="session-row-menu-wrap">
@@ -774,12 +794,18 @@ export function SessionsView({
   const title = activeFamiliar
     ? `${activeFamiliar.display_name} — Sessions`
     : "All Sessions";
+  const subtitle = activeFamiliar
+    ? harnessLabel(activeFamiliar.harness)
+    : ALL_HARNESS_SCOPE;
 
   return (
     <div className="sessions-view">
       {/* Header */}
       <div className="sessions-view-header">
-        <span className="sessions-view-title">{title}</span>
+        <div className="sessions-view-title-wrap">
+          <span className="sessions-view-title">{title}</span>
+          {subtitle && <span className="sessions-view-subtitle">{subtitle}</span>}
+        </div>
         <div className="sessions-view-actions">
           <button
             type="button"

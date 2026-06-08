@@ -31,6 +31,24 @@ assert.match(
 
 assert.match(
   source,
+  /\{ id: "agents",\s+label: "Chats"/,
+  "Sidebar should expose Chats as the familiar chat browser",
+);
+
+assert.match(
+  source,
+  /\{ id: "sessions",\s+label: "Sessions"/,
+  "Sidebar should expose Sessions as a top-level cross-harness session browser",
+);
+
+assert.match(
+  source,
+  /fm\.id === "agents" \|\| fm\.id === "sessions" \|\| fm\.id === "board"/,
+  "Sidebar Work section should include Chats, Sessions, and Tasks",
+);
+
+assert.match(
+  source,
   /<SidebarSection label="Manage" className="sidebar-actions sidebar-actions--footer">/,
   "Utility navigation should sit with the main sidebar sections instead of floating at the bottom",
 );
