@@ -11,6 +11,12 @@ type Props = {
   familiar: Familiar;
   familiars?: Familiar[];
   onSelect?: (id: string) => void;
+  /**
+   * Compact single-line variant used inline alongside toolbar controls.
+   * Shows the familiar avatar + name only (no role caption) at toolbar
+   * height (h-7) and keeps the trigger right-sized for action rows.
+   */
+  compact?: boolean;
 };
 
 /**
@@ -19,15 +25,20 @@ type Props = {
  * a compact dropdown listing all familiars so the user can switch without
  * leaving the chat panel.
  */
-export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) {
+export function FamiliarSwitcher({ familiar, familiars = [], onSelect, compact = false }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const glyphOverrides = useGlyphOverrides();
   const glyph = resolveFamiliarGlyph(familiar, glyphOverrides);
-  const triggerClassName = [
-    "focus-ring group flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-1.5 -ml-2 transition-colors",
-    "hover:bg-[var(--bg-raised)]/60",
-  ].join(" ");
+  const triggerClassName = compact
+    ? [
+        "focus-ring group inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-2 transition-colors",
+        "hover:bg-[var(--bg-raised)]/60",
+      ].join(" ")
+    : [
+        "focus-ring group flex w-full min-w-0 items-center justify-between gap-3 rounded-lg px-2 py-1.5 -ml-2 transition-colors",
+        "hover:bg-[var(--bg-raised)]/60",
+      ].join(" ");
 
   // Close on outside click / Esc
   useEffect(() => {
@@ -48,6 +59,21 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
 
   // Don't render a switcher if there's only one familiar
   if (familiars.length <= 1) {
+    if (compact) {
+      return (
+        <div className="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-2">
+          <span
+            className="grid h-4 w-4 shrink-0 place-items-center rounded-sm border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+            aria-hidden
+          >
+            <FamiliarGlyph glyph={glyph} size="sm" />
+          </span>
+          <span className="min-w-0 truncate text-[12px] font-medium text-[var(--text-primary)]">
+            {familiar.display_name}
+          </span>
+        </div>
+      );
+    }
     return (
       <div className="relative min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -66,7 +92,7 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
   }
 
   return (
-    <div ref={ref} className="relative min-w-0 flex-1">
+    <div ref={ref} className={compact ? "relative inline-block" : "relative min-w-0 flex-1"}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -75,27 +101,48 @@ export function FamiliarSwitcher({ familiar, familiars = [], onSelect }: Props) 
         aria-expanded={open}
         aria-label={`Switch familiar from ${familiar.display_name}`}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span
-            className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
-            aria-hidden
-          >
-            <FamiliarGlyph glyph={glyph} size="sm" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]">
+        {compact ? (
+          <>
+            <span
+              className="grid h-4 w-4 shrink-0 place-items-center rounded-sm border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+              aria-hidden
+            >
+              <FamiliarGlyph glyph={glyph} size="sm" />
+            </span>
+            <span className="min-w-0 truncate max-w-[120px] text-[12px] font-medium text-[var(--text-primary)]">
               {familiar.display_name}
             </span>
-            <span className="block truncate text-[10px] leading-tight text-[var(--text-muted)]">
-              {familiar.role || familiar.harness || "Familiar"}
+            <Icon
+              name="ph:caret-up-down-bold"
+              width={10}
+              className="shrink-0 text-[var(--text-muted)] opacity-60 transition-opacity group-hover:opacity-100"
+            />
+          </>
+        ) : (
+          <>
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]"
+                aria-hidden
+              >
+                <FamiliarGlyph glyph={glyph} size="sm" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[15px] font-semibold leading-tight text-[var(--text-primary)]">
+                  {familiar.display_name}
+                </span>
+                <span className="block truncate text-[10px] leading-tight text-[var(--text-muted)]">
+                  {familiar.role || familiar.harness || "Familiar"}
+                </span>
+              </span>
             </span>
-          </span>
-        </span>
-        <Icon
-          name="ph:caret-up-down-bold"
-          width={11}
-          className="shrink-0 text-[var(--text-muted)] opacity-60 transition-opacity group-hover:opacity-100"
-        />
+            <Icon
+              name="ph:caret-up-down-bold"
+              width={11}
+              className="shrink-0 text-[var(--text-muted)] opacity-60 transition-opacity group-hover:opacity-100"
+            />
+          </>
+        )}
       </button>
 
       {open ? (

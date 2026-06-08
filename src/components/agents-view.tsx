@@ -6,6 +6,7 @@ import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { CovenFloor } from "@/components/coven-floor";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -412,6 +413,14 @@ export function AgentsView({
 
           {/* Actions flush right */}
           <div className="flex items-center gap-1.5 py-1.5">
+            {(scope === "sessions" || scope === "conversation") && activeFamiliar && (
+              <FamiliarSwitcher
+                familiar={activeFamiliar}
+                familiars={familiars}
+                onSelect={onSetActiveFamiliar}
+                compact
+              />
+            )}
             {(scope === "sessions" || scope === "conversation") && (
               <div className="relative">
                 <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
