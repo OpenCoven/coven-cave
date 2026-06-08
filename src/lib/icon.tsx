@@ -65,6 +65,7 @@ export const ICON_NAMES = [
   "ph:mask-happy",
   "ph:cursor-click",
   "ph:check-circle",
+  "ph:warning",
   "ph:warning-circle",
   "ph:paperclip",
   "ph:plus",

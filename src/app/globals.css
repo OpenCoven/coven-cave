@@ -1405,6 +1405,48 @@ body {
   margin-top: var(--space-2);
 }
 
+/* Foundations PR — ErrorState primitive (mirrors .ui-empty-state layout
+   with a danger accent). role="alert" announces via assistive tech. */
+.ui-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.ui-error-state--compact {
+  padding: 16px 12px;
+  gap: 4px;
+}
+.ui-error-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+.ui-error-state-headline {
+  font-size: var(--text-base);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.ui-error-state-subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  max-width: 36ch;
+}
+.ui-error-state-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
 /* ---- Skeleton ----------------------------------------------- */
 @keyframes ui-skeleton-shimmer {
   0%   { background-position: 200% 0; }
