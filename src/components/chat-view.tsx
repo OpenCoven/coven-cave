@@ -226,30 +226,25 @@ function ChatEmptyState({
 }) {
 
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-6 select-none">
-      {/* Name + tagline */}
-      <h2 className="mb-1 text-base font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
+    <div className="cave-chat-empty select-none">
+      <div className="cave-chat-empty-mark">
+        <Icon name="ph:sparkle-bold" width={18} aria-hidden />
+      </div>
+      <h2 className="mb-1 text-base font-semibold text-[var(--text-primary)]">
         {familiar.display_name}
       </h2>
-      <p className="mb-6 text-[13px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+      <p className="mb-6 text-[13px] text-[var(--text-muted)]">
         Runs on{" "}
-        <code
-          className="rounded px-1 py-0.5 font-mono text-[11px]"
-          style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
-        >
+        <code className="rounded px-1 py-0.5 font-mono text-[11px] bg-[var(--bg-raised)] text-[var(--text-secondary)]">
           {familiar.harness}
         </code>
         {" "}· type{" "}
-        <kbd
-          className="rounded px-1 py-0.5 font-mono text-[11px]"
-          style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.5)" }}
-        >
+        <kbd className="rounded px-1 py-0.5 font-mono text-[11px] bg-[var(--bg-raised)] text-[var(--text-secondary)]">
           /
         </kbd>
         {" "}for commands
       </p>
 
-      {/* Starter prompt chips */}
       {onPrompt && (
         <div className="flex flex-wrap justify-center gap-2">
           {STARTER_PROMPTS.map((p) => (
@@ -257,20 +252,7 @@ function ChatEmptyState({
               key={p}
               type="button"
               onClick={() => onPrompt(p)}
-              className="rounded-full px-3 py-1.5 text-[12px] transition-colors"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.07)",
-                color: "rgba(255,255,255,0.5)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.09)";
-                (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.75)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)";
-                (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.5)";
-              }}
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/55 px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             >
               {p}
             </button>
@@ -278,8 +260,7 @@ function ChatEmptyState({
         </div>
       )}
 
-      {/* Keyboard hint */}
-      <p className="mt-8 text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+      <p className="mt-8 text-[11px] text-[var(--text-muted)]">
         {modKey}↵ to send
       </p>
     </div>
@@ -357,7 +338,7 @@ function ChatContextStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, onSessionStarted, onSlashCommand, onOpenOnboarding },
+  { familiar, sessionId, session, projectRoot, daemonRunning, onSessionStarted, onSlashCommand, onOpenOnboarding },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -853,21 +834,43 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 
   return (
-    <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
-      {/* Chat header: familiar name + harness badge (switch from the rail) */}
-      <header className="flex w-full flex-col gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
-              {familiar.display_name}
-            </h2>
+    <section className="cave-chat-messenger flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+      <header className="cave-chat-messenger-header">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="cave-agent-avatar" aria-hidden>
+            <Icon name="ph:sparkle-bold" width={15} />
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <span className={[
-              "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-              "bg-[var(--bg-raised)]/60 text-[var(--text-muted)]",
-            ].join(" ")}>
-              <span className="font-mono">{familiar.harness ?? "—"}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
+                {familiar.display_name}
+              </h2>
+              <span className={[
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                daemonRunning === false
+                  ? "bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]"
+                  : "bg-[color-mix(in_oklch,var(--color-success)_16%,transparent)] text-[var(--color-success)]",
+              ].join(" ")}>
+                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                {daemonRunning === false ? "offline" : "ready"}
+              </span>
+            </div>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+              <span className="font-mono text-[var(--text-secondary)]">{familiar.harness ?? "harness unknown"}</span>
+              <span aria-hidden>·</span>
+              <span className="font-mono text-[var(--text-secondary)]">{familiar.model ?? "model unknown"}</span>
+              {(session?.project_root ?? projectRoot) ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="min-w-0 truncate">{repoName(session?.project_root ?? projectRoot)}</span>
+                </>
+              ) : null}
+            </div>
+          </div>
+          <div className="ml-auto hidden items-center gap-2 md:flex">
+            <span className="cave-header-stat">
+              <Icon name="ph:chats" width={12} aria-hidden />
+              conversation
             </span>
           </div>
         </div>
@@ -877,9 +880,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           historyState={historyState}
         />
       </header>
-      {/* Transcript */}
-      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div className="space-y-6">
+      <div ref={scrollRef} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
+        <div className="cave-chat-thread">
           {turns.length === 0 ? (
             historyState === "loading" ? (
               <ChatHistoryNotice title="Loading chat history" body="Restoring this session transcript..." />
@@ -888,7 +890,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             ) : historyState === "error" ? (
               <ChatHistoryNotice title="Could not load chat history" body="The transcript request failed. You can still continue this session." />
             ) : (
-              <ChatEmptyState familiar={familiar} modKey={keys.mod} />
+              <ChatEmptyState familiar={familiar} modKey={keys.mod} onPrompt={(text) => {
+                setInput(text);
+                inputRef.current?.focus();
+              }} />
             )
           ) : null}
           {turns.map((t, i) => {
@@ -931,9 +936,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       ) : null}
 
-      {/* Composer — Codex style */}
-      <footer className="px-6 pb-5 pt-2">
-        <div className="relative">
+      <footer className="cave-composer-dock">
+        <div className="relative mx-auto w-full max-w-[1180px]">
           {slashSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1">
@@ -971,7 +975,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </div>
           ) : null}
 
-          <div className="rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 shadow-lg">
+          <div className="cave-composer-panel">
             {attachments.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                 {attachments.map((attachment) => (
@@ -1001,7 +1005,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onKeyDown={onComposerKey}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…`}
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
               <div className="flex items-center gap-1 text-[var(--text-muted)]">
@@ -1093,10 +1097,23 @@ function ThinkingIndicator({ since }: { since: string }) {
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
 
-function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familiar: Familiar; showTimestamp?: boolean }) {
+function TurnRow({
+  turn,
+  familiar,
+  showTimestamp = true,
+}: {
+  turn: Turn;
+  familiar: Familiar;
+  showTimestamp?: boolean;
+}) {
   if (turn.role === "system" || turn.role === "user") {
     return (
-      <div>
+      <div className={turn.role === "user" ? "cave-turn-user" : "cave-turn-system"}>
+        <div className="cave-turn-user-meta">
+          <span>{turn.role === "user" ? "You" : "System"}</span>
+          {showTimestamp && turn.createdAt ? <span>{fmtTime(turn.createdAt)}</span> : null}
+          {turn.attachments?.length ? <span>{turn.attachments.length} files</span> : null}
+        </div>
         <MessageBubble
           role={turn.role}
           content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
@@ -1111,31 +1128,46 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
   const duration = fmtDuration(turn.durationMs);
   const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
+  const toolCount = turn.tools?.length ?? 0;
+  const turnStatus = turn.error ? "error" : turn.pending ? "running" : "complete";
 
   return (
     <div className="cave-turn-assistant">
-      {/* Content column */}
+      <aside className="cave-turn-avatar" aria-hidden>
+        <div className="cave-turn-avatar-ring">
+          <Icon name="ph:sparkle-bold" width={14} />
+        </div>
+      </aside>
+
       <div className="cave-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
-        {turn.pending && !visible ? (
-          <ThinkingIndicator since={turn.createdAt} />
-        ) : (
-          <MessageBubble
-            role="assistant"
-            content={visible || (turn.pending ? "…" : "")}
-            timestamp={turn.createdAt}
-            showTimestamp={showTimestamp}
-            pending={turn.pending}
-            isError={turn.error}
-          />
-        )}
-        {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
-        {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
-        {duration && !turn.pending ? (
-          <div className="mt-1 flex items-center gap-2 text-[10px] text-[var(--text-muted)] opacity-0 transition-opacity group-hover/turn:opacity-100">
-            <span>·</span>
-            <span>worked for {duration}</span>
-          </div>
-        ) : null}
+        <div className="cave-turn-assistant-meta">
+          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{familiar.display_name}</span>
+          <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
+            {turnStatus}
+          </span>
+          {showTimestamp && turn.createdAt ? <span>{fmtTime(turn.createdAt)}</span> : null}
+          {duration && !turn.pending ? <span>worked {duration}</span> : null}
+          {toolCount ? <span>{toolCount} tool{toolCount === 1 ? "" : "s"}</span> : null}
+          {reasoning ? <span>reasoning</span> : null}
+        </div>
+
+        <div className="cave-turn-assistant-bubble">
+          {turn.pending && !visible ? (
+            <ThinkingIndicator since={turn.createdAt} />
+          ) : (
+            <MessageBubble
+              role="assistant"
+              content={visible || (turn.pending ? "…" : "")}
+              timestamp={turn.createdAt}
+              showTimestamp={false}
+              pending={turn.pending}
+              isError={turn.error}
+              label={familiar.display_name}
+            />
+          )}
+          {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
+          {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+        </div>
       </div>
     </div>
   );
@@ -1143,9 +1175,12 @@ function TurnRow({ turn, familiar, showTimestamp = true }: { turn: Turn; familia
 
 function ReasoningBlock({ reasoning }: { reasoning: string }) {
   return (
-    <details className="mt-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-3 py-2 text-[12px] text-[var(--text-muted)]">
-      <summary className="cursor-pointer select-none text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
-        Reasoning
+    <details className="cave-reasoning-block mt-3">
+      <summary className="cave-tool-summary">
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="ph:brain" width={12} aria-hidden />
+          Reasoning
+        </span>
       </summary>
       <div className="mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">
         <RichText text={reasoning} />
@@ -1155,12 +1190,21 @@ function ReasoningBlock({ reasoning }: { reasoning: string }) {
 }
 
 function ToolGroup({ tools }: { tools: ToolEvent[] }) {
+  const running = tools.filter((tool) => tool.status === "running").length;
+  const errors = tools.filter((tool) => tool.status === "error").length;
+  const completed = tools.length - running - errors;
+
   return (
-    <details className="mt-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-3 py-2">
-      <summary className="cursor-pointer select-none text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">
-        Tool use
-        <span className="ml-2 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
-          {tools.length}
+    <details className="cave-tool-group mt-3">
+      <summary className="cave-tool-summary">
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="ph:wrench" width={12} aria-hidden />
+          Tool activity
+        </span>
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} error</span> : null}
+          {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
       </summary>
       <div className="mt-2 space-y-2 border-t border-[var(--border-hairline)]/70 pt-2">
@@ -1172,11 +1216,12 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   return (
-    <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-2">
+    <div className="cave-tool-block">
       <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
+        <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
         <span className={[
-          "rounded-full px-1.5 py-0.5 font-mono text-[10px]",
+          "rounded px-1.5 py-0.5 font-mono text-[10px]",
           tool.status === "error"
             ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
             : tool.status === "running"

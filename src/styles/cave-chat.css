@@ -411,19 +411,123 @@
    BUBBLE VARIANTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* User bubble — lavender accent, right-aligned */
-/* User bubble — lavender accent, right-aligned */
+/* Workbench shell */
+.cave-chat-workbench {
+  background:
+    linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 28%, transparent), transparent 180px),
+    var(--bg-base);
+}
+
+.cave-chat-workbench-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 82%, transparent);
+  padding: 14px 18px 12px;
+  box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
+}
+
+.cave-agent-glyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 28%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  color: var(--accent-presence);
+  box-shadow: 0 1px 8px oklch(0 0 0 / 18%);
+}
+
+.cave-header-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  padding: 0 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.cave-chat-transcript {
+  padding: 26px clamp(16px, 3vw, 34px) 30px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+.cave-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
+.cave-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: min(460px, 60vh);
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.cave-chat-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 14px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
+  color: var(--accent-presence);
+}
+
+/* User turn — compact operator input, right-aligned */
+.cave-turn-user,
+.cave-turn-system {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.cave-turn-system {
+  align-items: stretch;
+}
+
+.cave-turn-user-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 2px 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.cave-turn-system .cave-turn-user-meta {
+  justify-content: flex-start;
+}
+
 .cave-bubble-user {
-  background: var(--accent-presence);
-  color: oklch(0.98 0 0);
-  border-radius: 18px 18px 4px 18px;
-  padding: 10px 14px;
-  max-width: min(80%, 520px);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  color: var(--text-primary);
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  padding: 10px 13px;
+  max-width: min(78%, 640px);
   word-break: break-word;
   overflow-wrap: anywhere;
   box-shadow:
-    0 1px 3px oklch(0 0 0 / 25%),
-    0 0 0 1px color-mix(in oklch, var(--accent-presence) 80%, transparent);
+    0 1px 3px oklch(0 0 0 / 18%),
+    inset 2px 0 0 color-mix(in oklch, var(--accent-presence) 62%, transparent);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -438,17 +542,17 @@
 }
 
 .cave-bubble-user a {
-  color: oklch(0.98 0 0);
-  text-decoration-color: oklch(0.98 0 0 / 50%);
+  color: var(--accent-presence-soft);
+  text-decoration-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
 }
 .cave-bubble-user a:hover {
-  text-decoration-color: oklch(0.98 0 0);
+  text-decoration-color: var(--accent-presence);
 }
 
 .cave-bubble-user :not(pre) > code {
-  background: oklch(0 0 0 / 18%);
-  color: oklch(0.98 0 0);
-  border-color: oklch(0 0 0 / 12%);
+  background: color-mix(in oklch, var(--accent-presence) 13%, transparent);
+  color: color-mix(in oklch, var(--accent-presence) 82%, var(--text-primary));
+  border-color: color-mix(in oklch, var(--accent-presence) 20%, transparent);
 }
 
 /* Assistant bubble — transparent, full width */
@@ -461,8 +565,43 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 .cave-turn-assistant {
-  display: block;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
   width: 100%;
+}
+
+.cave-turn-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding-top: 3px;
+}
+
+.cave-turn-ordinal {
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.cave-turn-node {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-raised));
+  color: var(--accent-presence);
+}
+
+.cave-turn-rail-line {
+  width: 1px;
+  min-height: 18px;
+  flex: 1;
+  background: linear-gradient(to bottom, var(--border-hairline), transparent);
 }
 
 .cave-turn-avatar {
@@ -488,6 +627,171 @@
   min-width: 0;
   width: min(100%, 920px);
   max-width: 920px;
+}
+
+.cave-turn-card {
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
+  box-shadow:
+    0 10px 30px oklch(0 0 0 / 12%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+.cave-turn-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 48%, transparent);
+  padding: 10px 13px;
+}
+
+.cave-turn-card-body {
+  padding: 13px;
+}
+
+.cave-turn-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.cave-turn-status--complete {
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
+.cave-turn-status--running {
+  background: color-mix(in oklch, var(--color-warning) 14%, transparent);
+  color: var(--color-warning);
+}
+
+.cave-turn-status--error {
+  background: color-mix(in oklch, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+.cave-reasoning-block,
+.cave-tool-group {
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-panel) 36%, transparent);
+  padding: 9px 10px;
+}
+
+.cave-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cave-tool-summary::marker {
+  color: var(--text-muted);
+}
+
+.cave-tool-count {
+  border: 1px solid var(--border-hairline);
+  border-radius: 5px;
+  padding: 2px 5px;
+  color: var(--text-secondary);
+}
+
+.cave-tool-count--running {
+  border-color: color-mix(in oklch, var(--color-warning) 26%, transparent);
+  color: var(--color-warning);
+}
+
+.cave-tool-count--error {
+  border-color: color-mix(in oklch, var(--color-danger) 28%, transparent);
+  color: var(--color-danger);
+}
+
+.cave-tool-block {
+  border: 1px solid var(--border-hairline);
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--bg-base) 58%, transparent);
+  padding: 9px;
+}
+
+.cave-composer-dock {
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
+  background:
+    linear-gradient(to top, var(--bg-base), color-mix(in oklch, var(--bg-base) 82%, transparent));
+  padding: 10px clamp(16px, 3vw, 34px) 18px;
+}
+
+.cave-composer-panel {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  box-shadow:
+    0 14px 42px oklch(0 0 0 / 22%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.cave-composer-panel:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-strong));
+  box-shadow:
+    0 16px 46px oklch(0 0 0 / 26%),
+    0 0 0 1px var(--ring-focus-soft),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.cave-composer-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 40%, transparent);
+  padding: 0 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .cave-chat-workbench-header {
+    padding: 12px 14px 10px;
+  }
+
+  .cave-chat-transcript {
+    padding: 18px 12px 22px;
+  }
+
+  .cave-turn-assistant {
+    grid-template-columns: 1fr;
+  }
+
+  .cave-turn-rail {
+    display: none;
+  }
+
+  .cave-turn-content,
+  .cave-bubble-user {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .cave-composer-dock {
+    padding: 8px 12px 12px;
+  }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
