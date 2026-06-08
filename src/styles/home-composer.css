@@ -49,13 +49,14 @@
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
+  box-shadow: 0 8px 32px color-mix(in oklch, var(--text-primary) 12%, transparent),
+              0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .home-composer-card:focus-within {
   border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.22),
+  box-shadow: 0 8px 40px color-mix(in oklch, var(--text-primary) 15%, transparent),
               0 0 0 1px color-mix(in oklch, var(--accent-presence) 20%, transparent);
 }
 
@@ -200,7 +201,7 @@
 }
 
 .hc-send-btn:hover:not(:disabled) {
-  background: oklch(0.7 0.18 280);
+  background: color-mix(in oklch, var(--accent-presence) 85%, #000);
   transform: scale(1.05);
 }
 
