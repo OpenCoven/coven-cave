@@ -313,20 +313,35 @@ export function CommandPalette({
           }}
           onKeyDown={onComposerKey}
           placeholder="Search familiars · chats · cards · memory · commands…"
+          aria-label="Search and jump to anything"
+          aria-controls="command-palette-listbox"
+          aria-activedescendant={
+            rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
+          }
           className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
-        <ul className="max-h-[60vh] overflow-y-auto py-1">
+        <ul
+          id="command-palette-listbox"
+          role="listbox"
+          className="max-h-[60vh] overflow-y-auto py-1"
+        >
           {rows.length === 0 ? (
-            <li className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">No matches.</li>
+            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">No matches.</li>
           ) : null}
           {rows.map((row, i) => {
             const active = i === activeIdx;
             return (
-              <li key={row.id}>
+              <li
+                key={row.id}
+                role="option"
+                id={`command-palette-option-${i}`}
+                aria-selected={active}
+              >
                 <button
+                  type="button"
+                  tabIndex={-1}
                   onMouseEnter={() => setActiveIdx(i)}
                   onClick={() => fire(row)}
-                  aria-current={active ? "true" : undefined}
                   className={`focus-ring-inset flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left text-sm transition-colors ${
                     active
                       ? "border-l-[var(--accent-presence)] bg-[var(--bg-hover)]"
