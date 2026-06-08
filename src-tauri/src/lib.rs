@@ -8,7 +8,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+    Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
 
 fn coven_tray_icon() -> Image<'static> {
@@ -384,16 +384,65 @@ mod tests {
 mod browser;
 mod pty;
 
-/// Open a URL in the system default browser.
+fn validate_shell_open_url(url: &str) -> Result<(), String> {
+    let parsed = Url::parse(url).map_err(|_| "shell_open requires a valid URL".to_string())?;
+
+    match parsed.scheme() {
+        "http" | "https" => Ok(()),
+        _ => Err("shell_open only supports http(s) URLs".to_string()),
+    }
+}
+
+/// Open an http(s) URL in the system default browser.
 #[tauri::command]
 fn shell_open(url: String) -> Result<(), String> {
+    validate_shell_open_url(&url)?;
+
     #[cfg(target_os = "macos")]
-    { std::process::Command::new("open").arg(&url).spawn().map_err(|e| e.to_string())?; }
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     #[cfg(target_os = "windows")]
-    { std::process::Command::new("cmd").args(["/c", "start", "", &url]).spawn().map_err(|e| e.to_string())?; }
+    {
+        std::process::Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     #[cfg(target_os = "linux")]
-    { std::process::Command::new("xdg-open").arg(&url).spawn().map_err(|e| e.to_string())?; }
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod shell_open_tests {
+    use super::validate_shell_open_url;
+
+    #[test]
+    fn validates_http_and_https_urls() {
+        assert!(validate_shell_open_url("http://example.test").is_ok());
+        assert!(validate_shell_open_url("https://example.test/?x=1&calc.exe").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_http_schemes() {
+        assert!(validate_shell_open_url("file:///C:/Windows/System32/calc.exe").is_err());
+        assert!(validate_shell_open_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_urls() {
+        assert!(validate_shell_open_url("example.test").is_err());
+        assert!(validate_shell_open_url("https://").is_err());
+    }
 }
 
 #[tauri::command]
