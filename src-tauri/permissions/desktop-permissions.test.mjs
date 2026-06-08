@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const capability = JSON.parse(readFileSync(new URL("../capabilities/default.json", import.meta.url), "utf8"));
+const defaultCapability = JSON.parse(readFileSync(new URL("../capabilities/default.json", import.meta.url), "utf8"));
+const loopbackBrowserCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-browser.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
@@ -43,14 +46,24 @@ const requiredCommands = [
   "shell_open",
 ];
 
-function capabilityAllowsOrigin(origin) {
+function capabilityAllowsOrigin(capability, origin) {
   const patterns = capability.remote?.urls ?? [];
   return patterns.some((pattern) => new URLPattern(pattern).test(origin));
 }
 
-test("local app origins do not receive terminal permissions", () => {
-  assert.equal(capability.local, false, "packaged local app origins must not receive PTY command permissions");
-  assert.ok(capability.permissions.includes("default"), "default capability should include custom app permissions");
+function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
+  for (const permission of deniedPermissions) {
+    assert.equal(
+      capability.permissions.includes(permission),
+      false,
+      `${capability.identifier} must not grant ${permission}`,
+    );
+  }
+}
+
+test("packaged desktop app can use native browser and terminal commands", () => {
+  assert.equal(defaultCapability.local, true, "packaged local app origin must receive the default capability");
+  assert.ok(defaultCapability.permissions.includes("default"), "default capability should include custom app permissions");
 
   for (const permissionId of requiredPermissionIds) {
     const escapedPermissionId = permissionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -71,12 +84,41 @@ test("local app origins do not receive terminal permissions", () => {
   }
 });
 
-test("packaged sidecar loopback origins can use native browser commands", () => {
-  assert.ok(capabilityAllowsOrigin("http://127.0.0.1:3000/"), "dev 127.0.0.1 origin should be allowed");
-  assert.ok(capabilityAllowsOrigin("http://localhost:3000/"), "dev localhost origin should be allowed");
-  assert.ok(capabilityAllowsOrigin("http://127.0.0.1:64203/"), "packaged random 127.0.0.1 sidecar port should be allowed");
-  assert.ok(capabilityAllowsOrigin("http://localhost:64203/"), "packaged random localhost sidecar port should be allowed");
-  assert.equal(capabilityAllowsOrigin("http://example.com:64203/"), false, "remote non-loopback origins should stay denied");
+test("packaged sidecar loopback origins can use restricted native browser commands only", () => {
+  assert.equal(defaultCapability.remote, undefined, "local default capability must not trust loopback origins");
+
+  assert.ok(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://127.0.0.1:3000/"),
+    "dev 127.0.0.1 origin should be allowed restricted browser IPC",
+  );
+  assert.ok(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://localhost:3000/"),
+    "dev localhost origin should be allowed restricted browser IPC",
+  );
+  assert.ok(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://127.0.0.1:64203/"),
+    "packaged random 127.0.0.1 sidecar port should be allowed restricted browser IPC",
+  );
+  assert.ok(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://localhost:64203/"),
+    "packaged random localhost sidecar port should be allowed restricted browser IPC",
+  );
+  assert.equal(
+    capabilityAllowsOrigin(loopbackBrowserCapability, "http://example.com:64203/"),
+    false,
+    "remote non-loopback origins should stay denied",
+  );
+
+  assertCapabilityDoesNotGrant(loopbackBrowserCapability, [
+    "default",
+    "allow-pty-start",
+    "allow-pty-write",
+    "allow-pty-resize",
+    "allow-pty-stop",
+    "allow-pty-list",
+    "allow-pty-diagnose",
+    "allow-shell-open",
+  ]);
 });
 
 test("privileged PTY commands require the trusted main webview at runtime", () => {

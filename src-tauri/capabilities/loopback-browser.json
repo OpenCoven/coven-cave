@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-browser",
+  "description": "allows loopback browser webviews to use restricted browser IPC only",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-browser-navigate",
+    "allow-browser-set-bounds",
+    "allow-browser-hide",
+    "allow-browser-hide-all-except",
+    "allow-browser-close",
+    "allow-browser-reload",
+    "allow-browser-report-title"
+  ]
+}
