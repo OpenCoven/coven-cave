@@ -93,7 +93,6 @@ export type ShellHandle = {
 function ShellInner({
   familiarRail,
   nav,
-  iconNav,
   list,
   detail,
   agent,
@@ -102,7 +101,6 @@ function ShellInner({
 }: {
   familiarRail?: ReactNode;
   nav: ReactNode;
-  iconNav?: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
   agent?: ReactNode;
@@ -137,7 +135,6 @@ function ShellInner({
 
   const twoPane = !list;
   const hasAgent = !!agent;
-  const hasIconNav = !!iconNav;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
@@ -291,21 +288,6 @@ function ShellInner({
       {topBar}
       <div className="flex flex-1 min-h-0">
         {familiarRail}
-        {/* Left nav tab — persistent full-height strip, mirrors agent tab on the right */}
-        {hasIconNav && (
-          <button
-            type="button"
-            className={`shell-nav-tab${navOpen ? " shell-nav-tab--open" : ""}`}
-            title={navOpen ? "Collapse sidebar (⌘B)" : "Expand sidebar (⌘B)"}
-            aria-label={navOpen ? "Close sidebar" : "Open sidebar"}
-            onClick={() => {
-              if (navOpen) { navRef.current?.collapse(); setNavOpen(false); }
-              else { navRef.current?.expand(); setNavOpen(true); }
-            }}
-          >
-            <Icon name="ph:sidebar-simple" width={15} />
-          </button>
-        )}
         {hasBottom ? (
           <Group
             className="flex-1 min-h-0"

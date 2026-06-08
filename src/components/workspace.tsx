@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SidebarMinimal, FOLDER_MODES, UTILITY_MODES } from "@/components/sidebar-minimal";
-import { Icon } from "@/lib/icon";
+import { SidebarMinimal } from "@/components/sidebar-minimal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
@@ -55,46 +54,6 @@ const SURFACE_LABELS: Record<WorkspaceMode, string> = {
   github: "GitHub",
 };
 
-// Icon-only nav strip shown when the sidebar is collapsed
-function IconNavStrip({
-  mode,
-  onModeChange,
-}: {
-  mode: string;
-  onModeChange: (m: string) => void;
-}) {
-  return (
-    <>
-      {FOLDER_MODES.map((fm) => {
-        return (
-          <button
-            key={fm.id}
-            type="button"
-            title={fm.label}
-            aria-label={fm.label}
-            onClick={() => onModeChange(fm.id)}
-            className={`shell-nav-tab-icon-btn${mode === fm.id ? " shell-nav-tab-icon-btn--active" : ""}`}
-          >
-            <Icon name={fm.iconName} width={15} />
-          </button>
-        );
-      })}
-      <span className="my-1 h-px w-5 bg-[var(--border-hairline)]" />
-      {UTILITY_MODES.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          title={item.label}
-          aria-label={item.label}
-          onClick={() => onModeChange(item.id)}
-        >
-          <Icon name={item.iconName} width={15} />
-        </button>
-      ))}
-    </>
-  );
-}
-
 export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -136,6 +95,23 @@ export function Workspace() {
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
+
+  // One-shot legacy localStorage key sweep: runs once per browser profile,
+  // then marks itself done so it never re-runs.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const swept = window.localStorage.getItem("cave:legacy-keys-swept");
+    if (swept === "1") return;
+    const orphans = [
+      "cave:agent-pane-lock",     // stripLock
+      "cave:agent-pane",          // shellAgentPane
+      "cave:sidebar-icon-strip",  // legacy strip state, if any
+    ];
+    for (const k of orphans) {
+      try { window.localStorage.removeItem(k); } catch { /* ignore */ }
+    }
+    window.localStorage.setItem("cave:legacy-keys-swept", "1");
+  }, []);
 
   useEffect(() => {
     setActiveFamiliar(activeId);
@@ -876,17 +852,6 @@ export function Workspace() {
         }
       }}
       onNotificationPrefsChanged={refreshPrefs}
-    />
-  );
-
-  const iconNav = (
-    <IconNavStrip
-      mode={mode}
-      onModeChange={(m) => {
-        shellRef.current?.openNav();
-        if (m === "browser") { setMode("browser"); return; }
-        setMode(m as WorkspaceMode);
-      }}
     />
   );
 
