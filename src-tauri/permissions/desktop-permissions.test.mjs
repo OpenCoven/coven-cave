@@ -8,6 +8,7 @@ const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), 
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
+const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -46,8 +47,8 @@ function capabilityAllowsOrigin(origin) {
   return patterns.some((pattern) => new URLPattern(pattern).test(origin));
 }
 
-test("packaged desktop app can use native browser and terminal commands", () => {
-  assert.equal(capability.local, true, "packaged local app origin must receive the default capability");
+test("local app origins do not receive terminal permissions", () => {
+  assert.equal(capability.local, false, "packaged local app origins must not receive PTY command permissions");
   assert.ok(capability.permissions.includes("default"), "default capability should include custom app permissions");
 
   for (const permissionId of requiredPermissionIds) {
@@ -83,6 +84,19 @@ test("browser event labels use the same native prefix in Rust and React", () => 
   assert.match(browserPane, /return `\$\{NATIVE_BROWSER_LABEL_PREFIX\}\$\{label\}-tab-`;/);
   assert.equal(browserPane.match(/startsWith\(eventPrefix\)/g)?.length, 2);
   assert.equal(browserPane.match(/slice\(eventPrefix\.length\)/g)?.length, 2);
+});
+
+test("pty_start only accepts terminal session metadata", () => {
+  assert.match(
+    ptyRust,
+    /#\[serde\(deny_unknown_fields\)\]\s*pub struct StartOptions \{[\s\S]*?pub thread_id: String,[\s\S]*?pub project_root: Option<String>,[\s\S]*?pub cols: Option<u16>,[\s\S]*?pub rows: Option<u16>,[\s\S]*?\}/,
+    "StartOptions should reject unknown caller-supplied fields",
+  );
+  assert.doesNotMatch(ptyRust, /pub command:/, "pty_start must not accept caller-supplied executables");
+  assert.doesNotMatch(ptyRust, /pub args:/, "pty_start must not accept caller-supplied arguments");
+  assert.doesNotMatch(ptyRust, /pub env:/, "pty_start must not accept caller-supplied environment overrides");
+  assert.match(ptyRust, /let command = default_shell\(\);/, "pty_start should always use the platform default shell");
+  assert.match(ptyRust, /let args = default_shell_args\(\);/, "pty_start should always use platform default shell args");
 });
 
 test("terminal commands use Tauri camelCase command arguments", () => {

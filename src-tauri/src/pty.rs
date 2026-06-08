@@ -66,14 +66,12 @@ impl Drop for PendingPtyStart {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StartOptions {
     pub thread_id: String,
     pub project_root: Option<String>,
-    pub command: Option<String>,
-    pub args: Option<Vec<String>>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
-    pub env: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -105,8 +103,8 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
 
-    let command = options.command.unwrap_or_else(default_shell);
-    let args = options.args.unwrap_or_else(default_shell_args);
+    let command = default_shell();
+    let args = default_shell_args();
     info!("pty_start[{}]: spawning {} {:?}", thread_id, command, args);
     let mut cmd = CommandBuilder::new(&command);
     cmd.args(&args);
@@ -133,15 +131,6 @@ pub fn pty_start(app: AppHandle, options: StartOptions) -> Result<(), String> {
         }
         if std::env::var("LC_ALL").is_err() {
             cmd.env("LC_ALL", "en_US.UTF-8");
-        }
-    }
-    if let Some(extra) = options.env {
-        for (k, v) in extra {
-            if v.is_empty() {
-                cmd.env_remove(&k);
-            } else {
-                cmd.env(k, v);
-            }
         }
     }
     // Drop nesting-tripwires inherited from the Tauri parent.
