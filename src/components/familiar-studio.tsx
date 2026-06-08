@@ -5,6 +5,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
 import type { Familiar } from "@/lib/types";
 
 type Props = {
@@ -124,7 +125,17 @@ export function FamiliarStudio({ familiars }: Props) {
 
         <div className="familiar-studio__body">
           {/* Tab body slots — wired in later tasks. */}
-          {activeTab === "identity" && familiar ? <div data-testid="identity-tab" /> : null}
+          {activeTab === "identity" && familiar ? (
+            <FamiliarStudioIdentityTab
+              familiar={familiar}
+              rawDaemonValues={{
+                display_name: familiars.find((f) => f.id === familiar.id)?.display_name,
+                role: familiars.find((f) => f.id === familiar.id)?.role,
+                pronouns: familiars.find((f) => f.id === familiar.id)?.pronouns,
+                description: familiars.find((f) => f.id === familiar.id)?.description,
+              }}
+            />
+          ) : null}
           {activeTab === "look" && familiar ? <div data-testid="look-tab" /> : null}
           {activeTab === "brain" && familiar ? <div data-testid="brain-tab" /> : null}
           {activeTab === "lifecycle" ? <div data-testid="lifecycle-tab" /> : null}
