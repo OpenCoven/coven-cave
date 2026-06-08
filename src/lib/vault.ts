@@ -13,7 +13,7 @@
  * any file — it lives only in process memory.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -91,10 +91,30 @@ export function saveVaultMap(map: VaultMap): void {
 
 // ── op resolver ───────────────────────────────────────────────────────────────
 
+const OP_REF_PREFIX = "op://";
+const OP_REF_MAX_LENGTH = 2048;
+const OP_REF_FORBIDDEN_CHARS = /[\0\r\n`"$\\<>|;&]/;
+
+export function validateOpRef(ref: string): string | null {
+  if (!ref.startsWith(OP_REF_PREFIX)) return "ref must start with op://";
+  if (ref.length > OP_REF_MAX_LENGTH) return "ref is too long";
+  if (OP_REF_FORBIDDEN_CHARS.test(ref)) return "ref contains invalid characters";
+
+  const path = ref.slice(OP_REF_PREFIX.length);
+  const segments = path.split("/");
+  if (segments.length < 3 || segments.some((segment) => !segment.trim())) {
+    return "ref must include vault, item, and field segments";
+  }
+
+  return null;
+}
+
 /** Call `op read` to fetch a secret reference. Returns null on failure. */
 function opRead(ref: string): string | null {
+  if (validateOpRef(ref)) return null;
+
   try {
-    const value = execSync(`op read "${ref}"`, {
+    const value = execFileSync("op", ["read", ref], {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 8000,

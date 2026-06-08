@@ -14,6 +14,7 @@ import {
   getVaultStatuses,
   loadVaultMap,
   saveVaultMap,
+  validateOpRef,
   type VaultEntry,
 } from "@/lib/vault";
 
@@ -41,7 +42,9 @@ export async function POST(req: NextRequest) {
   const ref = typeof body.ref === "string" ? body.ref.trim() : "";
 
   if (!key) return NextResponse.json({ ok: false, error: "key is required" }, { status: 400 });
-  if (!ref.startsWith("op://")) return NextResponse.json({ ok: false, error: "ref must start with op://" }, { status: 400 });
+
+  const refError = validateOpRef(ref);
+  if (refError) return NextResponse.json({ ok: false, error: refError }, { status: 400 });
 
   const map = loadVaultMap(true);
   const entry: VaultEntry = {
