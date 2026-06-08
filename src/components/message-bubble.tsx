@@ -288,7 +288,14 @@ async function mdToHtml(markdown: string): Promise<string> {
   // serialize to HTML so we can inject our custom Shiki code blocks.
   const { renderAsync } = await import("@create-markdown/preview");
 
-  const blocks: Block[] = parse(markdown);
+  // @create-markdown/core's fenced-code parser rejects any info string that
+  // contains a colon (e.g. ```ts:example.ts), treating the opener as a
+  // paragraph and then mis-reading the closing ``` as a new opener — which
+  // cascades and swallows the rest of the message as a fake code block.
+  // Strip the `:filename` suffix before parsing so only `lang` reaches it.
+  const normalized = markdown.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
+
+  const blocks: Block[] = parse(normalized);
 
   // Render prose via renderAsync (no shiki plugin — we handle code blocks)
   // then swap in our Shiki-rendered code blocks.
