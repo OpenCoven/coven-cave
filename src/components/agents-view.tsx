@@ -418,7 +418,13 @@ export function AgentsView({
               <FamiliarSwitcher
                 familiar={activeFamiliar}
                 familiars={familiars}
-                onSelect={onSetActiveFamiliar}
+                onSelect={(id) => {
+                  onSetActiveFamiliar(id);
+                  if (scope === "conversation") {
+                    setScope("sessions");
+                    window.setTimeout(() => routerRef.current?.goToList(), 0);
+                  }
+                }}
                 compact
               />
             )}
@@ -564,9 +570,16 @@ export function AgentsView({
                 </div>
               ) : (
                 <div className="divide-y divide-[var(--border-hairline)]">
-                  {groupedSessions.map(({ label, sessions: groupSessions }) => (
+                  {groupedSessions.map(({ label, sessions: groupSessions }) => {
+                    // Hide the group header when it's redundant with the top filter:
+                    // grouping by familiar while a single familiar is already selected
+                    // produces exactly one group whose label matches the toolbar pill.
+                    const hideLabel =
+                      label === null ||
+                      (groupBy === "familiar" && activeFamiliarId !== null);
+                    return (
                     <React.Fragment key={label ?? "__ungrouped__"}>
-                      {label !== null && (
+                      {!hideLabel && (
                         <div className="sticky top-0 z-10 bg-[var(--bg-canvas)]/95 backdrop-blur-sm px-5 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--border-hairline)]">
                           {label}
                           <span className="ml-1.5 font-normal opacity-40">{groupSessions.length}</span>
@@ -648,7 +661,8 @@ export function AgentsView({
                         );
                       })}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
