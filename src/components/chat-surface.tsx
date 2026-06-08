@@ -432,7 +432,7 @@ export function ChatSurface({
               </div>
             )}
             {(scope === "sessions" || scope === "conversation") && (
-              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Show active or done sessions">
+              <div className="inline-flex rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-0.5" title="Show active or done sessions" role="group" aria-label="Filter sessions by state">
                 <button type="button" onClick={() => setShowClosed(false)} className={softButton(!showClosed)} aria-pressed={!showClosed}>
                   <Icon name="ph:circle" width={11} />
                   Active <span className="opacity-50 font-normal">{openCount}</span>
