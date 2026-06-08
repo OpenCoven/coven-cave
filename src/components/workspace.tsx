@@ -38,6 +38,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
+import { useShellBanners } from "@/lib/shell-banners";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -90,6 +91,7 @@ export function Workspace() {
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
+  const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
@@ -155,6 +157,26 @@ export function Workspace() {
     const t = setInterval(tick, 5000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
+
+  // Push / dismiss the daemon-offline banner into the shared shell channel so
+  // it appears at the top of every surface, not just Chat.
+  useEffect(() => {
+    if (daemonRunning) {
+      dismissBanner("daemon-offline");
+    } else {
+      pushBanner({
+        id: "daemon-offline",
+        severity: "warning",
+        title: "Daemon offline — existing sessions visible but new tasks may not start.",
+        cta: {
+          label: "Start daemon",
+          onClick: () => {
+            void fetch("/api/daemon/start", { method: "POST" });
+          },
+        },
+      });
+    }
+  }, [daemonRunning, pushBanner, dismissBanner]);
 
   const loadFamiliars = useCallback(async () => {
     try {

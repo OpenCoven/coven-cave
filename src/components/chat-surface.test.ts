@@ -25,15 +25,15 @@ assert.match(
 );
 
 assert.match(
-  chatSurface,
+  workspace,
   /fetch\("\/api\/daemon\/start", \{ method: "POST" \}\)/,
-  "ChatSurface should make the offline daemon state actionable from the main Chat surface",
+  "Workspace should make the offline daemon state actionable via the shared banner channel",
 );
 
 assert.match(
-  chatSurface,
+  workspace,
   /Start daemon/,
-  "ChatSurface should show a clear start button when the daemon is offline",
+  "Workspace should push a start-daemon CTA into the shared banner channel when daemon is offline",
 );
 
 assert.doesNotMatch(

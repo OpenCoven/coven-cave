@@ -349,8 +349,6 @@ export function ChatSurface({
   const [showClosed, setShowClosed] = useState(false);
   const [groupBy, setGroupBy] = useState<"familiar" | "status" | "date" | "none">("familiar");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [startingDaemon, setStartingDaemon] = useState(false);
-  const [daemonStartError, setDaemonStartError] = useState<string | null>(null);
   // Familiar filter for the chats list — defaults to null (show all chats).
   // Decoupled from `activeFamiliarId` (which still drives new chats and the
   // right panel) so the list lands on "All chats" rather than pre-filtering
@@ -492,23 +490,6 @@ export function ChatSurface({
     if (session.familiarId) onSetActiveFamiliar(session.familiarId);
     setScope("conversation");
     window.setTimeout(() => routerRef.current?.openSession(session.id), 0);
-  }
-
-  async function startDaemon() {
-    setStartingDaemon(true);
-    setDaemonStartError(null);
-    try {
-      const res = await fetch("/api/daemon/start", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || json?.stderr || "daemon did not start");
-      }
-      onSessionStarted();
-    } catch (err) {
-      setDaemonStartError(err instanceof Error ? err.message : "daemon did not start");
-    } finally {
-      setStartingDaemon(false);
-    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -679,24 +660,6 @@ export function ChatSurface({
         ) : (
           /* History fallback — SessionsView when no thread is open */
           <div className="flex min-h-0 flex-1 flex-col">
-            {!daemonRunning && (
-              <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]">
-                <span className="min-w-0 flex-1">
-                  Daemon offline — existing sessions visible but new tasks may not start.
-                  {daemonStartError && <span className="ml-2 text-[var(--color-danger)]">{daemonStartError}</span>}
-                </span>
-                <button
-                  type="button"
-                  onClick={startDaemon}
-                  disabled={startingDaemon}
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2.5 font-medium text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] disabled:opacity-60"
-                  title="coven daemon start"
-                >
-                  <Icon name="ph:rocket-launch-bold" width={12} />
-                  {startingDaemon ? "Starting..." : "Start daemon"}
-                </button>
-              </div>
-            )}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <SessionsView
                 familiars={familiars}
