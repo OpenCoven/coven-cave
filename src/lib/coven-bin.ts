@@ -30,6 +30,8 @@ import path from "node:path";
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
 
+const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT"] as const;
+
 const HOME = os.homedir();
 
 function nodeNvmBinDirs(): string[] {
@@ -152,5 +154,9 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
     }
     cachedPath = dedup.join(":");
   }
-  return { ...process.env, PATH: cachedPath };
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: cachedPath };
+  for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
+    delete env[key];
+  }
+  return env;
 }
