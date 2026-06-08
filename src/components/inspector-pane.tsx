@@ -104,7 +104,7 @@ export function InspectorPane({
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 px-3 py-3 uppercase tracking-widest transition-colors ${
+              className={`flex-1 px-3 py-2.5 font-medium tracking-normal transition-colors ${
                 tab === t
                   ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
@@ -604,13 +604,13 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
               setQuery("");
               setMode(m);
             }}
-            className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-widest transition-colors ${
+            className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
               mode === m
-                ? "bg-[color-mix(in_oklch,var(--accent-presence)_80%,transparent)] text-white"
-                : "border border-[var(--border-strong)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                ? "bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             }`}
           >
-            {m}
+            {m === "inspector" ? "Inspect" : m === "coven" ? "Coven" : "Files"}
           </button>
         ))}
         <span className="ml-auto text-[10px] text-[var(--text-muted)]">

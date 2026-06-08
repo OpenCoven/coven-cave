@@ -2771,27 +2771,32 @@ body {
 .companion-rail__tabs {
   display: flex;
   gap: 2px;
-  padding: 6px 10px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--border-hairline);
   background: var(--bg-panel);
 }
 
 .companion-rail__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
   border-radius: var(--radius-control);
   background: transparent;
   border: 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+  color: var(--text-muted);
   cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.companion-rail__tab:hover {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
 .companion-rail__tab--active {
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
-  color: var(--text-primary);
+  color: var(--accent-presence);
 }
 
 .companion-rail__body {

@@ -104,24 +104,27 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
             className={`companion-rail__tab${selectedTab === "chat" ? " companion-rail__tab--active" : ""}`}
             onClick={() => switchTab("chat")}
             aria-current={selectedTab === "chat"}
+            title="Chat"
           >
-            <Icon name="ph:chats" width={11} /> Chat
+            <Icon name="ph:chats" width={14} />
           </button>
           <button
             type="button"
             className={`companion-rail__tab${selectedTab === "inspector" ? " companion-rail__tab--active" : ""}`}
             onClick={() => switchTab("inspector")}
             aria-current={selectedTab === "inspector"}
+            title="Inspector"
           >
-            <Icon name="ph:magnifying-glass" width={11} /> Inspector
+            <Icon name="ph:magnifying-glass" width={14} />
           </button>
           <button
             type="button"
             className={`companion-rail__tab${selectedTab === "memory" ? " companion-rail__tab--active" : ""}`}
             onClick={() => switchTab("memory")}
             aria-current={selectedTab === "memory"}
+            title="Memory"
           >
-            <Icon name="ph:brain" width={11} /> Memory
+            <Icon name="ph:brain" width={14} />
           </button>
           {salemSlot ? (
             <button
@@ -129,8 +132,9 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
               className={`companion-rail__tab${selectedTab === "salem" ? " companion-rail__tab--active" : ""}`}
               onClick={() => switchTab("salem")}
               aria-current={selectedTab === "salem"}
+              title="Salem"
             >
-              <Icon name="ph:book-open" width={11} /> Salem
+              <Icon name="ph:book-open" width={14} />
             </button>
           ) : null}
         </nav>
