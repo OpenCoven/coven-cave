@@ -218,10 +218,11 @@
   backdrop-filter: blur(4px);
 }
 
-/* decorative traffic-light dots */
-.cave-code-header::before {
+/* decorative traffic-light dots; BASH/lang stays first, then the dots. */
+.cave-code-header::after {
   content: "";
   display: block;
+  order: 1;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -230,11 +231,13 @@
   box-shadow:
     16px 0 0 color-mix(in oklch, oklch(0.75 0.18 60) 40%, oklch(0.4 0 0)),
     32px 0 0 color-mix(in oklch, oklch(0.65 0.18 170) 40%, oklch(0.4 0 0));
-  margin-right: 8px;
+  margin-left: 2px;
+  margin-right: 34px;
   opacity: 0.65;
 }
 
 .cave-code-lang {
+  order: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10px;
   letter-spacing: 0.06em;
@@ -245,6 +248,7 @@
 }
 
 .cave-code-filename {
+  order: 2;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10px;
   color: var(--text-muted);
@@ -361,7 +365,10 @@
 .cave-copy-btn:focus-visible { opacity: 1; }
 
 /* push copy btn to right inside header */
-.cave-code-header .cave-copy-btn { margin-left: auto; }
+.cave-code-header .cave-copy-btn {
+  order: 3;
+  margin-left: auto;
+}
 
 /* bubble-level copy — top-right corner */
 .cave-copy-btn-bubble {
