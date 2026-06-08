@@ -62,7 +62,7 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolGroup[\s\S]*<details[\s\S]*Tool use[\s\S]*tools\.map[\s\S]*<ToolBlock/,
+  /function ToolGroup[\s\S]*<details[\s\S]*Tool activity[\s\S]*tools\.map[\s\S]*<ToolBlock/,
   "ToolGroup should render tool calls in a collapsed disclosure",
 );
 
@@ -80,8 +80,8 @@ assert.match(
 
 assert.match(
   source,
-  /<header className="flex w-full (?:items-center|flex-col) gap-2/,
-  "Chat header should span the full side-panel width",
+  /<header className="cave-chat-workbench-header"/,
+  "Chat header should use the full-width workbench header",
 );
 
 assert.doesNotMatch(

@@ -12,6 +12,12 @@ import type { Familiar } from "@/lib/types";
 type GroupBy = "date" | "source";
 type ListFilter = "all" | "bookmarks" | "reading" | "github";
 
+function timelineEntryKey(entry: TimelineEntry, index: number): string {
+  const item = entry.item as TimelineEntry["item"] & { id?: string; url?: string };
+  if (item.id) return `${entry.list}:${item.id}`;
+  return `${entry.list}:legacy:${item.url ?? item.title ?? "untitled"}:${entry.capturedAt ?? "unknown"}:${index}`;
+}
+
 export function LibraryTimeline({
   familiars,
   selectedEntryId,
@@ -149,9 +155,9 @@ export function LibraryTimeline({
                 <span className="text-[10px] font-medium uppercase tracking-widest text-[var(--text-muted)]">{g.label}</span>
                 <span className="rounded-full bg-[var(--bg-raised)] px-1.5 py-0.5 text-[9px] tabular-nums text-[var(--text-muted)]">{g.items.length}</span>
               </div>
-              {g.items.map((e) => (
+              {g.items.map((e, index) => (
                 <LibraryTimelineRow
-                  key={e.item.id}
+                  key={timelineEntryKey(e, index)}
                   entry={e}
                   familiars={familiars}
                   selected={e.item.id === selectedEntryId}
