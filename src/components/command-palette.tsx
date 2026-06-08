@@ -319,7 +319,7 @@ export function CommandPalette({
           }}
           onKeyDown={onComposerKey}
           placeholder="Search familiars · chats · cards · memory · commands…"
-          className="w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+          className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
         <ul className="max-h-[60vh] overflow-y-auto py-1">
           {rows.length === 0 ? (
@@ -343,7 +343,7 @@ export function CommandPalette({
                     <>
                       <span className="flex flex-1 flex-col">
                         <span className="text-[var(--text-primary)]">{row.familiar.display_name}</span>
-                        <span className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+                        <span className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
                           {row.familiar.role}
                         </span>
                       </span>
