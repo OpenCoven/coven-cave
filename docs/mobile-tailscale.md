@@ -1,6 +1,6 @@
 # Mobile Access Over Tailscale
 
-This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve.
+This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve with a per-run access token.
 
 ## Requirements
 
@@ -23,28 +23,30 @@ Open the HTTPS URL printed by:
 tailscale serve status
 ```
 
+and append the `?coven_access_token=...` value printed by `pnpm mobile:tailscale`. The app stores the token in an HTTP-only cookie after the first successful request.
+
 ## Manual Equivalent
 
+Use a strong random token and keep the Next.js server bound to loopback so only Tailscale Serve can proxy it. In one terminal, start Cave:
+
 ```bash
-pnpm dev -- -H 127.0.0.1 -p 3000
+TOKEN=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))")
+echo "$TOKEN"
+COVEN_CAVE_ACCESS_TOKEN="$TOKEN" pnpm exec next dev -H 127.0.0.1 -p 3000
+```
+
+In another terminal, publish the loopback server:
+
+```bash
 tailscale serve --bg 3000
 tailscale serve status
 ```
 
-## Fallback Without Serve
+Open the Serve URL with `?coven_access_token=<printed-token>` appended.
 
-```bash
-pnpm dev -- -H 0.0.0.0 -p 3000
-tailscale ip -4
-```
+## No `0.0.0.0` Fallback
 
-Open:
-
-```text
-http://<tailscale-ip>:3000
-```
-
-Use this only when Serve is unavailable. Prefer Serve because it keeps the app private to the tailnet and gives HTTPS.
+Do not run CovenCave with `-H 0.0.0.0` for mobile access. Binding to all interfaces exposes the unauthenticated local development surface to the LAN as well as the tailnet if `COVEN_CAVE_ACCESS_TOKEN` is missing or misconfigured. If Tailscale Serve is unavailable, fix Serve or use a different authenticated tunnel that can reach the loopback-bound server.
 
 ## Expected Mobile Behavior
 

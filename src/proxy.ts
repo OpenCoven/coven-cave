@@ -1,61 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  bearerToken,
-  MOBILE_ACCESS_TOKEN_COOKIE,
-  MOBILE_ACCESS_TOKEN_HEADER,
-  MOBILE_ACCESS_TOKEN_QUERY,
-  mobileAccessToken,
-  tokensMatch,
-} from "@/lib/mobile-access-token";
 
-function isAuthorized(req: NextRequest, expected: string): boolean {
-  return (
-    tokensMatch(expected, req.nextUrl.searchParams.get(MOBILE_ACCESS_TOKEN_QUERY)) ||
-    tokensMatch(expected, req.headers.get(MOBILE_ACCESS_TOKEN_HEADER)) ||
-    tokensMatch(expected, bearerToken(req.headers.get("authorization"))) ||
-    tokensMatch(expected, req.cookies.get(MOBILE_ACCESS_TOKEN_COOKIE)?.value)
-  );
+const TOKEN_COOKIE = "coven_cave_access";
+const TOKEN_QUERY_PARAM = "coven_access_token";
+
+function configuredAccessToken() {
+  const token = process.env.COVEN_CAVE_ACCESS_TOKEN?.trim();
+  return token && token.length > 0 ? token : null;
 }
 
-function unauthorized(req: NextRequest): NextResponse {
-  if (req.nextUrl.pathname.startsWith("/api/")) {
-    return NextResponse.json({ ok: false, error: "mobile access token required" }, { status: 401 });
+function timingSafeEqualString(a: string, b: string) {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i += 1) {
+    diff |= aBytes[i] ^ bBytes[i];
   }
-  return new NextResponse("mobile access token required", {
-    status: 401,
-    headers: { "content-type": "text/plain; charset=utf-8" },
-  });
+  return diff === 0;
+}
+
+function bearerToken(req: NextRequest) {
+  const header = req.headers.get("authorization");
+  const prefix = "Bearer ";
+  if (!header?.startsWith(prefix)) return null;
+  return header.slice(prefix.length).trim();
+}
+
+function hasValidToken(req: NextRequest, expected: string) {
+  const token =
+    bearerToken(req) ??
+    req.cookies.get(TOKEN_COOKIE)?.value ??
+    req.nextUrl.searchParams.get(TOKEN_QUERY_PARAM);
+  return token ? timingSafeEqualString(token, expected) : false;
 }
 
 export function proxy(req: NextRequest) {
-  const expected = mobileAccessToken();
-  if (!expected) return NextResponse.next();
-  if (!isAuthorized(req, expected)) return unauthorized(req);
+  const expected = configuredAccessToken();
+  if (!expected || hasValidToken(req, expected)) {
+    const queryToken = req.nextUrl.searchParams.get(TOKEN_QUERY_PARAM);
+    if (!expected || !queryToken) return NextResponse.next();
 
-  const queryToken = req.nextUrl.searchParams.get(MOBILE_ACCESS_TOKEN_QUERY);
-  if (queryToken && req.method === "GET" && !req.nextUrl.pathname.startsWith("/api/")) {
-    const cleanUrl = req.nextUrl.clone();
-    cleanUrl.searchParams.delete(MOBILE_ACCESS_TOKEN_QUERY);
-    const res = NextResponse.redirect(cleanUrl);
-    res.cookies.set(MOBILE_ACCESS_TOKEN_COOKIE, expected, {
+    const url = req.nextUrl.clone();
+    url.searchParams.delete(TOKEN_QUERY_PARAM);
+    const res = NextResponse.redirect(url);
+    res.cookies.set(TOKEN_COOKIE, queryToken, {
       httpOnly: true,
-      sameSite: "strict",
+      sameSite: "lax",
       secure: req.nextUrl.protocol === "https:",
       path: "/",
     });
     return res;
   }
 
-  const res = NextResponse.next();
-  if (queryToken || req.headers.get(MOBILE_ACCESS_TOKEN_HEADER) || req.headers.get("authorization")) {
-    res.cookies.set(MOBILE_ACCESS_TOKEN_COOKIE, expected, {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: req.nextUrl.protocol === "https:",
-      path: "/",
-    });
-  }
-  return res;
+  return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 }
 
 export const config = {
