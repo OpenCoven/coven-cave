@@ -2221,3 +2221,107 @@ body {
   --ring-focus: color-mix(in oklch, #6DA9FF 55%, transparent);
   --brand: var(--accent-presence);
 }
+
+/* ────────────────────────────────────────────────
+   Familiar avatar rail — leftmost 52px zone
+   (Phase 1, shell-ia-redesign)
+   ──────────────────────────────────────────────── */
+
+.familiar-avatar-rail {
+  width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 12px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-hairline);
+  user-select: none;
+}
+
+.familiar-avatar-rail__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  align-items: center;
+  scrollbar-width: thin;
+}
+
+.familiar-avatar-rail__avatar {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-raised);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-avatar-rail__avatar:hover {
+  transform: scale(1.06);
+}
+
+.familiar-avatar-rail__avatar--active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent-presence);
+}
+
+.familiar-avatar-rail__presence {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-panel);
+}
+
+.familiar-avatar-rail__unread {
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  border: 2px solid var(--bg-panel);
+}
+
+.familiar-avatar-rail__add,
+.familiar-avatar-rail__toggle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-avatar-rail__add:hover,
+.familiar-avatar-rail__toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.familiar-avatar-rail__toggle {
+  border-style: none;
+  margin-top: auto;
+}
