@@ -202,11 +202,36 @@ async function saveState(state: CaveState): Promise<void> {
   await writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
 }
 
-export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {
-  const state = await loadState();
-  state.sessionFamiliar[sessionId] = familiarId;
+// In-process serialization of cave-state.json mutations. Without this, two
+// concurrent load→mutate→save calls (e.g. recordSessionFamiliar +
+// setSessionTitle fired via Promise.all on task-chat creation) both load the
+// same snapshot, each writes a different key, and the second saveState
+// silently clobbers the first — the field that lost the race vanishes from
+// disk. The mutex chain forces every mutation to do its own fresh load.
+let stateMutex: Promise<unknown> = Promise.resolve();
+
+async function updateState<T>(
+  mutator: (state: CaveState) => T | Promise<T>,
+): Promise<T> {
+  const previous = stateMutex;
+  let release!: () => void;
+  stateMutex = new Promise<void>((resolve) => { release = resolve; });
   try {
+    await previous.catch(() => {});
+    const state = await loadState();
+    const result = await mutator(state);
     await saveState(state);
+    return result;
+  } finally {
+    release();
+  }
+}
+
+export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {
+  try {
+    await updateState((state) => {
+      state.sessionFamiliar[sessionId] = familiarId;
+    });
   } catch {
     /* best effort */
   }
@@ -217,31 +242,31 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
  * Pass an empty/whitespace-only title to clear the override.
  */
 export async function setSessionTitle(sessionId: string, title: string): Promise<string | null> {
-  const state = await loadState();
-  const trimmed = title.trim();
-  if (!trimmed) {
-    delete state.sessionTitles[sessionId];
-  } else {
-    state.sessionTitles[sessionId] = trimmed;
-  }
-  await saveState(state);
-  return trimmed || null;
+  return updateState((state) => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      delete state.sessionTitles[sessionId];
+    } else {
+      state.sessionTitles[sessionId] = trimmed;
+    }
+    return trimmed || null;
+  });
 }
 
 /** Mark a session as archived in the Cave (does not touch the daemon row). */
 export async function archiveSessionLocal(sessionId: string): Promise<string> {
-  const state = await loadState();
   const now = new Date().toISOString();
-  state.sessionArchived[sessionId] = now;
-  await saveState(state);
+  await updateState((state) => {
+    state.sessionArchived[sessionId] = now;
+  });
   return now;
 }
 
 /** Restore a previously archived session in the Cave. */
 export async function summonSessionLocal(sessionId: string): Promise<void> {
-  const state = await loadState();
-  delete state.sessionArchived[sessionId];
-  await saveState(state);
+  await updateState((state) => {
+    delete state.sessionArchived[sessionId];
+  });
 }
 
 /**
@@ -250,10 +275,10 @@ export async function summonSessionLocal(sessionId: string): Promise<void> {
  * cave-state.json if the user changes their mind.
  */
 export async function sacrificeSessionLocal(sessionId: string): Promise<string> {
-  const state = await loadState();
   const now = new Date().toISOString();
-  state.sessionSacrificed[sessionId] = now;
-  await saveState(state);
+  await updateState((state) => {
+    state.sessionSacrificed[sessionId] = now;
+  });
   return now;
 }
 

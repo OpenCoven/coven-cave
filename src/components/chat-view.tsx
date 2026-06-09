@@ -361,19 +361,30 @@ function ChatLifecycleStatus({
 
 function ChatTitleEditable({
   session,
+  displayTitleOverride,
   onSessionsChanged,
+  headline = false,
 }: {
   session: SessionRow;
+  /** When set, displayed in place of session.title (e.g. to hide a raw
+   *  "Task context: …" seed prompt that leaked through as the title). The
+   *  edit input still pre-fills with the override so accepting it patches
+   *  the canonical title in the daemon/state. */
+  displayTitleOverride?: string | null;
   onSessionsChanged?: () => void;
+  /** Render as a full-width all-caps headline row above the context chips
+   *  instead of an inline title inside the session chip. */
+  headline?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(session.title ?? "");
+  const baseTitle = displayTitleOverride ?? session.title ?? "";
+  const [value, setValue] = useState(baseTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const submittedRef = useRef(false);
 
   useEffect(() => {
-    if (!editing) setValue(session.title ?? "");
-  }, [session.title, editing]);
+    if (!editing) setValue(baseTitle);
+  }, [baseTitle, editing]);
 
   useEffect(() => {
     if (!editing) return;
@@ -382,7 +393,7 @@ function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
-  const display = session.title || session.id;
+  const display = baseTitle || session.id;
 
   const submit = async () => {
     if (submittedRef.current) return;
@@ -405,16 +416,24 @@ function ChatTitleEditable({
   const cancel = () => {
     if (submittedRef.current) return;
     submittedRef.current = true;
-    setValue(session.title ?? "");
+    setValue(baseTitle);
     setEditing(false);
   };
+
+  const inputClassName = headline
+    ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
+    : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold leading-tight text-[var(--text-primary)] outline-none";
+
+  const buttonClassName = headline
+    ? "block w-full truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
+    : "min-w-0 flex-1 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
 
   if (editing) {
     return (
       <input
         ref={inputRef}
         type="text"
-        className="cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold leading-tight text-[var(--text-primary)] outline-none"
+        className={inputClassName}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onClick={(e) => e.stopPropagation()}
@@ -438,7 +457,7 @@ function ChatTitleEditable({
   return (
     <button
       type="button"
-      className="min-w-0 flex-1 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
+      className={buttonClassName}
       title={`${display} — click to rename`}
       onClick={(e) => {
         e.stopPropagation();
@@ -468,13 +487,13 @@ function ChatContextStrip({
   return (
     <div className="cave-chat-linear-header-context">
       {session ? (
-        <span className="inline-flex min-w-0 max-w-[32rem] items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
+        <span className="inline-flex min-w-0 items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
           <Icon name="ph:chats-circle" width={14} className="shrink-0 text-[var(--text-muted)]" />
-          <ChatTitleEditable session={session} onSessionsChanged={onSessionsChanged} />
-          <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{session.status}</span>
           {session.project_root ? (
             <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{repoName(session.project_root)}</span>
-          ) : null}
+          ) : (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">chat</span>
+          )}
         </span>
       ) : session === null && historyState !== "idle" ? (
         <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2 py-1 text-[11px] text-[var(--text-muted)]">
@@ -507,6 +526,34 @@ function ChatContextStrip({
         </a>
       ))}
     </div>
+  );
+}
+
+/** Headline row: full-width chat title, flush-left, all-caps. Sits above
+ *  the existing identity/chips row. Computes the same defense-in-depth
+ *  override as ChatContextStrip — see comment there for why. */
+function ChatHeadlineTitle({
+  session,
+  linkedContext,
+  onSessionsChanged,
+}: {
+  session: SessionRow | null;
+  linkedContext: ChatLinkedContext | null;
+  onSessionsChanged?: () => void;
+}) {
+  if (!session) return null;
+  const task = linkedContext?.task ?? null;
+  const sessionTitleOverride =
+    task && (session.title ?? "").startsWith("Task context:")
+      ? `Task: ${task.title}`
+      : null;
+  return (
+    <ChatTitleEditable
+      session={session}
+      displayTitleOverride={sessionTitleOverride}
+      onSessionsChanged={onSessionsChanged}
+      headline
+    />
   );
 }
 
@@ -1054,6 +1101,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       <header className="cave-chat-linear-header">
+        <ChatHeadlineTitle
+          session={session ?? null}
+          linkedContext={linkedContext}
+          onSessionsChanged={onSessionsChanged}
+        />
         {/* Single compact bar: status · meta · context strip (identity lives in the rail above) */}
         <div className="cave-chat-linear-header-row">
           <div className="cave-chat-linear-header-identity">

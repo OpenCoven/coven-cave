@@ -11,19 +11,19 @@ const linearHeaderRule = styles.match(/\.cave-chat-linear-header\s*\{(?<body>[^}
 assert.match(
   linearHeader,
   /<div className="cave-chat-linear-header-row"[\s\S]*<ChatContextStrip/,
-  "Task/session context should render inside the single chat header row",
+  "Task/session context should render inside the identity/chips row",
 );
 
-assert.doesNotMatch(
+assert.match(
   linearHeader,
-  /<\/div>\s*<ChatContextStrip[\s\S]*?\/>\s*<\/header>/,
-  "Task/session context should not sit on a second row below the identity bar",
+  /<ChatHeadlineTitle[\s\S]*<div className="cave-chat-linear-header-row"/,
+  "Headline title row must render above the identity/chips row (caller-side ordering)",
 );
 
 assert.match(
   linearHeaderRule,
-  /flex-direction\s*:\s*row/,
-  "Linear chat header should keep identity and task context on one row",
+  /flex-direction\s*:\s*column/,
+  "Linear chat header stacks the headline title above the identity/chips row",
 );
 
 assert.match(

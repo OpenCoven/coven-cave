@@ -864,9 +864,9 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear-header {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   width: 100%;
   border-bottom: 1px solid var(--border-hairline);
   background: var(--bg-raised);
