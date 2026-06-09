@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
@@ -8,6 +8,7 @@ import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },
@@ -59,8 +60,104 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [grabbedCardId, setGrabbedCardId] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
   const draggingIdRef = useRef<string | null>(null);
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const columnIndex = useCallback(
+    (id: string) => COLUMNS.findIndex((c) => c.id === id),
+    [],
+  );
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = document.activeElement as HTMLElement | null;
+      const focusedCardId = target?.dataset?.cardId ?? null;
+
+      // Toggle grab on Space.
+      if (e.key === " ") {
+        if (grabbedCardId) {
+          // DROP. Find target column from the focused element.
+          const dropTargetStatus =
+            (target?.closest("[data-kanban-column]") as HTMLElement | null)
+              ?.dataset?.kanbanColumn as CardStatus | undefined;
+          const card = cards.find((c) => c.id === grabbedCardId);
+          if (card && dropTargetStatus && card.status !== dropTargetStatus) {
+            const col = COLUMNS.find((c) => c.id === dropTargetStatus);
+            onMoveStatus(grabbedCardId, dropTargetStatus);
+            announce(
+              `Moved '${card.title}' to ${col?.label ?? dropTargetStatus}.`,
+            );
+          } else if (card) {
+            announce("Drop cancelled — same column.");
+          }
+          setGrabbedCardId(null);
+          e.preventDefault();
+          return;
+        }
+        // GRAB.
+        if (focusedCardId) {
+          const card = cards.find((c) => c.id === focusedCardId);
+          if (!card) return;
+          setGrabbedCardId(focusedCardId);
+          announce(
+            `Picked up '${card.title}'. Use arrow keys to move; Space to drop; Escape to cancel.`,
+          );
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // Escape cancels.
+      if (e.key === "Escape" && grabbedCardId) {
+        const card = cards.find((c) => c.id === grabbedCardId);
+        setGrabbedCardId(null);
+        announce(card ? `Cancelled moving '${card.title}'.` : "Cancelled.");
+        e.preventDefault();
+        return;
+      }
+
+      // Column nav while grabbed.
+      if (
+        (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+        grabbedCardId
+      ) {
+        const card = cards.find((c) => c.id === grabbedCardId);
+        if (!card) return;
+        // Read tentative current column from focus, NOT card.status, because
+        // card.status does not mutate during the grab session — we walk
+        // columns by where focus currently is.
+        const currentColEl =
+          (target?.closest("[data-kanban-column]") as HTMLElement | null) ??
+          null;
+        const currentStatus =
+          (currentColEl?.dataset?.kanbanColumn as CardStatus | undefined) ??
+          card.status;
+        const currentIdx = columnIndex(currentStatus);
+        if (currentIdx < 0) return;
+        const delta = e.key === "ArrowRight" ? 1 : -1;
+        const nextIdx = Math.max(
+          0,
+          Math.min(COLUMNS.length - 1, currentIdx + delta),
+        );
+        if (nextIdx === currentIdx) {
+          e.preventDefault();
+          return;
+        }
+        const nextCol = COLUMNS[nextIdx];
+        const colEl = document.querySelector<HTMLElement>(
+          `[data-kanban-column="${nextCol.id}"]`,
+        );
+        const firstCard = colEl?.querySelector<HTMLElement>("[data-card-id]");
+        (firstCard ?? colEl)?.focus();
+        announce(`Moving '${card.title}' over ${nextCol.label}.`);
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [grabbedCardId, cards, columnIndex, onMoveStatus, announce]);
 
   const groups = getGroups(cards, groupBy, familiars);
   const showSwimlanes = true;
@@ -150,6 +247,8 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
                     const isDrop = dropTarget === col.id;
                     return (
                       <div key={col.id}
+                        data-kanban-column={col.id}
+                        tabIndex={-1}
                         onDragEnter={(e) => handleDragEnter(e, col.id)}
                         onDragOver={(e) => handleDragOver(e, col.id)}
                         onDragLeave={(e) => handleDragLeave(e, col.id)}
@@ -185,6 +284,7 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
                           {rows.map((card) => (
                             <KanbanCard key={card.id} card={card} familiars={familiars} sessions={sessions}
                               isDragging={draggingId === card.id} isSelected={selectedCardId === card.id}
+                              isGrabbed={grabbedCardId === card.id}
                               onSelect={() => onSelect(card.id)}
                               onDragStart={(e) => handleDragStart(e, card.id)}
                               onDragEnd={handleDragEnd}
@@ -206,9 +306,9 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
   );
 }
 
-function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelect, onDragStart, onDragEnd, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
+function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
   card: Card; familiars: Familiar[]; sessions: SessionRow[];
-  isDragging: boolean; isSelected: boolean;
+  isDragging: boolean; isSelected: boolean; isGrabbed: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
@@ -224,14 +324,17 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, onSelec
 
   return (
     <li draggable
+      data-card-id={card.id}
       onDragStart={(e) => { draggedRef.current = true; onDragStart(e); }}
       onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); onDragEnd(); }}
       onClick={() => { if (draggedRef.current) return; onSelect(); }}
-      onKeyDown={(e) => { if (e.key !== "Enter" && e.key !== " ") return; e.preventDefault(); onSelect(); }}
-      tabIndex={0} aria-selected={isSelected}
+      onKeyDown={(e) => { if (e.key !== "Enter") return; e.preventDefault(); onSelect(); }}
+      tabIndex={0} aria-selected={isSelected} aria-grabbed={isGrabbed}
       className={`board-kanban-card board-kanban-card--priority-${card.priority}${
         isSelected ? " board-kanban-card--selected" : ""
-      }${isDragging ? " board-kanban-card--dragging" : ""}`}
+      }${isDragging ? " board-kanban-card--dragging" : ""}${
+        isGrabbed ? " board-kanban-card--grabbed" : ""
+      }`}
     >
       <div className="board-kanban-card-top">
         <span className={`board-kanban-priority-pill board-kanban-priority-pill--${card.priority}`}>{pri.label}</span>

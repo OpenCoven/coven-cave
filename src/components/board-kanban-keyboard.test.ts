@@ -1,0 +1,58 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const source = readFileSync(
+  new URL("./board-kanban.tsx", import.meta.url),
+  "utf8",
+);
+
+// Consumes the foundations announcer.
+assert.match(
+  source,
+  /import\s+\{[^}]*useAnnouncer[^}]*\}\s+from\s+["']@\/components\/ui\/live-region["']/,
+  "imports useAnnouncer",
+);
+assert.match(source, /useAnnouncer\(\)/, "calls useAnnouncer()");
+
+// Grab-mode state.
+assert.match(
+  source,
+  /(grabbedCardId|keyboardGrabbedId)/,
+  "tracks the keyboard-grabbed card id in state",
+);
+
+// Key handlers.
+assert.match(source, /key === " "|e\.key === " "/, "handles Space (grab/drop)");
+assert.match(
+  source,
+  /key === "ArrowLeft"|key === "ArrowRight"/,
+  "handles ArrowLeft/Right for column nav while grabbed",
+);
+assert.match(source, /key === "Escape"/, "handles Escape to cancel grab");
+
+// Visual affordance class.
+assert.match(
+  source,
+  /board-kanban-card--grabbed/,
+  "applies the --grabbed class to the grabbed card",
+);
+
+// Announcements fire.
+assert.match(source, /announce\(/, "calls announce(...) for grab/move/drop");
+
+// Column containers are marked.
+assert.match(
+  source,
+  /data-kanban-column=/,
+  "column containers are marked with data-kanban-column",
+);
+
+// Card rows expose data-card-id.
+assert.match(
+  source,
+  /data-card-id=/,
+  "card rows expose data-card-id",
+);
+
+console.log("board-kanban-keyboard.test.ts OK");

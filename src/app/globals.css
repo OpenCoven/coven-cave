@@ -3923,3 +3923,13 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/* Composition PR — keyboard drag affordance.
+   Visually distinct from --dragging so users can tell mouse-drag from
+   keyboard-grab. Uses --ring-focus for the lift; box-shadow for the float. */
+.board-kanban-card--grabbed {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+  box-shadow: 0 8px 16px color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  transform: translateY(-1px);
+}
