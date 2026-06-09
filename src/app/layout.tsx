@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fredoka, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
@@ -25,6 +25,21 @@ const fredoka = Fredoka({
 export const metadata: Metadata = {
   title: "CovenCave",
   description: "Coven desktop cave for familiars, memory, and tools.",
+  appleWebApp: {
+    capable: true,
+    title: "CovenCave",
+    statusBarStyle: "black-translucent",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+  ],
 };
 
 export default function RootLayout({

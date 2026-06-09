@@ -98,6 +98,19 @@
   --shell-nav-width: 240px;
   --shell-list-width: 260px;
 
+  /* ---- Mobile foundations ----
+     Safe-area-inset shorthands, set once on :root so consumers can
+     `padding-bottom: var(--sai-bottom)` without restating env(). Falls
+     back to 0 on browsers without notches.
+     --touch-target is the minimum hit-area for touch surfaces (WCAG
+     2.5.5 + iOS HIG). Apply via min-height / min-width on tap-only
+     controls; keyboard-focus paths can remain denser. */
+  --sai-top: env(safe-area-inset-top, 0px);
+  --sai-right: env(safe-area-inset-right, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left: env(safe-area-inset-left, 0px);
+  --touch-target: 44px;
+
   /* ---- Motion ----
      Standard durations and easings. Components should consume these
      rather than hardcoding ms values. Honored by the
@@ -271,6 +284,17 @@ body {
   font-size: 14px;
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Mobile foundations — kill iOS focus-zoom on text entry. Any input/
+   textarea/select smaller than 16px triggers Safari's auto-zoom. The
+   max() form lets larger contexts keep their size; <16px gets bumped.
+   Per-class overrides that set font-size < 16px on inputs are removed
+   in this same change so this rule actually wins. */
+input,
+textarea,
+select {
+  font-size: max(16px, 1em);
 }
 
 /* ============================================================
@@ -2104,7 +2128,6 @@ body {
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   color: var(--text-primary);
-  font-size: 12px;
   padding: 5px 8px;
   outline: none;
   width: 100%;
@@ -3705,12 +3728,14 @@ body {
 }
 
 /* ─── Mobile shell collapse ────────────────────────────────────────────
-   Below 768px (phone-class viewports), collapse the chrome to a single
-   visible pane: avatar rail becomes a top horizontal strip, the
-   sidebar nav + companion rail are hidden, and detail takes the full
-   width. Resizable-panels manages inline width styles; the !important
-   overrides win against those for the small-viewport case.
-   Restore on tablet+. */
+   Below 768px (phone-class viewports), the avatar rail flips to a top
+   horizontal strip and the detail pane takes the full width. The nav,
+   list, and agent panels stay mounted (preserves their content state
+   and avoids `panel.collapse()` fighting react-resizable-panels'
+   persisted layout) but slide off-screen, becoming drawers driven by
+   the `[data-mobile-drawer]` attribute on `.shell-root`. The
+   ⌘B / ⌘\\ / ⌘J keyboard shortcuts and the top-bar hamburger buttons
+   both flip that attribute. */
 @media (max-width: 767px) {
   .shell-body {
     flex-direction: column;
@@ -3721,7 +3746,7 @@ body {
     width: 100%;
     height: auto;
     flex-direction: row;
-    padding: 8px 12px;
+    padding: 8px 12px 8px calc(12px + var(--sai-left));
     gap: 10px;
     border-right: none;
     border-bottom: 1px solid var(--border-hairline);
@@ -3743,15 +3768,47 @@ body {
     width: 14px !important;
     height: 2px !important;
   }
-  /* Sidebar nav, list pane, companion rail: hidden on phone. The
-     ⌘B / ⌘\\ / ⌘J keyboard shortcuts still toggle them programmatically
-     for accessibility, but they don't take up screen space by default. */
+  /* Drawer panels: fixed-position overlays that slide in from the side.
+     They stay mounted so their content state survives across opens
+     (which is why we don't use display:none + remount). Width is capped
+     so the detail pane behind them is still visible during animation. */
   .shell-nav-panel,
   .shell-list-panel,
   .shell-agent-panel {
-    display: none !important;
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    z-index: 200;
+    width: min(86vw, 320px) !important;
+    min-width: 0 !important;
+    max-width: 86vw !important;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-hairline);
+    box-shadow: 0 0 30px oklch(0 0 0 / 30%);
+    transition: transform var(--duration-base) var(--ease-emphasized);
+    will-change: transform;
   }
-  /* Hide separators that would otherwise be orphaned. */
+  .shell-nav-panel,
+  .shell-list-panel {
+    left: 0;
+    transform: translateX(-100%);
+    padding-left: var(--sai-left);
+  }
+  .shell-agent-panel {
+    right: 0;
+    left: auto;
+    border-right: none;
+    border-left: 1px solid var(--border-hairline);
+    transform: translateX(100%);
+    padding-right: var(--sai-right);
+  }
+  .shell-root[data-mobile-drawer="nav"] .shell-nav-panel,
+  .shell-root[data-mobile-drawer="list"] .shell-list-panel,
+  .shell-root[data-mobile-drawer="agent"] .shell-agent-panel {
+    transform: translateX(0);
+  }
+  /* Hide the resize handles — pointer-drag has no meaning when panels
+     are full-height drawers. */
   .shell-root > [data-resizable-handle] {
     display: none !important;
   }
@@ -3763,10 +3820,51 @@ body {
   }
 }
 
-/* Treat phone keyboard pop-in: use dynamic viewport units in places
-   that previously assumed 100vh. Modal/portal content avoids being
-   pushed off-screen when the keyboard opens. */
+/* Reduced-motion users get the drawer position change without the
+   slide animation. */
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .shell-nav-panel,
+  .shell-list-panel,
+  .shell-agent-panel {
+    transition: none;
+  }
+}
+
+/* Backdrop sibling rendered by <MobileDrawer/> via portal whenever a
+   drawer is open. Covers the detail pane and dismisses on tap. */
+.mobile-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: var(--backdrop-scrim);
+  animation: mobile-drawer-fade-in var(--duration-base) var(--ease-decelerate);
+}
+@keyframes mobile-drawer-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-drawer-backdrop { animation: none; }
+}
+
+/* Touch / coarse-pointer surface. On devices with no hover capability,
+   controls that the desktop hides behind `opacity-0 group-hover:opacity-100`
+   become permanently visible — opt in with `.touch-always-visible`. */
+@media (hover: none) and (pointer: coarse) {
+  .touch-always-visible {
+    opacity: 1 !important;
+  }
+}
+
+/* Dynamic viewport units for layout shell + modals — `100vh` on iOS
+   includes the address bar height, so a `min-height: 100vh` element
+   would push content under the chrome. `100dvh` tracks the visible
+   area, including the on-screen keyboard. */
 @supports (height: 100dvh) {
+  .shell-root,
+  .shell-body {
+    min-height: 100dvh;
+  }
   .ui-modal-shell {
     max-height: calc(100dvh - 2 * var(--space-4));
   }
