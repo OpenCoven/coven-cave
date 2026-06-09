@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/salem-context";
+import { stripMdxLeakage } from "./strip-mdx";
 
 /**
  * Salem docs API — v1: live retrieval from llms-full.txt
@@ -53,12 +54,15 @@ function parseChunks(raw: string): DocChunk[] {
     const rest = lines.slice(1).join("\n").trim();
     if (!rest) continue;
 
-    // Extract leading heading (first # line)
-    const headingMatch = rest.match(/^#+\s+(.+)/m);
+    // Strip MDX/JSX tags before extracting heading & truncating, so the chunk
+    // text we hand to retrieval and the chat panel is plain markdown.
+    const cleaned = stripMdxLeakage(rest);
+    if (!cleaned) continue;
+
+    const headingMatch = cleaned.match(/^#+\s+(.+)/m);
     const heading = headingMatch?.[1] ?? source;
 
-    // Truncate for context budget
-    const text = rest.slice(0, MAX_CHUNK_CHARS);
+    const text = cleaned.slice(0, MAX_CHUNK_CHARS);
     chunks.push({ source, heading, text, tokens: tokenize(heading + " " + text) });
   }
 
