@@ -87,6 +87,22 @@ export function CapabilitiesViewSurface({
     if (activeHarness !== undefined) setFilter(activeHarness ?? null);
   }, [activeHarness]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key !== "r" && e.key !== "R") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      void load(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [load]);
+
   const visible = filter
     ? items.filter((m) => m.harness_id === filter)
     : items;
@@ -98,49 +114,44 @@ export function CapabilitiesViewSurface({
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
-      <header className="shrink-0 border-b border-border px-4 sm:px-8">
-        <div className="flex h-12 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Icon name="ph:lightning-bold" width={14} className="text-muted-foreground" />
-            <h1 className="truncate text-[13px] font-medium text-foreground">Capabilities</h1>
-            <span className="text-[11px] text-muted-foreground">read-only</span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
-            {scannedAt && (
-              <span title={scannedAt}>
-                Scanned {new Date(scannedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => void load(true)}
-              disabled={refreshing}
-              className="focus-ring flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-            >
-              <Icon
-                name="ph:arrows-clockwise-bold"
-                width={11}
-                className={refreshing ? "animate-spin" : undefined}
-              />
-              <span>{refreshing ? "Refreshing" : "Refresh"}</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1200px] px-4 pb-12 sm:px-8">
-          <div className="pb-4 pt-6">
-            <h2 className="text-[20px] font-semibold text-[var(--text-primary)]">
-              Harness capabilities
-            </h2>
-            <p className="mt-1 text-[12px] text-muted-foreground">
-              Per-harness manifest of skills, plugins, global instructions, and version detected
-              by the Coven daemon. Read-only — edits happen in the harness&apos;s own config files.
-            </p>
+          <div className="pb-4 pt-5">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-[18px] font-semibold text-[var(--text-primary)]">
+                  Harness capabilities
+                </h2>
+                <p className="mt-1 text-[12px] text-muted-foreground">
+                  Per-harness manifest of skills, plugins, global instructions, and version detected
+                  by the Coven daemon. Read-only — edits happen in the harness&apos;s own config files.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                {scannedAt && (
+                  <span title={scannedAt}>
+                    Scanned {new Date(scannedAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void load(true)}
+                  disabled={refreshing}
+                  title="Refresh (⌘R)"
+                  className="focus-ring flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                >
+                  <Icon
+                    name="ph:arrows-clockwise-bold"
+                    width={11}
+                    className={refreshing ? "animate-spin" : undefined}
+                  />
+                  <span>{refreshing ? "Refreshing" : "Refresh"}</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {loaded && !error && items.length > 0 && (
@@ -244,6 +255,9 @@ export function CapabilitiesViewSurface({
           )}
         </div>
       </div>
+      <footer className="shrink-0 border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
+        ⌘R refresh · click a harness to expand · read-only
+      </footer>
     </div>
   );
 }
