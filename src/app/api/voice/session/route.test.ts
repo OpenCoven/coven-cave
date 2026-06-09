@@ -122,28 +122,26 @@ test("200 happy path returns grant and ULID-shaped callId", async () => {
     display_name: "M",
     role: "x",
     voiceProvider: "openai",
-    voiceModel: "gpt-4o-realtime-preview",
+    voiceModel: "gpt-realtime",
     voiceName: "alloy",
   });
   writeSession([]);
   process.env.OPENAI_API_KEY = "sk-x";
   nextFetchResponse = new Response(
-    JSON.stringify({
-      client_secret: { value: "ephem_z", expires_at: 1750000000 },
-    }),
+    JSON.stringify({ value: "ek_z", expires_at: 1750000000 }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
   const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
   const json = await res.json();
   assert.equal(res.status, 200);
   assert.equal(json.ok, true);
-  assert.equal(json.grant.clientSecret, "ephem_z");
-  assert.equal(json.grant.connection.model, "gpt-4o-realtime-preview");
+  assert.equal(json.grant.clientSecret, "ek_z");
+  assert.equal(json.grant.connection.model, "gpt-realtime");
   // 26-char Crockford base32 ULID shape (alphabet excludes I, L, O, U).
   assert.match(json.callId, /^[0-9A-HJKMNP-TV-Z]{26}$/);
   assert.ok(lastFetchCall);
-  assert.equal(lastFetchCall.url, "https://api.openai.com/v1/realtime/sessions");
+  assert.equal(lastFetchCall.url, "https://api.openai.com/v1/realtime/client_secrets");
   const sentBody = JSON.parse(lastFetchCall.init.body as string);
-  assert.equal(sentBody.model, "gpt-4o-realtime-preview");
-  assert.equal(sentBody.voice, "alloy");
+  assert.equal(sentBody.session.model, "gpt-realtime");
+  assert.equal(sentBody.session.audio.output.voice, "alloy");
 });

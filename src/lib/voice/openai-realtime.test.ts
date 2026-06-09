@@ -12,67 +12,64 @@ let nextResponse: Response = new Response("{}", { status: 200 });
 
 const { openaiRealtimeProvider } = await import("./openai-realtime.ts");
 
-test("mintSession POSTs to OpenAI Realtime sessions endpoint with bearer auth", async () => {
+test("mintSession POSTs to /v1/realtime/client_secrets with bearer auth", async () => {
   captured = [];
   nextResponse = new Response(
-    JSON.stringify({
-      client_secret: { value: "ephem_123", expires_at: 1750000000 },
-      id: "sess_x",
-    }),
+    JSON.stringify({ value: "ek_123", expires_at: 1750000000 }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
   await openaiRealtimeProvider.mintSession("sk-test", {
     familiarId: "m",
-    model: "gpt-4o-realtime-preview",
+    model: "gpt-realtime",
     voice: "alloy",
     instructions: "you are Milo",
     conversationSeed: [],
   });
   assert.equal(captured.length, 1);
-  assert.equal(captured[0].url, "https://api.openai.com/v1/realtime/sessions");
+  assert.equal(captured[0].url, "https://api.openai.com/v1/realtime/client_secrets");
   assert.equal(captured[0].init.method, "POST");
   const headers = new Headers(captured[0].init.headers as HeadersInit);
   assert.equal(headers.get("authorization"), "Bearer sk-test");
   assert.equal(headers.get("content-type"), "application/json");
 });
 
-test("mintSession passes model, voice, instructions, input_audio_transcription in body", async () => {
+test("mintSession wraps model/voice/instructions/transcription inside session.audio", async () => {
   captured = [];
   nextResponse = new Response(
-    JSON.stringify({ client_secret: { value: "x", expires_at: 1 } }),
+    JSON.stringify({ value: "ek_x", expires_at: 1 }),
     { status: 200 },
   );
   await openaiRealtimeProvider.mintSession("sk-test", {
     familiarId: "m",
-    model: "gpt-4o-realtime-preview",
+    model: "gpt-realtime",
     voice: "verse",
     instructions: "be brief",
   });
   const body = JSON.parse(captured[0].init.body as string);
-  assert.equal(body.model, "gpt-4o-realtime-preview");
-  assert.equal(body.voice, "verse");
-  assert.equal(body.instructions, "be brief");
-  assert.ok(body.input_audio_transcription, "transcription must be requested");
+  assert.ok(body.session, "request body must wrap fields in a `session` object");
+  assert.equal(body.session.type, "realtime");
+  assert.equal(body.session.model, "gpt-realtime");
+  assert.equal(body.session.instructions, "be brief");
+  assert.equal(body.session.audio.output.voice, "verse");
+  assert.ok(body.session.audio.input.transcription, "transcription must be requested");
 });
 
 test("mintSession returns grant with provider, clientSecret, expiresAt, connection.kind", async () => {
   nextResponse = new Response(
-    JSON.stringify({
-      client_secret: { value: "ephem_42", expires_at: 1751111111 },
-    }),
+    JSON.stringify({ value: "ek_42", expires_at: 1751111111 }),
     { status: 200 },
   );
   const grant = await openaiRealtimeProvider.mintSession("sk-x", {
     familiarId: "m",
-    model: "gpt-4o-realtime-preview",
+    model: "gpt-realtime",
     voice: "alloy",
     instructions: "",
   });
   assert.equal(grant.provider, "openai");
-  assert.equal(grant.clientSecret, "ephem_42");
+  assert.equal(grant.clientSecret, "ek_42");
   assert.equal(typeof grant.expiresAt, "string");
   assert.equal(grant.connection.kind, "openai-realtime");
-  assert.equal(grant.connection.model, "gpt-4o-realtime-preview");
+  assert.equal(grant.connection.model, "gpt-realtime");
 });
 
 test("mintSession surfaces provider error message verbatim on non-2xx", async () => {
