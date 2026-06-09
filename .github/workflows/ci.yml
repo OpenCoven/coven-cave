@@ -25,9 +25,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm typecheck
+
       - run: pnpm test:app
 
       - run: pnpm test:api
+
+      # Mobile-readiness smoke tests — drawer wiring, no-zoom font
+      # sizes on inputs, safe-area tokens. Fast (no browser). See
+      # docs/mobile-readiness.md for the manual checklist these
+      # smokes feed into.
+      - run: pnpm test:mobile
 
       # Next 16.2.6 / Turbopack has non-deterministic chunking errors on
       # the same SHA (~50% pass rate observed on this codebase). Retry up

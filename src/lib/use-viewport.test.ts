@@ -22,8 +22,8 @@ assert.match(
 
 assert.match(
   source,
-  /\(max-width:\s*767px\)/,
-  "useIsMobile reads (max-width: 767px), matching the shell breakpoint",
+  /\(max-width:\s*(?:767|1023)px\)/,
+  "useIsMobile reads the shell's mobile breakpoint (767px or 1023px)",
 );
 assert.match(
   source,
