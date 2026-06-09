@@ -10,7 +10,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 
 export type GroupBy = "status" | "familiar";
-export type SortKey = "title" | "status" | "priority" | "familiar" | "cwd" | "links" | "lifecycle" | "updatedAt";
+export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "updatedAt";
 export type SortDir = "asc" | "desc";
 
 const STATUS_ORDER: Record<CardStatus, number> = { backlog: 0, inbox: 1, running: 2, review: 3, blocked: 4, done: 5 };
@@ -25,8 +25,6 @@ function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familia
       case "status":   cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]; break;
       case "priority": cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]; break;
       case "familiar": cmp = fname(a.familiarId).localeCompare(fname(b.familiarId)); break;
-      case "cwd": cmp = (a.cwd ?? "").localeCompare(b.cwd ?? ""); break;
-      case "links": cmp = a.links.length - b.links.length; break;
       case "lifecycle": cmp = a.lifecycle.localeCompare(b.lifecycle); break;
       case "updatedAt": cmp = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""); break;
     }
@@ -68,8 +66,6 @@ const COLS: ColDef[] = [
   { key: "status",    label: "Status",    width: "100px" },
   { key: "priority",  label: "Priority",  width: "90px" },
   { key: "familiar",  label: "Familiar",  width: "130px" },
-  { key: "cwd",       label: "CWD",       width: "160px" },
-  { key: "links",     label: "Links",     width: "70px" },
   { key: "lifecycle", label: "Lifecycle", width: "100px" },
   { key: "updatedAt", label: "Updated",   width: "80px" },
 ];
@@ -216,23 +212,6 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
                         </select>
                       </span>
                     </td>
-                    <td>
-                      {card.cwd ? (
-                        <span className="board-table-cell-path" title={card.cwd}>{shortPath(card.cwd)}</span>
-                      ) : (
-                        <span className="board-table-cell-empty">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {card.links.length > 0 ? (
-                        <span className="board-table-cell-links">
-                          <Icon name="ph:link-simple" width={10} />
-                          {card.links.length}
-                        </span>
-                      ) : (
-                        <span className="board-table-cell-empty">—</span>
-                      )}
-                    </td>
                     <td><LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} /></td>
                     <td style={{ textAlign: "right" }}><span className="board-table-cell-time">{relTime(card.updatedAt)}</span></td>
                   </tr>
@@ -246,7 +225,3 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
   );
 }
 
-function shortPath(value: string): string {
-  const parts = value.split("/").filter(Boolean);
-  return parts.length >= 2 ? parts.slice(-2).join("/") : value;
-}
