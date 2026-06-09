@@ -436,7 +436,16 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                 return (
                   <article
                     key={entry.id}
+                    role={compact ? undefined : "button"}
+                    tabIndex={compact ? undefined : 0}
                     onClick={() => { if (!compact) setSelectedRowId(`coven:${entry.id}`); }}
+                    onKeyDown={(e) => {
+                      if (compact) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedRowId(`coven:${entry.id}`);
+                      }
+                    }}
                     className={`rounded-lg border p-3 transition-colors ${compact ? "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35" : selectedRowId === `coven:${entry.id}` ? "cursor-pointer border-[var(--accent-presence)] bg-[var(--bg-raised)]/55" : "cursor-pointer border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 hover:bg-[var(--bg-raised)]/50"}`}
                   >
                     <div className="flex items-start justify-between gap-2">
