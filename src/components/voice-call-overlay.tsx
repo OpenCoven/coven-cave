@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
 import { getVoiceProvider } from "@/lib/voice/registry";
@@ -59,14 +59,15 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         const provider = getVoiceProvider(familiar.voiceProvider ?? "");
         const grant = grantRef.current;
         const mic = micStreamRef.current;
-        if (!provider || !grant || !mic) {
+        const callId = state.callId;
+        if (!provider || !grant || !mic || !callId) {
           dispatch({ type: "PROVIDER_ERROR", errorCode: "internal" });
           return;
         }
         try {
           const live = await provider.clientAdapter.connect(grant, mic, {
-            onUserTranscriptFinal: (text) => postTranscript(sessionId, state.callId!, "user", text),
-            onAssistantTranscriptFinal: (text) => postTranscript(sessionId, state.callId!, "assistant", text),
+            onUserTranscriptFinal: (text) => postTranscript(sessionId, callId, "user", text),
+            onAssistantTranscriptFinal: (text) => postTranscript(sessionId, callId, "assistant", text),
             onPartialTranscript: () => { /* live caption surface, not persisted */ },
             onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message }),
             onDisconnect: () => dispatch({ type: "DISCONNECTED" }),
@@ -83,6 +84,13 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         if (live) await live.close();
         liveRef.current = null;
         dispatch({ type: "DISCONNECTED" });
+      } else if (state.state === "error") {
+        const live = liveRef.current;
+        if (live) {
+          try { await live.close(); } catch { /* already closed */ }
+          liveRef.current = null;
+        }
+        cleanup();
       } else if (state.state === "closed") {
         cleanup();
         onClose();
@@ -96,6 +104,14 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   useEffect(() => {
     liveRef.current?.setMuted(state.muted);
   }, [state.muted]);
+
+  // Tick every second while live so the rendered duration advances.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (state.state !== "live") return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [state.state]);
 
   const cleanup = () => {
     micStreamRef.current?.getTracks().forEach(t => t.stop());
