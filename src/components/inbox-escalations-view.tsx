@@ -728,8 +728,12 @@ function EscalationRow({
             </span>
           </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {item.fromFamiliar ? <>From <span className="text-foreground">{item.fromFamiliar}</span> · </> : null}
-            {item.aboutFamiliar ? <>about <span className="text-foreground">{item.aboutFamiliar}</span> · </> : null}
+            {item.fromFamiliar ? (
+              <>From <span className="inline-block max-w-[12ch] truncate align-bottom text-foreground">{item.fromFamiliar}</span> · </>
+            ) : null}
+            {item.aboutFamiliar ? (
+              <>about <span className="inline-block max-w-[12ch] truncate align-bottom text-foreground">{item.aboutFamiliar}</span> · </>
+            ) : null}
             <span title={item.createdAt}>{age(item.createdAt)} ago</span>
             {item.state !== "new" ? (
               <span className="ml-1.5 inline-block rounded border border-border bg-card px-1 py-px text-[9px] uppercase tracking-widest text-muted-foreground align-middle">

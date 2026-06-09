@@ -62,4 +62,16 @@ assert.match(
   "Hover affordance must use opacity-0 group-hover:opacity-100",
 );
 
+// ───────── Task 5: Familiar names truncate ─────────
+assert.match(
+  source,
+  /<span className="inline-block max-w-\[12ch\] truncate align-bottom text-foreground">\{item\.fromFamiliar\}<\/span>/,
+  "fromFamiliar span must use inline-block max-w-[12ch] truncate",
+);
+assert.match(
+  source,
+  /<span className="inline-block max-w-\[12ch\] truncate align-bottom text-foreground">\{item\.aboutFamiliar\}<\/span>/,
+  "aboutFamiliar span must use inline-block max-w-[12ch] truncate",
+);
+
 console.log("inbox-escalations-view-polish.test.ts: ok");
