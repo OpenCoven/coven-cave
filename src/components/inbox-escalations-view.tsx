@@ -710,12 +710,14 @@ function EscalationRow({
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-sm text-foreground">
-            <span
-              className={`shrink-0 rounded border px-1.5 py-px text-[9px] uppercase tracking-widest ${sevColor}`}
-              title={item.severityReason ?? SEVERITY_LABEL[item.severity]}
-            >
-              {SEVERITY_LABEL[item.severity]}
-            </span>
+            {item.severity === "critical" ? (
+              <span
+                className={`shrink-0 rounded border px-1.5 py-px text-[9px] uppercase tracking-widest ${sevColor}`}
+                title={item.severityReason ?? SEVERITY_LABEL[item.severity]}
+              >
+                {SEVERITY_LABEL[item.severity]}
+              </span>
+            ) : null}
             {originChipFor(item.origin)}
             <span className="min-w-0 flex-1 truncate" title={item.title}>
               {item.title}

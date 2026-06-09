@@ -16,4 +16,16 @@ assert.doesNotMatch(
   "Old `· {item.state}` middot-text shape must be removed",
 );
 
+// ───────── Task 2: Severity text badge gated on critical only ─────────
+assert.match(
+  source,
+  /\{item\.severity === "critical" \? \(\s*<span/,
+  "Severity text badge must be gated on item.severity === 'critical'",
+);
+assert.doesNotMatch(
+  source,
+  /^\s*<span\s+className=\{`shrink-0 rounded border px-1\.5 py-px text-\[9px\] uppercase tracking-widest \$\{sevColor\}`\}\s+title=\{item\.severityReason \?\? SEVERITY_LABEL\[item\.severity\]\}>\s*\{SEVERITY_LABEL\[item\.severity\]\}\s*<\/span>$/m,
+  "Unconditional severity badge render must be gone",
+);
+
 console.log("inbox-escalations-view-polish.test.ts: ok");
