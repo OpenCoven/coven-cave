@@ -384,7 +384,10 @@ export function HomeComposer({
             {sending ? (
               <span className="hc-spinner" />
             ) : (
-              <Icon name="ph:arrow-up-bold" width={14} aria-hidden />
+              <>
+                <Icon name="ph:arrow-up-bold" width={11} aria-hidden />
+                <span className="hc-send-label">Send</span>
+              </>
             )}
           </button>
         </div>

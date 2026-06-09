@@ -33,4 +33,11 @@ assert.match(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ command
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 assert.match(css, /\.hc-keyboard-hint\s*\{[\s\S]*?color:\s*var\(--text-muted\)/, ".hc-keyboard-hint CSS with --text-muted");
 
+// ───────── Task 3: Visible Send label ─────────
+assert.match(source, /<span className="hc-send-label">Send<\/span>/, "Send label in button body");
+assert.match(source, /aria-label="Send"/, "Button keeps aria-label='Send'");
+assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?gap:\s*5px/, ".hc-send-btn uses gap: 5px");
+assert.doesNotMatch(css, /\.hc-send-btn\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?\}/, "Old fixed 32x32 size removed");
+assert.match(css, /\.hc-send-label\s*\{/, ".hc-send-label rule defined");
+
 console.log("home-composer-polish.test.ts: ok");
