@@ -419,6 +419,23 @@ export function GitHubView() {
     return () => { if (timerRef.current !== null) window.clearTimeout(timerRef.current); };
   }, []);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key !== "r" && e.key !== "R") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      void fetchActivity();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const items = activity?.items ?? [];
   const filtered = filter === "all" ? items : items.filter((i) => i.kind === filter);
 
@@ -446,12 +463,10 @@ export function GitHubView() {
       )}
 
       {/* ── Header ── */}
-      <header className="flex items-center gap-3 border-b border-[var(--border-hairline)] px-5 py-3">
+      <header className="flex items-center gap-3 border-b border-[var(--border-hairline)] px-5 py-2">
         <div className="flex items-center gap-2">
-          <Icon name="ph:github-logo" width={16} className="text-[var(--text-secondary)]" />
-          <h2 className="text-[15px] font-semibold">GitHub</h2>
           {activity?.login && (
-            <span className="text-[12px] text-[var(--text-muted)]">@{activity.login}</span>
+            <span className="text-[12px] text-[var(--text-secondary)]">@{activity.login}</span>
           )}
         </div>
 
@@ -488,7 +503,7 @@ export function GitHubView() {
               if (timerRef.current !== null) window.clearTimeout(timerRef.current);
               void fetchActivity();
             }}
-            title="Refresh"
+            title="Refresh (⌘R)"
             className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
           >
             <Icon name="ph:arrows-clockwise" width={13} />
@@ -590,21 +605,24 @@ export function GitHubView() {
       </div>
 
       {/* ── Footer ── */}
-      {activity && (
-        <footer className="border-t border-[var(--border-hairline)] px-5 py-2 text-[10px] text-[var(--text-muted)] flex items-center justify-between">
-          <span>
-            {activity.authed
-              ? "Authenticated — private repos included"
-              : "Public API — add a PAT for private repos + review requests"}
-          </span>
-          {activity.rateLimit && activity.rateLimit.remaining < 10 && (
+      <footer className="shrink-0 border-t border-[var(--border-hairline)] px-5 py-1.5 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-3">
+        <span>⌘R refresh · click a row to open in GitHub</span>
+        <span className="inline-flex items-center gap-3">
+          {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
             <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
               <Icon name="ph:warning-fill" width={12} aria-hidden />
               {activity.rateLimit.remaining} requests remaining
             </span>
           )}
-        </footer>
-      )}
+          {activity && (
+            <span>
+              {activity.authed
+                ? "Authenticated — private repos included"
+                : "Public API — add a PAT for private repos + review requests"}
+            </span>
+          )}
+        </span>
+      </footer>
     </section>
   );
 }
