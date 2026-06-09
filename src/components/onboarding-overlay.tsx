@@ -258,6 +258,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   const platformCopy = PLATFORM_COPY[platform];
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
+  const selectedHarness =
+    chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
+  const hasExistingOpenClawAgents = openclawAgents.length > 0;
 
   const copyText = async (text: string) => {
     try {
@@ -742,8 +745,19 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
               />
               <span>
-                I understand this creates a new Coven familiar instead of
-                connecting an existing OpenClaw agent.
+                I understand this creates a new Coven familiar
+                {selectedHarness ? (
+                  <>
+                    {" "}bound to the{" "}
+                    <span className="font-medium text-[var(--text-primary)]">
+                      {selectedHarness.label}
+                    </span>{" "}harness
+                  </>
+                ) : null}
+                {hasExistingOpenClawAgents
+                  ? ", not a connection to one of the existing OpenClaw agents listed alongside"
+                  : ""}
+                .
               </span>
             </label>
             <button
