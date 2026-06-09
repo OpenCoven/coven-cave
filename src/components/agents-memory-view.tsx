@@ -408,7 +408,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         </div>
       ) : (
       <div className={`min-h-0 flex-1 ${compact ? "flex flex-col gap-4 overflow-y-auto p-4" : selectedRowId ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,360px)]" : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"}`}>
-        {compact && loaded && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
+        {compact && loaded && !error && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
           <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-10 text-center">
             <Icon name="ph:brain" width={22} className="text-[var(--text-muted)]" />
             <div className="mt-3 text-[13px] font-medium text-[var(--text-primary)]">
