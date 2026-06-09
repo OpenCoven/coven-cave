@@ -64,27 +64,32 @@ const clientAdapter: VoiceClientAdapter = {
     const events = pc.createDataChannel("oai-events");
     events.onmessage = (ev) => handleEvent(ev.data, callbacks);
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+      if (pc.connectionState === "failed") {
         callbacks.onDisconnect();
       }
     };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-    const res = await fetch(grant.connection.url as string, {
-      method: "POST",
-      headers: {
-        "authorization": `Bearer ${grant.clientSecret}`,
-        "content-type": "application/sdp",
-      },
-      body: offer.sdp,
-    });
-    if (!res.ok) {
-      throw new Error(`sdp_exchange_failed_${res.status}`);
+      const res = await fetch(grant.connection.url as string, {
+        method: "POST",
+        headers: {
+          "authorization": `Bearer ${grant.clientSecret}`,
+          "content-type": "application/sdp",
+        },
+        body: offer.sdp,
+      });
+      if (!res.ok) {
+        throw new Error(`sdp_exchange_failed_${res.status}`);
+      }
+      const answer = await res.text();
+      await pc.setRemoteDescription({ type: "answer", sdp: answer });
+    } catch (err) {
+      try { pc.close(); } catch { /* already closing */ }
+      throw err;
     }
-    const answer = await res.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answer });
 
     const localTracks = mic.getAudioTracks();
 
