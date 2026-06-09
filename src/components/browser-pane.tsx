@@ -614,8 +614,10 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
                   : <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
                 }
               </span>
-              {/* Label */}
-              <span className="w-[44px] truncate text-center text-[9px] leading-tight">{title}</span>
+              {/* Label — only when rail is expanded; favicon-only when collapsed */}
+              {railExpanded ? (
+                <span className="w-[44px] truncate text-center text-[10px] leading-tight">{title}</span>
+              ) : null}
               {/* Close on hover */}
               {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
                 <button

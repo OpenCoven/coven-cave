@@ -26,4 +26,16 @@ assert.match(
   "[ handler must be scoped to focus inside the pane",
 );
 
+// ───────── Task 2: Tab label legibility ─────────
+assert.match(
+  pane,
+  /\{railExpanded \? \(\s*<span className="w-\[44px\] truncate text-center text-\[10px\] leading-tight">\{title\}<\/span>\s*\) : null\}/,
+  "Tab label gated on railExpanded + text-[10px]",
+);
+assert.doesNotMatch(
+  pane,
+  /<span className="w-\[44px\] truncate text-center text-\[9px\] leading-tight">/,
+  "Old text-[9px] label must be removed",
+);
+
 console.log("browser-polish.test.ts: ok");
