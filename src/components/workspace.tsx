@@ -1081,7 +1081,7 @@ export function Workspace() {
             }
           />
         }
-        agentRail={
+        agentRail={showCompanionRail ? (
           <aside className="agent-trigger-rail" aria-label="Salem toggle">
             <button
               type="button"
@@ -1096,7 +1096,7 @@ export function Workspace() {
               <Icon name="ph:cat" width={14} />
             </button>
           </aside>
-        }
+        ) : undefined}
         nav={sidebar}
         list={list}
         detail={detail}

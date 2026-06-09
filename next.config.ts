@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep local git-worktree builds scoped to this app checkout instead of
+  // letting Next infer a parent workspace root from sibling lockfiles.
+  outputFileTracingRoot: process.cwd(),
+  turbopack: {
+    root: process.cwd(),
+  },
   // Standalone output produces a self-contained Node server at
   // .next/standalone/ that we can bundle as a Tauri sidecar.
   output: "standalone",
