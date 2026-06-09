@@ -357,6 +357,7 @@ function SessionRowItem({
   session,
   familiar,
   active,
+  compact,
   menuOpen,
   renaming,
   onClick,
@@ -369,6 +370,7 @@ function SessionRowItem({
   session: SessionRow;
   familiar: Familiar | undefined;
   active: boolean;
+  compact?: boolean;
   menuOpen: boolean;
   renaming: boolean;
   onClick: () => void;
@@ -402,13 +404,15 @@ function SessionRowItem({
       }}
       title={title}
     >
-      <div className="session-row-familiar-chip">
-        {resolvedFamiliar ? (
-          <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
-        ) : (
-          <Icon name="ph:user" width={11} />
-        )}
-      </div>
+      {!compact && (
+        <div className="session-row-familiar-chip">
+          {resolvedFamiliar ? (
+            <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
+          ) : (
+            <Icon name="ph:user" width={11} />
+          )}
+        </div>
+      )}
       <div className="session-row-main">
         {renaming ? (
           <RenameInput
@@ -419,15 +423,17 @@ function SessionRowItem({
         ) : (
           <div className="session-row-title">{title}</div>
         )}
-        <div className="session-row-status-line">
-          <span className={statusDotClass(session.status)} />
-          <span className="session-row-status-label">{session.status}</span>
-          {archived && <span className="session-row-archived-badge">archived</span>}
-        </div>
+        {(!compact || session.status !== "completed" || archived) && (
+          <div className="session-row-status-line">
+            <span className={statusDotClass(session.status)} />
+            <span className="session-row-status-label">{session.status}</span>
+            {archived && <span className="session-row-archived-badge">archived</span>}
+          </div>
+        )}
       </div>
       <div className="session-row-meta">
         {harness && <span className="session-card-harness">{harness}</span>}
-        {label && <span className="session-card-origin">{label}</span>}
+        {label && !(compact && session.origin === "chat") && <span className="session-card-origin">{label}</span>}
         {ts && <span className="session-card-ts">{ts}</span>}
         <div className="session-row-menu-wrap">
           <button
@@ -490,6 +496,7 @@ function SessionGroup({
   onNewChat,
   showNewChat,
   layoutMode,
+  compact,
   openMenuId,
   setOpenMenuId,
   renamingId,
@@ -504,6 +511,7 @@ function SessionGroup({
   onNewChat: () => void;
   showNewChat: boolean;
   layoutMode: SessionsLayoutMode;
+  compact?: boolean;
   openMenuId: string | null;
   setOpenMenuId: (id: string | null) => void;
   renamingId: string | null;
@@ -552,6 +560,7 @@ function SessionGroup({
               session={s}
               familiar={familiar}
               active={s.id === activeSessionId}
+              compact={compact}
               menuOpen={openMenuId === s.id}
               renaming={renamingId === s.id}
               onClick={() => onOpenSession(s.id)}
@@ -657,6 +666,12 @@ export type SessionsViewProps = {
   /** Hide the per-familiar filter dropdown. Used by the Chats surface where the
    *  list is already scoped to the active agent. */
   hideFamiliarFilter?: boolean;
+  /** Drop redundant per-row chrome (familiar avatar, default-completed status,
+   *  "Chat" origin badge). Used by the chat-surface Chats tab. */
+  compact?: boolean;
+  /** Render Today/Yesterday/This week/Older section headers in place of the
+   *  per-familiar grouping. Requires hideFamiliarFilter to be true. */
+  groupByRecency?: boolean;
 };
 
 export function SessionsView({
@@ -668,6 +683,8 @@ export function SessionsView({
   onNewChat,
   onSessionsChanged,
   hideFamiliarFilter = false,
+  compact = false,
+  groupByRecency = false,
 }: SessionsViewProps) {
   const [layoutMode, setLayoutMode] = useState<SessionsLayoutMode>("rows");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -998,6 +1015,7 @@ export function SessionsView({
               onNewChat={() => onNewChat(effectiveFilterId)}
               showNewChat
               layoutMode={layoutMode}
+              compact={compact}
               openMenuId={openMenuId}
               setOpenMenuId={setOpenMenuId}
               renamingId={renamingId}
@@ -1020,6 +1038,7 @@ export function SessionsView({
                   onNewChat={() => onNewChat(effectiveFilterId)}
                   showNewChat={false}
                   layoutMode={layoutMode}
+                  compact={compact}
                   openMenuId={openMenuId}
                   setOpenMenuId={setOpenMenuId}
                   renamingId={renamingId}
@@ -1044,6 +1063,7 @@ export function SessionsView({
                   onNewChat={() => onNewChat(f.id)}
                   showNewChat={false}
                   layoutMode={layoutMode}
+                  compact={compact}
                   openMenuId={openMenuId}
                   setOpenMenuId={setOpenMenuId}
                   renamingId={renamingId}
@@ -1084,6 +1104,7 @@ export function SessionsView({
                   onNewChat={() => onNewChat(undefined)}
                   showNewChat={false}
                   layoutMode={layoutMode}
+                  compact={compact}
                   openMenuId={openMenuId}
                   setOpenMenuId={setOpenMenuId}
                   renamingId={renamingId}
