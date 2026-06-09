@@ -265,18 +265,6 @@ function FamiliarSwitcher({
             className="sidebar-familiar-switcher__caret"
           />
         </button>
-        <button
-          type="button"
-          className="sidebar-familiar-switcher__plus"
-          aria-label="Add familiar"
-          title="Add familiar"
-          onClick={() => {
-            setOpen(false);
-            onAddFamiliar();
-          }}
-        >
-          <Icon name="ph:plus-bold" width={14} />
-        </button>
       </div>
       {open ? (
         <div
