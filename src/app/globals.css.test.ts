@@ -39,8 +39,8 @@ assert.match(covenRootBlock, /--background\s*:\s*oklch\(0\.13 0\.022 293\)/, "co
 
 console.log("globals.css.test.ts (task 3) OK");
 
-// Task 4 assertions: the 7 non-default themes each have dark + light blocks.
-const otherThemes = ["tide", "grove", "ember", "bloom", "dusk", "mist", "slate"];
+// Task 4 assertions: the 9 non-default themes each have dark + light blocks.
+const otherThemes = ["tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate"];
 for (const id of otherThemes) {
   const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
   const lightRe = new RegExp(`\\[data-theme="${id}"\\]\\[data-mode="light"\\]\\s*\\{`);

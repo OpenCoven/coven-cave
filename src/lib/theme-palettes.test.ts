@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { THEME_IDS, THEME_META, getSwatches } from "./theme-palettes.ts";
 import { LEGACY_THEME_RENAME, COVEN_THEME_KEY, COVEN_MODE_KEY } from "./theme-storage.ts";
 
-// 8 themes, coven is the default (first).
-assert.equal(THEME_IDS.length, 8);
+// 10 themes, coven is the default (first).
+assert.equal(THEME_IDS.length, 10);
 assert.equal(THEME_IDS[0], "coven");
 assert.deepEqual(
   [...THEME_IDS].sort(),
-  ["bloom", "coven", "dusk", "ember", "grove", "mist", "slate", "tide"],
+  ["bane", "bloom", "coven", "dusk", "ember", "grove", "hex", "mist", "slate", "tide"],
 );
 
 // Every theme has a name, hue, and both accent values.
