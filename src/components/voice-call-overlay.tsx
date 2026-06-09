@@ -46,7 +46,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
               type: "SESSION_FAILED",
               errorCode: json.error,
               missingKey: json.missingKey,
-              hint: json.hint,
+              hint: json.hint ?? json.providerMessage,
             });
             return;
           }
@@ -76,8 +76,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
           dispatch({ type: "CONNECTED", startedAt: Date.now() });
-        } catch {
-          dispatch({ type: "PROVIDER_ERROR", errorCode: "connect_failed" });
+        } catch (err) {
+          dispatch({
+            type: "PROVIDER_ERROR",
+            errorCode: err instanceof Error ? err.message : "connect_failed",
+          });
         }
       } else if (state.state === "ending") {
         const live = liveRef.current;
@@ -92,6 +95,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         }
         cleanup();
       } else if (state.state === "closed") {
+        const live = liveRef.current;
+        if (live) {
+          try { await live.close(); } catch { /* ignore */ }
+          liveRef.current = null;
+        }
         cleanup();
         onClose();
       }

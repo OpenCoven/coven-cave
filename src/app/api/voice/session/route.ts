@@ -17,7 +17,7 @@ const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
 };
 
 const DEFAULTS: Record<string, { model: string; voice: string }> = {
-  openai: { model: "gpt-realtime", voice: "alloy" },
+  openai: { model: "gpt-4o-realtime-preview", voice: "alloy" },
   gemini: { model: "gemini-2.0-flash-exp", voice: "Puck" },
 };
 
@@ -82,7 +82,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "unknown_provider" }, { status: 400 });
   }
 
-  const vaultKey = VAULT_KEY_BY_PROVIDER[familiar.voiceProvider];
+  const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
+  if (!vaultKey) {
+    return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
+  }
   const apiKey = resolveSecret(vaultKey);
   if (!apiKey) {
     return NextResponse.json({
