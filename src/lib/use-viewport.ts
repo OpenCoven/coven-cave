@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-const MOBILE_QUERY = "(max-width: 767px)";
+const MOBILE_QUERY = "(max-width: 1023px)";
 const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
 /**
  * Live boolean for "viewport narrower than the desktop shell breakpoint."
  * SSR-safe: returns false on the server and during the first browser render,
  * then flips synchronously after mount and subscribes to viewport changes.
- * Pair with CSS @media (max-width: 767px) so server-rendered markup matches.
+ * Pair with CSS @media (max-width: 1023px) so server-rendered markup matches.
  */
 export function useIsMobile(): boolean {
   const [mobile, setMobile] = useState(false);
