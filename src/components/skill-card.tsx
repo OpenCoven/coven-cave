@@ -131,7 +131,7 @@ export function SkillCard({
         <Icon
           name="ph:arrow-right-bold"
           width={12}
-          className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          className="touch-always-visible text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
         />
       </span>
     </button>

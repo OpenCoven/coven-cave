@@ -621,7 +621,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
                 <button
                   onClick={(e) => removeTab(tab.id, e)}
-                  className="focus-ring absolute top-1 right-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 text-[var(--fg-muted)] transition-opacity"
+                  className="touch-always-visible focus-ring absolute top-1 right-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 text-[var(--fg-muted)] transition-opacity"
                   title="Close tab"
                 >
                   <Icon name="ph:x-bold" width={7} />

@@ -148,7 +148,7 @@ export function NotificationBell({
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setSettingsOpen((v) => !v)}
-                className="focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
+                className="touch-always-visible focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
                 title="Notification settings"
                 aria-label="Notification settings"
               >
@@ -276,7 +276,7 @@ export function NotificationBell({
                         onClick={() => void toggleMute(it.familiarId!)}
                         title={muted ? `Unmute ${fname}` : `Mute ${fname}`}
                         aria-label={muted ? `Unmute ${fname}` : `Mute ${fname}`}
-                        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
+                        className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
                       >
                         <Icon
                           name={muted ? "ph:bell-slash-fill" : "ph:bell-slash"}

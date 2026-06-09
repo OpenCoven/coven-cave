@@ -713,7 +713,7 @@ function EscalationRow({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-start gap-2">
         <label
-          className={`mt-0.5 inline-flex shrink-0 items-center transition-opacity ${
+          className={`touch-always-visible mt-0.5 inline-flex shrink-0 items-center transition-opacity ${
             isSelected || isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
           onClick={(e) => e.stopPropagation()}
@@ -769,7 +769,7 @@ function EscalationRow({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onPromoteToActive(); }}
-            className="shrink-0 opacity-0 group-hover:opacity-100 focus-ring rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-opacity"
+            className="touch-always-visible shrink-0 opacity-0 group-hover:opacity-100 focus-ring rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-opacity"
             aria-label="Show actions"
             title="Show actions"
           >

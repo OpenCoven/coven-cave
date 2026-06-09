@@ -334,7 +334,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                       {repoName(projectRoot)}
                     </span>
                     <button
-                      className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                      className="touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                       onClick={(e) => {
                         e.stopPropagation();
                         onNewChat(projectRoot);
@@ -429,7 +429,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                             onClick={(e) => openInTui(e, s.id)}
                             disabled={busyTuiId === s.id}
                             title="Open in Coven Code TUI"
-                            className="self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-all hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
+                            className="touch-always-visible self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-all hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
                           >
                             {busyTuiId === s.id ? "…" : "tui →"}
                           </button>
