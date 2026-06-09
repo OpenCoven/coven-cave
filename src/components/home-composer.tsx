@@ -12,12 +12,14 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { Icon, type IconName } from "@/lib/icon";
+import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +39,9 @@ type Props = {
   onNavigateToBoard: () => void;
   onNavigateToInbox: () => void;
   onToast: (msg: string) => void;
+  /** Submit a slash command. Mirrors the chat composer's escape hatch so
+   *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
+  onSlash?: (command: string, args: string) => void;
 };
 
 const SEED_SUGGESTIONS = [
@@ -55,6 +60,7 @@ export function HomeComposer({
   onNavigateToBoard,
   onNavigateToInbox,
   onToast,
+  onSlash,
 }: Props) {
   const [text, setText] = useState("");
   const [destination, setDestination] = useState<Destination>("chat");
@@ -63,7 +69,20 @@ export function HomeComposer({
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
+  const [slashIdx, setSlashIdx] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Mirror the chat composer's matching rule: surface only while the user is
+  // still typing the command token (no whitespace yet).
+  const slashSuggestions: SlashCommand[] = useMemo(() => {
+    const firstWord = text.trimStart().split(/\s/)[0] ?? "";
+    if (!firstWord.startsWith("/") || text.trimStart().includes(" ")) return [];
+    return matchSlash(firstWord);
+  }, [text]);
+
+  useEffect(() => {
+    setSlashIdx(0);
+  }, [text]);
 
   // Focus on mount
   useEffect(() => {
@@ -111,6 +130,37 @@ export function HomeComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Slash menu hotkeys take priority over history/submit when it's open
+      if (slashSuggestions.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSlashIdx((i) => Math.min(i + 1, slashSuggestions.length - 1));
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSlashIdx((i) => Math.max(i - 1, 0));
+          return;
+        }
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const cmd = slashSuggestions[slashIdx];
+          if (cmd) setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+          return;
+        }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const cmd = slashSuggestions[slashIdx];
+          // If the input is an exact command (no args yet), run it directly;
+          // otherwise autocomplete first so the user can fill in args.
+          if (cmd && cmd.argPlaceholder && canonicalize(text.trim()) !== cmd.name) {
+            setText(cmd.name + " ");
+          } else {
+            void handleSubmit();
+          }
+          return;
+        }
+      }
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         void handleSubmit();
@@ -137,12 +187,30 @@ export function HomeComposer({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [text, history, historyIdx],
+    [text, history, historyIdx, slashSuggestions, slashIdx],
   );
 
   const handleSubmit = useCallback(async () => {
     const prompt = text.trim();
     if (!prompt || sending) return;
+
+    // Slash commands bypass the destination model entirely — same contract
+    // as the chat composer's slash dispatch.
+    if (prompt.startsWith("/")) {
+      const [rawCmd, ...rest] = prompt.split(/\s+/);
+      const command = canonicalize(rawCmd) ?? rawCmd;
+      const args = rest.join(" ");
+      if (onSlash) {
+        setHistory((prev) => [...prev, prompt]);
+        setHistoryIdx(-1);
+        setText("");
+        onSlash(command, args);
+      } else {
+        onToast(`Slash commands aren't wired up here yet — try ${command} from a chat.`);
+      }
+      return;
+    }
+
     setHistory((prev) => [...prev, prompt]);
     setHistoryIdx(-1);
     setSending(true);
@@ -217,7 +285,7 @@ export function HomeComposer({
       setSending(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, destination, activeFamiliarId, familiars, sending]);
+  }, [text, destination, activeFamiliarId, familiars, sending, onSlash]);
 
   return (
     <div className="home-composer-root">
@@ -228,8 +296,45 @@ export function HomeComposer({
         <p className="home-composer-sub">Pick a destination, and go.</p>
       </div>
 
-      {/* Composer card */}
-      <div className="home-composer-card">
+      {/* Composer card — wrapped so the slash menu can render above the
+          card without being clipped by the card's `overflow: hidden`. */}
+      <div className="home-composer-card-wrap">
+
+        {/* Slash suggestion popover — anchored above the card so it doesn't
+            push the rest of the layout when it opens. */}
+        {slashSuggestions.length > 0 ? (
+          <div className="hc-slash-menu">
+            <ul className="hc-slash-list">
+              {slashSuggestions.map((cmd, i) => {
+                const active = i === slashIdx;
+                return (
+                  <li key={cmd.name}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setSlashIdx(i)}
+                      onClick={() => {
+                        setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+                        textareaRef.current?.focus();
+                      }}
+                      className={`hc-slash-row${active ? " active" : ""}`}
+                    >
+                      <span className="hc-slash-name">{cmd.name}</span>
+                      <span className="hc-slash-desc">{cmd.description}</span>
+                      {cmd.argPlaceholder ? (
+                        <span className="hc-slash-arg">{cmd.argPlaceholder}</span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hc-slash-footer">
+              ↑↓ navigate · Enter run · Tab complete · type space to dismiss
+            </div>
+          </div>
+        ) : null}
+
+        <div className="home-composer-card">
 
         {/* Textarea */}
         <textarea
@@ -277,6 +382,7 @@ export function HomeComposer({
               <Icon name="ph:arrow-up-bold" width={14} aria-hidden />
             )}
           </button>
+        </div>
         </div>
       </div>
 

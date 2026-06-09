@@ -926,6 +926,7 @@ export function Workspace() {
         onNavigateToBoard={() => setMode("board")}
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
+        onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
       />
     ) : mode === "chat" ? (
       <ChatSurface
@@ -1043,6 +1044,7 @@ export function Workspace() {
         onNavigateToBoard={() => setMode("board")}
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
+        onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
       />
     )}
     </div>

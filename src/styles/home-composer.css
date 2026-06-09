@@ -41,6 +41,14 @@
   letter-spacing: -0.01em;
 }
 
+/* Wrap around the composer card so the slash menu can render above without
+ * being clipped by the card's `overflow: hidden`. */
+.home-composer-card-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+}
+
 /* ── Composer card ───────────────────────────────────────────────────────── */
 .home-composer-card {
   width: 100%;
@@ -313,4 +321,77 @@
   max-width: 720px;
   margin-inline: auto;
   width: 100%;
+}
+
+/* ── Slash command menu ──────────────────────────────────────────────────────
+ *   Floats above the composer card while the user is typing a `/command`.
+ *   Matches the chat composer's affordance so the muscle memory transfers. */
+.hc-slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 10;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-2xl, 14px);
+  background: var(--bg-base);
+  box-shadow:
+    0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
+    0 4px 18px -6px rgb(0 0 0 / 0.35);
+}
+.hc-slash-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.hc-slash-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.hc-slash-row:hover,
+.hc-slash-row.active {
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+}
+.hc-slash-name {
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 110px;
+}
+.hc-slash-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hc-slash-arg {
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+.hc-slash-footer {
+  border-top: 1px solid var(--border-hairline);
+  padding: 6px 12px;
+  font-size: 10px;
+  color: var(--text-muted);
 }
