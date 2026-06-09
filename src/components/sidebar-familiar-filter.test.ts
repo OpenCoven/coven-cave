@@ -32,20 +32,20 @@ assert.match(
 
 assert.match(
   sidebar,
-  /aria-label="Active familiar"/,
-  "Familiar selector should label the dropdown after the active familiar",
+  /<span className="sidebar-familiar-filter__label">Agent<\/span>[\s\S]*aria-label="Filter workspace by agent"[\s\S]*<option value="">Familiars<\/option>/,
+  "Familiar selector should expose Familiars as the generic no-filter agent option",
 );
 
 assert.doesNotMatch(
   sidebar,
   /Coven \(all\)/,
-  "Selector should not offer an all-scope option — downstream surfaces hard-scope to a single familiar",
+  "Selector should use Familiars, not Coven (all), for the generic no-filter option",
 );
 
 assert.match(
   sidebar,
-  /if \(next\) onFamiliarScopeChange\(next\)/,
-  "Selector should only fire the callback for a real familiar id, never an empty value",
+  /onFamiliarScopeChange\(e\.currentTarget\.value \|\| null\)/,
+  "Selector should send null when Familiars is selected",
 );
 
 assert.match(
@@ -56,8 +56,14 @@ assert.match(
 
 assert.match(
   sidebar,
-  /onFamiliarScopeChange: \(id: string\) => void/,
-  "Sidebar should expose a non-null callback for changing the active familiar",
+  /onFamiliarScopeChange: \(id: string \| null\) => void/,
+  "Sidebar should expose a nullable callback for changing the active familiar scope",
+);
+
+assert.doesNotMatch(
+  workspace,
+  /setActiveId\(\(curr\) => curr \?\? (?:fallback|merged)\[0\]\?\.id \?\? null\)/,
+  "Workspace should not auto-select the first familiar; null means the generic Familiars scope",
 );
 
 assert.doesNotMatch(
@@ -86,14 +92,20 @@ assert.match(
 
 assert.match(
   workspace,
-  /onFamiliarScopeChange=\{selectFamiliar\}/,
-  "Workspace should wire the sidebar familiar selector into the existing single-familiar select handler",
+  /onFamiliarScopeChange=\{selectFamiliarScope\}/,
+  "Workspace should wire the sidebar familiar selector into nullable familiar scope state",
 );
 
 assert.match(
   chatSurface,
-  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : \[\], \[activeFamiliar\]\)/,
-  "ChatSurface stays hard-scoped to the active familiar — no all-familiar fallback",
+  /familiars,[\s\S]*activeFamiliar,[\s\S]*activeFamiliarId,/,
+  "ChatSurface should destructure familiars so the generic scope can show all familiars",
+);
+
+assert.match(
+  chatSurface,
+  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
+  "ChatSurface should show all familiar memory/list context when Familiars is selected",
 );
 
 assert.match(

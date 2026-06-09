@@ -15,6 +15,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 type AgentsScope = "conversation" | "memory";
 
 type Props = {
+  familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliar: Familiar | null;
   activeFamiliarId: string | null;
@@ -127,6 +128,7 @@ function RightPanel({
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function ChatSurface({
+  familiars,
   sessions,
   activeFamiliar,
   activeFamiliarId,
@@ -164,7 +166,7 @@ export function ChatSurface({
     onSetInspectorOpen(next === "inspector");
   }
 
-  const scopedFamiliars = useMemo(() => activeFamiliar ? [activeFamiliar] : [], [activeFamiliar]);
+  const scopedFamiliars = useMemo(() => activeFamiliar ? [activeFamiliar] : familiars, [activeFamiliar, familiars]);
 
   // Window events
   useEffect(() => {

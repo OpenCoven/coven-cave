@@ -96,8 +96,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /onFamiliarScopeChange=\{selectFamiliar\}/,
-  "Workspace wires the sidebar familiar scope selector into the single-familiar select handler",
+  /onFamiliarScopeChange=\{selectFamiliarScope\}/,
+  "Workspace wires the sidebar familiar scope selector into nullable familiar scope state",
 );
 
 assert.doesNotMatch(

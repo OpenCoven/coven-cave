@@ -214,7 +214,6 @@ export function Workspace() {
         const fallback = DEMO_MODE ? DEMO_FAMILIARS : [];
         setFamiliars(fallback);
         setFamiliarsError(DEMO_MODE ? null : (json.error ?? "daemon offline"));
-        if (DEMO_MODE) setActiveId((curr) => curr ?? fallback[0]?.id ?? null);
         return;
       }
       setFamiliarsError(null);
@@ -224,20 +223,23 @@ export function Workspace() {
         ? [...list, ...DEMO_FAMILIARS.filter((d) => !list.find((l) => l.id === d.id))]
         : list;
       setFamiliars(merged);
-      setActiveId((curr) => curr ?? merged[0]?.id ?? null);
     } catch (err) {
       const fallback = DEMO_MODE ? DEMO_FAMILIARS : [];
       setFamiliars(fallback);
       setFamiliarsError(DEMO_MODE ? null : (err instanceof Error ? err.message : "fetch failed"));
-      if (DEMO_MODE) setActiveId((curr) => curr ?? fallback[0]?.id ?? null);
     }
   }, []);
 
-  const selectFamiliar = useCallback((id: string) => {
+  const selectFamiliarScope = useCallback((id: string | null) => {
     setActiveId(id);
+    if (!id) return;
     const last = getLastSurface(id);
     if (last) setMode(last as WorkspaceMode);
   }, []);
+
+  const selectFamiliar = useCallback((id: string) => {
+    selectFamiliarScope(id);
+  }, [selectFamiliarScope]);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -882,7 +884,7 @@ export function Workspace() {
       inboxPrefs={inboxPrefs}
       familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
-      onFamiliarScopeChange={selectFamiliar}
+      onFamiliarScopeChange={selectFamiliarScope}
       notificationBadgeCount={inboxBadgeCount}
       onOpenInbox={() => setMode("inbox")}
       onOpenInboxItem={(item) => {
@@ -916,6 +918,7 @@ export function Workspace() {
       />
     ) : mode === "chat" ? (
       <ChatSurface
+        familiars={familiars}
         sessions={sessions}
         activeFamiliar={active}
         activeFamiliarId={activeId}

@@ -49,8 +49,8 @@ assert.match(
 
 assert.match(
   source,
-  /onFamiliarScopeChange: \(id: string\) => void/,
-  "Sidebar exposes a non-null familiar scope change callback (hard-scope)",
+  /onFamiliarScopeChange: \(id: string \| null\) => void/,
+  "Sidebar exposes a nullable familiar scope change callback for the generic Familiars option",
 );
 
 assert.match(

@@ -52,7 +52,7 @@ export type SidebarMinimalProps = {
   inboxPrefs?: InboxPrefs;
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
-  onFamiliarScopeChange: (id: string) => void;
+  onFamiliarScopeChange: (id: string | null) => void;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
   onOpenInboxItem?: (item: InboxItem) => void;
@@ -110,26 +110,20 @@ function FamiliarScopeSelect({
 }: {
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
-  onFamiliarScopeChange: (id: string) => void;
+  onFamiliarScopeChange: (id: string | null) => void;
 }) {
-  // Hard-scope: every downstream surface (Chat, Board, etc.) expects a single
-  // familiar selected, so the selector lists only familiars. The first
-  // familiar is bootstrapped at the workspace level; we don't expose an
-  // all-scope option because the aggregate views aren't built.
   return (
     <label className="sidebar-familiar-filter">
-      <span className="sidebar-familiar-filter__label">Scope</span>
+      <span className="sidebar-familiar-filter__label">Agent</span>
       <span className="sidebar-familiar-filter__control">
         <Icon name="ph:sparkle" width={14} className="sidebar-familiar-filter__icon" aria-hidden />
         <select
-          aria-label="Active familiar"
+          aria-label="Filter workspace by agent"
           value={activeFamiliarId ?? ""}
-          onChange={(e) => {
-            const next = e.currentTarget.value;
-            if (next) onFamiliarScopeChange(next);
-          }}
+          onChange={(e) => onFamiliarScopeChange(e.currentTarget.value || null)}
           className="sidebar-familiar-filter__select"
         >
+          <option value="">Familiars</option>
           {familiars.map((familiar) => (
             <option key={familiar.id} value={familiar.id}>
               {familiar.display_name}

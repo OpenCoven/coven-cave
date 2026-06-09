@@ -56,8 +56,8 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : \[\], \[activeFamiliar\]\)/,
-  "ChatSurface should derive a one-familiar list from the active familiar",
+  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
+  "ChatSurface should derive all familiars when the generic Familiars scope is selected",
 );
 
 assert.match(
