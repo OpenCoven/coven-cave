@@ -49,6 +49,29 @@ export function SettingsShell() {
 
   const [section, setSection] = useState<Section>(initialSection);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        router.back();
+        return;
+      }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const idx = SECTIONS.findIndex((s) => s.id === section);
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        const next = (idx + delta + SECTIONS.length) % SECTIONS.length;
+        setSection(SECTIONS[next].id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router, section]);
+
   return (
     <FamiliarStudioProvider>
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
@@ -105,6 +128,9 @@ export function SettingsShell() {
           {section === "about"    && <AboutSection />}
         </main>
       </div>
+      <footer className="shrink-0 border-t border-[var(--border-hairline)] px-4 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
+        Esc back · ↑↓ navigate sections
+      </footer>
     </div>
     </FamiliarStudioProvider>
   );
@@ -822,7 +848,7 @@ function SettingsGroup({ label, children }: { label: string; children: React.Rea
 
 function SettingsRow({ label, description, comingSoon, children }: { label: string; description?: string; comingSoon?: boolean; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className={`flex items-center justify-between gap-4 px-4 py-3 ${comingSoon ? "opacity-50" : ""}`}>
       <div className="min-w-0">
         <p className="text-[13px] text-[var(--text-primary)]">{label}</p>
         {description && <p className="text-[11px] text-[var(--text-muted)]">{description}</p>}
