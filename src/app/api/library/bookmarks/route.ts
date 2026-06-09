@@ -15,8 +15,23 @@ function generateId(): string {
   return `bm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function syntheticId(item: Partial<LibraryBookmark>): string {
+  let h = 0;
+  const seed = `${item.url ?? ""}|${item.savedAt ?? ""}|${item.title ?? ""}`;
+  for (let i = 0; i < seed.length; i++) h = ((h * 31) + seed.charCodeAt(i)) | 0;
+  return `bm_legacy_${(h >>> 0).toString(36)}`;
+}
+
 export async function GET() {
-  const items = (await store.readBookmarks()).slice().sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+  const raw = await store.readBookmarks();
+  const items = raw
+    .map((item) => ({
+      ...item,
+      id: item.id || syntheticId(item),
+      savedAt: item.savedAt || new Date(0).toISOString(),
+    }))
+    .slice()
+    .sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
   return NextResponse.json({ ok: true, items });
 }
 

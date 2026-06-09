@@ -274,7 +274,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete }: Props) 
                     </tr>
                   )}
                   {!collapsed.has(key) && gi.map((item) => (
-                    <tr key={item.id}
+                    <tr key={`${key}:${item.id || item.url}`}
                       className={item.id === selectedId ? "selected" : ""}
                       onClick={() => onSelect(item)}>
                       <td>
