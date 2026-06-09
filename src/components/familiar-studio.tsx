@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   setFamiliarOverride,
@@ -83,6 +84,33 @@ export function FamiliarStudio({ familiars }: Props) {
 
   const disableNonLifecycle = listView && !familiar;
 
+  // Roving tabindex over the tablist. Arrow keys move focus across enabled
+  // tabs; Home/End jump to ends. We pair this with an effect below to also
+  // switch the active tab when focus moves (automatic activation per APG).
+  const tablistRef = useRef<HTMLDivElement | null>(null);
+  const { activeIndex } = useRovingTabIndex({
+    containerRef: tablistRef,
+    itemSelector: '[role="tab"]:not([aria-disabled="true"])',
+    // Tabstrip is visually a column (`flex-direction: column`), so vertical
+    // arrow keys move focus across tabs. aria-orientation below mirrors this.
+    orientation: "vertical",
+  });
+
+  // Automatic activation: switch activeTab whenever the roving focus lands on
+  // a new tab. Studio tab panels are cheap, so APG recommends auto activation.
+  useEffect(() => {
+    const enabledTabs = TABS.filter((t) =>
+      disableNonLifecycle ? t.id === "lifecycle" : true,
+    );
+    const target = enabledTabs[activeIndex];
+    if (target && target.id !== activeTab) {
+      setActiveTab(target.id);
+    }
+    // Intentionally omit activeTab/setActiveTab from deps: this effect drives
+    // activeTab from activeIndex, not the other way around.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, disableNonLifecycle]);
+
   return (
     <aside
       role="dialog"
@@ -90,24 +118,34 @@ export function FamiliarStudio({ familiars }: Props) {
       className="familiar-studio__drawer"
     >
       {/* Tabstrip */}
-      <nav className="familiar-studio__tabstrip" aria-label="Studio sections">
+      <div
+        role="tablist"
+        aria-label="Studio sections"
+        aria-orientation="vertical"
+        ref={tablistRef}
+        className="familiar-studio__tabstrip"
+      >
         {TABS.map((t) => {
           const disabled = disableNonLifecycle && t.id !== "lifecycle";
+          const selected = activeTab === t.id;
           return (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              id={`familiar-studio-tab-${t.id}`}
+              aria-selected={selected}
+              aria-controls={`familiar-studio-panel-${t.id}`}
+              aria-disabled={disabled ? true : undefined}
               onClick={() => !disabled && setActiveTab(t.id)}
-              aria-current={activeTab === t.id ? "page" : undefined}
-              disabled={disabled}
-              className={`familiar-studio__tab${activeTab === t.id ? " familiar-studio__tab--active" : ""}`}
+              className={`familiar-studio__tab${selected ? " familiar-studio__tab--active" : ""}`}
             >
               <Icon name={t.icon} width={18} />
               <span>{t.label}</span>
             </button>
           );
         })}
-      </nav>
+      </div>
 
       {/* Main column */}
       <div className="familiar-studio__main">
@@ -132,7 +170,12 @@ export function FamiliarStudio({ familiars }: Props) {
           </button>
         </header>
 
-        <div className="familiar-studio__body">
+        <div
+          role="tabpanel"
+          id={`familiar-studio-panel-${activeTab}`}
+          aria-labelledby={`familiar-studio-tab-${activeTab}`}
+          className="familiar-studio__body"
+        >
           {/* Tab body slots — wired in later tasks. */}
           {activeTab === "identity" && familiar ? (
             <FamiliarStudioIdentityTab
