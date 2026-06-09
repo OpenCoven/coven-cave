@@ -1,0 +1,149 @@
+// @ts-nocheck
+import { test, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const TMP = mkdtempSync(join(tmpdir(), "voice-session-route-"));
+process.env.HOME = TMP;
+
+const FAMILIAR_ID = "milo";
+const SESSION_ID = "sess-route";
+
+function writeFamiliar(record: Record<string, unknown>) {
+  const dir = join(TMP, ".coven");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "cave-config.json"),
+    JSON.stringify({ familiars: { [FAMILIAR_ID]: record } }),
+  );
+}
+
+function writeSession(turns: any[] = []) {
+  const dir = join(TMP, ".coven", "cave-conversations");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${SESSION_ID}.json`), JSON.stringify({
+    sessionId: SESSION_ID, familiarId: FAMILIAR_ID, harness: "claude",
+    createdAt: "2026-06-01T00:00:00Z", updatedAt: "2026-06-01T00:00:00Z",
+    turns,
+  }));
+}
+
+function req(body: unknown) {
+  return new Request("http://test/api/voice/session", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+const realFetch = globalThis.fetch;
+let nextFetchResponse: Response | null = null;
+let lastFetchCall: { url: string; init: RequestInit } | null = null;
+
+(globalThis as any).fetch = async (url: string | URL, init?: RequestInit) => {
+  lastFetchCall = { url: String(url), init: init ?? {} };
+  if (nextFetchResponse) return nextFetchResponse;
+  return realFetch(url as any, init);
+};
+
+const { POST } = await import("./route.ts");
+
+beforeEach(() => {
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.GOOGLE_API_KEY;
+  nextFetchResponse = null;
+  lastFetchCall = null;
+});
+
+test("400 when familiarId missing", async () => {
+  const res = await POST(req({ sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.ok, false);
+});
+
+test("400 invalid_session when sessionId is unsafe", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "openai" });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: "../escape" }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.error, "invalid_session");
+});
+
+test("404 when familiar not found", async () => {
+  const res = await POST(req({ familiarId: "ghost", sessionId: SESSION_ID }));
+  assert.equal(res.status, 404);
+});
+
+test("400 voice_not_configured when familiar has no voiceProvider", async () => {
+  writeFamiliar({ display_name: "M", role: "x" });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.error, "voice_not_configured");
+});
+
+test("400 unknown_provider when voiceProvider is unrecognized", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "bogus" });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.error, "unknown_provider");
+});
+
+test("400 vault_key_unresolved when key not in env/vault", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "openai" });
+  writeSession([]);
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.error, "vault_key_unresolved");
+  assert.equal(json.missingKey, "OPENAI_API_KEY");
+});
+
+test("502 provider_mint_failed surfaces provider message verbatim", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "openai" });
+  writeSession([]);
+  process.env.OPENAI_API_KEY = "sk-x";
+  nextFetchResponse = new Response(
+    JSON.stringify({ error: { message: "quota exhausted" } }),
+    { status: 429 },
+  );
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 502);
+  assert.equal(json.error, "provider_mint_failed");
+  assert.match(json.providerMessage, /quota exhausted/);
+});
+
+test("200 happy path returns grant and ULID-shaped callId", async () => {
+  writeFamiliar({
+    display_name: "M",
+    role: "x",
+    voiceProvider: "openai",
+    voiceModel: "gpt-4o-realtime-preview",
+    voiceName: "alloy",
+  });
+  writeSession([]);
+  process.env.OPENAI_API_KEY = "sk-x";
+  nextFetchResponse = new Response(
+    JSON.stringify({
+      client_secret: { value: "ephem_z", expires_at: 1750000000 },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.grant.clientSecret, "ephem_z");
+  assert.equal(json.grant.connection.model, "gpt-4o-realtime-preview");
+  // 26-char Crockford base32 ULID shape (alphabet excludes I, L, O, U).
+  assert.match(json.callId, /^[0-9A-HJKMNP-TV-Z]{26}$/);
+  assert.ok(lastFetchCall);
+  assert.equal(lastFetchCall.url, "https://api.openai.com/v1/realtime/sessions");
+  const sentBody = JSON.parse(lastFetchCall.init.body as string);
+  assert.equal(sentBody.model, "gpt-4o-realtime-preview");
+  assert.equal(sentBody.voice, "alloy");
+});
