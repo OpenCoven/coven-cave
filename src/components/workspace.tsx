@@ -880,10 +880,8 @@ export function Workspace() {
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}
       familiars={resolvedFamiliars}
-      activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
-      responseNeeded={responseNeeded}
-      onSelectFamiliar={selectFamiliar}
-      onAddFamiliar={openOnboarding}
+      activeFamiliarId={activeId}
+      onFamiliarScopeChange={selectFamiliar}
       notificationBadgeCount={inboxBadgeCount}
       onOpenInbox={() => setMode("inbox")}
       onOpenInboxItem={(item) => {
@@ -1062,19 +1060,6 @@ export function Workspace() {
             }}
             onNotificationPrefsChanged={refreshPrefs}
           />
-        }
-        familiarRail={
-          <aside className="sidebar-trigger-rail" aria-label="Sidebar toggle">
-            <button
-              type="button"
-              className="sidebar-trigger-rail__toggle"
-              aria-label="Toggle sidebar"
-              title="Toggle sidebar (⌘B)"
-              onClick={() => shellRef.current?.toggleNav()}
-            >
-              <Icon name="ph:sidebar-simple" width={14} />
-            </button>
-          </aside>
         }
         agentRail={
           <aside className="agent-trigger-rail" aria-label="Salem toggle">

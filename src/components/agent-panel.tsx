@@ -30,7 +30,7 @@ export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPane
     <div className="flex h-full min-h-0 flex-col">
       {!familiar ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center text-[12px] text-[var(--text-muted)]">
-          <p className="text-[var(--text-secondary)]">Pick a familiar from the rail.</p>
+          <p className="text-[var(--text-secondary)]">Pick a familiar from the sidebar selector.</p>
           <p className="mt-1">Their live chat lives here.</p>
           <button
             type="button"
