@@ -1,3 +1,5 @@
+import { COVEN_IDENTITY_CANON } from "@/lib/coven-identity-canon";
+
 export type SalemLoadoutItem = {
   id: string;
   label: string;
@@ -17,6 +19,7 @@ export type SalemPreloadContext = {
     tone: string[];
   };
   lineage: string[];
+  courtCanon: readonly string[];
   docsCorpus: SalemLoadoutItem[];
   toolLoadout: SalemLoadoutItem[];
   skillLoadout: SalemLoadoutItem[];
@@ -42,6 +45,7 @@ export const SALEM_PRELOAD_CONTEXT: SalemPreloadContext = {
     "OpenClaw Chat API retrieval loop",
     "CovenCave bottom-right familiar surface",
   ],
+  courtCanon: COVEN_IDENTITY_CANON,
   docsCorpus: [
     {
       id: "familiars",

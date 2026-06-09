@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SALEM_PRELOAD_CONTEXT, summarizePreload } from "@/components/salem/salem-context";
+import { COVEN_IDENTITY_CANON } from "@/lib/coven-identity-canon";
 import { stripMdxLeakage } from "./strip-mdx";
 
 /**
@@ -122,6 +123,13 @@ function retrieveTopK(chunks: DocChunk[], query: string, k: number): DocChunk[] 
 
 function quickReply(message: string): string | null {
   const lower = message.toLowerCase();
+  if (lower.match(/\bqueen\b|\bcourt\b|\bsovereign\b|\bnova\b|\bvalentina\b|\bval\b/)) {
+    return [
+      "Court protocol, since apparently some familiars require remedial monarchy:",
+      "",
+      ...COVEN_IDENTITY_CANON.map((line) => `- ${line}`),
+    ].join("\n");
+  }
   if (lower.match(/\bwho are you\b|\bwhat are you\b|\bsalem\b/)) {
     return `I'm **Salem** — your docs familiar. Male black cat, preloaded with the full OpenCoven docs corpus, here to save you from reading 300KB of markdown yourself. Ask me anything about familiars, plugins, roles, skills, the daemon, Cave, or how any of this works.`;
   }

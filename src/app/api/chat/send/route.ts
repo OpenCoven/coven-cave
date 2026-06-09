@@ -15,6 +15,7 @@ import {
 } from "@/lib/chat-attachments";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { covenHome, familiarWorkspace } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
@@ -488,9 +489,12 @@ export async function POST(req: Request) {
     );
   }
   const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildTaskAwarePrompt(
-    buildPromptWithAttachments(promptText, attachments),
-    taskContext,
+  const harnessPrompt = buildPromptWithCovenIdentityCanon(
+    buildTaskAwarePrompt(
+      buildPromptWithAttachments(promptText, attachments),
+      taskContext,
+    ),
+    body.familiarId,
   );
 
   const config = await loadConfig();
