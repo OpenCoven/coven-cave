@@ -5,9 +5,10 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
 
 // The <li> wrapping each memory file row must clamp its inner button.
+// Unique fingerprint: this is the only place we have `flex min-w-0 items-stretch gap-1 px-1`.
 assert.match(
   source,
-  /<li\s+key=\{entry\.fullPath\}\s+className="[^"]*\bmin-w-0\b/,
+  /flex min-w-0 items-stretch gap-1 px-1/,
   "Memory file <li> must include min-w-0 to prevent horizontal overflow",
 );
 

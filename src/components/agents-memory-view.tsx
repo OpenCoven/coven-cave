@@ -103,6 +103,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [viewMode, setViewMode] = useState<"list" | "graph">("graph");
   const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const effectiveViewMode = mode ?? viewMode;
   const effectiveLimit = limit ?? Infinity;
   const [error, setError] = useState<string | null>(null);
@@ -406,7 +407,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </aside>
         </div>
       ) : (
-      <div className={`min-h-0 flex-1 ${compact ? "flex flex-col gap-4 overflow-y-auto p-4" : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"}`}>
+      <div className={`min-h-0 flex-1 ${compact ? "flex flex-col gap-4 overflow-y-auto p-4" : selectedRowId ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,360px)]" : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"}`}>
         {compact && loaded && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
           <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-10 text-center">
             <Icon name="ph:brain" width={22} className="text-[var(--text-muted)]" />
@@ -433,7 +434,11 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               {visibleCoven.slice(0, effectiveLimit === Infinity ? 80 : effectiveLimit).map((entry) => {
                 const familiar = familiarById.get(entry.familiar_id);
                 return (
-                  <article key={entry.id} className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3">
+                  <article
+                    key={entry.id}
+                    onClick={() => { if (!compact) setSelectedRowId(`coven:${entry.id}`); }}
+                    className={`rounded-lg border p-3 transition-colors ${compact ? "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35" : selectedRowId === `coven:${entry.id}` ? "cursor-pointer border-[var(--accent-presence)] bg-[var(--bg-raised)]/55" : "cursor-pointer border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 hover:bg-[var(--bg-raised)]/50"}`}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
@@ -452,7 +457,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => onOpenMemoryFile?.(entry.path)}
+                        onClick={(e) => { e.stopPropagation(); onOpenMemoryFile?.(entry.path); }}
                         className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
                       >
                         <Icon name="ph:file-text" width={12} />
@@ -479,8 +484,86 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             error={error}
             limit={effectiveLimit === Infinity ? 160 : effectiveLimit}
             activeFamiliarId={familiarFilter}
+            onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
+            selectedRowId={compact ? null : selectedRowId}
           />
         </section>
+        {!compact && selectedRowId ? (
+          <aside data-testid="memory-list-drawer" className="min-h-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Selected</h3>
+              <button
+                type="button"
+                onClick={() => setSelectedRowId(null)}
+                className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                aria-label="Close drawer"
+              >
+                <Icon name="ph:x-bold" width={11} />
+              </button>
+            </div>
+            {(() => {
+              if (selectedRowId.startsWith("coven:")) {
+                const id = selectedRowId.slice("coven:".length);
+                const entry = visibleCoven.find((c) => c.id === id);
+                if (!entry) return <div className="mt-3 text-[12px] text-[var(--text-muted)]">Memory no longer in view.</div>;
+                const familiar = familiarById.get(entry.familiar_id);
+                return (
+                  <div className="mt-3">
+                    <h4 className="line-clamp-3 text-[14px] font-semibold leading-5 text-[var(--text-primary)]">{entry.title}</h4>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">{familiar?.display_name ?? entry.familiar_id}</span>
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">Coven memory</span>
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(entry.updated_at)}</span>
+                    </div>
+                    {entry.excerpt ? <p className="mt-3 line-clamp-6 text-[12px] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p> : null}
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onOpenMemoryFile?.(entry.path)}
+                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      >
+                        <Icon name="ph:file-text" width={12} />
+                        Open memory
+                      </button>
+                      <ExpandMemoryButton path={entry.path} title={entry.title} />
+                    </div>
+                  </div>
+                );
+              }
+              if (selectedRowId.startsWith("file:")) {
+                const fullPath = selectedRowId.slice("file:".length);
+                const entry = visibleFiles.find((f) => f.fullPath === fullPath);
+                if (!entry) return <div className="mt-3 text-[12px] text-[var(--text-muted)]">File no longer in view.</div>;
+                return (
+                  <div className="mt-3">
+                    <h4 className="line-clamp-3 text-[14px] font-semibold leading-5 text-[var(--text-primary)]">{entry.relPath}</h4>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">{entry.sourceKindLabel}</span>
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{entry.rootLabel}</span>
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(entry.modified)}</span>
+                    </div>
+                    <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 px-2.5 py-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Path</div>
+                      <code className="mt-1 block break-all font-mono text-[11px] leading-4 text-[var(--text-primary)]">{compactPath(entry.fullPath)}</code>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onOpenMemoryFile?.(entry.fullPath)}
+                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      >
+                        <Icon name="ph:file-text" width={12} />
+                        Open file
+                      </button>
+                      <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} />
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+          </aside>
+        ) : null}
           </>
         )}
       </div>
@@ -548,6 +631,8 @@ type MemoryFilesListProps = {
   className?: string;
   listClassName?: string;
   activeFamiliarId?: string | null;
+  onSelect?: (rowId: string) => void;
+  selectedRowId?: string | null;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -674,6 +759,8 @@ export function MemoryFilesList({
   className,
   listClassName,
   activeFamiliarId,
+  onSelect,
+  selectedRowId,
 }: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
   return (
@@ -694,10 +781,13 @@ export function MemoryFilesList({
       ) : (
         <ul className={listClassName ?? "max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto"}>
           {sliced.map((entry) => (
-            <li key={entry.fullPath} className="flex min-w-0 items-stretch gap-1 px-1 hover:bg-[var(--bg-raised)]">
+            <li
+              key={entry.fullPath}
+              className={`flex min-w-0 items-stretch gap-1 px-1 ${selectedRowId === `file:${entry.fullPath}` ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]"}`}
+            >
               <button
                 type="button"
-                onClick={() => onOpen?.(entry.fullPath)}
+                onClick={() => (onSelect ? onSelect(`file:${entry.fullPath}`) : onOpen?.(entry.fullPath))}
                 className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-2 py-2 text-left"
               >
                 <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
