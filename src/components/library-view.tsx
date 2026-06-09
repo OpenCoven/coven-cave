@@ -54,6 +54,19 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "[") return;
+      const target = e.target as HTMLElement;
+      const tag = target.tagName?.toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
+      e.preventDefault();
+      setListPinned((v) => !v);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const [docsError, setDocsError] = useState<string | null>(null);
 
   const loadDocs = useCallback(async (collectionId: string) => {

@@ -44,4 +44,10 @@ for (const section of ["all", "docs", "bookmarks", "reading", "github", "project
 assert.match(preview, /activeSection \? EMPTY_TEXT\[activeSection\] : "Select an item to preview"/, "Empty render uses EMPTY_TEXT[activeSection]");
 assert.match(view, /<LibraryDocPreview\s+selected=\{selectedItem\}\s+loading=\{previewLoading\}\s+activeSection=\{activeSection\}/, "library-view passes activeSection");
 
+// ───────── Task 5: [ shortcut toggles list panel ─────────
+const view2 = await readFile(new URL("./library-view.tsx", import.meta.url), "utf8");
+assert.match(view2, /if \(e\.key !== "\["\) return;/, "library-view must filter keydown events for '['");
+assert.match(view2, /setListPinned\(\(v\) => !v\)/, "library-view must call setListPinned((v) => !v)");
+assert.match(view2, /\["input", "textarea", "select"\]\.includes\(tag\)/, "library-view must skip when focus is in an input");
+
 console.log("library-polish.test.ts: ok");
