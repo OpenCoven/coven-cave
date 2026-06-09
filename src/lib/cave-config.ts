@@ -45,6 +45,9 @@ export type FamiliarBinding = {
   harness: string;
   model: string;
   note?: string;
+  voiceProvider?: string;
+  voiceModel?: string;
+  voiceName?: string;
 };
 
 export type RoleConfigEntry = {
@@ -179,6 +182,9 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     harness: f.harness ?? config.defaults.harness,
     model: f.model ?? config.defaults.model,
     note: f.note,
+    voiceProvider: f.voiceProvider,
+    voiceModel: f.voiceModel,
+    voiceName: f.voiceName,
   };
 }
 

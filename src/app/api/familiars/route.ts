@@ -34,7 +34,15 @@ export async function GET() {
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
   const familiars = (res.data ?? []).map((f) => {
     const binding = bindingFor(config, f.id);
-    return { ...f, harness: binding.harness, model: binding.model, note: binding.note };
+    return {
+      ...f,
+      harness: binding.harness,
+      model: binding.model,
+      note: binding.note,
+      voiceProvider: binding.voiceProvider,
+      voiceModel: binding.voiceModel,
+      voiceName: binding.voiceName,
+    };
   });
   return NextResponse.json({ ok: true, familiars });
 }
