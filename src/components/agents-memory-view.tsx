@@ -482,6 +482,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             loaded={loaded}
             error={error}
             limit={effectiveLimit === Infinity ? 160 : effectiveLimit}
+            activeFamiliarId={familiarFilter}
           />
         </section>
       </div>
@@ -548,6 +549,7 @@ type MemoryFilesListProps = {
   limit?: number;
   className?: string;
   listClassName?: string;
+  activeFamiliarId?: string | null;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -673,6 +675,7 @@ export function MemoryFilesList({
   limit,
   className,
   listClassName,
+  activeFamiliarId,
 }: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
   return (
@@ -705,12 +708,12 @@ export function MemoryFilesList({
                   <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
                     {entry.sourceKindLabel} · {entry.rootLabel} · {compactPath(entry.fullPath)}
                   </span>
-                  {(entry.harnessId || entry.runtimeId || entry.origin || entry.familiarId) ? (
+                  {(entry.harnessId || entry.runtimeId || entry.origin || (entry.familiarId && entry.familiarId !== activeFamiliarId)) ? (
                     <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--text-muted)]">
                       {entry.origin ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">origin:{entry.origin}</span> : null}
                       {entry.harnessId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">harness:{entry.harnessId}</span> : null}
                       {entry.runtimeId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.runtimeId}</span> : null}
-                      {entry.familiarId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">familiar:{entry.familiarId}</span> : null}
+                      {entry.familiarId && entry.familiarId !== activeFamiliarId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">familiar:{entry.familiarId}</span> : null}
                     </span>
                   ) : null}
                 </span>
