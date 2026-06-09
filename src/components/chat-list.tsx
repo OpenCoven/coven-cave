@@ -142,10 +142,10 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <section className="chat-list-surface flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
       {/* ── Agent dossier + command strip ── */}
-      <header className="agent-panel-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)]">
+      <header className="agent-panel-dossier chat-list-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)]">
         {/* Brand accent bar */}
         <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-[var(--accent-presence)]/50 to-transparent" />
 
@@ -270,7 +270,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
       )}
 
       {/* ── List ── */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="chat-list-scroll min-h-0 flex-1 overflow-y-auto">
         {!hasAny ? (
           /* Empty state */
           <div className="flex h-full flex-col justify-between px-4 py-4">
@@ -445,7 +445,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
       </div>
 
       {/* ── Footer ── */}
-      <footer className="border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
+      <footer className="chat-list-footer border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
         {keys.enter} open · {keys.mod}K palette · / commands in chat
       </footer>
     </section>

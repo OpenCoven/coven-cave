@@ -232,11 +232,11 @@ export function ChatSurface({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <section className="flex h-full min-w-0 bg-[var(--bg-base)]">
+    <section className="chat-surface flex h-full min-w-0 bg-[var(--bg-base)]">
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
-        <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
+        <div className="chat-scope-tabs flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
           <div role="tablist" className="flex items-end gap-1">
             {(["conversation", "memory"] as const).map((s) => {

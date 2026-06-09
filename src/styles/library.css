@@ -1588,3 +1588,139 @@ tr:hover .library-row-delete,
   color: #fff;
   line-height: 1;
 }
+
+/* ── Mobile command center layout ─────────────────────────────────
+   The desktop Library is a rail + preview + list workbench. On phones that
+   crushes the useful list into a sliver, so the rail becomes a horizontal
+   filter strip and the list becomes the primary full-width surface. Keep
+   this at the end so it wins over the desktop table/list rules above. */
+@media (max-width: 767px) {
+  .library-shell {
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .library-divider {
+    display: none;
+  }
+
+  .library-rail {
+    width: 100%;
+    min-height: 48px;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-hairline);
+    background: color-mix(in oklch, var(--bg-raised) 84%, transparent);
+    scrollbar-width: none;
+  }
+
+  .library-rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .library-rail-header,
+  .library-rail-divider {
+    display: none;
+  }
+
+  .library-rail-list {
+    min-width: max-content;
+    flex: 0 0 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .library-rail-item {
+    min-height: 34px;
+    width: auto;
+    flex: 0 0 auto;
+    border: 1px solid var(--border-hairline);
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--bg-base) 76%, transparent);
+    padding: 0 11px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .library-rail-item--active {
+    border-color: color-mix(in oklch, var(--accent-presence) 44%, var(--border-hairline));
+    background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-raised));
+  }
+
+  .library-rail-icon-wrap {
+    width: 16px;
+  }
+
+  .library-rail-badge,
+  .library-rail-skill-cat {
+    display: none;
+  }
+
+  .library-preview {
+    display: none;
+  }
+
+  .library-list-panel {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+    border-left: 0;
+  }
+
+  .library-list-panel--open,
+  .library-list-panel--closed {
+    width: 100%;
+  }
+
+  .library-list-toggle {
+    display: none;
+  }
+
+  .library-list-content {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .library-list-content--visible,
+  .library-list-content--hidden {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .library-doclist-search {
+    min-height: 44px;
+    padding: 8px 12px;
+    background: color-mix(in oklch, var(--bg-base) 94%, transparent);
+  }
+
+  .library-doclist-items {
+    padding-bottom: calc(72px + var(--sai-bottom));
+  }
+
+  .library-doclist-item {
+    padding: 12px;
+  }
+
+  .library-doclist-item-title {
+    max-width: 100%;
+    white-space: nowrap;
+  }
+
+  .library-doclist-item-tags {
+    max-width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .library-doclist-item-tags::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -4028,6 +4028,61 @@ select {
   }
 }
 
+/* Chat mobile command center refinements. These classes are intentionally
+   plain CSS hooks around Tailwind-heavy components so phone-specific layout
+   can be adjusted without threading conditional class strings through every
+   row. */
+@media (max-width: 767px) {
+  .shell-detail:has(> .cave-mode-fade > .chat-surface) {
+    overflow: hidden;
+  }
+
+  .shell-detail:has(> .cave-mode-fade > .library-shell) {
+    overflow: hidden;
+  }
+
+  .chat-surface {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .chat-scope-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 55;
+    min-height: 42px;
+    background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+
+  .chat-list-surface {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .chat-list-dossier {
+    position: sticky;
+    top: 0;
+    z-index: 45;
+    background: color-mix(in oklch, var(--bg-base) 96%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .chat-list-dossier > * {
+    min-width: 0;
+  }
+
+  .chat-list-scroll {
+    padding-bottom: calc(72px + var(--sai-bottom));
+  }
+
+  .chat-list-footer {
+    display: none;
+  }
+}
+
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS
    includes the address bar height, so a `min-height: 100vh` element
    would push content under the chrome. `100dvh` tracks the visible
