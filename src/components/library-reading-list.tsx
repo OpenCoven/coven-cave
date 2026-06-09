@@ -31,9 +31,9 @@ function relTime(iso: string): string {
 function sortItems(items: LibraryReadingItem[], key: SortKey, dir: SortDir): LibraryReadingItem[] {
   return [...items].sort((a, b) => {
     let cmp = 0;
-    if (key === "title") cmp = a.title.localeCompare(b.title);
+    if (key === "title") cmp = (a.title ?? "").localeCompare(b.title ?? "");
     else if (key === "status") cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-    else cmp = a.addedAt.localeCompare(b.addedAt);
+    else cmp = (a.addedAt ?? "").localeCompare(b.addedAt ?? "");
     return dir === "asc" ? cmp : -cmp;
   });
 }
@@ -52,7 +52,7 @@ function groupItems(items: LibraryReadingItem[], by: GroupBy): { key: string; la
     items,
   }));
   if (by === "status") entries.sort((a, b) => (STATUS_ORDER[a.key as ReadingStatus] ?? 9) - (STATUS_ORDER[b.key as ReadingStatus] ?? 9));
-  else entries.sort((a, b) => a.label.localeCompare(b.label));
+  else entries.sort((a, b) => (a.label ?? "").localeCompare(b.label ?? ""));
   return entries;
 }
 

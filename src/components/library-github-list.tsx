@@ -32,9 +32,9 @@ function relTime(iso: string): string {
 function sortItems(items: LibraryGitHubItem[], key: SortKey, dir: SortDir): LibraryGitHubItem[] {
   return [...items].sort((a, b) => {
     let cmp = 0;
-    if (key === "title") cmp = a.title.localeCompare(b.title);
-    else if (key === "repo") cmp = a.repo.localeCompare(b.repo);
-    else cmp = a.savedAt.localeCompare(b.savedAt);
+    if (key === "title") cmp = (a.title ?? "").localeCompare(b.title ?? "");
+    else if (key === "repo") cmp = (a.repo ?? "").localeCompare(b.repo ?? "");
+    else cmp = (a.savedAt ?? "").localeCompare(b.savedAt ?? "");
     return dir === "asc" ? cmp : -cmp;
   });
 }

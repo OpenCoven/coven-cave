@@ -24,9 +24,9 @@ function relTime(iso: string): string {
 function sortItems(items: LibraryBookmark[], key: SortKey, dir: SortDir): LibraryBookmark[] {
   return [...items].sort((a, b) => {
     let cmp = 0;
-    if (key === "title") cmp = a.title.localeCompare(b.title);
-    else if (key === "domain") cmp = a.domain.localeCompare(b.domain);
-    else cmp = a.savedAt.localeCompare(b.savedAt);
+    if (key === "title") cmp = (a.title ?? "").localeCompare(b.title ?? "");
+    else if (key === "domain") cmp = (a.domain ?? "").localeCompare(b.domain ?? "");
+    else cmp = (a.savedAt ?? "").localeCompare(b.savedAt ?? "");
     return dir === "asc" ? cmp : -cmp;
   });
 }
