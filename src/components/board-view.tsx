@@ -10,7 +10,9 @@ import { type Card, type CardStatus } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardTable, type GroupBy } from "@/components/board-table";
+import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
+import { useIsMobile } from "@/lib/use-viewport";
 
 type ViewMode = "kanban" | "table";
 
@@ -28,6 +30,7 @@ type Props = {
 };
 
 export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSession }: Props) {
+  const isMobile = useIsMobile();
   const [cards, setCards] = useState<Card[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
@@ -257,7 +260,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             </button>
           </div>
 
-          <div className="board-view-toggle" role="group" aria-label="Tasks view mode">
+          {/* Kanban/Table toggle — hidden on phones; BoardCardStack
+              replaces both at <768px (see render branch below). */}
+          <div className="board-view-toggle hidden md:flex" role="group" aria-label="Tasks view mode">
             <button type="button" aria-label="Kanban view"
               className={`board-view-toggle-btn${viewMode === "kanban" ? " board-view-toggle-btn--active" : ""}`}
               onClick={() => setViewMode("kanban")}>
@@ -322,6 +327,15 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               </button>
             </div>
           </div>
+        ) : isMobile ? (
+          <BoardCardStack cards={filtered} familiars={familiars} sessions={sessions}
+            selectedCardId={selectedCardId}
+            onSelect={setSelectedCardId}
+            onMoveStatus={moveCardToStatus}
+            onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
+            onJumpToSession={onJumpToSession}
+            onOpenTaskChat={onOpenTaskChat}
+            chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} sessions={sessions}
             groupBy={groupBy} selectedCardId={selectedCardId}
