@@ -69,6 +69,13 @@ function fmtDateHeading(d: Date): string {
   });
 }
 
+function fmtHourLabel(h: number): string {
+  if (h === 0) return "12 AM";
+  if (h < 12) return `${h} AM`;
+  if (h === 12) return "12 PM";
+  return `${h - 12} PM`;
+}
+
 function defaultEntryFireAt(day: Date): string {
   const target = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
   const now = new Date();
@@ -369,7 +376,7 @@ function TimeGrid({
             className="absolute right-2 text-[9px] text-[var(--text-muted)] -translate-y-1/2"
             style={{ top: h * HOUR_HEIGHT }}
           >
-            {h === 0 ? "" : `${h}:00`}
+            {fmtHourLabel(h)}
           </div>
         ))}
       </div>
