@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(
   new URL("../lib/workspace-mode.ts", import.meta.url),
   "utf8",
@@ -55,6 +56,30 @@ assert.match(
   workspace,
   /agents: "Familiars"/,
   "SURFACE_LABELS labels the page Familiars",
+);
+
+assert.match(
+  workspace,
+  /const surfaceLabel = \(mode === "agents" \|\| mode === "chat"\) && active\s*\?\s*active\.display_name\s*:\s*mode === "home"\s*\?\s*""\s*:\s*\(SURFACE_LABELS\[mode\] \?\? "Home"\)/,
+  "Workspace top bar uses the active familiar name as the familiar-chat surface label",
+);
+
+assert.match(
+  workspace,
+  /const subContext = \(mode !== "agents" && mode !== "chat" && mode !== "home" && active\) \? active\.display_name : undefined/,
+  "Workspace should not duplicate the familiar name as a second crumb in familiar-chat contexts",
+);
+
+assert.match(
+  workspace,
+  /onOpenHome=\{\(\) => setMode\("home"\)\}/,
+  "Workspace should wire the top-bar Home button to Home mode",
+);
+
+assert.match(
+  topBar,
+  /onOpenHome[\s\S]*className="top-bar__home-btn"[\s\S]*>\s*Home\s*<\/button>/,
+  "TopBar should expose Home as a button instead of only breadcrumb text",
 );
 
 assert.match(

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { SessionsView } from "@/components/sessions-view";
@@ -8,7 +8,6 @@ import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { inferOrigin } from "@/lib/session-origin";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 
@@ -41,49 +40,9 @@ type Props = {
   onCreateReminder: (familiarId: string) => void;
   onOpenInboxItem: (item: InboxItem) => void;
   onInboxItemChanged: () => void | Promise<void>;
-  onOpenMode: (mode: string) => void;
   onOpenSession?: (sessionId: string, familiarId?: string) => void;
   onNewChat?: (familiarId?: string) => void;
   onSessionsChanged?: () => void;
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function relTime(iso: string | undefined): string {
-  if (!iso) return "";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return "";
-  if (ms < 60_000) return "just now";
-  const m = Math.floor(ms / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
-
-function isClosed(s: SessionRow): boolean {
-  if (s.archived_at) return true;
-  if (s.exit_code !== null) return true;
-  return ["complete", "completed", "done", "exited", "failed", "cancelled"].includes(s.status);
-}
-
-/** Only show a pill for meaningful / attention-worthy statuses. */
-function statusPill(s: SessionRow): { label: string; cls: string } | null {
-  if (s.status === "running") return { label: "running", cls: "border-[color-mix(in_oklch,var(--color-success)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]" };
-  if (s.status === "failed" || (s.exit_code !== null && s.exit_code !== 0))
-    return { label: "failed", cls: "border-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] text-[var(--color-danger)]" };
-  return null; // orphaned / created / idle = no pill
-}
-
-// ── Origin icon map ───────────────────────────────────────────────────────────
-
-const ORIGIN_ICONS: Record<string, string> = {
-  chat: "ph:chat-circle",
-  board: "ph:kanban",
-  cron: "ph:clock",
-  heartbeat: "ph:pulse",
-  call: "ph:phone",
-  mention: "ph:at",
 };
 
 // ── Right panel (inspector / chat) ────────────────────────────────────────────
@@ -194,19 +153,12 @@ export function ChatSurface({
   onCreateReminder,
   onOpenInboxItem,
   onInboxItemChanged,
-  onOpenMode,
   onOpenSession,
   onNewChat,
   onSessionsChanged,
 }: Props) {
   const [scope, setScope] = useState<AgentsScope>("sessions");
-  const [query, setQuery] = useState("");
-  const [showClosed, setShowClosed] = useState(false);
   const consumedPendingActionNonce = useRef<number | null>(null);
-  // groupBy intentionally omits "familiar": Chats is already filtered to the
-  // active agent, so grouping by familiar would always produce one group.
-  const [groupBy, setGroupBy] = useState<"status" | "date" | "none">("date");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Right panel — prefer new prop, fall back to legacy bool
   const rightPanel: "inspector" | "chat" | null =
@@ -217,9 +169,7 @@ export function ChatSurface({
     onSetInspectorOpen(next === "inspector");
   }
 
-  const famById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  const openCount = useMemo(() => sessions.filter((s) => !isClosed(s)).length, [sessions]);
-  const closedCount = sessions.length - openCount;
+  const scopedFamiliars = useMemo(() => activeFamiliar ? [activeFamiliar] : [], [activeFamiliar]);
 
   // Window events
   useEffect(() => {
@@ -276,85 +226,6 @@ export function ChatSurface({
     onPendingChatActionHandled();
   }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
 
-  const filteredSessions = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return [...sessions]
-      .filter((s) => (s.origin ?? inferOrigin(s)) === "chat")
-      .filter((s) => (showClosed ? isClosed(s) : !isClosed(s)))
-      .filter((s) => (activeFamiliarId ? s.familiarId === activeFamiliarId : true))
-      .filter((s) => {
-        if (!q) return true;
-        const f = s.familiarId ? famById.get(s.familiarId) : null;
-        return [s.title, s.status, s.harness, s.project_root, s.origin ?? "", f?.display_name ?? ""]
-          .some((v) => v?.toLowerCase().includes(q));
-      })
-      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-  }, [activeFamiliarId, famById, query, sessions, showClosed]);
-
-  const groupedSessions = useMemo(() => {
-    if (groupBy === "none") return [{ label: null, sessions: filteredSessions }];
-    const map = new Map<string, typeof filteredSessions>();
-    for (const s of filteredSessions) {
-      let key: string;
-      if (groupBy === "status") {
-        key = s.status ?? "unknown";
-      } else {
-        const d = new Date(s.updated_at);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
-        if (diffDays < 1) key = "Today";
-        else if (diffDays < 2) key = "Yesterday";
-        else if (diffDays < 7) key = "This week";
-        else key = "Older";
-      }
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(s);
-    }
-    return [...map.entries()].map(([label, sessions]) => ({ label, sessions }));
-  }, [filteredSessions, groupBy]);
-
-  // Clear selection when filter/group changes
-  useEffect(() => { setSelectedIds(new Set()); }, [groupBy, showClosed, query]);
-
-  const allVisibleIds = useMemo(
-    () => new Set(filteredSessions.map((s) => s.id)),
-    [filteredSessions],
-  );
-  const allSelected = allVisibleIds.size > 0 && [...allVisibleIds].every((id) => selectedIds.has(id));
-  const someSelected = selectedIds.size > 0;
-
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-  function toggleSelectAll() {
-    if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(allVisibleIds));
-  }
-  async function bulkArchive() {
-    await Promise.all(
-      [...selectedIds].map((id) =>
-        fetch(`/api/sessions/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ archived: true }),
-        }),
-      ),
-    );
-    setSelectedIds(new Set());
-    onSessionStarted();
-  }
-  async function bulkDelete() {
-    if (!window.confirm(`Sacrifice ${selectedIds.size} session${selectedIds.size === 1 ? "" : "s"}? This cannot be undone.`)) return;
-    await Promise.all([...selectedIds].map((id) => fetch(`/api/sessions/${id}`, { method: "DELETE" })));
-    setSelectedIds(new Set());
-    onSessionStarted();
-  }
-
   function startConversation(familiarId?: string | null) {
     if (familiarId) onSetActiveFamiliar(familiarId);
     setScope("conversation");
@@ -402,90 +273,24 @@ export function ChatSurface({
           </div>
 
           {/* Actions flush right — chromeless */}
-          <div className="flex items-center gap-3 py-1.5">
-            {(scope === "sessions" || scope === "conversation") && (
-              <>
-                <div className="relative">
-                  <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search"
-                    className="h-7 w-[90px] bg-transparent pl-5 pr-1 text-[12px] outline-none placeholder:text-[var(--text-muted)] focus:w-[160px] transition-all"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 text-[11px]" role="group" aria-label="Filter sessions by state">
-                  <button
-                    type="button"
-                    onClick={() => setShowClosed(false)}
-                    aria-pressed={!showClosed}
-                    className={!showClosed ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
-                  >
-                    Active <span className="opacity-50">{openCount}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowClosed(true)}
-                    aria-pressed={showClosed}
-                    className={showClosed ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
-                  >
-                    Done <span className="opacity-50">{closedCount}</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 text-[11px]" role="group" aria-label="Group by">
-                  <button
-                    type="button"
-                    onClick={() => setGroupBy("date")}
-                    aria-pressed={groupBy === "date"}
-                    className={groupBy === "date" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
-                  >
-                    Date
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGroupBy("status")}
-                    aria-pressed={groupBy === "status"}
-                    className={groupBy === "status" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
-                  >
-                    Status
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGroupBy("none")}
-                    aria-pressed={groupBy === "none"}
-                    className={groupBy === "none" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}
-                  >
-                    Flat
-                  </button>
-                </div>
-              </>
-            )}
+          <div className="flex items-center gap-2 py-1.5">
             <button
               type="button"
               onClick={() => startConversation(activeFamiliarId)}
               title="New chat"
-              className="inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              className="inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:plus-bold" width={11} />
               New
-            </button>
-            <button
-              type="button"
-              title="Configure plugins"
-              onClick={() => onOpenMode("plugins")}
-              className="inline-flex h-7 items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <Icon name="ph:plug" width={12} />
             </button>
           </div>
         </div>
 
         {scope === "memory" ? (
           <AgentsMemoryView
-            familiars={familiars}
+            familiars={scopedFamiliars}
             activeFamiliar={activeFamiliar}
+            lockToFamiliar
             onOpenMemoryFile={(path) => {
               setRightPanel("inspector");
               window.location.hash = `memory:${encodeURIComponent(path)}`;
@@ -528,7 +333,7 @@ export function ChatSurface({
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto">
               <SessionsView
-                familiars={familiars}
+                familiars={scopedFamiliars}
                 sessions={sessions}
                 activeFamiliarId={activeFamiliarId}
                 activeSessionId={activeSessionId ?? null}

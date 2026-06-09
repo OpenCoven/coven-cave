@@ -12,16 +12,22 @@ assert.match(
   "ChatSurface should be the integrated top-level chat surface",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /placeholder="Search"/,
-  "ChatSurface should keep chat search in the primary command row",
+  /placeholder="Search"|\bActive <span|\bDone <span|\bDate<\/button>|\bStatus<\/button>|\bFlat<\/button>/,
+  "ChatSurface should not render a redundant search/status/group command strip above the chat UI",
 );
 
 assert.match(
   chatSurface,
   /New/,
   "ChatSurface should expose the primary chat launch action without a separate composer block",
+);
+
+assert.doesNotMatch(
+  chatSurface,
+  /ph:plug|Configure plugins|onOpenMode/,
+  "ChatSurface should not render the plugin/config icon in the chat interface",
 );
 
 assert.match(
@@ -50,8 +56,20 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /<AgentsMemoryView[\s\S]*familiars=\{familiars\}[\s\S]*activeFamiliar=\{activeFamiliar\}/,
-  "ChatSurface should surface comprehensive memory as a first-class tab",
+  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : \[\], \[activeFamiliar\]\)/,
+  "ChatSurface should derive a one-familiar list from the active familiar",
+);
+
+assert.match(
+  chatSurface,
+  /<AgentsMemoryView[\s\S]*familiars=\{scopedFamiliars\}[\s\S]*activeFamiliar=\{activeFamiliar\}[\s\S]*lockToFamiliar/,
+  "ChatSurface memory should stay locked to the selected familiar",
+);
+
+assert.match(
+  chatSurface,
+  /<SessionsView[\s\S]*familiars=\{scopedFamiliars\}[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*hideFamiliarFilter/,
+  "ChatSurface history should not receive the redundant full familiars list",
 );
 
 assert.match(
@@ -60,18 +78,10 @@ assert.match(
   "ChatSurface should label the third primary tab Memory instead of Traces",
 );
 
-// b05fba5 dropped the redundant group-by-Familiar option (familiar scoping
-// lives in the avatar rail now). Status/Date/None remain. Lock the removal
-// in so a regression that adds "Familiar" back surfaces immediately.
-assert.match(
-  chatSurface,
-  /useState<"status" \| "date" \| "none">/,
-  "ChatSurface group-by must only support status/date/none — Familiar option removed by b05fba5",
-);
 assert.doesNotMatch(
   chatSurface,
-  /setGroupBy\("familiar"\)/,
-  "ChatSurface should not reintroduce a Familiar group-by button",
+  /groupBy|setGroupBy|filteredSessions|groupedSessions|showClosed|setShowClosed|const \[query, setQuery\]/,
+  "ChatSurface should not keep unused command-strip filtering state",
 );
 
 assert.doesNotMatch(

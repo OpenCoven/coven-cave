@@ -3128,6 +3128,33 @@ body {
   font-weight: 600;
 }
 
+.top-bar__home-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__home-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.top-bar__home-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
 .top-bar__crumb {
   display: inline-flex;
   align-items: center;

@@ -835,8 +835,12 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
-  const surfaceLabel = SURFACE_LABELS[mode] ?? "Home";
-  const subContext = active ? active.display_name : undefined;
+  const surfaceLabel = (mode === "agents" || mode === "chat") && active
+    ? active.display_name
+    : mode === "home"
+      ? ""
+      : (SURFACE_LABELS[mode] ?? "Home");
+  const subContext = (mode !== "agents" && mode !== "chat" && mode !== "home" && active) ? active.display_name : undefined;
   const showCompanionRail = railTab === "salem" || (mode !== "browser" && mode !== "agents");
 
   const openProjectChat = useCallback((projectRoot: string) => {
@@ -939,7 +943,6 @@ export function Workspace() {
         onCreateReminder={openReminderForFamiliar}
         onOpenInboxItem={openInspectorInboxItem}
         onInboxItemChanged={refreshInbox}
-        onOpenMode={(nextMode) => setMode(nextMode as WorkspaceMode)}
         onOpenSession={(sessionId, familiarId) => {
           openAgentSession(sessionId, familiarId);
         }}
@@ -1049,6 +1052,7 @@ export function Workspace() {
           <TopBar
             surfaceLabel={surfaceLabel}
             subContext={subContext}
+            onOpenHome={() => setMode("home")}
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenInbox={() => setMode("inbox")}
             onOpenSettings={() => nextRouter.push("/settings")}

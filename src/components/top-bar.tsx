@@ -9,6 +9,7 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 type Props = {
   surfaceLabel: string;
   subContext?: string;
+  onOpenHome: () => void;
   onOpenPalette: () => void;
   onOpenInbox: () => void;
   onOpenSettings: () => void;
@@ -24,6 +25,7 @@ export function TopBar(props: Props) {
   const {
     surfaceLabel,
     subContext,
+    onOpenHome,
     onOpenPalette,
     onOpenInbox,
     onOpenSettings,
@@ -38,16 +40,21 @@ export function TopBar(props: Props) {
   return (
     <header className="top-bar">
       <span className="top-bar__brand">CovenCave</span>
-      <span className="top-bar__crumb">
-        <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
-        <span className="top-bar__crumb-surface">{surfaceLabel}</span>
-        {subContext ? (
-          <>
-            <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
-            <span className="top-bar__crumb-sub">{subContext}</span>
-          </>
-        ) : null}
-      </span>
+      <button type="button" className="top-bar__home-btn" onClick={onOpenHome}>
+        Home
+      </button>
+      {surfaceLabel ? (
+        <span className="top-bar__crumb">
+          <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
+          <span className="top-bar__crumb-surface">{surfaceLabel}</span>
+          {subContext ? (
+            <>
+              <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
+              <span className="top-bar__crumb-sub">{subContext}</span>
+            </>
+          ) : null}
+        </span>
+      ) : null}
 
       <button
         type="button"
