@@ -40,4 +40,11 @@ assert.match(
   "DayView must render a floating '+ Add event' affordance when empty",
 );
 
+// ───────── Task 3: Week view always renders TimeGrid ─────────
+assert.match(
+  source,
+  /function WeekView\([\s\S]*?<TimeGrid columns=\{columns\} onOpenItem=\{onOpenItem\} \/>\s*\{isWeekEmpty && onAddEntry/,
+  "WeekView must always render TimeGrid then conditionally render the empty add-CTA",
+);
+
 console.log("calendar-view-polish.test.ts: ok");

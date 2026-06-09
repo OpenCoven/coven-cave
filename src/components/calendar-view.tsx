@@ -583,19 +583,18 @@ function WeekView({
       {allDayColumns.some((c) => c.items.length > 0) && (
         <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
       )}
-      {isWeekEmpty ? (
-        <EmptyScheduleState
-          icon="ph:calendar-blank"
-          label="Nothing scheduled for this week"
-          onAddEntry={
-            onAddEntry
-              ? () => onAddEntry({ fireAt: defaultWeekEntryFireAt(anchor) })
-              : undefined
-          }
-        />
-      ) : (
+      <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} />
-      )}
+        {isWeekEmpty && onAddEntry ? (
+          <button
+            type="button"
+            onClick={() => onAddEntry({ fireAt: defaultWeekEntryFireAt(anchor) })}
+            className="focus-ring absolute top-3 right-3 z-10 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/80 px-2.5 py-1 text-[11px] text-[var(--text-secondary)] backdrop-blur transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            + Add event
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
