@@ -686,11 +686,11 @@ export function MemoryFilesList({
       ) : (
         <ul className={listClassName ?? "max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto"}>
           {sliced.map((entry) => (
-            <li key={entry.fullPath} className="flex items-stretch gap-1 px-1 hover:bg-[var(--bg-raised)]">
+            <li key={entry.fullPath} className="flex min-w-0 items-stretch gap-1 px-1 hover:bg-[var(--bg-raised)]">
               <button
                 type="button"
                 onClick={() => onOpen?.(entry.fullPath)}
-                className="focus-ring-inset flex flex-1 items-start gap-2 px-2 py-2 text-left"
+                className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-2 py-2 text-left"
               >
                 <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                 <span className="min-w-0 flex-1">
