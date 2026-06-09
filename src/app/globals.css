@@ -314,19 +314,6 @@ body {
   display: flex;
 }
 
-/* Home composer needs to visually center on the viewport, which means its
- * .home-composer-root translates left to compensate for the nav panel.
- * Allow the detail panel to overflow visible only while it contains a Home
- * composer; react-resizable-panels sets `overflow: auto` inline, so the
- * override needs `!important`. The composer's own .home-composer-root
- * keeps its own vertical scroll. */
-.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) {
-  overflow: visible !important;
-}
-.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) > .shell-detail {
-  overflow: visible;
-}
-
 /* Inner panel border — subtle dividing line on the right edge of side panels */
 .shell-nav-panel { border-right: 1px solid var(--border-hairline); }
 .shell-agent-panel { border-left: 1px solid var(--border-hairline); }
@@ -3323,6 +3310,30 @@ body {
   outline-offset: 1px;
 }
 
+/* Mobile top bar — collapse the search button to an icon-only affordance so
+ * the notification bell and settings cog remain visible on 375–428px phones.
+ * The full search label/kbd hint comes back on tablets at ≥640px. */
+@media (max-width: 639px) {
+  .top-bar {
+    padding: 0 10px;
+    gap: 8px;
+  }
+  .top-bar__search {
+    min-width: 0;
+    margin-right: 0;
+    padding: 5px 8px;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+  .top-bar__search > span,
+  .top-bar__search kbd {
+    display: none;
+  }
+  .top-bar__crumb-sub {
+    display: none;
+  }
+}
+
 /* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
@@ -3745,10 +3756,16 @@ body {
   }
   /* Sidebar nav, list pane, companion rail: hidden on phone. The
      ⌘B / ⌘\\ / ⌘J keyboard shortcuts still toggle them programmatically
-     for accessibility, but they don't take up screen space by default. */
+     for accessibility, but they don't take up screen space by default.
+     react-resizable-panels uses a wrapper `<div data-panel>` whose inline
+     `flex: N 1 0px` style overrides our className-based hides, so we also
+     target the wrapper by id to fully remove it from the layout. */
   .shell-nav-panel,
   .shell-list-panel,
-  .shell-agent-panel {
+  .shell-agent-panel,
+  [data-panel="true"]#nav,
+  [data-panel="true"]#list,
+  [data-panel="true"]#agent {
     display: none !important;
   }
   /* Hide separators that would otherwise be orphaned. */
@@ -3756,7 +3773,8 @@ body {
     display: none !important;
   }
   /* Detail takes the full width. */
-  .shell-detail-panel {
+  .shell-detail-panel,
+  [data-panel="true"]#detail {
     flex: 1 1 100% !important;
     width: 100% !important;
     min-width: 0 !important;

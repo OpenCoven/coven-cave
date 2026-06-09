@@ -16,39 +16,12 @@
   gap: 16px;
   overflow-y: auto;
   box-sizing: border-box;
-  /* Visually center on the viewport, compensating for the side-panel widths
-   * exposed by the Shell as --shell-nav-px / --shell-agent-px. The asymmetry
-   * (nav present, agent collapsed in home mode) would otherwise push the
-   * composer off to the right.
-   *
-   * Two coordinated pieces:
-   *   1. --hc-asymmetry — abs(nav - agent), used to narrow the composer
-   *      cards so there is room to translate them all the way to the
-   *      viewport's center without overflowing under a side panel.
-   *   2. transform: translateX(clamp(...)) — the actual viewport shift,
-   *      capped to the available free space (panel_width − card_width)/2
-   *      so the card never overflows even if the variables get out of sync.
-   */
-  --hc-asymmetry: max(
-    calc(var(--shell-nav-px, 0px) - var(--shell-agent-px, 0px)),
-    calc(var(--shell-agent-px, 0px) - var(--shell-nav-px, 0px))
-  );
-  --hc-max-shift: max(
-    0px,
-    calc((100% - 880px) / 2),
-    calc(var(--hc-asymmetry) / 2)
-  );
-  --hc-ideal-shift: calc(
-    (var(--shell-agent-px, 0px) - var(--shell-nav-px, 0px)) / 2
-  );
-  transform: translateX(
-    clamp(
-      calc(-1 * var(--hc-max-shift)),
-      var(--hc-ideal-shift),
-      var(--hc-max-shift)
-    )
-  );
-  transition: transform 120ms ease-out;
+  /* Home content is always equidistant from the two side panels. With the
+   * Shell enforcing symmetric min/max on .shell-nav-panel and
+   * .shell-agent-panel, "centered in the detail panel" gives equal gaps to
+   * both panel edges. When a side panel is collapsed, the gap is measured to
+   * the viewport edge instead — still equal on both sides because the
+   * composer is centered inside the detail panel that fills that space. */
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
@@ -79,7 +52,7 @@
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
-  max-width: min(880px, calc(100% - var(--hc-asymmetry, 0px)));
+  max-width: 880px;
 }
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
@@ -288,7 +261,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-width: min(880px, calc(100% - var(--hc-asymmetry, 0px)));
+  max-width: 880px;
   width: 100%;
   justify-content: center;
 }
@@ -305,7 +278,12 @@
   font-size: 12px;
   cursor: pointer;
   transition: all 0.12s ease;
-  max-width: 100%;
+  /* Cap each chip so long suggestions ellipsis cleanly inside the chip
+   * instead of pushing past the suggestion row's edge. On phones this is
+   * what keeps "Continue: Task context: Title:…" from getting clipped by
+   * the viewport. */
+  max-width: min(100%, 360px);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -320,6 +298,17 @@
 .hc-suggestion-icon {
   flex-shrink: 0;
   opacity: 0.5;
+}
+
+/* The label inside each chip handles its own text-overflow so long
+ * suggestions get an ellipsis inside the chip rather than spilling past
+ * the viewport. The chip itself is `display: inline-flex`, so the text
+ * needs its own overflow context with min-width: 0 to shrink. */
+.hc-suggestion > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
@@ -443,4 +432,24 @@
   text-align: center;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+/* Touch devices have no physical keyboard — hide the desktop-only shortcut
+ * legend so phones don't waste vertical space on irrelevant guidance. */
+@media (pointer: coarse) {
+  .hc-keyboard-hint {
+    display: none;
+  }
+}
+
+/* Phone-portrait composer position
+ * On tall portrait phones, vertical-center positioning drops the title to
+ * ~60% of the viewport with a wide band of empty space above. Anchor the
+ * stack near the upper third so it reads as content rather than a stranded
+ * island, while keeping wider screens (tablet+) on the centered layout. */
+@media (max-width: 639px) {
+  .home-composer-root {
+    justify-content: flex-start;
+    padding-top: clamp(72px, 18vh, 160px);
+  }
 }

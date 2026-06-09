@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -175,12 +175,6 @@ function ShellInner({
     return typeof pct !== "number" || pct > 0;
   });
 
-  // Track rendered pixel widths of the side panels so child surfaces (e.g. the
-  // Home composer) can visually center on the viewport rather than on the
-  // asymmetric .shell-detail panel.
-  const [navWidthPx, setNavWidthPx] = useState(0);
-  const [agentWidthPx, setAgentWidthPx] = useState(0);
-
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
@@ -251,15 +245,15 @@ function ShellInner({
         id="nav"
         className="shell-nav-panel"
         defaultSize="17%"
-        minSize="14%"
-        maxSize="25%"
+        // Symmetric with the agent panel so when both are open the layout
+        // stays visually balanced and the Home composer sits equidistant
+        // from both side panels.
+        minSize="16%"
+        maxSize="28%"
         collapsible
         collapsedSize={0}
         panelRef={navRef}
-        onResize={(size) => {
-          setNavOpen((size.asPercentage ?? 0) > 0);
-          setNavWidthPx(size.inPixels ?? 0);
-        }}
+        onResize={(size) => setNavOpen((size.asPercentage ?? 0) > 0)}
       >
         <aside className="shell-nav">{nav}</aside>
       </Panel>
@@ -294,15 +288,15 @@ function ShellInner({
             id="agent"
             className="shell-agent-panel"
             defaultSize={"0%"}
-            minSize="25%"
-            maxSize="38%"
+            // Symmetric with the nav panel so when both are open the layout
+            // stays visually balanced and the Home composer sits equidistant
+            // from both side panels.
+            minSize="16%"
+            maxSize="28%"
             collapsible
             collapsedSize={0}
             panelRef={agentRef}
-            onResize={(size) => {
-              setAgentOpen((size.asPercentage ?? 0) > 0);
-              setAgentWidthPx(size.inPixels ?? 0);
-            }}
+            onResize={(size) => setAgentOpen((size.asPercentage ?? 0) > 0)}
           >
             <aside className="shell-agent">{agentOpen ? agent : null}</aside>
           </Panel>
@@ -311,21 +305,8 @@ function ShellInner({
     </Group>
   );
 
-  const shellFrameStyle: CSSProperties & {
-    "--shell-nav-px": string;
-    "--shell-agent-px": string;
-  } = {
-    // Surfaces that need to visually center on the viewport (e.g. Home)
-    // use these to compensate for the asymmetric side-panel widths.
-    "--shell-nav-px": `${Math.round(navWidthPx)}px`,
-    "--shell-agent-px": `${Math.round(agentWidthPx)}px`,
-  };
-
   return (
-    <div
-      className="shell-frame flex h-full w-full flex-col"
-      style={shellFrameStyle}
-    >
+    <div className="shell-frame flex h-full w-full flex-col">
       {topBar}
       <div className="shell-body flex flex-1 min-h-0">
         {familiarRail}
