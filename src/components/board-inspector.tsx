@@ -43,6 +43,10 @@ type Props = {
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinking?: boolean;
+  /** Surfaces an in-drawer error when /api/board/:id/chat fails (typically
+   *  daemon offline → 502). Without this the failure only appears as a
+   *  small banner at the top of the board, hidden behind the open drawer. */
+  chatLinkError?: string | null;
 };
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
@@ -721,7 +725,7 @@ function StepsSection({
   );
 }
 
-export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, chatLinking = false }: Props) {
+export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, chatLinking = false, chatLinkError }: Props) {
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<CardLifecycle | null>(null);
@@ -871,8 +875,14 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
                   <Icon name="ph:chat-circle-dots" width={14} />
                 </span>
                 <span className="board-drawer-chat-body">
-                  <span className="board-drawer-chat-title">No chat linked</span>
-                  <span className="board-drawer-chat-desc">Start a conversation with this card's familiar.</span>
+                  <span className="board-drawer-chat-title">
+                    {chatLinkError ? "Couldn't start chat" : "No chat linked"}
+                  </span>
+                  <span className="board-drawer-chat-desc">
+                    {chatLinkError
+                      ? chatLinkError
+                      : "Start a conversation with this card's familiar."}
+                  </span>
                 </span>
                 <button
                   type="button"
@@ -880,7 +890,7 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
                   disabled={chatLinking}
                   onClick={() => void onOpenTaskChat?.(card.id)}
                 >
-                  {chatLinking ? "Starting…" : "Start chat"}
+                  {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start chat"}
                   <Icon name="ph:arrow-right-bold" width={11} />
                 </button>
               </div>

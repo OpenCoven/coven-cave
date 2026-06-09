@@ -348,7 +348,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           onCardReplaced={(next) => setCards((prev) => prev.map((c) => (c.id === next.id ? next : c)))}
           onJumpToSession={onJumpToSession}
           onOpenTaskChat={onOpenTaskChat}
-          chatLinking={chatLinkingId === selectedCard.id} />
+          chatLinking={chatLinkingId === selectedCard.id}
+          chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}
+        />
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}
