@@ -1,5 +1,5 @@
 /**
- * 8-theme roster metadata + swatch lookup for the appearance settings UI.
+ * 10-theme roster metadata + swatch lookup for the appearance settings UI.
  * The actual palette CSS lives in `src/app/globals.css`; this module
  * mirrors the accent values and a representative background swatch
  * per (theme, mode) so the settings grid can preview each card.
@@ -15,6 +15,8 @@ export const THEME_IDS = [
   "bloom",
   "dusk",
   "mist",
+  "hex",
+  "bane",
   "slate",
 ] as const;
 
@@ -73,6 +75,18 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     description: "Scrying-pool teal. Cold as a question without an answer.",
     hue: 198, accentDark: "#6BD8D3", accentLight: "#1A857F",
     bgDark: "oklch(0.09 0.030 198)", bgLight: "oklch(0.97 0.015 195)",
+  },
+  hex: {
+    name: "Hex",
+    description: "Bloodletter's brand. The mark that doesn't wash off.",
+    hue: 25, accentDark: "#E04848", accentLight: "#A41C24",
+    bgDark: "oklch(0.09 0.060 25)", bgLight: "oklch(0.97 0.022 25)",
+  },
+  bane: {
+    name: "Bane",
+    description: "Wolfsbane bloom. Bright; deeply unwise.",
+    hue: 125, accentDark: "#A5F050", accentLight: "#4A7C18",
+    bgDark: "oklch(0.09 0.050 125)", bgLight: "oklch(0.97 0.022 125)",
   },
   slate: {
     name: "Slate",

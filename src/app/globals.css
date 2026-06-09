@@ -2476,6 +2476,80 @@ body {
   --ring-focus: color-mix(in oklch, #1A857F 55%, transparent);
 }
 
+/* ---- Hex (bloodletter 25) — the mark that doesn't wash off ---- */
+[data-theme="hex"] {
+  --background: oklch(0.09 0.060 25);
+  --card: oklch(0.125 0.062 25);
+  --popover: oklch(0.125 0.062 25);
+  --muted: oklch(0.17 0.066 25);
+  --accent: oklch(0.17 0.066 25);
+  --secondary: oklch(0.17 0.066 25);
+  --muted-foreground: oklch(0.72 0.044 25);
+  --accent-presence: #E04848;
+  --ring: oklch(0.64 0.20 25);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.07 0.054 25);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.17 0.066 25);
+  --bg-hover: oklch(0.21 0.068 25);
+  --ring-focus: color-mix(in oklch, #E04848 55%, transparent);
+}
+[data-theme="hex"][data-mode="light"] {
+  --background: oklch(0.97 0.022 25);
+  --foreground: oklch(0.20 0.034 25);
+  --card: oklch(0.94 0.024 25);
+  --popover: oklch(0.96 0.024 25);
+  --muted: oklch(0.90 0.030 25);
+  --accent: oklch(0.90 0.030 25);
+  --secondary: oklch(0.90 0.030 25);
+  --muted-foreground: oklch(0.44 0.040 25);
+  --accent-presence: #A41C24;
+  --ring: oklch(0.52 0.22 25);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.016 25);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.026 25);
+  --bg-hover: oklch(0.87 0.030 25);
+  --ring-focus: color-mix(in oklch, #A41C24 55%, transparent);
+}
+
+/* ---- Bane (wolfsbane 125) — bright; deeply unwise ---- */
+[data-theme="bane"] {
+  --background: oklch(0.09 0.050 125);
+  --card: oklch(0.125 0.052 125);
+  --popover: oklch(0.125 0.052 125);
+  --muted: oklch(0.17 0.054 125);
+  --accent: oklch(0.17 0.054 125);
+  --secondary: oklch(0.17 0.054 125);
+  --muted-foreground: oklch(0.70 0.040 125);
+  --accent-presence: #A5F050;
+  --ring: oklch(0.78 0.18 125);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.07 0.044 125);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.17 0.054 125);
+  --bg-hover: oklch(0.21 0.056 125);
+  --ring-focus: color-mix(in oklch, #A5F050 55%, transparent);
+}
+[data-theme="bane"][data-mode="light"] {
+  --background: oklch(0.97 0.022 125);
+  --foreground: oklch(0.18 0.030 125);
+  --card: oklch(0.94 0.024 125);
+  --popover: oklch(0.96 0.024 125);
+  --muted: oklch(0.90 0.030 125);
+  --accent: oklch(0.90 0.030 125);
+  --secondary: oklch(0.90 0.030 125);
+  --muted-foreground: oklch(0.42 0.034 125);
+  --accent-presence: #4A7C18;
+  --ring: oklch(0.52 0.18 125);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.016 125);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.026 125);
+  --bg-hover: oklch(0.87 0.030 125);
+  --ring-focus: color-mix(in oklch, #4A7C18 55%, transparent);
+}
+
 /* ---- Slate (ink-and-bone 270) — no color, no mercy ---- */
 [data-theme="slate"] {
   --background: oklch(0.05 0.000 0);
