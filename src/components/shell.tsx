@@ -104,6 +104,7 @@ function ShellInner({
   agent,
   bottom,
   topBar,
+  mobileTabs,
   onNavOpenChange,
   onAgentOpenChange,
 }: {
@@ -117,6 +118,10 @@ function ShellInner({
   agent?: ReactNode;
   bottom?: ReactNode;
   topBar?: ReactNode;
+  /** Mobile/tablet-only bottom tab bar. Rendered after `.shell-body`
+   *  inside `.shell-frame`, but only when the viewport matches the
+   *  mobile breakpoint (≤1023px). */
+  mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
   onAgentOpenChange?: (open: boolean) => void;
 }, ref: ForwardedRef<ShellHandle>) {
@@ -319,7 +324,7 @@ function ShellInner({
       <Panel
         id="nav"
         className="shell-nav-panel"
-        defaultSize="17%"
+        defaultSize="18%"
         minSize="14%"
         maxSize="25%"
         collapsible
@@ -362,9 +367,9 @@ function ShellInner({
           <Panel
             id="agent"
             className="shell-agent-panel"
-            defaultSize={"0%"}
-            minSize="25%"
-            maxSize="38%"
+            defaultSize={"18%"}
+            minSize="14%"
+            maxSize="25%"
             collapsible
             collapsedSize={0}
             panelRef={agentRef}
@@ -426,6 +431,7 @@ function ShellInner({
         )}
         {agentRail}
       </div>
+      {isMobile && mobileTabs ? mobileTabs : null}
       <MobileDrawer
         open={isMobile ? mobileDrawer : null}
         onClose={() => setMobileDrawer(null)}

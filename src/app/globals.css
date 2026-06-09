@@ -370,7 +370,9 @@ select {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-base);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   overflow: hidden;
 }
 
@@ -544,7 +546,9 @@ select {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  background: var(--bg-base);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   overflow-y: auto;
 }
 
@@ -3737,15 +3741,17 @@ select {
 }
 
 /* ─── Mobile shell collapse ────────────────────────────────────────────
-   Below 768px (phone-class viewports), the avatar rail flips to a top
-   horizontal strip and the detail pane takes the full width. The nav,
-   list, and agent panels stay mounted (preserves their content state
-   and avoids `panel.collapse()` fighting react-resizable-panels'
-   persisted layout) but slide off-screen, becoming drawers driven by
-   the `[data-mobile-drawer]` attribute on `.shell-root`. The
+   Below 1024px (phone- and tablet-class viewports), the avatar rail
+   flips to a top horizontal strip and the detail pane takes the full
+   width. The nav, list, and agent panels stay mounted (preserves their
+   content state and avoids `panel.collapse()` fighting react-resizable-
+   panels' persisted layout) but slide off-screen, becoming drawers
+   driven by the `[data-mobile-drawer]` attribute on `.shell-root`. The
    ⌘B / ⌘\\ / ⌘J keyboard shortcuts and the top-bar hamburger buttons
-   both flip that attribute. */
-@media (max-width: 767px) {
+   both flip that attribute. At this breakpoint the shell also surfaces
+   a bottom tab bar (`<MobileBottomTabs>`) for the top-five destinations,
+   which is why `.shell-detail` reserves bottom padding here. */
+@media (max-width: 1023px) {
   .shell-body {
     flex-direction: column;
   }
@@ -3827,6 +3833,12 @@ select {
     width: 100% !important;
     min-width: 0 !important;
   }
+  /* Reserve room at the bottom of the detail surface for the bottom tab
+     bar so the last line of scrollable content isn't obscured. The bar
+     itself adds its own safe-area inset on top of this 56px. */
+  .shell-detail {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* Mobile top-bar — reveal drawer toggles, compress the search box so the
@@ -3834,7 +3846,7 @@ select {
    the surface name reads fine without it at narrow widths, and respect
    the notch on the top edge. The desktop Home button stays but
    gets a tighter padding. */
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .top-bar {
     padding: 0 calc(8px + var(--sai-right)) 0 calc(8px + var(--sai-left));
     padding-top: var(--sai-top);
@@ -3882,7 +3894,7 @@ select {
 
 /* Reduced-motion users get the drawer position change without the
    slide animation. */
-@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+@media (max-width: 1023px) and (prefers-reduced-motion: reduce) {
   .shell-nav-panel,
   .shell-list-panel,
   .shell-agent-panel {
@@ -3905,6 +3917,90 @@ select {
 }
 @media (prefers-reduced-motion: reduce) {
   .mobile-drawer-backdrop { animation: none; }
+}
+
+/* ─── Mobile bottom tabs ───────────────────────────────────────────────
+   Sticky bottom navigation strip rendered by the Shell on mobile/tablet
+   viewports (≤1023px). Five fixed destinations (Home / Chat / Board /
+   Inbox / Library); active tab adopts var(--accent-presence). Sits above
+   the detail panel and below any modal/drawer scrim. */
+.mobile-bottom-tabs {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 150;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 0;
+  min-height: 56px;
+  padding: 0 calc(4px + var(--sai-left, 0px)) 0 calc(4px + var(--sai-right, 0px));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-top: 1px solid var(--border-hairline);
+}
+.mobile-bottom-tab {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.mobile-bottom-tab:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-control);
+}
+.mobile-bottom-tab__icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+}
+.mobile-bottom-tab__label {
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.mobile-bottom-tab--active {
+  color: var(--accent-presence);
+}
+.mobile-bottom-tab--active .mobile-bottom-tab__label {
+  font-weight: 600;
+}
+.mobile-bottom-tab__badge {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Touch / coarse-pointer surface. On devices with no hover capability,

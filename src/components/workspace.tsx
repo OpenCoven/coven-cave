@@ -14,6 +14,7 @@ import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
+import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { FamiliarStudio } from "@/components/familiar-studio";
@@ -1045,10 +1046,19 @@ export function Workspace() {
     </div>
   );
 
+  const mobileTabs = (
+    <MobileBottomTabs
+      mode={mode}
+      onSelect={(id) => setMode(id as WorkspaceMode)}
+      inboxBadgeCount={inboxBadgeCount}
+    />
+  );
+
   return (
     <FamiliarStudioProvider>
       <Shell
         ref={shellRef}
+        mobileTabs={mobileTabs}
         onAgentOpenChange={(open) => {
           if (activeId) setRailOpen(activeId, open);
         }}
