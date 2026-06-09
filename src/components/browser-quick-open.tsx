@@ -97,11 +97,14 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
   return (
     <div
       ref={backdropRef}
-      className="absolute inset-0 z-50 flex items-start justify-center pt-[72px]"
-      style={{ background: "transparent" }}
+      className="absolute inset-0 z-50 flex items-start justify-center pt-[72px] bg-black/40 backdrop-blur-sm"
       onMouseDown={handleBackdrop}
+      onClick={onClose}
     >
-      <div className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl"
+      >
         {/* Search input */}
         <div className="flex items-center gap-2.5 border-b border-[var(--border-hairline)] px-4 py-3">
           <span className="text-sm text-[var(--text-muted)]">⌘</span>

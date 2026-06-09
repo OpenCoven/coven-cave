@@ -53,4 +53,10 @@ assert.doesNotMatch(
   "Old 2px accent dot must be removed",
 );
 
+// ───────── Task 4: Quick-open backdrop ─────────
+const qo = await readFile(new URL("./browser-quick-open.tsx", import.meta.url), "utf8");
+assert.match(qo, /bg-black\/40 backdrop-blur-sm/, "Backdrop must use bg-black/40 + backdrop-blur-sm");
+assert.match(qo, /onClick=\{onClose\}/, "Outer container must handle onClick={onClose}");
+assert.match(qo, /onClick=\{\(e\) => e\.stopPropagation\(\)\}/, "Inner card must stopPropagation on click");
+
 console.log("browser-polish.test.ts: ok");
