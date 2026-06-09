@@ -174,6 +174,26 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     );
   }, []);
 
+  useEffect(() => {
+    if (view !== "terminal") return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        addSession();
+      } else if (e.key === "w" || e.key === "W") {
+        if (sessions.length === 0) return;
+        e.preventDefault();
+        removeSession(currentIdx);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, addSession, removeSession, currentIdx, sessions.length]);
+
   const openFilePreview = useCallback(async (path: string) => {
     setPreviewPath(path);
     setPreviewLoading(true);
@@ -271,6 +291,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             <button
               type="button"
               onClick={() => addSession()}
+              aria-label="New terminal"
+              title="New terminal (⌘N)"
               className="rounded px-1.5 py-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
             >
               +
@@ -280,15 +302,25 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           {/* Terminal area */}
           <div className="flex-1 min-h-0 relative">
             {sessions.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-[var(--text-muted)]">
-                <p>No terminal sessions.</p>
-                <button
-                  type="button"
-                  onClick={() => addSession()}
-                  className="rounded border border-[var(--border-hairline)] px-3 py-1 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                >
-                  + New terminal
-                </button>
+              <div className="flex h-full flex-col items-center justify-center gap-3">
+                <div className="flex flex-col items-center gap-1 text-center">
+                  <p className="text-sm text-[var(--text-secondary)]">No terminal sessions</p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Start one to run commands inside the cave.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addSession()}
+                    className="rounded border border-[var(--border-hairline)] px-3 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                  >
+                    + New terminal
+                  </button>
+                  <kbd className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+                    ⌘N
+                  </kbd>
+                </div>
               </div>
             ) : (
               sessions.map((s, i) => (
@@ -311,6 +343,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               ))
             )}
           </div>
+          <footer className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
+            ⌘N new · ⌘W close · double-click tab name to rename
+          </footer>
         </div>
       ) : (
         /* Project tab */
