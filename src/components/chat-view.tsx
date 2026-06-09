@@ -8,6 +8,7 @@ import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/s
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
+import { useVisualViewport } from "@/lib/use-viewport";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
@@ -606,6 +607,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const keys = useKeySymbols();
+
+  // Track the iOS visual viewport so the composer dock can translate up
+  // by the on-screen keyboard height. `100dvh` shrinks the layout for
+  // most browsers; iOS Safari is the laggard where position:sticky alone
+  // leaves the dock under the keyboard until the next layout pass.
+  // Keyboard height ≈ window.innerHeight - visualViewport.height; on
+  // desktop both are equal so the offset stays 0.
+  const vv = useVisualViewport();
+  const keyboardOffset =
+    typeof window !== "undefined" && vv.height > 0
+      ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+      : 0;
 
   // Slash suggestions
   const slashSuggestions: SlashCommand[] = useMemo(() => {
@@ -1307,7 +1320,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         familiarName={familiar.display_name}
       />
 
-      <footer className="cave-composer-dock">
+      <footer
+        className="cave-composer-dock"
+        style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
+      >
         <div className="cave-composer-shell">
           {slashSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
@@ -1377,7 +1393,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onKeyDown={onComposerKey}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…`}
               rows={1}
-              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              inputMode="text"
+              enterKeyHint="send"
+              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
               aria-label="Message"
             />
             <div className="flex items-center justify-between px-3 pb-2.5">

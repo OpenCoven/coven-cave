@@ -1113,6 +1113,33 @@ details[open] > .cave-tool-summary::before {
   }
 }
 
+/* Mobile composer dock — keep the textarea visible above the on-screen
+   keyboard. position:sticky pins it to the bottom of the chat surface,
+   safe-area-inset-bottom respects the iPhone home indicator. The
+   --composer-kb-offset CSS variable is set inline by ChatView from
+   useVisualViewport(); position:sticky alone is not enough on iOS Safari
+   because the layout viewport doesn't shrink with the keyboard. The
+   translateY runs in the negative direction so the dock rides up above
+   the keyboard rather than getting pinned under it. */
+@media (max-width: 767px) {
+  .cave-composer-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 50;
+    padding: 8px clamp(12px, 3vw, 18px)
+            calc(12px + var(--sai-bottom))
+            clamp(12px, 3vw, 18px);
+    transform: translateY(calc(-1 * var(--composer-kb-offset, 0px)));
+    transition: transform var(--duration-fast) var(--ease-decelerate);
+  }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .cave-composer-dock {
+    transition: none;
+  }
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    SYSTEM TURN — terminal chrome
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */

@@ -13,6 +13,7 @@ import {
   taskGitHubLinkFromGitHubItem,
 } from "@/lib/task-github";
 import { Icon } from "@/lib/icon";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -163,6 +164,7 @@ function GitHubAttachSection({
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
+  const coarse = useIsCoarsePointer();
 
   useEffect(() => {
     if (!open) return;
@@ -268,7 +270,7 @@ function GitHubAttachSection({
           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
             <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
             <input
-              autoFocus
+              autoFocus={!coarse}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search PRs, issues…"

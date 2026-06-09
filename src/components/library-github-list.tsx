@@ -11,6 +11,7 @@ import {
   mergeTaskGitHubLinks,
 } from "@/lib/task-github";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -515,6 +516,7 @@ function AddGitHubForm({ onAdd, onCancel }: {
 }) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
+  const coarse = useIsCoarsePointer();
 
   function handleUrlBlur() {
     if (url && !title) {
@@ -535,7 +537,7 @@ function AddGitHubForm({ onAdd, onCancel }: {
   return (
     <form className="library-list-add-form" onSubmit={handleSubmit}>
       <input
-        autoFocus
+        autoFocus={!coarse}
         className="board-drawer-field-input library-list-add-input"
         placeholder="https://github.com/owner/repo/issues/123"
         value={url}

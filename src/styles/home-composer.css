@@ -111,7 +111,10 @@
   border: none;
   outline: none;
   color: var(--text-primary);
-  font-size: 15px;
+  /* 16px floor so iOS Safari doesn't auto-zoom on focus. The desktop
+     baseline was 15px — the 1px bump is barely perceptible and not
+     worth a (pointer: coarse) gate. */
+  font-size: 16px;
   line-height: 1.6;
   padding: 18px 18px 10px;
   font-family: inherit;

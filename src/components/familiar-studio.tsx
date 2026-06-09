@@ -11,6 +11,7 @@ import {
   clearFamiliarOverrideField,
 } from "@/lib/cave-familiar-overrides";
 import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
 import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
@@ -219,6 +220,7 @@ export function FamiliarStudio({ familiars }: Props) {
 function HeaderName({ familiar }: { familiar: ResolvedFamiliar }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(familiar.display_name);
+  const coarse = useIsCoarsePointer();
 
   function enter() {
     setDraft(familiar.display_name);
@@ -242,7 +244,7 @@ function HeaderName({ familiar }: { familiar: ResolvedFamiliar }) {
   if (editing) {
     return (
       <input
-        autoFocus
+        autoFocus={!coarse}
         className="familiar-studio__name familiar-studio__name--editing"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}

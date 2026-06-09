@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
 import { SalemCat3D } from "./salem-cat-3d";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 
 type Message = { role: "user" | "salem"; text: string };
 
@@ -61,6 +62,7 @@ export function SalemChatPanel() {
     preload: SalemPreloadContext;
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const coarse = useIsCoarsePointer();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -171,8 +173,10 @@ export function SalemChatPanel() {
           value={input}
           onChange={(e) => { setInput(e.target.value); if (e.target.value) setMood("listening"); else setMood("idle"); }}
           disabled={loading}
-          autoFocus
+          autoFocus={!coarse}
           aria-label="Search Salem docs"
+          inputMode="text"
+          enterKeyHint="send"
         />
         <button type="submit" className="salem-panel__send salem-panel__send--label" disabled={loading || !input.trim()} aria-label="Send">
           <span className="salem-panel__send-text">SALEM</span>

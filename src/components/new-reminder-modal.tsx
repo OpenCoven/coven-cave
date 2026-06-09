@@ -6,6 +6,7 @@ import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen, splitWhenAndText } from "@/lib/parse-when";
 import { parseCron } from "@/lib/cron";
 import { Icon } from "@/lib/icon";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 
 export type NewReminderDraft = {
   title: string;
@@ -90,6 +91,7 @@ export function NewReminderModal({
   const [cronExpr, setCronExpr] = useState<string>("*/15 * * * *");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const coarse = useIsCoarsePointer();
 
   useEffect(() => {
     if (!open) return;
@@ -229,7 +231,7 @@ export function NewReminderModal({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="check the deploy"
-            autoFocus
+            autoFocus={!coarse}
             className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
           />
         </Field>

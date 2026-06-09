@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { LibraryBookmark } from "@/lib/library-types";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ function AddBookmarkForm({ onAdd, onCancel }: { onAdd: (url: string, title: stri
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
+  const coarse = useIsCoarsePointer();
 
   function handleUrlBlur() {
     if (url && !title) {
@@ -113,7 +115,7 @@ function AddBookmarkForm({ onAdd, onCancel }: { onAdd: (url: string, title: stri
   return (
     <form className="library-list-add-form" onSubmit={handleSubmit}>
       <input
-        autoFocus
+        autoFocus={!coarse}
         className="board-drawer-field-input library-list-add-input"
         placeholder="https://…"
         value={url}

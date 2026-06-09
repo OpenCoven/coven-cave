@@ -352,6 +352,8 @@ export function HomeComposer({
           onKeyDown={handleKeyDown}
           disabled={sending}
           aria-label="Ask anything"
+          inputMode="text"
+          enterKeyHint="send"
         />
 
         {/* Action bar */}

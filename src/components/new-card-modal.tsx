@@ -10,6 +10,7 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board-types";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 
 export type NewCardDraft = {
   title: string;
@@ -54,6 +55,7 @@ export function NewCardModal({
   const [labels, setLabels] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const coarse = useIsCoarsePointer();
 
   useEffect(() => {
     if (!open) return;
@@ -156,7 +158,7 @@ export function NewCardModal({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
-          autoFocus
+          autoFocus={!coarse}
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>

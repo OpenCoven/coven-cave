@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { LibraryReadingItem, ReadingStatus } from "@/lib/library-types";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -86,6 +87,7 @@ function AddReadingForm({ onAdd, onCancel }: {
   const [title, setTitle] = useState("");
   const [sourceType, setSourceType] = useState<LibraryReadingItem["sourceType"]>("article");
   const [status, setStatus] = useState<ReadingStatus>("want-to-read");
+  const coarse = useIsCoarsePointer();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -96,7 +98,7 @@ function AddReadingForm({ onAdd, onCancel }: {
   return (
     <form className="library-list-add-form" onSubmit={handleSubmit}>
       <input
-        autoFocus
+        autoFocus={!coarse}
         className="board-drawer-field-input library-list-add-input"
         placeholder="Title"
         value={title}
