@@ -5,6 +5,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -332,11 +333,18 @@ function TimeGrid({
   onOpenItem?: (item: InboxItem) => void;
 }) {
   const nowRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const today = new Date();
 
   useEffect(() => {
     nowRef.current?.scrollIntoView({ block: "center" });
   }, []);
+
+  useRovingTabIndex({
+    containerRef: gridRef,
+    itemSelector: '[data-calendar-event="true"]',
+    orientation: "vertical",
+  });
 
   function itemTop(item: InboxItem): number {
     const d = itemDate(item);
@@ -349,7 +357,7 @@ function TimeGrid({
   const nowTop = (nowMinutes / 60) * HOUR_HEIGHT;
 
   return (
-    <div className="flex flex-1 overflow-auto">
+    <div ref={gridRef} className="flex flex-1 overflow-auto">
       {/* Time axis */}
       <div
         className="sticky left-0 z-20 w-12 shrink-0 border-r border-[var(--border-hairline)] bg-[var(--bg-base)] relative"
@@ -401,6 +409,8 @@ function TimeGrid({
               .map((item) => (
                 <button
                   key={item.id}
+                  type="button"
+                  data-calendar-event="true"
                   onClick={() => onOpenItem?.(item)}
                   className="absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[10px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors overflow-hidden"
                   style={{
