@@ -21,10 +21,13 @@ and a small PTY guard.
 ### Changed
 
 - **Distinct theme personalities.** The eight default palettes
-  (Midnight, Dusk, Slate, Moss, Sky, Dawn, Latte, Storm) now read as
-  meaningfully different — each gets accent, surface, and contrast
-  values tuned to its mood instead of all converging on a similar
-  purple-blue middle. (#285)
+  (Coven, Tide, Grove, Ember, Bloom, Dusk, Mist, Slate) now carry
+  their hue in the chrome — background chroma is pushed 2–4× and
+  base lightness is staggered, so each theme reads as a different
+  mood (lavender grimoire, moontide blue, hexenwald moss, brazier
+  parchment, bewitching rose, witching-hour magenta, scrying-pool
+  teal, ink-and-bone) instead of the previous flat dark/light gray
+  with only a tinted accent button. (#285)
 
 ### Fixed
 
@@ -33,6 +36,10 @@ and a small PTY guard.
   session list when the daemon is offline, and the familiar memory
   view is scoped to the active familiar so other familiars' files no
   longer bleed into the surface. (#287)
+- **Ember light contrast.** Pulls Ember light background chroma back
+  and darkens the burnt-orange accent so body text reads cleanly on
+  the parchment surface; foreground and muted-foreground lightness
+  tightened to match. Ember dark untouched. (#290)
 - **PTY zero-size guard.** Clamps PTY dimensions to a safe minimum
   when the host terminal pane reports a zero-pixel area, preventing
   the desktop from crashing when chat or terminal panes are collapsed
