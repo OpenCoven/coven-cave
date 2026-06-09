@@ -62,7 +62,14 @@ function age(iso: string | undefined): string {
 }
 
 function compactPath(path: string): string {
-  return path.replace(/^\/Users\/[^/]+/, "~");
+  const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
+  const THRESHOLD = 52;
+  if (collapsed.length <= THRESHOLD) return collapsed;
+  const segments = collapsed.split("/").filter(Boolean);
+  if (segments.length <= 4) return collapsed;
+  const first = collapsed.startsWith("~") ? "~" : `/${segments[0]}`;
+  const last = segments.slice(-3);
+  return `${first}/…/${last.join("/")}`;
 }
 
 function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string): boolean {
