@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 
 export type GroupBy = "status" | "familiar";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "cwd" | "links" | "lifecycle" | "updatedAt";
@@ -96,6 +97,34 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
   const groups = useMemo(() => groupCards(sorted, groupBy, familiars), [sorted, groupBy, familiars]);
 
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  useRovingTabIndex({
+    containerRef: tbodyRef,
+    itemSelector: 'tr[data-board-row="true"]',
+    orientation: "vertical",
+  });
+
+  useEffect(() => {
+    const tbody = tbodyRef.current;
+    if (!tbody) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = document.activeElement as HTMLElement | null;
+      if (!target || !tbody.contains(target)) return;
+      if (e.key === "Enter") {
+        const cardId = target.dataset.cardId;
+        if (cardId) {
+          e.preventDefault();
+          onSelect(cardId);
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onSelect("");
+      }
+    };
+    tbody.addEventListener("keydown", onKey);
+    return () => tbody.removeEventListener("keydown", onKey);
+  }, [onSelect]);
+
   const handleCol = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
@@ -132,7 +161,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody ref={tbodyRef}>
           {groups.map(({ key, label, cards: gc }) => (
             <React.Fragment key={key}>
               <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
@@ -150,7 +179,10 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
               {!collapsed.has(key) && gc.map((card) => {
                 const resolvedFamiliar = card.familiarId ? resolvedByIdMap.get(card.familiarId) ?? null : null;
                 return (
-                  <tr key={card.id} className={selectedCardId === card.id ? "selected" : ""}
+                  <tr key={card.id}
+                    data-board-row="true"
+                    data-card-id={card.id}
+                    className={selectedCardId === card.id ? "selected" : ""}
                     onClick={() => onSelect(card.id)}>
                     <td><span className="board-table-title">{card.title}</span></td>
                     <td>

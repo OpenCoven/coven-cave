@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { setFamiliarOrder } from "@/lib/cave-familiar-order";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -37,6 +38,13 @@ export function FamiliarAvatarRail({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+
+  const avatarListRef = useRef<HTMLUListElement | null>(null);
+  useRovingTabIndex({
+    containerRef: avatarListRef,
+    itemSelector: ".familiar-avatar-rail__avatar:not([disabled])",
+    orientation: "vertical",
+  });
 
   // Dismiss the + context menu on outside click or Esc.
   useEffect(() => {
@@ -118,7 +126,13 @@ export function FamiliarAvatarRail({
       className="familiar-avatar-rail"
       aria-label="Familiars"
     >
-      <ul className="familiar-avatar-rail__list">
+      <ul
+        ref={avatarListRef}
+        className="familiar-avatar-rail__list"
+        role="toolbar"
+        aria-orientation="vertical"
+        aria-label="Familiars"
+      >
         {familiars.map((f) => {
           const active = f.id === activeId;
           const needsReply = responseNeeded.has(f.id);

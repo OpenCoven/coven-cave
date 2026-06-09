@@ -1,0 +1,16 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const source = readFileSync(
+  new URL("./browser-quick-open.tsx", import.meta.url),
+  "utf8",
+);
+
+assert.match(source, /role="listbox"/, "results container has role=listbox");
+assert.match(source, /role="option"/, "items have role=option");
+assert.match(source, /aria-controls=/, "input has aria-controls");
+assert.match(source, /aria-activedescendant=/, "input uses aria-activedescendant");
+assert.match(source, /aria-selected=/, "active item announced via aria-selected");
+
+console.log("browser-quick-open.test.ts OK");

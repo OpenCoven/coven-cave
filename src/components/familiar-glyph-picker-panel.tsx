@@ -20,6 +20,7 @@ import {
 } from "@/lib/familiar-glyph";
 import { FamiliarGlyph as GlyphView } from "@/components/familiar-glyph";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import type { Familiar } from "@/lib/types";
 
 type Props = {
@@ -41,6 +42,27 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
     [onHoverChange],
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // 1D horizontal rove across every rendered glyph button (Recent + Results).
+  // Vertical/grid-aware navigation is deferred — the responsive column-count
+  // makes Up/Down ambiguous without a layout-aware design pass.
+  const { activeIndex } = useRovingTabIndex({
+    containerRef: gridRef,
+    itemSelector: '[data-glyph-button="true"]',
+    orientation: "horizontal",
+  });
+
+  // Keep the currently focused glyph in view as the rove moves.
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const items = grid.querySelectorAll<HTMLElement>(
+      '[data-glyph-button="true"]',
+    );
+    const active = items[activeIndex];
+    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeIndex]);
 
   // Cmd/Ctrl+Backspace clears the current override.
   useEffect(() => {
@@ -160,7 +182,12 @@ export function FamiliarGlyphPickerPanel({ familiar, onHoverChange }: Props) {
       </div>
 
       {/* Grid */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div
+        ref={gridRef}
+        role="listbox"
+        aria-label="Glyph"
+        className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
+      >
         {results.length === 0 ? (
           <div className="grid h-full place-items-center text-sm text-[var(--text-muted)]">
             No matches.
@@ -207,6 +234,10 @@ function GlyphButton({
   const glyph: FamiliarGlyph = { kind: "icon", name: entry.value };
   return (
     <button
+      type="button"
+      role="option"
+      aria-selected={active}
+      data-glyph-button="true"
       onClick={() => onPick(entry)}
       onMouseEnter={() => onHover(entry)}
       onMouseLeave={() => onHover(null)}

@@ -3335,7 +3335,7 @@ body {
   color: var(--text-primary);
   border-left-color: var(--familiar-accent, var(--accent-presence));
 }
-.familiar-studio__tab:disabled {
+.familiar-studio__tab[aria-disabled="true"] {
   opacity: 0.4;
   cursor: not-allowed;
 }

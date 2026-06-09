@@ -115,6 +115,11 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
             className="focus-ring-inset flex-1 rounded bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             spellCheck={false}
             autoComplete="off"
+            aria-label="Search open tabs and history"
+            aria-controls="browser-quick-open-listbox"
+            aria-activedescendant={
+              filtered.length > 0 ? `browser-quick-open-option-${safeIdx}` : undefined
+            }
           />
           {query && (
             <button
@@ -134,16 +139,27 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
             No tabs match &ldquo;{query}&rdquo;
           </p>
         ) : (
-          <ul ref={listRef} className="max-h-[320px] overflow-y-auto py-1.5">
+          <ul
+              id="browser-quick-open-listbox"
+              role="listbox"
+              ref={listRef}
+              className="max-h-[320px] overflow-y-auto py-1.5"
+            >
             {filtered.map((tab, i) => {
               const isActive = tab.id === activeId;
               const isHighlighted = i === safeIdx;
               const fav = favicon(tab);
 
               return (
-                <li key={tab.id}>
+                <li
+                  key={tab.id}
+                  role="option"
+                  id={`browser-quick-open-option-${i}`}
+                  aria-selected={i === safeIdx}
+                >
                   <button
                     type="button"
+                    tabIndex={-1}
                     className={`focus-ring-inset flex w-full items-center gap-3 px-4 py-2.5 text-left transition-none ${
                       isHighlighted ? "bg-[var(--bg-hover)]" : ""
                     }`}
