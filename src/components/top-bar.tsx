@@ -19,6 +19,13 @@ type Props = {
   inboxBadgeCount: number;
   onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged: () => void;
+  /** Mobile-only drawer toggles. Visibility is gated by CSS at <768px
+   *  (.top-bar__mobile-toggle is `display: none` on desktop). Omit any
+   *  that aren't applicable to the current surface — e.g. two-pane modes
+   *  with no list panel should pass `onToggleList={undefined}`. */
+  onToggleNav?: () => void;
+  onToggleList?: () => void;
+  onToggleAgent?: () => void;
 };
 
 export function TopBar(props: Props) {
@@ -35,14 +42,39 @@ export function TopBar(props: Props) {
     inboxBadgeCount,
     onOpenInboxItem,
     onNotificationPrefsChanged,
+    onToggleNav,
+    onToggleList,
+    onToggleAgent,
   } = props;
 
   return (
     <header className="top-bar">
+      {onToggleNav ? (
+        <button
+          type="button"
+          className="top-bar__mobile-toggle"
+          onClick={onToggleNav}
+          aria-label="Open navigation (⌘B)"
+          title="Open navigation"
+        >
+          <Icon name="ph:sidebar-simple" width={18} />
+        </button>
+      ) : null}
       <span className="top-bar__brand">CovenCave</span>
       <button type="button" className="top-bar__home-btn" onClick={onOpenHome}>
         Home
       </button>
+      {onToggleList ? (
+        <button
+          type="button"
+          className="top-bar__mobile-toggle"
+          onClick={onToggleList}
+          aria-label="Open list (⌘\\)"
+          title="Open list"
+        >
+          <Icon name="ph:list-checks-bold" width={18} />
+        </button>
+      ) : null}
       {surfaceLabel ? (
         <span className="top-bar__crumb">
           <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
@@ -86,6 +118,17 @@ export function TopBar(props: Props) {
         >
           <Icon name="ph:gear-six" width={14} />
         </button>
+        {onToggleAgent ? (
+          <button
+            type="button"
+            className="top-bar__mobile-toggle"
+            onClick={onToggleAgent}
+            aria-label="Open agent panel (⌘J)"
+            title="Open agent panel"
+          >
+            <Icon name="ph:cat" width={18} />
+          </button>
+        ) : null}
       </div>
     </header>
   );

@@ -3341,6 +3341,15 @@ select {
   color: var(--text-primary);
 }
 
+/* Mobile drawer toggles. Hidden on desktop; CSS @media block below
+   reveals them and gives them a 44px hit area. The TopBar omits them
+   from JSX when the surface has no relevant pane (e.g. two-pane modes
+   skip the list toggle); on desktop they're still rendered but display
+   collapses to none. */
+.top-bar__mobile-toggle {
+  display: none;
+}
+
 .top-bar__icon-btn:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 1px;
@@ -3817,6 +3826,57 @@ select {
     flex: 1 1 100% !important;
     width: 100% !important;
     min-width: 0 !important;
+  }
+}
+
+/* Mobile top-bar — reveal drawer toggles, compress the search box so the
+   header fits a 360px viewport, drop the breadcrumb's leading "›" since
+   the surface name reads fine without it at narrow widths, and respect
+   the notch on the top edge. The desktop Home button stays but
+   gets a tighter padding. */
+@media (max-width: 767px) {
+  .top-bar {
+    padding: 0 calc(8px + var(--sai-right)) 0 calc(8px + var(--sai-left));
+    padding-top: var(--sai-top);
+    height: calc(36px + var(--sai-top));
+    gap: 6px;
+  }
+  .top-bar__mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-standard),
+                color var(--duration-fast) var(--ease-standard);
+  }
+  .top-bar__mobile-toggle:hover,
+  .top-bar__mobile-toggle:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .top-bar__mobile-toggle:focus-visible {
+    outline: var(--ring-width) solid var(--ring-focus);
+    outline-offset: -2px;
+  }
+  .top-bar__search {
+    min-width: 0;
+    flex: 0 1 auto;
+    margin-right: 0;
+  }
+  .top-bar__search span,
+  .top-bar__search kbd {
+    display: none;
+  }
+  /* Hide the agent-trigger rail — its single button is now in the top
+     bar's mobile toggles, so showing both is redundant. */
+  .agent-trigger-rail {
+    display: none !important;
   }
 }
 

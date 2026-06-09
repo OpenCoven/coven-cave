@@ -12,6 +12,8 @@ import {
 } from "react-resizable-panels";
 import { Icon, type IconName } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
+import { useIsMobile } from "@/lib/use-viewport";
+import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -88,6 +90,9 @@ export type ShellHandle = {
   openNav: () => void;
   closeNav: () => void;
   toggleNav: () => void;
+  openList: () => void;
+  closeList: () => void;
+  toggleList: () => void;
 };
 
 function ShellInner({
@@ -122,24 +127,76 @@ function ShellInner({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  useImperativeHandle(ref, () => ({
-    openAgent: () => { agentRef.current?.expand(); setAgentOpen(true); },
-    closeAgent: () => { agentRef.current?.collapse(); setAgentOpen(false); },
-    toggleAgent: () => {
-      const panel = agentRef.current;
-      if (!panel) return;
-      if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
-      else { panel.collapse(); setAgentOpen(false); }
-    },
-    openNav: () => { navRef.current?.expand(); setNavOpen(true); },
-    closeNav: () => { navRef.current?.collapse(); setNavOpen(false); },
-    toggleNav: () => {
-      const panel = navRef.current;
-      if (!panel) return;
-      if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
-      else { panel.collapse(); setNavOpen(false); }
-    },
-  }), []);
+  // Mobile drawer: which of the nav/list/agent panels is currently slid in
+  // as a full-height overlay. On desktop this stays null and react-resizable-
+  // panels owns the layout. On phones the panels stay mounted but we override
+  // their position to fixed via CSS (see globals.css, @media max-width 767px);
+  // this state drives the `[data-mobile-drawer]` attribute that triggers the
+  // slide. We deliberately do NOT call panel.collapse/expand on mobile —
+  // that would write to the persisted desktop layout for no benefit.
+  const isMobile = useIsMobile();
+  const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
+
+  // When the viewport crosses back to desktop, drop any open drawer state so
+  // we don't end up with a stale [data-mobile-drawer] attribute applying to
+  // a layout that's no longer in mobile mode.
+  useEffect(() => {
+    if (!isMobile) setMobileDrawer(null);
+  }, [isMobile]);
+
+  useImperativeHandle(ref, () => {
+    const toggleDrawer = (slot: NonNullable<MobileDrawerSlot>) => {
+      setMobileDrawer((curr) => (curr === slot ? null : slot));
+    };
+    return {
+      openAgent: () => {
+        if (isMobile) { setMobileDrawer("agent"); return; }
+        agentRef.current?.expand();
+        setAgentOpen(true);
+      },
+      closeAgent: () => {
+        if (isMobile) { setMobileDrawer((c) => (c === "agent" ? null : c)); return; }
+        agentRef.current?.collapse();
+        setAgentOpen(false);
+      },
+      toggleAgent: () => {
+        if (isMobile) { toggleDrawer("agent"); return; }
+        const panel = agentRef.current;
+        if (!panel) return;
+        if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
+        else { panel.collapse(); setAgentOpen(false); }
+      },
+      openNav: () => {
+        if (isMobile) { setMobileDrawer("nav"); return; }
+        navRef.current?.expand();
+        setNavOpen(true);
+      },
+      closeNav: () => {
+        if (isMobile) { setMobileDrawer((c) => (c === "nav" ? null : c)); return; }
+        navRef.current?.collapse();
+        setNavOpen(false);
+      },
+      toggleNav: () => {
+        if (isMobile) { toggleDrawer("nav"); return; }
+        const panel = navRef.current;
+        if (!panel) return;
+        if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
+        else { panel.collapse(); setNavOpen(false); }
+      },
+      openList: () => {
+        if (isMobile) { setMobileDrawer("list"); return; }
+        listRef.current?.expand();
+      },
+      closeList: () => {
+        if (isMobile) { setMobileDrawer((c) => (c === "list" ? null : c)); return; }
+        listRef.current?.collapse();
+      },
+      toggleList: () => {
+        if (isMobile) { toggleDrawer("list"); return; }
+        togglePanel(listRef.current);
+      },
+    };
+  }, [isMobile]);
 
   const twoPane = !list;
   const hasAgent = !!agent;
@@ -190,18 +247,26 @@ function ShellInner({
   }, [agentOpen, onAgentOpenChange]);
 
   useEffect(() => {
+    const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
+      setMobileDrawer((curr) => (curr === slot ? null : slot));
+    };
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
       if (!meta) return;
       const key = e.key.toLowerCase();
       if (key === "b") {
         e.preventDefault();
-        togglePanel(navRef.current);
+        if (isMobile) toggleDrawerSlot("nav");
+        else togglePanel(navRef.current);
       } else if (key === "\\" && !twoPane) {
         e.preventDefault();
-        togglePanel(listRef.current);
+        if (isMobile) toggleDrawerSlot("list");
+        else togglePanel(listRef.current);
       } else if (key === "j" && hasAgent) {
-          e.preventDefault();
+        e.preventDefault();
+        if (isMobile) {
+          toggleDrawerSlot("agent");
+        } else {
           const panel = agentRef.current;
           if (!panel) return;
           if (panel.isCollapsed()) {
@@ -212,9 +277,12 @@ function ShellInner({
             setAgentOpen(false);
           }
         }
+      }
     };
     const bottomToggle = (e: KeyboardEvent) => {
       if (!hasBottom) return;
+      // Bottom terminal is desktop-only (Tauri-gated); no mobile drawer.
+      if (isMobile) return;
       if (e.ctrlKey && e.key === "`") {
         e.preventDefault();
         togglePanel(bottomRef.current);
@@ -226,7 +294,7 @@ function ShellInner({
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
     };
-  }, [twoPane, hasAgent, hasBottom]);
+  }, [twoPane, hasAgent, hasBottom, isMobile]);
 
   if (!mounted) {
     return (
@@ -246,6 +314,7 @@ function ShellInner({
       orientation="horizontal"
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
+      data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
     >
       <Panel
         id="nav"
@@ -357,6 +426,10 @@ function ShellInner({
         )}
         {agentRail}
       </div>
+      <MobileDrawer
+        open={isMobile ? mobileDrawer : null}
+        onClose={() => setMobileDrawer(null)}
+      />
     </div>
   );
 }

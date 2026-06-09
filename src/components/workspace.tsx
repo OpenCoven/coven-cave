@@ -1069,6 +1069,16 @@ export function Workspace() {
               else setMode("inbox");
             }}
             onNotificationPrefsChanged={refreshPrefs}
+            onToggleNav={() => shellRef.current?.toggleNav()}
+            onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
+            onToggleAgent={
+              showCompanionRail
+                ? () => {
+                    setRailTab("salem");
+                    shellRef.current?.toggleAgent();
+                  }
+                : undefined
+            }
           />
         }
         agentRail={
