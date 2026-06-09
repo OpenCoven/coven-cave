@@ -28,4 +28,8 @@ assert.match(timeline, /placeholder="Search links…"/, "Timeline placeholder mu
 assert.match(timeline, /title="Search links — try chat: github: sage:"/, "Verbose hint must live in title=");
 assert.doesNotMatch(timeline, /placeholder="Search links — try chat: github: sage:"/, "Old long placeholder must be removed");
 
+// ───────── Task 3: Lists "All" renamed to "Timeline" ─────────
+const rail = await readFile(new URL("./library-collection-rail.tsx", import.meta.url), "utf8");
+assert.match(rail, /\{ id: "all",\s+label: "Timeline",\s+icon: "ph:link" \}/, "STATIC_LIST_SECTIONS first row label must be 'Timeline'");
+
 console.log("library-polish.test.ts: ok");
