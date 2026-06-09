@@ -307,6 +307,7 @@ export function InboxEscalationsView({
   const criticalCount = items.filter(
     (i) => i.severity === "critical" && i.state !== "resolved" && i.state !== "dismissed",
   ).length;
+  const resolvedCount = items.filter((i) => i.state === "resolved").length;
 
   return (
     <section
@@ -354,7 +355,7 @@ export function InboxEscalationsView({
                   onChange={(e) => setShowResolved(e.target.checked)}
                   className="accent-foreground"
                 />
-                Show resolved
+                Show resolved{resolvedCount > 0 ? ` (${resolvedCount})` : ""}
               </label>
               <button
                 onClick={() => void refresh()}
@@ -600,6 +601,7 @@ function GroupedList({
           onPatch={(body) => onPatch(it.id, body)}
           onOpenSource={() => onOpenSource(it)}
           onAskSnooze={() => onAskSnooze(it.id)}
+          onPromoteToActive={() => onActivate(idx)}
         />
         {snoozeMenuFor === it.id ? (
           <SnoozeMenu
@@ -666,6 +668,7 @@ function EscalationRow({
   onPatch,
   onOpenSource,
   onAskSnooze,
+  onPromoteToActive,
 }: {
   item: Escalation;
   isActive: boolean;
@@ -674,6 +677,7 @@ function EscalationRow({
   onPatch: (body: Record<string, unknown>) => void;
   onOpenSource: () => void;
   onAskSnooze: () => void;
+  onPromoteToActive: () => void;
 }) {
   const sevColor =
     item.severity === "critical"
@@ -710,27 +714,48 @@ function EscalationRow({
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-sm text-foreground">
-            <span
-              className={`shrink-0 rounded border px-1.5 py-px text-[9px] uppercase tracking-widest ${sevColor}`}
-              title={item.severityReason ?? SEVERITY_LABEL[item.severity]}
-            >
-              {SEVERITY_LABEL[item.severity]}
-            </span>
+            {item.severity === "critical" ? (
+              <span
+                className={`shrink-0 rounded border px-1.5 py-px text-[9px] uppercase tracking-widest ${sevColor}`}
+                title={item.severityReason ?? SEVERITY_LABEL[item.severity]}
+              >
+                {SEVERITY_LABEL[item.severity]}
+              </span>
+            ) : null}
             {originChipFor(item.origin)}
             <span className="min-w-0 flex-1 truncate" title={item.title}>
               {item.title}
             </span>
           </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {item.fromFamiliar ? <>From <span className="text-foreground">{item.fromFamiliar}</span> · </> : null}
-            {item.aboutFamiliar ? <>about <span className="text-foreground">{item.aboutFamiliar}</span> · </> : null}
+            {item.fromFamiliar ? (
+              <>From <span className="inline-block max-w-[12ch] truncate align-bottom text-foreground">{item.fromFamiliar}</span> · </>
+            ) : null}
+            {item.aboutFamiliar ? (
+              <>about <span className="inline-block max-w-[12ch] truncate align-bottom text-foreground">{item.aboutFamiliar}</span> · </>
+            ) : null}
             <span title={item.createdAt}>{age(item.createdAt)} ago</span>
-            {item.state !== "new" ? <> · <span>{item.state}</span></> : null}
+            {item.state !== "new" ? (
+              <span className="ml-1.5 inline-block rounded border border-border bg-card px-1 py-px text-[9px] uppercase tracking-widest text-muted-foreground align-middle">
+                {item.state}
+              </span>
+            ) : null}
           </div>
           {item.excerpt ? (
             <p className="mt-1 line-clamp-2 text-[12px] text-muted-foreground">{item.excerpt}</p>
           ) : null}
         </div>
+        {!isActive ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onPromoteToActive(); }}
+            className="shrink-0 opacity-0 group-hover:opacity-100 focus-ring rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-opacity"
+            aria-label="Show actions"
+            title="Show actions"
+          >
+            <Icon name="ph:dots-three-bold" width={14} />
+          </button>
+        ) : null}
       </div>
 
       {isActive ? (
