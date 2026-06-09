@@ -8,7 +8,7 @@
     "mobile:tailscale": "bash scripts/mobile-tailscale.sh",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "test:app": "node --experimental-strip-types src/lib/app-version.test.ts && node --experimental-strip-types src/components/settings-appearance.test.ts",
+    "test:app": "node --experimental-strip-types src/lib/app-version.test.ts && node --experimental-strip-types src/components/settings-appearance.test.ts && node --experimental-strip-types src/components/chat-header-row.test.ts",
     "test:api": "node --experimental-strip-types src/app/api/api-contracts.test.ts && node --experimental-strip-types src/app/api/board/enrich-steps/route.test.ts && node --experimental-strip-types src/app/api/chat/send/harness-routing.test.ts && node --experimental-strip-types src/app/api/library/route-link/route.test.ts && node --experimental-strip-types src/lib/server/memory-file-sources.test.ts && node --experimental-strip-types src/lib/server/memory-file-paths.test.ts",
     "test:api:http": "node scripts/api-http-smoke.mjs",
     "start": "next start"
