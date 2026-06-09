@@ -3,6 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatView } from "@/components/chat-view";
+import { useIsMobile } from "@/lib/use-viewport";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type View =
@@ -54,6 +55,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const [view, setView] = useState<View>({ kind: "list" });
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null>(null);
+  const isMobile = useIsMobile();
   const activeSession = view.kind === "chat" && view.sessionId
     ? sessions.find((s) => s.id === view.sessionId) ?? null
     : null;
@@ -86,16 +88,26 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   );
 
   if (!familiar) {
+    // Empty-state copy is mode-aware: on phones the nav/sidebar/agent panels
+    // are drawers behind a toggle, so "from the sidebar selector" / "left
+    // panel" reads as broken. Point users at the drawer or the setup CTA
+    // instead.
+    const heading = isMobile
+      ? "Choose a familiar to start chatting"
+      : "Choose a familiar from the sidebar selector";
+    const subline = pendingProjectRoot
+      ? "Selecting one will start this chat in the pending project."
+      : isMobile
+        ? "Open the menu to pick a familiar, or set one up below."
+        : "Pick who should handle the conversation from the left panel.";
     return (
       <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
         <div>
           <p className="text-[15px] font-medium text-[var(--text-secondary)]">
-            Choose a familiar from the sidebar selector
+            {heading}
           </p>
           <p className="mt-1 text-[12px]">
-            {pendingProjectRoot
-              ? "Selecting one will start this chat in the pending project."
-              : "Pick who should handle the conversation from the left panel."}
+            {subline}
           </p>
         </div>
         {onOpenOnboarding ? (
