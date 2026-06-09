@@ -5,6 +5,7 @@ import { SidecarAuthBridge } from "@/components/security/sidecar-auth-bridge";
 import { SidecarAuthMonitor } from "@/components/security/sidecar-auth-monitor";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
+import { PwaRegister } from "@/components/pwa-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,10 +26,21 @@ const fredoka = Fredoka({
 export const metadata: Metadata = {
   title: "CovenCave",
   description: "Coven desktop cave for familiars, memory, and tools.",
+  manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     title: "CovenCave",
     statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
   },
 };
 
@@ -57,6 +69,7 @@ export default function RootLayout({
           <LiveRegionProvider>
             <SidecarAuthBridge />
             <SidecarAuthMonitor />
+            <PwaRegister />
             {children}
           </LiveRegionProvider>
         </ShellBannersProvider>

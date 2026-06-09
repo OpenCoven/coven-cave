@@ -6,6 +6,8 @@
     "dev": "next dev",
     "dev:app": "bash scripts/dev-app.sh",
     "mobile:tailscale": "bash scripts/mobile-tailscale.sh",
+    "pwa:icons": "node scripts/generate-pwa-icons.mjs",
+    "prebuild": "node scripts/generate-pwa-icons.mjs",
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "test:app": "node --experimental-strip-types src/lib/app-version.test.ts && node --experimental-strip-types src/components/settings-appearance.test.ts && node --experimental-strip-types src/components/chat-header-row.test.ts && node --experimental-strip-types src/components/sidebar-minimal.test.ts && node --experimental-strip-types src/components/sidebar-familiar-filter.test.ts && node --experimental-strip-types src/components/familiar-studio.test.ts && node --experimental-strip-types src/components/familiar-studio-look-tab.test.ts && node --experimental-strip-types src/components/agents-view.test.ts && node --experimental-strip-types src/components/workspace-agents-landing.test.ts && node --experimental-strip-types src/components/board-kanban-keyboard.test.ts && node --experimental-strip-types src/components/voice-call-button.test.ts && node --experimental-strip-types src/components/voice-call-overlay-state.test.ts",
