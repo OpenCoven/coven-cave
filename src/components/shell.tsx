@@ -99,6 +99,7 @@ function ShellInner({
   bottom,
   topBar,
   onNavOpenChange,
+  onAgentOpenChange,
 }: {
   familiarRail?: ReactNode;
   nav: ReactNode;
@@ -108,6 +109,7 @@ function ShellInner({
   bottom?: ReactNode;
   topBar?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
+  onAgentOpenChange?: (open: boolean) => void;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
@@ -172,6 +174,10 @@ function ShellInner({
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
+
+  useEffect(() => {
+    onAgentOpenChange?.(agentOpen);
+  }, [agentOpen, onAgentOpenChange]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

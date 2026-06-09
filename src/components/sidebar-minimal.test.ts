@@ -65,10 +65,11 @@ assert.match(
   "Terminal remains a Tools surface",
 );
 
-assert.match(
+// NOTE: assertion updated by shell-ia-lastmile S1 — Capabilities removed from sidebar per 2026-06-08 spec.
+assert.doesNotMatch(
   source,
   /\{ id: "capabilities", label: "Capabilities"/,
-  "Capabilities is a Tools surface routing to the daemon /v1/capabilities endpoint",
+  "Capabilities is no longer a sidebar entry (removed per 2026-06-08 Shell IA spec)",
 );
 
 assert.doesNotMatch(
@@ -106,3 +107,30 @@ assert.match(
   /\.sidebar-foot-bell > \.relative,\n\.sidebar-foot-icon-cell/,
   "Footer rows should align labels from matching icon cells",
 );
+
+// S1 shell-ia-lastmile: roles + capabilities removed from sidebar entries.
+assert.doesNotMatch(
+  source,
+  /\{[^}]*id:\s*"roles"[^}]*\}/,
+  "roles is not a sidebar entry",
+);
+
+assert.doesNotMatch(
+  source,
+  /\{[^}]*id:\s*"capabilities"[^}]*\}/,
+  "capabilities is not a sidebar entry",
+);
+
+// S1: surviving Tools-group entries still include browser + terminal.
+assert.match(
+  source,
+  /id:\s*"browser"[^}]*group:\s*"tools"/,
+  "browser stays in Tools",
+);
+assert.match(
+  source,
+  /id:\s*"terminal"[^}]*group:\s*"tools"/,
+  "terminal stays in Tools",
+);
+
+console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");
