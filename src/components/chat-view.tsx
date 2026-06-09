@@ -560,6 +560,93 @@ function ChatContextStrip({
   );
 }
 
+function MobileChatContextMenu({
+  familiar,
+  session,
+  linkedContext,
+  historyState,
+  daemonRunning,
+  projectRoot,
+  onOpenTask,
+}: {
+  familiar: Familiar;
+  session: SessionRow | null;
+  linkedContext: ChatLinkedContext | null;
+  historyState: ChatHistoryState;
+  daemonRunning?: boolean;
+  projectRoot?: string;
+  onOpenTask?: (cardId: string) => void;
+}) {
+  const task = linkedContext?.task ?? null;
+  const github = linkedContext?.github ?? [];
+  const repo = repoName(session?.project_root ?? projectRoot);
+  const runtime = [
+    familiar.harness,
+    familiar.model,
+    repo,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <details className="cave-mobile-context">
+      <summary className="cave-mobile-context-trigger" aria-label="Open chat context">
+        <Icon name="ph:dots-three-vertical" width={17} aria-hidden />
+      </summary>
+      <div className="cave-mobile-context-panel">
+        <div className="cave-mobile-context-card">
+          <div className="cave-mobile-context-kicker">Familiar</div>
+          <div className="cave-mobile-context-title">{familiar.display_name}</div>
+          <div className="cave-mobile-context-copy">{runtime || familiar.role}</div>
+        </div>
+        <div className="cave-mobile-context-grid">
+          <span className="cave-mobile-context-chip">
+            <Icon name={daemonRunning === false ? "ph:warning-circle" : "ph:check-circle"} width={13} aria-hidden />
+            {daemonRunning === false ? "Daemon offline" : "Daemon ready"}
+          </span>
+          <span className="cave-mobile-context-chip">
+            <Icon name="ph:clock" width={13} aria-hidden />
+            {session?.status ?? historyState}
+          </span>
+        </div>
+        {task ? (
+          onOpenTask ? (
+            <button
+              type="button"
+              className="cave-mobile-context-link"
+              onClick={() => onOpenTask(task.id)}
+            >
+              <Icon name="ph:kanban" width={13} aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Task: {task.title}</span>
+              <Icon name="ph:arrow-square-out" width={12} aria-hidden />
+            </button>
+          ) : (
+            <span className="cave-mobile-context-link">
+              <Icon name="ph:kanban" width={13} aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Task: {task.title}</span>
+            </span>
+          )
+        ) : null}
+        {github.length ? (
+          <div className="cave-mobile-context-links">
+            {github.slice(0, 3).map((item) => (
+              <a
+                key={item.id}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="cave-mobile-context-link"
+              >
+                <Icon name={githubIcon(item.kind)} width={13} aria-hidden />
+                <span className="min-w-0 flex-1 truncate">{githubLabel(item.kind)} · {item.repo}{item.number ? ` #${item.number}` : ""}</span>
+                <Icon name="ph:arrow-square-out" width={12} aria-hidden />
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
 /** Headline row: full-width chat title, flush-left, all-caps. Sits above
  *  the existing identity/chips row. Computes the same defense-in-depth
  *  override as ChatContextStrip — see comment there for why. */
@@ -585,6 +672,52 @@ function ChatHeadlineTitle({
       onSessionsChanged={onSessionsChanged}
       headline
     />
+  );
+}
+
+function MobileChatActionStrip({
+  busy,
+  canRetry,
+  canAttach,
+  hasSession,
+  onRetry,
+  onStop,
+  onSummarize,
+  onAttach,
+  onVoice,
+}: {
+  busy: boolean;
+  canRetry: boolean;
+  canAttach: boolean;
+  hasSession: boolean;
+  onRetry: () => void;
+  onStop: () => void;
+  onSummarize: () => void;
+  onAttach: () => void;
+  onVoice: () => void;
+}) {
+  return (
+    <div className="cave-mobile-action-strip" aria-label="Chat actions">
+      <button type="button" onClick={onRetry} disabled={!canRetry || busy} className="cave-mobile-action-chip">
+        <Icon name="ph:arrow-clockwise" width={13} aria-hidden />
+        Retry
+      </button>
+      <button type="button" onClick={onStop} disabled={!busy} className="cave-mobile-action-chip">
+        <Icon name="ph:x-bold" width={13} aria-hidden />
+        Stop
+      </button>
+      <button type="button" onClick={onSummarize} disabled={busy} className="cave-mobile-action-chip">
+        <Icon name="ph:magnifying-glass" width={13} aria-hidden />
+        Summarize
+      </button>
+      <button type="button" onClick={onAttach} disabled={!canAttach || busy} className="cave-mobile-action-chip">
+        <Icon name="ph:paperclip" width={13} aria-hidden />
+        Attach
+      </button>
+      <button type="button" onClick={onVoice} disabled={!hasSession} className="cave-mobile-action-chip cave-mobile-action-chip--icon" aria-label="Start voice call">
+        <Icon name="ph:phone" width={13} aria-hidden />
+      </button>
+    </div>
   );
 }
 
@@ -1161,6 +1294,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       <header className="cave-chat-linear-header">
+        <div className="cave-mobile-header-identity">
+          <div className="cave-mobile-header-familiar">
+            <FamiliarIcon familiar={familiar} size="sm" />
+            <div className="min-w-0">
+              <div className="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
+              <div className="truncate font-mono text-[10px] leading-tight text-[var(--text-muted)]">
+                {familiar.harness ?? "cave"}
+                {familiar.model ? ` · ${familiar.model}` : ""}
+              </div>
+            </div>
+          </div>
+          <span className={[
+            "cave-mobile-daemon-pill",
+            daemonRunning === false ? "cave-mobile-daemon-pill--offline" : "cave-mobile-daemon-pill--ready",
+          ].join(" ")}>
+            <span aria-hidden />
+            {daemonRunning === false ? "offline" : "ready"}
+          </span>
+          <MobileChatContextMenu
+            familiar={familiar}
+            session={session ?? null}
+            daemonRunning={daemonRunning}
+            linkedContext={linkedContext}
+            historyState={historyState}
+            projectRoot={projectRoot}
+            onOpenTask={onOpenTask}
+          />
+        </div>
         <ChatHeadlineTitle
           session={session ?? null}
           linkedContext={linkedContext}
@@ -1375,6 +1536,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : null}
+
+          <MobileChatActionStrip
+            busy={busy}
+            canRetry={Boolean(lastFailedSend)}
+            canAttach={attachments.length < 10}
+            hasSession={Boolean(sessionId)}
+            onRetry={retryLastSend}
+            onStop={cancelSend}
+            onSummarize={() => {
+              setInput((current) => current.trim() ? current : "Summarize this session and call out decisions, blockers, and next actions.");
+              inputRef.current?.focus();
+            }}
+            onAttach={() => fileInputRef.current?.click()}
+            onVoice={() => setVoiceCallOpen(true)}
+          />
 
           <div className="cave-composer-panel">
             {csvRaw && !csvModalOpen && (

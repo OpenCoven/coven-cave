@@ -881,6 +881,12 @@ details[open] > .cave-tool-summary::before {
   padding: 8px 14px;
 }
 
+.cave-mobile-header-identity,
+.cave-mobile-action-strip,
+.cave-mobile-context {
+  display: none;
+}
+
 .cave-chat-linear-header-row {
   display: flex;
   min-width: 0;
@@ -1087,6 +1093,146 @@ details[open] > .cave-tool-summary::before {
     inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 
+.cave-mobile-context-trigger {
+  display: grid;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  place-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-panel) 48%, transparent);
+  color: var(--text-secondary);
+  list-style: none;
+}
+
+.cave-mobile-context-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.cave-mobile-context-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 12px;
+  left: 12px;
+  z-index: 70;
+  display: flex;
+  max-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 95%, var(--bg-base));
+  box-shadow: 0 18px 60px oklch(0 0 0 / 34%);
+  opacity: 0;
+  pointer-events: none;
+  transition: max-height var(--duration-base) var(--ease-decelerate), opacity var(--duration-fast) var(--ease-standard);
+}
+
+.cave-mobile-context[open] .cave-mobile-context-panel {
+  max-height: min(52vh, 360px);
+  overflow-y: auto;
+  padding: 10px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cave-mobile-context-card {
+  min-width: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 52%, transparent);
+  padding: 10px;
+}
+
+.cave-mobile-context-kicker {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.cave-mobile-context-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.cave-mobile-context-copy {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-mobile-context-grid,
+.cave-mobile-context-links {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cave-mobile-context-chip,
+.cave-mobile-context-link {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 42%, transparent);
+  padding: 7px 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.cave-mobile-context-link {
+  width: 100%;
+  min-height: 36px;
+}
+
+.cave-mobile-action-strip {
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 7px;
+  scrollbar-width: none;
+}
+
+.cave-mobile-action-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.cave-mobile-action-chip {
+  display: inline-flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 58%, transparent);
+  padding: 0 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cave-mobile-action-chip--icon {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+
+.cave-mobile-action-chip:disabled {
+  opacity: 0.38;
+}
+
 @media (max-width: 720px) {
   .cave-chat-workbench-header,
   .cave-chat-linear-header {
@@ -1130,15 +1276,147 @@ details[open] > .cave-tool-summary::before {
    translateY runs in the negative direction so the dock rides up above
    the keyboard rather than getting pinned under it. */
 @media (max-width: 767px) {
+  .cave-chat-linear-header {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    gap: 7px;
+    padding: 8px 12px 9px;
+    padding-top: calc(var(--sai-top) + 8px);
+    background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+    backdrop-filter: blur(14px);
+  }
+
+  .cave-chat-linear-header > .cave-chat-title-input,
+  .cave-chat-linear-header > button {
+    display: none;
+  }
+
+  .cave-chat-linear-header-row {
+    min-height: 28px;
+    gap: 7px;
+  }
+
+  .cave-chat-linear-header-identity {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .cave-chat-linear-header-context {
+    display: none;
+  }
+
+  .cave-mobile-header-identity {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cave-mobile-header-familiar {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .cave-mobile-daemon-pill {
+    display: inline-flex;
+    min-height: 28px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    border-radius: 999px;
+    padding: 0 9px;
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .cave-mobile-daemon-pill > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .cave-mobile-daemon-pill--ready {
+    background: color-mix(in oklch, var(--color-success) 14%, transparent);
+    color: var(--color-success);
+  }
+
+  .cave-mobile-daemon-pill--offline {
+    background: color-mix(in oklch, var(--color-danger) 16%, transparent);
+    color: var(--color-danger);
+  }
+
+  .cave-mobile-context {
+    display: block;
+    flex: 0 0 auto;
+  }
+
+  .cave-chat-linear .cave-chat-transcript {
+    padding: 16px 12px 96px;
+    padding-bottom: calc(96px + var(--sai-bottom));
+  }
+
+  .cave-chat-linear .cave-chat-thread {
+    gap: 4px;
+  }
+
+  .cave-chat-linear .cave-md {
+    font-size: 14px;
+    line-height: 1.68;
+  }
+
+  .cave-linear-turn {
+    padding: 12px 0;
+  }
+
+  .cave-linear-turn--assistant .cave-linear-turn-content {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .cave-linear-turn-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .cave-chat-linear .cave-bubble-user {
+    max-width: min(92%, 520px);
+    padding: 10px 12px;
+  }
+
+  .cave-chat-lifecycle-status {
+    min-height: 28px;
+    padding: 0 12px;
+  }
+
   .cave-composer-dock {
     position: sticky;
-    bottom: 0;
+    bottom: calc(56px + var(--sai-bottom));
     z-index: 50;
     padding: 8px clamp(12px, 3vw, 18px)
-            calc(12px + var(--sai-bottom))
+            12px
             clamp(12px, 3vw, 18px);
     transform: translateY(calc(-1 * var(--composer-kb-offset, 0px)));
     transition: transform var(--duration-fast) var(--ease-decelerate);
+  }
+
+  .cave-mobile-action-strip {
+    display: flex;
+  }
+
+  .cave-composer-panel {
+    border-radius: 9px;
+  }
+
+  .cave-composer-input {
+    min-height: 42px;
+    max-height: min(30vh, 150px);
   }
 }
 

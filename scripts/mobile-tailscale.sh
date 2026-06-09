@@ -91,7 +91,7 @@ else
     exit 1
   fi
   sleep 0.25
-done
+fi
 if ! port_is_listening >/dev/null 2>&1; then
   echo "Next server did not start. See /tmp/coven-cave-mobile-${PORT}.log" >&2
   kill "$NEXT_PID" >/dev/null 2>&1 || true
