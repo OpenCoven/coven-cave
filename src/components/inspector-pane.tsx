@@ -9,7 +9,7 @@ import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 import { VaultPanel } from "@/components/vault-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
@@ -57,6 +57,41 @@ const TAB_LABEL: Record<Tab, string> = {
   vault: "Vault",
 };
 
+function InspectorEmpty({
+  icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: IconName;
+  title: string;
+  hint?: string;
+  action?: { label: string; onClick: () => void };
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col items-center justify-center gap-2 px-6 py-8 text-center">
+      <span className="text-[var(--text-muted)]" aria-hidden>
+        <Icon name={icon} width={20} />
+      </span>
+      <p className="text-[12px] font-medium text-[var(--text-secondary)]">{title}</p>
+      {hint ? (
+        <p className="max-w-[28ch] text-[11px] leading-snug text-[var(--text-muted)]">
+          {hint}
+        </p>
+      ) : null}
+      {action ? (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="mt-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]"
+        >
+          {action.label}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function age(iso: string): string {
   const ms = Math.abs(Date.now() - new Date(iso).getTime());
   const s = Math.floor(ms / 1000);
@@ -103,25 +138,41 @@ export function InspectorPane({
   return (
     <aside className={shellClassName}>
       {!compact && (
-        <nav className="flex border-b border-[var(--border-hairline)] text-[11px]">
-          {(["memory", "familiar", "inbox", "vault"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 px-3 py-2.5 font-medium tracking-normal transition-colors ${
-                tab === t
-                  ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              {TAB_LABEL[t]}
-              {t === "inbox" && inboxBadge > 0 ? (
-                <span className="ml-1 rounded-full bg-[var(--color-danger)] px-1 text-[9px] font-bold text-white">
-                  {inboxBadge}
-                </span>
-              ) : null}
-            </button>
-          ))}
+        <nav
+          role="tablist"
+          aria-label="Inspector sections"
+          className="flex items-end gap-1 border-b border-[var(--border-hairline)] px-1 text-[11px]"
+        >
+          {(["memory", "familiar", "inbox", "vault"] as const).map((t) => {
+            const isActive = tab === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setTab(t)}
+                className={[
+                  "relative flex-1 px-3 py-2.5 font-medium tracking-normal transition-colors outline-none",
+                  "after:absolute after:bottom-0 after:left-3 after:right-3 after:h-[2px] after:rounded-full after:transition-colors",
+                  isActive
+                    ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] after:bg-transparent hover:after:bg-[color-mix(in_oklch,var(--text-muted)_45%,transparent)]",
+                  "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-t-sm",
+                ].join(" ")}
+              >
+                {TAB_LABEL[t]}
+                {t === "inbox" && inboxBadge > 0 ? (
+                  <span
+                    className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
+                    aria-label={`${inboxBadge} fired`}
+                  >
+                    {inboxBadge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </nav>
       )}
 
@@ -204,9 +255,11 @@ function InboxTab({
 
   if (!familiar) {
     return (
-      <p className="p-4 text-xs text-[var(--text-muted)]">
-        Select a familiar to see its reminders.
-      </p>
+      <InspectorEmpty
+        icon="ph:bell"
+        title="No familiar selected"
+        hint="Pick a familiar to see its pending reminders and follow-ups."
+      />
     );
   }
 
@@ -270,77 +323,92 @@ function InboxTab({
           {error}
         </div>
       ) : null}
-      <ul className="p-2">
+      <ul className="space-y-1.5 p-2">
         {items.map((it) => {
           const busy = busyItemId === it.id;
           const canOpen = !!onOpenInboxItem;
+          const isFired = it.status === "fired";
+          const isEphemeral = it.id.startsWith("eph:");
+          const when = isFired
+            ? `fired ${age(it.firedAt ?? it.updatedAt)} ago`
+            : it.kind === "response-needed"
+              ? "waiting on you"
+              : `in ${age(it.fireAt ?? it.updatedAt)}`;
           return (
             <li
               key={it.id}
-              className="mb-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-2"
+              className={[
+                "inspector-inbox-card group rounded-md border px-2.5 py-2 transition-colors",
+                isFired
+                  ? "border-[color-mix(in_oklch,var(--color-warning)_45%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_6%,var(--bg-raised))]"
+                  : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:bg-[var(--bg-raised)]/70",
+              ].join(" ")}
             >
               <div className="flex items-start justify-between gap-2">
-                <span className="flex-1 truncate text-[var(--text-primary)]">{it.title}</span>
                 <span
-                  className={`shrink-0 rounded px-1 py-px text-[9px] uppercase tracking-widest ${
-                    it.status === "fired"
-                      ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
-                      : "bg-[color-mix(in_oklch,var(--accent-presence-soft)_20%,transparent)] text-[var(--accent-presence-soft)]"
+                  className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-primary)]"
+                  title={it.title}
+                >
+                  {it.title}
+                </span>
+                <span
+                  className={`shrink-0 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider ${
+                    isFired
+                      ? "bg-[color-mix(in_oklch,var(--color-warning)_24%,transparent)] text-[var(--color-warning)]"
+                      : "bg-[color-mix(in_oklch,var(--accent-presence-soft)_22%,transparent)] text-[var(--accent-presence-soft)]"
                   }`}
                 >
                   {it.status}
                 </span>
               </div>
               {it.body ? (
-                <p className="mt-1 line-clamp-2 text-[10px] text-[var(--text-muted)]">{it.body}</p>
+                <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--text-muted)]">
+                  {it.body}
+                </p>
               ) : null}
-              <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-                {it.status === "fired"
-                  ? `fired ${age(it.firedAt ?? it.updatedAt)} ago`
-                  : it.kind === "response-needed"
-                    ? "waiting on you"
-                    : `in ${age(it.fireAt ?? it.updatedAt)}`}
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {canOpen ? (
-                  <button
-                    type="button"
-                    onClick={() => onOpenInboxItem?.(it)}
-                    className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                  >
-                    Open
-                  </button>
-                ) : null}
-                {it.id.startsWith("eph:") ? (
-                  <span className="text-[10px] italic text-[var(--text-muted)]">
-                    respond in chat to clear
-                  </span>
-                ) : (
-                  <>
-                    <SnoozeMenu
-                      size="xs"
-                      onSnooze={(untilIso) => runItemAction(it, "snooze", untilIso)}
-                    />
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-[10px] text-[var(--text-muted)]">{when}</span>
+                <div className="flex items-center gap-1">
+                  {canOpen ? (
                     <button
                       type="button"
-                      disabled={busy}
-                      onClick={() => void runItemAction(it, "dismiss")}
-                      className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                      onClick={() => onOpenInboxItem?.(it)}
+                      className="rounded-md border border-transparent px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]"
                     >
-                      Dismiss
+                      Open
                     </button>
-                    {it.status === "fired" ? (
+                  ) : null}
+                  {isEphemeral ? (
+                    <span className="text-[10px] italic text-[var(--text-muted)]">
+                      respond in chat to clear
+                    </span>
+                  ) : (
+                    <>
+                      <SnoozeMenu
+                        size="xs"
+                        onSnooze={(untilIso) => runItemAction(it, "snooze", untilIso)}
+                      />
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void runItemAction(it, "done")}
-                        className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                        onClick={() => void runItemAction(it, "dismiss")}
+                        className="rounded-md border border-transparent px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] disabled:opacity-50"
                       >
-                        Done
+                        Dismiss
                       </button>
-                    ) : null}
-                  </>
-                )}
+                      {isFired ? (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void runItemAction(it, "done")}
+                          className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] disabled:opacity-50"
+                        >
+                          Done
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
               </div>
             </li>
           );
@@ -581,7 +649,13 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
   }, [covenEntries, query, familiar]);
 
   if (error) {
-    return <p className="p-4 text-xs text-[var(--color-warning)]">Memory unavailable: {error}</p>;
+    return (
+      <InspectorEmpty
+        icon="ph:warning"
+        title="Memory unavailable"
+        hint={error}
+      />
+    );
   }
 
   if (openPath) {
@@ -604,24 +678,36 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
 
   return (
     <div className="inspector-memory-tab-surface flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
-      <div className="flex items-center gap-1 border-b border-[var(--border-hairline)] px-2 py-1.5">
-        {(["inspector", "coven", "files"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => {
-              setQuery("");
-              setMode(m);
-            }}
-            className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
-              mode === m
-                ? "bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
-                : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-            }`}
-          >
-            {m === "inspector" ? "Inspect" : m === "coven" ? "Coven" : "Files"}
-          </button>
-        ))}
-        <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+      <div className="flex items-end gap-0.5 border-b border-[var(--border-hairline)] px-2">
+        <div role="tablist" aria-label="Memory mode" className="flex items-end gap-0.5">
+          {(["inspector", "coven", "files"] as const).map((m) => {
+            const isActive = mode === m;
+            const label = m === "inspector" ? "Inspect" : m === "coven" ? "Coven" : "Files";
+            return (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => {
+                  setQuery("");
+                  setMode(m);
+                }}
+                className={[
+                  "relative px-2.5 py-1.5 text-[11px] font-medium transition-colors outline-none",
+                  "after:absolute after:bottom-0 after:left-2.5 after:right-2.5 after:h-[2px] after:rounded-full after:transition-colors",
+                  isActive
+                    ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] after:bg-transparent hover:after:bg-[color-mix(in_oklch,var(--text-muted)_45%,transparent)]",
+                  "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-t-sm",
+                ].join(" ")}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="ml-auto pb-1.5 text-[10px] text-[var(--text-muted)]">
           {mode === "inspector" ? "read-only" : mode === "coven" ? covenFiltered.length : filtered.length}
         </span>
       </div>
@@ -910,14 +996,20 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
 
   if (!familiar) {
     return (
-      <p className="p-4 text-xs text-[var(--text-muted)]">
-        Select a familiar to see its capabilities.
-      </p>
+      <InspectorEmpty
+        icon="ph:sparkle"
+        title="No familiar selected"
+        hint="Pick a familiar to see its roles, skills, and harness capabilities."
+      />
     );
   }
 
   if (loading) {
-    return <p className="p-4 text-xs text-[var(--text-muted)]">loading…</p>;
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center text-[11px] text-[var(--text-muted)]">
+        Loading capabilities…
+      </div>
+    );
   }
 
   // ── Derive inheritance layers ────────────────────────────────────────────────
