@@ -184,7 +184,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
                     data-card-id={card.id}
                     className={selectedCardId === card.id ? "selected" : ""}
                     onClick={() => onSelect(card.id)}>
-                    <td><span className="board-table-title">{card.title}</span></td>
+                    <td><span className="board-table-title" title={card.title}>{card.title}</span></td>
                     <td>
                       <span className="board-table-cell-status">
                         <span className={`board-table-status-dot board-table-status-dot--${card.status}`} aria-hidden />
