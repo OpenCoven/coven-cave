@@ -525,7 +525,7 @@ function SessionGroup({
       )}
       {layoutMode === "cards" ? (
         <div className="sessions-grid">
-          {showNewChat && <NewChatCard onClick={onNewChat} />}
+          {showNewChat && visible.length === 0 && <NewChatCard onClick={onNewChat} />}
           {visible.map((s) => (
             <SessionCard
               key={s.id}
@@ -545,7 +545,7 @@ function SessionGroup({
         </div>
       ) : (
         <div className="sessions-list">
-          {showNewChat && <NewChatRow onClick={onNewChat} />}
+          {showNewChat && visible.length === 0 && <NewChatRow onClick={onNewChat} />}
           {visible.map((s) => (
             <SessionRowItem
               key={s.id}

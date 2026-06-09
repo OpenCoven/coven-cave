@@ -11,4 +11,17 @@ assert.match(
   "Sub-header sessions-view-title-wrap must be gated on !hideFamiliarFilter",
 );
 
+// ───────── Task 2: In-list NewChatRow only when no sessions ─────────
+assert.match(
+  source,
+  /\{showNewChat\s*&&\s*visible\.length\s*===\s*0\s*&&\s*<NewChatRow\s+onClick=\{onNewChat\}\s*\/>\}/,
+  "NewChatRow inside SessionGroup must only render when sessions are empty",
+);
+
+assert.match(
+  source,
+  /\{showNewChat\s*&&\s*visible\.length\s*===\s*0\s*&&\s*<NewChatCard\s+onClick=\{onNewChat\}\s*\/>\}/,
+  "NewChatCard inside SessionGroup must only render when sessions are empty",
+);
+
 console.log("sessions-view-chat-polish.test.ts: ok");
