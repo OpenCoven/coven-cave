@@ -35,16 +35,34 @@ assert.match(
   "Home is the first Work surface",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /\{ id: "chat", label: "Chat"/,
-  "Agents renamed to Chat",
+  /\{ id: "agents", label: "Familiars"/,
+  "Familiars subpage should not appear as a Work navigation row",
 );
 
 assert.match(
   source,
-  /\{ id: "board", label: "Board"/,
-  "Tasks renamed to Board",
+  /activeFamiliar\?: Familiar \| null/,
+  "Sidebar receives the selected familiar for Work context",
+);
+
+assert.match(
+  source,
+  /<SelectedFamiliarInfo familiar=\{activeFamiliar\} \/>/,
+  "Work section should show selected familiar info instead of a Familiars row",
+);
+
+assert.match(
+  source,
+  /\{ id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2" \}/,
+  "Chat should move to the ⌘2 Work shortcut after removing Familiars",
+);
+
+assert.match(
+  source,
+  /\{ id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3" \}/,
+  "Board should move to the ⌘3 Work shortcut after removing Familiars",
 );
 
 assert.match(
@@ -55,14 +73,14 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser"/,
-  "Browser remains a Tools surface",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" \}/,
+  "Browser remains a Tools surface and moves to ⌘7",
 );
 
 assert.match(
   source,
-  /\{ id: "terminal", label: "Terminal"/,
-  "Terminal remains a Tools surface",
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" \}/,
+  "Terminal remains a Tools surface and takes ⌘8",
 );
 
 // NOTE: assertion updated by shell-ia-lastmile S1 — Capabilities removed from sidebar per 2026-06-08 spec.

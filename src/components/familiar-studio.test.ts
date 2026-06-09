@@ -18,4 +18,16 @@ assert.match(source, /familiar-studio__name--editing/, "Editing-state class must
 assert.match(source, /useDaemonSyncStatus/, "Footer subscribes to daemon sync status");
 assert.match(source, /Saved locally, daemon offline/, "Daemon-offline indicator text present");
 
+assert.match(
+  source,
+  /<FamiliarStudioLookTab familiar=\{familiar\} allFamiliars=\{resolved\} \/>/,
+  "Familiar Studio should pass all resolved familiars to the Look tab for group color assignment",
+);
+
+assert.match(
+  source,
+  /const tablistRef = useRef[\s\S]*if \(!drawerOpen\) return null/,
+  "Familiar Studio should call tabstrip hooks before early returns to keep hook order stable",
+);
+
 console.log("familiar-studio.test.ts: ok");

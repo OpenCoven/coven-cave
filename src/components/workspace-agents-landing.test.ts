@@ -13,13 +13,13 @@ const workspaceMode = readFileSync(
 assert.match(
   workspaceMode,
   /\|\s*"agents"/,
-  "WorkspaceMode union must include \"agents\"",
+  "WorkspaceMode union keeps \"agents\" for internal familiar detail flows",
 );
 
 assert.match(
   workspace,
-  /useState<WorkspaceMode>\("agents"\)/,
-  "Default workspace mode must be \"agents\" (replaces home as landing tab)",
+  /useState<WorkspaceMode>\("home"\)/,
+  "Default workspace mode should land on Home after removing Familiars from Work nav",
 );
 
 assert.match(
@@ -48,8 +48,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "agents", "chat", "board", "calendar", "inbox", "library", "browser",/,
-  "SURFACE_ORDER keeps Home before the Familiars surface",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",/,
+  "SURFACE_ORDER should omit the Familiars surface from Work shortcuts",
 );
 
 assert.match(
@@ -82,10 +82,16 @@ assert.match(
   "TopBar should expose Home as a button instead of only breadcrumb text",
 );
 
+assert.doesNotMatch(
+  sidebar,
+  /\{ id: "agents", label: "Familiars"/,
+  "Sidebar should not expose a Familiars subpage in Work",
+);
+
 assert.match(
   sidebar,
-  /\{ id: "agents", label: "Familiars", iconName: "ph:users-three", group: "work", kbd: "⌘2" \}/,
-  "Sidebar FOLDER_MODES labels the page Familiars",
+  /<SelectedFamiliarInfo familiar=\{activeFamiliar\} \/>/,
+  "Sidebar Work section replaces the Familiars row with selected familiar info",
 );
 
 assert.match(
@@ -96,14 +102,14 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘8" \}/,
-  "Sidebar Browser shifted to ⌘8",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" \}/,
+  "Sidebar Browser shifts to ⌘7 after removing Familiars from Work",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools" \}/,
-  "Sidebar Terminal kept but without shortcut hint",
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" \}/,
+  "Sidebar Terminal takes the final ⌘8 shortcut",
 );
 
 console.log("workspace-agents-landing: all assertions passed");

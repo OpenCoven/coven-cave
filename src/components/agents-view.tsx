@@ -537,6 +537,13 @@ function AgentDetailPanel({
         .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
     [sessions, familiar.id],
   );
+  const familiarFileEntries = useMemo(
+    () =>
+      fileEntries
+        .filter((entry) => entry.familiarId === familiar.id)
+        .sort((a, b) => (a.modified < b.modified ? 1 : -1)),
+    [fileEntries, familiar.id],
+  );
 
   return (
     <section className="agents-view__panel flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
@@ -601,23 +608,25 @@ function AgentDetailPanel({
             onOpenMemoryFile={onOpenMemoryFile}
           />
         ) : tab === "files" ? (
-          <div className="h-full overflow-y-auto p-4">
-            <div className="mb-2 flex items-center justify-between">
+          <div className="flex min-h-0 flex-1 flex-col p-4">
+            <div className="mb-2 flex shrink-0 items-center justify-between">
               <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                 Memory files
               </h3>
               <span className="text-[10px] text-[var(--text-muted)]">
-                {fileEntries.length} total
+                {familiarFileEntries.length} total
               </span>
             </div>
             <MemoryFilesList
-              entries={fileEntries}
+              entries={familiarFileEntries}
               loaded={memoryLoaded}
               error={memoryError}
               onOpen={onOpenMemoryFile}
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              listClassName="h-full min-h-0 divide-y divide-[var(--border-hairline)] overflow-y-auto"
             />
             <p className="mt-2 text-[10px] text-[var(--text-muted)]">
-              Note: /api/memory is global today, so this list is the same for every familiar.
+              Only files traced to {familiar.display_name} are shown here.
             </p>
           </div>
         ) : (

@@ -15,29 +15,107 @@ import {
 } from "@/lib/cave-familiar-overrides";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
-const COLOR_PRESETS = [
-  "#f59e0b",
-  "#10b981",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899",
-  "#ef4444",
-  "#6b7280",
-  "#0ea5e9",
+type ColorPreset = {
+  label: string;
+  color: string;
+  inputFallback: string;
+};
+
+const COLOR_PRESETS: ColorPreset[] = [
+  {
+    label: "Theme",
+    color: "color-mix(in oklch, var(--accent-presence) 72%, white 28%)",
+    inputFallback: "#9a8ecd",
+  },
+  {
+    label: "Lilac",
+    color: "oklch(0.82 0.08 305)",
+    inputFallback: "#d8a7f2",
+  },
+  {
+    label: "Rose",
+    color: "oklch(0.82 0.08 20)",
+    inputFallback: "#f2a6b5",
+  },
+  {
+    label: "Peach",
+    color: "oklch(0.84 0.08 55)",
+    inputFallback: "#f0bd82",
+  },
+  {
+    label: "Sage",
+    color: "oklch(0.80 0.08 145)",
+    inputFallback: "#91d3a4",
+  },
+  {
+    label: "Mint",
+    color: "oklch(0.83 0.08 180)",
+    inputFallback: "#88d9c9",
+  },
+  {
+    label: "Tide",
+    color: "oklch(0.80 0.08 235)",
+    inputFallback: "#93b9f4",
+  },
+  {
+    label: "Moon",
+    color: "color-mix(in oklch, var(--accent-presence-soft) 58%, var(--text-primary) 18%, white 24%)",
+    inputFallback: "#b8b8c2",
+  },
 ];
 
-type Props = { familiar: ResolvedFamiliar };
+type ColorScope = "familiar" | "harness";
 
-export function FamiliarStudioLookTab({ familiar }: Props) {
+type Props = {
+  familiar: ResolvedFamiliar;
+  allFamiliars: ResolvedFamiliar[];
+};
+
+export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
   const overrides = useFamiliarOverrides();
   const images = useFamiliarImages();
   const currentColor = overrides[familiar.id]?.color ?? null;
   const currentImage = images[familiar.id];
   const [toast, setToast] = useState<string | null>(null);
+  const [colorScope, setColorScope] = useState<ColorScope>("familiar");
 
-  function pickColor(c: string | null) {
-    if (c === null) clearFamiliarOverrideField(familiar.id, "color");
-    else setFamiliarOverride(familiar.id, { color: c });
+  const harnessKey = familiar.harness ?? "";
+  const harnessTargets = allFamiliars.filter((target) => (target.harness ?? "") === harnessKey);
+  const colorTargets = colorScope === "harness" ? harnessTargets : [familiar];
+
+  function applyColorToTargets(targets: ResolvedFamiliar[], color: string) {
+    for (const target of targets) setFamiliarOverride(target.id, { color });
+  }
+
+  function pickColor(color: string | null) {
+    if (color === null) {
+      for (const target of colorTargets) clearFamiliarOverrideField(target.id, "color");
+    } else {
+      applyColorToTargets(colorTargets, color);
+    }
+  }
+
+  function applyPaletteByFamiliar() {
+    allFamiliars.forEach((target, index) => {
+      const color = COLOR_PRESETS[index % COLOR_PRESETS.length].color;
+      setFamiliarOverride(target.id, { color });
+    });
+  }
+
+  function applyPaletteByHarness() {
+    const harnesses = Array.from(
+      new Set(allFamiliars.map((target) => target.harness ?? "unassigned")),
+    );
+    const colorByHarness = new Map(
+      harnesses.map((harness, index) => [
+        harness,
+        COLOR_PRESETS[index % COLOR_PRESETS.length].color,
+      ]),
+    );
+    for (const target of allFamiliars) {
+      const color = colorByHarness.get(target.harness ?? "unassigned");
+      if (color) setFamiliarOverride(target.id, { color });
+    }
   }
 
   async function onFile(file: File) {
@@ -56,20 +134,42 @@ export function FamiliarStudioLookTab({ familiar }: Props) {
 
       <section className="familiar-studio-look__section">
         <h3 className="familiar-studio-look__heading">Accent color</h3>
+        <div
+          className="familiar-studio-look__scope"
+          role="group"
+          aria-label="Color assignment scope"
+        >
+          <button
+            type="button"
+            onClick={() => setColorScope("familiar")}
+            className={`familiar-studio-look__scope-btn${colorScope === "familiar" ? " familiar-studio-look__scope-btn--active" : ""}`}
+          >
+            This familiar
+          </button>
+          <button
+            type="button"
+            onClick={() => setColorScope("harness")}
+            className={`familiar-studio-look__scope-btn${colorScope === "harness" ? " familiar-studio-look__scope-btn--active" : ""}`}
+          >
+            Same harness
+            <span>{harnessTargets.length}</span>
+          </button>
+        </div>
         <div className="familiar-studio-look__swatches">
-          {COLOR_PRESETS.map((c) => (
+          {COLOR_PRESETS.map((preset) => (
             <button
-              key={c}
+              key={preset.label}
               type="button"
-              aria-label={`Use ${c}`}
-              onClick={() => pickColor(c)}
-              className={`familiar-studio-look__swatch${currentColor === c ? " familiar-studio-look__swatch--active" : ""}`}
-              style={{ background: c }}
+              aria-label={`Use ${preset.label}`}
+              title={preset.label}
+              onClick={() => pickColor(preset.color)}
+              className={`familiar-studio-look__swatch${currentColor === preset.color ? " familiar-studio-look__swatch--active" : ""}`}
+              style={{ background: preset.color }}
             />
           ))}
           {/* eslint-disable-next-line jsx-a11y/no-interactive-element-to-noninteractive-role */}
           <input type="color"
-            value={currentColor ?? "#888888"}
+            value={colorInputValue(currentColor)}
             onChange={(e) => pickColor(e.target.value)}
             aria-label="Custom accent color"
             className="familiar-studio-look__custom"
@@ -83,6 +183,18 @@ export function FamiliarStudioLookTab({ familiar }: Props) {
             Reset
           </button>
         </div>
+        <div className="familiar-studio-look__palette-actions">
+          <button type="button" onClick={applyPaletteByFamiliar}>
+            Palette by familiar
+          </button>
+          <button type="button" onClick={applyPaletteByHarness}>
+            Palette by harness
+          </button>
+        </div>
+        <p className="familiar-studio-look__note">
+          Pastels follow the current theme accent. Use same-harness scope for a
+          whole harness set.
+        </p>
       </section>
 
       <section className="familiar-studio-look__section">
@@ -148,4 +260,10 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function colorInputValue(color: string | null): string {
+  return color && /^#[0-9a-f]{6}$/i.test(color)
+    ? color
+    : (COLOR_PRESETS[0]?.inputFallback ?? "#888888");
 }

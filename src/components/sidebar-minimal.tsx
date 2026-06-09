@@ -51,6 +51,7 @@ export type SidebarMinimalProps = {
   inboxItems?: InboxItem[];
   inboxPrefs?: InboxPrefs;
   familiars?: Familiar[];
+  activeFamiliar?: Familiar | null;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
   onOpenInboxItem?: (item: InboxItem) => void;
@@ -67,16 +68,22 @@ const FOLDER_MODES: Array<{
 }> = [
   // Work
   { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1" },
-  { id: "agents", label: "Familiars", iconName: "ph:users-three", group: "work", kbd: "⌘2" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘3" },
-  { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘4" },
-  { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘5" },
-  { id: "inbox", label: "Inbox", iconName: "ph:tray", group: "work", kbd: "⌘6" },
+  { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2" },
+  { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3" },
+  { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4" },
+  { id: "inbox", label: "Inbox", iconName: "ph:tray", group: "work", kbd: "⌘5" },
   // Knowledge
-  { id: "library", label: "Library", iconName: "ph:books", group: "knowledge", kbd: "⌘7" },
+  { id: "library", label: "Library", iconName: "ph:books", group: "knowledge", kbd: "⌘6" },
   // Tools
+<<<<<<< Updated upstream
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘8" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools" },
+=======
+  { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" },
+  { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" },
+  { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" },
+  { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" },
+>>>>>>> Stashed changes
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons" },
 ];
@@ -159,6 +166,27 @@ function FolderRow({
   );
 }
 
+function SelectedFamiliarInfo({ familiar }: { familiar?: Familiar | null }) {
+  const title = familiar?.display_name ?? "No familiar selected";
+  const subtitle = familiar
+    ? [familiar.role, familiar.harness].filter(Boolean).join(" · ") || familiar.id
+    : "Pick one from the rail";
+  const detail = familiar?.model ?? familiar?.note ?? familiar?.status ?? null;
+  return (
+    <div className="sidebar-selected-familiar" aria-label="Selected familiar">
+      <span className="sidebar-selected-familiar__icon" aria-hidden="true">
+        <Icon name={(familiar?.icon ?? "ph:sparkle") as Parameters<typeof Icon>[0]["name"]} width={15} />
+      </span>
+      <span className="sidebar-selected-familiar__body">
+        <span className="sidebar-selected-familiar__eyebrow">Selected familiar</span>
+        <span className="sidebar-selected-familiar__name">{title}</span>
+        <span className="sidebar-selected-familiar__meta">{subtitle}</span>
+        {detail ? <span className="sidebar-selected-familiar__detail">{detail}</span> : null}
+      </span>
+    </div>
+  );
+}
+
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
@@ -170,6 +198,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     inboxItems,
     inboxPrefs,
     familiars,
+    activeFamiliar,
     notificationBadgeCount = 0,
     onOpenInbox,
     onOpenInboxItem,
@@ -205,6 +234,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
       <div className="sidebar-nav-scroll">
         <SidebarSection label="Work">
+          <SelectedFamiliarInfo familiar={activeFamiliar} />
           {workModes.map((fm) => (
             <FolderRow
               key={fm.id}

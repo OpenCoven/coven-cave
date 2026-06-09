@@ -150,9 +150,10 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const visibleFiles = useMemo(
     () =>
       fileEntries
+        .filter((entry) => entry.familiarId === familiarFilter)
         .filter((entry) => memoryMatches(entry, q))
         .sort((a, b) => (a.modified < b.modified ? 1 : -1)),
-    [fileEntries, q],
+    [familiarFilter, fileEntries, q],
   );
 
   const familiarsWithMemory = useMemo(() => {
@@ -538,6 +539,8 @@ type MemoryFilesListProps = {
   loaded: boolean;
   error: string | null;
   limit?: number;
+  className?: string;
+  listClassName?: string;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -655,10 +658,23 @@ function ExpandMemoryButton({
   );
 }
 
-export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: MemoryFilesListProps) {
+export function MemoryFilesList({
+  entries,
+  onOpen,
+  loaded,
+  error,
+  limit,
+  className,
+  listClassName,
+}: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
   return (
-    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+    <div
+      className={[
+        "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25",
+        className ?? "",
+      ].join(" ")}
+    >
       {sliced.length === 0 ? (
         <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
           {loaded
@@ -668,7 +684,7 @@ export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: Memor
             : "Loading files..."}
         </div>
       ) : (
-        <ul className="max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto">
+        <ul className={listClassName ?? "max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto"}>
           {sliced.map((entry) => (
             <li key={entry.fullPath} className="flex items-stretch gap-1 px-1 hover:bg-[var(--bg-raised)]">
               <button

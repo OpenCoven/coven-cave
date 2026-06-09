@@ -81,7 +81,7 @@ export function Workspace() {
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [mode, setMode] = useState<WorkspaceMode>("agents");
+  const [mode, setMode] = useState<WorkspaceMode>("home");
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<"inspector" | "chat" | null>(null);
@@ -579,7 +579,7 @@ export function Workspace() {
 
   useEffect(() => {
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "agents", "chat", "board", "calendar", "inbox", "library", "browser",
+      "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",
     ];
 
     const onKey = (e: KeyboardEvent) => {
@@ -882,6 +882,7 @@ export function Workspace() {
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}
       familiars={familiars}
+      activeFamiliar={active}
       notificationBadgeCount={inboxBadgeCount}
       onOpenInbox={() => setMode("inbox")}
       onOpenInboxItem={(item) => {

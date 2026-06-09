@@ -44,10 +44,24 @@ export function FamiliarStudio({ familiars }: Props) {
     () => resolved.find((f) => f.id === activeFamiliarId) ?? null,
     [resolved, activeFamiliarId],
   );
+  const drawerOpen = Boolean(activeFamiliarId || listView);
+  const disableNonLifecycle = listView && !familiar;
+
+  // Roving tabindex over the tablist. Arrow keys move focus across enabled
+  // tabs; Home/End jump to ends. We pair this with an effect below to also
+  // switch the active tab when focus moves (automatic activation per APG).
+  const tablistRef = useRef<HTMLDivElement | null>(null);
+  const { activeIndex } = useRovingTabIndex({
+    containerRef: tablistRef,
+    itemSelector: '[role="tab"]:not([aria-disabled="true"])',
+    // Tabstrip is visually a column (`flex-direction: column`), so vertical
+    // arrow keys move focus across tabs. aria-orientation below mirrors this.
+    orientation: "vertical",
+  });
 
   // Esc to close
   useEffect(() => {
-    if (!activeFamiliarId && !listView) return;
+    if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -56,10 +70,26 @@ export function FamiliarStudio({ familiars }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeFamiliarId, listView, closeFamiliarStudio]);
+  }, [drawerOpen, closeFamiliarStudio]);
+
+  // Automatic activation: switch activeTab whenever the roving focus lands on
+  // a new tab. Studio tab panels are cheap, so APG recommends auto activation.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const enabledTabs = TABS.filter((t) =>
+      disableNonLifecycle ? t.id === "lifecycle" : true,
+    );
+    const target = enabledTabs[activeIndex];
+    if (target && target.id !== activeTab) {
+      setActiveTab(target.id);
+    }
+    // Intentionally omit activeTab/setActiveTab from deps: this effect drives
+    // activeTab from activeIndex, not the other way around.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, disableNonLifecycle, drawerOpen]);
 
   // No drawer when nothing is open.
-  if (!activeFamiliarId && !listView) return null;
+  if (!drawerOpen) return null;
 
   // Open-for-id-that-no-longer-exists empty state.
   if (activeFamiliarId && !familiar) {
@@ -81,35 +111,6 @@ export function FamiliarStudio({ familiars }: Props) {
       </aside>
     );
   }
-
-  const disableNonLifecycle = listView && !familiar;
-
-  // Roving tabindex over the tablist. Arrow keys move focus across enabled
-  // tabs; Home/End jump to ends. We pair this with an effect below to also
-  // switch the active tab when focus moves (automatic activation per APG).
-  const tablistRef = useRef<HTMLDivElement | null>(null);
-  const { activeIndex } = useRovingTabIndex({
-    containerRef: tablistRef,
-    itemSelector: '[role="tab"]:not([aria-disabled="true"])',
-    // Tabstrip is visually a column (`flex-direction: column`), so vertical
-    // arrow keys move focus across tabs. aria-orientation below mirrors this.
-    orientation: "vertical",
-  });
-
-  // Automatic activation: switch activeTab whenever the roving focus lands on
-  // a new tab. Studio tab panels are cheap, so APG recommends auto activation.
-  useEffect(() => {
-    const enabledTabs = TABS.filter((t) =>
-      disableNonLifecycle ? t.id === "lifecycle" : true,
-    );
-    const target = enabledTabs[activeIndex];
-    if (target && target.id !== activeTab) {
-      setActiveTab(target.id);
-    }
-    // Intentionally omit activeTab/setActiveTab from deps: this effect drives
-    // activeTab from activeIndex, not the other way around.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, disableNonLifecycle]);
 
   return (
     <aside
@@ -188,7 +189,9 @@ export function FamiliarStudio({ familiars }: Props) {
               }}
             />
           ) : null}
-          {activeTab === "look" && familiar ? <FamiliarStudioLookTab familiar={familiar} /> : null}
+          {activeTab === "look" && familiar ? (
+            <FamiliarStudioLookTab familiar={familiar} allFamiliars={resolved} />
+          ) : null}
           {activeTab === "brain" && familiar ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
           {activeTab === "lifecycle" ? (
             <FamiliarStudioLifecycleTab familiar={familiar} allResolved={resolved} />

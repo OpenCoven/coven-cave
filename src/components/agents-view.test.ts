@@ -116,6 +116,30 @@ assert.match(
 
 assert.match(
   source,
+  /const familiarFileEntries = useMemo\([\s\S]*entry\.familiarId === familiar\.id[\s\S]*\[fileEntries, familiar\.id\]/,
+  "Files tab filters memory files to the selected familiar",
+);
+
+assert.match(
+  source,
+  /entries=\{familiarFileEntries\}/,
+  "Files tab passes only the selected familiar's files to MemoryFilesList",
+);
+
+assert.match(
+  source,
+  /listClassName="h-full min-h-0 divide-y divide-\[var\(--border-hairline\)\] overflow-y-auto"/,
+  "Files tab gives MemoryFilesList a panel-height scroll container",
+);
+
+assert.doesNotMatch(
+  source,
+  /list is the same for every familiar/,
+  "Files tab should not describe the per-familiar list as global",
+);
+
+assert.match(
+  source,
   /role="dialog"[\s\S]*aria-modal="true"/,
   "Overlay exposes modal dialog semantics",
 );
