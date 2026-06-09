@@ -981,6 +981,11 @@ export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props
           />
         )}
       </div>
+      <footer
+        className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6"
+      >
+        ← → navigate · T today · D Day · W Week · M Month · A Agenda
+      </footer>
       {selectedItem && (
         <ItemDetailPanel
           item={selectedItem}

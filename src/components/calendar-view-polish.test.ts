@@ -59,4 +59,11 @@ assert.match(
   "MonthView cell must add ring-1 ring-inset on today",
 );
 
+// ───────── Task 5: Keyboard hints footer ─────────
+assert.match(
+  source,
+  /← → navigate · T today · D Day · W Week · M Month · A Agenda/,
+  "CalendarView must render the keyboard-hints footer string",
+);
+
 console.log("calendar-view-polish.test.ts: ok");
