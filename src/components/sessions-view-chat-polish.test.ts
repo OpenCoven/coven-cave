@@ -106,4 +106,29 @@ assert.deepEqual(out.yesterday.map((s) => s.id), ["b"], "yesterday bucket");
 assert.deepEqual(out.thisWeek.map((s) => s.id),  ["c"], "thisWeek bucket");
 assert.deepEqual(out.older.map((s) => s.id),     ["d"], "older bucket");
 
+// ───────── Task 5: inline title filter ─────────
+assert.match(
+  source,
+  /const \[titleQuery, setTitleQuery\] = useState\(""\);/,
+  "SessionsView must own a titleQuery state",
+);
+
+assert.match(
+  source,
+  /sessions\.length\s*>=\s*6/,
+  "Inline filter input must be gated on sessions.length >= 6",
+);
+
+assert.match(
+  source,
+  /placeholder="Filter chats…"/,
+  "Filter input placeholder must read 'Filter chats…'",
+);
+
+assert.match(
+  source,
+  /titleQuery\.toLowerCase\(\)/,
+  "Title query filter must be case-insensitive",
+);
+
 console.log("sessions-view-chat-polish.test.ts: ok");

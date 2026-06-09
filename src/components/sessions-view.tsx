@@ -722,6 +722,7 @@ export function SessionsView({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [pendingSacrifice, setPendingSacrifice] = useState<SessionRow | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [titleQuery, setTitleQuery] = useState("");
   const [archivedSessions, setArchivedSessions] = useState<SessionRow[]>([]);
   // Local per-familiar filter — defaults to null (show all). Takes precedence
   // over the workspace's activeFamiliarId so the Sessions view always lands on
@@ -845,13 +846,16 @@ export function SessionsView({
     [sessions]
   );
 
-  const filtered = useMemo(
-    () =>
-      effectiveFilterId
-        ? sorted.filter((s) => s.familiarId === effectiveFilterId)
-        : sorted,
-    [sorted, effectiveFilterId]
-  );
+  const filtered = useMemo(() => {
+    let list = effectiveFilterId
+      ? sorted.filter((s) => s.familiarId === effectiveFilterId)
+      : sorted;
+    if (titleQuery.trim()) {
+      const q = titleQuery.toLowerCase();
+      list = list.filter((s) => (s.title ?? "").toLowerCase().includes(q));
+    }
+    return list;
+  }, [sorted, effectiveFilterId, titleQuery]);
 
   const archivedFiltered = useMemo(() => {
     const sortedArch = [...archivedSessions].sort((a, b) =>
@@ -1005,6 +1009,19 @@ export function SessionsView({
           </button>
         </div>
       </div>
+
+      {sessions.length >= 6 && (
+        <div className="border-b border-[var(--border-hairline)] px-3 py-2">
+          <input
+            type="text"
+            value={titleQuery}
+            onChange={(e) => setTitleQuery(e.target.value)}
+            placeholder="Filter chats…"
+            className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+            aria-label="Filter chats by title"
+          />
+        </div>
+      )}
 
       {/* Content */}
       <div className="sessions-view-scroll">
