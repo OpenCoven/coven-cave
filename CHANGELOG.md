@@ -7,6 +7,67 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.58] — 2026-06-09
+
+Accessibility sweep across the main interactive surfaces (kanban,
+calendar, board, library, terminal mirror, glyph picker, avatar rail,
+familiar studio, browser quick-open), two new themes to broaden the
+default palette, and a couple of recovery fixes.
+
+### Added
+
+- **Two new default themes.** Hex (true red, hue 25°) — *"Bloodletter's
+  brand. The mark that doesn't wash off."* — fills the red slot Bloom's
+  rose-pink didn't cover; deeper base and ~3× higher background chroma
+  than Bloom keep them visibly distinct. Bane (lime green, hue 125°) —
+  *"Wolfsbane bloom. Bright; deeply unwise."* — fills the lime slot
+  Grove's mossy 150° forest didn't cover. `THEME_IDS` count bumps
+  from 8 → 10. (#295)
+- **Keyboard drag on kanban cards.** Cards can be picked up, moved,
+  and dropped without a pointer: Space to grab, arrow keys to move,
+  Space or Esc to commit or cancel.
+- **Calendar TimeGrid event roving.** Arrow-key navigation across
+  event blocks in the calendar time grid, with Enter to open.
+- **Board table vertical roving + Enter/Esc.** Arrow keys traverse
+  the board cells; Enter opens, Esc dismisses.
+- **Library reader heading navigation.** `j` / `k` and arrow keys
+  walk between headings inside the reader pane.
+- **XTerm screen-reader mirror.** The embedded terminal now exposes
+  a parallel screen-reader-accessible mirror of its scrollback so
+  AT users can read terminal output line by line.
+- **Familiar studio tablist + vertical roving tabindex.** Keyboard
+  traversal across the studio's tab strip and the vertical sections
+  inside each tab.
+- **Avatar rail vertical roving tabindex.** Up/down arrow navigation
+  through the leftmost familiar avatar rail.
+- **Glyph picker horizontal roving + scrollIntoView.** Left/right
+  arrows through the glyph grid; selected glyph scrolls into view.
+- **Browser quick-open listbox semantics.** Quick-open results are
+  now a proper `role=listbox` so screen readers announce position
+  and total.
+
+### Fixed
+
+- **Conversation history writes are validated.** Chat now guards
+  against writing malformed history entries to the local conversation
+  store, preventing corruption that previously surfaced as missing or
+  reordered messages on reload.
+- **Onboarding stays open after completion.** Setup no longer
+  auto-dismisses the moment its final step succeeds — users see the
+  confirmation state and close it themselves.
+
+### Changed
+
+- **CHANGELOG accuracy.** The v0.0.57 CHANGELOG entry was corrected
+  to list the actual eight theme names (Coven, Tide, Grove, Ember,
+  Bloom, Dusk, Mist, Slate) and to record PR #290's Ember-light
+  contrast fix in the Fixed section. The shipped v0.0.57 tag and
+  artifacts are unchanged; only the CHANGELOG file on main was
+  updated. (#292)
+- **Repo hygiene.** `.superpowers/` contents are no longer tracked —
+  they're per-user agent specs and don't belong in the working tree
+  on main. (#293)
+
 ## [0.0.57] — 2026-06-09
 
 Theme personality, recovered local chats with familiar-scoped memory,
