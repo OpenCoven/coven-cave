@@ -7,6 +7,7 @@ import { MemoryGraph3D } from "@/components/memory-graph-3d";
 import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory-graph-3d-model";
 import type { MemoryGraphMemoryNode } from "@/lib/memory-graph-3d-model";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
+import { MarkdownBlock } from "@/components/message-bubble";
 
 export type FileMemoryEntry = {
   root: string;
@@ -36,6 +37,8 @@ type Props = {
   limit?: number;
   /** Suppress the familiar <select>; render the active familiar as a chip. */
   lockToFamiliar?: boolean;
+  /** Compact header for narrow surfaces like the companion rail. */
+  compact?: boolean;
 };
 
 type CovenMemoryResponse =
@@ -86,7 +89,7 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, mode, limit, lockToFamiliar }: Props) {
+export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, mode, limit, lockToFamiliar, compact }: Props) {
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
@@ -212,66 +215,70 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
-      <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
-              <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Agent Memory</h2>
-            </div>
-            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-              Focused recall for one agent at a time, with local memory files kept in the list surface.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {!mode && (
-              <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
-                {(["list", "graph"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setViewMode(m)}
-                    className={[
-                      "focus-ring-inset inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
-                      viewMode === m
-                        ? "bg-[var(--accent-presence)] text-white"
-                        : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
-                    ].join(" ")}
-                  >
-                    <Icon name={m === "list" ? "ph:list-bullets" : "ph:graph"} width={12} />
-                    {m}
-                  </button>
-                ))}
+      <div className={`shrink-0 border-b border-[var(--border-hairline)] ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
+        {compact ? null : (
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
+                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Agent Memory</h2>
               </div>
-            )}
-            <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
-              <Icon name="ph:arrows-clockwise" width={12} />
-              Refresh
-            </button>
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                Focused recall for one agent at a time, with local memory files kept in the list surface.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {!mode && (
+                <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
+                  {(["list", "graph"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setViewMode(m)}
+                      className={[
+                        "focus-ring-inset inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
+                        viewMode === m
+                          ? "bg-[var(--accent-presence)] text-white"
+                          : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
+                      ].join(" ")}
+                    >
+                      <Icon name={m === "list" ? "ph:list-bullets" : "ph:graph"} width={12} />
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+                <Icon name="ph:arrows-clockwise" width={12} />
+                Refresh
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agent memories</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{visibleCoven.length}</div>
+        {compact ? null : (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agent memories</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{visibleCoven.length}</div>
+            </div>
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Coven origin</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.covenOrigin}</div>
+            </div>
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">External harnesses</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.externalHarnesses}</div>
+            </div>
+            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Runtime memory</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.runtimeMemory}</div>
+            </div>
           </div>
-          <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Coven origin</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.covenOrigin}</div>
-          </div>
-          <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">External harnesses</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.externalHarnesses}</div>
-          </div>
-          <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Runtime memory</div>
-            <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.runtimeMemory}</div>
-          </div>
-        </div>
+        )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[220px] flex-1">
+        <div className={`${compact ? "" : "mt-3"} flex flex-wrap items-center gap-2`}>
+          <div className={`relative ${compact ? "min-w-0" : "min-w-[220px]"} flex-1`}>
             <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               value={query}
@@ -356,14 +363,17 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                       </code>
                     </div>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => onOpenMemoryFile?.(selectedMemory.path)}
-                    className="focus-ring mt-3 inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                  >
-                    <Icon name="ph:file-text" width={13} />
-                    Open memory
-                  </button>
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onOpenMemoryFile?.(selectedMemory.path)}
+                      className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                    >
+                      <Icon name="ph:file-text" width={13} />
+                      Open memory
+                    </button>
+                    <ExpandMemoryButton path={selectedMemory.path} title={selectedMemory.title} />
+                  </div>
                 </div>
               ) : (
                 <div className="mt-3 rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-6 text-center text-[12px] text-[var(--text-muted)]">
@@ -435,14 +445,17 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     {entry.excerpt ? (
                       <p className="mt-2 line-clamp-4 text-[11px] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => onOpenMemoryFile?.(entry.path)}
-                      className="focus-ring mt-3 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                    >
-                      <Icon name="ph:file-text" width={12} />
-                      Open memory
-                    </button>
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onOpenMemoryFile?.(entry.path)}
+                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      >
+                        <Icon name="ph:file-text" width={12} />
+                        Open memory
+                      </button>
+                      <ExpandMemoryButton path={entry.path} title={entry.title} />
+                    </div>
                   </article>
                 );
               })}
@@ -498,6 +511,8 @@ export function RailMemoryList({
         activeFamiliar={familiar}
         mode="list"
         limit={20}
+        compact
+        lockToFamiliar
       />
       {onOpenFullView ? (
         <button
@@ -525,6 +540,121 @@ type MemoryFilesListProps = {
   limit?: number;
 };
 
+// ────────────────────────────────────────────────────────────────────────────
+// MemoryReaderModal — fullscreen reader rendering a memory file's markdown
+// via @create-markdown/preview (through MarkdownBlock).
+// ────────────────────────────────────────────────────────────────────────────
+
+type MemoryReaderModalProps = {
+  path: string;
+  title?: string;
+  onClose: () => void;
+};
+
+export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalProps) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setText(null);
+    setError(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/memory/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok) setText(typeof json.text === "string" ? json.text : "");
+        else setError(json.error ?? "Failed to load memory");
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load memory");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [path]);
+
+  const heading = title ?? path.split("/").pop() ?? "Memory";
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Memory reader: ${heading}`}
+    >
+      <div
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
+          <Icon name="ph:book-open" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]" title={path}>
+            {heading}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            aria-label="Close memory reader"
+          >
+            <Icon name="ph:x-bold" width={11} aria-hidden />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+          <div className="mx-auto w-full max-w-[820px]">
+            {error ? (
+              <p className="text-[12px] text-[var(--color-warning)]">{error}</p>
+            ) : text === null ? (
+              <p className="text-[12px] text-[var(--text-muted)]">Loading memory…</p>
+            ) : (
+              <MarkdownBlock text={text} className="cave-md--expanded" />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpandMemoryButton({
+  path,
+  title,
+  variant = "default",
+}: {
+  path: string;
+  title?: string;
+  variant?: "default" | "compact";
+}) {
+  const [open, setOpen] = useState(false);
+  const compact = variant === "compact";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        aria-label="Expand memory to reader view"
+        title="Expand to reader view"
+        className={
+          compact
+            ? "focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            : "focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        }
+      >
+        <Icon name="ph:arrows-out-simple" width={compact ? 12 : 11} />
+        {compact ? null : "Expand"}
+      </button>
+      {open ? <MemoryReaderModal path={path} title={title} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
 export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
   return (
@@ -540,11 +670,11 @@ export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: Memor
       ) : (
         <ul className="max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto">
           {sliced.map((entry) => (
-            <li key={entry.fullPath}>
+            <li key={entry.fullPath} className="flex items-stretch gap-1 px-1 hover:bg-[var(--bg-raised)]">
               <button
                 type="button"
                 onClick={() => onOpen?.(entry.fullPath)}
-                className="focus-ring-inset flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                className="focus-ring-inset flex flex-1 items-start gap-2 px-2 py-2 text-left"
               >
                 <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                 <span className="min-w-0 flex-1">
@@ -563,6 +693,9 @@ export function MemoryFilesList({ entries, onOpen, loaded, error, limit }: Memor
                 </span>
                 <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
               </button>
+              <div className="flex items-center pr-2">
+                <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
+              </div>
             </li>
           ))}
         </ul>
