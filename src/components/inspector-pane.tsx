@@ -164,10 +164,7 @@ export function InspectorPane({
                 {TAB_LABEL[t]}
                 {t === "inbox" && inboxBadge > 0 ? (
                   <span
-                    className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
-                    aria-label={`${inboxBadge} fired`}
-                  >
-                    {inboxBadge}
+                    aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}`
                   </span>
                 ) : null}
               </button>
