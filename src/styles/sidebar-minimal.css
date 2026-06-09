@@ -693,6 +693,10 @@
   outline-offset: -1px;
 }
 
+.sidebar-new-chat-row {
+  display: none;
+}
+
 /* Desktop (>= 768px): hide the full-width "New Chat" row, keep the + icon. */
 @media (min-width: 768px) {
   .sidebar-new-chat-row {
@@ -702,6 +706,10 @@
 
 /* Mobile (<= 767px): hide the inline + icon, show the full-width button. */
 @media (max-width: 767px) {
+  .sidebar-new-chat-row {
+    display: block;
+  }
+
   .sidebar-new-chat-icon {
     display: none;
   }

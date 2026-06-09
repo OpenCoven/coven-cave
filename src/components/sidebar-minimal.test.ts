@@ -171,4 +171,10 @@ assert.match(
   "capabilities stays in Tools",
 );
 
+assert.match(
+  source,
+  /className="sidebar-new-chat-row">\s*<ActionRow/,
+  "The mobile New Chat ActionRow stays wrapped in .sidebar-new-chat-row so responsive CSS can hide it on desktop",
+);
+
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");
