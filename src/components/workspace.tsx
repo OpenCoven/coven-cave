@@ -915,19 +915,6 @@ export function Workspace() {
         }}
         onOpenOnboarding={openOnboarding}
       />
-    ) : mode === "home" ? (
-      <HomeComposer
-        familiars={familiars}
-        activeFamiliarId={activeId}
-        sessions={sessions}
-        onNavigateToChat={(sessionId, fid) => {
-          openAgentSession(sessionId, fid);
-        }}
-        onNavigateToBoard={() => setMode("board")}
-        onNavigateToInbox={() => setMode("inbox")}
-        onToast={pushToast}
-        onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
-      />
     ) : mode === "chat" ? (
       <ChatSurface
         sessions={sessions}
