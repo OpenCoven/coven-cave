@@ -78,17 +78,17 @@ assert.match(
   "transform: translateX(clamp(-max, ideal, max))",
 );
 
-// Composer card wrap + suggestions use the widened 880px max-width minus
+// Composer card wrap + suggestions use the widened 1200px max-width minus
 // --hc-asymmetry so they don't overflow when the layout is asymmetric.
 assert.match(
   css,
-  /\.home-composer-card-wrap\s*\{[\s\S]*?max-width:\s*min\(880px,\s*calc\(100% - var\(--hc-asymmetry, 0px\)\)\)/,
-  ".home-composer-card-wrap uses 880px asymmetry-aware max-width",
+  /\.home-composer-card-wrap\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*calc\(100% - var\(--hc-asymmetry, 0px\)\)\)/,
+  ".home-composer-card-wrap uses 1200px asymmetry-aware max-width",
 );
 assert.match(
   css,
-  /\.home-composer-suggestions\s*\{[\s\S]*?max-width:\s*min\(880px,\s*calc\(100% - var\(--hc-asymmetry, 0px\)\)\)/,
-  ".home-composer-suggestions uses 880px asymmetry-aware max-width",
+  /\.home-composer-suggestions\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*calc\(100% - var\(--hc-asymmetry, 0px\)\)\)/,
+  ".home-composer-suggestions uses 1200px asymmetry-aware max-width",
 );
 
 // The card itself inherits the constraint from its wrap — must NOT subtract

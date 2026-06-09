@@ -41,7 +41,7 @@
   );
   --hc-max-shift: max(
     0px,
-    calc((100% - 880px) / 2),
+    calc((100% - 1200px) / 2),
     calc(var(--hc-asymmetry) / 2)
   );
   --hc-ideal-shift: calc(
@@ -92,7 +92,7 @@
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
-  max-width: min(880px, calc(100% - var(--hc-asymmetry, 0px)));
+  max-width: min(1200px, calc(100% - var(--hc-asymmetry, 0px)));
 }
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
@@ -304,7 +304,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-width: min(880px, calc(100% - var(--hc-asymmetry, 0px)));
+  max-width: min(1200px, calc(100% - var(--hc-asymmetry, 0px)));
   width: 100%;
   justify-content: center;
 }
