@@ -95,4 +95,26 @@ assert.match(
   "AgendaView must offer a 'Hide past' toggle when showPast is on",
 );
 
+// ───────── Task 8: Mini-month popover ─────────
+assert.match(
+  source,
+  /function MiniMonthPopover\(\s*\{\s*anchor,\s*onPick,\s*onClose,?\s*\}/,
+  "MiniMonthPopover component must be defined",
+);
+assert.match(
+  source,
+  /const \[pickerOpen, setPickerOpen\] = useState\(false\);/,
+  "CalendarView must own a pickerOpen state",
+);
+assert.match(
+  source,
+  /aria-label="Jump to date"/,
+  "Popover dialog must carry aria-label='Jump to date'",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => setPickerOpen\(\(v\) => !v\)\}/,
+  "Heading button must toggle pickerOpen",
+);
+
 console.log("calendar-view-polish.test.ts: ok");

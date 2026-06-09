@@ -757,6 +757,105 @@ function MonthView({
 
 // ─── Item Detail Panel ───────────────────────────────────────────────────────
 
+function MiniMonthPopover({
+  anchor,
+  onPick,
+  onClose,
+}: {
+  anchor: Date;
+  onPick: (d: Date) => void;
+  onClose: () => void;
+}) {
+  const [view, setView] = useState<Date>(startOfMonth(anchor));
+  const ref = useRef<HTMLDivElement>(null);
+  const today = new Date();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onClick);
+    };
+  }, [onClose]);
+
+  const monthStart = view;
+  const gridStart = startOfWeek(monthStart);
+  const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Jump to date"
+      className="absolute top-full left-0 z-20 mt-2 w-[260px] rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
+          className="focus-ring grid h-6 w-6 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          aria-label="Previous month"
+        >
+          <Icon name="ph:arrow-left-bold" width={10} />
+        </button>
+        <span className="text-[12px] font-medium text-[var(--text-primary)]">
+          {MONTHS[view.getMonth()]} {view.getFullYear()}
+        </span>
+        <button
+          type="button"
+          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
+          className="focus-ring grid h-6 w-6 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          aria-label="Next month"
+        >
+          <Icon name="ph:arrow-right-bold" width={10} />
+        </button>
+      </div>
+      <div className="mb-1 grid grid-cols-7 gap-px text-[9px] uppercase tracking-widest text-[var(--text-muted)]">
+        {WEEKDAYS.map((wd) => <div key={wd} className="text-center">{wd.slice(0, 1)}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-px">
+        {cells.map((day, i) => {
+          const isCurrentMonth = day.getMonth() === view.getMonth();
+          const isToday = isSameDay(day, today);
+          const isAnchor = isSameDay(day, anchor);
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onPick(day)}
+              className={`focus-ring h-7 w-full rounded text-[11px] transition-colors ${
+                isAnchor
+                  ? "bg-[var(--accent-presence)] text-white"
+                  : isToday
+                    ? "ring-1 ring-inset ring-[var(--accent-presence)] text-[var(--accent-presence)]"
+                    : isCurrentMonth
+                      ? "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                      : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)]/40"
+              }`}
+            >
+              {day.getDate()}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={() => onPick(today)}
+        className="focus-ring mt-2 w-full rounded-md border border-[var(--border-hairline)] py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+      >
+        Today
+      </button>
+    </div>
+  );
+}
+
 function ItemDetailPanel({
   item,
   onClose,
@@ -854,6 +953,7 @@ export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -950,16 +1050,29 @@ export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props
           </button>
         </div>
 
-        {/* Heading + pending pill */}
-        <div className="min-w-[120px] flex flex-1 items-center gap-2 min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+        {/* Heading + pending pill + jump-to-date popover */}
+        <div className="relative min-w-[120px] flex flex-1 items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            aria-expanded={pickerOpen}
+            aria-haspopup="dialog"
+            className="focus-ring truncate text-sm font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--accent-presence)]"
+          >
             {headingLabel()}
-          </h2>
+          </button>
           {items.filter((i) => i.status === "pending").length > 0 && (
             <span className="shrink-0 rounded-full bg-[var(--bg-raised)] border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] font-medium tabular-nums">
               {items.filter((i) => i.status === "pending").length} pending
             </span>
           )}
+          {pickerOpen ? (
+            <MiniMonthPopover
+              anchor={anchor}
+              onPick={(d) => { setAnchor(d); setPickerOpen(false); }}
+              onClose={() => setPickerOpen(false)}
+            />
+          ) : null}
         </div>
 
         {/* View mode toggle */}
