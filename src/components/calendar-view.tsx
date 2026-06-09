@@ -474,6 +474,8 @@ function DayView({
     items: timedItems,
   }], [anchor, timedItems]);
 
+  const isEmpty = timedItems.length === 0 && allDayItems.length === 0;
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Header */}
@@ -489,20 +491,19 @@ function DayView({
           onOpenItem={onOpenItem}
         />
       )}
-      {/* Time grid */}
-      {timedItems.length === 0 && allDayItems.length === 0 ? (
-        <EmptyScheduleState
-          icon="ph:sun"
-          label="Nothing scheduled for this day"
-          onAddEntry={
-            onAddEntry
-              ? () => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })
-              : undefined
-          }
-        />
-      ) : timedItems.length === 0 ? null : (
+      {/* Time grid — always rendered for visual parity with Week */}
+      <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} />
-      )}
+        {isEmpty && onAddEntry ? (
+          <button
+            type="button"
+            onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
+            className="focus-ring absolute top-3 right-3 z-10 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/80 px-2.5 py-1 text-[11px] text-[var(--text-secondary)] backdrop-blur transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            + Add event
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

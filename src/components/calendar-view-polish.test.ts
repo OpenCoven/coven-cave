@@ -28,4 +28,16 @@ assert.equal(fmtHourLabel(12), "12 PM", "h=12 → 12 PM");
 assert.equal(fmtHourLabel(13), "1 PM", "h=13 → 1 PM");
 assert.equal(fmtHourLabel(23), "11 PM", "h=23 → 11 PM");
 
+// ───────── Task 2: Day view always renders TimeGrid ─────────
+assert.match(
+  source,
+  /function DayView\([\s\S]*?return \(\s*<div className="flex flex-col flex-1 overflow-hidden">[\s\S]*?<TimeGrid columns=\{columns\}/,
+  "DayView must always render TimeGrid (no conditional EmptyScheduleState swap)",
+);
+assert.match(
+  source,
+  /function DayView\([\s\S]*?\+ Add event/,
+  "DayView must render a floating '+ Add event' affordance when empty",
+);
+
 console.log("calendar-view-polish.test.ts: ok");
