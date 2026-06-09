@@ -388,7 +388,13 @@ function TimeGrid({
         }`}
       >
         {columns.map((col, ci) => (
-          <div key={ci} className="flex-1 relative min-w-[80px]" style={{ height: totalHeight }}>
+          <div
+            key={ci}
+            className={col.isToday
+              ? "flex-1 relative min-w-[80px] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
+              : "flex-1 relative min-w-[80px]"}
+            style={{ height: totalHeight }}
+          >
             {/* Hour lines */}
             {HOURS.map((h) => (
               <div
@@ -662,7 +668,7 @@ function MonthView({
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
-                  }`}
+                  } ${isToday ? "ring-1 ring-inset ring-[var(--accent-presence)]" : ""}`}
                 >
                   <span
                     className={`mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${

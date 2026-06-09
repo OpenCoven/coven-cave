@@ -47,4 +47,16 @@ assert.match(
   "WeekView must always render TimeGrid then conditionally render the empty add-CTA",
 );
 
+// ───────── Task 4: Today indicator ─────────
+assert.match(
+  source,
+  /col\.isToday\s*\?\s*"flex-1 relative min-w-\[80px\] bg-\[color-mix\(in_oklch,var\(--accent-presence\)_6%,transparent\)\]"\s*:\s*"flex-1 relative min-w-\[80px\]"/,
+  "TimeGrid column body must tint today's column with accent-presence at 6%",
+);
+assert.match(
+  source,
+  /isToday[\s\S]{0,80}ring-1 ring-inset ring-\[var\(--accent-presence\)\]/,
+  "MonthView cell must add ring-1 ring-inset on today",
+);
+
 console.log("calendar-view-polish.test.ts: ok");
