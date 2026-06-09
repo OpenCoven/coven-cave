@@ -6,6 +6,7 @@ import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useIsMobile } from "@/lib/use-viewport";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ function ItemChip({
   return (
     <button
       onClick={onClick}
-      className="focus-ring flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-left text-[11px] hover:bg-[var(--bg-elevated)] transition-colors group"
+      className="focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-2.5 text-left text-[13px] transition-colors hover:bg-[var(--bg-elevated)] md:py-1 md:text-[11px]"
     >
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
       <Icon
@@ -954,11 +955,22 @@ function ItemDetailPanel({
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
 export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, onOpenItem }: Props) {
+  const isMobile = useIsMobile();
+  // SSR returns false from useIsMobile, so initial render is always "week"
+  // on the server; the effect below snaps to agenda on mount when the
+  // viewport actually matches mobile. Keeps server/client markup in sync.
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [anchor, setAnchor] = useState<Date>(new Date());
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Force agenda on phone-class viewports: the day/week/month grids all
+  // have a `min-w-[560px]` floor, which would overflow a 360px screen.
+  // Lets the user swap back to a grid once they're on a tablet+.
+  useEffect(() => {
+    if (isMobile && viewMode !== "agenda") setViewMode("agenda");
+  }, [isMobile, viewMode]);
 
   // Hard-scope: filter every downstream view (agenda/day/week/month) to the
   // active familiar. Defensive null escape: bypass the filter entirely.
@@ -1089,8 +1101,9 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
           ) : null}
         </div>
 
-        {/* View mode toggle */}
-        <div className="flex max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)]">
+        {/* View mode toggle — hidden on phones (only agenda is usable
+            there; see the useEffect that pins viewMode to "agenda"). */}
+        <div className="hidden max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)] md:flex">
           {VIEW_MODES.map(({ id, label }) => (
             <button
               key={id}
@@ -1157,8 +1170,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
           />
         )}
       </div>
+      {/* Keyboard hint — hidden on coarse-pointer / narrow viewports
+          where the single-key shortcuts can't be triggered. */}
       <footer
-        className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6"
+        className="hidden shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6 md:block"
       >
         ← → navigate · T today · D Day · W Week · M Month · A Agenda
       </footer>
