@@ -509,6 +509,21 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
+  // `[` → toggle rail pin (scoped to pane focus, mirroring Cmd+K).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "[") return;
+      if (!paneRef.current?.contains(e.target as Node)) return;
+      const target = e.target as HTMLElement;
+      const tag = target.tagName?.toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
+      e.preventDefault();
+      setRailPinned((v) => !v);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   return (
     <div ref={paneRef} className="flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
       {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
@@ -732,6 +747,11 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           <div ref={surfaceRef} className="absolute inset-0" />
         )}
       </div>
+      <footer
+        className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]"
+      >
+        ⌘K tabs · ⌘[ back · ⌘] forward · ⌘R reload · [ pin rail
+      </footer>
       </div>{/* end main area */}
     </div>
   );
