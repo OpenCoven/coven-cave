@@ -64,7 +64,14 @@ export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<voi
 }
 
 export async function listConversations(): Promise<
-  Array<{ sessionId: string; familiarId: string; title?: string; updatedAt: string }>
+  Array<{
+    sessionId: string;
+    familiarId: string;
+    harness?: string;
+    title?: string;
+    createdAt?: string;
+    updatedAt: string;
+  }>
 > {
   await ensureDir();
   let entries;
@@ -76,7 +83,9 @@ export async function listConversations(): Promise<
   const results: Array<{
     sessionId: string;
     familiarId: string;
+    harness?: string;
     title?: string;
+    createdAt?: string;
     updatedAt: string;
   }> = [];
   for (const name of entries) {
@@ -88,7 +97,9 @@ export async function listConversations(): Promise<
         results.push({
           sessionId: conv.sessionId,
           familiarId: conv.familiarId,
+          harness: conv.harness,
           title: conv.title,
+          createdAt: conv.createdAt,
           updatedAt: conv.updatedAt,
         });
       } else {

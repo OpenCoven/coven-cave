@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadState } from "@/lib/cave-config";
-import { inferOrigin } from "@/lib/session-origin";
+import { listConversations } from "@/lib/cave-conversations";
+import {
+  localConversationSessionRows,
+  mergeSessionRows,
+} from "@/lib/session-list-merge";
 
 export const dynamic = "force-dynamic";
 
@@ -25,29 +29,29 @@ export async function GET(req: Request) {
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
     loadState(),
   ]);
+  const localConversations = await listConversations();
   if (!res.ok || !res.data) {
+    const localSessions = localConversationSessionRows(localConversations, state, includeArchived);
+    if (localSessions.length > 0) {
+      return NextResponse.json({
+        ok: true,
+        degraded: true,
+        error: res.error ?? `daemon http ${res.status}`,
+        sessions: localSessions,
+      });
+    }
     return NextResponse.json(
       { ok: false, error: res.error ?? `daemon http ${res.status}`, sessions: [] },
       { status: 503 },
     );
   }
 
-  const sessions = res.data
-    // Soft-delete: never surface sacrificed sessions to the UI.
-    .filter((s) => !state.sessionSacrificed[s.id])
-    .map((s) => {
-      const titleOverride = state.sessionTitles[s.id];
-      const archivedLocal = state.sessionArchived[s.id] ?? null;
-      const archived_at = archivedLocal ?? s.archived_at;
-      return {
-        ...s,
-        title: titleOverride ?? s.title,
-        archived_at,
-        familiarId: state.sessionFamiliar[s.id] ?? null,
-        origin: inferOrigin(s),
-      };
-    })
-    .filter((s) => includeArchived || !s.archived_at);
+  const sessions = mergeSessionRows({
+    daemonSessions: res.data,
+    localConversations,
+    state,
+    includeArchived,
+  });
 
   return NextResponse.json({ ok: true, sessions });
 }

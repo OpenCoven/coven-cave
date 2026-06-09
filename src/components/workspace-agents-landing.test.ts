@@ -35,32 +35,38 @@ assert.match(
 
 assert.match(
   workspace,
-  /mode === "browser" \|\| mode === "agents" \? undefined/,
-  "Companion rail is hidden on Agents (and Browser, as before)",
+  /<AgentsView[\s\S]*activeFamiliar=\{active\}/,
+  "Workspace passes the selected familiar into the Familiars page",
 );
 
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"agents", "home", "chat", "board", "calendar", "inbox", "library", "browser",/,
-  "SURFACE_ORDER prepends agents so ⌘1 selects Agents",
+  /const showCompanionRail = railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
+  "Companion rail is hidden on Familiars and Browser unless Salem is selected",
 );
 
 assert.match(
   workspace,
-  /agents: "Agents"/,
-  "SURFACE_LABELS has an Agents entry",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "agents", "chat", "board", "calendar", "inbox", "library", "browser",/,
+  "SURFACE_ORDER keeps Home before the Familiars surface",
+);
+
+assert.match(
+  workspace,
+  /agents: "Familiars"/,
+  "SURFACE_LABELS labels the page Familiars",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "agents", label: "Agents", iconName: "ph:users-three", group: "work", kbd: "⌘1" \}/,
-  "Sidebar FOLDER_MODES lists Agents first in Work with ⌘1",
+  /\{ id: "agents", label: "Familiars", iconName: "ph:users-three", group: "work", kbd: "⌘2" \}/,
+  "Sidebar FOLDER_MODES labels the page Familiars",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘2" \}/,
-  "Sidebar Home shifted to ⌘2",
+  /\{ id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1" \}/,
+  "Sidebar Home keeps its shortcut hint",
 );
 
 assert.match(

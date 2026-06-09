@@ -51,7 +51,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
 const SURFACE_LABELS: Record<WorkspaceMode, string> = {
-  agents: "Agents",
+  agents: "Familiars",
   home: "Home",
   chat: "Chat",
   board: "Board",
@@ -888,6 +888,7 @@ export function Workspace() {
       <AgentsView
         familiars={familiars}
         sessions={sessions}
+        activeFamiliar={active}
         daemonRunning={daemonRunning}
         responseNeeded={responseNeeded}
         onStartChat={(familiarId) => startAgentChat(familiarId)}

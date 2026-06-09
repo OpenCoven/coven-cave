@@ -19,13 +19,14 @@ type FileMemoryResponse =
   | { ok: true; entries: FileMemoryEntry[] }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
 
-type ViewMode = "roster" | "detail" | "global-memory";
+type ViewMode = "roster" | "detail" | "agent-memory";
 
 const LAST_SELECTED_KEY = "cave:agents.lastSelected";
 
 type AgentsViewProps = {
   familiars: Familiar[];
   sessions: SessionRow[];
+  activeFamiliar?: Familiar | null;
   daemonRunning: boolean;
   responseNeeded: Set<string>;
   onStartChat: (familiarId: string) => void;
@@ -60,6 +61,7 @@ function familiarMatches(familiar: Familiar, query: string): boolean {
 export function AgentsView({
   familiars,
   sessions,
+  activeFamiliar,
   daemonRunning,
   responseNeeded,
   onStartChat,
@@ -129,6 +131,7 @@ export function AgentsView({
     () => familiars.find((f) => f.id === selectedFamiliarId) ?? null,
     [familiars, selectedFamiliarId],
   );
+  const memoryFamiliar = selectedFamiliar ?? activeFamiliar ?? null;
 
   useEffect(() => {
     if (selectedFamiliarId && !selectedFamiliar) {
@@ -154,7 +157,7 @@ export function AgentsView({
           <div>
             <div className="flex items-center gap-2">
               <Icon name="ph:users-three" width={16} className="text-[var(--accent-presence)]" />
-              <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">Agents</h1>
+              <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiars</h1>
             </div>
             <p className="mt-1 text-[11px] text-[var(--text-muted)]">
               Roster of every familiar — identity, status, recent activity, memory at a glance.
@@ -163,11 +166,13 @@ export function AgentsView({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode("global-memory")}
+              onClick={() => memoryFamiliar && setViewMode("agent-memory")}
+              disabled={!memoryFamiliar}
+              title={memoryFamiliar ? `Memory for ${memoryFamiliar.display_name}` : "Select a familiar to view memory"}
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[11px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
             >
               <Icon name="ph:graph" width={12} />
-              Memory across all agents
+              Familiar memory
             </button>
             <button
               type="button"
@@ -189,7 +194,7 @@ export function AgentsView({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search agents…"
+              placeholder="Search familiars…"
               className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
           </div>
@@ -253,9 +258,10 @@ export function AgentsView({
           </div>
         )}
       </div>
-      {viewMode === "global-memory" ? (
-        <GlobalMemoryOverlay
+      {viewMode === "agent-memory" && memoryFamiliar ? (
+        <AgentMemoryOverlay
           familiars={familiars}
+          familiar={memoryFamiliar}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
         />
@@ -386,16 +392,17 @@ function AgentRosterCard({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// GlobalMemoryOverlay — modal-style full-screen overlay for all-agent memory
+// AgentMemoryOverlay — modal-style full-screen overlay for selected familiar memory
 // ────────────────────────────────────────────────────────────────────────────
 
-type GlobalMemoryOverlayProps = {
+type AgentMemoryOverlayProps = {
   familiars: Familiar[];
+  familiar: Familiar;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
 
-function GlobalMemoryOverlay({ familiars, onClose, onOpenMemoryFile }: GlobalMemoryOverlayProps) {
+function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -412,7 +419,7 @@ function GlobalMemoryOverlay({ familiars, onClose, onOpenMemoryFile }: GlobalMem
       className="agents-view__overlay fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Memory across all agents"
+      aria-label={`Memory for ${familiar.display_name}`}
       onClick={onClose}
     >
       <div
@@ -430,8 +437,9 @@ function GlobalMemoryOverlay({ familiars, onClose, onOpenMemoryFile }: GlobalMem
         </button>
         <AgentsMemoryView
           familiars={familiars}
-          activeFamiliar={null}
+          activeFamiliar={familiar}
           mode="graph"
+          lockToFamiliar
           onOpenMemoryFile={onOpenMemoryFile}
         />
       </div>

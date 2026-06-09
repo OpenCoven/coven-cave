@@ -56,14 +56,44 @@ assert.match(
 
 assert.match(
   source,
-  /<GlobalMemoryOverlay[\s\S]*familiars=\{familiars\}/,
-  "Global memory overlay is rendered when active",
+  /const memoryFamiliar = selectedFamiliar \?\? activeFamiliar \?\? null/,
+  "Familiar memory scope falls back to the workspace-selected familiar",
 );
 
 assert.match(
   source,
-  /setViewMode\("global-memory"\)/,
-  "Header button switches to global-memory mode",
+  /<AgentMemoryOverlay[\s\S]*familiar=\{memoryFamiliar\}/,
+  "Familiar memory overlay is scoped to the selected familiar",
+);
+
+assert.match(
+  source,
+  /setViewMode\("agent-memory"\)/,
+  "Header button switches to agent-memory mode",
+);
+
+assert.doesNotMatch(
+  source,
+  /Memory across all agents/,
+  "Familiars view should not expose global all-agents memory copy",
+);
+
+assert.match(
+  source,
+  /<h1[^>]*>Familiars<\/h1>/,
+  "Page heading uses Familiars instead of Agents",
+);
+
+assert.match(
+  source,
+  /Familiar memory/,
+  "Memory action uses singular Familiar copy",
+);
+
+assert.match(
+  source,
+  /activeFamiliar=\{familiar\}[\s\S]*lockToFamiliar/,
+  "Familiar memory overlay passes the selected familiar and locks the memory filter",
 );
 
 assert.match(
