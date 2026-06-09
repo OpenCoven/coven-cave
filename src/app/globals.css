@@ -3933,3 +3933,14 @@ body {
   box-shadow: 0 8px 16px color-mix(in oklch, var(--accent-presence) 30%, transparent);
   transform: translateY(-1px);
 }
+
+/* Composition PR — reader heading active flash.
+   Brief visual cue when keyboard nav lands on a heading. */
+@keyframes library-heading-flash {
+  0%   { background: color-mix(in oklch, var(--accent-presence) 22%, transparent); }
+  100% { background: transparent; }
+}
+.library-heading--active {
+  animation: library-heading-flash 800ms ease-out;
+  border-radius: 4px;
+}

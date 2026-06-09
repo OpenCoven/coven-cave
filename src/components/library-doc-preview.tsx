@@ -377,7 +377,16 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) setActiveTocId(entry.target.id);
+          if (entry.isIntersecting) {
+            const activeId = entry.target.id;
+            setActiveTocId(activeId);
+            // Sync aria-current on the active heading element.
+            const headings = mdRef.current?.querySelectorAll<HTMLElement>("h1,h2,h3") ?? [];
+            for (const h of headings) {
+              if (h.id === activeId) h.setAttribute("aria-current", "location");
+              else h.removeAttribute("aria-current");
+            }
+          }
         }
       },
       { rootMargin: "-20% 0px -70% 0px", threshold: 0 }
@@ -408,7 +417,16 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting) setActiveReaderTocId(entry.target.id);
+          if (entry.isIntersecting) {
+            const activeId = entry.target.id;
+            setActiveReaderTocId(activeId);
+            // Sync aria-current on the active heading element.
+            const headings = readerMdRef.current?.querySelectorAll<HTMLElement>("h1,h2,h3") ?? [];
+            for (const h of headings) {
+              if (h.id === activeId) h.setAttribute("aria-current", "location");
+              else h.removeAttribute("aria-current");
+            }
+          }
         }
       },
       { rootMargin: "-20% 0px -70% 0px", threshold: 0 }
@@ -427,6 +445,50 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [readerOpen]);
+
+  // Keyboard heading navigation in reader mode: j/ArrowDown next, k/ArrowUp prev.
+  useEffect(() => {
+    if (!readerOpen) return;
+    const reader = readerMdRef.current;
+    if (!reader) return;
+
+    function jumpToHeading(direction: 1 | -1) {
+      if (readerTocItems.length === 0) return;
+      const currentIdx = readerTocItems.findIndex((t) => t.id === activeReaderTocId);
+      let nextIdx: number;
+      if (currentIdx < 0) {
+        nextIdx = direction === 1 ? 0 : readerTocItems.length - 1;
+      } else {
+        nextIdx = Math.max(0, Math.min(readerTocItems.length - 1, currentIdx + direction));
+      }
+      if (nextIdx === currentIdx) return;
+      const next = readerTocItems[nextIdx];
+      const el = reader!.querySelector<HTMLElement>(`#${CSS.escape(next.id)}`);
+      if (!el) return;
+      el.scrollIntoView({ block: "start", behavior: "auto" });
+      setActiveReaderTocId(next.id);
+      el.classList.add("library-heading--active");
+      window.setTimeout(() => el.classList.remove("library-heading--active"), 800);
+    }
+
+    function onKey(e: KeyboardEvent) {
+      // Don't steal keys from inputs / contentEditable.
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+        return;
+      }
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        jumpToHeading(1);
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        jumpToHeading(-1);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readerOpen, readerTocItems, activeReaderTocId]);
 
   const hasToc = tocItems.length >= 3;
   const hasReaderToc = readerTocItems.length >= 3;
