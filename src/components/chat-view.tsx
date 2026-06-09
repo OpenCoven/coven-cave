@@ -1149,11 +1149,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               {(session?.project_root ?? projectRoot) ? <> · {repoName(session?.project_root ?? projectRoot)}</> : null}
             </span>
           </div>
-          <VoiceCallButton
-            familiar={familiar}
-            callActive={voiceCallOpen}
-            onOpen={() => setVoiceCallOpen(true)}
-          />
+          {sessionId && (
+            <VoiceCallButton
+              familiar={familiar}
+              callActive={voiceCallOpen}
+              onOpen={() => setVoiceCallOpen(true)}
+            />
+          )}
           <ChatContextStrip
             session={session ?? null}
             linkedContext={linkedContext}
