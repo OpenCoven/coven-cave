@@ -416,6 +416,18 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         </div>
       ) : (
       <div className={`min-h-0 flex-1 ${compact ? "flex flex-col gap-4 overflow-y-auto p-4" : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"}`}>
+        {compact && loaded && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
+          <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-10 text-center">
+            <Icon name="ph:brain" width={22} className="text-[var(--text-muted)]" />
+            <div className="mt-3 text-[13px] font-medium text-[var(--text-primary)]">
+              No memories yet for {selectedFamiliar?.display_name ?? "this familiar"}
+            </div>
+            <p className="mt-1 max-w-[280px] text-[11px] leading-5 text-[var(--text-muted)]">
+              Familiar memories are saved during chats. Memory files appear when the agent's harness writes to disk.
+            </p>
+          </div>
+        ) : (
+          <>
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
@@ -478,6 +490,8 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             activeFamiliarId={familiarFilter}
           />
         </section>
+          </>
+        )}
       </div>
       )}
     </div>
