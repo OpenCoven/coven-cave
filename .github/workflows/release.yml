@@ -319,6 +319,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+          # release-notes.sh resolves the previous tag for the compare link
+          # via `git tag --sort=-version:refname`, so the checksums job needs
+          # the full tag history (shallow defaults would only have HEAD).
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Resolve release tag
         shell: bash
@@ -371,3 +376,21 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: _release/SHA256SUMS
+
+      # Render the standardized release body — CHANGELOG.md section for
+      # the version, plus arch-aware install instructions, checksum verify
+      # snippet, and a compare link. Runs after every artifact has uploaded
+      # so the install instructions match what's actually attached. This is
+      # the only step that sets the release body, so it stays the canonical
+      # source for what users read on the release page.
+      - name: Set release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/release-notes.sh "$RELEASE_TAG" > /tmp/release-body.md
+          echo "--- rendered body ---"
+          cat /tmp/release-body.md
+          echo "--- end body ---"
+          gh release edit "$RELEASE_TAG" --notes-file /tmp/release-body.md
