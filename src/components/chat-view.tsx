@@ -67,6 +67,10 @@ type StreamEvent =
 
 type ComposerAttachment = ChatAttachment & { id: string };
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
+type FailedSend = {
+  text: string;
+  attachments: ChatAttachment[];
+};
 
 function fmtDuration(ms?: number): string | null {
   if (!ms || ms < 0) return null;
@@ -351,6 +355,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
   const currentSessionRef = useRef<string | null>(sessionId);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -476,6 +481,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   }, [sessionId]);
 
+  function resizeComposer() {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  }
+
+  useEffect(() => {
+    resizeComposer();
+  }, [input]);
+
   const appendSystem = (text: string) => {
     setTurns((prev) => [
       ...prev,
@@ -594,8 +610,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const sendRaw = async (text: string, outgoingAttachments: ChatAttachment[] = []) => {
     const trimmed = text.trim();
     if ((!trimmed && outgoingAttachments.length === 0) || busy) return;
+    const request: FailedSend = { text: trimmed, attachments: outgoingAttachments };
     setBusy(true);
     setError(null);
+    setLastFailedSend(null);
 
     const now = new Date().toISOString();
     const userTurn: Turn = {
@@ -633,6 +651,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       });
       if (!res.ok || !res.body) {
         setError(`request failed (${res.status})`);
+        setLastFailedSend(request);
         markAssistantError(assistantId);
         return;
       }
@@ -653,7 +672,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (!payload) continue;
           try {
             const ev = JSON.parse(payload) as StreamEvent;
-            handleEvent(ev, assistantId);
+            handleEvent(ev, assistantId, request);
           } catch {
             /* skip malformed */
           }
@@ -670,6 +689,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
       } else {
         setError(err instanceof Error ? err.message : "send failed");
+        setLastFailedSend(request);
         markAssistantError(assistantId);
       }
     } finally {
@@ -681,6 +701,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const cancelSend = () => {
     abortRef.current?.abort();
   };
+
+  function retryLastSend() {
+    if (!lastFailedSend || busy) return;
+    setError(null);
+    setLastFailedSend(null);
+    void sendRaw(lastFailedSend.text, lastFailedSend.attachments);
+  }
 
   const send = async () => {
     const text = input.trim();
@@ -702,7 +729,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   };
 
-  const handleEvent = (ev: StreamEvent, assistantId: string) => {
+  const handleEvent = (ev: StreamEvent, assistantId: string, request: FailedSend) => {
     switch (ev.kind) {
       case "session": {
         if (!currentSessionRef.current) {
@@ -763,6 +790,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : t,
           ),
         );
+        if (ev.isError) setLastFailedSend(request);
         if (ev.sessionId && !currentSessionRef.current) {
           currentSessionRef.current = ev.sessionId;
           onSessionStarted?.(ev.sessionId);
@@ -771,6 +799,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       case "error": {
         setError(ev.message);
+        setLastFailedSend(request);
         markAssistantError(assistantId);
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
@@ -928,8 +957,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </div>
 
       {error ? (
-        <div className="border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-5 py-1.5 text-xs text-[var(--color-warning)]">
-          {error}
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_16%,transparent)] px-5 py-2 text-xs text-[var(--color-warning)]"
+        >
+          <span className="min-w-0 truncate">{error}</span>
+          {lastFailedSend ? (
+            <button
+              type="button"
+              onClick={retryLastSend}
+              disabled={busy}
+              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
+            >
+              <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+              Retry
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -988,6 +1031,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
                       className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title={`Remove ${attachment.name}`}
+                      aria-label={`Remove ${attachment.name}`}
                     >
                       <Icon name="ph:x-bold" width={9} />
                     </button>
@@ -1002,7 +1046,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onKeyDown={onComposerKey}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…`}
               rows={1}
-              className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 text-sm leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
               aria-label="Message"
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
@@ -1018,6 +1062,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   type="button"
                   className="focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                   title="Attach files"
+                  aria-label="Attach files"
                   disabled={busy || attachments.length >= 10}
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -1031,20 +1076,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </span>
                 {busy ? (
                   <button
+                    type="button"
                     onClick={cancelSend}
                     className="focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
                     title="Cancel (esc)"
+                    aria-label="Cancel response"
                   >
-                    ■
+                    <Icon name="ph:x-bold" width={13} aria-hidden />
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => void send()}
                     disabled={!input.trim() && attachments.length === 0}
                     className="focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                     title={`Send (${keys.enter})`}
+                    aria-label="Send message"
                   >
-                    ↑
+                    <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
                   </button>
                 )}
               </div>
@@ -1138,9 +1187,11 @@ function TurnRow({
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const toolCount = turn.tools?.length ?? 0;
   const turnStatus = turn.error ? "error" : turn.pending ? "running" : "complete";
+  const turnNumber = String(index + 1).padStart(2, "0");
 
   return (
     <div className="cave-linear-turn cave-linear-turn--assistant">
+      <span className="cave-linear-turn-index" aria-label={`Turn ${turnNumber}`}>{turnNumber}</span>
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
         {/* Avatar + right column */}
         <div className="cave-linear-turn-avatar" aria-hidden>
