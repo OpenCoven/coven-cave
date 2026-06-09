@@ -66,4 +66,16 @@ assert.match(
   "CalendarView must render the keyboard-hints footer string",
 );
 
+// ───────── Task 6: + New event toolbar button ─────────
+assert.match(
+  source,
+  /aria-label="New event"|>\s*New event\s*</,
+  "CalendarView header must include a 'New event' button",
+);
+assert.match(
+  source,
+  /onAddEntry\(\{ fireAt: defaultEntryFireAt\(anchor\) \}\)/,
+  "Toolbar new-event handler must call onAddEntry with anchor-derived fireAt",
+);
+
 console.log("calendar-view-polish.test.ts: ok");

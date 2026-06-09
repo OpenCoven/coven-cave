@@ -941,6 +941,18 @@ export function CalendarView({ items, familiars, onAddEntry, onOpenItem }: Props
             </button>
           ))}
         </div>
+
+        {onAddEntry ? (
+          <button
+            type="button"
+            onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
+            aria-label="New event"
+            className="focus-ring inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:plus-bold" width={10} />
+            New event
+          </button>
+        ) : null}
       </div>
 
       {/* View body */}
