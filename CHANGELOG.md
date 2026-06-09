@@ -7,6 +7,51 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.56] — 2026-06-09
+
+Cross-surface polish, memory provenance + a11y groundwork, and a
+standardized release-notes pipeline. No public-API breaks.
+
+### Added
+
+- **Memory file source metadata.** `/api/memory` now exposes per-file
+  `source` and `context` provenance so the inspector and the 3D graph
+  can surface where a memory entry originated. (#278)
+- **API contract test suite.** Sanity-checks the surface area of the
+  workspace-driving routes so future refactors can't silently break
+  callers. (#277)
+- **Accessibility quickwins.** Focus rings, ARIA labels, and keyboard
+  traversal repaired across the agents, inspector, capabilities, and
+  command-palette surfaces. (#280)
+
+### Fixed
+
+- **Inspector pane surface.** Inspector now matches the compact rail
+  surface tokens instead of drifting on its own palette. (#273)
+- **Familiar memory file reads.** The packaged sidecar can now read the
+  per-familiar memory tree it was previously refusing. (#274)
+- **Agents hover caret + memory tab scroll.** Roster card name + the
+  agents-detail memory tab no longer show a hover caret, and the memory
+  tab scrolls within its detail panel instead of pushing siblings
+  off-screen. (#275, #276)
+- **Salem surface tokens.** Salem perch and chat panel inherit shared
+  Cave tokens (`--bg-panel`, `--accent-presence`, `--text-*`) instead of
+  hardcoded purple literals — theme tuning now reaches the rail and
+  perch consistently. (#279)
+- **Settings reported app version.** About / settings now reports the
+  version embedded in the bundle metadata instead of a stale literal.
+- **Chat header context row.** Chat keeps its context row inside the
+  header instead of letting it reflow below on tighter viewports.
+
+### Changed
+
+- **Standardized release notes.** New `scripts/release-notes.sh` renders
+  a consistent GitHub Release body (CHANGELOG section + arch-aware
+  install block + checksum verify snippet + compare link), wired into
+  `release.yml`'s checksums job. Backfilled all 24 historically-empty
+  release pages (`v0.0.23`–`v0.0.55`) with the standardized template.
+  (#282)
+
 ## [0.0.55] — 2026-06-08
 
 Release repair for the packaged macOS sidecar after 0.0.54.
