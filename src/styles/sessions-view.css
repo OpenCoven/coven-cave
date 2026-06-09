@@ -315,6 +315,12 @@
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
 }
 
+.session-row--compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
 .session-row-familiar-chip,
 .session-row-new-icon {
   width: 24px;

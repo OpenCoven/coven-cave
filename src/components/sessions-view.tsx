@@ -421,7 +421,7 @@ function SessionRowItem({
 
   return (
     <div
-      className={`session-row${active ? " session-row--active" : ""}${
+      className={`session-row${compact ? " session-row--compact" : ""}${active ? " session-row--active" : ""}${
         archived ? " session-row--archived" : ""
       }`}
       onClick={renaming ? undefined : onClick}
