@@ -13,6 +13,37 @@ import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 
 type SessionsLayoutMode = "cards" | "rows";
 
+type RecencyBuckets = {
+  today: SessionRow[];
+  yesterday: SessionRow[];
+  thisWeek: SessionRow[];
+  older: SessionRow[];
+};
+
+export function bucketByRecency(sessions: SessionRow[], now: number): RecencyBuckets {
+  const today: SessionRow[] = [];
+  const yesterday: SessionRow[] = [];
+  const thisWeek: SessionRow[] = [];
+  const older: SessionRow[] = [];
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTodayMs = startOfToday.getTime();
+  const startOfYesterdayMs = startOfTodayMs - 24 * 60 * 60 * 1000;
+  const sevenDaysAgoMs = now - 7 * 24 * 60 * 60 * 1000;
+  for (const s of sessions) {
+    const ts = Date.parse(s.updated_at || s.created_at || "");
+    if (!Number.isFinite(ts)) {
+      older.push(s);
+      continue;
+    }
+    if (ts >= startOfTodayMs) today.push(s);
+    else if (ts >= startOfYesterdayMs) yesterday.push(s);
+    else if (ts >= sevenDaysAgoMs) thisWeek.push(s);
+    else older.push(s);
+  }
+  return { today, yesterday, thisWeek, older };
+}
+
 function shortRelTime(iso: string | undefined): string {
   if (!iso) return "";
   try {
@@ -977,7 +1008,44 @@ export function SessionsView({
 
       {/* Content */}
       <div className="sessions-view-scroll">
-        {filtered.length === 0 && archivedFiltered.length === 0 ? (
+        {groupByRecency && hideFamiliarFilter && filtered.length > 0 ? (
+          (() => {
+            const buckets = bucketByRecency(filtered, Date.now());
+            const sections: Array<{ label: string; rows: SessionRow[] }> = [
+              { label: "Today", rows: buckets.today },
+              { label: "Yesterday", rows: buckets.yesterday },
+              { label: "This week", rows: buckets.thisWeek },
+              { label: "Older", rows: buckets.older },
+            ];
+            return (
+              <div className="sessions-recency-groups">
+                {sections.filter((s) => s.rows.length > 0).map((section) => (
+                  <div key={section.label} className="sessions-recency-group">
+                    <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                      {section.label}
+                    </div>
+                    <SessionGroup
+                      familiar={undefined}
+                      sessions={section.rows}
+                      activeSessionId={activeSessionId}
+                      onOpenSession={(id) => onOpenSession(id)}
+                      onNewChat={() => onNewChat(effectiveFilterId ?? undefined)}
+                      showNewChat={false}
+                      layoutMode={layoutMode}
+                      compact={compact}
+                      openMenuId={openMenuId}
+                      setOpenMenuId={setOpenMenuId}
+                      renamingId={renamingId}
+                      setRenamingId={setRenamingId}
+                      onRenameSubmit={handleRenameSubmit}
+                      onAction={handleAction}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })()
+        ) : filtered.length === 0 && archivedFiltered.length === 0 ? (
           <div className="sessions-empty">
             <div className="sessions-empty-glyph">
               {resolvedActiveFamiliar ? (
