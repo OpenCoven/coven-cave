@@ -28,6 +28,13 @@ const nextConfig: NextConfig = {
       "./node_modules/@swc/helpers/**/*",
     ],
   },
+  experimental: {
+    // Tree-shake the icon + syntax-highlight kitchens so the per-route
+    // bundle only includes the icons and grammars actually referenced.
+    // @iconify/react in particular has a flat icon-name surface that
+    // can otherwise pull in 200KB+ of icon metadata for one icon.
+    optimizePackageImports: ["@iconify/react", "shiki"],
+  },
 };
 
 export default nextConfig;

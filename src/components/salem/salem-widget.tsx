@@ -1,11 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
+import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
-import { SalemCat3D } from "./salem-cat-3d";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+
+// Salem's 3D cat avatar shows up in two places — the floating perch
+// (88px) and the chat panel (40px). Dynamic-import so Three.js doesn't
+// land in the initial bundle for users who never open Salem. SSR off
+// because WebGL needs a real canvas. The loading placeholder is the
+// same size as the rendered canvas so layout doesn't shift.
+const SalemCat3D = dynamic(
+  () => import("./salem-cat-3d").then((m) => m.SalemCat3D),
+  {
+    ssr: false,
+    loading: () => null,
+  },
+);
 
 type Message = { role: "user" | "salem"; text: string };
 

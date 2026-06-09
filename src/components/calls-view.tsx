@@ -18,8 +18,23 @@ import {
 } from "@/lib/coven-calls-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { CovenFloor } from "@/components/coven-floor";
-import { TraceGraph3D } from "@/components/trace-graph-3d";
+import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
+
+// Dynamic-import the Three.js trace graph so the calls route doesn't
+// drag Three (~600KB raw / ~150KB gz) into its initial bundle when the
+// user lands on the Floor tab. SSR is off — WebGL needs a real canvas.
+const TraceGraph3D = dynamic(
+  () => import("@/components/trace-graph-3d").then((m) => m.TraceGraph3D),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[320px] items-center justify-center text-[11px] text-[var(--text-muted)]">
+        Loading 3D delegation graph…
+      </div>
+    ),
+  },
+);
 
 export type CallsViewTab = "floor" | "delegations";
 type TimeWindow = "24h" | "7d" | "all";

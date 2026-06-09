@@ -1,14 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import { MemoryGraph3D } from "@/components/memory-graph-3d";
 import { useIsMobile } from "@/lib/use-viewport";
 import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory-graph-3d-model";
 import type { MemoryGraphMemoryNode } from "@/lib/memory-graph-3d-model";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
+
+// Three.js is ~600KB minified — gz it's still ~150KB. Dynamic-import the
+// 3D graph so the agents-memory route stays under budget when the user
+// has the list view selected (which is the default on phones — see
+// `effectiveViewMode` below). SSR is disabled because WebGL has no
+// equivalent at render-on-server time. The skeleton matches the actual
+// graph's "Loading…" state — same intent as the canvas's first frame.
+const MemoryGraph3D = dynamic(
+  () => import("@/components/memory-graph-3d").then((m) => m.MemoryGraph3D),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[320px] items-center justify-center text-[11px] text-[var(--text-muted)]">
+        Loading 3D memory graph…
+      </div>
+    ),
+  },
+);
 
 export type FileMemoryEntry = {
   root: string;
