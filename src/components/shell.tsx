@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -311,15 +311,20 @@ function ShellInner({
     </Group>
   );
 
+  const shellFrameStyle: CSSProperties & {
+    "--shell-nav-px": string;
+    "--shell-agent-px": string;
+  } = {
+    // Surfaces that need to visually center on the viewport (e.g. Home)
+    // use these to compensate for the asymmetric side-panel widths.
+    "--shell-nav-px": `${Math.round(navWidthPx)}px`,
+    "--shell-agent-px": `${Math.round(agentWidthPx)}px`,
+  };
+
   return (
     <div
       className="shell-frame flex h-full w-full flex-col"
-      style={{
-        // Surfaces that need to visually center on the viewport (e.g. Home)
-        // use these to compensate for the asymmetric side-panel widths.
-        ["--shell-nav-px" as const]: `${Math.round(navWidthPx)}px`,
-        ["--shell-agent-px" as const]: `${Math.round(agentWidthPx)}px`,
-      }}
+      style={shellFrameStyle}
     >
       {topBar}
       <div className="shell-body flex flex-1 min-h-0">

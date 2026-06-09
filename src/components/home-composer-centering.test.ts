@@ -27,13 +27,18 @@ assert.match(
 );
 assert.match(
   shell,
-  /"--shell-nav-px" as const\]: `\$\{Math\.round\(navWidthPx\)\}px`/,
+  /"--shell-nav-px": `\$\{Math\.round\(navWidthPx\)\}px`/,
   "Shell exposes --shell-nav-px on .shell-frame",
 );
 assert.match(
   shell,
-  /"--shell-agent-px" as const\]: `\$\{Math\.round\(agentWidthPx\)\}px`/,
+  /"--shell-agent-px": `\$\{Math\.round\(agentWidthPx\)\}px`/,
   "Shell exposes --shell-agent-px on .shell-frame",
+);
+assert.match(
+  shell,
+  /style=\{shellFrameStyle\}/,
+  ".shell-frame receives the custom-property style object",
 );
 
 // ───── Home composer reads the variables and centers on viewport ─────
