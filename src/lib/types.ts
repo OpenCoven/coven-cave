@@ -23,6 +23,9 @@ export type Familiar = {
   harness?: string;
   model?: string;
   note?: string;
+  voiceProvider?: string;
+  voiceModel?: string;
+  voiceName?: string;
 };
 
 export type DaemonStatus = {

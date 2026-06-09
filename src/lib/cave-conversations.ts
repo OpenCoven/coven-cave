@@ -21,6 +21,8 @@ export type ChatTurn = {
   createdAt: string;
   durationMs?: number;
   isError?: boolean;
+  origin?: "chat" | "voice";
+  voiceCallId?: string;
 };
 
 export type ConversationFile = {
