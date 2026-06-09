@@ -497,6 +497,14 @@
   color: var(--accent-presence);
 }
 
+/* The "{modKey}↵ to send" hint is keyboard-only; on touch devices the user
+ * sends via the composer button, not a shortcut. */
+@media (pointer: coarse) {
+  .cave-chat-empty-hint {
+    display: none;
+  }
+}
+
 /* User turn — compact operator input, right-aligned */
 .cave-turn-user,
 .cave-turn-system {

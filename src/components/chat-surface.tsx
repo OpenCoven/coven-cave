@@ -238,7 +238,7 @@ export function ChatSurface({
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
-          <div className="flex items-end gap-0">
+          <div role="tablist" className="flex items-end gap-1">
             {(["conversation", "memory"] as const).map((s) => {
               const labels: Record<string, string> = {
                 conversation: "Chats",
@@ -249,6 +249,8 @@ export function ChatSurface({
                 <button
                   key={s}
                   type="button"
+                  role="tab"
+                  aria-selected={isActive}
                   onClick={() => {
                     setScope(s);
                     if (s === "conversation") {
@@ -256,10 +258,14 @@ export function ChatSurface({
                     }
                   }}
                   className={[
-                    "relative px-2 py-2.5 text-[12px] transition-colors",
+                    "relative px-3 py-2.5 text-[12px] font-medium transition-colors outline-none",
+                    // 2px underline for the active tab + faint underline on
+                    // hover so the affordance is visible before click.
+                    "after:absolute after:bottom-0 after:left-3 after:right-3 after:h-[2px] after:rounded-full after:transition-colors",
                     isActive
-                      ? "text-[var(--text-primary)] after:absolute after:bottom-0 after:left-2 after:right-2 after:h-[1px] after:bg-[var(--text-primary)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                      ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] after:bg-transparent hover:after:bg-[color-mix(in_oklch,var(--text-muted)_45%,transparent)]",
+                    "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-t-sm",
                   ].join(" ")}
                 >
                   {labels[s]}

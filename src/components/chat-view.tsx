@@ -325,7 +325,9 @@ function ChatEmptyState({
         </div>
       )}
 
-      <p className="mt-8 text-[11px] text-[var(--text-muted)]">
+      {/* Keyboard-shortcut hint is desktop-only; touch devices have no Cmd
+       * key and on-screen keyboards send via a separate button. */}
+      <p className="cave-chat-empty-hint mt-8 text-[11px] text-[var(--text-muted)]">
         {modKey}↵ to send
       </p>
     </div>

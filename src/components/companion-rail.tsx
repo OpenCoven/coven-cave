@@ -21,6 +21,10 @@ type Props = {
   onCreateFamiliar?: () => void;
   daemonRunning: boolean;
   onTabChange?: (tab: CompanionTab) => void;
+  /** When the main detail panel is already showing a "pick a familiar"
+   * empty state (e.g. the chat surface), set this true so the rail doesn't
+   * render a second redundant CTA. */
+  suppressEmpty?: boolean;
 };
 
 // forwardRef handle is wired in Task 2.3; ref is forwarded to the chatSlot consumer.
@@ -38,6 +42,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       onCreateFamiliar,
       daemonRunning,
       onTabChange,
+      suppressEmpty = false,
     } = props;
     const resolvedFamiliars = useResolvedFamiliars(familiar ? [familiar] : [], { includeArchived: true });
     const resolvedFamiliar = resolvedFamiliars[0];
@@ -49,6 +54,9 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     }, [activeTab]);
 
     if (!familiar) {
+      // Skip rendering anything when the main panel already prompts for a
+      // familiar — two side-by-side "pick a familiar" CTAs is just noise.
+      if (suppressEmpty) return null;
       return (
         <aside className="companion-rail companion-rail--empty">
           <div className="companion-rail__empty-body">
