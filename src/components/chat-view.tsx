@@ -50,6 +50,8 @@ type Turn = {
   error?: boolean;
   lifecycle?: ChatTurnLifecycle;
   durationMs?: number;
+  origin?: "chat" | "voice";
+  voiceCallId?: string;
 };
 
 type Props = {
@@ -656,6 +658,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               durationMs?: number;
               isError?: boolean;
               createdAt?: string;
+              origin?: "chat" | "voice";
+              voiceCallId?: string;
             }>;
           };
         };
@@ -675,6 +679,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   durationMs?: number;
                   isError?: boolean;
                   createdAt?: string;
+                  origin?: "chat" | "voice";
+                  voiceCallId?: string;
                 } => t.role === "user" || t.role === "assistant",
               )
               .map((t) => ({
@@ -687,6 +693,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   durationMs: t.durationMs,
                   error: t.isError,
                   createdAt: t.createdAt ?? new Date().toISOString(),
+                  origin: t.origin,
+                  voiceCallId: t.voiceCallId,
                 })),
           );
           setHistoryState("loaded");
@@ -1187,21 +1195,73 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }} />
             )
           ) : null}
-          {turns.map((t, i) => {
-            const prev = turns[i - 1];
-            const showTimestamp = (() => {
-              if (!t.createdAt) return false;
-              if (!prev?.createdAt) return true;
-              const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
-              if (!Number.isFinite(gap)) return true;
-              if (gap >= 10 * 60 * 1000) return true;
-              // Only suppress timestamps for consecutive same-role turns within 10 minutes.
-              return prev.role !== t.role;
-            })();
-            return (
-              <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} index={i} />
-            );
-          })}
+          {(() => {
+            type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
+            type SingleItem = { kind: "single"; turn: Turn };
+            const grouped: Array<VoiceGroup | SingleItem> = [];
+            for (const turn of turns) {
+              if (turn.voiceCallId) {
+                const last = grouped[grouped.length - 1];
+                if (last && last.kind === "call" && last.callId === turn.voiceCallId) {
+                  last.turns.push(turn);
+                  const firstAt = Date.parse(last.turns[0].createdAt);
+                  const lastAt = Date.parse(last.turns[last.turns.length - 1].createdAt);
+                  last.durationSec = Math.max(0, Math.floor((lastAt - firstAt) / 1000));
+                } else {
+                  grouped.push({ kind: "call", callId: turn.voiceCallId, turns: [turn], durationSec: 0 });
+                }
+              } else {
+                grouped.push({ kind: "single", turn });
+              }
+            }
+
+            // Build a flat ordered list of turns for timestamp gap logic (prev-turn lookup).
+            const allTurns = turns;
+
+            return grouped.map((g) => {
+              if (g.kind === "single") {
+                const t = g.turn;
+                const i = allTurns.indexOf(t);
+                const prev = allTurns[i - 1];
+                const showTimestamp = (() => {
+                  if (!t.createdAt) return false;
+                  if (!prev?.createdAt) return true;
+                  const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+                  if (!Number.isFinite(gap)) return true;
+                  if (gap >= 10 * 60 * 1000) return true;
+                  return prev.role !== t.role;
+                })();
+                return (
+                  <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} index={i} />
+                );
+              }
+              const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
+              const ss = String(g.durationSec % 60).padStart(2, "0");
+              return (
+                <div key={g.callId} className="cave-chat-voice-call-group">
+                  <div className="cave-chat-voice-call-header">
+                    <span aria-hidden>📞</span>
+                    Voice call · {mm}:{ss}
+                  </div>
+                  {g.turns.map((t) => {
+                    const i = allTurns.indexOf(t);
+                    const prev = allTurns[i - 1];
+                    const showTimestamp = (() => {
+                      if (!t.createdAt) return false;
+                      if (!prev?.createdAt) return true;
+                      const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+                      if (!Number.isFinite(gap)) return true;
+                      if (gap >= 10 * 60 * 1000) return true;
+                      return prev.role !== t.role;
+                    })();
+                    return (
+                      <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} index={i} />
+                    );
+                  })}
+                </div>
+              );
+            });
+          })()}
           <div ref={tailRef} />
         </div>
 

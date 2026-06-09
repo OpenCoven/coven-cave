@@ -1273,3 +1273,18 @@ details[open] > .cave-tool-summary::before {
   border-bottom: 1px solid var(--border-hairline);
   min-height: 48px;
 }
+
+.cave-chat-voice-call-group {
+  border-left: 2px solid var(--accent-presence, #6aa);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.cave-chat-voice-call-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary, #999);
+  margin-bottom: 0.25rem;
+}
