@@ -32,7 +32,10 @@ assert.doesNotMatch(
 // 4. data-theme="midnight" / "orchid" / "sky" blocks are removed
 //    (replaced by new theme ids in a later task — Task 4).
 //    For this task we just verify the default Coven structure is intact.
-assert.match(css, /:root\s*\{[\s\S]*?--background\s*:\s*oklch\(0\.07/, "coven dark background");
+//    Anchored to the first :root { … } block (no attribute selector) so the
+//    assertion can't drift into another theme's background.
+const covenRootBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+assert.match(covenRootBlock, /--background\s*:\s*oklch\(0\.13 0\.022 293\)/, "coven dark background");
 
 console.log("globals.css.test.ts (task 3) OK");
 
