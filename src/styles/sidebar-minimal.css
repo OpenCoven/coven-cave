@@ -693,6 +693,10 @@
   outline-offset: -1px;
 }
 
+.sidebar-new-chat-row {
+  display: none;
+}
+
 /* Desktop (>= 768px): hide the full-width "New Chat" row, keep the + icon. */
 @media (min-width: 768px) {
   .sidebar-new-chat-row {
@@ -702,6 +706,10 @@
 
 /* Mobile (<= 767px): hide the inline + icon, show the full-width button. */
 @media (max-width: 767px) {
+  .sidebar-new-chat-row {
+    display: block;
+  }
+
   .sidebar-new-chat-icon {
     display: none;
   }
@@ -1025,12 +1033,14 @@
   margin-left: auto;
   font-family: var(--font-geist-mono);
   font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0.7;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  letter-spacing: 0.02em;
 }
 
 .sidebar-folder-row:hover .sidebar-folder-kbd {
   opacity: 1;
+  color: var(--text-primary);
 }
 
 
