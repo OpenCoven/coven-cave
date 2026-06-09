@@ -1064,6 +1064,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
       ) : null}
 
+      <ChatLifecycleStatus
+        busy={busy}
+        lifecycle={activeLifecycle}
+        familiarName={familiar.display_name}
+      />
+
       <footer className="cave-composer-dock">
         <div className="cave-composer-shell">
           {slashSuggestions.length > 0 ? (
@@ -1274,7 +1280,7 @@ function TurnRow({
   const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const toolCount = turn.tools?.length ?? 0;
-  const turnStatus = turn.error ? "error" : turn.pending ? "running" : "complete";
+  const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   const turnNumber = String(index + 1).padStart(2, "0");
 
   return (
@@ -1288,11 +1294,10 @@ function TurnRow({
         <div className="cave-linear-turn-right">
           <div className="cave-linear-turn-meta">
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus === "error" && (
-              <span className="cave-turn-status cave-turn-status--error">error</span>
-            )}
-            {turnStatus === "running" && (
-              <span className="cave-turn-status cave-turn-status--running">writing…</span>
+            {turnStatus !== "complete" && (
+              <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
+                {lifecycleLabel(turnStatus)}
+              </span>
             )}
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
             {duration && !turn.pending ? <span className="opacity-50">{duration}</span> : null}

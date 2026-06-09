@@ -675,11 +675,25 @@
   color: var(--color-success);
 }
 
+.cave-turn-status--queued,
+.cave-turn-status--connecting,
+.cave-turn-status--streaming,
 .cave-turn-status--running {
   background: color-mix(in oklch, var(--color-warning) 14%, transparent);
   color: var(--color-warning);
 }
 
+.cave-turn-status--tooling {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  color: var(--accent-presence);
+}
+
+.cave-turn-status--cancelled {
+  background: color-mix(in oklch, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+}
+
+.cave-turn-status--failed,
 .cave-turn-status--error {
   background: color-mix(in oklch, var(--color-danger) 16%, transparent);
   color: var(--color-danger);
@@ -757,6 +771,35 @@ details[open] > .cave-tool-summary::before {
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-base) 58%, transparent);
   padding: 9px;
+}
+
+.cave-chat-lifecycle-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 6%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 46%, var(--bg-base));
+  padding: 0 clamp(16px, 3vw, 34px);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.cave-chat-lifecycle-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 13%, transparent);
+}
+
+.cave-chat-lifecycle-status--tooling {
+  color: var(--accent-presence);
+}
+
+.cave-chat-lifecycle-status--failed {
+  color: var(--color-danger);
 }
 
 .cave-composer-dock {
