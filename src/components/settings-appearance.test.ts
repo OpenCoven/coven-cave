@@ -70,3 +70,21 @@ assert.match(
   /name\.startsWith\("--"\) \? name : `--\$\{name\}`/,
   "applyCustomVars should accept tweakcn's bare-name keys by prefixing -- when missing",
 );
+
+assert.match(
+  settings,
+  /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
+  "About settings must import the shared app version source",
+);
+
+assert.match(
+  settings,
+  /<SettingsKV label="App version" value=\{APP_VERSION\} \/>/,
+  "About settings must render the shared app version instead of a literal",
+);
+
+assert.doesNotMatch(
+  settings,
+  /<SettingsKV label="App version" value="[\d.]+"/,
+  "About settings must not hardcode an app version literal",
+);

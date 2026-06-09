@@ -9,6 +9,7 @@ import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-pa
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import { APP_VERSION } from "@/lib/app-version";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -767,7 +768,7 @@ function AboutSection() {
   return (
     <SettingsPage title="About" description="Version and build information.">
       <SettingsGroup label="CovenCave">
-        <SettingsKV label="App version" value="0.0.46" />
+        <SettingsKV label="App version" value={APP_VERSION} />
         <SettingsKV label="Daemon version" value={version ?? "—"} />
         <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
       </SettingsGroup>

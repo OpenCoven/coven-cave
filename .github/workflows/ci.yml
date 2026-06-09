@@ -25,6 +25,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm test:app
+
       - run: pnpm test:api
 
       # Next 16.2.6 / Turbopack has non-deterministic chunking errors on
