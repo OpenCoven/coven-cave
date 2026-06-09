@@ -2347,22 +2347,22 @@ body {
   --ring-focus: color-mix(in oklch, #F4B264 55%, transparent);
 }
 [data-theme="ember"][data-mode="light"] {
-  --background: oklch(0.97 0.025 65);
-  --foreground: oklch(0.20 0.035 40);
-  --card: oklch(0.94 0.028 65);
-  --popover: oklch(0.96 0.028 65);
-  --muted: oklch(0.90 0.034 60);
-  --accent: oklch(0.90 0.034 60);
-  --secondary: oklch(0.90 0.034 60);
-  --muted-foreground: oklch(0.44 0.040 40);
-  --accent-presence: #AD6A1F;
-  --ring: oklch(0.58 0.16 40);
+  --background: oklch(0.975 0.014 65);
+  --foreground: oklch(0.18 0.024 35);
+  --card: oklch(0.95 0.018 65);
+  --popover: oklch(0.97 0.018 65);
+  --muted: oklch(0.92 0.022 60);
+  --accent: oklch(0.92 0.022 60);
+  --secondary: oklch(0.92 0.022 60);
+  --muted-foreground: oklch(0.40 0.028 35);
+  --accent-presence: #8E5614;
+  --ring: oklch(0.50 0.14 40);
   --bg-base: var(--background);
-  --bg-panel: oklch(0.99 0.020 65);
+  --bg-panel: oklch(0.99 0.012 65);
   --bg-raised: var(--card);
-  --bg-elevated: oklch(0.91 0.030 60);
-  --bg-hover: oklch(0.87 0.034 55);
-  --ring-focus: color-mix(in oklch, #AD6A1F 55%, transparent);
+  --bg-elevated: oklch(0.93 0.020 60);
+  --bg-hover: oklch(0.89 0.024 55);
+  --ring-focus: color-mix(in oklch, #8E5614 55%, transparent);
 }
 
 /* ---- Bloom (bewitching-blood 20) — saccharine looks; thorned hands ---- */

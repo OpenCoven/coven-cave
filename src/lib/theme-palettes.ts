@@ -53,8 +53,8 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   ember: {
     name: "Ember",
     description: "Brazier-warmed parchment. A slow burn for long workings.",
-    hue: 40, accentDark: "#F4B264", accentLight: "#AD6A1F",
-    bgDark: "oklch(0.11 0.045 40)", bgLight: "oklch(0.97 0.025 65)",
+    hue: 40, accentDark: "#F4B264", accentLight: "#8E5614",
+    bgDark: "oklch(0.11 0.045 40)", bgLight: "oklch(0.975 0.014 65)",
   },
   bloom: {
     name: "Bloom",
