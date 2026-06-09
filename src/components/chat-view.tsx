@@ -414,7 +414,7 @@ function ChatTitleEditable({
       <input
         ref={inputRef}
         type="text"
-        className="cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[11px] text-[var(--text-primary)] outline-none"
+        className="cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold leading-tight text-[var(--text-primary)] outline-none"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onClick={(e) => e.stopPropagation()}
@@ -438,7 +438,7 @@ function ChatTitleEditable({
   return (
     <button
       type="button"
-      className="min-w-0 flex-1 truncate text-left text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      className="min-w-0 flex-1 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
       title={`${display} — click to rename`}
       onClick={(e) => {
         e.stopPropagation();
@@ -468,12 +468,12 @@ function ChatContextStrip({
   return (
     <div className="cave-chat-linear-header-context">
       {session ? (
-        <span className="inline-flex min-w-0 max-w-[22rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)]">
-          <Icon name="ph:chats-circle" width={12} className="shrink-0 text-[var(--text-muted)]" />
+        <span className="inline-flex min-w-0 max-w-[32rem] items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
+          <Icon name="ph:chats-circle" width={14} className="shrink-0 text-[var(--text-muted)]" />
           <ChatTitleEditable session={session} onSessionsChanged={onSessionsChanged} />
-          <span className="shrink-0 text-[var(--text-muted)]">{session.status}</span>
+          <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{session.status}</span>
           {session.project_root ? (
-            <span className="shrink-0 font-mono text-[var(--text-muted)]">{repoName(session.project_root)}</span>
+            <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{repoName(session.project_root)}</span>
           ) : null}
         </span>
       ) : session === null && historyState !== "idle" ? (
