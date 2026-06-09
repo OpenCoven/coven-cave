@@ -27,6 +27,15 @@ type ToolEvent = {
   durationMs?: number;
 };
 
+type ChatTurnLifecycle =
+  | "queued"
+  | "connecting"
+  | "streaming"
+  | "tooling"
+  | "cancelled"
+  | "failed"
+  | "complete";
+
 type Turn = {
   id: string;
   role: "user" | "assistant" | "system";
@@ -37,6 +46,7 @@ type Turn = {
   createdAt: string;
   pending?: boolean;
   error?: boolean;
+  lifecycle?: ChatTurnLifecycle;
   durationMs?: number;
 };
 
@@ -79,6 +89,44 @@ function fmtDuration(ms?: number): string | null {
   const m = Math.floor(s / 60);
   const rem = s % 60;
   return `${m}m ${rem}s`;
+}
+
+function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
+  switch (lifecycle) {
+    case "queued":
+      return "Queued";
+    case "connecting":
+      return "Connecting";
+    case "streaming":
+      return "Writing";
+    case "tooling":
+      return "Using tools";
+    case "cancelled":
+      return "Cancelled";
+    case "failed":
+      return "Failed";
+    case "complete":
+      return "Complete";
+  }
+}
+
+function lifecycleDetail(lifecycle: ChatTurnLifecycle, familiarName: string): string {
+  switch (lifecycle) {
+    case "queued":
+      return `Queued for ${familiarName}`;
+    case "connecting":
+      return `Contacting ${familiarName}`;
+    case "streaming":
+      return `${familiarName} is writing`;
+    case "tooling":
+      return `${familiarName} is using tools`;
+    case "cancelled":
+      return "Response cancelled";
+    case "failed":
+      return "Response failed";
+    case "complete":
+      return "Response complete";
+  }
 }
 
 function fmtTime(iso: string): string {
@@ -284,6 +332,32 @@ function ChatHistoryNotice({ title, body }: { title: string; body: string }) {
   );
 }
 
+function ChatLifecycleStatus({
+  busy,
+  lifecycle,
+  familiarName,
+}: {
+  busy: boolean;
+  lifecycle: ChatTurnLifecycle | null;
+  familiarName: string;
+}) {
+  if (!busy && !lifecycle) return null;
+  const phase = lifecycle ?? "connecting";
+  return (
+    <div
+      className={`cave-chat-lifecycle-status cave-chat-lifecycle-status--${phase}`}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-lifecycle={phase}
+    >
+      <span className="cave-chat-lifecycle-dot" aria-hidden />
+      <span className="min-w-0 truncate">{lifecycleDetail(phase, familiarName)}</span>
+      {busy ? <span className="shrink-0 text-[var(--text-muted)]">Esc cancels</span> : null}
+    </div>
+  );
+}
+
 function ChatContextStrip({
   session,
   linkedContext,
@@ -372,6 +446,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return matchSlash(firstWord);
   }, [input]);
   const [slashIdx, setSlashIdx] = useState(0);
+  const activeLifecycle = useMemo(() => {
+    const activeTurn = [...turns].reverse().find((turn) => turn.role === "assistant" && turn.pending);
+    return activeTurn?.lifecycle ?? (busy ? "connecting" : null);
+  }, [busy, turns]);
 
   useEffect(() => {
     setSlashIdx(0);
@@ -629,6 +707,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       role: "assistant",
       text: "",
       pending: true,
+      lifecycle: "queued",
       createdAt: now,
       tools: [],
     };
@@ -637,6 +716,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      setAssistantLifecycle(assistantId, "connecting");
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -683,7 +763,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
-              ? { ...t, pending: false, text: t.text || "(cancelled)" }
+              ? { ...t, pending: false, lifecycle: "cancelled", text: t.text || "(cancelled)" }
               : t,
           ),
         );
@@ -739,16 +819,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       case "assistant_chunk": {
+        setAssistantLifecycle(assistantId, "streaming");
         setTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
-              ? { ...t, text: (t.text + ev.text).replace(/\n{3,}/g, "\n\n"), pending: true }
+              ? { ...t, text: (t.text + ev.text).replace(/\n{3,}/g, "\n\n"), pending: true, lifecycle: "streaming" }
               : t,
           ),
         );
         return;
       }
       case "tool_use": {
+        setAssistantLifecycle(assistantId, "tooling");
         const incoming: ToolEvent = {
           id: ev.id ?? crypto.randomUUID(),
           name: ev.name,
@@ -777,7 +859,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       : x,
                   )
                 : [...tools, incoming];
-            return { ...t, tools: nextTools };
+            return { ...t, tools: nextTools, lifecycle: t.pending ? "tooling" : t.lifecycle };
           }),
         );
         return;
@@ -786,7 +868,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
-              ? { ...t, pending: false, error: ev.isError ?? false, durationMs: ev.durationMs }
+              ? { ...t, pending: false, error: ev.isError ?? false, lifecycle: ev.isError ? "failed" : "complete", durationMs: ev.durationMs }
               : t,
           ),
         );
@@ -809,9 +891,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const markAssistantError = (id: string) => {
     setTurns((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, pending: false, error: true } : t)),
+      prev.map((t) => (t.id === id ? { ...t, pending: false, error: true, lifecycle: "failed" } : t)),
     );
   };
+
+  function setAssistantLifecycle(id: string, lifecycle: ChatTurnLifecycle) {
+    setTurns((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, lifecycle } : t)),
+    );
+  }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (slashSuggestions.length > 0) {
@@ -968,6 +1056,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
         </div>
       ) : null}
+
+      <ChatLifecycleStatus
+        busy={busy}
+        lifecycle={activeLifecycle}
+        familiarName={familiar.display_name}
+      />
 
       <footer className="cave-composer-dock">
         <div className="cave-composer-shell">
@@ -1179,7 +1273,7 @@ function TurnRow({
   const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const toolCount = turn.tools?.length ?? 0;
-  const turnStatus = turn.error ? "error" : turn.pending ? "running" : "complete";
+  const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   const turnNumber = String(index + 1).padStart(2, "0");
 
   return (
@@ -1193,11 +1287,10 @@ function TurnRow({
         <div className="cave-linear-turn-right">
           <div className="cave-linear-turn-meta">
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus === "error" && (
-              <span className="cave-turn-status cave-turn-status--error">error</span>
-            )}
-            {turnStatus === "running" && (
-              <span className="cave-turn-status cave-turn-status--running">writing…</span>
+            {turnStatus !== "complete" && (
+              <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
+                {lifecycleLabel(turnStatus)}
+              </span>
             )}
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
             {duration && !turn.pending ? <span className="opacity-50">{duration}</span> : null}
