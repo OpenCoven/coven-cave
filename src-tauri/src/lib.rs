@@ -1,10 +1,22 @@
+// Desktop-only imports — pulled in conditionally so the mobile build
+// doesn't reach for std::process::Child, std::net::TcpListener, or the
+// Tauri tray/menu/webview-builder APIs that aren't available on iOS or
+// Android. Mobile binaries are thin shells: webview only, no sidecar.
+#[cfg(desktop)]
 use std::net::TcpListener;
+#[cfg(desktop)]
 use std::path::{Path, PathBuf};
+#[cfg(desktop)]
 use std::process::{Child, Command, Stdio};
+#[cfg(desktop)]
 use std::sync::Mutex;
+#[cfg(desktop)]
 use std::thread;
+#[cfg(desktop)]
 use std::time::{Duration, Instant};
+#[cfg(desktop)]
 use rand::{rngs::OsRng, RngCore};
+#[cfg(desktop)]
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -12,6 +24,7 @@ use tauri::{
     Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
 
+#[cfg(desktop)]
 fn coven_tray_icon() -> Image<'static> {
     const SIZE: u32 = 18;
     let mut rgba = vec![0; (SIZE * SIZE * 4) as usize];
@@ -43,6 +56,7 @@ fn coven_tray_icon() -> Image<'static> {
 /// Surface a fatal startup error to the user. Platform-specific: macOS uses
 /// osascript (Cocoa alert), Windows writes to a temp file and opens Notepad,
 /// Linux tries zenity/kdialog. Best-effort; ignored on failure.
+#[cfg(desktop)]
 fn show_fatal_dialog(msg: &str) {
     #[cfg(target_os = "macos")]
     {
@@ -83,6 +97,7 @@ fn show_fatal_dialog(msg: &str) {
 /// instead causes Tauri to panic inside the macOS NSApplicationDelegate's
 /// didFinishLaunching callback, which can't unwind across the Objective-C FFI
 /// boundary and aborts with SIGABRT. process::exit() avoids that path.
+#[cfg(desktop)]
 fn fatal_exit(msg: &str) -> ! {
     eprintln!("[cave] FATAL: {}", msg);
     show_fatal_dialog(msg);
@@ -98,6 +113,7 @@ fn fatal_exit(msg: &str) -> ! {
 /// of silently running translocated.
 ///
 /// On non-macOS platforms this is a no-op.
+#[cfg(desktop)]
 fn check_app_translocation() {
     #[cfg(target_os = "macos")]
     {
@@ -115,7 +131,7 @@ fn check_app_translocation() {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(desktop, target_os = "windows"))]
 fn bundled_node_path(resource_dir: &Path) -> PathBuf {
     resource_dir
         .join("resources")
@@ -124,7 +140,7 @@ fn bundled_node_path(resource_dir: &Path) -> PathBuf {
         .join("node.exe")
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(desktop, not(target_os = "windows")))]
 fn bundled_node_path(resource_dir: &Path) -> PathBuf {
     resource_dir
         .join("resources")
@@ -136,6 +152,7 @@ fn bundled_node_path(resource_dir: &Path) -> PathBuf {
 /// Find a usable `node` binary. Release builds include a Node runtime under
 /// bundled resources so clean user machines can boot the sidecar. Development
 /// builds can still fall back to common local Node installs.
+#[cfg(desktop)]
 fn find_node(resource_dir: &Path) -> Option<PathBuf> {
     let bundled = bundled_node_path(resource_dir);
     if bundled.exists() {
@@ -266,6 +283,7 @@ fn find_node(resource_dir: &Path) -> Option<PathBuf> {
 /// Find the `coven` CLI on disk so API routes spawned from the sidecar can
 /// reach it. Same GUI-launch PATH problem as `find_node`. Returns the full
 /// path to the binary so callers can prepend its parent directory to PATH.
+#[cfg(desktop)]
 fn find_coven() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -345,14 +363,17 @@ fn find_coven() -> Option<PathBuf> {
     }
 }
 
+#[cfg(desktop)]
 fn sidecar_auth_token() -> String {
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+#[cfg(desktop)]
 struct SidecarState(Mutex<Option<Child>>);
 
+#[cfg(desktop)]
 fn find_free_port() -> Option<u16> {
     TcpListener::bind("127.0.0.1:0")
         .ok()
@@ -360,6 +381,7 @@ fn find_free_port() -> Option<u16> {
         .map(|a| a.port())
 }
 
+#[cfg(desktop)]
 fn wait_for_port(port: u16, timeout: Duration) -> bool {
     use std::net::TcpStream;
     let addr = format!("127.0.0.1:{}", port);
@@ -374,7 +396,7 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(desktop, target_os = "windows"))]
 fn node_arg_path(path: &Path) -> PathBuf {
     let raw = path.as_os_str().to_string_lossy();
     if let Some(stripped) = raw.strip_prefix(r"\\?\UNC\") {
@@ -386,12 +408,12 @@ fn node_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(desktop, not(target_os = "windows")))]
 fn node_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-#[cfg(test)]
+#[cfg(all(test, desktop))]
 mod tests {
     #[allow(unused_imports)]
     use super::*;
@@ -435,9 +457,12 @@ mod tests {
     }
 }
 
+#[cfg(desktop)]
 mod browser;
+#[cfg(desktop)]
 mod pty;
 
+#[cfg(desktop)]
 fn validate_shell_open_url(url: &str) -> Result<(), String> {
     let parsed = Url::parse(url).map_err(|_| "shell_open requires a valid URL".to_string())?;
 
@@ -447,6 +472,7 @@ fn validate_shell_open_url(url: &str) -> Result<(), String> {
     }
 }
 
+#[cfg(desktop)]
 #[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 fn windows_system32_binary(binary: &str) -> std::path::PathBuf {
     let system_root = std::env::var_os("SystemRoot")
@@ -457,6 +483,7 @@ fn windows_system32_binary(binary: &str) -> std::path::PathBuf {
 }
 
 /// Open an http(s) URL in the system default browser.
+#[cfg(desktop)]
 #[tauri::command]
 fn shell_open(url: String) -> Result<(), String> {
     validate_shell_open_url(&url)?;
@@ -488,7 +515,7 @@ fn shell_open(url: String) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, desktop))]
 mod shell_open_tests {
     use super::validate_shell_open_url;
 
@@ -550,7 +577,38 @@ fn webview_probe_report(report: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default().plugin(tauri_plugin_os::init());
+
+    // Mobile-Tauri shell: no sidecar, no tray, no embedded browser/pty.
+    // The webview points at the configured devUrl (Tailscale Serve URL
+    // in dev, the bundled frontend stub at build) and the daemon lives
+    // remote — see docs/mobile-tailscale.md. Notification plugin still
+    // initialises so push permissions flow through the OS sheet.
+    #[cfg(mobile)]
+    {
+        builder
+            .invoke_handler(tauri::generate_handler![webview_probe_report])
+            .setup(|app| {
+                if cfg!(debug_assertions) {
+                    app.handle().plugin(
+                        tauri_plugin_log::Builder::default()
+                            .level(log::LevelFilter::Debug)
+                            .build(),
+                    )?;
+                }
+                app.handle().plugin(tauri_plugin_notification::init())?;
+                Ok(())
+            })
+            .run(tauri::generate_context!())
+            .expect("error while running tauri application");
+        return;
+    }
+
+    // Desktop body — sidecar bootstrap, embedded browser, terminal,
+    // tray icon. Everything below this point is gated to `cfg(desktop)`
+    // by the imports at the top of the file.
+    #[cfg(desktop)]
+    builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
             pty::pty_write,

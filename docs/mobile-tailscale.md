@@ -77,3 +77,34 @@ curl -I http://127.0.0.1:3000
 ```
 
 If the app loads but actions fail, verify the host machine has the Coven daemon/runtime available. The phone is only a browser; the host machine still performs local work.
+
+## Native Tauri Mobile Shell
+
+A Tauri iOS / Android binary (built via `pnpm tauri ios build` / `pnpm tauri android build`) ships exactly the same daemon-over-Tailscale model — there is **no bundled local Node sidecar** on mobile. iOS sandbox rules forbid spawning child processes, and the standalone Next.js server + node_modules tree would balloon the IPA past 100MB. The native shell is a thin webview that points at:
+
+- The Tailscale Serve URL of your laptop while you're on the same tailnet, OR
+- A long-lived `tailscale serve` on a home server that the phone always reaches over the tailnet.
+
+Either way the daemon lives on a desktop, not the phone. The phone only renders.
+
+### What changes in the native shell vs. mobile-web
+
+The native shell wraps the same Next.js UI. The only differences:
+
+- Push notifications: `tauri-plugin-notification` works on iOS and Android. The first call to `nativeNotify()` triggers the system permission prompt; thereafter the shell can fire local notifications even when the webview isn't focused.
+- "Add to Home Screen" isn't a thing because the shell ships as a regular app icon installed from TestFlight / Play.
+- The PWA service worker (`/sw.js`) is **not** registered inside Tauri. The desktop and mobile shells both rely on Tauri's webview cache, and an SW would intercept loopback requests and cache stale IPC responses (`PwaRegister` skips when `__TAURI_INTERNALS__` is present).
+- The bottom terminal and the embedded `BrowserPane` surfaces are unavailable, same as mobile-web — the `pty_*` / `browser_*` Rust commands are `cfg(desktop)`-gated and not registered on mobile-Tauri. Both surfaces detect this via `useTauriPlatform()` and render their "Terminal is only available inside the CovenCave desktop app" / iframe-fallback placeholder.
+
+### One-time scaffolding
+
+```bash
+pnpm tauri ios init      # generates src-tauri/gen/apple/
+pnpm tauri android init  # generates src-tauri/gen/android/
+```
+
+Both are interactive (Xcode signing team, Android SDK path). After scaffolding, builds run with `pnpm tauri ios build` / `pnpm tauri android build`. The `prebuild` hook (PWA icon generation) still runs but `sidecar-bundle.sh` short-circuits when `TAURI_PLATFORM` is `ios` or `android`.
+
+### Configuration: which daemon does the phone talk to?
+
+The native shell's `devUrl` (in `src-tauri/tauri.conf.json`) points at the dev server. In production builds, point it at your Tailscale-served daemon URL before running `tauri ios build` — the `$COVEN_CAVE_DAEMON_URL` env var (or whatever your team adopts) should be honoured by a small `build.rs` patch. (Not yet wired; track in a follow-up.)

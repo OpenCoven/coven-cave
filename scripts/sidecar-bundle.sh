@@ -2,7 +2,23 @@
 # Build + assemble the Next.js standalone server with a flat, complete
 # node_modules so it can boot from inside the Tauri .app bundle without any
 # pnpm symlink magic. Output: src-tauri/resources/server/.
+#
+# Mobile-Tauri builds: skip entirely. iOS and Android sandboxes can't spawn
+# a child Node.js process, the resulting IPA / APK would balloon by ~100MB
+# of `node_modules`, and the daemon model on mobile is "point at the user's
+# home Tailscale daemon" anyway — see docs/mobile-tailscale.md. Tauri sets
+# `TAURI_PLATFORM` for us during `tauri ios build` / `tauri android build`,
+# so a simple branch on that variable is enough.
 set -euo pipefail
+
+case "${TAURI_PLATFORM:-}" in
+  ios|android)
+    echo "==> sidecar-bundle.sh: skipping for mobile target ($TAURI_PLATFORM)"
+    echo "    mobile-Tauri builds rely on the user's remote Tailscale daemon;"
+    echo "    no bundled Node sidecar is shipped. See docs/mobile-tailscale.md."
+    exit 0
+    ;;
+esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"

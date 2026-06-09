@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTauriPlatform } from "@/lib/tauri-platform";
 
 // Bottom terminal pane — xterm.js in the browser, hooked up to a
 // portable-pty session on the Rust side (see src-tauri/src/pty.rs).
 //
-// Only mounts inside the Tauri webview. In `next dev` outside Tauri the
-// pty.* commands aren't available, so we render a small placeholder
-// instead of trying to invoke and erroring out.
+// Only mounts inside the Tauri desktop webview. The pty.* Rust commands
+// are cfg(desktop)-gated and not registered on Tauri-mobile (iOS,
+// Android) or in `next dev` outside Tauri; in those cases we render a
+// small placeholder instead of trying to invoke and erroring out.
 
 // Screen-reader mirror: xterm renders to a <canvas>, which is opaque to AT.
 // We keep an offscreen text mirror of recent PTY output (ANSI stripped) and
@@ -62,6 +64,16 @@ export function BottomTerminal({
   const projectRootRef = useRef<string | undefined>(projectRoot);
   useEffect(() => { projectRootRef.current = projectRoot; }, [projectRoot]);
   const [unavailable, setUnavailable] = useState(false);
+  // useTauriPlatform() resolves async and starts at "unknown". Treat
+  // anything that's not confirmed desktop-Tauri as unavailable — the
+  // pty Rust commands are cfg(desktop)-gated so calling them on
+  // Tauri-mobile would error.
+  const platform = useTauriPlatform();
+  useEffect(() => {
+    if (platform === "ios" || platform === "android" || platform === "browser") {
+      setUnavailable(true);
+    }
+  }, [platform]);
   // Screen-reader mirror state: see comment block near top of file.
   const [mirrorLines, setMirrorLines] = useState<string[]>([]);
   const pendingMirrorRef = useRef<string>("");
@@ -133,6 +145,11 @@ export function BottomTerminal({
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
+    // The pty.* Tauri commands are only registered on desktop. Don't
+    // even attempt xterm setup on Tauri-mobile or in the browser —
+    // the dedicated useEffect above sets `unavailable` and the JSX
+    // renders the placeholder instead.
+    if (platform !== "desktop") return;
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
@@ -293,7 +310,7 @@ export function BottomTerminal({
       disposed = true;
       cleanup?.();
     };
-  }, [threadId]);
+  }, [threadId, platform]);
 
   if (unavailable) {
     return (

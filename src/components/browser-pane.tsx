@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperat
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
+import { useTauriPlatform } from "@/lib/tauri-platform";
 
 // ── Favicon helpers (mirrors open-sesame FaviconService pattern) ──────────────
 // Primary: Google S2 API (works from renderer, no CORS)
@@ -210,6 +211,16 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBridge | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+  const platform = useTauriPlatform();
+  useEffect(() => {
+    // browser_* Rust commands are cfg(desktop)-gated. On Tauri-mobile
+    // (iOS / Android) and in the browser, the embedded webview path
+    // isn't reachable — drop to the iframe fallback that's already
+    // rendered when `unavailable` is true.
+    if (platform === "ios" || platform === "android" || platform === "browser") {
+      setUnavailable(true);
+    }
+  }, [platform]);
 
   // Tab state
   const [tabs, setTabs] = useState<BrowserTab[]>(() => loadPinnedTabs());
