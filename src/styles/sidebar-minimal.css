@@ -661,6 +661,7 @@
 .sidebar-familiar-switcher {
   position: relative;
   width: 100%;
+  max-width: 260px;
 }
 
 .sidebar-familiar-switcher__trigger {
@@ -856,6 +857,15 @@
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Fixed-width trailing slot — keeps every row's name area the same width
+   whether or not an unread dot or active check is present. */
+.sidebar-familiar-switcher__option-trailing {
+  flex: 0 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sidebar-familiar-switcher__unread {

@@ -323,20 +323,24 @@ function FamiliarSwitcher({
                       <span className="sidebar-familiar-switcher__option-name">
                         {f.display_name}
                       </span>
-                      {needsReply ? (
-                        <span
-                          className="sidebar-familiar-switcher__unread"
-                          aria-label="Reply needed"
-                          title="Reply needed"
-                        />
-                      ) : null}
-                      {isActive ? (
-                        <Icon
-                          name="ph:check-bold"
-                          width={12}
-                          className="sidebar-familiar-switcher__check"
-                        />
-                      ) : null}
+                      <span
+                        className="sidebar-familiar-switcher__option-trailing"
+                        aria-hidden={!needsReply && !isActive ? "true" : undefined}
+                      >
+                        {needsReply ? (
+                          <span
+                            className="sidebar-familiar-switcher__unread"
+                            aria-label="Reply needed"
+                            title="Reply needed"
+                          />
+                        ) : isActive ? (
+                          <Icon
+                            name="ph:check-bold"
+                            width={12}
+                            className="sidebar-familiar-switcher__check"
+                          />
+                        ) : null}
+                      </span>
                     </button>
                   </li>
                 );

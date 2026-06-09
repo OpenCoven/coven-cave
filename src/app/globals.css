@@ -2838,7 +2838,14 @@ body {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  opacity: 0;
+  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.sidebar-trigger-rail:hover .sidebar-trigger-rail__toggle,
+.sidebar-trigger-rail__toggle:hover,
+.sidebar-trigger-rail__toggle:focus-visible {
+  opacity: 1;
 }
 
 .sidebar-trigger-rail__toggle:hover {
