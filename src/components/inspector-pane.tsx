@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -10,6 +10,7 @@ import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 import { VaultPanel } from "@/components/vault-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
@@ -56,6 +57,8 @@ const TAB_LABEL: Record<Tab, string> = {
   inbox: "Inbox",
   vault: "Vault",
 };
+
+const INSPECTOR_TABS: Tab[] = ["memory", "familiar", "inbox", "vault"];
 
 function InspectorEmpty({
   icon,
@@ -113,6 +116,22 @@ export function InspectorPane({
   compact = false,
 }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
+  const tablistRef = useRef<HTMLElement | null>(null);
+  const { activeIndex, setActiveIndex } = useRovingTabIndex({
+    containerRef: tablistRef,
+    itemSelector: '[role="tab"]',
+    orientation: "horizontal",
+  });
+
+  useEffect(() => {
+    const next = INSPECTOR_TABS[activeIndex];
+    if (next && next !== tab) setTab(next);
+  }, [activeIndex, tab]);
+
+  useEffect(() => {
+    const tabIndex = INSPECTOR_TABS.indexOf(tab);
+    if (tabIndex >= 0 && tabIndex !== activeIndex) setActiveIndex(tabIndex);
+  }, [tab, activeIndex, setActiveIndex]);
 
   const familiarInbox = useMemo(() => {
     if (!familiar) return [];
@@ -139,18 +158,21 @@ export function InspectorPane({
     <aside className={shellClassName}>
       {!compact && (
         <nav
+          ref={tablistRef}
           role="tablist"
           aria-label="Inspector sections"
           className="flex items-end gap-1 border-b border-[var(--border-hairline)] px-1 text-[11px]"
         >
-          {(["memory", "familiar", "inbox", "vault"] as const).map((t) => {
+          {INSPECTOR_TABS.map((t) => {
             const isActive = tab === t;
             return (
               <button
                 key={t}
                 type="button"
                 role="tab"
+                id={`inspector-tab-${t}`}
                 aria-selected={isActive}
+                aria-controls={`inspector-panel-${t}`}
                 onClick={() => setTab(t)}
                 className={[
                   "relative flex-1 px-3 py-2.5 font-medium tracking-normal transition-colors outline-none",
@@ -164,7 +186,10 @@ export function InspectorPane({
                 {TAB_LABEL[t]}
                 {t === "inbox" && inboxBadge > 0 ? (
                   <span
-                    aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}`
+                    className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
+                    aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
+                  >
+                    {inboxBadge}
                   </span>
                 ) : null}
               </button>
@@ -174,6 +199,9 @@ export function InspectorPane({
       )}
 
       <div
+        role="tabpanel"
+        id={`inspector-panel-${tab}`}
+        aria-labelledby={`inspector-tab-${tab}`}
         className={`min-h-0 flex-1 ${
           tab === "memory" ? "overflow-hidden" : "overflow-y-auto"
         }`}
