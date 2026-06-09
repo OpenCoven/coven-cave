@@ -807,15 +807,46 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear-header {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   border-bottom: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--bg-panel) 76%, transparent);
-  padding: 8px 14px 7px;
+  padding: 8px 14px;
   box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+.cave-chat-linear-header-row {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+}
+
+.cave-chat-linear-header-identity {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.cave-chat-linear-header-context {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.cave-chat-linear-header-context > * {
+  flex: 0 1 auto;
 }
 
 .cave-agent-marker {

@@ -294,7 +294,7 @@ function ChatContextStrip({
   if (!session && !task && github.length === 0 && historyState === "idle") return null;
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+    <div className="cave-chat-linear-header-context">
       {session ? (
         <span className="inline-flex min-w-0 max-w-[22rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[11px] text-[var(--text-secondary)]">
           <Icon name="ph:chats-circle" width={12} className="shrink-0 text-[var(--text-muted)]" />
@@ -840,34 +840,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       <header className="cave-chat-linear-header">
         {/* Single compact bar: avatar · name · status · meta · context strip */}
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="cave-agent-marker cave-agent-marker--xs" aria-hidden>
-            <FamiliarIcon familiar={familiar} size="sm" />
+        <div className="cave-chat-linear-header-row">
+          <div className="cave-chat-linear-header-identity">
+            <div className="cave-agent-marker cave-agent-marker--xs" aria-hidden>
+              <FamiliarIcon familiar={familiar} size="sm" />
+            </div>
+            <h2 className="shrink-0 text-[13px] font-semibold text-[var(--text-primary)] leading-none">
+              {familiar.display_name}
+            </h2>
+            <span className={[
+              "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+              daemonRunning === false
+                ? "bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]"
+                : "bg-[color-mix(in_oklch,var(--color-success)_16%,transparent)] text-[var(--color-success)]",
+            ].join(" ")}>
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {daemonRunning === false ? "offline" : "ready"}
+            </span>
+            <span className="text-[var(--border-hairline)]" aria-hidden>|</span>
+            <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)] font-mono">
+              {familiar.harness ?? ""}
+              {familiar.model ? <> · {familiar.model}</> : null}
+              {(session?.project_root ?? projectRoot) ? <> · {repoName(session?.project_root ?? projectRoot)}</> : null}
+            </span>
           </div>
-          <h2 className="shrink-0 text-[13px] font-semibold text-[var(--text-primary)] leading-none">
-            {familiar.display_name}
-          </h2>
-          <span className={[
-            "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-            daemonRunning === false
-              ? "bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]"
-              : "bg-[color-mix(in_oklch,var(--color-success)_16%,transparent)] text-[var(--color-success)]",
-          ].join(" ")}>
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {daemonRunning === false ? "offline" : "ready"}
-          </span>
-          <span className="text-[var(--border-hairline)]" aria-hidden>|</span>
-          <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)] font-mono">
-            {familiar.harness ?? ""}
-            {familiar.model ? <> · {familiar.model}</> : null}
-            {(session?.project_root ?? projectRoot) ? <> · {repoName(session?.project_root ?? projectRoot)}</> : null}
-          </span>
+          <ChatContextStrip
+            session={session ?? null}
+            linkedContext={linkedContext}
+            historyState={historyState}
+          />
         </div>
-        <ChatContextStrip
-          session={session ?? null}
-          linkedContext={linkedContext}
-          historyState={historyState}
-        />
       </header>
       <div ref={scrollRef} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
