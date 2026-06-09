@@ -79,7 +79,7 @@
 .board-table tbody tr:hover { background:var(--bg-hover); }
 .board-table tbody tr.selected { background:color-mix(in oklch,var(--accent-presence) 14%,var(--bg-base)); box-shadow:inset 3px 0 0 var(--accent-presence); }
 .board-table td { padding:8px 10px; vertical-align:middle; }
-.board-table-title { font-weight:500; color:var(--text-primary); max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.board-table-title { display:inline-block; max-width:300px; vertical-align:middle; font-weight:500; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .board-table-muted { color:var(--text-muted); font-size:11px; }
 .board-table-group-row td { padding:8px 10px 7px; font-size:11px; font-weight:600; color:var(--text-secondary); letter-spacing:.04em; text-transform:uppercase; background:var(--bg-raised); border-top:1px solid var(--border-strong); border-bottom:1px solid var(--border-strong); cursor:pointer; user-select:none; }
 .board-table-group-row:first-child td { border-top:none; }
