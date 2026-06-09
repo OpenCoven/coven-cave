@@ -194,7 +194,17 @@ function AgendaView({
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
 }) {
-  // Group items by date, sorted ascending from anchor
+  const [showPast, setShowPast] = useState(false);
+
+  const pastCount = useMemo(
+    () => items.filter((it) => {
+      const d = itemDate(it);
+      return d && d < startOfDay(anchor);
+    }).length,
+    [items, anchor],
+  );
+
+  // Group items by date, then filter / sort based on showPast.
   const groups = useMemo(() => {
     const map = new Map<string, { date: Date; items: InboxItem[] }>();
     for (const item of items) {
@@ -205,26 +215,53 @@ function AgendaView({
       map.get(key)!.items.push(item);
     }
     return Array.from(map.values())
-      .sort((a, b) => a.date.getTime() - b.date.getTime())
-      .filter((g) => g.date >= startOfDay(anchor));
-  }, [items, anchor]);
+      .filter((g) => showPast ? true : g.date >= startOfDay(anchor))
+      .sort((a, b) => showPast
+        ? b.date.getTime() - a.date.getTime()
+        : a.date.getTime() - b.date.getTime());
+  }, [items, anchor, showPast]);
 
   if (groups.length === 0) {
     return (
-      <EmptyScheduleState
-        icon="ph:calendar-blank"
-        label="Nothing scheduled"
-        onAddEntry={
-          onAddEntry
-            ? () => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })
-            : undefined
-        }
-      />
+      <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
+        <Icon name="ph:calendar-blank" width={32} className="text-[var(--text-muted)]" />
+        <div>Nothing scheduled upcoming.</div>
+        {pastCount > 0 && !showPast ? (
+          <button
+            type="button"
+            onClick={() => setShowPast(true)}
+            className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            Show {pastCount} past item{pastCount !== 1 ? "s" : ""}
+          </button>
+        ) : null}
+        {onAddEntry ? (
+          <button
+            type="button"
+            onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
+            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:plus" width={11} />
+            Add task or event
+          </button>
+        ) : null}
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6 overflow-y-auto px-3 py-4 sm:px-6">
+      {showPast ? (
+        <div className="-mb-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setShowPast(false)}
+            className="focus-ring rounded-md px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            Hide past
+          </button>
+        </div>
+      ) : null}
       {groups.map(({ date, items: groupItems }) => (
         <div key={date.toISOString()}>
           <div className="mb-2 flex items-center gap-3">

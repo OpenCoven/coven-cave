@@ -78,4 +78,21 @@ assert.match(
   "Toolbar new-event handler must call onAddEntry with anchor-derived fireAt",
 );
 
+// ───────── Task 7: Agenda showPast fallback ─────────
+assert.match(
+  source,
+  /const \[showPast, setShowPast\] = useState\(false\);/,
+  "AgendaView must hold a showPast state",
+);
+assert.match(
+  source,
+  /Show \{pastCount\} past item/,
+  "AgendaView empty fallback must offer to show past items",
+);
+assert.match(
+  source,
+  /Hide past/,
+  "AgendaView must offer a 'Hide past' toggle when showPast is on",
+);
+
 console.log("calendar-view-polish.test.ts: ok");
