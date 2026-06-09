@@ -26,6 +26,8 @@ import {
   setActiveFamiliar,
   getLastSurface,
   setLastSurface,
+  getRailOpen,
+  setRailOpen,
 } from "@/lib/familiar-memory";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { AgentPanel } from "@/components/agent-panel";
@@ -129,6 +131,15 @@ export function Workspace() {
 
   useEffect(() => {
     setActiveFamiliar(activeId);
+  }, [activeId]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const desired = getRailOpen(activeId);
+    queueMicrotask(() => {
+      if (desired) shellRef.current?.openAgent();
+      else shellRef.current?.closeAgent();
+    });
   }, [activeId]);
 
   useEffect(() => {
@@ -1045,6 +1056,9 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         onNavOpenChange={setNavOpen}
+        onAgentOpenChange={(open) => {
+          if (activeId) setRailOpen(activeId, open);
+        }}
         topBar={
           <TopBar
             surfaceLabel={surfaceLabel}
