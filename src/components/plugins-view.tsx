@@ -158,6 +158,22 @@ export function PluginsView({
   const [selectedSkill, setSelectedSkill] = useState<SkillEntryWithDetail | null>(null);
   const [selectedRole, setSelectedRole] = useState<RoleEntry | null>(null);
   const createRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/") return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (target.isContentEditable) return;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Reset query when switching tabs
   const handleTabChange = (t: Tab) => {
@@ -482,10 +498,10 @@ export function PluginsView({
         <div className="mx-auto w-full max-w-[1200px] px-4 pb-12 sm:px-8">
 
           {/* ── Overview section ─────────────────────────────────────────── */}
-          <div className="pb-6 pt-6">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="pb-4 pt-5">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div className="min-w-0">
-                <h1 className="text-[22px] font-semibold text-[var(--text-primary)]">
+                <h1 className="text-[18px] font-semibold text-[var(--text-primary)]">
                   {HERO_HEADLINE[tab]}
                 </h1>
                 {tab === "plugins" && marketplaceLoaded && marketplacePlugins.length === 0 ? (
@@ -520,6 +536,7 @@ export function PluginsView({
                 height="0.9rem"
               />
               <input
+                ref={searchRef}
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -533,21 +550,6 @@ export function PluginsView({
           <section>
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
               {SECTION_LABEL[tab]}
-              {tab === "plugins" && marketplaceLoaded && !marketplaceError && (
-                <span className="ml-2 font-normal normal-case tracking-normal text-[var(--text-muted)]">
-                  {marketplacePlugins.length} available
-                </span>
-              )}
-              {tab === "skills" && skillsLoaded && !skillsError && (
-                <span className="ml-2 font-normal normal-case tracking-normal text-[var(--text-muted)]">
-                  {skills.length} installed
-                </span>
-              )}
-              {tab === "roles" && rolesLoaded && !rolesError && (
-                <span className="ml-2 font-normal normal-case tracking-normal text-[var(--text-muted)]">
-                  {roles.length} installed
-                </span>
-              )}
             </h2>
 
             {tab === "plugins" ? (
@@ -585,6 +587,10 @@ export function PluginsView({
           </section>
         </div>
       </div>
+
+      <footer className="shrink-0 border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
+        / focus search · click a role to manage · toggle the eye to activate
+      </footer>
 
       <SkillDetailDrawer
         skill={selectedSkill}
