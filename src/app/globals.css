@@ -2980,17 +2980,29 @@ body {
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
+}
+
+.rail-memory__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .rail-memory__open-full {
+  flex-shrink: 0;
   padding: 8px 12px;
   border-top: 1px solid var(--border-hairline);
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
-  border: 0;
 }
 
 .rail-memory__open-full:hover {
