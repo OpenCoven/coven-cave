@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // Bottom terminal pane — xterm.js in the browser, hooked up to a
 // portable-pty session on the Rust side (see src-tauri/src/pty.rs).
@@ -8,6 +8,23 @@ import { useEffect, useRef, useState } from "react";
 // Only mounts inside the Tauri webview. In `next dev` outside Tauri the
 // pty.* commands aren't available, so we render a small placeholder
 // instead of trying to invoke and erroring out.
+
+// Screen-reader mirror: xterm renders to a <canvas>, which is opaque to AT.
+// We keep an offscreen text mirror of recent PTY output (ANSI stripped) and
+// expose it as a polite live region. Capped + debounced so fast streams
+// (e.g. `cargo build`) don't flood SR or thrash React.
+const MIRROR_LINES = 50;
+const MIRROR_DEBOUNCE_MS = 250;
+
+function stripAnsi(text: string): string {
+  return text
+    // CSI: ESC [ params letter
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
+    // OSC: ESC ] ... BEL or ESC \
+    .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "")
+    // Other C0 control chars except newline (\n=0x0a) and tab (\x09).
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+}
 
 type TauriBridge = {
   invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -45,6 +62,41 @@ export function BottomTerminal({
   const projectRootRef = useRef<string | undefined>(projectRoot);
   useEffect(() => { projectRootRef.current = projectRoot; }, [projectRoot]);
   const [unavailable, setUnavailable] = useState(false);
+  // Screen-reader mirror state: see comment block near top of file.
+  const [mirrorLines, setMirrorLines] = useState<string[]>([]);
+  const pendingMirrorRef = useRef<string>("");
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const decoderRef = useRef<TextDecoder | null>(null);
+  if (!decoderRef.current) {
+    decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+  }
+
+  const flushMirror = useCallback(() => {
+    flushTimerRef.current = null;
+    const pending = pendingMirrorRef.current;
+    pendingMirrorRef.current = "";
+    if (!pending) return;
+    setMirrorLines((prev) => {
+      const combined = (prev.join("\n") + pending).split("\n");
+      return combined.slice(-MIRROR_LINES);
+    });
+  }, []);
+
+  const pushToMirror = useCallback(
+    (bytes: Uint8Array) => {
+      if (!decoderRef.current) return;
+      const text = stripAnsi(
+        decoderRef.current.decode(bytes, { stream: true }),
+      );
+      if (!text) return;
+      pendingMirrorRef.current += text;
+      if (flushTimerRef.current == null) {
+        flushTimerRef.current = setTimeout(flushMirror, MIRROR_DEBOUNCE_MS);
+      }
+    },
+    [flushMirror],
+  );
+
   const log = (...a: unknown[]) => {
     console.info(`[BottomTerminal:${threadId}]`, ...a);
     try {
@@ -136,7 +188,9 @@ export function BottomTerminal({
         bytes: number[];
       }>("pty:data", (e) => {
         if (e.payload.thread_id !== threadId) return;
-        term.write(new Uint8Array(e.payload.bytes));
+        const bytes = new Uint8Array(e.payload.bytes);
+        term.write(bytes);
+        pushToMirror(bytes);
       });
       const unlistenExit = await bridge.listen<{
         thread_id: string;
@@ -145,7 +199,9 @@ export function BottomTerminal({
         if (e.payload.thread_id !== threadId) return;
         log("pty:exit", e.payload);
         stopped = true;
-        term.write(`\r\n\x1b[2m[exit ${e.payload.code ?? 0}]\x1b[0m\r\n`);
+        const exitMsg = `\r\n\x1b[2m[exit ${e.payload.code ?? 0}]\x1b[0m\r\n`;
+        term.write(exitMsg);
+        pushToMirror(new TextEncoder().encode(exitMsg));
       });
       log("pty:data + pty:exit listeners registered");
 
@@ -182,7 +238,9 @@ export function BottomTerminal({
           // Rare race: another mount beat us between pty_list and pty_start.
           if (!String(err).includes("already running")) {
             log("pty_start FAILED", err);
-            term.write(`\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`);
+            const failMsg = `\r\n\x1b[31mpty_start failed: ${String(err)}\x1b[0m\r\n`;
+            term.write(failMsg);
+            pushToMirror(new TextEncoder().encode(failMsg));
           } else {
             log("pty_start: already running for this id (ok)");
           }
@@ -218,6 +276,11 @@ export function BottomTerminal({
         onDataDispose.dispose();
         unlistenData();
         unlistenExit();
+        if (flushTimerRef.current) {
+          clearTimeout(flushTimerRef.current);
+          flushTimerRef.current = null;
+        }
+        pendingMirrorRef.current = "";
         termRef.current = null;
         term.dispose();
         void bridge.invoke("pty_stop", { threadId: threadId });
@@ -241,14 +304,28 @@ export function BottomTerminal({
   }
 
   return (
-    <div
-      ref={wrapRef}
-      className="h-full w-full overflow-hidden"
-      style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
-      // Clicking anywhere in the terminal area refocuses xterm so keyboard
-      // input is routed correctly without the user having to click exactly
-      // on the cursor.
-      onClick={() => termRef.current?.focus()}
-    />
+    <>
+      <div
+        ref={wrapRef}
+        className="h-full w-full overflow-hidden"
+        style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
+        // Clicking anywhere in the terminal area refocuses xterm so keyboard
+        // input is routed correctly without the user having to click exactly
+        // on the cursor.
+        onClick={() => termRef.current?.focus()}
+      />
+      {/* Offscreen text mirror of PTY output for screen readers. */}
+      <div
+        className="sr-only"
+        role="region"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-label="Terminal output"
+      >
+        {mirrorLines.map((line, i) => (
+          <div key={i}>{line}</div>
+        ))}
+      </div>
+    </>
   );
 }
