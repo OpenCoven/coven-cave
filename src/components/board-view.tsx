@@ -67,15 +67,20 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const filtered = useMemo(
-    () => cards.filter((c) => cardMatchesBoardSearch(c, searchQuery, familiarsById)),
-    [cards, familiarsById, searchQuery],
+    () =>
+      cards.filter(
+        (c) =>
+          (activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
+          cardMatchesBoardSearch(c, searchQuery, familiarsById),
+      ),
+    [cards, familiarsById, searchQuery, activeFamiliarId],
   );
 
   const stats = useMemo(() => ({
     total: filtered.length,
-    running: cards.filter((c) => c.status === "running").length,
-    blocked: cards.filter((c) => c.status === "blocked" || c.needsHuman).length,
-  }), [cards, filtered]);
+    running: filtered.filter((c) => c.status === "running").length,
+    blocked: filtered.filter((c) => c.status === "blocked" || c.needsHuman).length,
+  }), [filtered]);
 
   const selectedCard = useMemo(() => cards.find((c) => c.id === selectedCardId) ?? null, [cards, selectedCardId]);
 
