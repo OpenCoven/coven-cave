@@ -307,6 +307,7 @@ export function InboxEscalationsView({
   const criticalCount = items.filter(
     (i) => i.severity === "critical" && i.state !== "resolved" && i.state !== "dismissed",
   ).length;
+  const resolvedCount = items.filter((i) => i.state === "resolved").length;
 
   return (
     <section
@@ -354,7 +355,7 @@ export function InboxEscalationsView({
                   onChange={(e) => setShowResolved(e.target.checked)}
                   className="accent-foreground"
                 />
-                Show resolved
+                Show resolved{resolvedCount > 0 ? ` (${resolvedCount})` : ""}
               </label>
               <button
                 onClick={() => void refresh()}

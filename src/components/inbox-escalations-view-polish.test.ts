@@ -28,4 +28,16 @@ assert.doesNotMatch(
   "Unconditional severity badge render must be gone",
 );
 
+// ───────── Task 3: Show resolved count ─────────
+assert.match(
+  source,
+  /const resolvedCount = items\.filter\(\(i\) => i\.state === "resolved"\)\.length;/,
+  "resolvedCount must be derived from items",
+);
+assert.match(
+  source,
+  /Show resolved\{resolvedCount > 0 \? ` \(\$\{resolvedCount\}\)` : ""\}/,
+  "Show resolved label must include count when > 0",
+);
+
 console.log("inbox-escalations-view-polish.test.ts: ok");
