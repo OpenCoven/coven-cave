@@ -265,23 +265,14 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         )}
 
         {compact ? null : (
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Agent memories</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{visibleCoven.length}</div>
-            </div>
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Coven origin</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.covenOrigin}</div>
-            </div>
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">External harnesses</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.externalHarnesses}</div>
-            </div>
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">Runtime memory</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{fileSourceCounts.runtimeMemory}</div>
-            </div>
+          <div
+            data-testid="memory-stats-inline"
+            className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-[var(--text-secondary)]"
+          >
+            <span><span className="text-[var(--text-muted)]">Agent memories</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
+            <span><span className="text-[var(--text-muted)]">Coven origin</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{fileSourceCounts.covenOrigin}</span></span>
+            <span><span className="text-[var(--text-muted)]">External harnesses</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{fileSourceCounts.externalHarnesses}</span></span>
+            <span><span className="text-[var(--text-muted)]">Runtime memory</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{fileSourceCounts.runtimeMemory}</span></span>
           </div>
         )}
 
