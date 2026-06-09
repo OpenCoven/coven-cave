@@ -5,7 +5,6 @@ import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
 import { SalemCat3D } from "./salem-cat-3d";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { cleanSalemMarkdown } from "./salem-clean";
 
 type Message = { role: "user" | "salem"; text: string };
 
@@ -97,7 +96,7 @@ export function SalemChatPanel() {
       });
       const data = (await res.json()) as { reply?: string; error?: string };
       const raw = data.reply ?? data.error ?? "Hmm, I couldn't find that one. Try rephrasing?";
-      setMessages((m) => [...m, { role: "salem", text: cleanSalemMarkdown(raw) }]);
+      setMessages((m) => [...m, { role: "salem", text: raw }]);
       setMood("happy");
       setTimeout(() => setMood("idle"), 2000);
     } catch {
