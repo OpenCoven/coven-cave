@@ -31,6 +31,12 @@ const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
   { id: "reminder", label: "Reminder", icon: "ph:alarm-fill" },
 ];
 
+const PLACEHOLDERS: Record<Destination, string> = {
+  chat: "Ask anything in Chat…",
+  board: "Describe a new task…",
+  reminder: "Remind me about…",
+};
+
 type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
@@ -293,7 +299,6 @@ export function HomeComposer({
       {/* Headline */}
       <div className="home-composer-hero">
         <h1 className="home-composer-headline">What can the Coven do?</h1>
-        <p className="home-composer-sub">Pick a destination, and go.</p>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -340,7 +345,7 @@ export function HomeComposer({
         <textarea
           ref={textareaRef}
           className="hc-textarea"
-          placeholder="Ask anything, start a task, set a reminder…"
+          placeholder={PLACEHOLDERS[destination]}
           rows={3}
           value={text}
           onChange={(e) => { setText(e.target.value); autoGrow(); }}
