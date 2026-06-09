@@ -17,7 +17,7 @@ const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
 };
 
 const DEFAULTS: Record<string, { model: string; voice: string }> = {
-  openai: { model: "gpt-4o-realtime-preview", voice: "alloy" },
+  openai: { model: "gpt-realtime", voice: "alloy" },
   gemini: { model: "gemini-2.0-flash-exp", voice: "Puck" },
 };
 

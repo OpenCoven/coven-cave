@@ -21,7 +21,7 @@ GITHUB_USERNAME:
   required: false
 
 OPENAI_API_KEY:
-  ref: ""
+  ref: "op://Development/OpenAI API Key 2/credential"
   description: "OpenAI API key, used to mint ephemeral tokens for Realtime voice"
   required: false
 

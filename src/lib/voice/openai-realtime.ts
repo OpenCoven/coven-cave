@@ -1,23 +1,28 @@
 import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, VoiceSessionGrant } from "./types";
 
-const SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions";
+const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const REALTIME_BASE = "https://api.openai.com/v1/realtime";
 
 const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
   id: "openai",
   label: "OpenAI Realtime",
   async mintSession(apiKey, req) {
-    const res = await fetch(SESSIONS_URL, {
+    const res = await fetch(CLIENT_SECRETS_URL, {
       method: "POST",
       headers: {
         "authorization": `Bearer ${apiKey}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: req.model,
-        voice: req.voice,
-        instructions: req.instructions,
-        input_audio_transcription: { model: "whisper-1" },
+        session: {
+          type: "realtime",
+          model: req.model,
+          instructions: req.instructions,
+          audio: {
+            input: { transcription: { model: "whisper-1" } },
+            output: { voice: req.voice },
+          },
+        },
       }),
     });
     if (!res.ok) {
@@ -29,11 +34,12 @@ const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
       throw new Error(msg);
     }
     const body = await res.json() as {
-      client_secret?: { value?: string; expires_at?: number };
+      value?: string;
+      expires_at?: number;
     };
-    const value = body.client_secret?.value;
-    const expiresAtSec = body.client_secret?.expires_at;
-    if (!value) throw new Error("provider returned no client_secret");
+    const value = body.value;
+    const expiresAtSec = body.expires_at;
+    if (!value) throw new Error("provider returned no ephemeral token");
     return {
       provider: "openai",
       clientSecret: value,
