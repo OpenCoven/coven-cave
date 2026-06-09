@@ -475,13 +475,16 @@ export function MemoryGraph3D({
       />
       <p aria-live="polite" className="sr-only">{selectedLabel}</p>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-3 p-3">
-        <div className="rounded-lg border border-white/10 bg-black/45 px-3 py-2 shadow-2xl backdrop-blur">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-white/55">Agent memory map</div>
-          <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-white/70">
-            <span>{familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}</span>
-            <span>{graph.metrics.visibleCovenEntries} memories</span>
-            {selectedMemoryId ? <span>1 selected</span> : null}
-          </div>
+        <div className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-black/45 px-2.5 py-1.5 text-[11px] text-white/75 shadow-2xl backdrop-blur">
+          <span className="font-medium text-white/90">{familiars.get(selectedFamiliarId)?.display_name ?? selectedFamiliarId}</span>
+          <span className="text-white/40">·</span>
+          <span>{graph.metrics.visibleCovenEntries} {graph.metrics.visibleCovenEntries === 1 ? "memory" : "memories"}</span>
+          {selectedMemoryId ? (
+            <>
+              <span className="text-white/40">·</span>
+              <span>1 selected</span>
+            </>
+          ) : null}
         </div>
         <button
           type="button"
@@ -492,11 +495,11 @@ export function MemoryGraph3D({
           <Icon name="ph:arrows-clockwise-bold" width={14} />
         </button>
       </div>
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/45 px-3 py-2 text-[10px] text-white/65 shadow-2xl backdrop-blur">
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#8E3DFF]" /> agent</span>
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#62d08f]" /> memory card</span>
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#7dd3fc]" /> tracked source</span>
-        <span className="inline-flex items-center gap-1"><i className="h-2 w-3 rounded-sm bg-[#f59e0b]" /> older stack</span>
+      <div className="pointer-events-none absolute bottom-3 left-3 inline-flex items-center gap-3 rounded-md border border-white/10 bg-black/45 px-2.5 py-1 text-[10px] text-white/60 shadow-2xl backdrop-blur">
+        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-2 rounded-sm bg-[#8E3DFF]" /> agent</span>
+        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-2 rounded-sm bg-[#62d08f]" /> memory</span>
+        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-2 rounded-sm bg-[#7dd3fc]" /> source</span>
+        <span className="inline-flex items-center gap-1"><i className="h-1.5 w-2 rounded-sm bg-[#f59e0b]" /> stack</span>
       </div>
       {graph.metrics.hiddenEntries > 0 ? (
         <div className="pointer-events-none absolute right-3 top-16 max-w-[260px] rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_25%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_18%,transparent)] px-3 py-2 text-[10px] text-[var(--color-warning)] shadow-2xl backdrop-blur">
