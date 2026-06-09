@@ -7,6 +7,37 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.57] — 2026-06-09
+
+Theme personality, recovered local chats with familiar-scoped memory,
+and a small PTY guard.
+
+### Added
+
+- **Expanded memory reader.** Memory inspector exposes a fuller
+  per-file reader so longer entries stay legible inside the panel
+  instead of clipping at the rail. (#287)
+
+### Changed
+
+- **Distinct theme personalities.** The eight default palettes
+  (Midnight, Dusk, Slate, Moss, Sky, Dawn, Latte, Storm) now read as
+  meaningfully different — each gets accent, surface, and contrast
+  values tuned to its mood instead of all converging on a similar
+  purple-blue middle. (#285)
+
+### Fixed
+
+- **Local chat recovery + familiar-scoped memory.** Chats stored in
+  the Cave-local conversation store are now recovered into the
+  session list when the daemon is offline, and the familiar memory
+  view is scoped to the active familiar so other familiars' files no
+  longer bleed into the surface. (#287)
+- **PTY zero-size guard.** Clamps PTY dimensions to a safe minimum
+  when the host terminal pane reports a zero-pixel area, preventing
+  the desktop from crashing when chat or terminal panes are collapsed
+  to nothing.
+
 ## [0.0.56] — 2026-06-09
 
 Cross-surface polish, memory provenance + a11y groundwork, and a
