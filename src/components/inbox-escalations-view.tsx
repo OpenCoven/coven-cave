@@ -601,6 +601,7 @@ function GroupedList({
           onPatch={(body) => onPatch(it.id, body)}
           onOpenSource={() => onOpenSource(it)}
           onAskSnooze={() => onAskSnooze(it.id)}
+          onPromoteToActive={() => onActivate(idx)}
         />
         {snoozeMenuFor === it.id ? (
           <SnoozeMenu
@@ -667,6 +668,7 @@ function EscalationRow({
   onPatch,
   onOpenSource,
   onAskSnooze,
+  onPromoteToActive,
 }: {
   item: Escalation;
   isActive: boolean;
@@ -675,6 +677,7 @@ function EscalationRow({
   onPatch: (body: Record<string, unknown>) => void;
   onOpenSource: () => void;
   onAskSnooze: () => void;
+  onPromoteToActive: () => void;
 }) {
   const sevColor =
     item.severity === "critical"
@@ -738,6 +741,17 @@ function EscalationRow({
             <p className="mt-1 line-clamp-2 text-[12px] text-muted-foreground">{item.excerpt}</p>
           ) : null}
         </div>
+        {!isActive ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onPromoteToActive(); }}
+            className="shrink-0 opacity-0 group-hover:opacity-100 focus-ring rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-opacity"
+            aria-label="Show actions"
+            title="Show actions"
+          >
+            <Icon name="ph:dots-three-bold" width={14} />
+          </button>
+        ) : null}
       </div>
 
       {isActive ? (

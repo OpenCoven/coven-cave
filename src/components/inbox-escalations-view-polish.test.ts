@@ -40,4 +40,26 @@ assert.match(
   "Show resolved label must include count when > 0",
 );
 
+// ───────── Task 4: Per-row hover affordance ─────────
+assert.match(
+  source,
+  /onPromoteToActive:\s*\(\) => void;/,
+  "EscalationRow must accept onPromoteToActive prop",
+);
+assert.match(
+  source,
+  /aria-label="Show actions"/,
+  "Hover affordance button must carry aria-label='Show actions'",
+);
+assert.match(
+  source,
+  /onPromoteToActive=\{\(\) => onActivate\(idx\)\}/,
+  "renderRow must wire onPromoteToActive to onActivate(idx)",
+);
+assert.match(
+  source,
+  /opacity-0 group-hover:opacity-100[^"]*"[\s\S]{0,200}aria-label="Show actions"/,
+  "Hover affordance must use opacity-0 group-hover:opacity-100",
+);
+
 console.log("inbox-escalations-view-polish.test.ts: ok");
