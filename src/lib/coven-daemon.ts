@@ -109,3 +109,33 @@ export async function callDaemon<T = unknown>({
  * decision so env changes are honored at call time.
  */
 export const COVEN_SOCKET_PATH = socketPath();
+
+/**
+ * Pull a human-readable error message out of a non-2xx daemon response.
+ * The daemon's convention is `{ error: { code, message } }` (see e.g.
+ * the session API's `invalid_request` 400s), but we accept a few shapes
+ * defensively in case different routes drift:
+ *
+ *   - `{ error: { message: string, code?: string } }`  — canonical
+ *   - `{ error: string }`                              — flat
+ *   - `{ message: string }`                            — top-level
+ *
+ * Returns null when the response carries no message we can surface
+ * (e.g. empty body, or the structured fields exist but aren't strings).
+ * Callers should fall back to `res.error ?? "daemon http <status>"`
+ * in that case.
+ */
+export function extractDaemonError(res: DaemonResponse<unknown>): string | null {
+  if (res.error) return res.error;
+  const data = res.data as Record<string, unknown> | null;
+  if (!data) return null;
+  const e = data.error;
+  if (typeof e === "string") return e;
+  if (e && typeof e === "object") {
+    const msg = (e as Record<string, unknown>).message;
+    if (typeof msg === "string") return msg;
+  }
+  const msg = data.message;
+  if (typeof msg === "string") return msg;
+  return null;
+}
