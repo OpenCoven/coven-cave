@@ -32,4 +32,16 @@ assert.doesNotMatch(timeline, /placeholder="Search links — try chat: github: s
 const rail = await readFile(new URL("./library-collection-rail.tsx", import.meta.url), "utf8");
 assert.match(rail, /\{ id: "all",\s+label: "Timeline",\s+icon: "ph:link" \}/, "STATIC_LIST_SECTIONS first row label must be 'Timeline'");
 
+// ───────── Task 4: Section-aware preview empty state ─────────
+const preview = await readFile(new URL("./library-doc-preview.tsx", import.meta.url), "utf8");
+const view    = await readFile(new URL("./library-view.tsx",        import.meta.url), "utf8");
+
+assert.match(preview, /LibrarySectionKind[\s\S]{0,200}?from "@\/lib\/library-types"/, "LibrarySectionKind must be imported from library-types");
+assert.match(preview, /const EMPTY_TEXT: Record<LibrarySectionKind, string> = \{/, "EMPTY_TEXT typed Record<LibrarySectionKind, string>");
+for (const section of ["all", "docs", "bookmarks", "reading", "github", "projects", "skills"]) {
+  assert.ok(new RegExp(`${section}:\\s*"Select`).test(preview), `EMPTY_TEXT entry for ${section}`);
+}
+assert.match(preview, /activeSection \? EMPTY_TEXT\[activeSection\] : "Select an item to preview"/, "Empty render uses EMPTY_TEXT[activeSection]");
+assert.match(view, /<LibraryDocPreview\s+selected=\{selectedItem\}\s+loading=\{previewLoading\}\s+activeSection=\{activeSection\}/, "library-view passes activeSection");
+
 console.log("library-polish.test.ts: ok");

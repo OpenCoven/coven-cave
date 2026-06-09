@@ -11,6 +11,7 @@ import type {
   LibraryReadingItem,
   LibraryGitHubItem,
   ReadingStatus,
+  LibrarySectionKind,
 } from "@/lib/library-types";
 import type { Skill } from "@/components/library-collection-rail";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -24,7 +25,17 @@ export type SelectedItem =
   | { kind: "skill"; skill: Skill }
   | null;
 
-type Props = { selected: SelectedItem; loading: boolean };
+type Props = { selected: SelectedItem; loading: boolean; activeSection?: LibrarySectionKind };
+
+const EMPTY_TEXT: Record<LibrarySectionKind, string> = {
+  all: "Select an item to preview",
+  docs: "Select a doc to preview",
+  bookmarks: "Select a bookmark to preview",
+  reading: "Select a reading item to preview",
+  github: "Select a GitHub item to preview",
+  projects: "Select a project to preview",
+  skills: "Select a skill to view",
+};
 
 // ── Helpers ──────────────────────────────────────────────────────
 const dateFmt = new Intl.DateTimeFormat([], { year: "numeric", month: "short", day: "numeric" });
@@ -674,7 +685,7 @@ function SkillDetail({ skill }: { skill: Skill }) {
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────
-export function LibraryDocPreview({ selected, loading }: Props) {
+export function LibraryDocPreview({ selected, loading, activeSection }: Props) {
   if (loading) {
     return (
       <div className="library-preview library-preview--empty">
@@ -686,7 +697,9 @@ export function LibraryDocPreview({ selected, loading }: Props) {
     return (
       <div className="library-preview library-preview--empty">
         <Icon name="ph:book-open" width={32} className="library-preview-empty-icon" />
-        <span className="library-preview-empty-text">Select a document to preview</span>
+        <span className="library-preview-empty-text">
+          {activeSection ? EMPTY_TEXT[activeSection] : "Select an item to preview"}
+        </span>
       </div>
     );
   }

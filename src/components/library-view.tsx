@@ -125,7 +125,7 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
       />
       <div className="library-divider" />
       {/* Preview pane — dominant left content area */}
-      <LibraryDocPreview selected={selectedItem} loading={previewLoading} />
+      <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} />
 
       {/* Collapsible list panel — matches browser rail expand/collapse pattern */}
       <div
