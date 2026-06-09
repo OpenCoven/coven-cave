@@ -16,6 +16,39 @@
   gap: 16px;
   overflow-y: auto;
   box-sizing: border-box;
+  /* Visually center on the viewport, compensating for the side-panel widths
+   * exposed by the Shell as --shell-nav-px / --shell-agent-px. The asymmetry
+   * (nav present, agent collapsed in home mode) would otherwise push the
+   * composer off to the right.
+   *
+   * Two coordinated pieces:
+   *   1. --hc-asymmetry — abs(nav - agent), used to narrow the composer
+   *      cards so there is room to translate them all the way to the
+   *      viewport's center without overflowing under a side panel.
+   *   2. transform: translateX(clamp(...)) — the actual viewport shift,
+   *      capped to the available free space (panel_width − card_width)/2
+   *      so the card never overflows even if the variables get out of sync.
+   */
+  --hc-asymmetry: max(
+    calc(var(--shell-nav-px, 0px) - var(--shell-agent-px, 0px)),
+    calc(var(--shell-agent-px, 0px) - var(--shell-nav-px, 0px))
+  );
+  --hc-max-shift: max(
+    0px,
+    calc((100% - 880px) / 2),
+    calc(var(--hc-asymmetry) / 2)
+  );
+  --hc-ideal-shift: calc(
+    (var(--shell-agent-px, 0px) - var(--shell-nav-px, 0px)) / 2
+  );
+  transform: translateX(
+    clamp(
+      calc(-1 * var(--hc-max-shift)),
+      var(--hc-ideal-shift),
+      var(--hc-max-shift)
+    )
+  );
+  transition: transform 120ms ease-out;
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
@@ -46,13 +79,15 @@
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
-  max-width: 760px;
+  max-width: min(880px, calc(100% - var(--hc-asymmetry, 0px)));
 }
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
 .home-composer-card {
   width: 100%;
-  max-width: 760px;
+  /* The wrap already applies the asymmetry-aware max-width; the card just
+   * fills it so we don't subtract --hc-asymmetry twice. */
+  max-width: 100%;
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 16px;
@@ -253,7 +288,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-width: 760px;
+  max-width: min(880px, calc(100% - var(--hc-asymmetry, 0px)));
   width: 100%;
   justify-content: center;
 }

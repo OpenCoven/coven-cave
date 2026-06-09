@@ -314,6 +314,19 @@ body {
   display: flex;
 }
 
+/* Home composer needs to visually center on the viewport, which means its
+ * .home-composer-root translates left to compensate for the nav panel.
+ * Allow the detail panel to overflow visible only while it contains a Home
+ * composer; react-resizable-panels sets `overflow: auto` inline, so the
+ * override needs `!important`. The composer's own .home-composer-root
+ * keeps its own vertical scroll. */
+.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) {
+  overflow: visible !important;
+}
+.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) > .shell-detail {
+  overflow: visible;
+}
+
 /* Inner panel border — subtle dividing line on the right edge of side panels */
 .shell-nav-panel { border-right: 1px solid var(--border-hairline); }
 .shell-agent-panel { border-left: 1px solid var(--border-hairline); }

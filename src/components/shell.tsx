@@ -175,6 +175,12 @@ function ShellInner({
     return typeof pct !== "number" || pct > 0;
   });
 
+  // Track rendered pixel widths of the side panels so child surfaces (e.g. the
+  // Home composer) can visually center on the viewport rather than on the
+  // asymmetric .shell-detail panel.
+  const [navWidthPx, setNavWidthPx] = useState(0);
+  const [agentWidthPx, setAgentWidthPx] = useState(0);
+
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
@@ -250,7 +256,10 @@ function ShellInner({
         collapsible
         collapsedSize={0}
         panelRef={navRef}
-        onResize={(size) => setNavOpen((size.asPercentage ?? 0) > 0)}
+        onResize={(size) => {
+          setNavOpen((size.asPercentage ?? 0) > 0);
+          setNavWidthPx(size.inPixels ?? 0);
+        }}
       >
         <aside className="shell-nav">{nav}</aside>
       </Panel>
@@ -290,7 +299,10 @@ function ShellInner({
             collapsible
             collapsedSize={0}
             panelRef={agentRef}
-            onResize={(size) => setAgentOpen((size.asPercentage ?? 0) > 0)}
+            onResize={(size) => {
+              setAgentOpen((size.asPercentage ?? 0) > 0);
+              setAgentWidthPx(size.inPixels ?? 0);
+            }}
           >
             <aside className="shell-agent">{agentOpen ? agent : null}</aside>
           </Panel>
@@ -300,7 +312,15 @@ function ShellInner({
   );
 
   return (
-    <div className="shell-frame flex h-full w-full flex-col">
+    <div
+      className="shell-frame flex h-full w-full flex-col"
+      style={{
+        // Surfaces that need to visually center on the viewport (e.g. Home)
+        // use these to compensate for the asymmetric side-panel widths.
+        ["--shell-nav-px" as const]: `${Math.round(navWidthPx)}px`,
+        ["--shell-agent-px" as const]: `${Math.round(agentWidthPx)}px`,
+      }}
+    >
       {topBar}
       <div className="shell-body flex flex-1 min-h-0">
         {familiarRail}
