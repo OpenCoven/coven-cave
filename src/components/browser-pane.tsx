@@ -536,25 +536,24 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
         className={[
           "browser-tab-rail group/rail relative flex flex-col items-center bg-[var(--bg-panel)] py-1.5",
           "transition-[width] duration-150 ease-out",
-          "w-1.5 hover:w-12 focus-within:w-12",
+          "w-3.5 hover:w-12 focus-within:w-12",
           railExpanded ? "!w-12" : "",
         ].join(" ")}
-        style={{ minWidth: railExpanded ? 48 : 6 }}
+        style={{ minWidth: railExpanded ? 48 : 14 }}
         onMouseEnter={() => setRailHover(true)}
         onMouseLeave={() => setRailHover(false)}
         aria-label="Browser tabs"
       >
-        {/* Collapsed-state hint: a subtle vertical accent so the rail is
-            still discoverable when hidden. */}
-        <span
-          aria-hidden
-          className={[
-            "pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 w-[2px] rounded-r-full bg-[var(--fg-base)]/20",
-            "transition-opacity duration-150",
-            railExpanded ? "opacity-0" : "opacity-100",
-          ].join(" ")}
-          style={{ height: 18 }}
-        />
+        {/* Collapsed-state hint: tab-count badge — communicates "tabs exist,
+            here's how many" without taking iframe space. */}
+        {!railExpanded ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 grid h-5 min-w-5 place-items-center rounded-r-full bg-[var(--bg-elevated)] px-1 text-[10px] font-semibold text-[var(--text-muted)] transition-opacity duration-150"
+          >
+            {tabs.length}
+          </span>
+        ) : null}
         {/* Tabs only render their content when the rail is expanded so
             collapsed-state mouse targets stay tiny and the page is not
             visually crowded. The rail itself remains hoverable in both
