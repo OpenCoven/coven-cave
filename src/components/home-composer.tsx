@@ -391,6 +391,10 @@ export function HomeComposer({
         </div>
       </div>
 
+      <div className="hc-keyboard-hint">
+        ⏎ send · ⇧⏎ newline · ↑↓ history · / commands
+      </div>
+
       {/* Suggestions */}
       {suggestionsLoading ? (
         <div className="home-composer-suggestions" aria-hidden>

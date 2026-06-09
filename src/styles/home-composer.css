@@ -395,3 +395,10 @@
   font-size: 10px;
   color: var(--text-muted);
 }
+
+.hc-keyboard-hint {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+}

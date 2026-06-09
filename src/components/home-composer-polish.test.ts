@@ -26,4 +26,11 @@ assert.doesNotMatch(
   "Redundant subtitle must be removed",
 );
 
+// ───────── Task 2: Keyboard hint strip ─────────
+assert.match(source, /<div className="hc-keyboard-hint">/, "hc-keyboard-hint div in JSX");
+assert.match(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ commands/, "Hint copy: send/newline/history/commands");
+
+const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
+assert.match(css, /\.hc-keyboard-hint\s*\{[\s\S]*?color:\s*var\(--text-muted\)/, ".hc-keyboard-hint CSS with --text-muted");
+
 console.log("home-composer-polish.test.ts: ok");
