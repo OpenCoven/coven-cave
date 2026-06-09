@@ -425,7 +425,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
           </div>
           {visibleCoven.length === 0 ? (
-            <div className="grid min-h-[180px] place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] text-center text-[12px] text-[var(--text-muted)]">
+            <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
               {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
             </div>
           ) : (

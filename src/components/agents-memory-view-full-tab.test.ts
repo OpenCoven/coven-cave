@@ -22,4 +22,18 @@ for (const label of ["Agent memories", "Coven origin", "External harnesses", "Ru
   assert.ok(source.includes(label), `Inline stats row must keep label: ${label}`);
 }
 
+// ───────── Task 8: empty-state min-height collapsed ─────────
+
+assert.doesNotMatch(
+  source,
+  /grid min-h-\[180px\] place-items-center rounded-lg border border-dashed/,
+  "Familiar memory empty-state card must not enforce min-h-[180px]",
+);
+
+assert.match(
+  source,
+  /grid place-items-center rounded-lg border border-dashed border-\[var\(--border-hairline\)\] px-4 py-6/,
+  "Empty-state card must use py-6 padding instead of min-h",
+);
+
 console.log("agents-memory-view-full-tab.test.ts: ok");
