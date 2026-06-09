@@ -868,15 +868,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       <header className="cave-chat-linear-header">
-        {/* Single compact bar: avatar · name · status · meta · context strip */}
+        {/* Single compact bar: status · meta · context strip (identity lives in the rail above) */}
         <div className="cave-chat-linear-header-row">
           <div className="cave-chat-linear-header-identity">
-            <div className="cave-agent-marker cave-agent-marker--xs" aria-hidden>
-              <FamiliarIcon familiar={familiar} size="sm" />
-            </div>
-            <h2 className="shrink-0 text-[13px] font-semibold text-[var(--text-primary)] leading-none">
-              {familiar.display_name}
-            </h2>
             <span className={[
               "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
               daemonRunning === false
@@ -886,7 +880,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <span className="h-1.5 w-1.5 rounded-full bg-current" />
               {daemonRunning === false ? "offline" : "ready"}
             </span>
-            <span className="text-[var(--border-hairline)]" aria-hidden>|</span>
             <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)] font-mono">
               {familiar.harness ?? ""}
               {familiar.model ? <> · {familiar.model}</> : null}

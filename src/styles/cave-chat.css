@@ -826,11 +826,8 @@ details[open] > .cave-tool-summary::before {
   gap: 10px;
   width: 100%;
   border-bottom: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-panel) 76%, transparent);
+  background: var(--bg-raised);
   padding: 8px 14px;
-  box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .cave-chat-linear-header-row {
