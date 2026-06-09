@@ -291,18 +291,11 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search memory..."
+              placeholder={lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory...` : "Search memory..."}
               className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
           </div>
-          {lockToFamiliar ? (
-            <span
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)]"
-              aria-label="Locked to familiar"
-            >
-              {selectedFamiliar?.display_name ?? "—"}
-            </span>
-          ) : (
+          {lockToFamiliar ? null : (
             <select
               value={familiarFilter}
               onChange={(event) => setFamiliarFilter(event.target.value)}
