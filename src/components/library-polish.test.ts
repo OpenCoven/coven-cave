@@ -22,4 +22,10 @@ assert.match(github, /\(a\.title \?\? ""\)\.localeCompare\(b\.title \?\? ""\)/, 
 assert.match(github, /\(a\.repo \?\? ""\)\.localeCompare\(b\.repo \?\? ""\)/,     "github repo null-guard");
 assert.match(github, /\(a\.savedAt \?\? ""\)\.localeCompare\(b\.savedAt \?\? ""\)/,"github savedAt null-guard");
 
+// ───────── Task 2: Timeline placeholder shortened ─────────
+const timeline = await readFile(new URL("./library-timeline.tsx", import.meta.url), "utf8");
+assert.match(timeline, /placeholder="Search links…"/, "Timeline placeholder must be 'Search links…'");
+assert.match(timeline, /title="Search links — try chat: github: sage:"/, "Verbose hint must live in title=");
+assert.doesNotMatch(timeline, /placeholder="Search links — try chat: github: sage:"/, "Old long placeholder must be removed");
+
 console.log("library-polish.test.ts: ok");

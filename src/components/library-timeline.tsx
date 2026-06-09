@@ -101,7 +101,8 @@ export function LibraryTimeline({
           <SearchInput
             value={search}
             onValueChange={setSearch}
-            placeholder="Search links — try chat: github: sage:"
+            placeholder="Search links…"
+            title="Search links — try chat: github: sage:"
             onClear={() => setSearch("")}
           />
         }
