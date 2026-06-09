@@ -31,6 +31,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftHarness, setDraftHarness] = useState(familiar.harness ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
+  const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
+  const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
+  const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
   const [toast, setToast] = useState<string | null>(null);
   const [manifest, setManifest] = useState<HarnessCapabilityManifest | null>(null);
   const [manifestState, setManifestState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -40,8 +43,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setDraftHarness(familiar.harness ?? "");
     setDraftModel(familiar.model ?? "");
     setDraftNote(familiar.note ?? "");
+    setDraftVoiceProvider(familiar.voiceProvider ?? "");
+    setDraftVoiceModel(familiar.voiceModel ?? "");
+    setDraftVoiceName(familiar.voiceName ?? "");
     setToast(null);
-  }, [familiar.id, familiar.harness, familiar.model, familiar.note]);
+  }, [familiar.id, familiar.harness, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +121,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         if ("harness" in patch) setDraftHarness(familiar.harness ?? "");
         if ("model" in patch) setDraftModel(familiar.model ?? "");
         if ("note" in patch) setDraftNote(familiar.note ?? "");
+        if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
+        if ("voiceModel" in patch) setDraftVoiceModel(familiar.voiceModel ?? "");
+        if ("voiceName" in patch) setDraftVoiceName(familiar.voiceName ?? "");
       } else {
         reportDaemonSyncSuccess();
       }
@@ -178,6 +187,66 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           />
         </div>
       </label>
+
+      <label className="familiar-studio-brain__row">
+        <span className="familiar-studio-brain__label">Voice provider</span>
+        <div className="familiar-studio-brain__control">
+          <select
+            value={draftVoiceProvider}
+            onChange={(e) => {
+              setDraftVoiceProvider(e.target.value);
+              void save({ voiceProvider: e.target.value || undefined });
+            }}
+            className="familiar-studio-brain__input"
+          >
+            <option value="">— none —</option>
+            <option value="openai">OpenAI Realtime</option>
+            <option value="gemini" disabled>Gemini Live (v1.1)</option>
+          </select>
+        </div>
+      </label>
+
+      {draftVoiceProvider === "openai" && (
+        <>
+          <label className="familiar-studio-brain__row">
+            <span className="familiar-studio-brain__label">Voice model</span>
+            <div className="familiar-studio-brain__control">
+              <input
+                type="text"
+                value={draftVoiceModel}
+                onChange={(e) => setDraftVoiceModel(e.target.value)}
+                onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || undefined })}
+                placeholder="gpt-4o-realtime-preview"
+                className="familiar-studio-brain__input"
+              />
+            </div>
+          </label>
+
+          <label className="familiar-studio-brain__row">
+            <span className="familiar-studio-brain__label">Voice</span>
+            <div className="familiar-studio-brain__control">
+              <select
+                value={draftVoiceName}
+                onChange={(e) => {
+                  setDraftVoiceName(e.target.value);
+                  void save({ voiceName: e.target.value || undefined });
+                }}
+                className="familiar-studio-brain__input"
+              >
+                <option value="">— default (alloy) —</option>
+                <option value="alloy">alloy</option>
+                <option value="ash">ash</option>
+                <option value="ballad">ballad</option>
+                <option value="coral">coral</option>
+                <option value="echo">echo</option>
+                <option value="sage">sage</option>
+                <option value="shimmer">shimmer</option>
+                <option value="verse">verse</option>
+              </select>
+            </div>
+          </label>
+        </>
+      )}
 
       {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}
 
