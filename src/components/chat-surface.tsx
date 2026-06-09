@@ -338,6 +338,8 @@ export function ChatSurface({
                 activeFamiliarId={activeFamiliarId}
                 activeSessionId={activeSessionId ?? null}
                 hideFamiliarFilter
+                compact
+                groupByRecency
                 onOpenSession={(sessionId, familiarId) => {
                   if (onOpenSession) {
                     onOpenSession(sessionId, familiarId);

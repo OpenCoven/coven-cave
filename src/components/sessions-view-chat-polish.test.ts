@@ -131,4 +131,12 @@ assert.match(
   "Title query filter must be case-insensitive",
 );
 
+// ───────── Task 6: chat-surface passes compact + groupByRecency ─────────
+const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+assert.match(
+  chatSurface,
+  /<SessionsView[\s\S]*?compact[\s\S]*?groupByRecency[\s\S]*?\/>/,
+  "chat-surface.tsx must pass compact and groupByRecency to SessionsView",
+);
+
 console.log("sessions-view-chat-polish.test.ts: ok");
