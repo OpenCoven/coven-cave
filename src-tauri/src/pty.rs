@@ -40,6 +40,9 @@ static SESSIONS: Lazy<Mutex<HashMap<String, PtySession>>> =
 static STARTING_SESSIONS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
+const DEFAULT_PTY_COLS: u16 = 120;
+const DEFAULT_PTY_ROWS: u16 = 40;
+
 fn url_origin(url: &Url) -> Option<String> {
     let host = url.host_str()?;
     let port = url.port_or_known_default()?;
@@ -130,12 +133,7 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
 
     let pty_system = native_pty_system();
     let pair = pty_system
-        .openpty(PtySize {
-            rows: options.rows.unwrap_or(40),
-            cols: options.cols.unwrap_or(120),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
+        .openpty(pty_size_from_options(&options))
         .map_err(|e| e.to_string())?;
 
     // Do not accept renderer-supplied command/args/env. PTY permissions are
@@ -281,12 +279,7 @@ pub fn pty_resize(webview: Webview, thread_id: String, cols: u16, rows: u16) -> 
         .ok_or_else(|| format!("pty '{}' not found", thread_id))?;
     session
         .master
-        .resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
+        .resize(pty_size(cols, rows))
         .map_err(|e| e.to_string())
 }
 
@@ -402,6 +395,22 @@ fn normalize_cwd(raw: &str) -> String {
     }
     #[cfg(not(target_os = "windows"))]
     raw.to_string()
+}
+
+fn pty_size_from_options(options: &StartOptions) -> PtySize {
+    pty_size(
+        options.cols.unwrap_or(DEFAULT_PTY_COLS),
+        options.rows.unwrap_or(DEFAULT_PTY_ROWS),
+    )
+}
+
+fn pty_size(cols: u16, rows: u16) -> PtySize {
+    PtySize {
+        rows: if rows == 0 { DEFAULT_PTY_ROWS } else { rows },
+        cols: if cols == 0 { DEFAULT_PTY_COLS } else { cols },
+        pixel_width: 0,
+        pixel_height: 0,
+    }
 }
 
 /// Default shell for the current platform.
@@ -531,6 +540,22 @@ mod tests {
         assert_eq!(options.thread_id, "cave.comux.test");
         assert_eq!(options.cols, Some(120));
         assert_eq!(options.rows, Some(40));
+    }
+
+    #[test]
+    fn pty_size_from_options_rejects_zero_sized_terminal_startup() {
+        let options = StartOptions {
+            thread_id: "cave.comux.test".to_string(),
+            project_root: None,
+            cols: Some(0),
+            rows: Some(0),
+        };
+
+        let size = pty_size_from_options(&options);
+        assert_eq!(size.cols, 120);
+        assert_eq!(size.rows, 40);
+        assert_eq!(size.pixel_width, 0);
+        assert_eq!(size.pixel_height, 0);
     }
 
     #[test]
