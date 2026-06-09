@@ -19,3 +19,13 @@ GITHUB_USERNAME:
   ref: "op://Development/GitHub PAT/username"
   description: "GitHub username associated with the PAT"
   required: false
+
+OPENAI_API_KEY:
+  ref: ""
+  description: "OpenAI API key, used to mint ephemeral tokens for Realtime voice"
+  required: false
+
+GOOGLE_API_KEY:
+  ref: ""
+  description: "Google AI Studio key, used to mint ephemeral tokens for Gemini Live (v1.1)"
+  required: false
