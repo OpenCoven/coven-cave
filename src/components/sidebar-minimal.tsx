@@ -221,11 +221,6 @@ function FamiliarSwitcher({
     });
   }, [activeFamiliar, sessions, responseNeeded, harnessInstalled]);
 
-  const subtitle = activeFamiliar
-    ? [activeFamiliar.role, activeFamiliar.harness].filter(Boolean).join(" · ") ||
-      activeFamiliar.id
-    : "Pick one to begin";
-
   return (
     <div className="sidebar-familiar-switcher" ref={wrapRef}>
       <button
@@ -259,11 +254,9 @@ function FamiliarSwitcher({
           ) : null}
         </span>
         <span className="sidebar-familiar-switcher__body">
-          <span className="sidebar-familiar-switcher__eyebrow">Familiar</span>
           <span className="sidebar-familiar-switcher__name">
             {activeFamiliar?.display_name ?? "No familiar selected"}
           </span>
-          <span className="sidebar-familiar-switcher__meta">{subtitle}</span>
         </span>
         <Icon
           name="ph:caret-down"
