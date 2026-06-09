@@ -17,6 +17,8 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import { VoiceCallButton } from "./voice-call-button";
+import { VoiceCallOverlay } from "./voice-call-overlay";
 
 type ToolEvent = {
   id: string;
@@ -593,6 +595,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
+  const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const currentSessionRef = useRef<string | null>(sessionId);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -1146,6 +1149,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               {(session?.project_root ?? projectRoot) ? <> · {repoName(session?.project_root ?? projectRoot)}</> : null}
             </span>
           </div>
+          <VoiceCallButton
+            familiar={familiar}
+            callActive={voiceCallOpen}
+            onOpen={() => setVoiceCallOpen(true)}
+          />
           <ChatContextStrip
             session={session ?? null}
             linkedContext={linkedContext}
@@ -1362,6 +1370,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </div>
       </footer>
+      {voiceCallOpen && sessionId && (
+        <VoiceCallOverlay
+          familiar={familiar}
+          sessionId={sessionId}
+          onClose={() => setVoiceCallOpen(false)}
+        />
+      )}
     </section>
   );
 });
