@@ -87,12 +87,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
         <div>
           <p className="text-[15px] font-medium text-[var(--text-secondary)]">
-            Choose a familiar from the rail
+            Choose a familiar from the sidebar selector
           </p>
           <p className="mt-1 text-[12px]">
             {pendingProjectRoot
               ? "Selecting one will start this chat in the pending project."
-              : "Pick who should handle the conversation."}
+              : "Pick who should handle the conversation from the left panel."}
           </p>
         </div>
         {onOpenOnboarding ? (

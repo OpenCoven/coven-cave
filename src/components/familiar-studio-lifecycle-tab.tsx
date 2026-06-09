@@ -109,7 +109,7 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
       <section className="familiar-studio-lifecycle__section">
         <h3 className="familiar-studio-lifecycle__heading">Archive</h3>
         <p className="familiar-studio-lifecycle__hint">
-          Archived familiars are hidden from the rail and switchers but remain
+          Archived familiars are hidden from the sidebar selector and switchers but remain
           in this Studio&apos;s list view.
         </p>
         {isArchived ? (

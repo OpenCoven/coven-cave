@@ -54,7 +54,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
           <div className="companion-rail__empty-body">
             <p className="companion-rail__empty-title">No familiar yet</p>
             <p className="companion-rail__empty-sub">
-              Pick a familiar from the rail on the left, or create one.
+              Pick a familiar from the sidebar selector, or create one.
             </p>
             {onCreateFamiliar ? (
               <button

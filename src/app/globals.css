@@ -2806,61 +2806,11 @@ body {
 }
 
 /* ────────────────────────────────────────────────
-   Sidebar trigger rail — slim full-height column
-   holding the sidebar toggle, with a faint tint
+   Agent trigger rail — right-edge slim column holding
+   the Salem toggle, mirror of the (now-removed) sidebar
+   trigger rail.
    ──────────────────────────────────────────────── */
 
-.sidebar-trigger-rail {
-  width: 22px;
-  flex: 0 0 22px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  padding: 0;
-  background: color-mix(in oklch, var(--bg-panel) 22%, transparent);
-  border-right: 1px solid var(--border-hairline);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  user-select: none;
-}
-
-.sidebar-trigger-rail__toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1 1 auto;
-  align-self: stretch;
-  width: 100%;
-  min-height: 0;
-  padding: 12px 0;
-  border-radius: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
-}
-
-.sidebar-trigger-rail:hover .sidebar-trigger-rail__toggle,
-.sidebar-trigger-rail__toggle:hover,
-.sidebar-trigger-rail__toggle:focus-visible {
-  opacity: 1;
-}
-
-.sidebar-trigger-rail__toggle:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.sidebar-trigger-rail__toggle:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: -2px;
-}
-
-/* Right-edge mirror of .sidebar-trigger-rail — same dimensions and behaviour,
- * border swapped to the left edge so the divider sits between this rail and
- * the agent panel to its left. Hosts the Salem toggle. */
 .agent-trigger-rail {
   width: 22px;
   flex: 0 0 22px;

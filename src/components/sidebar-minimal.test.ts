@@ -43,32 +43,26 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /activeFamiliar\?: ResolvedFamiliar \| null/,
-  "Sidebar receives the resolved selected familiar so the switcher can render avatar/color",
+  /activeFamiliarId\?: string \| null/,
+  "Sidebar receives the current familiar scope id",
 );
 
 assert.match(
   source,
-  /<FamiliarSwitcher/,
-  "Sidebar top slot renders the full-width FamiliarSwitcher (replaces the old search row + selected-familiar card)",
+  /onFamiliarScopeChange: \(id: string\) => void/,
+  "Sidebar exposes a non-null familiar scope change callback (hard-scope)",
 );
 
 assert.match(
   source,
-  /onSelectFamiliar: \(id: string\) => void/,
-  "Sidebar exposes onSelectFamiliar so the switcher can change the active familiar like the old avatar rail",
-);
-
-assert.match(
-  source,
-  /onAddFamiliar: \(\) => void/,
-  "Sidebar exposes onAddFamiliar so the switcher menu can trigger onboarding",
+  /<FamiliarScopeSelect[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
+  "Sidebar top slot renders the familiar scope selector",
 );
 
 assert.doesNotMatch(
   source,
-  /onOpenSearch/,
-  "Sidebar no longer surfaces a Search action row — the slot is now the FamiliarSwitcher",
+  /onOpenSearch|FamiliarSwitcher|sidebar-familiar-switcher|SelectedFamiliarInfo|sidebar-selected-familiar/,
+  "Sidebar no longer surfaces the old search, familiar switcher, or selected-familiar card",
 );
 
 assert.match(
@@ -171,10 +165,10 @@ assert.match(
   "capabilities stays in Tools",
 );
 
-assert.match(
-  source,
-  /className="sidebar-new-chat-row">\s*<ActionRow/,
-  "The mobile New Chat ActionRow stays wrapped in .sidebar-new-chat-row so responsive CSS can hide it on desktop",
-);
+// PR #322 wrapped the New Chat ActionRow in .sidebar-new-chat-row so desktop
+// CSS could hide it (the FamiliarSwitcher had its own + button to dedupe
+// against). PR #304 replaced the switcher with a plain dropdown that has no
+// + button, so the New Chat ActionRow is the sole new-chat affordance now —
+// no wrapper, no responsive hide.
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

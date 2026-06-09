@@ -90,14 +90,20 @@ assert.doesNotMatch(
 
 assert.match(
   sidebar,
-  /<FamiliarSwitcher/,
-  "Sidebar top slot renders the full-width FamiliarSwitcher in place of the old search/selected-familiar card",
+  /function FamiliarScopeSelect/,
+  "Sidebar top slot renders the familiar scope selector in place of search",
+);
+
+assert.match(
+  workspace,
+  /onFamiliarScopeChange=\{selectFamiliar\}/,
+  "Workspace wires the sidebar familiar scope selector into the single-familiar select handler",
 );
 
 assert.doesNotMatch(
   workspace,
-  /FamiliarAvatarRail/,
-  "Workspace no longer mounts the far-left FamiliarAvatarRail — the switcher inside the sidebar replaces it",
+  /FamiliarAvatarRail|familiarRail=\{|sidebar-trigger-rail/,
+  "Workspace no longer mounts the far-left familiar mini panel",
 );
 
 assert.match(
