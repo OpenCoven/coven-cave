@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-const { normalizeDaemonError, socketPath } = await import("./coven-daemon.ts");
+const { normalizeDaemonError, socketPath, extractDaemonError } = await import("./coven-daemon.ts");
 
 // ENOENT (socket missing) → "daemon offline"
 {
@@ -61,6 +61,53 @@ const { normalizeDaemonError, socketPath } = await import("./coven-daemon.ts");
   const def = socketPath();
   assert.match(def, /\.coven\/coven\.sock$/);
   if (before !== undefined) process.env.COVEN_SOCKET = before;
+}
+
+// extractDaemonError handles the canonical { error: { message } } shape
+{
+  const res = {
+    ok: false,
+    status: 400,
+    data: {
+      error: {
+        code: "invalid_request",
+        message: "harness `openclaw` is not a supported harness; expected one of [\"codex\", \"claude\"]",
+      },
+    },
+  };
+  const msg = extractDaemonError(res);
+  assert.ok(msg, "extractDaemonError must surface a nested error.message");
+  assert.match(msg, /not a supported harness/);
+}
+
+// extractDaemonError accepts a flat { error: string } shape too
+{
+  const res = { ok: false, status: 500, data: { error: "internal" } };
+  assert.equal(extractDaemonError(res), "internal");
+}
+
+// Top-level message field — last-ditch shape some routes may use
+{
+  const res = { ok: false, status: 500, data: { message: "boom" } };
+  assert.equal(extractDaemonError(res), "boom");
+}
+
+// Socket-level errors (res.error populated upstream) pass through verbatim
+{
+  const res = { ok: false, status: 0, data: null, error: "daemon offline" };
+  assert.equal(extractDaemonError(res), "daemon offline");
+}
+
+// Empty body → null (callers fall back to "daemon http <status>")
+{
+  const res = { ok: false, status: 502, data: null };
+  assert.equal(extractDaemonError(res), null);
+}
+
+// Structured field exists but isn't a string → null (don't leak object dumps)
+{
+  const res = { ok: false, status: 400, data: { error: { code: "x" /* no message */ } } };
+  assert.equal(extractDaemonError(res), null);
 }
 
 console.log("coven-daemon.test.ts: ok");

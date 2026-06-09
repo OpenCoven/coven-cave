@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { loadBoard, updateCard } from "@/lib/cave-board";
-import { callDaemon } from "@/lib/coven-daemon";
+import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
+
+// Match the daemon's "harness X is not a supported harness" rejection
+// from `/api/v1/sessions`. The daemon emits this when the requested
+// harness isn't registered for daemon-managed sessions (e.g. `openclaw`
+// and `hermes` today, which ship as their own CLI flows in chat/send
+// but don't yet have a daemon session adapter). Surfacing a friendly
+// 409 here saves the user from staring at "daemon http 400" with no
+// idea what to do.
+const UNSUPPORTED_HARNESS_RE = /not a supported harness/i;
 
 export const dynamic = "force-dynamic";
 
@@ -57,8 +66,23 @@ export async function POST(
   });
 
   if (!res.ok || !res.data?.id) {
+    const daemonMsg = extractDaemonError(res);
+    // Unsupported-harness errors aren't outages — they're a
+    // misconfiguration: the card is assigned to a familiar whose
+    // harness this daemon doesn't run as a task session. Return a 409
+    // with a message that tells the user what to do, instead of a 502
+    // that reads as "the daemon is broken".
+    if (daemonMsg && UNSUPPORTED_HARNESS_RE.test(daemonMsg)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `This familiar uses the '${binding.harness}' harness, which the daemon doesn't start as a task session. Reassign the card to a familiar with a daemon-supported harness, or use the regular Chat surface (daemon detail: ${daemonMsg}).`,
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
-      { ok: false, error: res.error ?? `daemon http ${res.status}` },
+      { ok: false, error: daemonMsg ?? res.error ?? `daemon http ${res.status}` },
       { status: 502 },
     );
   }
