@@ -43,8 +43,8 @@ assert.match(
 
 assert.match(
   source,
-  /\{compact\s*&&\s*loaded\s*&&\s*visibleCoven\.length\s*===\s*0\s*&&\s*visibleFiles\.length\s*===\s*0\s*\?/,
-  "Shared empty state must only render in compact mode when both lists are empty after load",
+  /\{compact\s*&&\s*loaded\s*&&(?:\s*!error\s*&&)?\s*visibleCoven\.length\s*===\s*0\s*&&\s*visibleFiles\.length\s*===\s*0\s*\?/,
+  "Shared empty state must only render in compact mode when both lists are empty after load (optional !error guard)",
 );
 
 // ───────── Task 5: vertical stack / balanced columns ─────────

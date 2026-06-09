@@ -212,6 +212,35 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
       ) ?? null,
     [memoryGraph, selectedMemoryId],
   );
+
+  type RecentItem = {
+    id: string;
+    kind: "coven" | "file";
+    title: string;
+    subtitle: string;
+    updatedAt: string;
+    path: string;
+  };
+
+  const recentInView = useMemo<RecentItem[]>(() => {
+    const covenRows: RecentItem[] = visibleCoven.map((entry) => ({
+      id: `memory:coven:${entry.id}`,
+      kind: "coven",
+      title: entry.title,
+      subtitle: `${familiarById.get(entry.familiar_id)?.display_name ?? entry.familiar_id} · ${age(entry.updated_at)}`,
+      updatedAt: entry.updated_at,
+      path: entry.path,
+    }));
+    const fileRows: RecentItem[] = visibleFiles.map((entry) => ({
+      id: `file:${entry.fullPath}`,
+      kind: "file",
+      title: entry.relPath,
+      subtitle: `${entry.sourceKindLabel} · ${age(entry.modified)}`,
+      updatedAt: entry.modified,
+      path: entry.fullPath,
+    }));
+    return [...covenRows, ...fileRows].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  }, [visibleCoven, visibleFiles, familiarById]);
   const firstMemoryId = useMemo(
     () => memoryGraph.nodes.find((node) => node.kind === "memory")?.id ?? null,
     [memoryGraph],
@@ -316,11 +345,11 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             />
           </section>
           <aside className="min-h-0">
-            <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Selected memory
-              </div>
-              {selectedMemory ? (
+            {selectedMemory ? (
+              <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                  Selected memory
+                </div>
                 <div className="mt-3">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="line-clamp-3 text-[15px] font-semibold leading-5 text-[var(--text-primary)]">
@@ -368,42 +397,52 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     <ExpandMemoryButton path={selectedMemory.path} title={selectedMemory.title} />
                   </div>
                 </div>
-              ) : (
-                <div className="mt-3 rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-6 text-center text-[12px] text-[var(--text-muted)]">
-                  {loaded ? "Select a memory card in the graph." : "Loading memories..."}
-                </div>
-              )}
-            </section>
+              </section>
+            ) : (
+              <p className="px-1 text-[11px] leading-5 text-[var(--text-muted)]">
+                {loaded
+                  ? "Click any card in the map to inspect it, or pick from the list below."
+                  : "Loading memories..."}
+              </p>
+            )}
 
-            <section className="mt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                  Recent in view
-                </h3>
-                <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
-              </div>
-              <div className="max-h-[420px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
-              {visibleCoven.slice(0, 18).map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => setSelectedMemoryId(`memory:coven:${entry.id}`)}
-                  className="focus-ring-inset flex w-full items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
-                >
-                  <Icon name="ph:brain" width={13} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block line-clamp-2 text-[12px] text-[var(--text-primary)]">{entry.title}</span>
-                    <span className="mt-0.5 block text-[10px] text-[var(--text-muted)]">{familiarById.get(entry.familiar_id)?.display_name ?? entry.familiar_id} · {age(entry.updated_at)}</span>
-                  </span>
-                </button>
-              ))}
-              {visibleCoven.length === 0 ? (
-                <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-                  {loaded ? (error ? "Couldn’t load memories. See the error above and try again." : "No memories match this agent view.") : "Loading memories..."}
+            {recentInView.length > 0 ? (
+              <section className={selectedMemory ? "mt-4" : "mt-3"}>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                    Recent in view
+                  </h3>
+                  <span className="text-[10px] text-[var(--text-muted)]">{recentInView.length} visible</span>
                 </div>
-              ) : null}
-              </div>
-            </section>
+                <div data-testid="graph-recent-list" className="max-h-[420px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+                  {recentInView.slice(0, 24).map((item) => {
+                    const isSelected = item.id === selectedMemoryId;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedMemoryId(item.id)}
+                        className={`focus-ring-inset flex w-full min-w-0 items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left ${isSelected ? "bg-[var(--bg-raised)]/55" : "hover:bg-[var(--bg-raised)]"}`}
+                      >
+                        <Icon
+                          name={item.kind === "file" ? "ph:file-text" : "ph:brain"}
+                          width={13}
+                          className={`mt-0.5 shrink-0 ${item.kind === "file" ? "text-[var(--text-muted)]" : "text-[var(--accent-presence)]"}`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[12px] text-[var(--text-primary)]">{item.title}</span>
+                          <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{item.subtitle}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : loaded && !error ? null : (
+              <p className="mt-3 px-1 text-[11px] leading-5 text-[var(--text-muted)]">
+                {error ? "Couldn’t load memories. See the error above and try again." : "Loading memories..."}
+              </p>
+            )}
           </aside>
         </div>
       ) : (
