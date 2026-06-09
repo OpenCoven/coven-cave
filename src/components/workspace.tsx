@@ -992,7 +992,10 @@ export function Workspace() {
         onNewChat={openProjectChat}
       />
     ) : mode === "github" ? (
-      <GitHubView />
+      <GitHubView
+        onJumpToSession={openAgentSession}
+        onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+      />
     ) : mode === "roles" ? (
       <PluginsView
         tabs={["roles", "workflows"]}

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import type { Card } from "@/lib/cave-board-types";
+import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import {
   GitHubActionPopover,
   type PopoverMode,
@@ -21,6 +23,16 @@ type ActivityResult = {
 };
 
 type PatStatus = { hasPat: boolean; login: string | null };
+
+type Filter = "all" | "pr" | "review_request" | "issue";
+
+type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
+type SortDir = "asc" | "desc";
+
+type Props = {
+  onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
+  onFocusCard?: (cardId: string) => void;
+};
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
@@ -39,36 +51,39 @@ function useFamiliars(): Familiar[] {
   return familiars;
 }
 
-function useCards(): Card[] {
+function useCards(): { cards: Card[]; reload: () => void } {
   const [cards, setCards] = useState<Card[]>([]);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/board")
       .then((r) => r.json())
       .then((data) => {
+        if (cancelled) return;
         if (data?.ok && Array.isArray(data.cards)) {
           setCards(data.cards as Card[]);
         }
       })
       .catch(() => {});
-  }, []);
-  return cards;
+    return () => { cancelled = true; };
+  }, [tick]);
+  return { cards, reload: () => setTick((t) => t + 1) };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function age(iso: string): string {
+function relTime(iso: string): string {
   const ts = Date.parse(iso);
   if (!Number.isFinite(ts)) return "";
-  const ms = Date.now() - ts;
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  const d = Math.round(s / 86400);
+  return d < 30 ? `${d}d` : `${Math.round(d / 30)}mo`;
 }
 
-const KIND_ICON: Record<string, string> = {
+const KIND_ICON: Record<string, "ph:git-pull-request" | "ph:issue-opened" | "ph:bell" | "ph:github-logo"> = {
   pr: "ph:git-pull-request",
   issue: "ph:issue-opened",
   review_request: "ph:git-pull-request",
@@ -83,11 +98,39 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 const KIND_COLOR: Record<string, string> = {
-  pr: "text-[var(--color-success)]",
-  issue: "text-[var(--accent-presence)]",
-  review_request: "text-[var(--color-warning)]",
-  notification: "text-[var(--text-muted)]",
+  pr: "var(--color-success)",
+  issue: "var(--accent-presence)",
+  review_request: "var(--color-warning)",
+  notification: "var(--text-muted)",
 };
+
+const KIND_ORDER: Record<string, number> = {
+  review_request: 0,
+  pr: 1,
+  issue: 2,
+  notification: 3,
+};
+
+const STATUS_DOT_COLOR: Record<CardStatus, string> = {
+  backlog: "var(--text-muted)",
+  inbox: "var(--accent-presence)",
+  running: "var(--color-warning)",
+  review: "var(--color-warning)",
+  blocked: "var(--color-danger)",
+  done: "var(--color-success)",
+};
+
+function linkedCardsForItem(cards: Card[], item: GitHubItem): Card[] {
+  const url = item.url.trim().toLowerCase();
+  const id = item.id.trim().toLowerCase();
+  return cards.filter((c) =>
+    (c.github ?? []).some(
+      (g) =>
+        g.url.trim().toLowerCase() === url ||
+        (id && g.id.trim().toLowerCase() === id),
+    ),
+  );
+}
 
 // ── PAT Setup Modal ───────────────────────────────────────────────────────────
 
@@ -223,152 +266,278 @@ function PatSetupModal({
   );
 }
 
-// ── Item row with actions ─────────────────────────────────────────────────────
+// ── Linked-task chip ──────────────────────────────────────────────────────────
 
-function GitHubItemRow({
+function LinkedTaskChip({
+  card,
+  familiar,
+  onFocusCard,
+}: {
+  card: Card;
+  familiar: { id: string; display_name: string } | null;
+  onFocusCard?: (cardId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onFocusCard?.(card.id);
+      }}
+      title={`${card.title}${familiar ? ` · ${familiar.display_name}` : ""}${card.sessionId ? " · chat linked" : ""}`}
+      className="gh-task-chip"
+    >
+      <span
+        className="gh-task-chip-dot"
+        style={{ background: STATUS_DOT_COLOR[card.status] }}
+        aria-hidden
+      />
+      <span className="gh-task-chip-title">{card.title}</span>
+      {card.sessionId && (
+        <Icon name="ph:chat-circle-dots" width={9} className="gh-task-chip-chat" />
+      )}
+    </button>
+  );
+}
+
+// ── Open-chat action ──────────────────────────────────────────────────────────
+
+function OpenChatAction({
+  item,
+  linkedCards,
+  familiars,
+  cards,
+  onJumpToSession,
+  onAfterLink,
+}: {
+  item: GitHubItem;
+  linkedCards: Card[];
+  familiars: Familiar[];
+  cards: Card[];
+  onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
+  onAfterLink: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Close the multi-card picker on outside click / Escape
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPickerOpen(false);
+    }
+    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickerOpen]);
+
+  async function openChatForCard(cardId: string) {
+    const target = cards.find((c) => c.id === cardId);
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/board/${cardId}/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiarId: target?.familiarId ?? null }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error ?? "Failed to open chat");
+        return;
+      }
+      onAfterLink();
+      onJumpToSession?.(json.sessionId as string, json.familiarId as string | null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setBusy(false);
+      setPickerOpen(false);
+    }
+  }
+
+  function handleClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    setError(null);
+    if (linkedCards.length === 0) {
+      setPopoverOpen(true);
+      return;
+    }
+    if (linkedCards.length === 1) {
+      void openChatForCard(linkedCards[0].id);
+      return;
+    }
+    setPickerOpen((v) => !v);
+  }
+
+  const label =
+    linkedCards.length === 0
+      ? "Start chat"
+      : linkedCards.length === 1
+        ? "Open chat"
+        : `Open chat (${linkedCards.length})`;
+
+  return (
+    <div className="gh-action-wrap">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={busy}
+        title={label}
+        className="gh-action-btn"
+      >
+        <Icon name="ph:chat-circle-dots" width={12} />
+        <span className="gh-action-btn-label">{label}</span>
+      </button>
+
+      {error && <span className="gh-action-error" title={error}>!</span>}
+
+      {pickerOpen && linkedCards.length > 1 && (
+        <div ref={pickerRef} className="gh-action-popover" onClick={(e) => e.stopPropagation()}>
+          <p className="gh-action-popover-title">Open chat for…</p>
+          <ul className="gh-action-popover-list">
+            {linkedCards.map((c) => {
+              const f = familiars.find((x) => x.id === c.familiarId);
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => void openChatForCard(c.id)}
+                    disabled={busy}
+                    className="gh-action-popover-item"
+                  >
+                    <span
+                      className="gh-task-chip-dot"
+                      style={{ background: STATUS_DOT_COLOR[c.status] }}
+                      aria-hidden
+                    />
+                    <span className="gh-action-popover-item-title">{c.title}</span>
+                    {f && (
+                      <span className="gh-action-popover-item-familiar">
+                        {f.display_name}
+                      </span>
+                    )}
+                    {c.sessionId && (
+                      <Icon name="ph:chat-circle-dots" width={10} className="gh-task-chip-chat" />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {popoverOpen && (
+        <div className="gh-action-popover gh-action-popover--wide" onClick={(e) => e.stopPropagation()}>
+          <GitHubActionPopover
+            mode="chat"
+            item={item}
+            familiars={familiars}
+            cards={cards}
+            onClose={() => setPopoverOpen(false)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Add-to-board action ───────────────────────────────────────────────────────
+
+function AddToBoardAction({
   item,
   familiars,
   cards,
+  onAfterLink,
 }: {
   item: GitHubItem;
   familiars: Familiar[];
   cards: Card[];
+  onAfterLink: () => void;
 }) {
-  const [openPopover, setOpenPopover] = useState<PopoverMode | null>(null);
+  const [mode, setMode] = useState<PopoverMode | null>(null);
 
-  function openMode(mode: PopoverMode, e: React.MouseEvent) {
-    e.preventDefault();
+  function open(m: PopoverMode, e: React.MouseEvent) {
     e.stopPropagation();
-    setOpenPopover((prev) => (prev === mode ? null : mode));
+    setMode(m);
+  }
+  function close() {
+    setMode(null);
+    onAfterLink();
   }
 
   return (
-    <li className="group relative">
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noreferrer"
-        className="flex items-start gap-3 px-5 py-3.5 hover:bg-[var(--bg-raised)]/50 transition-colors"
+    <div className="gh-action-wrap">
+      <button
+        type="button"
+        onClick={(e) => open("board", e)}
+        title="Add to task"
+        className="gh-action-btn"
       >
-        {/* Kind icon */}
-        <Icon
-          name={(KIND_ICON[item.kind] ?? "ph:github-logo") as Parameters<typeof Icon>[0]["name"]}
-          width={14}
-          className={`mt-[3px] shrink-0 ${KIND_COLOR[item.kind] ?? "text-[var(--text-muted)]"}`}
-        />
-
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {/* Row 1: repo + number + age */}
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="flex items-center gap-1.5 min-w-0">
-              <span className="truncate font-mono text-[11px] text-[var(--text-muted)]">
-                {item.repo}{item.number ? `#${item.number}` : ""}
-              </span>
-              {item.draft && (
-                <span className="rounded px-1 py-0.5 text-[9px] bg-[var(--bg-raised)] text-[var(--text-muted)]">draft</span>
-              )}
-            </span>
-            <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{age(item.updatedAt)}</span>
-          </div>
-
-          {/* Row 2: title */}
-          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)] group-hover:text-[var(--accent-presence)] transition-colors">
-            {item.title}
-          </span>
-
-          {/* Row 3: kind + labels */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-[11px] font-medium ${KIND_COLOR[item.kind]}`}>
-              {KIND_LABEL[item.kind]}
-            </span>
-            {item.labels?.slice(0, 3).map((l) => (
-              <span
-                key={l}
-                className="rounded px-1.5 py-0.5 text-[9px] bg-[var(--bg-raised)] text-[var(--text-muted)]"
-              >
-                {l}
-              </span>
-            ))}
-          </div>
-
-          {/* Row 4: action buttons (hover-revealed) */}
-          <div className="flex items-center gap-1 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              type="button"
-              onClick={(e) => openMode("board", e)}
-              title="Add to board"
-              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                openPopover === "board"
-                  ? "bg-[var(--accent-presence)]/20 text-[var(--accent-presence)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              <Icon name="ph:kanban" width={11} />
-              Board
-            </button>
-            <button
-              type="button"
-              onClick={(e) => openMode("chat", e)}
-              title="Start chat"
-              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                openPopover === "chat"
-                  ? "bg-[var(--accent-presence)]/20 text-[var(--accent-presence)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              <Icon name="ph:chat-circle-dots" width={11} />
-              Chat
-            </button>
-            <button
-              type="button"
-              onClick={(e) => openMode("assign", e)}
-              title="Assign to familiar"
-              className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${
-                openPopover === "assign"
-                  ? "bg-[var(--accent-presence)]/20 text-[var(--accent-presence)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              <Icon name="ph:robot" width={11} />
-              Assign
-            </button>
-          </div>
-        </div>
-
-        <Icon name="ph:arrow-square-out" width={11} className="mt-1 shrink-0 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
-      </a>
-
-      {/* Action popover — rendered outside the <a> to avoid nesting issues */}
-      {openPopover && (
-        <div className="relative px-5 pb-2" onClick={(e) => e.stopPropagation()}>
+        <Icon name="ph:kanban" width={12} />
+        <span className="gh-action-btn-label">Task</span>
+      </button>
+      {mode && (
+        <div className="gh-action-popover gh-action-popover--wide" onClick={(e) => e.stopPropagation()}>
           <GitHubActionPopover
-            mode={openPopover}
+            mode={mode}
             item={item}
             familiars={familiars}
             cards={cards}
-            onClose={() => setOpenPopover(null)}
+            onClose={close}
           />
         </div>
       )}
-    </li>
+    </div>
   );
 }
 
+// ── Sortable header ───────────────────────────────────────────────────────────
+
+type ColDef = { key: SortKey | null; label: string; width?: string; align?: "left" | "right" };
+const COLS: ColDef[] = [
+  { key: "kind", label: "Kind", width: "82px" },
+  { key: "repo", label: "Repo", width: "180px" },
+  { key: "title", label: "Title" },
+  { key: "tasks", label: "Tasks", width: "240px" },
+  { key: null, label: "Familiars", width: "92px" },
+  { key: "updatedAt", label: "Updated", width: "80px", align: "right" },
+  { key: null, label: "", width: "210px", align: "right" },
+];
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-type Filter = "all" | "pr" | "review_request" | "issue";
-
-export function GitHubView() {
+export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [showPatModal, setShowPatModal] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const timerRef = useRef<number | null>(null);
 
   const familiars = useFamiliars();
-  const cards = useCards();
+  const { cards, reload: reloadCards } = useCards();
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
+  const resolvedById = useMemo(
+    () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
+    [resolvedFamiliars],
+  );
 
   async function fetchPatStatus() {
     try {
@@ -386,7 +555,6 @@ export function GitHubView() {
       const data = await res.json().catch(() => null);
 
       if (res.status === 401 && data?.error === "no_user") {
-        // No username — show setup prompt
         setError("no_user");
         setLoading(false);
         return;
@@ -395,14 +563,12 @@ export function GitHubView() {
       if (!res.ok || !data?.ok) {
         setError(data?.error ?? `GitHub error (${res.status})`);
         setLoading(false);
-        // back off 60s on config errors
         timerRef.current = window.setTimeout(() => void fetchActivity(true), 60_000);
         return;
       }
 
       setActivity(data as ActivityResult);
       setError(null);
-      // poll every 90s when authed, 120s on public API
       const interval = (data as ActivityResult).authed ? 90_000 : 120_000;
       timerRef.current = window.setTimeout(() => void fetchActivity(true), interval);
     } catch (e) {
@@ -422,12 +588,57 @@ export function GitHubView() {
   const items = activity?.items ?? [];
   const filtered = filter === "all" ? items : items.filter((i) => i.kind === filter);
 
+  const linkedMap = useMemo(() => {
+    const m = new Map<string, Card[]>();
+    for (const item of filtered) {
+      m.set(item.id, linkedCardsForItem(cards, item));
+    }
+    return m;
+  }, [filtered, cards]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "kind":
+          cmp = (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9);
+          break;
+        case "repo": {
+          const ra = `${a.repo}#${a.number ?? 0}`;
+          const rb = `${b.repo}#${b.number ?? 0}`;
+          cmp = ra.localeCompare(rb);
+          break;
+        }
+        case "title":
+          cmp = a.title.localeCompare(b.title);
+          break;
+        case "tasks": {
+          const la = linkedMap.get(a.id)?.length ?? 0;
+          const lb = linkedMap.get(b.id)?.length ?? 0;
+          cmp = la - lb;
+          break;
+        }
+        case "updatedAt":
+          cmp = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [filtered, sortKey, sortDir, linkedMap]);
+
   const counts: Record<Filter, number> = {
     all: items.length,
     pr: items.filter((i) => i.kind === "pr").length,
     review_request: items.filter((i) => i.kind === "review_request").length,
     issue: items.filter((i) => i.kind === "issue").length,
   };
+
+  function handleSortClick(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "updatedAt" || key === "tasks" ? "desc" : "asc"); }
+  }
 
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
@@ -487,6 +698,7 @@ export function GitHubView() {
             onClick={() => {
               if (timerRef.current !== null) window.clearTimeout(timerRef.current);
               void fetchActivity();
+              reloadCards();
             }}
             title="Refresh"
             className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
@@ -567,7 +779,7 @@ export function GitHubView() {
             </button>
           </div>
 
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <Icon name="ph:check-circle" width={22} className="text-[var(--text-muted)]" />
             <p className="text-[13px] text-[var(--text-muted)]">
@@ -576,16 +788,162 @@ export function GitHubView() {
           </div>
 
         ) : (
-          <ul className="divide-y divide-[var(--border-hairline)]">
-            {filtered.map((item) => (
-              <GitHubItemRow
-                key={item.id}
-                item={item}
-                familiars={familiars}
-                cards={cards}
-              />
-            ))}
-          </ul>
+          <div className="board-table-wrap">
+            <table className="board-table gh-table">
+              <thead>
+                <tr>
+                  {COLS.map((col, i) => (
+                    <th
+                      key={`${col.label}-${i}`}
+                      style={{
+                        width: col.width,
+                        textAlign: col.align ?? "left",
+                        cursor: col.key ? "pointer" : "default",
+                      }}
+                      className={col.key && sortKey === col.key ? "sorted" : ""}
+                      onClick={() => col.key && handleSortClick(col.key)}
+                    >
+                      {col.label}
+                      {col.key && (
+                        <span className="board-table-sort-icon">
+                          {sortKey === col.key
+                            ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
+                            : <Icon name="ph:caret-up-down" width={9} />}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((item) => {
+                  const linked = linkedMap.get(item.id) ?? [];
+                  const familiarsForRow = Array.from(
+                    new Set(
+                      linked
+                        .map((c) => c.familiarId)
+                        .filter((id): id is string => Boolean(id)),
+                    ),
+                  );
+                  return (
+                    <tr key={item.id} className="gh-row">
+                      <td>
+                        <span className="gh-kind" style={{ color: KIND_COLOR[item.kind] }}>
+                          <Icon
+                            name={KIND_ICON[item.kind] ?? "ph:github-logo"}
+                            width={12}
+                          />
+                          <span>{KIND_LABEL[item.kind] ?? item.kind}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span className="gh-repo" title={item.repo}>
+                          {item.repo}
+                          {item.number != null && (
+                            <span className="gh-repo-number">#{item.number}</span>
+                          )}
+                        </span>
+                      </td>
+                      <td>
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="gh-title"
+                          onClick={(e) => e.stopPropagation()}
+                          title={item.title}
+                        >
+                          {item.title}
+                        </a>
+                        {item.draft && (
+                          <span className="gh-badge gh-badge--muted">draft</span>
+                        )}
+                        {item.labels?.slice(0, 2).map((l) => (
+                          <span key={l} className="gh-badge gh-badge--label" title={l}>
+                            {l}
+                          </span>
+                        ))}
+                      </td>
+                      <td>
+                        {linked.length === 0 ? (
+                          <span className="gh-empty-cell">—</span>
+                        ) : (
+                          <div className="gh-task-chip-list">
+                            {linked.slice(0, 3).map((c) => (
+                              <LinkedTaskChip
+                                key={c.id}
+                                card={c}
+                                familiar={
+                                  c.familiarId
+                                    ? familiars.find((f) => f.id === c.familiarId) ?? null
+                                    : null
+                                }
+                                onFocusCard={onFocusCard}
+                              />
+                            ))}
+                            {linked.length > 3 && (
+                              <span className="gh-task-chip-more">+{linked.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {familiarsForRow.length === 0 ? (
+                          <span className="gh-empty-cell">—</span>
+                        ) : (
+                          <div className="gh-familiar-stack">
+                            {familiarsForRow.slice(0, 3).map((fid) => {
+                              const f = resolvedById.get(fid);
+                              if (!f) return null;
+                              return (
+                                <span key={fid} className="gh-familiar-stack-item" title={f.display_name}>
+                                  <FamiliarAvatar familiar={f} size="sm" />
+                                </span>
+                              );
+                            })}
+                            {familiarsForRow.length > 3 && (
+                              <span className="gh-familiar-stack-more">+{familiarsForRow.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <span className="board-table-cell-time">{relTime(item.updatedAt)}</span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <div className="gh-actions">
+                          <OpenChatAction
+                            item={item}
+                            linkedCards={linked}
+                            familiars={familiars}
+                            cards={cards}
+                            onJumpToSession={onJumpToSession}
+                            onAfterLink={reloadCards}
+                          />
+                          <AddToBoardAction
+                            item={item}
+                            familiars={familiars}
+                            cards={cards}
+                            onAfterLink={reloadCards}
+                          />
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open on GitHub"
+                            className="gh-action-btn gh-action-btn--icon"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Icon name="ph:arrow-square-out" width={11} />
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
