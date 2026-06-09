@@ -423,7 +423,7 @@ function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: 
       onClick={onClose}
     >
       <div
-        className="agents-view__overlay-panel relative flex h-[85vh] w-[90vw] max-w-[1280px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
+        className="agents-view__overlay-panel relative flex h-[100dvh] w-full flex-col overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl md:h-[85vh] md:w-[90vw] md:max-w-[1280px] md:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button

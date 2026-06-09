@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { MemoryGraph3D } from "@/components/memory-graph-3d";
+import { useIsMobile } from "@/lib/use-viewport";
 import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory-graph-3d-model";
 import type { MemoryGraphMemoryNode } from "@/lib/memory-graph-3d-model";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
@@ -104,7 +105,14 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [viewMode, setViewMode] = useState<"list" | "graph">("graph");
   const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const effectiveViewMode = mode ?? viewMode;
+  // Force list mode on phones — the 3D graph (Three.js + OrbitControls)
+  // is unusable at 360px and burns battery rendering a WebGL scene the
+  // user can't navigate. The MemoryGraph3D component never mounts when
+  // effectiveViewMode is "list", so the scene + raycaster cost is
+  // skipped at runtime. The Three.js bundle itself still loads — that
+  // belongs to phase 7 perf work.
+  const isMobile = useIsMobile();
+  const effectiveViewMode = isMobile ? "list" : (mode ?? viewMode);
   const effectiveLimit = limit ?? Infinity;
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -266,7 +274,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {!mode && (
+              {!mode && !isMobile && (
                 <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
                   {(["list", "graph"] as const).map((m) => (
                     <button
