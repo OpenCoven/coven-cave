@@ -10,6 +10,7 @@ import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_R
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { APP_VERSION } from "@/lib/app-version";
+import { useIsMobile } from "@/lib/use-viewport";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
 
 export function SettingsShell() {
   const router = useRouter();
+  const isMobile = useIsMobile();
 
   // Support hash-based deep-linking, e.g. /settings#plugins
   const initialSection = (): Section => {
@@ -48,6 +50,30 @@ export function SettingsShell() {
   };
 
   const [section, setSection] = useState<Section>(initialSection);
+  // Mobile drill-down: when true, render the section list full-screen
+  // (no section content) — iOS-Settings-style. Tap a section → false,
+  // render that section. Hash-deep-link (`/settings#plugins`) skips the
+  // picker so the user lands directly on the target.
+  const [pickerView, setPickerView] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return !window.location.hash;
+  });
+  const activeSection = SECTIONS.find((s) => s.id === section);
+  const showPicker = isMobile && pickerView;
+
+  function openSection(id: Section) {
+    setSection(id);
+    setPickerView(false);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `#${id}`);
+    }
+  }
+  function backToPicker() {
+    setPickerView(true);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -74,51 +100,80 @@ export function SettingsShell() {
 
   return (
     <FamiliarStudioProvider>
-    <div className="flex h-screen w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
-      {/* Header */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-2.5">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+      {/* Header. On mobile the back button has two roles: from a section
+          page it drops back to the picker; from the picker it pops the
+          route. Desktop always pops the route. */}
+      <header
+        className="flex shrink-0 items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-2.5"
+        style={{ paddingTop: "calc(0.625rem + var(--sai-top))" }}
+      >
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => {
+            if (isMobile && !pickerView) backToPicker();
+            else router.back();
+          }}
           className="focus-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:arrow-left" width={13} />
-          Back
+          {isMobile && !pickerView ? "Settings" : "Back"}
         </button>
-        <span className="text-[13px] font-semibold text-[var(--text-primary)]">Settings</span>
+        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
+          {isMobile && !pickerView ? (activeSection?.label ?? "Settings") : "Settings"}
+        </span>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        {/* Sidebar */}
-        <nav className="w-[200px] shrink-0 border-r border-[var(--border-hairline)] py-3">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* Sidebar / picker. On desktop this is a 200px rail next to
+            content. On mobile it expands full-screen when in picker
+            view (iOS-Settings drill-down). Once a section is picked the
+            picker hides and the content fills the screen. */}
+        <nav
+          className={`shrink-0 py-3 md:w-[200px] md:border-r md:border-[var(--border-hairline)] ${
+            showPicker ? "flex-1 w-full" : isMobile ? "hidden" : "w-[200px]"
+          }`}
+        >
           <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
             Settings
           </p>
-          <div className="space-y-px px-2">
+          <div className={`space-y-px ${showPicker ? "px-3" : "px-2"}`}>
             {SECTIONS.map((s) => (
               <button
                 key={s.id}
                 type="button"
-                onClick={() => setSection(s.id)}
-                className={`focus-ring flex w-full items-center gap-2 rounded-[5px] px-2.5 py-[6px] text-left text-[12px] transition-colors ${
-                  section === s.id
+                onClick={() => openSection(s.id)}
+                className={`focus-ring flex w-full items-center rounded-[5px] px-2.5 text-left transition-colors ${
+                  showPicker
+                    ? "min-h-[var(--touch-target)] gap-3 py-3 text-[14px]"
+                    : "gap-2 py-[6px] text-[12px]"
+                } ${
+                  section === s.id && !showPicker
                     ? "bg-[var(--accent-presence)] text-white"
                     : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                 }`}
               >
                 <Icon
                   name={s.icon as Parameters<typeof Icon>[0]["name"]}
-                  width={13}
-                  className={section === s.id ? "text-white/70" : "text-[var(--text-muted)]"}
+                  width={showPicker ? 18 : 13}
+                  className={section === s.id && !showPicker ? "text-white/70" : "text-[var(--text-muted)]"}
                 />
-                {s.label}
+                <span className="flex-1">{s.label}</span>
+                {showPicker ? (
+                  <Icon name="ph:caret-right" width={14} className="text-[var(--text-muted)]" />
+                ) : null}
               </button>
             ))}
           </div>
         </nav>
 
         {/* Content */}
-        <main className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+        <main
+          className={`min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 ${
+            showPicker ? "hidden md:block" : ""
+          }`}
+          style={{ paddingBottom: "calc(1.5rem + var(--sai-bottom))" }}
+        >
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
