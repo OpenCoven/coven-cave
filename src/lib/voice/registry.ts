@@ -1,6 +1,6 @@
 import type { VoiceProvider, VoiceProviderId } from "./types";
-import { openaiRealtimeProvider } from "./openai-realtime";
-import { geminiLiveProvider } from "./gemini-live";
+import { openaiRealtimeProvider } from "./openai-realtime.ts";
+import { geminiLiveProvider } from "./gemini-live.ts";
 
 const PROVIDERS: Record<VoiceProviderId, VoiceProvider> = {
   openai: openaiRealtimeProvider,
