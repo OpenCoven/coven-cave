@@ -836,10 +836,12 @@ export function SessionsView({
     <div className="sessions-view">
       {/* Header */}
       <div className="sessions-view-header">
-        <div className="sessions-view-title-wrap">
-          <span className="sessions-view-title">{title}</span>
-          {subtitle && <span className="sessions-view-subtitle">{subtitle}</span>}
-        </div>
+        {!hideFamiliarFilter && (
+          <div className="sessions-view-title-wrap">
+            <span className="sessions-view-title">{title}</span>
+            {subtitle && <span className="sessions-view-subtitle">{subtitle}</span>}
+          </div>
+        )}
         <div className="sessions-view-actions">
           {!hideFamiliarFilter && familiars.length > 0 && (
             <div ref={filterRef} className="relative inline-block">
