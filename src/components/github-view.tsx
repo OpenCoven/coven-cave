@@ -210,57 +210,67 @@ function PatSetupModal({
           Your PAT is stored only on this machine — never synced, never shared.
         </p>
 
-        <div className="mb-3">
-          <label className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
-            GitHub username
-          </label>
-          <input
-            ref={inputRef}
-            type="text"
-            value={usernameInput}
-            onChange={(e) => setUsernameInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void save()}
-            placeholder="your-username"
-            className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
-          />
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <div className="mb-3">
+            <label htmlFor="gh-pat-username" className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+              GitHub username
+            </label>
+            <input
+              id="gh-pat-username"
+              ref={inputRef}
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              placeholder="your-username"
+              className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+            />
+          </div>
 
-        <div className="mb-2">
-          <label className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
-            Personal Access Token <span className="font-normal text-[var(--text-muted)]">(optional — for private repos)</span>
-          </label>
-          <input
-            type="password"
-            value={pat}
-            onChange={(e) => setPat(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void save()}
-            placeholder="ghp_…"
-            className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
-          />
-        </div>
+          <div className="mb-2">
+            <label htmlFor="gh-pat-token" className="block text-[11px] font-medium text-[var(--text-secondary)] mb-1.5">
+              Personal Access Token <span className="font-normal text-[var(--text-muted)]">(optional — for private repos)</span>
+            </label>
+            <input
+              id="gh-pat-token"
+              type="password"
+              name="github-pat"
+              autoComplete="off"
+              value={pat}
+              onChange={(e) => setPat(e.target.value)}
+              placeholder="ghp_…"
+              className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+            />
+          </div>
 
-        {error && (
-          <p className="mb-3 text-[11px] text-[var(--color-danger)]">{error}</p>
-        )}
+          {error && (
+            <p className="mb-3 text-[11px] text-[var(--color-danger)]">{error}</p>
+          )}
 
-        <div className="flex items-center justify-between mt-4">
-          <a
-            href="https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] text-[var(--accent-presence)] hover:underline"
-          >
-            Generate a PAT on GitHub →
-          </a>
-          <button
-            type="button"
-            disabled={!pat.trim() || saving}
-            onClick={() => void save()}
-            className="rounded-lg bg-[var(--accent-presence)] px-4 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
-          >
-            {saving ? "Verifying…" : "Save"}
-          </button>
-        </div>
+          <div className="flex items-center justify-between mt-4">
+            <a
+              href="https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-[var(--accent-presence)] hover:underline"
+            >
+              Generate a PAT on GitHub →
+            </a>
+            <button
+              type="submit"
+              disabled={!pat.trim() || saving}
+              className="rounded-lg bg-[var(--accent-presence)] px-4 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
+            >
+              {saving ? "Verifying…" : "Save"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
