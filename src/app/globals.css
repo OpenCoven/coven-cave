@@ -3827,10 +3827,26 @@ select {
   .shell-root > [data-resizable-handle] {
     display: none !important;
   }
-  /* Detail takes the full width. */
-  .shell-detail-panel {
+  /* Detail takes the full width.
+   *
+   * react-resizable-panels wraps each Panel in a `<div data-panel id="...">`
+   * whose inline `flex: N 1 0px` (from defaultSize) controls the layout. The
+   * .shell-*-panel className lives on an inner div, so making just the inner
+   * full-width leaves the OUTER nav/list/agent wrappers still claiming their
+   * percent of the row — at 375px that's ~68px of dead space shoved before
+   * the detail panel. Override the outer wrappers by id so detail truly
+   * fills the viewport on phones. */
+  .shell-detail-panel,
+  [data-panel="true"]#detail {
     flex: 1 1 100% !important;
     width: 100% !important;
+    min-width: 0 !important;
+  }
+  [data-panel="true"]#nav,
+  [data-panel="true"]#list,
+  [data-panel="true"]#agent {
+    flex: 0 0 0 !important;
+    width: 0 !important;
     min-width: 0 !important;
   }
   /* Reserve room at the bottom of the detail surface for the bottom tab

@@ -321,7 +321,21 @@
   font-size: 12px;
   cursor: pointer;
   transition: all 0.12s ease;
-  max-width: 100%;
+  /* Cap each chip so long suggestions ellipsis inside the chip instead of
+   * extending past the suggestion row's edge — without this the chip stays
+   * one wide line and clips its tail at the viewport on phones. */
+  max-width: min(100%, 360px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The label inside each chip needs its own overflow context with min-width: 0
+ * because the chip is `display: inline-flex` — text-overflow on the flex
+ * parent doesn't reach individual flex children. */
+.hc-suggestion > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -459,4 +473,12 @@
   text-align: center;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+/* Touch devices have no physical keyboard — hide the desktop-only shortcut
+ * legend so phones don't waste vertical space on irrelevant guidance. */
+@media (pointer: coarse) {
+  .hc-keyboard-hint {
+    display: none;
+  }
 }
