@@ -596,14 +596,16 @@ export function RailMemoryList({
   }
   return (
     <div className="rail-memory">
-      <AgentsMemoryView
-        familiars={familiars}
-        activeFamiliar={familiar}
-        mode="list"
-        limit={20}
-        compact
-        lockToFamiliar
-      />
+      <div className="rail-memory__scroll">
+        <AgentsMemoryView
+          familiars={familiars}
+          activeFamiliar={familiar}
+          mode="list"
+          limit={20}
+          compact
+          lockToFamiliar
+        />
+      </div>
       {onOpenFullView ? (
         <button
           type="button"

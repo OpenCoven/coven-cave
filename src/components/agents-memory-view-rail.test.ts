@@ -67,4 +67,32 @@ assert.doesNotMatch(
   "Old asymmetric 1.25/0.75 grid must be removed",
 );
 
+// ───────── Task 10: sticky rail footer ─────────
+
+const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+assert.match(
+  cssSource,
+  /\.rail-memory\s*\{[^}]*overflow:\s*hidden/,
+  "rail-memory container must hide overflow so the inner scroll pane handles it",
+);
+
+assert.match(
+  cssSource,
+  /\.rail-memory__scroll\s*\{[^}]*flex:\s*1[\s\S]*?min-height:\s*0[\s\S]*?overflow-y:\s*auto/,
+  "rail-memory__scroll must define the inner scroll surface",
+);
+
+assert.match(
+  cssSource,
+  /\.rail-memory__open-full\s*\{[^}]*flex-shrink:\s*0/,
+  "rail-memory__open-full must be pinned (flex-shrink: 0)",
+);
+
+assert.match(
+  source,
+  /<div className="rail-memory__scroll">\s*<AgentsMemoryView/,
+  "RailMemoryList must wrap AgentsMemoryView in a .rail-memory__scroll div",
+);
+
 console.log("agents-memory-view-rail.test.ts: ok");
