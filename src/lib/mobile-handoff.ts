@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 
 export const MOBILE_INVITE_TTL_MS = 10 * 60 * 1000;
@@ -18,6 +21,100 @@ type TailscaleServeStatus = {
 
 function normalizeServeHost(host: string) {
   return host.endsWith(":443") ? host.slice(0, -4) : host;
+}
+
+type ResolveTailscaleBinOptions = {
+  envBin?: string | null;
+  pathEnv?: string | null;
+  exists?: (candidate: string) => boolean;
+  candidatePaths?: string[];
+};
+
+const TAILSCALE_APP_DIR = "/Applications/Tailscale.app/Contents/MacOS";
+const DEFAULT_TAILSCALE_PATHS = [
+  path.join(TAILSCALE_APP_DIR, "tailscale"),
+  path.join(TAILSCALE_APP_DIR, "Tailscale"),
+  "/opt/homebrew/bin/tailscale",
+  "/usr/local/bin/tailscale",
+  "/usr/bin/tailscale",
+  "/bin/tailscale",
+];
+
+let cachedTailscaleBin: string | null = null;
+let cachedTailscalePath: string | null = null;
+
+function executableExists(candidate: string) {
+  try {
+    const st = statSync(candidate);
+    return st.isFile() || st.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function loginShellPath(): string | null {
+  const env = process.env as Record<string, string | undefined>;
+  const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
+  try {
+    const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
+      encoding: "utf-8",
+      timeout: 4000,
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+function pathCandidates(pathEnv: string | null | undefined) {
+  if (!pathEnv) return [];
+  return pathEnv
+    .split(":")
+    .filter(Boolean)
+    .map((dir) => path.join(dir, "tailscale"));
+}
+
+export function resolveTailscaleBin({
+  envBin = process.env.TAILSCALE_BIN,
+  pathEnv = process.env.PATH,
+  exists = executableExists,
+  candidatePaths = DEFAULT_TAILSCALE_PATHS,
+}: ResolveTailscaleBinOptions = {}) {
+  if (envBin && exists(envBin)) return envBin;
+
+  for (const candidate of [...candidatePaths, ...pathCandidates(pathEnv)]) {
+    if (exists(candidate)) return candidate;
+  }
+
+  return "tailscale";
+}
+
+export function tailscaleBin() {
+  if (!cachedTailscaleBin) cachedTailscaleBin = resolveTailscaleBin();
+  return cachedTailscaleBin;
+}
+
+export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
+  if (cachedTailscalePath === null) {
+    const fromShell = loginShellPath();
+    const parts = [
+      TAILSCALE_APP_DIR,
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      ...(fromShell ? fromShell.split(":") : []),
+      ...(process.env.PATH ? process.env.PATH.split(":") : []),
+    ];
+    const seen = new Set<string>();
+    const dedup: string[] = [];
+    for (const p of parts) {
+      if (!p || seen.has(p) || !existsSync(p)) continue;
+      seen.add(p);
+      dedup.push(p);
+    }
+    cachedTailscalePath = dedup.join(":");
+  }
+
+  return { ...process.env, PATH: cachedTailscalePath };
 }
 
 export function findServeUrl(status: unknown, backendUrl: string) {

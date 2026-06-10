@@ -6,6 +6,8 @@ import {
   createMobileInvite,
   findServeUrl,
   MOBILE_INVITE_TTL_MS,
+  tailscaleBin,
+  tailscaleSpawnEnv,
 } from "@/lib/mobile-handoff";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +21,10 @@ type TailscaleResult = {
 
 function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult> {
   return new Promise((resolve) => {
-    const child = spawn("tailscale", args, {
+    const bin = tailscaleBin();
+    const child = spawn(bin, args, {
       stdio: ["ignore", "pipe", "pipe"],
+      env: tailscaleSpawnEnv(),
     });
     let stdout = "";
     let stderr = "";
@@ -42,11 +46,14 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
     });
     child.on("error", (error) => {
       clearTimeout(timer);
+      const missing = (error as NodeJS.ErrnoException).code === "ENOENT";
       resolve({
         ok: false,
         status: null,
         stdout: stripAnsi(stdout),
-        stderr: error.message,
+        stderr: missing
+          ? "Tailscale CLI not found. Install Tailscale or set TAILSCALE_BIN to the tailscale executable."
+          : error.message,
       });
     });
     child.on("close", (status) => {

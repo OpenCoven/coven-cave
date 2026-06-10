@@ -4,6 +4,7 @@ import {
   buildInviteUrl,
   createMobileInvite,
   findServeUrl,
+  resolveTailscaleBin,
 } from "./mobile-handoff.ts";
 import { verifyMobileAccessToken } from "./mobile-access-token.ts";
 
@@ -31,6 +32,35 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 {
   const url = findServeUrl(status, "http://127.0.0.1:4242");
   assert.equal(url, null);
+}
+
+{
+  const bin = resolveTailscaleBin({
+    envBin: "/custom/tailscale",
+    pathEnv: "",
+    exists: (candidate) => candidate === "/custom/tailscale",
+    candidatePaths: ["/Applications/Tailscale.app/Contents/MacOS/Tailscale"],
+  });
+  assert.equal(bin, "/custom/tailscale");
+}
+
+{
+  const appBin = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
+  const bin = resolveTailscaleBin({
+    pathEnv: "/usr/bin:/bin",
+    exists: (candidate) => candidate === appBin,
+    candidatePaths: [appBin, "/usr/local/bin/tailscale"],
+  });
+  assert.equal(bin, appBin);
+}
+
+{
+  const bin = resolveTailscaleBin({
+    pathEnv: "/usr/bin:/bin",
+    exists: () => false,
+    candidatePaths: ["/Applications/Tailscale.app/Contents/MacOS/Tailscale"],
+  });
+  assert.equal(bin, "tailscale");
 }
 
 {
