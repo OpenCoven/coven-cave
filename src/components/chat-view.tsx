@@ -1994,7 +1994,7 @@ function ProgressGroup({
         ) : null}
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} issue</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} issue{errors === 1 ? "" : "s"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
       </summary>
