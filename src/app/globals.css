@@ -4152,13 +4152,19 @@ select {
 }
 
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS
-   includes the address bar height, so a `min-height: 100vh` element
-   would push content under the chrome. `100dvh` tracks the visible
-   area, including the on-screen keyboard. */
+   includes the address bar height, so a `100vh` element would push
+   content under the chrome. `100dvh` tracks the visible area, including
+   the on-screen keyboard.
+
+   Anchor the dynamic-viewport height on the OUTER `.shell-frame` so the
+   whole app is exactly the visible viewport tall. The inner `.shell-body`
+   / `.shell-root` must NOT also be 100dvh — they sit below the top bar
+   inside the frame, so a full-viewport height on them would overflow the
+   frame and force the window to scroll. They fill the remaining space via
+   their existing `flex-1 min-h-0`. */
 @supports (height: 100dvh) {
-  .shell-root,
-  .shell-body {
-    min-height: 100dvh;
+  .shell-frame {
+    height: 100dvh;
   }
   .ui-modal-shell {
     max-height: calc(100dvh - 2 * var(--space-4));

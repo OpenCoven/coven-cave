@@ -36,7 +36,29 @@ test.describe("mobile foundations", () => {
     expect(overflow, "no horizontal overflow at 360px viewport").toBeLessThanOrEqual(0);
   });
 
+  test("home route does not create window-level vertical scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await page.waitForSelector(".shell-frame");
+
+    const metrics = await page.evaluate(() => {
+      const frame = document.querySelector(".shell-frame");
+      const frameRect = frame?.getBoundingClientRect();
+      return {
+        documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+        bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
+        frameBottom: frameRect?.bottom ?? 0,
+        viewportHeight: window.innerHeight,
+      };
+    });
+
+    expect(metrics.documentOverflow, "document should not be vertically scrollable").toBeLessThanOrEqual(1);
+    expect(metrics.bodyOverflow, "body should not be vertically scrollable").toBeLessThanOrEqual(1);
+    expect(metrics.frameBottom, "app frame should fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  });
+
   test("mobile drawer toggles render on phone viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 720 });
     await page.goto("/");
     // The .top-bar__mobile-toggle class is `display: none` on desktop
     // and `display: inline-flex` under @media (max-width: 767px). At
