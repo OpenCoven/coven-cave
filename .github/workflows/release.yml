@@ -289,7 +289,13 @@ jobs:
             exit 1
           fi
           echo "Verifying $DMG"
-          if ! spctl -a -t open --context context:primary-signature -vv "$DMG" 2>&1 | tee /tmp/spctl.out | grep -q "accepted"; then
+          # Capture first, grep the file after. The previous form piped
+          # spctl through `tee | grep -q`; grep -q exits on first match,
+          # tee dies of SIGPIPE, and pipefail turns a PASSING check into
+          # a failure (raced on the v0.0.63 aarch64 job — the DMG was
+          # accepted + notarized but the step failed).
+          spctl -a -t open --context context:primary-signature -vv "$DMG" > /tmp/spctl.out 2>&1 || true
+          if ! grep -q "accepted" /tmp/spctl.out; then
             echo "::error::DMG is not accepted by Gatekeeper. Output:"
             cat /tmp/spctl.out
             exit 1
