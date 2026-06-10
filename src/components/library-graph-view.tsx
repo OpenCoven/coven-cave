@@ -29,6 +29,59 @@ function runForceLayout(
 ): Map<string, { x: number; y: number }> {
   if (nodes.length === 0) return new Map();
 
+  // Large graphs: skip full O(n²) sim — too slow and doesn't converge well.
+  // Instead assign a readable grid layout that avoids collisions, then run
+  // a small attraction-only pass to pull connected nodes closer.
+  const BIG_GRAPH_THRESHOLD = 300;
+  if (nodes.length > BIG_GRAPH_THRESHOLD) {
+    const cols = Math.ceil(Math.sqrt(nodes.length * (width / height)));
+    const rows = Math.ceil(nodes.length / cols);
+    const cellW = width / cols;
+    const cellH = height / rows;
+    const posMap = new Map(
+      nodes.map((n, i) => [
+        n.id,
+        {
+          x: (i % cols) * cellW + cellW / 2 + (Math.random() - 0.5) * cellW * 0.3,
+          y: Math.floor(i / cols) * cellH + cellH / 2 + (Math.random() - 0.5) * cellH * 0.3,
+          vx: 0,
+          vy: 0,
+          node: n,
+        },
+      ]),
+    );
+    // Light attraction-only pass (50 iters) to pull edge-connected nodes closer
+    const aK = Math.min(cellW, cellH) * 0.15;
+    for (let iter = 0; iter < 50; iter++) {
+      for (const edge of edges) {
+        const srcId = typeof edge.source === "object"
+          ? (edge.source as { id?: string }).id ?? String(edge.source)
+          : String(edge.source);
+        const tgtId = typeof edge.target === "object"
+          ? (edge.target as { id?: string }).id ?? String(edge.target)
+          : String(edge.target);
+        const a = posMap.get(srcId);
+        const b = posMap.get(tgtId);
+        if (!a || !b) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+        const force = aK;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        a.vx += fx * 0.5; a.vy += fy * 0.5;
+        b.vx -= fx * 0.5; b.vy -= fy * 0.5;
+      }
+      for (const p of posMap.values()) {
+        p.x = Math.max(24, Math.min(width - 24, p.x + p.vx));
+        p.y = Math.max(24, Math.min(height - 24, p.y + p.vy));
+        p.vx *= 0.6;
+        p.vy *= 0.6;
+      }
+    }
+    return new Map([...posMap.entries()].map(([id, p]) => [id, { x: p.x, y: p.y }]));
+  }
+
   const positions: NodePos[] = nodes.map((n, i) => {
     const angle = (2 * Math.PI * i) / nodes.length;
     const r = Math.min(width, height) * 0.35;
@@ -44,8 +97,9 @@ function runForceLayout(
 
   const posMap = new Map(positions.map((p) => [p.id, p]));
   const k = Math.sqrt((width * height) / Math.max(nodes.length, 1));
-  const repulsion = k * k * 1.5;
-  const attractionK = k * 0.1;
+  // Boost repulsion so nodes spread across the full canvas, not into columns
+  const repulsion = k * k * 3.0;
+  const attractionK = k * 0.08;
   const damping = 0.8;
 
   for (let iter = 0; iter < iterations; iter++) {
@@ -129,6 +183,7 @@ function GraphCanvas({
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ dx: 0, dy: 0 });
   const [posOverride, setPosOverride] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -239,34 +294,52 @@ function GraphCanvas({
           const r = radius(node);
           const visible = filteredNodeIds.has(node.id);
           const selected = node.id === selectedNodeId;
+          const hovered = node.id === hoveredNodeId;
+          // Only render text labels when the graph is small enough that they
+          // won't collide. For dense graphs, show labels only on hover/selection.
+          const LABEL_DENSITY_THRESHOLD = 120;
+          const showLabel =
+            graph.nodes.length <= LABEL_DENSITY_THRESHOLD || selected || hovered;
           return (
             <g
               key={node.id}
               transform={`translate(${pos.x},${pos.y})`}
               style={{ cursor: "pointer", opacity: visible ? 1 : 0.25 }}
               onMouseDown={(e) => onMouseDown(e, node.id)}
+              onMouseEnter={() => setHoveredNodeId(node.id)}
+              onMouseLeave={() => setHoveredNodeId((prev) => (prev === node.id ? null : prev))}
               onClick={(e) => { e.stopPropagation(); onSelectNode(selected ? null : node.id); }}
             >
               <circle
                 r={r}
-                fill={selected ? "var(--accent-presence)" : "var(--bg-raised)"}
-                stroke={selected ? "var(--accent-presence)" : "var(--border-hairline)"}
-                strokeWidth={selected ? 2.5 : 1.5}
+                fill={selected ? "var(--accent-presence)" : hovered ? "var(--bg-active)" : "var(--bg-raised)"}
+                stroke={selected ? "var(--accent-presence)" : hovered ? "var(--text-muted)" : "var(--border-hairline)"}
+                strokeWidth={selected ? 2.5 : hovered ? 2 : 1.5}
               />
-              <text
-                textAnchor="middle"
-                dominantBaseline="auto"
-                y={r + 12}
-                fontSize={10}
-                fill="var(--text-secondary)"
-                style={{ pointerEvents: "none", userSelect: "none" }}
-              >
-                {node.label.length > 18 ? node.label.slice(0, 16) + "\u2026" : node.label}
-              </text>
+              {showLabel && (
+                <text
+                  textAnchor="middle"
+                  dominantBaseline="auto"
+                  y={r + 12}
+                  fontSize={selected || hovered ? 11 : 10}
+                  fontWeight={selected || hovered ? 600 : 400}
+                  fill={selected ? "var(--text-primary)" : hovered ? "var(--text-primary)" : "var(--text-secondary)"}
+                  style={{ pointerEvents: "none", userSelect: "none" }}
+                >
+                  {node.label.length > 18 ? node.label.slice(0, 16) + "\u2026" : node.label}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
+      {/* Node count hint — helpful for dense graphs where labels are suppressed */}
+      {graph.nodes.length > 0 && (
+        <div className="pointer-events-none absolute bottom-2 left-3 text-[10px] text-[var(--text-muted)] opacity-60 select-none">
+          {graph.nodes.length} nodes · {graph.edges.length} edges
+          {graph.nodes.length > 120 ? " · hover to label" : ""}
+        </div>
+      )}
     </div>
   );
 }

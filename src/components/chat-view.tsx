@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
@@ -320,12 +320,44 @@ function ChatEmptyState({
   );
 }
 
-function ChatHistoryNotice({ title, body }: { title: string; body: string }) {
+function ChatHistoryNotice({
+  title,
+  body,
+  onRetry,
+  onBack,
+}: {
+  title: string;
+  body: string;
+  onRetry?: (() => void) | null;
+  onBack?: (() => void) | null;
+}) {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center justify-center rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-5 py-6 text-center">
-      <Icon name="ph:chats" width={18} className="mb-2 text-[var(--text-muted)]" />
+    <div className="mx-auto flex max-w-sm flex-col items-center justify-center rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-6 py-7 text-center">
+      <Icon name="ph:chats" width={20} className="mb-3 text-[var(--text-muted)]" />
       <p className="text-[13px] font-semibold text-[var(--text-primary)]">{title}</p>
-      <p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">{body}</p>
+      <p className="mt-1.5 max-w-[28ch] text-[12px] leading-[1.55] text-[var(--text-muted)]">{body}</p>
+      {(onRetry || onBack) && (
+        <div className="mt-4 flex gap-2">
+          {onBack && (
+            <button
+              type="button"
+              className="cave-btn cave-btn--ghost cave-btn--sm"
+              onClick={onBack}
+            >
+              Back to sessions
+            </button>
+          )}
+          {onRetry && (
+            <button
+              type="button"
+              className="cave-btn cave-btn--primary cave-btn--sm"
+              onClick={onRetry}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -736,11 +768,13 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, daemonRunning, onSessionStarted, onSessionsChanged, onSlashCommand, onOpenOnboarding, onOpenTask },
+  { familiar, sessionId, session, projectRoot, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
+  const [historyRetryKey, setHistoryRetryKey] = useState(0);
+  const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
@@ -880,7 +914,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, historyRetryKey]);
 
   useEffect(() => {
     if (atBottom) tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -1371,9 +1405,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             historyState === "loading" ? (
               <ChatHistoryNotice title="Loading chat history" body="Restoring this session transcript..." />
             ) : historyState === "missing" ? (
-              <ChatHistoryNotice title="Chat history unavailable" body="This session exists, but CovenCave could not find a saved transcript for it yet." />
+              <ChatHistoryNotice
+                title="Chat history unavailable"
+                body="This session exists, but CovenCave could not find a saved transcript for it yet."
+                onRetry={retryHistory}
+                onBack={onBack}
+              />
             ) : historyState === "error" ? (
-              <ChatHistoryNotice title="Could not load chat history" body="The transcript request failed. You can still continue this session." />
+              <ChatHistoryNotice
+                title="Could not load chat history"
+                body="The transcript request failed. You can still continue this session."
+                onRetry={retryHistory}
+                onBack={onBack}
+              />
             ) : (
               <ChatEmptyState familiar={familiar} onPrompt={(text) => {
                 setInput(text);
