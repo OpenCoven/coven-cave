@@ -96,13 +96,14 @@ export function tailscaleBin() {
 
 export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
   if (cachedTailscalePath === null) {
+    const delimiter = path.delimiter;
     const fromShell = loginShellPath();
     const parts = [
       TAILSCALE_APP_DIR,
       "/opt/homebrew/bin",
       "/usr/local/bin",
-      ...(fromShell ? fromShell.split(":") : []),
-      ...(process.env.PATH ? process.env.PATH.split(":") : []),
+      ...(fromShell ? fromShell.split(delimiter) : []),
+      ...(process.env.PATH ? process.env.PATH.split(delimiter) : []),
     ];
     const seen = new Set<string>();
     const dedup: string[] = [];
@@ -111,7 +112,8 @@ export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
       seen.add(p);
       dedup.push(p);
     }
-    cachedTailscalePath = dedup.join(":");
+    const joined = dedup.join(delimiter);
+    cachedTailscalePath = joined || process.env.PATH || "";
   }
 
   return { ...process.env, PATH: cachedTailscalePath };
