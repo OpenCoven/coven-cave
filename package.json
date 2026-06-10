@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.0.62",
+  "version": "0.0.63",
   "private": true,
   "scripts": {
     "dev": "next dev",

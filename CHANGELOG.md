@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.63] — 2026-06-10
+
+### Changed
+- **Chat surface streamline** — the chat header collapses into a single MetaLine (editable title + `harness · model · repo · duration` meta); streaming/failed/daemon-offline states recolor the line instead of emitting separate pills; task/GitHub chips move to a conditional linked-context row. (#350)
+- **Quiet top bar** — brand mark, Home button, breadcrumb, and gear icon removed; ⌘K search is centered with bell + account button on the right. Sidebar carries identity and nav. (#350)
+- **Thread declutter** — turn numbers, "You" labels, per-turn duration, and tool-count meta removed; the Tool activity disclosure summary and header meta carry those signals. Composer drops its model pill and gains a `↵ to send` placeholder hint. (#350, #351)
+- **Cross-surface error/empty consistency** — Board, Inbox, Chat list, and Library load failures share one banner idiom (icon + message + Retry/dismiss); Library's empty doc list gains icon + title + hint. (#351)
+
+### Fixed
+- **Transcript debug-log leak** — upstream harness lines like `[model-fallback/decision] …` are stripped from assistant messages without touching line-leading markdown links. (#350)
+- **Empty-state send hint** — the chat empty state advertised `⌘↵ to send` while plain Enter sends; it now reads `↵ to send · shift↵ for newline`. (#351)
+- **Onboarding offline attribution** — with the daemon stopped, the binding step now says familiars load once the daemon starts instead of blaming the user's bindings. (#351)
+
 ## [0.0.62] — 2026-06-10
 
 ### Fixed
