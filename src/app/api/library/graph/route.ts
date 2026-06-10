@@ -13,6 +13,43 @@ const GRAPHS_DIR = path.join(
   "graphs",
 );
 
+
+// ── Understand-Anything schema adapter ──────────────────────────────────────
+// UA's knowledge-graph.json has a richer schema: nodes have {id, type, name,
+// summary, tags, complexity, filePath, ...} and edges have {source, target,
+// type, weight, direction, description}. We map it to GraphifyGraph so the
+// existing canvas renderer works without changes.
+function normalizeUAGraph(raw: unknown): GraphifyGraph {
+  if (
+    typeof raw !== "object" ||
+    raw === null ||
+    !Array.isArray((raw as Record<string, unknown>).nodes)
+  ) {
+    return { nodes: [], edges: [] };
+  }
+  const r = raw as Record<string, unknown>;
+  const nodes = (r.nodes as Array<Record<string, unknown>>).map((n) => ({
+    id: String(n.id ?? ""),
+    label: String(n.name ?? n.id ?? ""),
+    type: String(n.type ?? "file"),
+    weight: typeof n.complexity === "string"
+      ? ({ simple: 1, moderate: 2, complex: 3 } as Record<string, number>)[n.complexity] ?? 1
+      : typeof n.weight === "number" ? n.weight : 1,
+    tags: Array.isArray(n.tags) ? (n.tags as string[]) : [],
+    summary: typeof n.summary === "string" ? n.summary : undefined,
+    filePath: typeof n.filePath === "string" ? n.filePath : undefined,
+  }));
+  const edges = Array.isArray(r.edges)
+    ? (r.edges as Array<Record<string, unknown>>).map((e) => ({
+        source: String(e.source ?? ""),
+        target: String(e.target ?? ""),
+        label: typeof e.type === "string" ? e.type : undefined,
+        weight: typeof e.weight === "number" ? e.weight : 1,
+      }))
+    : [];
+  return { nodes, edges };
+}
+
 function generateId(): string {
   return `graph_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -92,6 +129,28 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, result });
   }
 
+  // ?path= loads an existing UA knowledge-graph.json directly (no pipeline run)
+  const rawPath = req.nextUrl.searchParams.get("path");
+  if (rawPath) {
+    try {
+      const uaPath = path.join(rawPath, ".understand-anything", "knowledge-graph.json");
+      const raw = await fs.readFile(uaPath, "utf-8");
+      const graphJson = normalizeUAGraph(JSON.parse(raw));
+      const label = path.basename(rawPath);
+      const id = `ua_${Buffer.from(rawPath).toString("base64url").slice(0, 16)}`;
+      const result: GraphifyResult = {
+        id,
+        label,
+        targetPath: rawPath,
+        generatedAt: new Date().toISOString(),
+        graphJson,
+      };
+      return NextResponse.json({ ok: true, result });
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: `could not read UA graph: ${String(err)}` }, { status: 404 });
+    }
+  }
+
   const metas = await readAllGraphMeta();
   return NextResponse.json({ ok: true, graphs: metas });
 }
@@ -129,23 +188,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: `graphify failed: ${msg}` }, { status: 500 });
   }
 
-  // Read outputs
-  const outDir = path.join(targetPath, "graphify-out");
+  // Read outputs — prefer Understand-Anything output, fall back to legacy graphify-out
+  const uaGraphPath = path.join(targetPath, ".understand-anything", "knowledge-graph.json");
+  const legacyGraphPath = path.join(targetPath, "graphify-out", "graph.json");
 
   let graphJson: GraphifyGraph;
   try {
-    const raw = await fs.readFile(path.join(outDir, "graph.json"), "utf-8");
-    graphJson = JSON.parse(raw) as GraphifyGraph;
-    // Normalize: ensure arrays exist
+    // Try UA output first (richer: summaries, complexity, typed edges)
+    const uaRaw = await fs.readFile(uaGraphPath, "utf-8").catch(() => null);
+    if (uaRaw) {
+      graphJson = normalizeUAGraph(JSON.parse(uaRaw));
+    } else {
+      // Fall back to legacy graphify-out/graph.json
+      const raw = await fs.readFile(legacyGraphPath, "utf-8");
+      graphJson = JSON.parse(raw) as GraphifyGraph;
+    }
     if (!Array.isArray(graphJson.nodes)) graphJson.nodes = [];
     if (!Array.isArray(graphJson.edges)) graphJson.edges = [];
   } catch (err) {
-    return NextResponse.json({ ok: false, error: `could not read graph.json: ${String(err)}` }, { status: 500 });
+    return NextResponse.json({ ok: false, error: `could not read graph output: ${String(err)}` }, { status: 500 });
   }
 
   let reportMd: string | undefined;
   try {
-    reportMd = await fs.readFile(path.join(outDir, "GRAPH_REPORT.md"), "utf-8");
+    reportMd = await fs.readFile(path.join(targetPath, "graphify-out", "GRAPH_REPORT.md"), "utf-8");
   } catch {
     reportMd = undefined;
   }
