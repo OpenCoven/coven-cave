@@ -2014,7 +2014,7 @@ function ProgressGroup({
             />
             <span className="min-w-0 flex-1 truncate">{event.label}</span>
             {event.detail ? <span className="min-w-0 max-w-[18rem] truncate text-[var(--text-muted)]">{event.detail}</span> : null}
-            {event.durationMs ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(event.durationMs)}</span> : null}
+            {event.durationMs != null ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(event.durationMs)}</span> : null}
           </div>
         ))}
       </div>
