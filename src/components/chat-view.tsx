@@ -159,12 +159,17 @@ function settleRunningProgress(
 }
 
 function fmtDuration(ms?: number): string | null {
-  if (!ms || ms < 0) return null;
+  if (ms == null || ms < 0) return null;
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   const rem = s % 60;
   return `${m}m ${rem}s`;
+}
+
+function DurationText({ durationMs }: { durationMs?: number }) {
+  const duration = fmtDuration(durationMs);
+  return duration ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{duration}</span> : null;
 }
 
 function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
@@ -1994,7 +1999,7 @@ function ProgressGroup({
         ) : null}
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} issue{errors === 1 ? "" : "s"}</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "issue" : "issues"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
       </summary>
@@ -2014,7 +2019,7 @@ function ProgressGroup({
             />
             <span className="min-w-0 flex-1 truncate">{event.label}</span>
             {event.detail ? <span className="min-w-0 max-w-[18rem] truncate text-[var(--text-muted)]">{event.detail}</span> : null}
-            {event.durationMs != null ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(event.durationMs)}</span> : null}
+            <DurationText durationMs={event.durationMs} />
           </div>
         ))}
       </div>
@@ -2036,7 +2041,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         </span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} error</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
       </summary>
@@ -2063,9 +2068,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         ].join(" ")}>
           {tool.status}
         </span>
-        {tool.durationMs ? (
-          <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(tool.durationMs)}</span>
-        ) : null}
+        <DurationText durationMs={tool.durationMs} />
       </summary>
       {tool.input ? (
         <div className="mt-2">

@@ -73,6 +73,24 @@ assert.match(
 
 assert.match(
   source,
+  /function fmtDuration\(ms\?: number\)[\s\S]*ms == null \|\| ms < 0/,
+  "Duration formatting should preserve valid 0ms timings",
+);
+
+assert.match(
+  source,
+  /function DurationText[\s\S]*const duration = fmtDuration\(durationMs\)[\s\S]*return duration \?/,
+  "Progress and tool rows should render durations through a shared null-safe helper",
+);
+
+assert.match(
+  source,
+  /errors === 1 \? "issue" : "issues"/,
+  "Progress issue counts should pluralize correctly",
+);
+
+assert.match(
+  source,
   /case "assistant_chunk":[\s\S]*setAssistantLifecycle\(assistantId, "streaming"\)/,
   "Assistant chunks should move the turn into a streaming lifecycle",
 );
