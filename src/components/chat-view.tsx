@@ -1750,10 +1750,8 @@ function TurnRow({
     );
   }
 
-  const duration = fmtDuration(turn.durationMs);
   const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
-  const toolCount = turn.tools?.length ?? 0;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
 
   return (
@@ -1772,8 +1770,6 @@ function TurnRow({
               </span>
             )}
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
-            {duration && !turn.pending ? <span className="opacity-50">{duration}</span> : null}
-            {toolCount ? <span className="opacity-60">{toolCount} tool{toolCount === 1 ? "" : "s"}</span> : null}
           </div>
 
           <div className="cave-linear-turn-body">

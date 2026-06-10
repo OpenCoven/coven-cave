@@ -176,3 +176,14 @@ assert.match(
   /<LinkedContextRow\b/,
   "ChatView header should render LinkedContextRow for task/GitHub chips",
 );
+
+assert.doesNotMatch(
+  turnRow,
+  /\{toolCount\} tool\{toolCount === 1 \? "" : "s"\}/,
+  "Turn meta should drop the tool count — the Tool activity disclosure summary carries running/error/done counts",
+);
+assert.doesNotMatch(
+  turnRow,
+  /const duration = fmtDuration\(turn\.durationMs\)/,
+  "Turn meta should drop per-turn duration — the header MetaLine carries the session duration",
+);
