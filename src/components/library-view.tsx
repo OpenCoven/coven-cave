@@ -140,11 +140,17 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
         }}
       />
       <div className="library-divider" />
-      {/* Preview pane — dominant left content area */}
-      <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} />
+      {/* Preview pane — dominant left content area; graph section owns the full canvas */}
+      {activeSection === "graph" ? (
+        <div className="library-preview" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <LibraryGraphView />
+        </div>
+      ) : (
+        <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} />
+      )}
 
-      {/* Collapsible list panel — matches browser rail expand/collapse pattern */}
-      <div
+      {/* Collapsible list panel — hidden when graph is active (graph owns full canvas) */}
+      {activeSection !== "graph" && <div
         className={[
           "library-list-panel",
           "transition-[width] duration-200 ease-out",
@@ -237,9 +243,6 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
               onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
             />
           )}
-          {activeSection === "graph" && (
-            <LibraryGraphView />
-          )}
           {activeSection === "projects" && (
             <ComuxView
               view="projects"
@@ -250,6 +253,7 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
           )}
         </div>
       </div>
+      }
       {/* Add-to-Board modal — triggered from bookmark rows */}
       {boardDraft && (
         <NewCardModal
