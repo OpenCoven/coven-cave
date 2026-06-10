@@ -69,7 +69,7 @@ function loginShellPath(): string | null {
 function pathCandidates(pathEnv: string | null | undefined) {
   if (!pathEnv) return [];
   return pathEnv
-    .split(":")
+    .split(path.delimiter)
     .filter(Boolean)
     .map((dir) => path.join(dir, "tailscale"));
 }
