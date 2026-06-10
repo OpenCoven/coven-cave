@@ -131,3 +131,27 @@ assert.match(
   /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
   "Composer placeholder should include ↵ to send hint in steady state",
 );
+
+const splitFn = source.match(/function splitReasoning\([\s\S]*?\n}\n/)?.[0] ?? "";
+assert.match(
+  splitFn,
+  /DEBUG_PREFIX_RE/,
+  "splitReasoning should reference the debug-prefix filter regex",
+);
+
+const DEBUG_PREFIX_RE = /^\[[a-z][\w-]*(?:\/[\w-]+)+\][^\n]*\n?/gim;
+assert.equal(
+  "[model-fallback/decision] model fallback decision: decision=candidate_succeeded\nreal content".replace(DEBUG_PREFIX_RE, ""),
+  "real content",
+  "Debug-prefix filter should strip [model-fallback/decision] lines but keep real content",
+);
+assert.equal(
+  "see [link] for details".replace(DEBUG_PREFIX_RE, ""),
+  "see [link] for details",
+  "Debug-prefix filter should leave inline brackets alone (only line-anchored matches strip)",
+);
+assert.equal(
+  "[docs](https://example.com) is the place".replace(DEBUG_PREFIX_RE, ""),
+  "[docs](https://example.com) is the place",
+  "Debug-prefix filter should not eat line-leading markdown links (requires a /segment)",
+);

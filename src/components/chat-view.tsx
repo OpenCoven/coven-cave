@@ -265,8 +265,12 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
   }
 
   const visible = visibleParts.join("");
+  // Strip upstream debug-prefix lines (e.g. "[model-fallback/decision] …")
+  // that leak into the assistant transcript. Anchored to line start so
+  // inline brackets in prose are untouched.
+  const DEBUG_PREFIX_RE = /^\[[a-z][\w-]*(?:\/[\w-]+)+\][^\n]*\n?/gim;
   return {
-    visible: visible.replace(/\n{3,}/g, "\n\n").trimStart(),
+    visible: visible.replace(DEBUG_PREFIX_RE, "").replace(/\n{3,}/g, "\n\n").trimStart(),
     reasoning: reasoningParts.join("\n\n").trim(),
   };
 }
