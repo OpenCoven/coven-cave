@@ -119,3 +119,15 @@ assert.doesNotMatch(
   /\{turn\.role === "user" \? "You" : "System"\}/,
   "User turns should drop the \"You\" label — bubble + right-alignment already convey role",
 );
+
+assert.doesNotMatch(
+  source,
+  /\{familiar\.model \?\? "—"\}/,
+  "Composer dock model pill should be removed — header meta line carries the model",
+);
+
+assert.match(
+  source,
+  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  "Composer placeholder should include ↵ to send hint in steady state",
+);

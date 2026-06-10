@@ -1602,7 +1602,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 const text = e.clipboardData.getData("text/plain");
                 if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}
-              placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…`}
+              placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
               inputMode="text"
               enterKeyHint="send"
@@ -1630,10 +1630,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 </button>
               </div>
               <div className="flex items-center gap-2 text-[var(--text-muted)]">
-                <span className="flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-1 text-[11px]">
-                  <span className="text-[var(--accent-presence)]">◆</span>
-                  <span className="font-mono text-[var(--text-secondary)]">{familiar.model ?? "—"}</span>
-                </span>
                 {busy ? (
                   <button
                     type="button"
