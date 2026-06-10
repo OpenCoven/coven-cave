@@ -150,7 +150,7 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   };
 }
 
-async function checkBinding(familiarsAvailable: boolean): Promise<Step> {
+async function checkBinding(familiarsAvailable: boolean, daemonOk: boolean): Promise<Step> {
   const config = await loadConfig();
   const hasDefaults = !!config.defaults.harness && !!config.defaults.model;
   if (!hasDefaults) {
@@ -160,7 +160,14 @@ async function checkBinding(familiarsAvailable: boolean): Promise<Step> {
     };
   }
   if (!familiarsAvailable) {
-    return { ok: false, hint: "Bindings set but no familiars to bind." };
+    // With the daemon down the familiar count is unknown, not zero — point
+    // at the actual blocker instead of blaming the user's bindings.
+    return {
+      ok: false,
+      hint: daemonOk
+        ? "Bindings set but no familiars to bind."
+        : "Waiting for the daemon — familiars load once it starts.",
+    };
   }
   return {
     ok: true,
@@ -177,7 +184,7 @@ export async function GET() {
     checkFamiliars(),
   ]);
   const adapters = await checkHarnessAdapters(openclawAgentCount);
-  const binding = await checkBinding(familiarsRes.count > 0);
+  const binding = await checkBinding(familiarsRes.count > 0, daemon.ok);
 
   const steps = {
     covenCli,
