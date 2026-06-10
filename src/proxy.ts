@@ -13,6 +13,7 @@ import {
   isAllowedRequestSource,
   bearerFromReferer,
 } from "./proxy-helpers";
+import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 
 // Re-exported here so existing call sites (and tests) that imported these
 // from "./proxy" keep working.
@@ -49,33 +50,47 @@ function mobileAccessSuppliedTokens(req: NextRequest) {
   ].filter((token): token is string => Boolean(token));
 }
 
-function hasValidMobileAccessToken(req: NextRequest, expected: string) {
-  return mobileAccessSuppliedTokens(req).some((token) => timingSafeEqualString(token, expected));
+async function mobileAccessVerification(req: NextRequest, expected: string) {
+  for (const token of mobileAccessSuppliedTokens(req)) {
+    const result = await isValidMobileAccessCredential({
+      supplied: token,
+      expectedSecret: expected,
+    });
+    if (result.ok) return result;
+  }
+  return null;
 }
 
-function mobileAccessGate(req: NextRequest) {
+async function mobileAccessGate(req: NextRequest) {
   const expected = configuredMobileAccessToken();
   if (!expected) return null;
 
   const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
-  if (!hasValidMobileAccessToken(req, expected)) {
+  const verification = await mobileAccessVerification(req, expected);
+  if (!verification) {
     return jsonError(401, "unauthorized");
   }
 
-  if (
-    queryToken &&
-    timingSafeEqualString(queryToken, expected) &&
-    (req.method === "GET" || req.method === "HEAD")
-  ) {
+  if (queryToken && (req.method === "GET" || req.method === "HEAD")) {
     const url = req.nextUrl.clone();
     url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
     const res = NextResponse.redirect(url);
-    res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: req.nextUrl.protocol === "https:",
-      path: "/",
+    const queryVerification = await isValidMobileAccessCredential({
+      supplied: queryToken,
+      expectedSecret: expected,
     });
+    if (queryVerification.ok) {
+      const maxAge = queryVerification.legacy
+        ? undefined
+        : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
+      res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: req.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge,
+      });
+    }
     return res;
   }
 
@@ -90,9 +105,9 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const mobileAccessToken = configuredMobileAccessToken();
-  const mobileRes = mobileAccessGate(req);
+  const mobileRes = await mobileAccessGate(req);
   if (mobileRes) return mobileRes;
 
   if (!req.nextUrl.pathname.startsWith("/api/")) {
@@ -108,7 +123,7 @@ export function proxy(req: NextRequest) {
   // legitimately optional in browser-dev mode.
   const expectedOrigin = req.nextUrl.origin;
   const mobileAccessAuthenticated = mobileAccessToken
-    ? hasValidMobileAccessToken(req, mobileAccessToken)
+    ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
     : false;
   if (!isAllowedApiHost(req.headers.get("host"), mobileAccessAuthenticated)) {
     return jsonError(403, "forbidden host");

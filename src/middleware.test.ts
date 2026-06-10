@@ -9,7 +9,7 @@ const mobileScriptSource = await readFile(new URL("../scripts/mobile-tailscale.s
 const mobileDocsSource = await readFile(new URL("../docs/mobile-tailscale.md", import.meta.url), "utf8");
 const nextConfigSource = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 
-assert.match(source, /export function proxy\(req: NextRequest\)/, "Next 16 proxy entrypoint should guard requests");
+assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16 proxy entrypoint should guard requests");
 assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
 assert.match(source, /process\.env\.COVEN_CAVE_AUTH_TOKEN/, "proxy should require the per-launch sidecar token");
 assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing sidecar auth token/, "bundled sidecar mode should fail closed when its auth token is missing");
@@ -43,12 +43,21 @@ assert.match(source, /unsupported content-type/, "middleware should reject unsaf
     "dev-mode token bypass must run AFTER host/origin/referer/content-type guards",
   );
 }
-assert.match(source, /timingSafeEqualString\(queryToken, expected\)/, "mobile token bootstrap should only store verified query tokens");
+assert.match(source, /isValidMobileAccessCredential/, "mobile token bootstrap should verify signed or legacy credentials");
+assert.match(
+  source,
+  /isValidMobileAccessCredential\(\{\s*supplied:\s*queryToken,\s*expectedSecret:\s*expected,\s*\}\)/,
+  "mobile token bootstrap should validate the query token before writing cookie state",
+);
+assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
+assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
 assert.match(sidecarBridgeSource, /window\.history\.replaceState/, "sidecar token bootstrap should remove the token from the visible URL");
 assert.match(mobileScriptSource, /tailscale_cmd serve --bg "\$TAILSCALE_BACKEND"/, "mobile script should publish the exact loopback backend it started");
+assert.match(mobileScriptSource, /"authorization": `Bearer \$\{accessToken\}`/, "mobile script should authenticate its local invite API request");
 assert.match(nextConfigSource, /allowedDevOrigins:\s*\[[\s\S]*"\*\*\.ts\.net"/, "Next dev should allow Tailscale Serve origins for mobile browser access");
-assert.match(mobileDocsSource, /coven_access_token=<printed-token>/, "mobile docs should include the required access token query");
+assert.match(mobileDocsSource, /signed `coven_access_token`/, "mobile docs should describe the signed access token invite");
 assert.match(tauriSource, /sidecar_auth_token\(\)/, "Tauri sidecar should generate a per-launch token");
 assert.match(tauriSource, /\.env\("COVEN_CAVE_AUTH_TOKEN", &auth_token\)/, "Tauri sidecar should pass the token to Next.js");
-assert.match(tauriSource, /\?covenCaveToken=\{\}/, "Tauri app URL should bootstrap the token into the webview");
+assert.match(tauriSource, /\.env\("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token\)/, "Tauri sidecar should pass the mobile access secret to Next.js");
+assert.match(tauriSource, /\?covenCaveToken=\{\}&coven_access_token=\{\}/, "Tauri app URL should bootstrap both tokens into the webview");

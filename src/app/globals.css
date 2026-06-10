@@ -3359,6 +3359,89 @@ select {
   outline-offset: 1px;
 }
 
+.mobile-handoff {
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.mobile-handoff-qr {
+  width: 272px;
+  aspect-ratio: 1;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.mobile-handoff-qr__svg {
+  width: 256px;
+  height: 256px;
+  color: #111;
+}
+
+.mobile-handoff-qr__svg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mobile-handoff-qr__placeholder {
+  width: 256px;
+  height: 256px;
+  display: grid;
+  place-items: center;
+  color: #444;
+  font-size: var(--text-sm);
+}
+
+.mobile-handoff__body {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.mobile-handoff__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.mobile-handoff__meta,
+.mobile-handoff__hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.mobile-handoff__url {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.mobile-handoff__error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
 /* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
@@ -3899,6 +3982,9 @@ select {
   }
   .top-bar__search span,
   .top-bar__search kbd {
+    display: none;
+  }
+  .top-bar__mobile-handoff {
     display: none;
   }
   /* Hide the agent-trigger rail — its single button is now in the top

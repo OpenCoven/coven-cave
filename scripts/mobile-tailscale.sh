@@ -103,10 +103,37 @@ tailscale_cmd serve --bg "$TAILSCALE_BACKEND"
 
 echo
 echo "CovenCave mobile is available inside your tailnet."
-echo "Open the Tailscale Serve URL with this query parameter appended:"
-echo "  ?coven_access_token=${ACCESS_TOKEN}"
-echo "The token is stored as an HTTP-only cookie after the first successful request."
-echo "Run this to see the base URL:"
-echo "  tailscale serve status"
+echo "Creating a short-lived mobile invite URL..."
+node - "$HOST" "$PORT" "$ACCESS_TOKEN" <<'NODE'
+(async () => {
+  const [host, port, accessToken] = process.argv.slice(2);
+  const base = host === "::1"
+    ? `http://[::1]:${port}`
+    : `http://${host}:${port}`;
+
+  const res = await fetch(`${base}/api/mobile-handoff`, {
+    method: "POST",
+    headers: {
+      "authorization": `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ action: "start" }),
+  });
+  const json = await res.json().catch(() => ({ ok: false, error: "invalid response" }));
+  if (!json.ok) {
+    console.error(json.stderr || json.error || "failed to create mobile invite");
+    process.exit(1);
+  }
+  console.log("Open this URL on your phone:");
+  console.log(`  ${json.url}`);
+  console.log(`Expires: ${json.expiresAtIso}`);
+  console.log("The invite is stored as an HTTP-only cookie after the first successful request.");
+})().catch((err) => {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});
+NODE
+echo "Run this to see the base Serve URL:"
+echo "  tailscale serve status --json"
 echo
 tailscale_cmd serve status || true

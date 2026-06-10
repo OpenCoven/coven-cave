@@ -661,6 +661,7 @@ pub fn run() {
                 None => fatal_exit("no free local port available"),
             };
             let auth_token = sidecar_auth_token();
+            let mobile_access_token = sidecar_auth_token();
             log::info!("[cave] starting sidecar on port {}", port);
 
             let node = match find_node(&resource_dir) {
@@ -754,7 +755,8 @@ pub fn run() {
                 .env("HOSTNAME", "127.0.0.1")
                 .env("NODE_ENV", "production")
                 .env("COVEN_CAVE_BUNDLE", "1")
-                .env("COVEN_CAVE_AUTH_TOKEN", &auth_token);
+                .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
+                .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
 
             if let Some(out) = stdout_log {
                 cmd.stdout(Stdio::from(out));
@@ -804,7 +806,10 @@ pub fn run() {
                 ));
             }
 
-            let url = format!("http://127.0.0.1:{}/?covenCaveToken={}", port, auth_token);
+            let url = format!(
+                "http://127.0.0.1:{}/?covenCaveToken={}&coven_access_token={}",
+                port, auth_token, mobile_access_token
+            );
             let main_url = url.parse().expect("valid url");
             pty::trust_main_origin(&main_url);
             if let Err(e) = WebviewWindowBuilder::new(

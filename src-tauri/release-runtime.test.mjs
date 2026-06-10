@@ -71,6 +71,21 @@ test("packaged app does not override Coven workspace with OpenClaw workspace", a
   );
 });
 
+test("packaged sidecar bootstraps mobile handoff tokens", async () => {
+  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+
+  assert.match(
+    launcher,
+    /\.env\("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token\)/,
+    "packaged sidecar must expose a per-launch mobile access secret to Next.js",
+  );
+  assert.match(
+    launcher,
+    /\?covenCaveToken=\{\}&coven_access_token=\{\}/,
+    "desktop webview should bootstrap both sidecar auth and mobile access cookies",
+  );
+});
+
 test("macOS release signing includes nested executables like bundled Node", async () => {
   const releaseScript = await readFile(
     new URL("../scripts/release.sh", import.meta.url),

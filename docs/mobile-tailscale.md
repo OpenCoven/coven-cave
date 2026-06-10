@@ -1,6 +1,6 @@
 # Mobile Access Over Tailscale
 
-This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve with a per-run access token.
+This runs CovenCave's browser surface on your development machine and exposes it privately to your phone through Tailscale Serve with a short-lived mobile invite.
 
 ## Requirements
 
@@ -20,12 +20,14 @@ pnpm mobile:tailscale
 Open the HTTPS URL printed by:
 
 ```bash
-tailscale serve status
+pnpm mobile:tailscale
 ```
 
-and append the `?coven_access_token=...` value printed by `pnpm mobile:tailscale`. The app stores the token in an HTTP-only cookie after the first successful request.
+The script starts Cave on loopback, publishes it through Tailscale Serve, then prints a ready-to-open invite URL containing a signed `coven_access_token`. The app stores the invite in an HTTP-only cookie after the first successful request and removes it from the visible URL.
 
-Do not open the Serve URL without the access query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects requests until the token is supplied by query, cookie, bearer header, or the equivalent internal request path.
+In the packaged desktop app, click **Open on phone** in the top bar to create the same kind of invite as a QR code. Scan it from a phone signed into the same tailnet.
+
+Do not open the Serve URL without the invite query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects requests until a valid invite is supplied by query, cookie, bearer header, or the equivalent internal request path.
 
 Independent of the mobile token, every `/api/*` request also has to satisfy loopback/same-origin/referer/content-type checks — those guards apply in plain browser dev too, not just in bundled mode. A valid mobile token lets Tailscale Serve satisfy the host/origin/referer gates while it proxies to the loopback dev server; anything else (LAN scanners, accidental `-H 0.0.0.0`, mismatched origins without the token) hits a 403 before any handler runs.
 
@@ -48,7 +50,7 @@ tailscale serve --bg http://127.0.0.1:3000
 tailscale serve status
 ```
 
-Open the Serve URL with `?coven_access_token=<printed-token>` appended.
+Prefer the generated invite from `pnpm mobile:tailscale` or **Open on phone**. The proxy still accepts the raw per-run token for manual debugging, but release flows use signed expiring invites.
 
 ## No `0.0.0.0` Fallback
 

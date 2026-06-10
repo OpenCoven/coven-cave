@@ -13,6 +13,7 @@ type Props = {
   onOpenPalette: () => void;
   onOpenInbox: () => void;
   onOpenSettings: () => void;
+  onOpenMobileHandoff: () => void;
   inboxItems: InboxItem[];
   familiars: Familiar[];
   inboxPrefs: InboxPrefs;
@@ -36,6 +37,7 @@ export function TopBar(props: Props) {
     onOpenPalette,
     onOpenInbox,
     onOpenSettings,
+    onOpenMobileHandoff,
     inboxItems,
     familiars,
     inboxPrefs,
@@ -100,6 +102,15 @@ export function TopBar(props: Props) {
       </button>
 
       <div className="top-bar__actions">
+        <button
+          type="button"
+          className="top-bar__icon-btn top-bar__mobile-handoff"
+          onClick={onOpenMobileHandoff}
+          aria-label="Open on phone"
+          title="Open on phone"
+        >
+          <Icon name="ph:phone" width={14} />
+        </button>
         <NotificationBell
           items={inboxItems}
           familiars={familiars}

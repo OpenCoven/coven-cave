@@ -41,6 +41,7 @@ import { PluginsView } from "@/components/plugins-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
+import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -108,6 +109,7 @@ export function Workspace() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
+  const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
@@ -1098,6 +1100,7 @@ export function Workspace() {
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenInbox={() => setMode("inbox")}
             onOpenSettings={() => nextRouter.push("/settings")}
+            onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
             inboxItems={inboxItemsWithEphemeral}
             familiars={familiars}
             inboxPrefs={inboxPrefs}
@@ -1263,6 +1266,10 @@ export function Workspace() {
       />
 
       <FamiliarStudio familiars={familiars} />
+      <MobileHandoffModal
+        open={mobileHandoffOpen}
+        onClose={() => setMobileHandoffOpen(false)}
+      />
     </FamiliarStudioProvider>
   );
 }

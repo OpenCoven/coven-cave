@@ -12,9 +12,11 @@ documented at the bottom.
 pnpm mobile:tailscale
 ```
 
-Opens a Tailscale Serve URL. Append `?coven_access_token=…` once; the
-cookie sticks after that. The phone is only a browser — the daemon
-still runs on the dev machine.
+Prints a short-lived Tailscale Serve invite URL. In the desktop app,
+click **Open on phone** in the top bar and scan the QR code instead.
+The invite is stored as an HTTP-only cookie after the first successful
+request. The phone is only a browser — the daemon still runs on the dev
+machine.
 
 Native-Tauri shell on iOS / Android: same daemon-over-Tailscale model;
 see `docs/mobile-tailscale.md`.
@@ -142,12 +144,19 @@ see `docs/mobile-tailscale.md`.
 | Mobile-specific Node smoke tests | `pnpm test:mobile` |
 | Full unit + smoke + API suite | `pnpm test:app && pnpm test:api` |
 | Typecheck | `pnpm typecheck` |
+| Production build | `pnpm build` |
+| Mobile viewport geometry | `pnpm test:e2e:mobile` |
 
 The mobile smoke set asserts CSS / component invariants (drawer wiring,
 no-zoom font-sizes, safe-area tokens) — fast, no browser. Playwright
 mobile-viewport specs (`pnpm test:e2e:mobile`) cover the runtime
 behaviours that smoke tests can't catch; they boot Next.js + a fake
 daemon so they're slower and live in CI rather than every pre-commit.
+
+For release candidates that touch mobile access, also run a real
+Tailscale smoke: open **Open on phone**, scan the QR from a phone on the
+same tailnet, confirm Chat and Library load, then wait for or manually
+refresh an expired invite to confirm the old URL is rejected.
 
 When this checklist is run, paste the date and device list into the PR
 description so the next reviewer has a record.

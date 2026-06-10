@@ -7,6 +7,23 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.61] — 2026-06-10
+
+### Added
+- **Open on phone handoff** — desktop Cave now has an "Open on phone" action that starts or reuses Tailscale Serve, creates a short-lived signed mobile invite, renders a QR code, and includes copy/refresh/reset controls.
+- **Expiring mobile access tokens** — mobile access can now use signed HMAC invites with enforced expiry while preserving the existing per-run CLI token fallback.
+- **Library graph + CSV import** — Library gains the Graphify knowledge graph viewer and CSV chat import flow, backed by a graph API contract test.
+- **Board link workflows** — bookmarks can be added to Board, Board links can be saved back to Library, task creation is available from the command palette, and bookmark titles prefill the add-to-board modal.
+
+### Changed
+- **Tailscale mobile dev flow** — `pnpm mobile:tailscale` now prints a ready-to-open expiring invite URL instead of asking users to manually append the raw access token.
+- **Inspector polish** — the inspector tab strip, empty states, and inbox cards have been tightened.
+- **Mobile command center layouts** — Chat, Chat list, Chat detail, and Library now use phone-width layouts with bottom-tab-safe scrolling, stable headers/tabs, and full-width Library list behavior.
+
+### Fixed
+- **Tailscale API gate** — valid mobile access now satisfies the host/origin/referer checks while keeping loopback-bound development protected from LAN exposure.
+- **Library mobile squeeze** — the desktop rail/preview/list layout no longer compresses into phone width; the section rail becomes horizontal and preview hides on mobile.
+
 ## [0.0.60] — 2026-06-09
 
 ### Added
