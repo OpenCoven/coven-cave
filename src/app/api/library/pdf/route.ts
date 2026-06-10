@@ -6,9 +6,9 @@ import { homedir } from "node:os";
 export const dynamic = "force-dynamic";
 
 // Serve local PDF files from the papers directory.
-// Only allows files inside ~/.openclaw/workspace/sage/library/papers/
+// Only allows files inside ~/.coven/library/papers/
 // GET /api/library/pdf?file=<filename>
-const PAPERS_DIR = path.join(homedir(), ".openclaw", "workspace", "sage", "library", "papers");
+const PAPERS_DIR = path.join(homedir(), ".coven", "library", "papers");
 
 export async function GET(req: NextRequest) {
   const file = req.nextUrl.searchParams.get("file");

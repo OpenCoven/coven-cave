@@ -9,7 +9,7 @@ import type { GraphifyResult, GraphifyGraph } from "@/lib/library-types";
 const execFileAsync = promisify(execFile);
 
 const GRAPHS_DIR = path.join(
-  process.env.CAVE_LIBRARY_DIR ?? path.join(homedir(), ".openclaw", "workspace", "sage", "library"),
+  process.env.CAVE_LIBRARY_DIR ?? path.join(homedir(), ".coven", "library"),
   "graphs",
 );
 
