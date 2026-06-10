@@ -59,8 +59,13 @@ function loginShellPath(): string | null {
     const out = execFileSync(shell, ["-ilc", "echo $PATH"], {
       encoding: "utf-8",
       timeout: 4000,
-    }).trim();
-    return out || null;
+    });
+    const lastLine = out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .at(-1);
+    return lastLine || null;
   } catch {
     return null;
   }
