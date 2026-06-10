@@ -269,11 +269,9 @@ const STARTER_PROMPTS = [
 
 function ChatEmptyState({
   familiar,
-  modKey,
   onPrompt,
 }: {
   familiar: Familiar;
-  modKey: string;
   onPrompt?: (text: string) => void;
 }) {
 
@@ -312,10 +310,11 @@ function ChatEmptyState({
         </div>
       )}
 
-      {/* Keyboard-shortcut hint is desktop-only; touch devices have no Cmd
-       * key and on-screen keyboards send via a separate button. */}
+      {/* Keyboard-shortcut hint is desktop-only; on-screen keyboards send
+       * via the composer button. Plain Enter sends (see onComposerKey) —
+       * no modifier, matching the composer placeholder. */}
       <p className="cave-chat-empty-hint mt-8 text-[11px] text-[var(--text-muted)]">
-        {modKey}↵ to send
+        ↵ to send · shift↵ for newline
       </p>
     </div>
   );
@@ -1376,7 +1375,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             ) : historyState === "error" ? (
               <ChatHistoryNotice title="Could not load chat history" body="The transcript request failed. You can still continue this session." />
             ) : (
-              <ChatEmptyState familiar={familiar} modKey={keys.mod} onPrompt={(text) => {
+              <ChatEmptyState familiar={familiar} onPrompt={(text) => {
                 setInput(text);
                 inputRef.current?.focus();
               }} />

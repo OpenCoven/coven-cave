@@ -187,3 +187,14 @@ assert.doesNotMatch(
   /const duration = fmtDuration\(turn\.durationMs\)/,
   "Turn meta should drop per-turn duration — the header MetaLine carries the session duration",
 );
+
+assert.doesNotMatch(
+  source,
+  /\{modKey\}↵ to send/,
+  "Empty-state hint must not advertise a modifier — plain Enter sends (onComposerKey)",
+);
+assert.match(
+  source,
+  /↵ to send · shift↵ for newline/,
+  "Empty-state hint matches actual composer key behavior",
+);
