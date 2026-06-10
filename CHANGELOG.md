@@ -7,6 +7,17 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.64] — 2026-06-10
+
+### Changed
+- **Chat history recovery states** — missing/error transcript notices now offer Retry and Back to sessions actions, with retry reloading history without a page refresh. (#356)
+- **Knowledge graph readability** — dense graphs now use a faster large-graph layout, suppress noisy labels until hover/selection, and render the graph on the full Library canvas. (#356)
+- **Empty companion rail behavior** — when no familiar is selected, Cave collapses the right companion panel instead of reserving space for an empty rail. (#357)
+
+### Fixed
+- **Packaged mobile handoff QR** — the mobile handoff API now resolves the Tailscale CLI from macOS app/Homebrew/common install paths or `TAILSCALE_BIN`, preventing packaged app `spawn tailscale ENOENT` failures. (#354)
+- **Window-level shell scroll** — the app shell now anchors `100dvh` on the outer frame so the document/body do not become globally scrollable. (#358)
+
 ## [0.0.63] — 2026-06-10
 
 ### Changed
