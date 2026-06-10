@@ -182,6 +182,26 @@ assert.match(
 );
 assert.match(
   source,
+  /const liveSessionIdRef = useRef<string \| null>\(null\)/,
+  "ChatView should synchronously track the session id that owns the live in-flight transcript",
+);
+assert.match(
+  source,
+  /function shouldKeepLiveNewChatState\(\{[\s\S]*liveSessionId[\s\S]*turnCount[\s\S]*liveSessionId === sessionId/,
+  "Live new-chat preservation should not depend only on committed turn state",
+);
+assert.match(
+  source,
+  /if \(!res\.ok\) \{[\s\S]*if \(keepLiveSession\(\)\) \{[\s\S]*setHistoryState\("loaded"\)[\s\S]*return/,
+  "A stale missing-history response must not clear an in-flight transcript for the same promoted session",
+);
+assert.match(
+  source,
+  /case "session":[\s\S]*liveSessionIdRef\.current = ev\.sessionId[\s\S]*currentSessionRef\.current = ev\.sessionId/,
+  "Session promotion events should bind the live transcript to the daemon session before parent rerender",
+);
+assert.match(
+  source,
   /<LinkedContextRow\b/,
   "ChatView header should render LinkedContextRow for task/GitHub chips",
 );

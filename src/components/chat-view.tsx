@@ -108,13 +108,19 @@ type FailedSend = {
 function shouldKeepLiveNewChatState({
   sessionId,
   currentSessionId,
+  liveSessionId,
   turnCount,
 }: {
   sessionId: string | null;
   currentSessionId: string | null;
+  liveSessionId: string | null;
   turnCount: number;
 }): boolean {
-  return Boolean(sessionId && currentSessionId === sessionId && turnCount > 0);
+  return Boolean(
+    sessionId &&
+      currentSessionId === sessionId &&
+      (turnCount > 0 || liveSessionId === sessionId),
+  );
 }
 
 function upsertProgressEvent(
@@ -854,6 +860,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const currentSessionRef = useRef<string | null>(sessionId);
+  const liveSessionIdRef = useRef<string | null>(null);
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -897,15 +904,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Load history on attach; new chats open with a clean empty state
   useEffect(() => {
+    const keepLiveSession = () =>
+      shouldKeepLiveNewChatState({
+        sessionId,
+        currentSessionId: currentSessionRef.current,
+        liveSessionId: liveSessionIdRef.current,
+        turnCount: turnsRef.current.length,
+      });
+
     if (shouldKeepLiveNewChatState({
       sessionId,
       currentSessionId: currentSessionRef.current,
+      liveSessionId: liveSessionIdRef.current,
       turnCount: turnsRef.current.length,
     })) {
       setHistoryState("loaded");
       return;
     }
     currentSessionRef.current = sessionId;
+    liveSessionIdRef.current = null;
     setLinkedContext(null);
     if (!sessionId) {
       setTurns([]);
@@ -919,6 +936,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
           if (!cancelled) {
+            if (keepLiveSession()) {
+              setHistoryState("loaded");
+              return;
+            }
             setTurns([]);
             setHistoryState(res.status === 404 ? "missing" : "error");
           }
@@ -980,14 +1001,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setHistoryState("loaded");
         } else if (json.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
+          if (keepLiveSession()) {
+            setHistoryState("loaded");
+            return;
+          }
           setTurns([]);
           setHistoryState("loaded");
         } else {
+          if (keepLiveSession()) {
+            setHistoryState("loaded");
+            return;
+          }
           setTurns([]);
           setHistoryState("missing");
         }
       } catch {
         if (!cancelled) {
+          if (keepLiveSession()) {
+            setHistoryState("loaded");
+            return;
+          }
           setTurns([]);
           setHistoryState("error");
         }
@@ -1071,6 +1104,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const command = canonicalize(token) ?? token;
 
     if (command === "/clear") {
+      liveSessionIdRef.current = null;
       setTurns([]);
       setInput("");
       return true;
@@ -1150,6 +1184,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setBusy(true);
     setError(null);
     setLastFailedSend(null);
+    liveSessionIdRef.current = currentSessionRef.current;
+    setHistoryState("loaded");
 
     const now = new Date().toISOString();
     const userTurn: Turn = {
@@ -1306,7 +1342,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     switch (ev.kind) {
       case "session": {
         if (ev.sessionId !== currentSessionRef.current) {
+          liveSessionIdRef.current = ev.sessionId;
           currentSessionRef.current = ev.sessionId;
+          setHistoryState("loaded");
           onSessionStarted?.(ev.sessionId);
         }
         return;
@@ -1399,7 +1437,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         if (ev.isError) setLastFailedSend(request);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
+          liveSessionIdRef.current = ev.sessionId;
           currentSessionRef.current = ev.sessionId;
+          setHistoryState("loaded");
           onSessionStarted?.(ev.sessionId);
         }
         return;
@@ -1478,10 +1518,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useImperativeHandle(
     ref,
     () => ({
-      clearTranscript: () => setTurns([]),
+      clearTranscript: () => {
+        liveSessionIdRef.current = null;
+        setTurns([]);
+      },
       runSlash: (command: string) => {
         // Push command into the composer + dispatch
         if (command === "/clear") {
+          liveSessionIdRef.current = null;
           setTurns([]);
           return;
         }
