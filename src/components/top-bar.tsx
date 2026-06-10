@@ -7,9 +7,6 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 
 type Props = {
-  surfaceLabel: string;
-  subContext?: string;
-  onOpenHome: () => void;
   onOpenPalette: () => void;
   onOpenInbox: () => void;
   onOpenSettings: () => void;
@@ -31,9 +28,6 @@ type Props = {
 
 export function TopBar(props: Props) {
   const {
-    surfaceLabel,
-    subContext,
-    onOpenHome,
     onOpenPalette,
     onOpenInbox,
     onOpenSettings,
@@ -51,44 +45,32 @@ export function TopBar(props: Props) {
 
   return (
     <header className="top-bar">
-      {onToggleNav ? (
-        <button
-          type="button"
-          className="top-bar__mobile-toggle"
-          onClick={onToggleNav}
-          aria-label="Open navigation (⌘B)"
-          title="Open navigation"
-        >
-          <Icon name="ph:sidebar-simple" width={18} />
-        </button>
-      ) : null}
-      <span className="top-bar__brand">CovenCave</span>
-      <button type="button" className="top-bar__home-btn" onClick={onOpenHome}>
-        Home
-      </button>
-      {onToggleList ? (
-        <button
-          type="button"
-          className="top-bar__mobile-toggle"
-          onClick={onToggleList}
-          aria-label="Open list (⌘\\)"
-          title="Open list"
-        >
-          <Icon name="ph:list-checks-bold" width={18} />
-        </button>
-      ) : null}
-      {surfaceLabel ? (
-        <span className="top-bar__crumb">
-          <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
-          <span className="top-bar__crumb-surface">{surfaceLabel}</span>
-          {subContext ? (
-            <>
-              <span className="top-bar__crumb-sep" aria-hidden="true">›</span>
-              <span className="top-bar__crumb-sub">{subContext}</span>
-            </>
-          ) : null}
-        </span>
-      ) : null}
+      {/* Left cell: mobile drawer toggles; empty on desktop so the grid
+          keeps the search bar centered. */}
+      <div className="top-bar__lead">
+        {onToggleNav ? (
+          <button
+            type="button"
+            className="top-bar__mobile-toggle"
+            onClick={onToggleNav}
+            aria-label="Open navigation (⌘B)"
+            title="Open navigation"
+          >
+            <Icon name="ph:sidebar-simple" width={18} />
+          </button>
+        ) : null}
+        {onToggleList ? (
+          <button
+            type="button"
+            className="top-bar__mobile-toggle"
+            onClick={onToggleList}
+            aria-label="Open list (⌘\\)"
+            title="Open list"
+          >
+            <Icon name="ph:list-checks-bold" width={18} />
+          </button>
+        ) : null}
+      </div>
 
       <button
         type="button"
@@ -122,12 +104,12 @@ export function TopBar(props: Props) {
         />
         <button
           type="button"
-          className="top-bar__icon-btn"
+          className="top-bar__account"
           onClick={onOpenSettings}
-          aria-label="Settings"
+          aria-label="Account / settings"
           title="Settings (⌘,)"
         >
-          <Icon name="ph:gear-six" width={14} />
+          <Icon name="ph:user" width={13} />
         </button>
         {onToggleAgent ? (
           <button

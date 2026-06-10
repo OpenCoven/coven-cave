@@ -52,34 +52,18 @@ assert.match(
   "SURFACE_ORDER should omit the Familiars surface from Work shortcuts",
 );
 
-assert.match(
+// After the top-bar streamline: no breadcrumb, no Home button, no brand
+// mark. The sidebar carries section + familiar identity instead.
+assert.doesNotMatch(
   workspace,
-  /agents: "Familiars"/,
-  "SURFACE_LABELS labels the page Familiars",
+  /surfaceLabel|subContext|SURFACE_LABELS|onOpenHome/,
+  "Workspace no longer computes breadcrumb labels for the top bar",
 );
 
-assert.match(
-  workspace,
-  /const surfaceLabel = \(mode === "agents" \|\| mode === "chat"\) && active\s*\?\s*active\.display_name\s*:\s*mode === "home"\s*\?\s*""\s*:\s*\(SURFACE_LABELS\[mode\] \?\? "Home"\)/,
-  "Workspace top bar uses the active familiar name as the familiar-chat surface label",
-);
-
-assert.match(
-  workspace,
-  /const subContext = \(mode !== "agents" && mode !== "chat" && mode !== "home" && active\) \? active\.display_name : undefined/,
-  "Workspace should not duplicate the familiar name as a second crumb in familiar-chat contexts",
-);
-
-assert.match(
-  workspace,
-  /onOpenHome=\{\(\) => setMode\("home"\)\}/,
-  "Workspace should wire the top-bar Home button to Home mode",
-);
-
-assert.match(
+assert.doesNotMatch(
   topBar,
-  /onOpenHome[\s\S]*className="top-bar__home-btn"[\s\S]*>\s*Home\s*<\/button>/,
-  "TopBar should expose Home as a button instead of only breadcrumb text",
+  /top-bar__home-btn|top-bar__brand|top-bar__crumb/,
+  "TopBar drops the brand/home/breadcrumb chrome — sidebar carries identity and nav",
 );
 
 assert.doesNotMatch(

@@ -54,21 +54,6 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
-const SURFACE_LABELS: Record<WorkspaceMode, string> = {
-  agents: "Familiars",
-  home: "Home",
-  chat: "Chat",
-  board: "Board",
-  calendar: "Calendar",
-  inbox: "Inbox",
-  library: "Library",
-  browser: "Browser",
-  terminal: "Terminal",
-  github: "GitHub",
-  roles: "Roles",
-  capabilities: "Capabilities",
-};
-
 export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -879,12 +864,6 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
-  const surfaceLabel = (mode === "agents" || mode === "chat") && active
-    ? active.display_name
-    : mode === "home"
-      ? ""
-      : (SURFACE_LABELS[mode] ?? "Home");
-  const subContext = (mode !== "agents" && mode !== "chat" && mode !== "home" && active) ? active.display_name : undefined;
   const showCompanionRail = railTab === "salem" || (mode !== "browser" && mode !== "agents");
 
   const openProjectChat = useCallback((projectRoot: string) => {
@@ -1094,9 +1073,6 @@ export function Workspace() {
         }}
         topBar={
           <TopBar
-            surfaceLabel={surfaceLabel}
-            subContext={subContext}
-            onOpenHome={() => setMode("home")}
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenInbox={() => setMode("inbox")}
             onOpenSettings={() => nextRouter.push("/settings")}

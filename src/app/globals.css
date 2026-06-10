@@ -3213,81 +3213,40 @@ select {
 }
 
 /* ────────────────────────────────────────────────
-   Top bar — brand · breadcrumb · search · bell · settings
-   (Phase 4, shell-ia-redesign)
+   Top bar — quiet command-first frame: centered ⌘K search,
+   right cluster for handoff · bell · account. Sidebar carries
+   brand/identity/nav (no breadcrumb, no Home button).
    ──────────────────────────────────────────────── */
 
 .top-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(auto, 560px) 1fr;
   align-items: center;
   gap: 12px;
-  padding: 0 16px;
-  height: 36px;
+  padding: 0 14px;
+  height: 40px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-hairline);
   font-size: var(--text-sm);
   user-select: none;
 }
 
-.top-bar__brand {
-  color: var(--accent-presence);
-  font-weight: 600;
-}
-
-.top-bar__home-btn {
+.top-bar__lead {
+  justify-self: start;
   display: inline-flex;
   align-items: center;
-  height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-base);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-standard),
-              color var(--duration-fast) var(--ease-standard),
-              background var(--duration-fast) var(--ease-standard);
-}
-
-.top-bar__home-btn:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-raised);
-  color: var(--text-primary);
-}
-
-.top-bar__home-btn:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 2px;
-}
-
-.top-bar__crumb {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.top-bar__crumb-surface {
-  color: var(--text-primary);
-}
-
-.top-bar__crumb-sep {
-  color: var(--text-muted);
-  opacity: 0.55;
-}
-
-.top-bar__crumb-sub {
-  color: var(--text-secondary);
+  gap: 4px;
 }
 
 .top-bar__search {
-  margin-left: auto;
-  margin-right: 12px;
+  justify-self: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 560px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 5px 12px;
-  min-width: 420px;
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
@@ -3321,9 +3280,34 @@ select {
 }
 
 .top-bar__actions {
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.top-bar__account {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__account:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.top-bar__account:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
 
 .top-bar__icon-btn {
@@ -3940,16 +3924,15 @@ select {
   }
 }
 
-/* Mobile top-bar — reveal drawer toggles, compress the search box so the
-   header fits a 360px viewport, drop the breadcrumb's leading "›" since
-   the surface name reads fine without it at narrow widths, and respect
-   the notch on the top edge. The desktop Home button stays but
-   gets a tighter padding. */
+/* Mobile top-bar — reveal drawer toggles, compress the search box to its
+   icon so the header fits a 360px viewport, and respect the notch on the
+   top edge. */
 @media (max-width: 1023px) {
   .top-bar {
+    grid-template-columns: 1fr auto 1fr;
     padding: 0 calc(8px + var(--sai-right)) 0 calc(8px + var(--sai-left));
     padding-top: var(--sai-top);
-    height: calc(36px + var(--sai-top));
+    height: calc(40px + var(--sai-top));
     gap: 6px;
   }
   .top-bar__mobile-toggle {
@@ -3977,8 +3960,7 @@ select {
   }
   .top-bar__search {
     min-width: 0;
-    flex: 0 1 auto;
-    margin-right: 0;
+    width: auto;
   }
   .top-bar__search span,
   .top-bar__search kbd {
