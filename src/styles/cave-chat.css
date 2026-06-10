@@ -975,10 +975,6 @@ details[open] > .cave-tool-summary::before {
   align-items: stretch;
 }
 
-.cave-linear-turn-index {
-  display: none; /* removed — clutters the visual; ordinal lives in meta if needed */
-}
-
 .cave-linear-turn-content {
   min-width: 0;
   max-width: 100%;

@@ -92,13 +92,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const turnNumber = String\(index \+ 1\)\.padStart\(2, "0"\)/,
-  "Chat turns should expose stable turn numbers for dense review",
-);
-
-assert.match(
-  turnRow,
-  /cave-linear-turn[\s\S]*cave-linear-turn-index[\s\S]*cave-linear-turn-content/,
+  /cave-linear-turn[\s\S]*cave-linear-turn-content/,
   "Chat turns should use the dense linear transcript anatomy",
 );
 
@@ -112,4 +106,10 @@ assert.doesNotMatch(
   source,
   /FamiliarSwitcher/,
   "Chat header should not duplicate the avatar rail's familiar switcher",
+);
+
+assert.doesNotMatch(
+  source,
+  /cave-linear-turn-index/,
+  "Dead turn-index className should be deleted from TurnRow (CSS rule is already display:none)",
 );

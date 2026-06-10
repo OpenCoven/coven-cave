@@ -1732,12 +1732,10 @@ function TurnRow({
   turn,
   familiar,
   showTimestamp = true,
-  index,
 }: {
   turn: Turn;
   familiar: Familiar;
   showTimestamp?: boolean;
-  index: number;
 }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
@@ -1766,11 +1764,9 @@ function TurnRow({
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const toolCount = turn.tools?.length ?? 0;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
-  const turnNumber = String(index + 1).padStart(2, "0");
 
   return (
     <div className="cave-linear-turn cave-linear-turn--assistant">
-      <span className="cave-linear-turn-index" aria-label={`Turn ${turnNumber}`}>{turnNumber}</span>
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
         {/* Avatar + right column */}
         <div className="cave-linear-turn-avatar" aria-hidden>
