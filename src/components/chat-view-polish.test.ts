@@ -113,3 +113,9 @@ assert.doesNotMatch(
   /cave-linear-turn-index/,
   "Dead turn-index className should be deleted from TurnRow (CSS rule is already display:none)",
 );
+
+assert.doesNotMatch(
+  source,
+  /\{turn\.role === "user" \? "You" : "System"\}/,
+  "User turns should drop the \"You\" label — bubble + right-alignment already convey role",
+);

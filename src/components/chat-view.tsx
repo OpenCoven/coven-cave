@@ -1742,7 +1742,9 @@ function TurnRow({
       <div className={`cave-linear-turn cave-linear-turn--${turn.role}`}>
         <div className="cave-linear-turn-content">
           <div className="cave-linear-turn-meta">
-            <span className="font-medium text-[var(--text-secondary)]">{turn.role === "user" ? "You" : "System"}</span>
+            {turn.role === "system" ? (
+              <span className="font-medium text-[var(--text-secondary)]">System</span>
+            ) : null}
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
             {turn.attachments?.length ? <span className="opacity-60">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
           </div>
