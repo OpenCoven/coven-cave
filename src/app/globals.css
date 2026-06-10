@@ -275,6 +275,12 @@ html,
 body {
   background: var(--bg-base);
   color: var(--text-primary);
+  /* The app chrome is sized to exactly fill the viewport (see .shell-frame).
+     Clamp window-level overflow so the desktop window never scrolls — any
+     scrolling happens inside individual panels, which manage their own
+     overflow. */
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -349,6 +355,21 @@ select {
 }
 .shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) > .shell-detail {
   overflow: visible;
+}
+
+/* Browser pane must never scroll — the native Tauri child webview is
+ * positioned via absolute viewport coords (getBoundingClientRect) and
+ * would lose sync if the shell-detail scroll container drifts.
+ * Also ensure the cave-mode-fade wrapper stretches to fill the detail
+ * panel so the browser toolbar row is always visible. */
+.shell-detail:has(> .cave-mode-fade > .browser-pane) {
+  overflow: hidden;
+}
+.shell-detail > .cave-mode-fade:has(> .browser-pane) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Inner panel border — subtle dividing line on the right edge of side panels */

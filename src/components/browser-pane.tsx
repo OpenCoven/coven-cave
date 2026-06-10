@@ -536,7 +536,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   }, []);
 
   return (
-    <div ref={paneRef} className="flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
+    <div ref={paneRef} className="browser-pane flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
       {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
       {/* Collapsed by default to a 6px edge handle so the page gets the
          full viewport width; expands to 48px on hover or keyboard focus.
