@@ -75,16 +75,22 @@ async function mobileAccessGate(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.searchParams.delete(ACCESS_TOKEN_QUERY_PARAM);
     const res = NextResponse.redirect(url);
-    const maxAge = verification.legacy
-      ? undefined
-      : Math.max(1, Math.floor((verification.expiresAt - Date.now()) / 1000));
-    res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: req.nextUrl.protocol === "https:",
-      path: "/",
-      maxAge,
+    const queryVerification = await isValidMobileAccessCredential({
+      supplied: queryToken,
+      expectedSecret: expected,
     });
+    if (queryVerification.ok) {
+      const maxAge = queryVerification.legacy
+        ? undefined
+        : Math.max(1, Math.floor((queryVerification.expiresAt - Date.now()) / 1000));
+      res.cookies.set(ACCESS_TOKEN_COOKIE, queryToken, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: req.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge,
+      });
+    }
     return res;
   }
 
