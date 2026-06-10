@@ -32,6 +32,15 @@ type ToolEvent = {
   durationMs?: number;
 };
 
+type ProgressEvent = {
+  id: string;
+  label: string;
+  detail?: string;
+  status: "running" | "done" | "error";
+  createdAt: string;
+  durationMs?: number;
+};
+
 type ChatTurnLifecycle =
   | "queued"
   | "connecting"
@@ -48,6 +57,7 @@ type Turn = {
   attachments?: ChatAttachment[];
   reasoning?: string;
   tools?: ToolEvent[];
+  progress?: ProgressEvent[];
   createdAt: string;
   pending?: boolean;
   error?: boolean;
@@ -83,6 +93,7 @@ type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "progress"; id?: string; label: string; detail?: string; status?: "running" | "done" | "error"; durationMs?: number }
   | { kind: "tool_use"; id?: string; name: string; input?: string; output?: string; status?: "running" | "ok" | "error"; durationMs?: number }
   | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string }
   | { kind: "error"; message: string; code?: string };
@@ -94,13 +105,71 @@ type FailedSend = {
   attachments: ChatAttachment[];
 };
 
+function shouldKeepLiveNewChatState({
+  sessionId,
+  currentSessionId,
+  turnCount,
+}: {
+  sessionId: string | null;
+  currentSessionId: string | null;
+  turnCount: number;
+}): boolean {
+  return Boolean(sessionId && currentSessionId === sessionId && turnCount > 0);
+}
+
+function upsertProgressEvent(
+  progress: ProgressEvent[] | undefined,
+  incoming: {
+    id?: string;
+    label: string;
+    detail?: string;
+    status?: "running" | "done" | "error";
+    durationMs?: number;
+    createdAt?: string;
+  },
+): ProgressEvent[] {
+  const event: ProgressEvent = {
+    id: incoming.id ?? crypto.randomUUID(),
+    label: incoming.label,
+    detail: incoming.detail,
+    status: incoming.status ?? "running",
+    createdAt: incoming.createdAt ?? new Date().toISOString(),
+    durationMs: incoming.durationMs,
+  };
+  const existing = progress?.findIndex((item) => item.id === event.id) ?? -1;
+  if (existing < 0) return [...(progress ?? []), event];
+  return (progress ?? []).map((item, index) =>
+    index === existing
+      ? {
+          ...item,
+          ...event,
+          detail: event.detail ?? item.detail,
+          durationMs: event.durationMs ?? item.durationMs,
+        }
+      : item,
+  );
+}
+
+function settleRunningProgress(
+  progress: ProgressEvent[] | undefined,
+  status: "done" | "error",
+): ProgressEvent[] | undefined {
+  if (!progress?.length) return progress;
+  return progress.map((item) => (item.status === "running" ? { ...item, status } : item));
+}
+
 function fmtDuration(ms?: number): string | null {
-  if (!ms || ms < 0) return null;
+  if (ms == null || ms < 0) return null;
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   const rem = s % 60;
   return `${m}m ${rem}s`;
+}
+
+function DurationText({ durationMs }: { durationMs?: number }) {
+  const duration = fmtDuration(durationMs);
+  return duration ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{duration}</span> : null;
 }
 
 function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
@@ -751,6 +820,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const currentSessionRef = useRef<string | null>(sessionId);
+  const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -787,8 +857,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSlashIdx(0);
   }, [input]);
 
+  useEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
+
   // Load history on attach; new chats open with a clean empty state
   useEffect(() => {
+    if (shouldKeepLiveNewChatState({
+      sessionId,
+      currentSessionId: currentSessionRef.current,
+      turnCount: turnsRef.current.length,
+    })) {
+      setHistoryState("loaded");
+      return;
+    }
     currentSessionRef.current = sessionId;
     setLinkedContext(null);
     if (!sessionId) {
@@ -1052,6 +1134,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       lifecycle: "queued",
       createdAt: now,
       tools: [],
+      progress: [
+        { id: "queued", label: "Queued request", status: "done", createdAt: now },
+        { id: "connect", label: "Connecting to chat bridge", status: "running", createdAt: now },
+      ],
     };
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
 
@@ -1074,10 +1160,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (!res.ok || !res.body) {
         setError(`request failed (${res.status})`);
         setLastFailedSend(request);
+        upsertTurnProgress(assistantId, {
+          id: "connect",
+          label: "Chat bridge rejected the request",
+          status: "error",
+        });
         markAssistantError(assistantId);
         return;
       }
 
+      upsertTurnProgress(assistantId, {
+        id: "connect",
+        label: "Connected to chat bridge",
+        status: "done",
+      });
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1105,7 +1201,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
-              ? { ...t, pending: false, lifecycle: "cancelled", text: t.text || "(cancelled)" }
+              ? {
+                  ...t,
+                  pending: false,
+                  lifecycle: "cancelled",
+                  text: t.text || "(cancelled)",
+                  progress: settleRunningProgress(
+                    upsertProgressEvent(t.progress, {
+                      id: "cancelled",
+                      label: "Cancelled by user",
+                      status: "error",
+                    }),
+                    "error",
+                  ),
+                }
               : t,
           ),
         );
@@ -1162,7 +1271,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const handleEvent = (ev: StreamEvent, assistantId: string, request: FailedSend) => {
     switch (ev.kind) {
       case "session": {
-        if (!currentSessionRef.current) {
+        if (ev.sessionId !== currentSessionRef.current) {
           currentSessionRef.current = ev.sessionId;
           onSessionStarted?.(ev.sessionId);
         }
@@ -1173,10 +1282,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
-              ? { ...t, text: (t.text + ev.text).replace(/\n{3,}/g, "\n\n"), pending: true, lifecycle: "streaming" }
+              ? {
+                  ...t,
+                  text: (t.text + ev.text).replace(/\n{3,}/g, "\n\n"),
+                  pending: true,
+                  lifecycle: "streaming",
+                  progress: upsertProgressEvent(t.progress, {
+                    id: "stream",
+                    label: "Receiving response",
+                    status: "running",
+                  }),
+                }
               : t,
           ),
         );
+        return;
+      }
+      case "progress": {
+        upsertTurnProgress(assistantId, ev);
         return;
       }
       case "tool_use": {
@@ -1209,7 +1332,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       : x,
                   )
                 : [...tools, incoming];
-            return { ...t, tools: nextTools, lifecycle: t.pending ? "tooling" : t.lifecycle };
+            return {
+              ...t,
+              tools: nextTools,
+              lifecycle: t.pending ? "tooling" : t.lifecycle,
+              progress: upsertProgressEvent(t.progress, {
+                id: "tools",
+                label: incoming.status === "running" ? "Tool call running" : "Tool call finished",
+                detail: incoming.name,
+                status: incoming.status === "error" ? "error" : incoming.status === "ok" ? "done" : "running",
+                durationMs: incoming.durationMs,
+              }),
+            };
           }),
         );
         return;
@@ -1218,12 +1352,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
-              ? { ...t, pending: false, error: ev.isError ?? false, lifecycle: ev.isError ? "failed" : "complete", durationMs: ev.durationMs }
+              ? {
+                  ...t,
+                  pending: false,
+                  error: ev.isError ?? false,
+                  lifecycle: ev.isError ? "failed" : "complete",
+                  durationMs: ev.durationMs,
+                  progress: settleRunningProgress(t.progress, ev.isError ? "error" : "done"),
+                }
               : t,
           ),
         );
         if (ev.isError) setLastFailedSend(request);
-        if (ev.sessionId && !currentSessionRef.current) {
+        if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           currentSessionRef.current = ev.sessionId;
           onSessionStarted?.(ev.sessionId);
         }
@@ -1241,13 +1382,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   const markAssistantError = (id: string) => {
     setTurns((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, pending: false, error: true, lifecycle: "failed" } : t)),
+      prev.map((t) => (
+        t.id === id
+          ? { ...t, pending: false, error: true, lifecycle: "failed", progress: settleRunningProgress(t.progress, "error") }
+          : t
+      )),
     );
   };
 
   function setAssistantLifecycle(id: string, lifecycle: ChatTurnLifecycle) {
     setTurns((prev) =>
       prev.map((t) => (t.id === id ? { ...t, lifecycle } : t)),
+    );
+  }
+
+  function upsertTurnProgress(
+    id: string,
+    event: {
+      id?: string;
+      label: string;
+      detail?: string;
+      status?: "running" | "done" | "error";
+      durationMs?: number;
+    },
+  ) {
+    setTurns((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, progress: upsertProgressEvent(t.progress, event) } : t)),
     );
   }
 
@@ -1785,6 +1945,7 @@ function TurnRow({
                 label={familiar.display_name}
               />
             )}
+            {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
             {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
           </div>
@@ -1810,6 +1971,62 @@ function ReasoningBlock({ reasoning }: { reasoning: string }) {
   );
 }
 
+function ProgressGroup({
+  progress,
+  pending,
+}: {
+  progress: ProgressEvent[];
+  pending: boolean;
+}) {
+  const running = progress.filter((event) => event.status === "running").length;
+  const errors = progress.filter((event) => event.status === "error").length;
+  const completed = progress.length - running - errors;
+  const current =
+    [...progress].reverse().find((event) => event.status === "running") ??
+    progress[progress.length - 1];
+
+  return (
+    <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
+      <summary className="cave-tool-summary">
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="ph:list-checks-bold" width={12} aria-hidden />
+          Progress
+        </span>
+        {current ? (
+          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)] normal-case tracking-normal">
+            {current.label}
+          </span>
+        ) : null}
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+          {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "issue" : "issues"}</span> : null}
+          {completed ? <span className="cave-tool-count">{completed} done</span> : null}
+        </span>
+      </summary>
+      <div className="cave-progress-list">
+        {progress.map((event) => (
+          <div key={event.id} className={`cave-progress-row cave-progress-row--${event.status}`}>
+            <Icon
+              name={
+                event.status === "error"
+                  ? "ph:warning-circle"
+                  : event.status === "done"
+                    ? "ph:check-circle"
+                    : "ph:circle-dashed"
+              }
+              width={12}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate">{event.label}</span>
+            {event.detail ? <span className="min-w-0 max-w-[18rem] truncate text-[var(--text-muted)]">{event.detail}</span> : null}
+            <DurationText durationMs={event.durationMs} />
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   const running = tools.filter((tool) => tool.status === "running").length;
   const errors = tools.filter((tool) => tool.status === "error").length;
@@ -1824,7 +2041,7 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
         </span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
           {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
-          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} error</span> : null}
+          {errors ? <span className="cave-tool-count cave-tool-count--error">{errors} {errors === 1 ? "error" : "errors"}</span> : null}
           {completed ? <span className="cave-tool-count">{completed} done</span> : null}
         </span>
       </summary>
@@ -1851,9 +2068,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         ].join(" ")}>
           {tool.status}
         </span>
-        {tool.durationMs ? (
-          <span className="font-mono text-[10px] text-[var(--text-muted)]">{fmtDuration(tool.durationMs)}</span>
-        ) : null}
+        <DurationText durationMs={tool.durationMs} />
       </summary>
       {tool.input ? (
         <div className="mt-2">

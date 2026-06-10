@@ -45,8 +45,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-meta-line--writing[\s\S]*\.cave-chat-meta-line--failed/,
-  "Meta line has writing/failed state modifiers",
+  /\.cave-chat-meta-line--streaming[\s\S]*\.cave-chat-meta-line--failed/,
+  "Meta line has streaming/failed state modifiers",
 );
 
 assert.match(

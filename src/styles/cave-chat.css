@@ -708,6 +708,7 @@
 }
 
 .cave-reasoning-block,
+.cave-progress-group,
 .cave-tool-group {
   border: 1px solid var(--border-hairline);
   border-radius: 8px;
@@ -772,6 +773,52 @@ details[open] > .cave-tool-summary::before {
 .cave-tool-count--error {
   border-color: color-mix(in oklch, var(--color-danger) 28%, transparent);
   color: var(--color-danger);
+}
+
+.cave-progress-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+  padding-top: 8px;
+}
+
+.cave-progress-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.cave-progress-row--running {
+  color: var(--color-warning);
+}
+
+.cave-progress-row--running svg {
+  animation: cave-progress-spin 1s linear infinite;
+}
+
+.cave-progress-row--done {
+  color: var(--text-muted);
+}
+
+.cave-progress-row--error {
+  color: var(--color-danger);
+}
+
+@keyframes cave-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-progress-row--running svg {
+    animation: none;
+  }
 }
 
 .cave-tool-block {
@@ -890,13 +937,13 @@ details[open] > .cave-tool-summary::before {
   box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 14%, transparent);
 }
 
-.cave-chat-meta-line--writing {
+.cave-chat-meta-line--streaming {
   color: var(--color-warning);
 }
-.cave-chat-meta-line--writing .cave-chat-meta-line__meta {
+.cave-chat-meta-line--streaming .cave-chat-meta-line__meta {
   color: var(--color-warning);
 }
-.cave-chat-meta-line--writing .cave-chat-meta-line__dot {
+.cave-chat-meta-line--streaming .cave-chat-meta-line__dot {
   animation: cave-chat-meta-blip 1.2s ease-in-out infinite;
 }
 
@@ -1073,6 +1120,7 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear .cave-reasoning-block,
+.cave-chat-linear .cave-progress-group,
 .cave-chat-linear .cave-tool-group {
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-panel) 26%, transparent);
