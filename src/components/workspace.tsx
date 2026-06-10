@@ -121,7 +121,10 @@ export function Workspace() {
   }, [activeId]);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId) {
+      queueMicrotask(() => shellRef.current?.closeAgent());
+      return;
+    }
     const desired = getRailOpen(activeId);
     queueMicrotask(() => {
       if (desired) shellRef.current?.openAgent();

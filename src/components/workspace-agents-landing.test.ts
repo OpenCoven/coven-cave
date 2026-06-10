@@ -48,6 +48,12 @@ assert.match(
 
 assert.match(
   workspace,
+  /if \(!activeId\) \{\s*queueMicrotask\(\(\) => shellRef\.current\?\.closeAgent\(\)\);\s*return;\s*\}/,
+  "Workspace collapses the companion panel when no familiar is selected so empty rails do not crowd every surface",
+);
+
+assert.match(
+  workspace,
   /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",/,
   "SURFACE_ORDER should omit the Familiars surface from Work shortcuts",
 );
