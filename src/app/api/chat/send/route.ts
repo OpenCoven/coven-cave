@@ -46,6 +46,7 @@ type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "progress"; id?: string; label: string; detail?: string; status?: "running" | "done" | "error"; durationMs?: number }
   | {
       kind: "tool_use";
       id?: string;
@@ -302,6 +303,21 @@ function openClawChatResponse(args: {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      const pushProgress = (
+        id: string,
+        label: string,
+        status: "running" | "done" | "error",
+        detail?: string,
+        durationMs?: number,
+      ) =>
+        push({
+          kind: "progress",
+          id,
+          label,
+          status,
+          ...(detail ? { detail } : {}),
+          ...(durationMs != null ? { durationMs } : {}),
+        });
       let closed = false;
       const close = () => {
         if (closed) return;
@@ -316,13 +332,19 @@ function openClawChatResponse(args: {
       push({ kind: "user", text: args.promptText });
 
       const startedAt = Date.now();
+      pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
       const agentId = await resolveOpenClawAgentId(args.body.familiarId);
+      pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", agentId);
       const argv = openClawAgentArgs(args.body, args.harnessPrompt, agentId);
+      const cwd = await resolveCwd(args.body.projectRoot);
+      pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn("openclaw", argv, {
-        cwd: await resolveCwd(args.body.projectRoot),
+        cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: covenSpawnEnv(),
       });
+      pushProgress("openclaw-start", "OpenClaw bridge started", "done");
+      pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
 
       let stdout = "";
       let stderr = "";
@@ -346,6 +368,7 @@ function openClawChatResponse(args: {
           err.code === "ENOENT"
             ? "openclaw CLI not found on PATH. Open Setup to install it, then try again."
             : err.message;
+        pushProgress("openclaw-response", "OpenClaw bridge failed", "error", message);
         push({ kind: "error", code: err.code, message });
         push({
           kind: "done",
@@ -361,6 +384,14 @@ function openClawChatResponse(args: {
         let sessionId: string | null = args.body.sessionId ?? null;
         let assistantText = "";
         let isError = code !== 0;
+
+        pushProgress(
+          "openclaw-response",
+          code === 0 ? "OpenClaw response received" : "OpenClaw bridge exited with an issue",
+          code === 0 ? "done" : "error",
+          code == null ? undefined : `exit ${code}`,
+          durationMs,
+        );
 
         if (stdout.trim()) {
           try {
@@ -390,6 +421,7 @@ function openClawChatResponse(args: {
         push({ kind: "assistant_chunk", text: assistantText });
 
         if (sessionId) {
+          pushProgress("save-transcript", "Saving transcript", "running");
           await recordSessionFamiliar(sessionId, args.body.familiarId);
           const existing = await loadConversation(sessionId);
           const now = new Date().toISOString();
@@ -427,6 +459,7 @@ function openClawChatResponse(args: {
             },
           );
           await saveConversation(conv);
+          pushProgress("save-transcript", "Transcript saved", "done");
           scheduleLinkRoute({
             prompt: args.promptText,
             sessionId,
@@ -573,6 +606,21 @@ export async function POST(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
       const push = (e: StreamEvent) => controller.enqueue(sse(e));
+      const pushProgress = (
+        id: string,
+        label: string,
+        status: "running" | "done" | "error",
+        detail?: string,
+        durationMs?: number,
+      ) =>
+        push({
+          kind: "progress",
+          id,
+          label,
+          status,
+          ...(detail ? { detail } : {}),
+          ...(durationMs != null ? { durationMs } : {}),
+        });
       let closed = false;
       const close = () => {
         if (closed) return;
@@ -714,6 +762,8 @@ export async function POST(req: Request) {
 
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
+          const attemptStartedAt = Date.now();
+          pushProgress("harness-start", `Starting ${binding.harness}`, "running", familiarWorkspace ?? cwd);
           const child = spawn(covenBin(), spawnArgs, {
             // Spawn IN the familiar's workspace when no project root was
             // supplied, so coven's project-root resolver picks that dir as
@@ -756,6 +806,13 @@ export async function POST(req: Request) {
           });
 
           child.on("error", (err: NodeJS.ErrnoException) => {
+            pushProgress(
+              "harness-start",
+              `${binding.harness} failed to start`,
+              "error",
+              err.message,
+              Date.now() - attemptStartedAt,
+            );
             if (err.code === "ENOENT") {
               push({
                 kind: "error",
@@ -772,6 +829,13 @@ export async function POST(req: Request) {
           });
 
           child.on("close", () => {
+            pushProgress(
+              "harness-start",
+              `${binding.harness} exited`,
+              "done",
+              undefined,
+              Date.now() - attemptStartedAt,
+            );
             if (jsonBuf) handleLine(jsonBuf);
             const tail = assistantFilter.flush();
             if (tail) {
@@ -790,6 +854,7 @@ export async function POST(req: Request) {
       // we had been resuming, start a fresh thread (no --continue) so the
       // user's prompt still gets answered.
       if (resumeFailed && body.sessionId) {
+        pushProgress("resume-retry", "Resume failed; starting a fresh chat", "running");
         sessionId = null;
         assistantFilter = new AssistantFilter();
         assistantText = "";
@@ -799,6 +864,7 @@ export async function POST(req: Request) {
         toolSeq = 0;
         resumeFailed = false;
         await runAttempt(buildArgs(null));
+        pushProgress("resume-retry", "Fresh chat started", "done");
       }
 
       // Empty-response diagnostic: when the harness reports done but never
@@ -815,6 +881,7 @@ export async function POST(req: Request) {
         const diagnostic = result.is_error
           ? `_The "${harness}" harness errored${durSuffix} and returned no text._${tailBlock || "\n\nNo error output captured. Try `/doctor` for diagnostics."}`
           : `_The "${harness}" harness completed${durSuffix} but produced no output._\n\nUsually this means the CLI is installed but not authenticated to a provider. Try \`/doctor\`, re-run \`coven\`'s sign-in (\`codex login\` / Claude API key), or check the harness logs.${tailBlock}`;
+        pushProgress("assistant-output", "No assistant text returned", "error", harness, durMs);
         assistantText = diagnostic;
         result.is_error = true;
         push({ kind: "assistant_chunk", text: diagnostic });
@@ -822,6 +889,7 @@ export async function POST(req: Request) {
 
       const finalSessionId = sessionId;
       if (finalSessionId) {
+        pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
         const existing = await loadConversation(finalSessionId);
         const now = new Date().toISOString();
@@ -858,6 +926,7 @@ export async function POST(req: Request) {
         };
         conv.turns.push(userTurn, assistantTurn);
         await saveConversation(conv);
+        pushProgress("save-transcript", "Transcript saved", "done");
 
         // Fire-and-forget: extract URLs from user prompt and assistant text,
         // route them to the library. Failures must never affect the chat stream.

@@ -31,14 +31,44 @@ assert.match(
 
 assert.match(
   source,
-  /function ChatLifecycleStatus[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*aria-atomic="true"/,
-  "In-flight chat lifecycle should be announced through a polite live region",
+  /function MetaLine[\s\S]*role="status"[\s\S]*aria-live="polite"[\s\S]*data-lifecycle=\{state\}/,
+  "In-flight chat lifecycle should be announced through the header meta line",
 );
 
 assert.match(
   source,
-  /<ChatLifecycleStatus[\s\S]*busy=\{busy\}[\s\S]*familiarName=\{familiar\.display_name\}/,
-  "ChatView should render the lifecycle status while a send is active",
+  /<MetaLine[\s\S]*busy=\{busy\}[\s\S]*familiar=\{familiar\}/,
+  "ChatView should render the lifecycle status in the header while a send is active",
+);
+
+assert.match(
+  source,
+  /\{ kind: "progress"; id\?: string; label: string; detail\?: string; status\?: "running" \| "done" \| "error"; durationMs\?: number \}/,
+  "Chat streams should expose non-token progress events for quiet phases",
+);
+
+assert.match(
+  source,
+  /progress\?: ProgressEvent\[\]/,
+  "Assistant turns should keep progress events alongside text, thinking, and tools",
+);
+
+assert.match(
+  source,
+  /case "progress":[\s\S]*upsertTurnProgress\(assistantId, ev\)/,
+  "Progress events should update the active assistant turn",
+);
+
+assert.match(
+  source,
+  /case "session":[\s\S]*ev\.sessionId !== currentSessionRef\.current[\s\S]*onSessionStarted\?\.\(ev\.sessionId\)/,
+  "A transparent resume fallback should promote the live chat to the replacement session id",
+);
+
+assert.match(
+  source,
+  /function ProgressGroup[\s\S]*<details[\s\S]*open=\{pending \|\| undefined\}[\s\S]*Progress[\s\S]*progress\.map/,
+  "Progress events should render as a collapsible activity timeline that stays open while running",
 );
 
 assert.match(
@@ -79,8 +109,20 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-lifecycle-status\s*\{[\s\S]*min-height:/,
-  "Lifecycle status strip should have stable dimensions",
+  /\.cave-chat-meta-line\s*\{[\s\S]*min-height:/,
+  "Lifecycle header meta line should have stable dimensions",
+);
+
+assert.match(
+  styles,
+  /\.cave-chat-meta-line--streaming[\s\S]*cave-chat-meta-blip/,
+  "Streaming meta line state should match the class ChatView emits",
+);
+
+assert.match(
+  styles,
+  /\.cave-progress-group[\s\S]*\.cave-progress-row--running/,
+  "Progress timeline should have stable styles for running rows",
 );
 
 assert.match(

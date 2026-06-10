@@ -60,6 +60,36 @@ assert.match(
 );
 
 assert.match(
+  chatRoute,
+  /\| \{ kind: "progress"; id\?: string; label: string; detail\?: string; status\?: "running" \| "done" \| "error"; durationMs\?: number \}/,
+  "Native chat streams should expose progress SSE events for quiet phases",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\("openclaw-resolve", "Resolving OpenClaw agent", "running"[\s\S]*pushProgress\("openclaw-resolve", "OpenClaw agent resolved", "done"/,
+  "OpenClaw bridge should show agent resolution progress before the JSON response returns",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\(\s*"harness-start",\s*`Starting \$\{binding\.harness\}`,\s*"running"[\s\S]*pushProgress\(\s*"harness-start",\s*`\$\{binding\.harness\} exited`,\s*"done"/,
+  "Coven harness streams should show process start and exit progress",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\("resume-retry", "Resume failed; starting a fresh chat", "running"[\s\S]*await runAttempt\(buildArgs\(null\)\)[\s\S]*pushProgress\("resume-retry", "Fresh chat started", "done"/,
+  "Transparent resume fallback should be visible in the progress timeline",
+);
+
+assert.match(
+  chatRoute,
+  /pushProgress\("save-transcript", "Saving transcript", "running"[\s\S]*await saveConversation\(conv\)[\s\S]*pushProgress\("save-transcript", "Transcript saved", "done"/,
+  "Conversation persistence should be visible before the final done event",
+);
+
+assert.match(
   boardRoute,
   /isTrustedChatHarness\(binding\.harness\)/,
   "Board step enrichment should enforce the same trusted Coven harness gate",

@@ -73,7 +73,11 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  source.match(/function ReasoningBlock[\s\S]*?function ToolBlock/)?.[0] ?? "",
+  [
+    source.match(/function ReasoningBlock[\s\S]*?function ProgressGroup/)?.[0] ?? "",
+    source.match(/function ToolGroup[\s\S]*?function ToolBlock/)?.[0] ?? "",
+    source.match(/function ToolBlock[\s\S]*?function ThinkingIndicator/)?.[0] ?? "",
+  ].join("\n"),
   /<details[^>]*\sopen(?:=|\s|>)/,
   "Thinking and tool-use disclosures must not default open",
 );
@@ -170,6 +174,11 @@ assert.match(
   source,
   /<MetaLine\b/,
   "ChatView header should render the new MetaLine component",
+);
+assert.match(
+  source,
+  /shouldKeepLiveNewChatState\(\{[\s\S]*sessionId[\s\S]*currentSessionId: currentSessionRef\.current[\s\S]*turnCount: turnsRef\.current\.length[\s\S]*\}\)/,
+  "Promoting a live new chat to its daemon session id should not reload missing history over the fresh transcript",
 );
 assert.match(
   source,
