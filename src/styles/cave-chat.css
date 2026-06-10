@@ -781,35 +781,6 @@ details[open] > .cave-tool-summary::before {
   padding: 9px;
 }
 
-.cave-chat-lifecycle-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  border-top: 1px solid color-mix(in oklch, var(--foreground) 6%, transparent);
-  background: color-mix(in oklch, var(--bg-panel) 46%, var(--bg-base));
-  padding: 0 clamp(16px, 3vw, 34px);
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.cave-chat-lifecycle-dot {
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 13%, transparent);
-}
-
-.cave-chat-lifecycle-status--tooling {
-  color: var(--accent-presence);
-}
-
-.cave-chat-lifecycle-status--failed {
-  color: var(--color-danger);
-}
-
 .cave-composer-dock {
   border-top: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
   background:
@@ -887,34 +858,75 @@ details[open] > .cave-tool-summary::before {
   display: none;
 }
 
-.cave-chat-linear-header-row {
+/* ── Meta line (single-row title + status banner) ─────────────────────── */
+.cave-chat-meta-line {
   display: flex;
   min-width: 0;
   width: 100%;
   align-items: center;
   gap: 10px;
+  min-height: 26px;
+  font-size: 12px;
 }
 
-.cave-chat-linear-header-identity {
-  display: flex;
-  min-width: 0;
+.cave-chat-meta-line__meta {
+  margin-left: auto;
   flex: 0 1 auto;
-  align-items: center;
-  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
 }
 
-.cave-chat-linear-header-context {
+.cave-chat-meta-line__dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.cave-chat-meta-line--writing {
+  color: var(--color-warning);
+}
+.cave-chat-meta-line--writing .cave-chat-meta-line__meta {
+  color: var(--color-warning);
+}
+.cave-chat-meta-line--writing .cave-chat-meta-line__dot {
+  animation: cave-chat-meta-blip 1.2s ease-in-out infinite;
+}
+
+.cave-chat-meta-line--failed,
+.cave-chat-meta-line--offline {
+  color: var(--color-danger);
+}
+.cave-chat-meta-line--failed .cave-chat-meta-line__meta,
+.cave-chat-meta-line--offline .cave-chat-meta-line__meta {
+  color: var(--color-danger);
+}
+
+@keyframes cave-chat-meta-blip {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+/* Linked context row (chips for task / GitHub items) */
+.cave-chat-linked-context {
   display: flex;
   min-width: 0;
-  flex: 1 1 auto;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
+  overflow-x: auto;
+  scrollbar-width: none;
   white-space: nowrap;
 }
 
-.cave-chat-linear-header-context > * {
-  flex: 0 1 auto;
+.cave-chat-linked-context::-webkit-scrollbar {
+  display: none;
 }
 
 .cave-agent-marker {
@@ -1283,22 +1295,10 @@ details[open] > .cave-tool-summary::before {
     backdrop-filter: blur(14px);
   }
 
-  .cave-chat-linear-header > .cave-chat-title-input,
-  .cave-chat-linear-header > button {
-    display: none;
-  }
-
-  .cave-chat-linear-header-row {
-    min-height: 28px;
-    gap: 7px;
-  }
-
-  .cave-chat-linear-header-identity {
-    flex: 1 1 auto;
-    overflow: hidden;
-  }
-
-  .cave-chat-linear-header-context {
+  /* Mobile keeps its own identity rail + context menu; the desktop meta
+     line and linked-context chips would double-report there. */
+  .cave-chat-meta-line,
+  .cave-chat-linked-context {
     display: none;
   }
 
@@ -1384,11 +1384,6 @@ details[open] > .cave-tool-summary::before {
   .cave-chat-linear .cave-bubble-user {
     max-width: min(92%, 520px);
     padding: 10px 12px;
-  }
-
-  .cave-chat-lifecycle-status {
-    min-height: 28px;
-    padding: 0 12px;
   }
 
   .cave-composer-dock {

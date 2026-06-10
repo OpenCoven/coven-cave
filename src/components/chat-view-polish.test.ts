@@ -155,3 +155,24 @@ assert.equal(
   "[docs](https://example.com) is the place",
   "Debug-prefix filter should not eat line-leading markdown links (requires a /segment)",
 );
+
+assert.doesNotMatch(
+  source,
+  /cave-chat-linear-header-identity/,
+  "Daemon ready/offline chip should be removed — sidebar presence covers it; mobile keeps its own pill",
+);
+assert.doesNotMatch(
+  source,
+  /<ChatLifecycleStatus\b/,
+  "ChatLifecycleStatus bar should be folded into the header meta line",
+);
+assert.match(
+  source,
+  /<MetaLine\b/,
+  "ChatView header should render the new MetaLine component",
+);
+assert.match(
+  source,
+  /<LinkedContextRow\b/,
+  "ChatView header should render LinkedContextRow for task/GitHub chips",
+);

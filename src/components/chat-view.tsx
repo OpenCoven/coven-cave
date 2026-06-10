@@ -122,25 +122,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
   }
 }
 
-function lifecycleDetail(lifecycle: ChatTurnLifecycle, familiarName: string): string {
-  switch (lifecycle) {
-    case "queued":
-      return `Queued for ${familiarName}`;
-    case "connecting":
-      return `Contacting ${familiarName}`;
-    case "streaming":
-      return `${familiarName} is writing`;
-    case "tooling":
-      return `${familiarName} is using tools`;
-    case "cancelled":
-      return "Response cancelled";
-    case "failed":
-      return "Response failed";
-    case "complete":
-      return "Response complete";
-  }
-}
-
 function fmtTime(iso: string): string {
   try {
     const d = new Date(iso);
@@ -350,32 +331,6 @@ function ChatHistoryNotice({ title, body }: { title: string; body: string }) {
   );
 }
 
-function ChatLifecycleStatus({
-  busy,
-  lifecycle,
-  familiarName,
-}: {
-  busy: boolean;
-  lifecycle: ChatTurnLifecycle | null;
-  familiarName: string;
-}) {
-  if (!busy && !lifecycle) return null;
-  const phase = lifecycle ?? "connecting";
-  return (
-    <div
-      className={`cave-chat-lifecycle-status cave-chat-lifecycle-status--${phase}`}
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      data-lifecycle={phase}
-    >
-      <span className="cave-chat-lifecycle-dot" aria-hidden />
-      <span className="min-w-0 truncate">{lifecycleDetail(phase, familiarName)}</span>
-      {busy ? <span className="shrink-0 text-[var(--text-muted)]">Esc cancels</span> : null}
-    </div>
-  );
-}
-
 function ChatTitleEditable({
   session,
   displayTitleOverride,
@@ -486,40 +441,122 @@ function ChatTitleEditable({
   );
 }
 
-function ChatContextStrip({
+type MetaLineState = "complete" | "streaming" | "failed" | "offline";
+
+function metaLineState(args: {
+  busy: boolean;
+  lifecycle: ChatTurnLifecycle | null;
+  error: boolean;
+  daemonRunning: boolean | undefined;
+}): MetaLineState {
+  if (args.daemonRunning === false) return "offline";
+  if (args.lifecycle === "failed" || args.error) return "failed";
+  if (args.busy || args.lifecycle === "queued" || args.lifecycle === "connecting" || args.lifecycle === "streaming" || args.lifecycle === "tooling") return "streaming";
+  return "complete";
+}
+
+function metaLineString(args: {
+  state: MetaLineState;
+  lifecycle: ChatTurnLifecycle | null;
+  harness?: string;
+  model?: string;
+  projectRoot?: string | null;
+  durationMs?: number;
+}): string {
+  const parts: string[] = [];
+  if (args.state === "offline") {
+    parts.push("daemon offline · check Coven");
+  } else if (args.state === "failed") {
+    if (args.model) parts.push(args.model);
+    parts.push("failed");
+  } else if (args.state === "streaming") {
+    if (args.model) parts.push(args.model);
+    parts.push(args.lifecycle === "tooling" ? "using tools…" : args.lifecycle === "connecting" || args.lifecycle === "queued" ? "connecting…" : "writing…");
+    parts.push("esc to cancel");
+  } else {
+    if (args.harness) parts.push(args.harness);
+    if (args.model) parts.push(args.model);
+    const repo = repoName(args.projectRoot);
+    if (repo) parts.push(repo);
+    const dur = fmtDuration(args.durationMs);
+    if (dur) parts.push(dur);
+  }
+  return parts.join(" · ");
+}
+
+/** Single header row: editable title left, harness/model/status meta right.
+ *  Ephemeral state (streaming, failed, daemon offline) recolors the line and
+ *  rewrites the meta string instead of emitting separate pills/bars. */
+function MetaLine({
   session,
   linkedContext,
-  historyState,
+  busy,
+  lifecycle,
+  error,
+  daemonRunning,
+  durationMs,
+  familiar,
+  projectRoot,
   onSessionsChanged,
-  onOpenTask,
+  children,
 }: {
   session: SessionRow | null;
   linkedContext: ChatLinkedContext | null;
-  historyState: ChatHistoryState;
+  busy: boolean;
+  lifecycle: ChatTurnLifecycle | null;
+  error: boolean;
+  daemonRunning: boolean | undefined;
+  durationMs: number | undefined;
+  familiar: Familiar;
+  projectRoot?: string;
   onSessionsChanged?: () => void;
+  children?: React.ReactNode;
+}) {
+  const state = metaLineState({ busy, lifecycle, error, daemonRunning });
+  const meta = metaLineString({
+    state,
+    lifecycle,
+    harness: familiar.harness ?? undefined,
+    model: familiar.model ?? undefined,
+    projectRoot: session?.project_root ?? projectRoot,
+    durationMs,
+  });
+  const task = linkedContext?.task ?? null;
+  // Same defense-in-depth override as the old headline row: hide a raw
+  // "Task context: …" seed prompt that leaked through as the title.
+  const titleOverride =
+    session && task && (session.title ?? "").startsWith("Task context:")
+      ? `Task: ${task.title}`
+      : null;
+  return (
+    <div className={`cave-chat-meta-line cave-chat-meta-line--${state}`} role="status" aria-live="polite" data-lifecycle={state}>
+      {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
+      {session ? (
+        <ChatTitleEditable
+          session={session}
+          displayTitleOverride={titleOverride}
+          onSessionsChanged={onSessionsChanged}
+        />
+      ) : null}
+      <span className="cave-chat-meta-line__meta">{meta}</span>
+      {children}
+    </div>
+  );
+}
+
+function LinkedContextRow({
+  linkedContext,
+  onOpenTask,
+}: {
+  linkedContext: ChatLinkedContext | null;
   onOpenTask?: (cardId: string) => void;
 }) {
   const task = linkedContext?.task ?? null;
   const github = linkedContext?.github ?? [];
-  if (!session && !task && github.length === 0 && historyState === "idle") return null;
+  if (!task && github.length === 0) return null;
 
   return (
-    <div className="cave-chat-linear-header-context">
-      {session ? (
-        <span className="inline-flex min-w-0 items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 py-1 text-[11px] text-[var(--text-secondary)]">
-          <Icon name="ph:chats-circle" width={14} className="shrink-0 text-[var(--text-muted)]" />
-          {session.project_root ? (
-            <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{repoName(session.project_root)}</span>
-          ) : (
-            <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">chat</span>
-          )}
-        </span>
-      ) : session === null && historyState !== "idle" ? (
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2 py-1 text-[11px] text-[var(--text-muted)]">
-          <Icon name="ph:clock" width={12} />
-          {historyState}
-        </span>
-      ) : null}
+    <div className="cave-chat-linked-context">
       {task ? (
         onOpenTask ? (
           <button
@@ -648,34 +685,6 @@ function MobileChatContextMenu({
         ) : null}
       </div>
     </details>
-  );
-}
-
-/** Headline row: full-width chat title, flush-left, all-caps. Sits above
- *  the existing identity/chips row. Computes the same defense-in-depth
- *  override as ChatContextStrip — see comment there for why. */
-function ChatHeadlineTitle({
-  session,
-  linkedContext,
-  onSessionsChanged,
-}: {
-  session: SessionRow | null;
-  linkedContext: ChatLinkedContext | null;
-  onSessionsChanged?: () => void;
-}) {
-  if (!session) return null;
-  const task = linkedContext?.task ?? null;
-  const sessionTitleOverride =
-    task && (session.title ?? "").startsWith("Task context:")
-      ? `Task: ${task.title}`
-      : null;
-  return (
-    <ChatTitleEditable
-      session={session}
-      displayTitleOverride={sessionTitleOverride}
-      onSessionsChanged={onSessionsChanged}
-      headline
-    />
   );
 }
 
@@ -1326,29 +1335,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenTask={onOpenTask}
           />
         </div>
-        <ChatHeadlineTitle
+        <MetaLine
           session={session ?? null}
           linkedContext={linkedContext}
+          busy={busy}
+          lifecycle={activeLifecycle}
+          error={!!error}
+          daemonRunning={daemonRunning}
+          durationMs={(() => {
+            const last = [...turns].reverse().find((t) => t.role === "assistant" && !t.pending && typeof t.durationMs === "number");
+            return last?.durationMs;
+          })()}
+          familiar={familiar}
+          projectRoot={projectRoot}
           onSessionsChanged={onSessionsChanged}
-        />
-        {/* Single compact bar: status · meta · context strip (identity lives in the rail above) */}
-        <div className="cave-chat-linear-header-row">
-          <div className="cave-chat-linear-header-identity">
-            <span className={[
-              "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-              daemonRunning === false
-                ? "bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] text-[var(--color-danger)]"
-                : "bg-[color-mix(in_oklch,var(--color-success)_16%,transparent)] text-[var(--color-success)]",
-            ].join(" ")}>
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-              {daemonRunning === false ? "offline" : "ready"}
-            </span>
-            <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)] font-mono">
-              {familiar.harness ?? ""}
-              {familiar.model ? <> · {familiar.model}</> : null}
-              {(session?.project_root ?? projectRoot) ? <> · {repoName(session?.project_root ?? projectRoot)}</> : null}
-            </span>
-          </div>
+        >
           {sessionId && (
             <VoiceCallButton
               familiar={familiar}
@@ -1356,14 +1357,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onOpen={() => setVoiceCallOpen(true)}
             />
           )}
-          <ChatContextStrip
-            session={session ?? null}
-            linkedContext={linkedContext}
-            historyState={historyState}
-            onSessionsChanged={onSessionsChanged}
-            onOpenTask={onOpenTask}
-          />
-        </div>
+        </MetaLine>
+        <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
       </header>
       <div ref={scrollRef} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
@@ -1424,7 +1419,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   return prev.role !== t.role;
                 })();
                 return (
-                  <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} index={i} />
+                  <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
                 );
               }
               const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
@@ -1447,7 +1442,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       return prev.role !== t.role;
                     })();
                     return (
-                      <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} index={i} />
+                      <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
                     );
                   })}
                 </div>
@@ -1492,12 +1487,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
         </div>
       ) : null}
-
-      <ChatLifecycleStatus
-        busy={busy}
-        lifecycle={activeLifecycle}
-        familiarName={familiar.display_name}
-      />
 
       <footer
         className="cave-composer-dock"
