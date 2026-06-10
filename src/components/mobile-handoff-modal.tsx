@@ -76,8 +76,14 @@ export function MobileHandoffModal({ open, onClose }: Props) {
 
   const copyUrl = useCallback(async () => {
     if (!handoff?.url) return;
-    await navigator.clipboard.writeText(handoff.url);
-    setCopied(true);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(handoff.url);
+      setCopied(true);
+    } catch (err) {
+      setCopied(false);
+      setError(err instanceof Error ? err.message : "Failed to copy URL.");
+    }
   }, [handoff?.url]);
 
   const resetServe = useCallback(async () => {
