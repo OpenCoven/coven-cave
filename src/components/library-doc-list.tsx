@@ -87,7 +87,10 @@ export function LibraryDocList({
           <div className="library-doclist-empty">Loading…</div>
         ) : error ? (
           <div className="library-doclist-empty" role="alert">
-            <div className="text-[var(--color-warning)]">Couldn&rsquo;t load documents.</div>
+            <div className="inline-flex items-center gap-1.5 text-[var(--color-danger)]">
+              <Icon name="ph:warning-circle" width={13} aria-hidden />
+              Couldn&rsquo;t load documents.
+            </div>
             <div className="mt-1 text-[11px] text-[var(--text-muted)]">{error}</div>
             {onRetry ? (
               <button
@@ -102,7 +105,13 @@ export function LibraryDocList({
           </div>
         ) : filtered.length === 0 ? (
           <div className="library-doclist-empty">
-            {searchQuery ? "No documents match your search." : "No documents found."}
+            <Icon name="ph:books" width={18} className="mx-auto mb-2 block text-[var(--text-muted)]" aria-hidden />
+            <div className="text-[13px] font-medium text-[var(--text-primary)]">
+              {searchQuery ? "No documents match your search." : "No documents yet."}
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-[var(--text-muted)]">
+              {searchQuery ? "Try a shorter query or clear the search." : "Documents your familiars collect or you import will appear here."}
+            </p>
           </div>
         ) : (
           filtered.map((doc) => (

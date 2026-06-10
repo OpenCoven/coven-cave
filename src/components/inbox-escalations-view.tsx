@@ -414,10 +414,22 @@ export function InboxEscalationsView({
 
           {error ? (
             <div
-              className="border-b border-[var(--border-hairline)] px-3 py-1.5 text-xs text-[var(--color-danger)] sm:px-5"
+              role="alert"
+              className="flex items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-3 py-1.5 text-xs text-[var(--color-danger)] sm:px-5"
               style={{ background: "color-mix(in oklch, var(--color-danger) 10%, var(--bg-base))" }}
             >
-              {error}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+                <span className="min-w-0 truncate">{error}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
+              >
+                <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+                Retry
+              </button>
             </div>
           ) : null}
 

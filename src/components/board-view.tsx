@@ -305,11 +305,31 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       </header>
 
       {error && (
-        <div className="border-b border-border bg-card px-5 py-1.5 text-xs text-muted-foreground">{error}</div>
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-danger)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{error}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+            Retry
+          </button>
+        </div>
       )}
       {chatLinkError && (
-        <div className="border-b border-border bg-card px-5 py-1.5 text-xs text-muted-foreground">
-          {chatLinkError}
+        <div
+          role="alert"
+          className="flex items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+        >
+          <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+          <span className="min-w-0 truncate">{chatLinkError}</span>
         </div>
       )}
 

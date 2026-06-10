@@ -262,10 +262,24 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
         </div>
       </header>
 
-      {/* ── Error banner ── */}
+      {/* ── Error banner (launch failures — transient, dismissable) ── */}
       {error && (
-        <div className="border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-1.5 text-xs text-[var(--color-warning)]">
-          {error}
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-1.5 text-xs text-[var(--color-warning)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{error}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="Dismiss error"
+            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded hover:bg-[var(--bg-raised)]"
+          >
+            <Icon name="ph:x-bold" width={10} aria-hidden />
+          </button>
         </div>
       )}
 
