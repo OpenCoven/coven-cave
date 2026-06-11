@@ -1414,6 +1414,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const text = input.trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
+    // CHAT-D5-01: sendRaw early-returns while a response is streaming, so
+    // clearing the composer first would silently destroy the typed message
+    // (and staged attachments). Bail before touching state — slash intents
+    // above still run mid-stream; plain sends keep the draft intact.
+    if (busy) return;
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     setInput("");
     setAttachments([]);
