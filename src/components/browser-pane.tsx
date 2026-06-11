@@ -312,53 +312,67 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   }, [bridge, label, activeTabId]);
 
   // ── Sync active tab webview bounds ────────────────────────────────
+  // The native Tauri child webview is an OS-level overlay rendered ABOVE
+  // the DOM, so it must track `surface`'s viewport rect exactly or it
+  // rides up and covers the toolbar row above it. A ResizeObserver only
+  // reacts to SIZE changes — a sibling reflow that MOVES the surface
+  // without resizing it (e.g. a shell banner appearing/dismissing above
+  // the pane, or the cave-mode-fade mount animation) leaves the overlay
+  // stale and overlapping the toolbar. Reconcile against the live rect
+  // every frame instead, issuing IPC only when the rounded bounds change.
   useEffect(() => {
     if (!bridge) return;
     const surface = surfaceRef.current;
     if (!surface) return;
 
+    const tabIds = tabs.map((t) => t.id);
     let raf = 0;
-    const sync = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const rect = surface.getBoundingClientRect();
-        if (rect.width <= 1 || rect.height <= 1) {
-          // Hide all tab webviews when panel collapses
-          tabs.forEach((t) => {
-            void bridge.invoke("browser_hide", { label: tabLabel(t.id) });
-          });
-          return;
-        }
-        // Show active tab, hide others
-        tabs.forEach((t) => {
-          if (t.id === activeTabId) {
-            void bridge.invoke("browser_set_bounds", {
-              label: tabLabel(t.id),
-              x: rect.left, y: rect.top,
-              w: rect.width, h: rect.height,
-            });
-          } else {
-            void bridge.invoke("browser_hide", { label: tabLabel(t.id) });
-          }
-        });
+    let hidden = false;
+    let last = { x: 0, y: 0, w: 0, h: 0 };
+
+    const hideAll = () => {
+      tabIds.forEach((id) => {
+        void bridge.invoke("browser_hide", { label: tabLabel(id) });
       });
     };
 
-    sync();
-    const ro = new ResizeObserver(sync);
-    ro.observe(surface);
-    window.addEventListener("resize", sync);
-    window.addEventListener("scroll", sync, true);
+    const tick = () => {
+      const rect = surface.getBoundingClientRect();
+      if (rect.width <= 1 || rect.height <= 1) {
+        // Panel collapsed — hide all tab webviews (once).
+        if (!hidden) {
+          hidden = true;
+          hideAll();
+        }
+      } else {
+        const next = {
+          x: Math.round(rect.left), y: Math.round(rect.top),
+          w: Math.round(rect.width), h: Math.round(rect.height),
+        };
+        if (
+          hidden ||
+          next.x !== last.x || next.y !== last.y ||
+          next.w !== last.w || next.h !== last.h
+        ) {
+          last = next;
+          hidden = false;
+          // Show active tab at the live rect, hide others.
+          tabIds.forEach((id) => {
+            if (id === activeTabId) {
+              void bridge.invoke("browser_set_bounds", { label: tabLabel(id), ...next });
+            } else {
+              void bridge.invoke("browser_hide", { label: tabLabel(id) });
+            }
+          });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener("resize", sync);
-      window.removeEventListener("scroll", sync, true);
-      // Hide all on unmount
-      tabs.forEach((t) => {
-        void bridge.invoke("browser_hide", { label: tabLabel(t.id) });
-      });
+      hideAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge, label, activeTabId, tabs.map((t) => t.id).join(",")]);
