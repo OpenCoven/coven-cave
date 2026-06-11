@@ -18,6 +18,7 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { Icon, type IconName } from "@/lib/icon";
+import { draftReminderFromText } from "@/lib/reminder-draft";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -250,10 +251,22 @@ export function HomeComposer({
           break;
         }
         case "reminder": {
+          const reminder = draftReminderFromText(prompt);
+          if (!reminder.ok) {
+            onToast("Add a reminder time with @ 5pm, @ tomorrow 10am, or start with in 30m.");
+            break;
+          }
           const res = await fetch("/api/inbox", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ kind: "reminder", title: prompt, source: "user", familiarId: activeFamiliarId ?? null }),
+            body: JSON.stringify({
+              kind: "reminder",
+              title: reminder.title,
+              fireAt: reminder.fireAt,
+              recurrence: reminder.recurrence,
+              source: "user",
+              familiarId: activeFamiliarId ?? null,
+            }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
           if (json.ok) { setText(""); onNavigateToInbox(); }
