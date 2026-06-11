@@ -158,6 +158,7 @@ test.describe("mobile foundations", () => {
     expect(metrics.doclistHeight, "Document list should stay bounded by the right panel").toBeLessThanOrEqual(metrics.panelHeight + 1);
     expect(metrics.itemsOverflowY, "Document rows should be the inner scroll container").toBe("auto");
     expect(metrics.itemsScrollHeight, "Document rows should have more content than visible space").toBeGreaterThan(metrics.itemsHeight + 1);
+  });
 
   test("persisted screen magnification scales the app without window scroll", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -186,8 +187,6 @@ test.describe("mobile foundations", () => {
     expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
     expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
     expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
-  });
-
   });
 
   test("mobile drawer toggles render on phone viewport", async ({ page }) => {
