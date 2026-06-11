@@ -27,6 +27,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
@@ -680,6 +681,15 @@ function CopyBubble({ text }: { text: string }) {
 // Public: MessageBubble
 // ---------------------------------------------------------------------------
 
+/**
+ * CHAT-D4-01: one ordered display segment of an assistant turn — either a
+ * prose span or an opaque block (a tool call rendered by the caller) at its
+ * chronological position between spans.
+ */
+export type MessageBubbleSegment =
+  | { kind: "text"; text: string }
+  | { kind: "block"; key: string; node: ReactNode };
+
 export type MessageBubbleProps = {
   role: "user" | "assistant" | "system";
   content: string;
@@ -694,9 +704,16 @@ export type MessageBubbleProps = {
   /** CHAT-D6-02: regenerate — renders a Regenerate action in the assistant
    *  bubble's revealed action row. Caller gates it on !busy/!pending. */
   onRegenerate?: () => void;
+  /** CHAT-D4-01: ordered segments — prose spans interleaved with tool blocks
+   *  at their chronological position. Assistant role only; when present they
+   *  replace the single MarkdownContent render. `content` must still carry
+   *  the FULL text so the Copy/Expand actions are unchanged. Only the LAST
+   *  text span streams (progressive markdown + ▌ cursor); earlier spans
+   *  render settled. */
+  segments?: MessageBubbleSegment[];
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, segments }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -768,6 +785,13 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
   }
 
   // Assistant
+  // CHAT-D4-01: with segments, only the LAST text span is the live streaming
+  // edge — earlier spans are settled slices that never change retroactively,
+  // so they take MarkdownContent's settled path (cached render, no throttle,
+  // no cursor) and the ▌ cursor shows on at most one span.
+  const lastTextIdx = segments
+    ? segments.reduce((acc, seg, i) => (seg.kind === "text" ? i : acc), -1)
+    : -1;
   return (
     <div
       className="group relative cave-bubble-assistant"
@@ -775,7 +799,17 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
       onMouseLeave={handleMouseLeave}
     >
       <div className={isError ? "text-[var(--color-warning)]" : ""}>
-        <MarkdownContent text={content} pending={pending} />
+        {segments?.length ? (
+          segments.map((seg, i) =>
+            seg.kind === "text" ? (
+              <MarkdownContent key={`span-${i}`} text={seg.text} pending={pending && i === lastTextIdx} />
+            ) : (
+              <div key={seg.key} className="my-2">{seg.node}</div>
+            ),
+          )
+        ) : (
+          <MarkdownContent text={content} pending={pending} />
+        )}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
           actions are reachable by keyboard (Tab), screen readers, and touch. */}

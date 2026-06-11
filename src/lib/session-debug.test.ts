@@ -81,3 +81,169 @@ assert.equal(debugFileName("s1"), "debug-s1.json");
 assert.equal(debugFileName(null), "debug-session.json");
 
 console.log("session-debug tests passed");
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHAT-D4-01 — interleaved tool segments (src/lib/turn-segments.ts).
+// Lives here because test:app is an explicit script list (no package.json
+// edits) and this is the non-contended lib test file in it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { readFileSync } from "node:fs";
+import { segmentTurn } from "./turn-segments.ts";
+
+// ── Legacy passthrough: turns without offsets render exactly as today ──────
+assert.equal(segmentTurn("some text", undefined), null, "no tools → null (legacy)");
+assert.equal(segmentTurn("some text", []), null, "empty tools → null (legacy)");
+assert.equal(
+  segmentTurn("some text", [{ id: "a" }]),
+  null,
+  "tools without textOffset (stored transcripts) → null (legacy trailing rollup)",
+);
+assert.equal(
+  segmentTurn("some text", [{ id: "a", textOffset: 0 }, { id: "b" }]),
+  null,
+  "ANY tool missing an offset disables segmentation — never a half-interleaved turn",
+);
+
+// ── Basic interleave: tool between paragraphs, in chronological order ──────
+{
+  const text = "Intro para.\n\nSecond para.\n\nThird para.";
+  // Tool arrived mid-first-paragraph (offset 4): snaps FORWARD to the start
+  // of the next paragraph, never splitting a paragraph in half.
+  const segs = segmentTurn(text, [{ id: "t1", textOffset: 4 }]);
+  assert.deepEqual(
+    segs.map((s) => s.kind),
+    ["text", "tools", "text"],
+    "tool renders between prose spans",
+  );
+  assert.equal(segs[0].text, "Intro para.\n\n", "first span is a verbatim slice");
+  assert.equal(segs[2].text, "Second para.\n\nThird para.");
+  assert.equal(
+    segs.filter((s) => s.kind === "text").map((s) => s.text).join(""),
+    text,
+    "text spans reassemble the full text verbatim",
+  );
+}
+
+// ── Offset 0: tool that ran before any prose renders FIRST ─────────────────
+{
+  const segs = segmentTurn("Answer prose.", [{ id: "t1", textOffset: 0 }]);
+  assert.deepEqual(segs.map((s) => s.kind), ["tools", "text"], "pre-prose tool leads the turn");
+}
+
+// ── Past-end offsets clamp to a trailing group (graceful degradation) ──────
+{
+  const segs = segmentTurn("Short.", [{ id: "t1", textOffset: 9999 }]);
+  assert.deepEqual(segs.map((s) => s.kind), ["text", "tools"]);
+}
+
+// ── Fence safety: blank lines INSIDE a code fence are not boundaries ───────
+{
+  const text = "Before.\n\n```ts\nconst a = 1;\n\nconst b = 2;\n```\n\nAfter.";
+  // Offset lands inside the fence (after "const a = 1;") — must snap past
+  // the fence to the paragraph after it, never splitting the fence open.
+  const inFence = text.indexOf("const b") - 1;
+  const segs = segmentTurn(text, [{ id: "t1", textOffset: inFence }]);
+  assert.deepEqual(segs.map((s) => s.kind), ["text", "tools", "text"]);
+  assert.ok(segs[0].text.includes("```\n"), "the whole fence stays in the span before the tool");
+  assert.equal(segs[2].text, "After.");
+  const fenceCount = (segs[0].text.match(/```/g) ?? []).length;
+  assert.equal(fenceCount % 2, 0, "no span ends inside an unterminated fence");
+}
+
+// ── Same-offset tools group consecutively, preserving arrival order ────────
+{
+  const text = "Para one.\n\nPara two.";
+  const segs = segmentTurn(text, [
+    { id: "first", textOffset: 3 },
+    { id: "second", textOffset: 3 },
+  ]);
+  assert.deepEqual(segs.map((s) => s.kind), ["text", "tools", "text"]);
+  assert.deepEqual(
+    segs[1].tools.map((t) => t.id),
+    ["first", "second"],
+    "same-offset tools render as one consecutive group in arrival order",
+  );
+}
+
+// ── Streaming stability: appended text lands AFTER the tool ────────────────
+{
+  // Tool arrived when the text was exactly "First para." (offset = length).
+  const tools = [{ id: "t1", textOffset: "First para.".length }];
+  const before = segmentTurn("First para.", tools);
+  assert.deepEqual(before.map((s) => s.kind), ["text", "tools"], "mid-stream: tool trails current text");
+  // More text streams in: it belongs to the NEXT span; the prose before the
+  // tool is unchanged — settled spans never move retroactively.
+  const after = segmentTurn("First para.\n\nSecond para.", tools);
+  assert.deepEqual(after.map((s) => s.kind), ["text", "tools", "text"]);
+  assert.equal(after[0].text.trim(), before[0].text.trim(), "span before the tool is stable across appends");
+  assert.equal(after[2].text, "Second para.", "appended text falls into the following span");
+}
+
+// ── Tool-only turn (no prose yet): pure tool segments ──────────────────────
+{
+  const segs = segmentTurn("", [{ id: "t1", textOffset: 0 }]);
+  assert.deepEqual(segs.map((s) => s.kind), ["tools"]);
+}
+
+// ── Source pins ─────────────────────────────────────────────────────────────
+const chatViewSource = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
+const bubbleSource = readFileSync(new URL("../components/message-bubble.tsx", import.meta.url), "utf8");
+const convRouteSource = readFileSync(
+  new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url),
+  "utf8",
+);
+
+// The tool_use SSE handler captures the offset at the tool's FIRST event —
+// the length of the text accumulated so far — and settle events preserve it.
+assert.match(
+  chatViewSource,
+  /\[\.\.\.tools, \{ \.\.\.incoming, textOffset: t\.text\.length \}\]/,
+  "CHAT-D4-01: new tool events record the accumulated text length as textOffset",
+);
+assert.match(
+  chatViewSource,
+  /textOffset: x\.textOffset,/,
+  "CHAT-D4-01: settle/update events keep the offset captured at first arrival",
+);
+
+// TurnRow renders the segmented path from the reasoning-stripped visible
+// text, and keeps the trailing ToolGroup ONLY as the legacy (no-offset) path.
+assert.match(
+  chatViewSource,
+  /const segments = segmentTurn\(visible, turn\.tools\)/,
+  "CHAT-D4-01: assistant turns segment the visible text by tool offsets",
+);
+assert.match(
+  chatViewSource,
+  /\{!segments && turn\.tools\?\.length \? <ToolGroup tools=\{turn\.tools\} \/> : null\}/,
+  "CHAT-D4-01: trailing ToolGroup rollup survives ONLY for legacy turns without offsets",
+);
+assert.match(
+  chatViewSource,
+  /seg\.tools\.map\(\(tool\) => <ToolBlock key=\{tool\.id\} tool=\{tool\} \/>\)/,
+  "CHAT-D4-01: interleaved tools reuse the existing collapsed ToolBlock",
+);
+
+// MessageBubble: only the LAST text span streams (progressive markdown +
+// cursor); settled spans render with pending=false.
+assert.match(
+  bubbleSource,
+  /pending=\{pending && i === lastTextIdx\}/,
+  "CHAT-D4-01: the ▌ cursor / progressive render applies only to the last text span",
+);
+assert.match(
+  bubbleSource,
+  /<MarkdownContent text=\{content\} pending=\{pending\} \/>/,
+  "CHAT-D4-01: segment-less bubbles keep the single MarkdownContent render",
+);
+
+// Round-trip: the conversation write route passes tool arrays through whole,
+// so textOffset on persisted tools survives serialization without migration.
+assert.match(
+  convRouteSource,
+  /\.\.\.\(Array\.isArray\(value\.tools\) \? \{ tools: value\.tools \} : \{\}\)/,
+  "CHAT-D4-01: conversation route round-trips whole tool objects (textOffset survives)",
+);
+
+console.log("turn-segments (CHAT-D4-01) tests passed");

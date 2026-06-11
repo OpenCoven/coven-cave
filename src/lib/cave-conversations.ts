@@ -17,6 +17,12 @@ export type ChatTurn = {
     output?: string;
     status: "running" | "ok" | "error";
     durationMs?: number;
+    /** CHAT-D4-01: length of the turn text when the tool's first event
+     *  arrived — drives inline (chronological) tool placement in the chat
+     *  view. Optional: turns persisted before the field render with the
+     *  legacy trailing rollup. The conversation route passes tool arrays
+     *  through whole, so the field round-trips for free. */
+    textOffset?: number;
   }>;
   createdAt: string;
   durationMs?: number;

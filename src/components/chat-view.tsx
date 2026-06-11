@@ -3,7 +3,8 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
+import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { segmentTurn } from "@/lib/turn-segments";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
@@ -37,6 +38,12 @@ type ToolEvent = {
   output?: string;
   status: "running" | "ok" | "error";
   durationMs?: number;
+  /** CHAT-D4-01: length of the turn's accumulated text when this tool's
+   *  FIRST event arrived — lets TurnRow interleave the tool block at its
+   *  chronological position between prose spans. Absent on tool events from
+   *  stored transcripts that predate the field (legacy turns keep the
+   *  trailing rollup). */
+  textOffset?: number;
 };
 
 type ProgressEvent = {
@@ -1671,10 +1678,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           // update doesn't supply them.
                           input: incoming.input ?? x.input,
                           output: incoming.output ?? x.output,
+                          // CHAT-D4-01: keep the offset captured when the
+                          // call first arrived — settle events must not move
+                          // the block.
+                          textOffset: x.textOffset,
                         }
                       : x,
                   )
-                : [...tools, incoming];
+                : // CHAT-D4-01: first event for this call — record how much
+                  // text had streamed so far, so the tool block renders at
+                  // its chronological position between prose spans.
+                  [...tools, { ...incoming, textOffset: t.text.length }];
             // Post-tool events carry no input, so summarize from the merged
             // record (which preserves the input captured at pre-tool time).
             const argSummary = toolArgSummary(
@@ -2476,6 +2490,33 @@ function TurnRow({
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
 
+  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
+  // this session), render the turn as ordered segments — prose spans with
+  // each tool call inline at its chronological position — instead of the
+  // legacy "all text, then a trailing Tool activity rollup" stack that
+  // inverted causality. Offsets were captured against the raw streamed text;
+  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
+  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
+  // markup), so a drifted offset degrades toward trailing — never a split
+  // inside a code fence. Stored transcripts without offsets return null and
+  // keep today's trailing ToolGroup.
+  const segments = segmentTurn(visible, turn.tools);
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
+    seg.kind === "text"
+      ? { kind: "text" as const, text: seg.text }
+      : {
+          kind: "block" as const,
+          key: `tools-${seg.tools[0]?.id ?? i}`,
+          // Reuse the EXISTING collapsed ToolBlock (arg summary + diff
+          // inputs); same-offset tools render consecutively in one group.
+          node: (
+            <div className="space-y-2">
+              {seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+            </div>
+          ),
+        },
+  );
+
   return (
     <div className="cave-linear-turn cave-linear-turn--assistant">
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
@@ -2512,7 +2553,21 @@ function TurnRow({
 
           <div className="cave-linear-turn-body">
             {turn.pending && !visible ? (
-              <ThinkingIndicator since={turn.createdAt} />
+              <>
+                <ThinkingIndicator since={turn.createdAt} />
+                {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
+                    (research-style turns) — show them inline immediately so
+                    they don't teleport out of a rollup once text arrives. */}
+                {segments?.length ? (
+                  <div className="mt-3 space-y-2">
+                    {segments.flatMap((seg) =>
+                      seg.kind === "tools"
+                        ? seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+                        : [],
+                    )}
+                  </div>
+                ) : null}
+              </>
             ) : (
               <MessageBubble
                 role="assistant"
@@ -2523,11 +2578,14 @@ function TurnRow({
                 isError={turn.error}
                 label={familiar.display_name}
                 onRegenerate={onRegenerate}
+                segments={bubbleSegments}
               />
             )}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
-            {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+            {/* Legacy trailing rollup — ONLY for turns whose tools predate
+                textOffset; segmented turns render their tools inline. */}
+            {!segments && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
           </div>
         </div>
       </div>
