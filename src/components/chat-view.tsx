@@ -26,6 +26,7 @@ import { VoiceCallButton } from "./voice-call-button";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
+import { toolArgSummary } from "@/lib/tool-arg-summary";
 
 type ToolEvent = {
   id: string;
@@ -1663,6 +1664,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       : x,
                   )
                 : [...tools, incoming];
+            // Post-tool events carry no input, so summarize from the merged
+            // record (which preserves the input captured at pre-tool time).
+            const argSummary = toolArgSummary(
+              incoming.name,
+              existingIdx >= 0 ? nextTools[existingIdx]?.input : incoming.input,
+            );
             return {
               ...t,
               tools: nextTools,
@@ -1670,7 +1677,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               progress: upsertProgressEvent(t.progress, {
                 id: "tools",
                 label: incoming.status === "running" ? "Tool call running" : "Tool call finished",
-                detail: incoming.name,
+                detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,
                 status: incoming.status === "error" ? "error" : incoming.status === "ok" ? "done" : "running",
                 durationMs: incoming.durationMs,
               }),
@@ -2586,11 +2593,15 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 }
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
+  const argSummary = toolArgSummary(tool.name, tool.input);
   return (
     <details className="cave-tool-block" data-default-collapsed="true">
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
         <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
+        {argSummary ? (
+          <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
+        ) : null}
         <span className={[
           "rounded px-1.5 py-0.5 font-mono text-[10px]",
           tool.status === "error"
