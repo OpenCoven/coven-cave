@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  chatProjectName,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "./chat-projects.ts";
@@ -63,5 +64,11 @@ assert.deepEqual(
   ],
   "project groups should be ordered by recency and expose the latest familiar for project-scoped launch",
 );
+
+assert.equal(chatProjectName("/Users/x/repos/coven-cave"), "coven-cave");
+assert.equal(chatProjectName("C:\\repos\\open-meow"), "open-meow");
+assert.equal(chatProjectName("/trailing/slash/"), "slash");
+assert.equal(chatProjectName(null), "No project");
+assert.equal(chatProjectName(""), "No project");
 
 console.log("chat-projects.test.ts: ok");

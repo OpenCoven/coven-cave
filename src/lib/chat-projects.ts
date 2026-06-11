@@ -53,3 +53,11 @@ export function deriveChatProjectGroups(sessions: SessionRow[]): ChatProjectGrou
       return (a.projectRoot ?? "").localeCompare(b.projectRoot ?? "");
     });
 }
+
+/** Display name for a project group — last path segment, or "No project"
+ *  for the null/unscoped group. Mirrors chat-list's local repoName(). */
+export function chatProjectName(projectRoot: string | null): string {
+  if (!projectRoot) return "No project";
+  const parts = projectRoot.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? projectRoot;
+}
