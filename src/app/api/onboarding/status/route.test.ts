@@ -26,4 +26,16 @@ assert.match(
   "GET passes the daemon step result into checkBinding",
 );
 
+assert.match(
+  source,
+  /npm i -g @opencoven\/cli@latest/,
+  "onboarding status should return the npm-published Coven CLI install command",
+);
+
+assert.doesNotMatch(
+  source,
+  /Install the coven CLI from OpenCoven\/coven/,
+  "onboarding status should not return stale repo-source CLI install guidance",
+);
+
 console.log("onboarding-status route.test.ts: ok");

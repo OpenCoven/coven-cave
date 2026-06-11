@@ -1,6 +1,10 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import {
+  type FamiliarRuntime,
+  normalizeFamiliarRuntime,
+} from "@/lib/familiar-runtime";
 
 const CONFIG_PATH = path.join(homedir(), ".coven", "cave-config.json");
 const STATE_PATH = path.join(homedir(), ".coven", "cave-state.json");
@@ -48,6 +52,7 @@ export type FamiliarBinding = {
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  runtime?: FamiliarRuntime;
 };
 
 export type RoleConfigEntry = {
@@ -185,6 +190,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     voiceProvider: f.voiceProvider,
     voiceModel: f.voiceModel,
     voiceName: f.voiceName,
+    runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
   };
 }
 

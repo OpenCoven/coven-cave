@@ -47,6 +47,8 @@ type OpenClawAgent = {
   workspacePath: string | null;
 };
 
+const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
+
 const PLATFORM_COPY: Record<
   PlatformId,
   {
@@ -59,7 +61,7 @@ const PLATFORM_COPY: Record<
 > = {
   windows: {
     label: "Windows",
-    installCommand: "where coven",
+    installCommand: COVEN_CLI_INSTALL_COMMAND,
     warning:
       "For now, turn off Smart App Control before downloading or opening the Windows build.",
     caveInstall: [
@@ -68,49 +70,49 @@ const PLATFORM_COPY: Record<
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the coven CLI from OpenCoven/coven or use the bundled CLI when available.",
-      "Make sure coven.exe is on PATH if you installed it separately.",
+      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure coven.exe is on PATH after the global npm install.",
       "Click Re-check after Windows can run coven from a new terminal.",
     ],
   },
   linux: {
     label: "Linux",
-    installCommand: "chmod +x CovenCave_*.AppImage && ./CovenCave_*.AppImage",
+    installCommand: COVEN_CLI_INSTALL_COMMAND,
     caveInstall: [
       "Download the AppImage from the official GitHub Release.",
       "Run chmod +x CovenCave_*.AppImage.",
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the coven CLI from OpenCoven/coven.",
-      "Make sure coven is executable and on PATH.",
+      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure coven is on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the CLI.",
     ],
   },
   mac: {
     label: "macOS",
-    installCommand: "brew install opencoven/tap/coven",
+    installCommand: COVEN_CLI_INSTALL_COMMAND,
     caveInstall: [
       "Download the DMG from the official GitHub Release.",
       "Open the DMG and drag CovenCave to Applications.",
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the coven CLI with Homebrew.",
-      "Make sure a terminal can run coven.",
+      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure a terminal can run coven after the global npm install.",
       "Click Re-check here after install.",
     ],
   },
   unknown: {
     label: "Your platform",
-    installCommand: "coven --version",
+    installCommand: COVEN_CLI_INSTALL_COMMAND,
     caveInstall: [
       "Download the matching asset from the official GitHub Release.",
       "Install or launch the app for your OS.",
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the coven CLI from OpenCoven/coven.",
+      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven is on PATH.",
       "Click Re-check here after install.",
     ],

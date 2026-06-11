@@ -39,6 +39,24 @@ assert.match(
 
 assert.match(
   source,
+  /const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven\/cli@latest"/,
+  "Setup should copy the npm-published Coven CLI install command",
+);
+
+assert.match(
+  source,
+  /installCommand: COVEN_CLI_INSTALL_COMMAND/,
+  "Setup platform copy should use the shared Coven CLI install command",
+);
+
+assert.doesNotMatch(
+  source,
+  /brew install opencoven\/tap\/coven|Install the coven CLI from OpenCoven\/coven/,
+  "Setup should not point users at stale Homebrew or repo-source CLI install guidance",
+);
+
+assert.match(
+  source,
   /xl:col-span-4[\s\S]*Available harnesses/,
   "Local harnesses should occupy a peer bento card in the same grid",
 );

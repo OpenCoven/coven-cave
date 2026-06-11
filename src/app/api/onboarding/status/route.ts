@@ -20,6 +20,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
+const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
 
 type Step = { ok: boolean; detail?: string; hint?: string };
 
@@ -28,7 +29,7 @@ async function checkCovenCli(): Promise<Step> {
   if (found) return { ok: true, detail: found };
   return {
     ok: false,
-    hint: "Install the coven CLI from OpenCoven/coven, make sure it is on PATH, then re-check.",
+    hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
   };
 }
 
