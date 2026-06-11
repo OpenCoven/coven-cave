@@ -101,6 +101,16 @@ function parseFenceInfo(info: string): { lang: string; filename?: string } {
 // Render a single code block with Shiki + chrome
 // ---------------------------------------------------------------------------
 
+/**
+ * Blocks at/above this many lines get a "Show more" footer (CHAT-D7-03).
+ * Tuned to the CSS clamp on .cave-code-wrap (max-height: min(60vh, 520px)):
+ * at 12px mono / 1.6em rows plus header + footer + pre padding, 24 lines is
+ * the first count guaranteed to overflow the 520px cap, so the toggle never
+ * appears on a block that has nothing to expand. Shorter blocks on short
+ * viewports (60vh < 520px) may still clip — inner scroll covers those.
+ */
+const CODE_EXPAND_MIN_LINES = 24;
+
 async function renderCodeBlock(
   code: string,
   info: string,
@@ -158,9 +168,15 @@ async function renderCodeBlock(
   const filenameHtml = filename
     ? `<span class="cave-code-filename">${escHtml(filename)}</span>`
     : "";
-  const headerHtml = `<div class="cave-code-header">${labelHtml}${filenameHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted" data-code="${escAttr(code)}">Copy</button></div>`;
+  // No data-code attribute (CHAT-D7-04): wireCopyButtons reads the code text
+  // back out of the rendered DOM at click time instead of carrying a second
+  // copy of every block's source in an attribute.
+  const headerHtml = `<div class="cave-code-header">${labelHtml}${filenameHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
+  const expandHtml = lines.length >= CODE_EXPAND_MIN_LINES
+    ? `<div class="cave-code-expand"><button type="button" class="cave-code-expand-btn">Show more</button></div>`
+    : "";
 
-  return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}</div>`;
+  return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}${expandHtml}</div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,10 +292,6 @@ function escHtml(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
-function escAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
 // ---------------------------------------------------------------------------
 // Render markdown to HTML (async, Shiki per code block)
 // ---------------------------------------------------------------------------
@@ -494,17 +506,48 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
 }
 
 // ---------------------------------------------------------------------------
-// Post-render: wire copy buttons in DOM
+// Post-render: wire copy + expand buttons in DOM
 // ---------------------------------------------------------------------------
 
+/**
+ * Click-time code extraction (CHAT-D7-04). The block's full source used to be
+ * duplicated into a `data-code` attribute on every Copy button — double the
+ * memory and a giant DOM attribute for big tool outputs / file previews (the
+ * SyntaxBlock path). Instead, read the text back out of the rendered block:
+ * line rows are `.cave-line` spans with no newline text nodes between them,
+ * so reconstruct with join("\n"); `.cave-ln` line-number spans are
+ * presentation-only (aria-hidden, user-select: none) and must be excluded —
+ * textContent WOULD include them, hence the clone-and-strip. Diff +/- line
+ * prefixes are real token text and copy as-is, matching the old behavior of
+ * copying the raw fence content. Byte-parity with the old data-code path was
+ * verified for plain, line-numbered, diff, entity-heavy, empty-interior-line
+ * and trailing-newline blocks.
+ */
+function codeTextFromWrap(btn: HTMLElement): string {
+  const codeEl = btn.closest(".cave-code-wrap")?.querySelector("pre code");
+  if (!codeEl) return "";
+  const lineEls = Array.from(codeEl.querySelectorAll(".cave-line"));
+  // Shiki-failure fallback renders a plain <pre><code> without line rows.
+  if (lineEls.length === 0) return codeEl.textContent ?? "";
+  return lineEls
+    .map((line) => {
+      const clone = line.cloneNode(true) as HTMLElement;
+      for (const ln of Array.from(clone.querySelectorAll(".cave-ln"))) ln.remove();
+      return clone.textContent ?? "";
+    })
+    .join("\n");
+}
+
 function wireCopyButtons(container: HTMLElement) {
-  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-copy-btn[data-code]"))) {
+  // Only the injected-HTML header buttons (.cave-copy-btn-mounted) need
+  // wiring — the React-rendered bubble copy/expand buttons carry their own
+  // onClick handlers and props.
+  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-copy-btn-mounted"))) {
     if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
     (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
-    const code = btn.dataset.code ?? "";
     let timer: ReturnType<typeof setTimeout> | null = null;
     btn.addEventListener("click", () => {
-      navigator.clipboard.writeText(code).catch(() => undefined);
+      navigator.clipboard.writeText(codeTextFromWrap(btn)).catch(() => undefined);
       btn.textContent = "Copied";
       btn.classList.add("cave-copy-btn--confirmed");
       if (timer) clearTimeout(timer);
@@ -512,6 +555,20 @@ function wireCopyButtons(container: HTMLElement) {
         btn.textContent = "Copy";
         btn.classList.remove("cave-copy-btn--confirmed");
       }, 2000);
+    });
+  }
+  // Show more / Show less footer on height-clamped blocks (CHAT-D7-03).
+  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-expand-btn"))) {
+    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
+    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
+    btn.addEventListener("click", () => {
+      const wrap = btn.closest(".cave-code-wrap");
+      if (!wrap) return;
+      const expanded = wrap.classList.toggle("cave-code-wrap--expanded");
+      btn.textContent = expanded ? "Show less" : "Show more";
+      // Collapsing from deep in a long block would otherwise leave the
+      // clamped viewport scrolled to an arbitrary middle.
+      if (!expanded) wrap.scrollTop = 0;
     });
   }
 }

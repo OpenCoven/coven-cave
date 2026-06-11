@@ -216,15 +216,43 @@
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
     inset 0 1px 0 oklch(0.985 0 0 / 4%);
-  overflow: hidden;
+  /* CHAT-D7-03: the wrap is the block's vertical scroll container — huge
+     blocks clamp instead of dominating the transcript (cf. the system
+     bubble's 320px cap; benchmark: Claude Code truncates long blocks).
+     520px reads as ~24 code lines against the 920px thread measure.
+     overflow-x stays hidden: the inner <pre> owns horizontal scrolling,
+     and the wrap must keep clipping its rounded corners. */
+  max-height: min(60vh, 520px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
   font-size: 12px;
   margin: 0.6em 0;
+}
+
+/* "Show more" lifts the clamp (toggled by wireCopyButtons' expand wiring). */
+.cave-code-wrap--expanded {
+  max-height: none;
+}
+
+.cave-code-wrap::-webkit-scrollbar { width: 4px; }
+.cave-code-wrap::-webkit-scrollbar-track { background: transparent; }
+.cave-code-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    CODE BLOCK HEADER
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-code-header {
+  /* CHAT-D7-02: stick to the top of the wrap's scroll viewport so the lang
+     label + Copy stay reachable on long blocks (benchmark: ChatGPT/Cursor).
+     Legible while stuck thanks to the near-opaque surface (CHAT-D13-01). */
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 0.5em;
@@ -430,6 +458,42 @@
   align-items: center;
   justify-content: center;
   padding: 3px 5px;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   EXPAND FOOTER (CHAT-D7-03) — emitted only on blocks tall enough to clamp;
+   sticks to the bottom of the wrap's scroll viewport like the header sticks
+   to its top. Fixed dark chrome inks (CHAT-D13-01), no theme ink.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-code-expand {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0.25em 0.75em;
+  background: oklch(0.16 0.015 280 / 92%);
+  border-top: 1px solid var(--border-hairline);
+  backdrop-filter: blur(4px);
+}
+
+.cave-code-expand-btn {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.8em;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--code-chrome-ink-faint);
+  cursor: pointer;
+  transition: color 0.1s;
+  line-height: 1.4;
+}
+
+.cave-code-expand-btn:hover,
+.cave-code-expand-btn:focus-visible {
+  color: var(--code-chrome-ink);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

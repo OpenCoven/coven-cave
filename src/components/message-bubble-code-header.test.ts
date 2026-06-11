@@ -36,12 +36,14 @@ assert.match(
 
 // ---------------------------------------------------------------------------
 // Copy buttons must be WIRED, not just rendered. renderCodeBlock emits the
-// <button class="cave-copy-btn" data-code> markup, but the click handler only
-// attaches via wireCopyButtons after the HTML lands in the DOM. Every
-// component that injects this HTML (MarkdownContent, SyntaxBlock,
+// <button class="cave-copy-btn cave-copy-btn-mounted"> markup, but the click
+// handler only attaches via wireCopyButtons after the HTML lands in the DOM.
+// Every component that injects this HTML (MarkdownContent, SyntaxBlock,
 // MarkdownBlock) must run the post-render wiring — otherwise Copy silently
 // does nothing in tool blocks, the inspector pane, comux previews, and the
 // markdown expand modal (audit finding CHAT-D7-01).
+// (Stale #398-era note removed: the buttons no longer carry a data-code
+// attribute — see the CHAT-D7-04 pins below.)
 // ---------------------------------------------------------------------------
 
 const source = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
@@ -206,3 +208,111 @@ for (const selector of [".cave-code-wrap", ".cave-bubble-system"]) {
     `${selector} surface must not mix with theme backgrounds`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// CHAT-D7-02 — the code-block header must be sticky inside the block's own
+// scroll container, so the language label and Copy button stay reachable on
+// long blocks (benchmarks: ChatGPT/Cursor). Sticking against page scroll
+// would be a no-op: the wrap clips overflow, so the wrap itself must be the
+// scroll container (see CHAT-D7-03 below) and the header sticks to its top.
+// ---------------------------------------------------------------------------
+
+const headerBlock = ruleBlock(".cave-code-header");
+assert.match(headerBlock, /position:\s*sticky/, "Code-block header must be sticky");
+assert.match(headerBlock, /top:\s*0/, "Sticky header must pin to the top of the wrap's scroll viewport");
+assert.match(headerBlock, /z-index:\s*1/, "Sticky header must layer above the code lines it scrolls over");
+
+// ---------------------------------------------------------------------------
+// CHAT-D7-03 — huge blocks must not dominate the transcript. The wrap clamps
+// to min(60vh, 520px) with inner vertical scroll (the system bubble's 320px
+// cap is the in-repo precedent); blocks shorter than the cap are unaffected.
+// A "Show more" footer (emitted only on blocks tall enough to clamp) lifts
+// the cap via the --expanded class, toggled by the same delegated wiring as
+// the copy buttons.
+// ---------------------------------------------------------------------------
+
+const wrapBlock = ruleBlock(".cave-code-wrap");
+assert.match(
+  wrapBlock,
+  /max-height:\s*min\(60vh,\s*520px\)/,
+  "Code-block wrap must clamp its height so huge blocks don't dominate the transcript",
+);
+assert.match(wrapBlock, /overflow-y:\s*auto/, "Clamped wrap must scroll vertically (it is the sticky header's container)");
+assert.match(wrapBlock, /overflow-x:\s*hidden/, "Wrap must keep clipping horizontally — the inner <pre> owns x-scroll");
+assert.match(
+  ruleBlock(".cave-code-wrap--expanded"),
+  /max-height:\s*none/,
+  "The expanded state must lift the height clamp",
+);
+
+const renderCodeBlockFn = /async function renderCodeBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.match(
+  renderCodeBlockFn,
+  /cave-code-expand-btn/,
+  "renderCodeBlock must emit the Show more footer button for clamp-height blocks",
+);
+assert.match(
+  source,
+  /CODE_EXPAND_MIN_LINES/,
+  "The expand footer must only be emitted for blocks tall enough to actually clamp",
+);
+
+const wireFn = /function wireCopyButtons\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.match(
+  wireFn,
+  /cave-code-expand-btn/,
+  "wireCopyButtons must wire the expand toggle alongside the copy buttons",
+);
+assert.match(
+  wireFn,
+  /cave-code-wrap--expanded/,
+  "The expand toggle must flip the --expanded class on the wrap",
+);
+
+// ---------------------------------------------------------------------------
+// CHAT-D7-04 — no data-code duplication. renderCodeBlock used to copy every
+// block's full source into a data-code attribute (via SyntaxBlock that meant
+// whole tool outputs and file previews twice in memory, as giant DOM
+// attributes). The Copy buttons now read the code text out of the rendered
+// DOM at click time: .cave-line rows joined with "\n", with the aria-hidden
+// .cave-ln line-number spans stripped first (textContent WOULD include
+// them). Byte-parity with the old data-code path was verified for plain,
+// line-numbered, diff, entity-heavy and trailing-newline blocks.
+// (Updated #398-era pins: wireCopyButtons used to select
+// ".cave-copy-btn[data-code]" — it now selects ".cave-copy-btn-mounted".)
+// ---------------------------------------------------------------------------
+
+assert.doesNotMatch(
+  source,
+  /data-code=/,
+  "renderCodeBlock must not duplicate block source into a data-code attribute",
+);
+assert.doesNotMatch(
+  source,
+  /dataset\.code/,
+  "Copy wiring must not read from the removed data-code attribute",
+);
+assert.match(
+  wireFn,
+  /cave-copy-btn-mounted/,
+  "wireCopyButtons must select the injected header buttons by their mounted class (React bubble buttons wire their own onClick)",
+);
+assert.match(wireFn, /codeTextFromWrap/, "Copy clicks must read the code text from the DOM at click time");
+
+const codeTextFn = /function codeTextFromWrap\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.match(
+  codeTextFn,
+  /closest\("\.cave-code-wrap"\)/,
+  "Click-time extraction must scope to the button's own code block",
+);
+assert.match(codeTextFn, /cloneNode/, "Extraction must clone line rows before stripping line numbers");
+assert.match(
+  codeTextFn,
+  /\.cave-ln/,
+  "Extraction must strip .cave-ln line-number spans (aria-hidden, but included by textContent)",
+);
+assert.match(
+  codeTextFn,
+  /join\("\\n"\)/,
+  'Line rows carry no newline text nodes — extraction must rejoin them with "\\n"',
+);
