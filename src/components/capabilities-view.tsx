@@ -6,7 +6,6 @@ import { Icon } from "@/lib/icon";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   filterCapabilityItems,
-  harnessLabel,
   normalizeCapabilities,
   type CapabilityHarnessSummary,
   type CapabilityMapItem,
@@ -55,10 +54,38 @@ const STATUS_LABEL: Record<CapabilityStatus, string> = {
   warning: "warning",
 };
 
-function initialHarness(activeHarness?: string | null): string | null {
-  if (activeHarness !== undefined) return activeHarness ?? null;
+const CAPABILITY_TYPES = new Set<CapabilityType>(["instructions", "skill", "plugin", "mcp", "warning"]);
+const CAPABILITY_STATUSES = new Set<CapabilityStatus>(["available", "enabled", "disabled", "warning"]);
+
+function readUrlParam(name: string): string | null {
   if (typeof window === "undefined") return null;
-  return new URLSearchParams(window.location.search).get("harness");
+  return new URLSearchParams(window.location.search).get(name);
+}
+
+function readCapabilityTypeParam(name: string): CapabilityType | "all" {
+  const value = readUrlParam(name);
+  return value && CAPABILITY_TYPES.has(value as CapabilityType) ? (value as CapabilityType) : "all";
+}
+
+function readCapabilityStatusParam(name: string): CapabilityStatus | "all" {
+  const value = readUrlParam(name);
+  return value && CAPABILITY_STATUSES.has(value as CapabilityStatus) ? (value as CapabilityStatus) : "all";
+}
+
+function initialHarness(activeHarness?: string | null): string | null {
+  return activeHarness ?? readUrlParam("harness");
+}
+
+function initialQuery(): string {
+  return readUrlParam("q") ?? "";
+}
+
+function initialTypeFilter(): CapabilityType | "all" {
+  return readCapabilityTypeParam("type");
+}
+
+function initialStatusFilter(): CapabilityStatus | "all" {
+  return readCapabilityStatusParam("status");
 }
 
 export function CapabilitiesViewSurface({
@@ -73,9 +100,9 @@ export function CapabilitiesViewSurface({
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [harnessFilter, setHarnessFilter] = useState<string | null>(() => initialHarness(activeHarness));
-  const [typeFilter, setTypeFilter] = useState<CapabilityType | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<CapabilityStatus | "all">("all");
-  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<CapabilityType | "all">(() => initialTypeFilter());
+  const [statusFilter, setStatusFilter] = useState<CapabilityStatus | "all">(() => initialStatusFilter());
+  const [query, setQuery] = useState(() => initialQuery());
   const [selectionId, setSelectionId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -113,7 +140,10 @@ export function CapabilitiesViewSurface({
   }, [load]);
 
   useEffect(() => {
-    if (activeHarness !== undefined) setHarnessFilter(activeHarness ?? null);
+    if (activeHarness) {
+      setHarnessFilter(activeHarness);
+      setSelectionId(null);
+    }
   }, [activeHarness]);
 
   useEffect(() => {
@@ -125,9 +155,11 @@ export function CapabilitiesViewSurface({
     else params.delete("q");
     if (typeFilter !== "all") params.set("type", typeFilter);
     else params.delete("type");
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    else params.delete("status");
     const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     window.history.replaceState(null, "", next);
-  }, [harnessFilter, query, typeFilter]);
+  }, [harnessFilter, query, typeFilter, statusFilter]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -189,11 +221,28 @@ export function CapabilitiesViewSurface({
     setSelectionId(null);
   };
 
+  const applyQueryFilter = (value: string) => {
+    setQuery(value);
+    setSelectionId(null);
+  };
+
+  const applyTypeFilter = (value: CapabilityType | "all") => {
+    setTypeFilter(value);
+    setSelectionId(null);
+  };
+
+  const applyStatusFilter = (value: CapabilityStatus | "all") => {
+    setStatusFilter(value);
+    setSelectionId(null);
+  };
+
   const applySummaryFilter = (type: CapabilityType | "all", status: CapabilityStatus | "all" = "all") => {
     setTypeFilter(type);
     setStatusFilter(status);
     setSelectionId(null);
   };
+
+  const readinessStatus = operatorView.summary.warnings > 0 ? "warning" : operatorView.summary.disabled > 0 ? "disabled" : "all";
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
@@ -250,8 +299,8 @@ export function CapabilitiesViewSurface({
                   icon="ph:heartbeat"
                   label="Readiness"
                   value={operatorView.summary.warnings + operatorView.summary.disabled === 0 ? "Clear" : `${operatorView.summary.warnings + operatorView.summary.disabled} issue${operatorView.summary.warnings + operatorView.summary.disabled === 1 ? "" : "s"}`}
-                  active={typeFilter === "warning" || statusFilter === "disabled"}
-                  onClick={() => applySummaryFilter("warning")}
+                  active={statusFilter === "warning" || statusFilter === "disabled"}
+                  onClick={() => applySummaryFilter("all", readinessStatus)}
                 />
                 <SummaryTile
                   icon="ph:cube-bold"
@@ -295,11 +344,11 @@ export function CapabilitiesViewSurface({
 
               <CapabilityToolbar
                 query={query}
-                onQueryChange={setQuery}
+                onQueryChange={applyQueryFilter}
                 typeFilter={typeFilter}
-                onTypeFilter={setTypeFilter}
+                onTypeFilter={applyTypeFilter}
                 statusFilter={statusFilter}
-                onStatusFilter={setStatusFilter}
+                onStatusFilter={applyStatusFilter}
                 harnesses={operatorView.harnesses}
                 harnessFilter={harnessFilter}
                 onHarnessFilter={applyHarnessFilter}
@@ -359,6 +408,8 @@ function CapabilityToolbar({
         <label className="focus-within:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] focus-within:ring-1">
           <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-muted-foreground" />
           <input
+            type="search"
+            aria-label="Search capabilities"
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search skills, plugins, paths, commands"
