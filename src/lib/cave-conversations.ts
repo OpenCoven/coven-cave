@@ -148,4 +148,95 @@ export async function listConversations(): Promise<
   return results;
 }
 
+// ── Content search (CHAT-D9-02) ──────────────────────────────────────────────
+// "Where did we discuss X" — scan stored transcripts for a case-insensitive
+// substring and return one hit per conversation with a snippet around the
+// first match. Pure-ish + bounded: cheap text pre-filter before JSON.parse,
+// oversized files skipped, corrupt files skipped, result count capped.
+
+export type ConversationSearchHit = {
+  sessionId: string;
+  title?: string;
+  /** Single-line excerpt (~80 chars) around the first match. */
+  snippet: string;
+  /** Total occurrences across the conversation's turn texts. */
+  matchCount: number;
+};
+
+const SEARCH_DEFAULT_LIMIT = 30;
+const SEARCH_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const SEARCH_SNIPPET_RADIUS = 40;
+
+function searchSnippet(text: string, index: number, matchLength: number): string {
+  const start = Math.max(0, index - SEARCH_SNIPPET_RADIUS);
+  const end = Math.min(text.length, index + matchLength + SEARCH_SNIPPET_RADIUS);
+  let excerpt = text.slice(start, end).replace(/\s+/g, " ").trim();
+  if (start > 0) excerpt = `…${excerpt}`;
+  if (end < text.length) excerpt = `${excerpt}…`;
+  return excerpt;
+}
+
+export async function searchConversations(
+  query: string,
+  opts: { limit?: number; maxFileBytes?: number } = {},
+): Promise<ConversationSearchHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const qLower = q.toLowerCase();
+  const limit = Math.max(1, opts.limit ?? SEARCH_DEFAULT_LIMIT);
+  const maxFileBytes = opts.maxFileBytes ?? SEARCH_MAX_FILE_BYTES;
+
+  let entries: string[];
+  try {
+    entries = await readdir(CONV_DIR);
+  } catch {
+    return [];
+  }
+
+  const hits: Array<ConversationSearchHit & { updatedAt: string }> = [];
+  for (const name of entries) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const file = path.join(CONV_DIR, name);
+      const info = await stat(file);
+      if (info.size > maxFileBytes) continue; // huge body — skip gracefully
+      const raw = await readFile(file, "utf8");
+      // Cheap substring pre-filter on the raw text before paying for parse.
+      if (!raw.toLowerCase().includes(qLower)) continue;
+      const conv = JSON.parse(raw) as ConversationFile;
+      if (!Array.isArray(conv?.turns)) continue;
+      let matchCount = 0;
+      let snippet = "";
+      for (const turn of conv.turns) {
+        const text = typeof turn?.text === "string" ? turn.text : "";
+        if (!text) continue;
+        const textLower = text.toLowerCase();
+        let idx = textLower.indexOf(qLower);
+        if (idx < 0) continue;
+        if (!snippet) snippet = searchSnippet(text, idx, q.length);
+        while (idx >= 0) {
+          matchCount += 1;
+          idx = textLower.indexOf(qLower, idx + qLower.length);
+        }
+      }
+      if (matchCount === 0) continue;
+      hits.push({
+        sessionId:
+          typeof conv.sessionId === "string" && conv.sessionId
+            ? conv.sessionId
+            : name.replace(/\.json$/, ""),
+        ...(typeof conv.title === "string" && conv.title ? { title: conv.title } : {}),
+        snippet,
+        matchCount,
+        updatedAt: typeof conv.updatedAt === "string" ? conv.updatedAt : "",
+      });
+    } catch {
+      /* corrupt or unreadable file — skip */
+    }
+  }
+
+  hits.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  return hits.slice(0, limit).map(({ updatedAt: _updatedAt, ...hit }) => hit);
+}
+
 export { CONV_DIR, appendFile };
