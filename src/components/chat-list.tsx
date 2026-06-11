@@ -21,6 +21,11 @@ type Props = {
   onOpen: (sessionId: string, familiarId?: string | null) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
   onSessionsChanged?: () => void;
+  /** false while the workspace's first /api/sessions/list fetch is in
+   *  flight — gates the list on a skeleton instead of flashing the
+   *  "no chats yet" empty state. Defaults true for callers that load
+   *  sessions before mounting. */
+  sessionsLoaded?: boolean;
 };
 
 function age(iso: string): string {
@@ -60,7 +65,7 @@ function statusStyle(s: string) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true }: Props) {
   const [error, setError] = useState<string | null>(null);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
@@ -299,7 +304,20 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
       {/* ── List ── */}
       <div className="chat-list-scroll min-h-0 flex-1 overflow-y-auto">
-        {!hasAny ? (
+        {!sessionsLoaded && !hasAny ? (
+          <div aria-hidden className="space-y-px px-4 py-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse flex gap-3 px-0 py-3.5">
+                <span className="mt-1 block h-2 w-2 rounded-full bg-[var(--bg-hover)]" />
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className="h-2.5 w-1/4 rounded bg-[var(--bg-hover)] opacity-70" />
+                  <span className="h-3 w-1/2 rounded bg-[var(--bg-hover)]" />
+                  <span className="h-2.5 w-1/3 rounded bg-[var(--bg-hover)] opacity-50" />
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : !hasAny ? (
           /* Empty state */
           <div className="flex h-full flex-col justify-between px-4 py-4">
             <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">

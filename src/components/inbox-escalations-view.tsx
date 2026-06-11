@@ -99,6 +99,9 @@ export function InboxEscalationsView({
   const [snoozeMenuFor, setSnoozeMenuFor] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<EscalationSeverity | "all">("all");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  // false until the FIRST /api/escalations fetch settles — gates the list
+  // area on a skeleton instead of flashing "Nothing needs you."
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const rootRef = useRef<HTMLElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -119,6 +122,8 @@ export function InboxEscalationsView({
     } catch (err) {
       setItems([]);
       setError(err instanceof Error ? err.message : "load failed");
+    } finally {
+      setInitialLoadDone(true);
     }
   }, []);
 
@@ -442,7 +447,20 @@ export function InboxEscalationsView({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
             <div className="mx-auto w-full max-w-[1200px]">
-              {visible.length === 0 ? (
+              {!initialLoadDone ? (
+                <div aria-hidden className="space-y-3">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="animate-pulse rounded-2xl border px-6 py-5"
+                      style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}
+                    >
+                      <div className="h-3 w-1/3 rounded bg-[var(--bg-hover)]" />
+                      <div className="mt-2 h-2.5 w-2/3 rounded bg-[var(--bg-hover)] opacity-60" />
+                    </div>
+                  ))}
+                </div>
+              ) : visible.length === 0 ? (
                 <div
                   className="rounded-2xl border px-6 py-12 text-center"
                   style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}

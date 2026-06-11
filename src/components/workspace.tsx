@@ -70,6 +70,9 @@ export function Workspace() {
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
   const [demoMode, setDemoMode] = useState(() => isDemoModeEnabled());
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  // false until the first /api/sessions/list fetch settles — lets the chat
+  // list show a skeleton instead of flashing its empty state on boot.
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
@@ -257,6 +260,8 @@ export function Workspace() {
       if (json.ok) setSessions((json.sessions ?? []) as SessionRow[]);
     } catch {
       /* transient */
+    } finally {
+      setSessionsLoaded(true);
     }
   }, []);
 
@@ -960,6 +965,7 @@ export function Workspace() {
         activeFamiliarId={activeId}
         daemonRunning={daemonRunning}
         routerRef={routerRef}
+        sessionsLoaded={sessionsLoaded}
         inboxItems={inboxItemsWithEphemeral}
         inspectorOpen={inspectorOpen}
         rightPanel={rightPanel}

@@ -18,6 +18,7 @@ type Props = {
   onSetActiveFamiliar?: (id: string) => void;
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
+  sessionsLoaded?: boolean;
   onSlashFromChat?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   pendingProjectRoot?: string | null;
@@ -49,6 +50,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSetActiveFamiliar,
     onSessionStarted,
     onSessionsChanged,
+    sessionsLoaded,
     onSlashFromChat,
     onOpenOnboarding,
     pendingProjectRoot,
@@ -171,6 +173,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiars={familiars}
         sessions={sessions}
         daemonRunning={daemonRunning}
+        sessionsLoaded={sessionsLoaded}
         onSessionsChanged={onSessionsChanged}
         onOpen={(sessionId, familiarId) => {
           const next = selectFamiliarForChat(familiarId);

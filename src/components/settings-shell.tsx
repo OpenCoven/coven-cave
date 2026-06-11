@@ -438,7 +438,14 @@ function AddonsSection() {
     <SettingsPage title="Add-ons" description="Optional integrations. Disabled add-ons are hidden from the sidebar.">
       <SettingsGroup label="Integrations">
         {loading ? (
-          <div className="px-4 py-3 text-[12px] text-[var(--text-muted)]">Loading…</div>
+          <div aria-hidden className="animate-pulse space-y-3 px-4 py-3">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex items-center justify-between gap-4">
+                <span className="h-3 w-1/3 rounded bg-[var(--bg-hover)]" />
+                <span className="h-5 w-9 rounded-full bg-[var(--bg-hover)] opacity-70" />
+              </div>
+            ))}
+          </div>
         ) : (
           ADDON_ROWS.map((row) => (
             <div key={row.key} className="flex items-center justify-between gap-4 px-4 py-3">
