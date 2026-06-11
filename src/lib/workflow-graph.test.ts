@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { workflowToGraph, workflowNodeTone } from "./workflow-graph.ts";
-import type { WorkflowSummary } from "./workflows.ts";
+import type { WorkflowDryRunPlan, WorkflowSummary } from "./workflows.ts";
 
 const workflow: WorkflowSummary = {
   id: "nova-release-review",
@@ -28,6 +28,21 @@ assert.equal(graph.nodes[0].data.kind, "human-gate", "node data preserves step k
 assert.equal(graph.nodes[0].data.tone, "gate", "human gates use gate tone");
 assert.equal(graph.nodes[1].position.x > graph.nodes[0].position.x, true, "nodes are laid out left to right");
 assert.equal(workflowNodeTone("workflow"), "workflow", "nested workflow nodes get workflow tone");
+
+const dryRun: WorkflowDryRunPlan = {
+  ok: true,
+  workflowId: "nova-release-review",
+  steps: [
+    { id: "gate", kind: "human-gate", uses: "valentina", status: "blocked", blockers: [{ code: "gate.waiting", tier: "preflight" }] },
+    { id: "review", kind: "agent", uses: "nova", status: "ready" },
+  ],
+  issues: [],
+};
+const dryRunGraph = workflowToGraph(workflow, dryRun);
+assert.equal(dryRunGraph.nodes[0].data.issues, 1, "step blockers become node issue counts");
+assert.equal(dryRunGraph.nodes[0].data.status, "blocked", "blocked dry-run status is preserved");
+assert.equal(dryRunGraph.nodes[1].data.status, "ready", "ready dry-run status is preserved");
+assert.equal(dryRunGraph.edges.every((edge) => edge.animated), true, "successful dry-runs animate graph edges");
 
 const fallback = workflowToGraph({ id: "empty", version: "0.1.0", validation_state: "unknown" });
 assert.equal(fallback.nodes.length, 1, "missing steps render an overview node");

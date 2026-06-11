@@ -9,6 +9,7 @@ export type WorkflowGraphNodeData = {
   uses?: string;
   summary?: string;
   issues: number;
+  status?: "ready" | "blocked";
 };
 
 export type WorkflowGraphNode = {
@@ -52,13 +53,16 @@ function fallbackStep(workflow: WorkflowSummary): WorkflowStepSummary {
   };
 }
 
-function issueCountForStep(step: WorkflowStepSummary, dryRun?: WorkflowDryRunPlan): number {
-  return dryRun?.steps?.find((planStep) => planStep.id === step.id)?.blockers?.length ?? 0;
+type WorkflowDryRunStep = NonNullable<WorkflowDryRunPlan["steps"]>[number];
+
+function dryRunStepFor(step: WorkflowStepSummary, dryRun?: WorkflowDryRunPlan): WorkflowDryRunStep | undefined {
+  return dryRun?.steps?.find((planStep) => planStep.id === step.id);
 }
 
 export function workflowToGraph(workflow: WorkflowSummary, dryRun?: WorkflowDryRunPlan): WorkflowGraph {
   const steps = workflow.steps && workflow.steps.length > 0 ? workflow.steps : [fallbackStep(workflow)];
   const nodes = steps.map((step, index): WorkflowGraphNode => {
+    const dryRunStep = dryRunStepFor(step, dryRun);
     return {
       id: step.id,
       type: "workflowStep",
@@ -72,7 +76,8 @@ export function workflowToGraph(workflow: WorkflowSummary, dryRun?: WorkflowDryR
         tone: workflowNodeTone(step.kind),
         uses: step.uses,
         summary: step.summary,
-        issues: issueCountForStep(step, dryRun),
+        issues: dryRunStep?.blockers?.length ?? 0,
+        status: dryRunStep?.status,
       },
     };
   });
