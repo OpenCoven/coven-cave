@@ -896,9 +896,37 @@ details[open] > .cave-tool-summary::before {
 
 /* Dense linear session view */
 .cave-chat-linear {
+  position: relative; /* anchors .cave-drop-overlay */
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
+}
+
+/* Drag-and-drop attach overlay (CHAT-D1-03). pointer-events: none keeps the
+   layer from swallowing the drop (the section handles it) and guarantees it
+   never intercepts clicks. */
+.cave-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  border: 1.5px dashed color-mix(in oklch, var(--accent-presence) 60%, transparent);
+}
+
+.cave-drop-overlay-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px color-mix(in oklch, var(--bg-base) 60%, transparent);
 }
 
 .cave-chat-linear-header {
