@@ -283,7 +283,50 @@ function escAttr(s: string): string {
 // Render markdown to HTML (async, Shiki per code block)
 // ---------------------------------------------------------------------------
 
+/**
+ * renderCache LRU — keyed by the FULL markdown string. Capped (CHAT-D3-03):
+ * an unbounded Map keyed by entire messages grows for the whole session.
+ * Map iteration order is insertion order, so refreshing recency on get and
+ * evicting the first key on overflow gives a small LRU for free.
+ */
+const RENDER_CACHE_MAX = 200;
 const renderCache = new Map<string, string>();
+
+function renderCacheGet(key: string): string | undefined {
+  const value = renderCache.get(key);
+  if (value !== undefined) {
+    renderCache.delete(key);
+    renderCache.set(key, value);
+  }
+  return value;
+}
+
+function renderCacheSet(key: string, value: string) {
+  if (renderCache.has(key)) renderCache.delete(key);
+  renderCache.set(key, value);
+  if (renderCache.size > RENDER_CACHE_MAX) {
+    const oldest = renderCache.keys().next().value;
+    if (oldest !== undefined) renderCache.delete(oldest);
+  }
+}
+
+/** Streaming markdown re-renders at most once per this many ms (trailing). */
+const STREAM_RENDER_INTERVAL_MS = 200;
+
+/**
+ * Mid-stream nicety: if the accumulated text ends inside an unterminated
+ * code fence, close it before rendering so the partial block highlights as
+ * code instead of pulling the rest of the snapshot into a runaway open
+ * block. Only applied to transient streaming snapshots — the final settled
+ * render gets the text verbatim.
+ */
+function closeTrailingFence(markdown: string): string {
+  let inFence = false;
+  for (const line of markdown.split("\n")) {
+    if (/^\s*```/.test(line)) inFence = !inFence;
+  }
+  return inFence ? `${markdown}\n\`\`\`` : markdown;
+}
 
 /**
  * Scan markdown for fence openers in order, returning the filename suffix for
@@ -357,8 +400,9 @@ async function renderTableBlock(block: TableBlock, renderAsync: RenderAsyncFn): 
   return `<table class="cm-table"><thead><tr>${ths.join("")}</tr></thead><tbody>${trs.join("")}</tbody></table>`;
 }
 
-async function mdToHtml(markdown: string): Promise<string> {
-  if (renderCache.has(markdown)) return renderCache.get(markdown)!;
+async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promise<string> {
+  const cached = renderCacheGet(markdown);
+  if (cached !== undefined) return cached;
 
   // We render ourselves: use @create-markdown/core to parse, then manually
   // serialize to HTML so we can inject our custom Shiki code blocks.
@@ -441,7 +485,10 @@ async function mdToHtml(markdown: string): Promise<string> {
   }
 
   const sanitizedHtml = sanitizeHtml(html);
-  renderCache.set(markdown, sanitizedHtml);
+  // Transient (mid-stream) snapshots are never requested again once the
+  // stream advances past them — caching one per throttle tick would churn
+  // settled entries out of the LRU for no hit-rate gain.
+  if (!opts?.transient) renderCacheSet(markdown, sanitizedHtml);
   return sanitizedHtml;
 }
 
@@ -484,28 +531,80 @@ function useWireCopyButtons(html: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// MarkdownContent — async render; plain fallback while streaming
+// MarkdownContent — progressive async render while streaming (CHAT-D3-01);
+// plain fallback only until the first render lands
 // ---------------------------------------------------------------------------
 
 function MarkdownContent({ text, pending }: { text: string; pending?: boolean }) {
   const [html, setHtml] = useState<string | null>(null);
   const containerRef = useWireCopyButtons(html);
+  // Out-of-order guard: mdToHtml is async and during streaming several
+  // renders can be in flight at once. Every render takes a monotonically
+  // increasing stamp, and a result only commits if it is newer than the
+  // last committed one — a slower earlier render never overwrites a newer
+  // one (including the final settled render).
+  const renderStampRef = useRef(0);
+  const appliedStampRef = useRef(0);
+  // Throttle bookkeeping for streaming renders. Lives in a ref because the
+  // effect re-fires on every streamed chunk: a per-effect trailing debounce
+  // would be reset by each chunk and never fire under a steady stream.
+  const lastStreamRenderRef = useRef(0);
 
   useEffect(() => {
-    if (pending) {
-      // Don't block on async render while streaming
-      setHtml(null);
-      return;
-    }
     // No "same text" guard here: the effect only re-fires when text/pending
     // change, and a ref-based guard poisons itself under StrictMode's
     // double-invoke (run 1 marks the text seen, then gets cancelled; run 2
     // early-returns and the bubble is stuck on the plain-text fallback).
     // mdToHtml memoizes per-text, so re-entry is cheap.
     if (!text) return;
+
+    if (pending) {
+      // CHAT-D3-01: render markdown progressively during the stream instead
+      // of showing literal ``` fences and **markers** until `done` (which
+      // then re-typesets the whole bubble at once — live-measured CLS 0.53).
+      // Renders are throttled to one per STREAM_RENDER_INTERVAL_MS, trailing
+      // edge; the first chunk renders immediately (lastStreamRenderRef starts
+      // at 0, so the first elapsed check always passes).
+      //
+      // Deliberately NOT gated on a `cancelled` flag: every chunk re-runs
+      // this effect, so any stream whose chunk interval is shorter than
+      // mdToHtml's latency would cancel every in-flight render before it
+      // commits and nothing would paint until the turn settles (starvation).
+      // The stamp guard above provides ordering safety instead; a commit
+      // after unmount is a no-op state update that React drops.
+      const run = () => {
+        lastStreamRenderRef.current = Date.now();
+        const stamp = ++renderStampRef.current;
+        mdToHtml(closeTrailingFence(text), { transient: true })
+          .then((h) => {
+            if (stamp <= appliedStampRef.current) return; // stale out-of-order render
+            appliedStampRef.current = stamp;
+            setHtml(h);
+          })
+          .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
+      };
+      const wait = STREAM_RENDER_INTERVAL_MS - (Date.now() - lastStreamRenderRef.current);
+      if (wait <= 0) {
+        run();
+        return;
+      }
+      const timer = setTimeout(run, wait);
+      return () => { clearTimeout(timer); };
+    }
+
+    // Settled (`pending` → false): final immediate render on the verbatim
+    // text, keeping the original async-cancellation discipline — once the
+    // turn is done there is no starvation risk, and cancellation keeps a
+    // stale effect run from committing.
     let cancelled = false;
+    const stamp = ++renderStampRef.current;
     mdToHtml(text)
-      .then((h) => { if (!cancelled) setHtml(h); })
+      .then((h) => {
+        if (cancelled) return;
+        if (stamp <= appliedStampRef.current) return; // stale out-of-order render
+        appliedStampRef.current = stamp;
+        setHtml(h);
+      })
       .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
     return () => { cancelled = true; };
   }, [text, pending]);
@@ -522,13 +621,20 @@ function MarkdownContent({ text, pending }: { text: string; pending?: boolean })
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="cave-md"
-      // Markdown output is sanitized in mdToHtml before DOM insertion.
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      <div
+        ref={containerRef}
+        className="cave-md"
+        // Markdown output is sanitized in mdToHtml before DOM insertion.
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {/* Streaming cursor as a SIBLING of the markdown container — never
+          injected into the sanitized HTML string. */}
+      {pending ? (
+        <span aria-hidden="true" className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
+      ) : null}
+    </>
   );
 }
 
