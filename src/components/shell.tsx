@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -237,11 +237,60 @@ function ShellInner({
     return typeof pct !== "number" || pct > 0;
   });
 
-  // Track rendered pixel widths of the side panels so child surfaces (e.g. the
-  // Home composer) can visually center on the viewport rather than on the
-  // asymmetric .shell-detail panel.
-  const [navWidthPx, setNavWidthPx] = useState(0);
-  const [agentWidthPx, setAgentWidthPx] = useState(0);
+  // Track the detail panel's REAL left/right viewport gaps (side panels +
+  // separators + edge rails — everything between the detail box and the
+  // viewport edges) so child surfaces (e.g. the Home composer) can visually
+  // center on the viewport rather than on the asymmetric .shell-detail panel.
+  //
+  // Measured from the detail element's own rect instead of the panel
+  // onResize callbacks, for two reasons (both were shipped bugs):
+  //   1. onResize lands AFTER first paint, so the home content painted
+  //      ~nav/2 off-center at startup and then slid into place. The
+  //      useLayoutEffect below runs in the same commit that mounts the
+  //      panels, so the first painted frame already has correct gaps.
+  //   2. Panel widths miss the separators and the agent-trigger rail,
+  //      leaving a permanent ~11px centering bias.
+  const detailElRef = useRef<HTMLElement | null>(null);
+  const [detailGaps, setDetailGaps] = useState({ left: 0, right: 0 });
+
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const el = detailElRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const left = Math.max(0, Math.round(rect.left));
+      const right = Math.max(0, Math.round(window.innerWidth - rect.right));
+      setDetailGaps((prev) =>
+        prev.left === left && prev.right === right ? prev : { left, right },
+      );
+    };
+    measure();
+    // Separator drags and panel collapse/expand resize the detail element;
+    // window resizes that somehow don't (e.g. only chrome around the group
+    // changes) are caught by the window listener.
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [mounted, hasBottom, hasAgent, twoPane, isMobile]);
+
+  // The first painted frames can still shift: react-resizable-panels applies
+  // its persisted layout (and Workspace collapses an empty companion rail)
+  // one frame AFTER first paint, so the gap correction above lands a frame
+  // late. Keep centering transitions OFF during that startup window so the
+  // correction snaps invisibly instead of gliding 120ms across the screen;
+  // flip them on once startup has settled (user-initiated toggles still
+  // animate). 250ms is several frames past the observed 1–2 frame settle.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!mounted) return;
+    const t = window.setTimeout(() => setSettled(true), 250);
+    return () => window.clearTimeout(t);
+  }, [mounted]);
 
   useEffect(() => {
     onNavOpenChange?.(navOpen);
@@ -332,7 +381,6 @@ function ShellInner({
         panelRef={navRef}
         onResize={(size) => {
           setNavOpen((size.asPercentage ?? 0) > 0);
-          setNavWidthPx(size.inPixels ?? 0);
         }}
       >
         <aside className="shell-nav">{nav}</aside>
@@ -356,7 +404,7 @@ function ShellInner({
         </>
       )}
       <Panel id="detail" className="shell-detail-panel">
-        <main className="shell-detail">
+        <main className="shell-detail" ref={detailElRef}>
           <ShellBannerStrip />
           {detail}
         </main>
@@ -375,7 +423,6 @@ function ShellInner({
             panelRef={agentRef}
             onResize={(size) => {
               setAgentOpen((size.asPercentage ?? 0) > 0);
-              setAgentWidthPx(size.inPixels ?? 0);
             }}
           >
             <aside className="shell-agent">{agentOpen ? agent : null}</aside>
@@ -386,19 +433,21 @@ function ShellInner({
   );
 
   const shellFrameStyle: CSSProperties & {
-    "--shell-nav-px": string;
-    "--shell-agent-px": string;
+    "--shell-left-gap-px": string;
+    "--shell-right-gap-px": string;
   } = {
     // Surfaces that need to visually center on the viewport (e.g. Home)
-    // use these to compensate for the asymmetric side-panel widths.
-    "--shell-nav-px": `${Math.round(navWidthPx)}px`,
-    "--shell-agent-px": `${Math.round(agentWidthPx)}px`,
+    // use these to compensate for the asymmetric chrome around the detail
+    // panel (side panels, separators, edge rails).
+    "--shell-left-gap-px": `${detailGaps.left}px`,
+    "--shell-right-gap-px": `${detailGaps.right}px`,
   };
 
   return (
     <div
       className="shell-frame flex h-full w-full flex-col"
       style={shellFrameStyle}
+      data-settled={settled ? "" : undefined}
     >
       {topBar}
       <div className="shell-body flex flex-1 min-h-0">

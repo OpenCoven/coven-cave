@@ -22,13 +22,15 @@
   gap: 16px;
   overflow-y: auto;
   box-sizing: border-box;
-  /* Visually center on the viewport, compensating for the side-panel widths
-   * exposed by the Shell as --shell-nav-px / --shell-agent-px. The asymmetry
-   * (nav present, agent collapsed in home mode) would otherwise push the
-   * composer off to the right.
+  /* Visually center on the viewport, compensating for the chrome around the
+   * detail panel. The Shell measures the detail panel's real left/right
+   * viewport gaps (side panels + separators + edge rails) before first paint
+   * and exposes them as --shell-left-gap-px / --shell-right-gap-px. The
+   * asymmetry (nav present, agent collapsed in home mode) would otherwise
+   * push the composer off to the right.
    *
    * Two coordinated pieces:
-   *   1. --hc-asymmetry — abs(nav - agent), used to narrow the composer
+   *   1. --hc-asymmetry — abs(left - right), used to narrow the composer
    *      cards so there is room to translate them all the way to the
    *      viewport's center without overflowing under a side panel.
    *   2. transform: translateX(clamp(...)) — the actual viewport shift,
@@ -36,8 +38,8 @@
    *      so the card never overflows even if the variables get out of sync.
    */
   --hc-asymmetry: max(
-    calc(var(--shell-nav-px, 0px) - var(--shell-agent-px, 0px)),
-    calc(var(--shell-agent-px, 0px) - var(--shell-nav-px, 0px))
+    calc(var(--shell-left-gap-px, 0px) - var(--shell-right-gap-px, 0px)),
+    calc(var(--shell-right-gap-px, 0px) - var(--shell-left-gap-px, 0px))
   );
   --hc-max-shift: max(
     0px,
@@ -45,7 +47,7 @@
     calc(var(--hc-asymmetry) / 2)
   );
   --hc-ideal-shift: calc(
-    (var(--shell-agent-px, 0px) - var(--shell-nav-px, 0px)) / 2
+    (var(--shell-right-gap-px, 0px) - var(--shell-left-gap-px, 0px)) / 2
   );
   transform: translateX(
     clamp(
@@ -54,6 +56,15 @@
       var(--hc-max-shift)
     )
   );
+  /* No transition during startup — the Shell's gap measurement can be
+   * corrected a frame after first paint (panel library applies persisted
+   * layout late), and animating that correction reads as the whole home
+   * surface sliding into place on every launch. The Shell sets
+   * [data-settled] once startup is done; from then on panel toggles animate. */
+  transition: none;
+}
+
+.shell-frame[data-settled] .home-composer-root {
   transition: transform 120ms ease-out;
 }
 
