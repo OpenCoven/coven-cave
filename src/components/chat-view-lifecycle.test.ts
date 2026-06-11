@@ -291,6 +291,16 @@ assert.match(
   /const clearFoundHighlightTimer = useCallback\(\(\) => \{[\s\S]*?window\.clearTimeout\(foundClearTimerRef\.current\);[\s\S]*?foundClearTimerRef\.current = null;/,
   "Find highlight timer cleanup should clear and null the pending timeout",
 );
+assert.match(
+  source,
+  /const foundFrameRef = useRef<number \| null>\(null\);[\s\S]*?window\.cancelAnimationFrame\(foundFrameRef\.current\);[\s\S]*?foundFrameRef\.current = null;/,
+  "Find highlight cleanup should cancel and null a pending requestAnimationFrame",
+);
+assert.match(
+  source,
+  /foundFrameRef\.current = requestAnimationFrame\(\(\) => \{[\s\S]*?setFoundTurnId\(id\);[\s\S]*?foundFrameRef\.current = null;/,
+  "Find jumps should track the highlight requestAnimationFrame until it fires",
+);
 
 assert.match(
   source,

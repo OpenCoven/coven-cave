@@ -1182,9 +1182,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Turn id flashed with the cave-turn-found highlight after a jump.
   const [foundTurnId, setFoundTurnId] = useState<string | null>(null);
   const foundClearTimerRef = useRef<number | null>(null);
+  const foundFrameRef = useRef<number | null>(null);
   const lastJumpedQueryRef = useRef("");
 
   const clearFoundHighlightTimer = useCallback(() => {
+    if (foundFrameRef.current !== null) {
+      window.cancelAnimationFrame(foundFrameRef.current);
+      foundFrameRef.current = null;
+    }
     if (foundClearTimerRef.current !== null) {
       window.clearTimeout(foundClearTimerRef.current);
       foundClearTimerRef.current = null;
@@ -1237,7 +1242,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // turn: clear, then re-set on the next frame so the class re-applies.
       clearFoundHighlightTimer();
       setFoundTurnId(null);
-      requestAnimationFrame(() => setFoundTurnId(id));
+      foundFrameRef.current = requestAnimationFrame(() => {
+        setFoundTurnId(id);
+        foundFrameRef.current = null;
+      });
       foundClearTimerRef.current = window.setTimeout(() => {
         setFoundTurnId(null);
         foundClearTimerRef.current = null;

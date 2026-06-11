@@ -215,6 +215,11 @@ assert.equal(
   "+++ b/empty.ts",
   "Empty Write content renders only the file header, not a phantom + row",
 );
+assert.equal(
+  toolInputAsDiff("Write", JSON.stringify({ file_path: "blank.ts", content: "\n" })),
+  ["+++ b/blank.ts", "+"].join("\n"),
+  "Write content containing one blank line renders a meaningful blank + row",
+);
 
 // MultiEdit → one @@-labelled hunk per edit, concatenated.
 const multi = toolInputAsDiff(
