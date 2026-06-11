@@ -2460,6 +2460,22 @@ function TurnRow({
                 {lifecycleLabel(turnStatus)}
               </span>
             )}
+            {/* CHAT-D12-03: a failed turn must offer retry WITHOUT hover — the
+                bubble action row is hover-revealed (and absent entirely when
+                the turn died with no text), and the lastFailedSend banner only
+                covers transport errors. Same gated callback as Regenerate. */}
+            {turn.error && onRegenerate ? (
+              <button
+                type="button"
+                aria-label="Retry failed turn"
+                title="Retry"
+                onClick={onRegenerate}
+                className="cave-turn-retry"
+              >
+                <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+                Retry
+              </button>
+            ) : null}
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
           </div>
 

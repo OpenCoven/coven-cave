@@ -207,4 +207,45 @@ assert.match(
   "Regenerate renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
 );
 
+// ── CHAT-D12-03: visible retry at failed turns on desktop ──
+
+// regenerateFor's gate is busy/role/pending only — a failed turn (pending:
+// false, error: true) must keep passing it, or the pill below never renders.
+const regenerateForBody =
+  source.match(
+    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]\);/,
+  )?.[0] ?? "";
+assert.ok(regenerateForBody, "regenerateFor body should be extractable (CHAT-D12-03)");
+assert.doesNotMatch(
+  regenerateForBody,
+  /turn\.error/,
+  "regenerateFor must serve failed turns — its gate must not exclude turn.error (CHAT-D12-03)",
+);
+
+assert.match(
+  source,
+  /\{turn\.error && onRegenerate \? \([\s\S]{0,400}?aria-label="Retry failed turn"[\s\S]{0,300}?onClick=\{onRegenerate\}/,
+  "Failed assistant turns render an explicit Retry button wired to the regenerate callback (CHAT-D12-03)",
+);
+
+assert.match(
+  source,
+  /cave-turn-status--\$\{turnStatus\}[\s\S]{0,900}?cave-turn-retry/,
+  "The Retry affordance lives in the turn meta row beside the status chip — discoverable without hover (CHAT-D12-03)",
+);
+
+// The transport-failure path is untouched: failed dones still arm the
+// lastFailedSend banner state alongside the per-turn affordance.
+assert.match(
+  source,
+  /case "done":[\s\S]*?if \(ev\.isError\) setLastFailedSend\(request\);/,
+  "Failed dones must still arm lastFailedSend for the transport retry path (CHAT-D12-03)",
+);
+
+assert.match(
+  styles,
+  /\.cave-turn-retry\s*\{[\s\S]*?display: inline-flex/,
+  "Retry pill has always-visible styling — no hover-reveal gating (CHAT-D12-03)",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");

@@ -720,6 +720,29 @@
   color: var(--color-danger);
 }
 
+/* CHAT-D12-03: always-visible retry pill beside a failed turn's status chip.
+   Deliberately NOT hover-revealed — a stuck user must see it immediately. */
+.cave-turn-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in oklch, var(--color-danger) 35%, transparent);
+  background: transparent;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-danger);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.cave-turn-retry:hover {
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
+}
+
 .cave-reasoning-block,
 .cave-progress-group,
 .cave-tool-group {
