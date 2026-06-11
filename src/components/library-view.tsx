@@ -133,6 +133,77 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const selectedBmId =   selectedItem?.kind === "bookmark" ? selectedItem.item.id : null;
   const selectedReadId = selectedItem?.kind === "reading"  ? selectedItem.item.id : null;
   const selectedGhId =   selectedItem?.kind === "github"   ? selectedItem.item.id : null;
+  const showBrowseCanvas = selectedItem === null && activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects";
+
+  function renderLibraryListContent() {
+    if (activeSection === "all") {
+      return (
+        <LibraryTimeline
+          familiars={familiars}
+          selectedEntryId={timelineSelectedId}
+          onSelect={(entry: TimelineEntry) => {
+            setTimelineSelectedId(entry.item.id);
+            if (entry.list === "bookmarks") {
+              setSelectedItem({ kind: "bookmark", item: entry.item as any });
+            } else if (entry.list === "reading") {
+              setSelectedItem({ kind: "reading", item: entry.item as any });
+            } else {
+              setSelectedItem({ kind: "github", item: entry.item as any });
+            }
+          }}
+        />
+      );
+    }
+    if (activeSection === "docs") {
+      return (
+        <LibraryDocList
+          docs={docs}
+          selectedId={selectedDocId}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onSelect={handleSelectDoc}
+          loading={loading}
+          error={docsError}
+          onRetry={() => void loadDocs(activeCollection)}
+        />
+      );
+    }
+    if (activeSection === "bookmarks") {
+      return (
+        <LibraryBookmarksList
+          selectedId={selectedBmId}
+          onSelect={(item: LibraryBookmark) => {
+            setSelectedItem({ kind: "bookmark", item });
+          }}
+          onDelete={(id) => { if (selectedBmId === id) setSelectedItem(null); }}
+          onAddToBoard={(bookmark) => setBoardDraft(bookmark)}
+        />
+      );
+    }
+    if (activeSection === "reading") {
+      return (
+        <LibraryReadingList
+          selectedId={selectedReadId}
+          onSelect={(item: LibraryReadingItem) => {
+            setSelectedItem({ kind: "reading", item });
+          }}
+          onDelete={(id) => { if (selectedReadId === id) setSelectedItem(null); }}
+        />
+      );
+    }
+    if (activeSection === "github") {
+      return (
+        <LibraryGitHubList
+          selectedId={selectedGhId}
+          onSelect={(item: LibraryGitHubItem) => {
+            setSelectedItem({ kind: "github", item });
+          }}
+          onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
+        />
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="library-shell">
@@ -164,12 +235,18 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
             onNewChat={onNewProjectChat ?? (() => undefined)}
           />
         </div>
+      ) : showBrowseCanvas ? (
+        <div className="library-browse-canvas">
+          <div className="library-browse-content">
+            {renderLibraryListContent()}
+          </div>
+        </div>
       ) : (
         <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} docNav={docNav} />
       )}
 
       {/* Collapsible list panel — hidden when graph, skills, or projects are active (these sections own the full canvas) */}
-      {activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" && <div
+      {activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas && <div
         className={[
           "library-list-panel",
           "transition-[width] duration-200 ease-out",
@@ -203,62 +280,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           "library-list-content",
           listExpanded ? "library-list-content--visible" : "library-list-content--hidden",
         ].join(" ")}>
-          {activeSection === "all" && (
-            <LibraryTimeline
-              familiars={familiars}
-              selectedEntryId={timelineSelectedId}
-              onSelect={(entry: TimelineEntry) => {
-                setTimelineSelectedId(entry.item.id);
-                if (entry.list === "bookmarks") {
-                  setSelectedItem({ kind: "bookmark", item: entry.item as any });
-                } else if (entry.list === "reading") {
-                  setSelectedItem({ kind: "reading", item: entry.item as any });
-                } else {
-                  setSelectedItem({ kind: "github", item: entry.item as any });
-                }
-              }}
-            />
-          )}
-          {activeSection === "docs" && (
-            <LibraryDocList
-              docs={docs}
-              selectedId={selectedDocId}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              onSelect={handleSelectDoc}
-              loading={loading}
-              error={docsError}
-              onRetry={() => void loadDocs(activeCollection)}
-            />
-          )}
-          {activeSection === "bookmarks" && (
-            <LibraryBookmarksList
-              selectedId={selectedBmId}
-              onSelect={(item: LibraryBookmark) => {
-                setSelectedItem({ kind: "bookmark", item });
-              }}
-              onDelete={(id) => { if (selectedBmId === id) setSelectedItem(null); }}
-              onAddToBoard={(bookmark) => setBoardDraft(bookmark)}
-            />
-          )}
-          {activeSection === "reading" && (
-            <LibraryReadingList
-              selectedId={selectedReadId}
-              onSelect={(item: LibraryReadingItem) => {
-                setSelectedItem({ kind: "reading", item });
-              }}
-              onDelete={(id) => { if (selectedReadId === id) setSelectedItem(null); }}
-            />
-          )}
-          {activeSection === "github" && (
-            <LibraryGitHubList
-              selectedId={selectedGhId}
-              onSelect={(item: LibraryGitHubItem) => {
-                setSelectedItem({ kind: "github", item });
-              }}
-              onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
-            />
-          )}
+          {renderLibraryListContent()}
         </div>
       </div>
       }

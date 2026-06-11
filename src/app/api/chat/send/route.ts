@@ -702,10 +702,12 @@ export async function POST(req: Request) {
   // "thread/resume failed: no rollout found ... (code -32600)" when the
   // rollout DB no longer has the thread. Claude Code emits
   // "Session ID <uuid> is already in use" when --resume hits a session
-  // that is locked by another live process. In both cases we retry once
-  // without the resume flag so the chat starts fresh instead of erroring.
+  // that is locked by another live process. Coven itself emits
+  // "session <uuid> not found in local store" when the requested --continue
+  // id exists only in Cave's local transcript store. In these cases we retry
+  // once without the resume flag so the chat starts fresh instead of erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|session\s+\S+\s+not found in local store/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -991,6 +993,8 @@ export async function POST(req: Request) {
         result = {};
         toolStartTimes = new Map();
         toolSeq = 0;
+        stderrTail.length = 0;
+        stdoutErrTail.length = 0;
         resumeFailed = false;
         await runAttempt(buildArgs(null));
         pushProgress("resume-retry", "Fresh chat started", "done");

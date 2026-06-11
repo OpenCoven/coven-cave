@@ -109,6 +109,18 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /session\\s\+\\S\+\\s\+not found in local store/,
+  "Transparent resume fallback should also handle Coven local-store misses from stale session ids",
+);
+
+assert.match(
+  chatRoute,
+  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null\)\)/,
+  "Fresh-chat retry should clear stale diagnostic tails before the retry attempt",
+);
+
+assert.match(
+  chatRoute,
   /pushProgress\("save-transcript", "Saving transcript", "running"[\s\S]*await saveConversation\(conv\)[\s\S]*pushProgress\("save-transcript", "Transcript saved", "done"/,
   "Conversation persistence should be visible before the final done event",
 );

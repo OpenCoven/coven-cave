@@ -984,6 +984,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const initialPromptSentRef = useRef(false);
   const keys = useKeySymbols();
@@ -1019,6 +1020,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setSlashIdx(0);
     setSlashDismissed(false);
   }, [input]);
+
+  useEffect(() => {
+    if (slashSuggestions.length === 0) return;
+    activeSlashOptionRef.current?.scrollIntoView({ block: "nearest" });
+  }, [slashIdx, slashSuggestions.length]);
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -2116,6 +2122,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   return (
                     <li key={cmd.name}>
                       <button
+                        type="button"
+                        ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => {
                           setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));

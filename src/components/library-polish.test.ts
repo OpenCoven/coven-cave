@@ -98,3 +98,25 @@ assert.match(
   /activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" &&/,
   "List panel is hidden while Projects is active",
 );
+
+// ── Browse-first empty canvas ──
+assert.match(
+  view,
+  /const showBrowseCanvas = selectedItem === null && activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects"/,
+  "When no library item is selected, the dominant center canvas should become the browse list instead of an empty placeholder",
+);
+assert.match(
+  view,
+  /showBrowseCanvas \? \([\s\S]{0,160}<div className="library-browse-canvas">[\s\S]{0,160}renderLibraryListContent\(\)/,
+  "Browse canvas should render the active list content in the center pane",
+);
+assert.match(
+  view,
+  /activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas &&/,
+  "Right list panel should be hidden while the center browse canvas is active",
+);
+assert.match(
+  libraryCss,
+  /\.library-browse-canvas\s*\{[\s\S]*?flex:\s*1;[\s\S]*?overflow:\s*hidden;/,
+  "Center browse canvas should own the available library width without overflowing",
+);

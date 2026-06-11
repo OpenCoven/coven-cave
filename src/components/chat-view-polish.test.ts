@@ -142,6 +142,22 @@ assert.match(
   "Composer placeholder should include ↵ to send hint in steady state",
 );
 
+assert.match(
+  source,
+  /const activeSlashOptionRef = useRef<HTMLButtonElement \| null>\(null\)/,
+  "Slash menu should keep a ref to the active option so keyboard navigation can keep it visible",
+);
+assert.match(
+  source,
+  /activeSlashOptionRef\.current\?\.scrollIntoView\(\{ block: "nearest" \}\)/,
+  "Arrow-key slash navigation should scroll the active option into the visible menu viewport",
+);
+assert.match(
+  source,
+  /ref=\{active \? activeSlashOptionRef : null\}/,
+  "Only the active slash command row should receive the scroll target ref",
+);
+
 const splitFn = source.match(/function splitReasoning\([\s\S]*?\n}\n/)?.[0] ?? "";
 assert.match(
   splitFn,
