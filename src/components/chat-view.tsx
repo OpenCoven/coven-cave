@@ -961,7 +961,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
+  // pinned to the newest content". It releases on user INTENT (wheel up /
+  // touch drag toward earlier content), never on mere scroll position — the
+  // old position-threshold release meant the stream's own smooth-scroll
+  // animation kept re-arming the pin and yanked readers back per SSE chunk.
+  // The ref mirrors the state so passive DOM listeners and rAF callbacks
+  // read the live value without re-subscribing.
+  const [following, setFollowing] = useState(true);
+  const followingRef = useRef(true);
+  const updateFollowing = useCallback((next: boolean) => {
+    followingRef.current = next;
+    setFollowing(next);
+  }, []);
+  const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -1133,20 +1146,84 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [sessionId, historyRetryKey]);
 
+  // Pin: while following, every turns mutation snaps the scroller to the
+  // bottom INSTANTLY (scrollTop assignment inside a rAF, coalescing multiple
+  // SSE chunks per frame). Never a queued smooth animation per chunk — that
+  // is the CHAT-D10-01 bug, and instant pinning also satisfies
+  // prefers-reduced-motion during streaming (CHAT-D13-03).
   useEffect(() => {
-    if (atBottom) tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, atBottom]);
+    if (!followingRef.current) return;
+    if (pinFrameRef.current !== null) return;
+    pinFrameRef.current = requestAnimationFrame(() => {
+      pinFrameRef.current = null;
+      const el = scrollRef.current;
+      if (!el || !followingRef.current) return;
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [turns]);
 
+  useEffect(() => () => {
+    if (pinFrameRef.current !== null) cancelAnimationFrame(pinFrameRef.current);
+  }, []);
+
+  // A freshly opened chat (or session switch) follows by default; the pin
+  // effect above then handles the initial scroll-to-bottom once history lands.
+  useEffect(() => {
+    updateFollowing(true);
+  }, [sessionId, updateFollowing]);
+
+  // Release on intent: only USER input events detach following. Programmatic
+  // pins (scrollTop assignment, FAB scrollTo) emit scroll events but never
+  // wheel/touch/key events, so they are structurally excluded from intent
+  // detection here.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let lastTouchY: number | null = null;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0 && followingRef.current) updateFollowing(false);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      lastTouchY = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY;
+      if (y === undefined) return;
+      // Finger moving down the screen drags content down = scrolling up.
+      if (lastTouchY !== null && y > lastTouchY && followingRef.current) updateFollowing(false);
+      lastTouchY = y;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === "PageUp" || e.key === "Home" || e.key === "ArrowUp") && followingRef.current) {
+        updateFollowing(false);
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("keydown", onKeyDown);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("keydown", onKeyDown);
+    };
+  }, [updateFollowing]);
+
+  // Re-pin: only when the user actually returns to the true bottom (small
+  // epsilon). While following this is a no-op, so the pin's own scroll events
+  // can never count as user intent.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
-      const threshold = 80;
-      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < threshold);
+      if (followingRef.current) return;
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [updateFollowing]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -1932,12 +2009,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
 
         {/* Scroll-to-bottom FAB */}
-        {!atBottom && (
+        {!following && (
           <button
             type="button"
             onClick={() => {
-              setAtBottom(true);
-              tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+              updateFollowing(true);
+              const el = scrollRef.current;
+              if (!el) return;
+              // CHAT-D13-03: the global `scroll-behavior: auto !important`
+              // kill switch does NOT override explicit scrollTo options, so
+              // gate the smooth animation on prefers-reduced-motion here.
+              const reduceMotion =
+                typeof window !== "undefined" &&
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
             }}
             aria-label="Scroll to bottom"
             className="sticky bottom-4 float-right z-20 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"

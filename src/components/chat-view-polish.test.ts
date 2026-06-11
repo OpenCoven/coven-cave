@@ -274,6 +274,69 @@ assert.match(
   "Slash menu footer promises run/complete/cancel — keep it in sync with onComposerKey",
 );
 
+// — CHAT-D10-01 + CHAT-D13-03: instant scroll pin, intent-based release —
+const pinEffect = source.match(/\/\/ Pin: while following[\s\S]*?\}, \[turns\]\);/)?.[0] ?? "";
+assert.match(
+  pinEffect,
+  /requestAnimationFrame\(\(\) => \{[\s\S]*el\.scrollTop = el\.scrollHeight/,
+  "Streaming pin must set scrollTop instantly inside a rAF (coalesced per frame)",
+);
+assert.doesNotMatch(
+  pinEffect,
+  /scrollIntoView|behavior:/,
+  "The turns-change pin path must never queue a smooth scrollIntoView per SSE chunk",
+);
+assert.match(
+  pinEffect,
+  /if \(pinFrameRef\.current !== null\) return/,
+  "Pin must coalesce multiple turns updates into one frame, not stack rAF callbacks",
+);
+assert.doesNotMatch(
+  source,
+  /scrollIntoView\(\{ behavior: "smooth"/,
+  "No explicit smooth scrollIntoView anywhere — the reduced-motion CSS kill switch cannot override explicit options",
+);
+assert.match(
+  source,
+  /addEventListener\("wheel", onWheel, \{ passive: true \}\)/,
+  "Release must hook wheel input (passive) for intent detection",
+);
+assert.match(
+  source,
+  /if \(e\.deltaY < 0 && followingRef\.current\) updateFollowing\(false\)/,
+  "Wheel-up (negative deltaY) is the user intent that detaches following",
+);
+assert.match(
+  source,
+  /addEventListener\("touchmove", onTouchMove, \{ passive: true \}\)/,
+  "Release must hook touchmove (passive) for touch intent detection",
+);
+assert.match(
+  source,
+  /y > lastTouchY && followingRef\.current\) updateFollowing\(false\)/,
+  "Touch drag toward earlier content (finger moving down) detaches following",
+);
+assert.match(
+  source,
+  /if \(followingRef\.current\) return;[\s\S]{0,200}gap <= 4\) updateFollowing\(true\)/,
+  "Re-pin only on user scrolls reaching the true bottom (small epsilon); pin's own scroll events are no-ops while following",
+);
+assert.match(
+  source,
+  /updateFollowing\(true\);[\s\S]{0,600}prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduceMotion \? "auto" : "smooth"[\s\S]{0,400}aria-label="Scroll to bottom"/,
+  "Scroll FAB must re-engage following and gate its smooth scroll on prefers-reduced-motion",
+);
+assert.match(
+  source,
+  /\{!following && \(/,
+  "Scroll FAB visibility is driven by the following state",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*updateFollowing\(true\);\s*\}, \[sessionId, updateFollowing\]\)/,
+  "A freshly opened chat / session switch must re-engage following by default",
+);
+
 const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const slashHelper = workspaceSource.match(/const handleSlashIntent = [\s\S]*?\n  \};/)?.[0] ?? "";
 assert.match(
