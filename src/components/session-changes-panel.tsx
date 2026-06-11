@@ -151,7 +151,7 @@ function FileRow({
             aria-label={untracked ? `Delete untracked file ${file.path}` : `Revert ${file.path}`}
             className="focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] disabled:opacity-40"
           >
-            <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
+            <Icon name={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"} width={11} aria-hidden />
           </button>
         )}
       </div>
@@ -334,7 +334,9 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
           </button>
         </div>
         <p className="mt-0.5 truncate text-[10px] text-[var(--text-muted)]" title={repoRoot ?? projectRoot}>
-          All uncommitted changes in {repoRoot ?? projectRoot} — not only this session&rsquo;s edits.
+          {notARepo
+            ? <>No git working tree at {repoRoot ?? projectRoot}.</>
+            : <>All uncommitted changes in {repoRoot ?? projectRoot} — not only this session&rsquo;s edits.</>}
         </p>
       </div>
 
