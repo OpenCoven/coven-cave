@@ -7,6 +7,11 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.70] - 2026-06-11
+
+### Fixed
+- **Apple Silicon DMG release packaging** - retries transient `hdiutil create` `Resource busy` failures and detaches stale CovenCave DMG mounts before rebuilding the container, restoring the missing Apple Silicon macOS artifact after `v0.0.69` partially uploaded only the Intel DMG.
+
 ## [0.0.69] - 2026-06-11
 
 ### Fixed

@@ -104,6 +104,57 @@ run_notary_submit() {
   fi
   rm -f "$output"
 }
+cleanup_dmg_artifacts() {
+  local mount
+
+  rm -f "$DMG_PATH"
+
+  while IFS= read -r mount; do
+    [ -n "$mount" ] || continue
+    echo "    detaching stale DMG mount: $mount"
+    hdiutil detach "$mount" -force >/dev/null 2>&1 || true
+  done < <(
+    hdiutil info 2>/dev/null |
+      awk -v app="$APP_NAME" '$1 == "/dev/disk" { next } $0 ~ "^/Volumes/" app { print $0 }'
+  )
+}
+create_dmg_with_retry() {
+  local attempt
+  local max_attempts=4
+  local output
+  local status
+
+  for attempt in $(seq 1 "$max_attempts"); do
+    output=$(mktemp)
+    cleanup_dmg_artifacts
+    set +e
+    hdiutil create \
+      -volname "${APP_NAME}" \
+      -srcfolder "$DMG_STAGE" \
+      -ov \
+      -format UDZO \
+      "$DMG_PATH" >"$output" 2>&1
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+      rm -f "$output"
+      return 0
+    fi
+
+    echo "    hdiutil create failed on attempt ${attempt}/${max_attempts}:"
+    cat "$output"
+    if ! grep -qi "Resource busy" "$output" || [ "$attempt" -eq "$max_attempts" ]; then
+      rm -f "$output"
+      return "$status"
+    fi
+
+    rm -f "$output"
+    sleep "$((attempt * 3))"
+  done
+
+  return 1
+}
 
 require_tool pnpm
 require_tool codesign
@@ -211,7 +262,7 @@ DMG_STAGE=$(mktemp -d -t covencave-dmg)
 trap 'rm -rf "$DMG_STAGE"' EXIT
 cp -R "$APP_PATH" "$DMG_STAGE/"
 ln -s /Applications "$DMG_STAGE/Applications"
-hdiutil create -volname "${APP_NAME}" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
+create_dmg_with_retry
 
 echo "==> Signing DMG container"
 codesign --force --timestamp \
