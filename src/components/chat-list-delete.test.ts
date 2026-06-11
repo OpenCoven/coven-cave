@@ -123,6 +123,11 @@ assert.match(
 );
 assert.match(
   source,
+  /disabled=\{archivingId !== null\}/,
+  "All archive controls should stay disabled while any archive request is in flight",
+);
+assert.match(
+  source,
   /if \(!showArchived\) \{\s*setArchivedRows\(\[\]\);/,
   "Archived rows should be dropped whenever the Show archived toggle is off",
 );
