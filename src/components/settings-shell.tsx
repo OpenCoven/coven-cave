@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
-import { PluginsView } from "@/components/plugins-view";
 import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
@@ -35,14 +34,13 @@ type DaemonStatus = {
   daemon?: { pid: number; startedAt: string; socket: string };
 };
 
-type Section = "general" | "daemon" | "familiars" | "addons" | "appearance" | "about" | "plugins";
+type Section = "general" | "daemon" | "familiars" | "addons" | "appearance" | "about";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
   { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
   { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
   { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
-  { id: "plugins",    label: "Plugins",    icon: "ph:sparkle" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
   { id: "about",      label: "About",      icon: "ph:info" },
 ];
@@ -53,7 +51,7 @@ export function SettingsShell() {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  // Support hash-based deep-linking, e.g. /settings#plugins
+  // Support hash-based deep-linking, e.g. /settings#familiars
   const initialSection = (): Section => {
     if (typeof window !== "undefined") {
       const hash = window.location.hash.replace("#", "") as Section;
@@ -65,7 +63,7 @@ export function SettingsShell() {
   const [section, setSection] = useState<Section>(initialSection);
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
-  // render that section. Hash-deep-link (`/settings#plugins`) skips the
+  // render that section. Hash-deep-link (`/settings#familiars`) skips the
   // picker so the user lands directly on the target.
   const [pickerView, setPickerView] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -191,7 +189,6 @@ export function SettingsShell() {
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
           {section === "addons"   && <AddonsSection />}
-          {section === "plugins"  && <PluginsSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "about"    && <AboutSection />}
         </main>
@@ -482,32 +479,6 @@ function AddonsSection() {
         )}
       </SettingsGroup>
     </SettingsPage>
-  );
-}
-
-// ─── Section: Plugins ─────────────────────────────────────────────────────────
-
-function PluginsSection() {
-  // Settings doesn't yet have familiar context — familiars are stubbed as []
-  // until a follow-up spec threads real familiars through SettingsShell.
-  // onOpenChat navigates back to the workspace home where the user can start a
-  // chat; the workspace's full startAgentChat binding is not available here.
-  return (
-    <PluginsView
-      familiars={[]}
-      tabs={["plugins", "skills"]}
-      initialTab="plugins"
-      onOpenChat={() => {
-        // Navigate to workspace home; user can select a familiar and start a chat
-        window.location.href = "/";
-      }}
-      onCreateSkill={() => {
-        window.location.href = "/";
-      }}
-      onCreatePlugin={() => {
-        window.location.href = "/";
-      }}
-    />
   );
 }
 

@@ -21,9 +21,9 @@ assert.match(
 );
 
 assert.match(
-  workspace,
-  /roles: "Roles"/,
-  "Workspace surface labels should include Roles",
+  sidebar,
+  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" \}/,
+  "Sidebar navigation should expose Roles as a tools surface",
 );
 
 assert.match(
