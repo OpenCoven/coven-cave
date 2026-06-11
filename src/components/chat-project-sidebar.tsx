@@ -23,6 +23,7 @@ function statusDotClass(status: string): string {
   if (status === "running") return "animate-pulse bg-[var(--color-success)]";
   if (status === "failed") return "bg-[var(--color-danger)]";
   if (status === "queued") return "bg-[var(--color-warning)]";
+  if (status === "paused") return "bg-[var(--accent-presence-soft)]";
   return "bg-[var(--text-muted)]";
 }
 
@@ -149,7 +150,7 @@ export function ChatProjectSidebar({
                   onClick={() => onNewChat(group.projectRoot)}
                   title={`New chat in ${label}`}
                   aria-label={`New chat in ${label}`}
-                  className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] group-hover:opacity-100"
+                  className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
                 >
                   <Icon name="ph:plus" width={11} aria-hidden />
                 </button>
