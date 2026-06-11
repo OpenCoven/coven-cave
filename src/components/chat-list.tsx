@@ -476,30 +476,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         </div>
         )}
 
-        {/* Stats row */}
-        <div className={`${familiar ? "pt-4" : "mt-3"} grid grid-cols-3 gap-1.5 px-4`}>
-          <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
-            <div className="flex items-center gap-1.5">
-              <Icon name="ph:chats" width={11} className="text-[var(--text-muted)]" />
-              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Chats</p>
-            </div>
-            <p className="mt-1 font-mono text-[15px] font-semibold text-[var(--text-primary)]">{mine.length}</p>
-          </div>
-          <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
-            <div className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${runningCount > 0 ? "animate-pulse bg-[var(--color-success)]" : "bg-[var(--text-muted)]"}`} />
-              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Live</p>
-            </div>
-            <p className={`mt-1 font-mono text-[15px] font-semibold ${runningCount > 0 ? "text-[var(--color-success)]" : "text-[var(--text-primary)]"}`}>{runningCount}</p>
-          </div>
-          <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
-            <div className="flex items-center gap-1.5">
-              <Icon name="ph:folder" width={11} className="text-[var(--text-muted)]" />
-              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Projects</p>
-            </div>
-            <p className="mt-1 font-mono text-[15px] font-semibold text-[var(--text-primary)]">{projectCount}</p>
-          </div>
-        </div>
+        {/* Stats removed for sidepanel optimization */}
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
