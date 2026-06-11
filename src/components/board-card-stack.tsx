@@ -247,13 +247,14 @@ function BoardCardStackRow({
               className="board-card-stack__row-action board-card-stack__row-action--chat"
               role="link"
               tabIndex={-1}
+              title="Start chat"
               onClick={(e) => {
                 e.stopPropagation();
                 if (!chatLinking) void onOpenTaskChat?.(card.id);
               }}
             >
               <Icon name="ph:chat-circle-dots" width={11} />
-              {chatLinking ? "Starting…" : "Chat"}
+              {chatLinking ? "Starting…" : "Start"}
             </span>
           )}
         </div>

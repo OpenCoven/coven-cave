@@ -452,11 +452,12 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
           <button
             type="button"
             disabled={chatLinking}
+            title="Start chat"
             onClick={(e) => { e.stopPropagation(); void onOpenTaskChat?.(card.id); }}
             className="board-kanban-card-action board-kanban-card-action--chat"
           >
             <Icon name="ph:chat-circle-dots" width={10} />
-            {chatLinking ? "Starting…" : "Chat"}
+            {chatLinking ? "Starting…" : "Start"}
           </button>
         )}
       </div>
