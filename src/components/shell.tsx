@@ -434,24 +434,16 @@ function ShellInner({
     </Group>
   );
 
-  const homeCenteringActive = navOpen && agentOpen;
-  const homeCenterShift = homeCenteringActive
-    ? Math.round((detailGaps.right - detailGaps.left) / 2)
-    : 0;
-
   const shellFrameStyle: CSSProperties & {
     "--shell-left-gap-px": string;
     "--shell-right-gap-px": string;
-    "--shell-home-center-shift-px": string;
   } = {
-    // Surfaces that need to visually center on the viewport (e.g. Home)
-    // use these to compensate for the asymmetric chrome around the detail
-    // panel (side panels, separators, edge rails). The shift is an IDEAL the
-    // CSS hard-bounds to the detail panel's own slack — it never pushes content
-    // into an open side panel (notably the native browser webview on the right).
+    // The detail panel's real left/right viewport gaps (side panels +
+    // separators + edge rails). Surfaces can read these to reason about the
+    // chrome around the detail panel; Home now simply fills the detail panel
+    // rather than translating toward the viewport center.
     "--shell-left-gap-px": `${detailGaps.left}px`,
     "--shell-right-gap-px": `${detailGaps.right}px`,
-    "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
 
   // Persistent nav toggle — the left-edge mirror of the agent trigger rail, so

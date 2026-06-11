@@ -22,37 +22,11 @@
   gap: 16px;
   overflow-y: auto;
   box-sizing: border-box;
-  /* Nudge toward the viewport center, compensating for the chrome around the
-   * detail panel. The Shell measures the detail panel's real left/right
-   * viewport gaps (side panels + separators + edge rails) before first paint
-   * and exposes the ideal correction as --shell-home-center-shift-px.
-   *
-   * The shift is HARD-bounded to the slack around the 1200px content cap so the
-   * composer never escapes the detail panel into an open side panel. This
-   * matters most for the right-hand agent panel: when it holds the native
-   * browser webview (which paints on top of web content), any overflow that
-   * crosses into its region gets covered and the composer reads as clipped.
-   * With a wide side panel the slack is zero, so the composer simply centers in
-   * the detail panel at full available width instead of sliding under the panel. */
-  --hc-max-shift: max(0px, calc((100% - 1200px) / 2));
-  --hc-ideal-shift: var(--shell-home-center-shift-px, 0px);
-  transform: translateX(
-    clamp(
-      calc(-1 * var(--hc-max-shift)),
-      var(--hc-ideal-shift),
-      var(--hc-max-shift)
-    )
-  );
-  /* No transition during startup — the Shell's gap measurement can be
-   * corrected a frame after first paint (panel library applies persisted
-   * layout late), and animating that correction reads as the whole home
-   * surface sliding into place on every launch. The Shell sets
-   * [data-settled] once startup is done; from then on panel toggles animate. */
-  transition: none;
-}
-
-.shell-frame[data-settled] .home-composer-root {
-  transition: transform 120ms ease-out;
+  /* The composer fills the width of the area it resides in (the detail panel),
+   * centered within it. No viewport-centering translate: shifting toward the
+   * viewport center always pushed content toward the wider side panel, and when
+   * that panel holds the native browser webview (which paints on top of web
+   * content) the overflow got covered and the composer read as clipped. */
 }
 
 @media (max-width: 520px) {
@@ -90,13 +64,11 @@
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
-  max-width: min(1200px, 100%);
 }
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
 .home-composer-card {
   width: 100%;
-  /* The wrap already applies the 1200px cap; the card just fills it. */
   max-width: 100%;
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
@@ -301,7 +273,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-width: min(1200px, 100%);
   width: 100%;
   justify-content: center;
 }
