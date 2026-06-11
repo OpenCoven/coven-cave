@@ -31,7 +31,7 @@ assert.match(
 
 assert.match(
   surface,
-  /newChat\(\s*pendingChatAction\.projectRoot \?\? undefined,\s*pendingChatAction\.initialPrompt \?\? undefined,?\s*\)/s,
+  /newChat\(\s*pendingChatAction\.projectRoot \?\? undefined,\s*pendingChatAction\.initialPrompt \?\? undefined,\s*pendingChatAction\.familiarId,?\s*\)/s,
   "ChatSurface should forward the pending initialPrompt into ChatRouter.newChat",
 );
 

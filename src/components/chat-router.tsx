@@ -8,12 +8,14 @@ import type { Familiar, SessionRow } from "@/lib/types";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string };
+  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; familiarId?: string | null };
 
 type Props = {
   familiar: Familiar | null;
+  familiars?: Familiar[];
   sessions: SessionRow[];
   daemonRunning?: boolean;
+  onSetActiveFamiliar?: (id: string) => void;
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
   onSlashFromChat?: (command: string, args: string) => boolean;
@@ -25,7 +27,7 @@ type Props = {
 
 export type ChatRouterHandle = {
   goToList: () => void;
-  newChat: (projectRoot?: string, initialPrompt?: string) => void;
+  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null) => void;
   openSession: (sessionId: string) => void;
   currentSessionId: () => string | null;
   clearTranscript: () => void;
@@ -41,8 +43,10 @@ type ChatViewHandle = {
 export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
   {
     familiar,
+    familiars = [],
     sessions,
     daemonRunning,
+    onSetActiveFamiliar,
     onSessionStarted,
     onSessionsChanged,
     onSlashFromChat,
@@ -54,22 +58,47 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
   const viewHandle = useRef<ChatViewHandle | null>(null);
-  const previousFamiliarIdRef = useRef<string | null>(null);
+  const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
   const isMobile = useIsMobile();
   const activeSession = view.kind === "chat" && view.sessionId
     ? sessions.find((s) => s.id === view.sessionId) ?? null
     : null;
+  const fallbackFamiliar = familiars[0] ?? null;
+  const selectedViewFamiliar = view.kind === "chat" && view.familiarId
+    ? familiars.find((entry) => entry.id === view.familiarId) ?? null
+    : null;
+  const sessionFamiliar = activeSession?.familiarId
+    ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
+    : null;
+  const chatFamiliar = familiar ?? selectedViewFamiliar ?? sessionFamiliar ?? null;
+
+  function selectFamiliarForChat(familiarId?: string | null): Familiar | null {
+    const next = familiarId
+      ? familiars.find((entry) => entry.id === familiarId) ?? null
+      : familiar ?? fallbackFamiliar;
+    if (next) onSetActiveFamiliar?.(next.id);
+    return next;
+  }
 
   useEffect(() => {
-    if (previousFamiliarIdRef.current === null) {
-      previousFamiliarIdRef.current = familiar?.id ?? null;
+    const nextFamiliarId = familiar?.id ?? null;
+    if (previousFamiliarIdRef.current === undefined) {
+      previousFamiliarIdRef.current = nextFamiliarId;
       return;
     }
-    if (previousFamiliarIdRef.current === (familiar?.id ?? null)) return;
-    previousFamiliarIdRef.current = familiar?.id ?? null;
+    if (previousFamiliarIdRef.current === nextFamiliarId) return;
+    previousFamiliarIdRef.current = nextFamiliarId;
     setView((prev) =>
-      prev.kind === "chat"
-        ? { kind: "chat", sessionId: null, projectRoot: prev.projectRoot }
+      nextFamiliarId === null
+        ? { kind: "list" }
+        : prev.kind === "chat"
+          ? {
+              kind: "chat",
+              sessionId: null,
+              projectRoot: prev.projectRoot,
+              initialPrompt: prev.initialPrompt,
+              familiarId: nextFamiliarId,
+            }
         : { kind: "list" },
     );
   }, [familiar?.id]);
@@ -78,17 +107,29 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ref,
     () => ({
       goToList: () => setView({ kind: "list" }),
-      newChat: (projectRoot?: string, initialPrompt?: string) =>
-        setView({ kind: "chat", sessionId: null, projectRoot, initialPrompt }),
-      openSession: (sessionId: string) => setView({ kind: "chat", sessionId }),
+      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null) => {
+        const next = selectFamiliarForChat(familiarId);
+        setView({
+          kind: "chat",
+          sessionId: null,
+          projectRoot,
+          initialPrompt,
+          familiarId: next?.id ?? familiarId ?? null,
+        });
+      },
+      openSession: (sessionId: string) => {
+        const session = sessions.find((entry) => entry.id === sessionId);
+        const next = selectFamiliarForChat(session?.familiarId ?? null);
+        setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
+      },
       currentSessionId: () => (view.kind === "chat" ? view.sessionId : null),
       clearTranscript: () => viewHandle.current?.clearTranscript(),
       runSlash: (command: string) => viewHandle.current?.runSlash(command),
     }),
-    [view],
+    [fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view],
   );
 
-  if (!familiar) {
+  if (familiars.length === 0 && !familiar) {
     // Empty-state copy is mode-aware: on phones the nav/sidebar/agent panels
     // are drawers behind a toggle, so "from the sidebar selector" / "left
     // panel" reads as broken. Point users at the drawer or the setup CTA
@@ -127,18 +168,40 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     return (
       <ChatList
         familiar={familiar}
+        familiars={familiars}
         sessions={sessions}
         daemonRunning={daemonRunning}
-        onOpen={(sessionId) => setView({ kind: "chat", sessionId })}
-        onNewChat={(projectRoot) => setView({ kind: "chat", sessionId: null, projectRoot })}
+        onOpen={(sessionId, familiarId) => {
+          const next = selectFamiliarForChat(familiarId);
+          setView({ kind: "chat", sessionId, familiarId: next?.id ?? familiarId ?? null });
+        }}
+        onNewChat={(projectRoot, familiarId) => {
+          const next = selectFamiliarForChat(familiarId);
+          setView({ kind: "chat", sessionId: null, projectRoot, familiarId: next?.id ?? familiarId ?? null });
+        }}
       />
+    );
+  }
+
+  if (!chatFamiliar) {
+    return (
+      <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
+        <div>
+          <p className="text-[15px] font-medium text-[var(--text-secondary)]">
+            Choose a familiar to start chatting
+          </p>
+          <p className="mt-1 text-[12px]">
+            Pick who should handle the conversation from the sidebar selector.
+          </p>
+        </div>
+      </section>
     );
   }
 
   return (
     <ChatView
       ref={viewHandle}
-      familiar={familiar}
+      familiar={chatFamiliar}
       sessionId={view.sessionId}
       session={activeSession}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
@@ -153,7 +216,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         // currentSessionRef, breaking follow-up messages.
         setView((prev) =>
           prev.kind === "chat" && prev.sessionId === null
-            ? { kind: "chat", sessionId: sid }
+            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
             : prev,
         );
         onSessionStarted?.();

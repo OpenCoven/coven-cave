@@ -174,7 +174,7 @@ export function ChatSurface({
       const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null }>).detail;
       if (d?.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined), 0);
+      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, undefined, d?.familiarId), 0);
     };
     const onOpenSession = (e: Event) => {
       const d = (e as CustomEvent<{ sessionId?: string; familiarId?: string | null }>).detail;
@@ -208,6 +208,7 @@ export function ChatSurface({
         () => routerRef.current?.newChat(
           pendingChatAction.projectRoot ?? undefined,
           pendingChatAction.initialPrompt ?? undefined,
+          pendingChatAction.familiarId,
         ),
         0,
       );
@@ -229,7 +230,7 @@ export function ChatSurface({
   function startConversation(familiarId?: string | null) {
     if (familiarId) onSetActiveFamiliar(familiarId);
     setScope("conversation");
-    window.setTimeout(() => routerRef.current?.newChat(), 0);
+    window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, familiarId), 0);
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -307,8 +308,10 @@ export function ChatSurface({
               <ChatRouter
                 ref={routerRef}
                 familiar={activeFamiliar}
+                familiars={familiars}
                 sessions={sessions}
                 daemonRunning={daemonRunning}
+                onSetActiveFamiliar={onSetActiveFamiliar}
                 onSessionStarted={onSessionStarted}
                 onSessionsChanged={onSessionsChanged}
                 onSlashFromChat={onSlashFromChat}

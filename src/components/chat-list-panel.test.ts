@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   source,
-  /familiar\.role[\s\S]*Agent runtime/,
+  /panelRole[\s\S]*Agent runtime/,
   "ChatList dossier header should keep the familiar role and runtime subtitle together",
 );
 
