@@ -593,13 +593,13 @@ assert.match(
 const mentionSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 assert.match(
   mentionSource,
-  /const mentionRoot = resolveRootedCwd\(cwdDraft, cwdRootDraft, projectRoot\)\.trim\(\);/,
-  "The mention root must use the same ROOT-aware CWD resolver as the send body",
+  /const mentionRoot = activeProjectRoot\.trim\(\);/,
+  "The mention root must use the selected project root",
 );
 assert.match(
   mentionSource,
-  /const effectiveProjectRoot = resolveRootedCwd\(cwdDraft, cwdRootDraft, projectRoot\);/,
-  "The send body must resolve short CWD values against the editable ROOT",
+  /projectRoot: activeProjectRoot/,
+  "The send body must use the selected project root",
 );
 assert.match(
   mentionSource,

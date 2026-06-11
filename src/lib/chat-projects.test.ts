@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  CHAT_PROJECTS,
   chatProjectName,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
@@ -52,7 +53,7 @@ assert.deepEqual(
 const groups = deriveChatProjectGroups(filterVisibleChatSessions(sessions, null));
 
 assert.deepEqual(
-  groups.map((group) => ({
+  groups.filter((group) => group.sessions.length > 0).map((group) => ({
     root: group.projectRoot,
     defaultFamiliarId: group.defaultFamiliarId,
     sessionIds: group.sessions.map((s) => s.id),
@@ -70,5 +71,22 @@ assert.equal(chatProjectName("C:\\repos\\open-meow"), "open-meow");
 assert.equal(chatProjectName("/trailing/slash/"), "slash");
 assert.equal(chatProjectName(null), "No project");
 assert.equal(chatProjectName(""), "No project");
+
+const knownOnlyGroups = deriveChatProjectGroups([]);
+assert.deepEqual(
+  knownOnlyGroups.map((group) => ({
+    id: group.projectId,
+    root: group.projectRoot,
+    label: chatProjectName(group.projectRoot),
+    sessionCount: group.sessions.length,
+  })),
+  CHAT_PROJECTS.map((project) => ({
+    id: project.id,
+    root: project.root,
+    label: project.name,
+    sessionCount: 0,
+  })),
+  "predetermined projects should appear even before they have chat sessions",
+);
 
 console.log("chat-projects.test.ts: ok");

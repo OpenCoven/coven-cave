@@ -41,7 +41,13 @@ import {
   runtimeLabel,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
-import { resolveRootedCwd } from "@/lib/chat-cwd-root";
+import {
+  CHAT_PROJECTS,
+  DEFAULT_CHAT_PROJECT,
+  DEFAULT_CHAT_PROJECT_ID,
+  chatProjectById,
+  projectIdForRoot,
+} from "@/lib/chat-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolInputAsDiff } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
@@ -409,25 +415,16 @@ const STARTER_PROMPTS = [
 function ChatEmptyState({
   familiar,
   onPrompt,
-  root,
-  cwd,
-  defaultCwd,
-  onRootChange,
-  onCwdChange,
+  projectId,
+  onProjectChange,
   fileMentions = false,
 }: {
   familiar: Familiar;
   onPrompt?: (text: string) => void;
-  /** Root directory used to resolve relative CWD entries. */
-  root?: string;
-  /** Draft working directory for the chat. */
-  cwd?: string;
-  /** Pre-wired project root (e.g. "New chat in <project>") shown as the placeholder. */
-  defaultCwd?: string;
-  /** Updates the root used to resolve relative CWD entries. */
-  onRootChange?: (value: string) => void;
-  /** Updates the CWD used for the next send. */
-  onCwdChange?: (value: string) => void;
+  /** Selected predetermined project for the chat runtime root. */
+  projectId?: string;
+  /** Updates the project used for the next send. */
+  onProjectChange?: (value: string) => void;
   /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
   fileMentions?: boolean;
 }) {
@@ -461,30 +458,26 @@ function ChatEmptyState({
         ) : null}
       </p>
 
-      {onCwdChange && onRootChange && (
+      {onProjectChange && (
         <div className="mb-6 flex max-w-[min(42rem,100%)] flex-col gap-1.5">
           <label className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 focus-within:border-[var(--border-strong)]">
-            <span className="w-9 shrink-0 font-mono text-[10px] font-semibold text-[var(--text-muted)]">ROOT</span>
-            <input
-              type="text"
-              value={root ?? ""}
-              onChange={(e) => onRootChange(e.target.value)}
-              placeholder={defaultCwd || "Root directory"}
-              aria-label="Root directory for relative CWD"
-              className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]/70"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 focus-within:border-[var(--border-strong)]">
             <Icon name="ph:folder-open" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-            <span className="w-6 shrink-0 font-mono text-[10px] font-semibold text-[var(--text-muted)]">CWD</span>
-            <input
-              type="text"
-              value={cwd ?? ""}
-              onChange={(e) => onCwdChange(e.target.value)}
-              placeholder="Relative path or absolute override"
-              aria-label="Working directory for this chat"
-              className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]/70"
-            />
+            <span className="w-12 shrink-0 font-mono text-[10px] font-semibold text-[var(--text-muted)]">Project</span>
+            <select
+              value={projectId ?? DEFAULT_CHAT_PROJECT_ID}
+              onChange={(e) => onProjectChange(e.target.value)}
+              aria-label="Project for this chat"
+              className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[var(--text-secondary)] outline-none"
+            >
+              {CHAT_PROJECTS.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <span className="hidden min-w-0 flex-1 truncate text-right font-mono text-[10px] text-[var(--text-muted)] sm:block">
+              {chatProjectById(projectId)?.root ?? DEFAULT_CHAT_PROJECT.root}
+            </span>
           </label>
         </div>
       )}
@@ -514,42 +507,30 @@ function ChatEmptyState({
   );
 }
 
-function InlineCwdField({
-  root,
-  cwd,
-  defaultCwd,
-  onRootChange,
-  onCwdChange,
+function InlineProjectField({
+  projectId,
+  onProjectChange,
 }: {
-  root: string;
-  cwd: string;
-  defaultCwd?: string;
-  onRootChange: (value: string) => void;
-  onCwdChange: (value: string) => void;
+  projectId: string;
+  onProjectChange: (value: string) => void;
 }) {
+  const project = chatProjectById(projectId) ?? DEFAULT_CHAT_PROJECT;
   return (
-    <div className="cave-chat-cwd-pair" title={resolveRootedCwd(cwd, root, defaultCwd) || "Working directory"}>
-      <label className="cave-chat-cwd-inline focus-within:border-[var(--border-strong)]">
-        <span className="font-mono text-[9px] font-semibold text-[var(--text-muted)]">ROOT</span>
-        <input
-          type="text"
-          value={root}
-          onChange={(e) => onRootChange(e.target.value)}
-          placeholder={defaultCwd || "ROOT"}
-          aria-label="Root directory for relative CWD"
-          className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]/70"
-        />
-      </label>
+    <div className="cave-chat-cwd-pair" title={project.root}>
       <label className="cave-chat-cwd-inline focus-within:border-[var(--border-strong)]">
         <Icon name="ph:folder-open" width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-        <input
-          type="text"
-          value={cwd}
-          onChange={(e) => onCwdChange(e.target.value)}
-          placeholder="CWD"
-          aria-label="Working directory for this chat"
-          className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]/70"
-        />
+        <select
+          value={project.id}
+          onChange={(e) => onProjectChange(e.target.value)}
+          aria-label="Project for this chat"
+          className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-[var(--text-secondary)] outline-none"
+        >
+          {CHAT_PROJECTS.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.name}
+            </option>
+          ))}
+        </select>
       </label>
     </div>
   );
@@ -1268,10 +1249,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the inline Cancel/Delete confirm; only the explicit Delete commits.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // ROOT holds the long absolute base. CWD can stay short and relative to ROOT;
-  // an absolute CWD still overrides ROOT when the request is sent.
-  const [cwdRootDraft, setCwdRootDraft] = useState(session?.project_root ?? projectRoot ?? "");
-  const [cwdDraft, setCwdDraft] = useState("");
+  const [projectIdDraft, setProjectIdDraft] = useState(() => projectIdForRoot(session?.project_root ?? projectRoot) ?? DEFAULT_CHAT_PROJECT_ID);
+  const selectedProject = chatProjectById(projectIdDraft) ?? DEFAULT_CHAT_PROJECT;
+  const activeProjectRoot = selectedProject.root;
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
@@ -1489,12 +1469,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const slashListboxId = useId();
 
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
-  // when the chat knows its project root — the session's project_root, the
-  // CWD draft, or the pre-wired projectRoot prop, i.e. the same sources the
-  // send body uses. The file index is fetched once per root from
-  // /api/project/files and fuzzy-filtered client-side. Mentions stay
-  // disjoint from the slash menu: `@` is mid-token, `/` is first-token only.
-  const mentionRoot = resolveRootedCwd(cwdDraft, cwdRootDraft, projectRoot).trim();
+  // for the selected predetermined project. The file index is fetched once
+  // per root from /api/project/files and fuzzy-filtered client-side. Mentions
+  // stay disjoint from the slash menu: `@` is mid-token, `/` first-token-only.
+  const mentionRoot = activeProjectRoot.trim();
   const [composerCaret, setComposerCaret] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   // Esc hides the picker for the current input; any edit brings it back.
@@ -2026,7 +2004,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     abortRef.current = controller;
     try {
       setAssistantLifecycle(assistantId, "connecting");
-      const effectiveProjectRoot = resolveRootedCwd(cwdDraft, cwdRootDraft, projectRoot);
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2035,7 +2012,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           prompt: trimmed,
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
-          ...(effectiveProjectRoot ? { projectRoot: effectiveProjectRoot } : {}),
+          projectRoot: activeProjectRoot,
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
           // relative to — resumed sessions don't resend projectRoot above.
           ...(outgoingMentions.length && mentionRoot
@@ -2491,13 +2468,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  // Disarm a pending delete confirmation and sync the editable CWD when
+  // Disarm a pending delete confirmation and sync the selected project when
   // switching sessions. Drop staged file mentions because they are scoped to
   // the previous session/root.
   useEffect(() => {
     setConfirmDelete(false);
-    setCwdRootDraft(session?.project_root ?? projectRoot ?? "");
-    setCwdDraft("");
+    setProjectIdDraft(projectIdForRoot(session?.project_root ?? projectRoot) ?? DEFAULT_CHAT_PROJECT_ID);
     setMentionedFiles([]);
   }, [sessionId, session?.project_root, projectRoot]);
 
@@ -2647,12 +2623,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
           {sessionId && (
             <>
-              <InlineCwdField
-                root={cwdRootDraft}
-                cwd={cwdDraft}
-                defaultCwd={projectRoot}
-                onRootChange={setCwdRootDraft}
-                onCwdChange={setCwdDraft}
+              <InlineProjectField
+                projectId={projectIdDraft}
+                onProjectChange={setProjectIdDraft}
               />
               <VoiceCallButton
                 familiar={familiar}
@@ -2733,11 +2706,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   setInput(text);
                   inputRef.current?.focus();
                 }}
-                root={cwdRootDraft}
-                cwd={cwdDraft}
-                defaultCwd={projectRoot}
-                onRootChange={setCwdRootDraft}
-                onCwdChange={setCwdDraft}
+                projectId={projectIdDraft}
+                onProjectChange={setProjectIdDraft}
                 fileMentions={Boolean(mentionRoot)}
               />
             )
