@@ -38,10 +38,12 @@ import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
+import { WorkflowsView } from "@/components/workflows-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
+import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -60,6 +62,25 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
+// Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
+// thread, same in-app hash idiom as `#card-<id>` and `library:projects`.
+// ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
+const CHAT_HASH_PREFIX = "#chat-";
+
+function readChatHash(): string | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash;
+  return hash.startsWith(CHAT_HASH_PREFIX)
+    ? decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length))
+    : null;
+}
+
+function clearChatHash() {
+  if (typeof window === "undefined") return;
+  if (!window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+}
+
 export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -77,6 +98,7 @@ export function Workspace() {
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -108,6 +130,15 @@ export function Workspace() {
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
+  // Deep-link target captured at mount, held until the async sessions fetch
+  // settles (loadSessions → sessionsLoaded) so the restore can resolve it.
+  const pendingChatDeepLinkRef = useRef<string | null>(readChatHash());
+  // Refs for the popstate listener — sessions repoll every 4s and mode flips
+  // often; the listener should not resubscribe on either.
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -456,14 +487,33 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      const tag = target.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    };
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
-      if (!meta) return;
-      const k = e.key.toLowerCase();
-      if (k === "k") {
-        e.preventDefault();
-        setPaletteOpen(true);
+      if (meta) {
+        const k = e.key.toLowerCase();
+        if (k === "k") {
+          e.preventDefault();
+          setPaletteOpen(true);
+          return;
+        }
+        // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
+        if (e.key === "/") {
+          e.preventDefault();
+          setShortcutsOpen((open) => !open);
+        }
         return;
+      }
+      // Bare `?` also opens the sheet, but only when focus is not in an
+      // input/textarea/contentEditable — typing "?" must stay typing.
+      if (e.key === "?" && !isEditableTarget(e.target)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -655,6 +705,50 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Mount-time deep-link restore: sessions load async (/api/sessions/list),
+  // so hold the `#chat-<sessionId>` target until the first fetch settles,
+  // then open the session — same lookup as the `/attach` slash command.
+  // Unknown/stale ids fall back to the chat list with the hash cleared.
+  useEffect(() => {
+    if (!sessionsLoaded) return;
+    const sid = pendingChatDeepLinkRef.current;
+    if (!sid) return;
+    pendingChatDeepLinkRef.current = null;
+    const target = sessions.find((s) => s.id === sid);
+    if (target) {
+      openAgentSession(sid, target.familiarId);
+    } else {
+      clearChatHash();
+      showAgentChatList();
+    }
+  }, [sessionsLoaded, sessions, openAgentSession, showAgentChatList]);
+
+  // Browser Back/Forward between list ↔ chat (and chat ↔ chat). Only acts on
+  // chat hashes — board `#card-` and library hashes keep their own listeners.
+  useEffect(() => {
+    const onPopState = () => {
+      const sid = readChatHash();
+      if (sid) {
+        const target = sessionsRef.current.find((s) => s.id === sid);
+        openAgentSession(sid, target?.familiarId);
+        return;
+      }
+      // Popped back out of a chat entry → show the list, but only while the
+      // chat surface is active; other surfaces own their own hash traffic.
+      if (modeRef.current === "chat") showAgentChatList();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [openAgentSession, showAgentChatList]);
+
+  // Leaving the chat surface invalidates a chat hash — clear it in place
+  // (replace, not push) so a reload restores the surface the user actually
+  // sees. Skip while the mount-time deep link is still awaiting sessions.
+  useEffect(() => {
+    if (mode === "chat" || pendingChatDeepLinkRef.current) return;
+    clearChatHash();
+  }, [mode]);
+
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
     if (toast.sessionId) {
@@ -746,103 +840,113 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "slash") {
-      // Map slash commands directly to local actions
-      switch (intent.command) {
-        case "/new":
-          startAgentChat(activeId);
-          return;
-        case "/board":
-          setMode("board");
-          return;
-        case "/chats":
-        case "/agents":
-        case "/chat":
-          showAgentChatList();
-          return;
-        case "/inbox":
-          setMode("inbox");
-          return;
-        case "/remind": {
-          const args = (intent.args ?? "").trim();
-          const { title, whenText } = args
-            ? draftFromSlashArgs(args)
-            : { title: "", whenText: "" };
-          openReminderModal(title, whenText);
-          return;
-        }
-        case "/palette":
-          setPaletteOpen(true);
-          return;
-        case "/terminal":
-          setMode("terminal");
-          return;
-        case "/projects":
-          setMode("library");
-          window.location.hash = "library:projects";
-          return;
-        case "/library":
-          setMode("library");
-          return;
-        case "/toggle-agent":
-          toggleAgentPanel();
-          return;
-        case "/quit":
-          showAgentChatList();
-          return;
-        case "/sessions":
-          setMode("chat");
-          showAgentChatList();
-          return;
-        case "/familiar": {
-          const name = (intent.args ?? "").trim().toLowerCase();
-          if (name) {
-            const match = familiars.find(
-              (f) => f.id === name || f.display_name.toLowerCase() === name,
-            );
-            if (match) {
-              setActiveId(match.id);
-              showAgentChatList();
-              return;
-            }
-          }
-          setPaletteOpen(true);
-          return;
-        }
-        case "/attach": {
-          const sid = (intent.args ?? "").trim();
-          if (!sid) {
-            setPaletteOpen(true);
-            return;
-          }
-          // Find which familiar this session belongs to so we surface the right rail row
-          const target = sessions.find((s) => s.id === sid);
-          openAgentSession(sid, target?.familiarId);
-          return;
-        }
-        case "/tui": {
-          const sid = routerRef.current?.currentSessionId();
-          if (sid) {
-            void fetch("/api/launch", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ mode: "attach", sessionId: sid }),
-            });
-          }
-          return;
-        }
-        case "/clear":
-          routerRef.current?.clearTranscript();
-          return;
-        case "/help":
-        case "/familiar":
-        case "/run":
-        case "/codex":
-        case "/claude":
-          // These need composer context; route to the chat view's slash handler.
-          routerRef.current?.runSlash(intent.command);
-          return;
-      }
+      handleSlashIntent(intent.command, intent.args);
+      return;
     }
+  };
+
+  // Map slash commands directly to local actions. Returns false for commands
+  // this surface doesn't know so the chat composer can show its
+  // "Unknown command" feedback instead of silently swallowing the input.
+  const handleSlashIntent = (command: string, args = ""): boolean => {
+    switch (command) {
+      case "/new":
+        startAgentChat(activeId);
+        return true;
+      case "/board":
+        setMode("board");
+        return true;
+      case "/chats":
+      case "/agents":
+      case "/chat":
+        showAgentChatList();
+        return true;
+      case "/inbox":
+        setMode("inbox");
+        return true;
+      case "/remind": {
+        const trimmedArgs = args.trim();
+        const { title, whenText } = trimmedArgs
+          ? draftFromSlashArgs(trimmedArgs)
+          : { title: "", whenText: "" };
+        openReminderModal(title, whenText);
+        return true;
+      }
+      case "/palette":
+        setPaletteOpen(true);
+        return true;
+      case "/shortcuts":
+        setShortcutsOpen(true);
+        return true;
+      case "/terminal":
+        setMode("terminal");
+        return true;
+      case "/projects":
+        setMode("library");
+        window.location.hash = "library:projects";
+        return true;
+      case "/library":
+        setMode("library");
+        return true;
+      case "/toggle-agent":
+        toggleAgentPanel();
+        return true;
+      case "/quit":
+        showAgentChatList();
+        return true;
+      case "/sessions":
+        setMode("chat");
+        showAgentChatList();
+        return true;
+      case "/familiar": {
+        const name = args.trim().toLowerCase();
+        if (name) {
+          const match = familiars.find(
+            (f) => f.id === name || f.display_name.toLowerCase() === name,
+          );
+          if (match) {
+            setActiveId(match.id);
+            showAgentChatList();
+            return true;
+          }
+        }
+        setPaletteOpen(true);
+        return true;
+      }
+      case "/attach": {
+        const sid = args.trim();
+        if (!sid) {
+          setPaletteOpen(true);
+          return true;
+        }
+        // Find which familiar this session belongs to so we surface the right rail row
+        const target = sessions.find((s) => s.id === sid);
+        openAgentSession(sid, target?.familiarId);
+        return true;
+      }
+      case "/tui": {
+        const sid = routerRef.current?.currentSessionId();
+        if (sid) {
+          void fetch("/api/launch", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ mode: "attach", sessionId: sid }),
+          });
+        }
+        return true;
+      }
+      case "/clear":
+        routerRef.current?.clearTranscript();
+        return true;
+      case "/help":
+      case "/run":
+      case "/codex":
+      case "/claude":
+        // These need composer context; route to the chat view's slash handler.
+        routerRef.current?.runSlash(command);
+        return true;
+    }
+    return false;
   };
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
@@ -977,10 +1081,7 @@ export function Workspace() {
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onSessionStarted={loadSessions}
-        onSlashFromChat={(command, args) => {
-          onPaletteIntent({ kind: "slash", command, args });
-          return true;
-        }}
+        onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
         onOpenInbox={() => setMode("inbox")}
         onCreateReminder={openReminderForFamiliar}
@@ -1050,6 +1151,8 @@ export function Workspace() {
         onCreateSkill={() => setMode("capabilities")}
         onCreatePlugin={() => setMode("capabilities")}
       />
+    ) : mode === "workflows" ? (
+      <WorkflowsView />
     ) : mode === "capabilities" ? (
       <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (
@@ -1143,7 +1246,9 @@ export function Workspace() {
                 shellRef.current?.toggleAgent();
               }}
             >
-              <Icon name="ph:cat" width={14} />
+              <span className="edge-rail-chip">
+                <Icon name="ph:cat" width={14} />
+              </span>
             </button>
           </aside>
         ) : undefined}
@@ -1169,10 +1274,7 @@ export function Workspace() {
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   onSessionStarted={loadSessions}
-                  onSlashFromChat={(command, args) => {
-                    onPaletteIntent({ kind: "slash", command, args });
-                    return true;
-                  }}
+                  onSlashFromChat={handleSlashIntent}
                   onOpenOnboarding={openOnboarding}
                 />
               }
@@ -1200,6 +1302,8 @@ export function Workspace() {
         activeFamiliarId={activeId}
         onIntent={onPaletteIntent}
       />
+
+      <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <OnboardingOverlay open={onboardingOpen} onDismiss={closeOnboarding} />
 

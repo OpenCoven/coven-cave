@@ -8,8 +8,14 @@ const splitReasoning = source.match(/function splitReasoning[\s\S]*?\n}\n\n\/\/ 
 
 assert.match(
   source,
-  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*attachments: stripPreviewOnlyAttachmentFields\(outgoingAttachments\)/,
-  "Chat send should strip preview-only attachment fields before POSTing",
+  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*attachments: stripPreviewOnlyAttachmentFieldsKeepingImages\(outgoingAttachments\)/,
+  "Chat send should strip preview-only attachment fields before POSTing, keeping image payloads so the harness can see them",
+);
+
+assert.match(
+  source,
+  /if \(file\.size > MAX_ATTACHMENT_IMAGE_BYTES\) \{[\s\S]*?attachment\.truncated = true;/,
+  "Oversized image attachments should be capped at capture time and marked like truncated text",
 );
 
 assert.match(
@@ -136,6 +142,22 @@ assert.match(
   "Composer placeholder should include ↵ to send hint in steady state",
 );
 
+assert.match(
+  source,
+  /const activeSlashOptionRef = useRef<HTMLButtonElement \| null>\(null\)/,
+  "Slash menu should keep a ref to the active option so keyboard navigation can keep it visible",
+);
+assert.match(
+  source,
+  /activeSlashOptionRef\.current\?\.scrollIntoView\(\{ block: "nearest" \}\)/,
+  "Arrow-key slash navigation should scroll the active option into the visible menu viewport",
+);
+assert.match(
+  source,
+  /ref=\{active \? activeSlashOptionRef : null\}/,
+  "Only the active slash command row should receive the scroll target ref",
+);
+
 const splitFn = source.match(/function splitReasoning\([\s\S]*?\n}\n/)?.[0] ?? "";
 assert.match(
   splitFn,
@@ -237,4 +259,180 @@ assert.match(
   source,
   /ph:pencil-simple/,
   "Rename affordance uses the pencil icon",
+);
+
+// — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —
+const composerKey = source.match(/const onComposerKey = [\s\S]*?\n  \};/)?.[0] ?? "";
+const slashBranch = composerKey.match(/if \(slashSuggestions\.length > 0\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
+
+assert.match(
+  slashBranch,
+  /if \(e\.key === "Enter" && !e\.shiftKey\) \{[\s\S]*slashSuggestions\[slashIdx\][\s\S]*intentFromSlash\(cmd\.name\)/,
+  "Slash-menu Enter must run the highlighted suggestion, not send the partially typed text",
+);
+assert.match(
+  slashBranch,
+  /cmd\.argPlaceholder && canonicalize\(input\.trim\(\)\) !== cmd\.name[\s\S]*setInput\(cmd\.name \+ " "\)/,
+  "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
+);
+assert.match(
+  slashBranch,
+  /if \(e\.key === "Escape"\) \{[\s\S]*setSlashDismissed\(true\)/,
+  "Esc with the slash menu open must dismiss the menu",
+);
+assert.ok(
+  composerKey.includes("setSlashDismissed(true)") &&
+    composerKey.indexOf("setSlashDismissed(true)") < composerKey.indexOf("cancelSend()"),
+  "Esc precedence: dismiss the slash menu before the busy-cancel branch can kill the stream",
+);
+assert.match(
+  source,
+  /setSlashIdx\(0\);\s*\n\s*setSlashDismissed\(false\);/,
+  "Editing the input must re-arm dismissed slash suggestions",
+);
+assert.match(
+  source,
+  /\{keys\.up\}\{keys\.down\} navigate · \{keys\.enter\} run · Tab complete · esc cancel/,
+  "Slash menu footer promises run/complete/cancel — keep it in sync with onComposerKey",
+);
+
+// — CHAT-D10-01 + CHAT-D13-03: instant scroll pin, intent-based release —
+const pinEffect = source.match(/\/\/ Pin: while following[\s\S]*?\}, \[turns\]\);/)?.[0] ?? "";
+assert.match(
+  pinEffect,
+  /requestAnimationFrame\(\(\) => \{[\s\S]*el\.scrollTop = el\.scrollHeight/,
+  "Streaming pin must set scrollTop instantly inside a rAF (coalesced per frame)",
+);
+assert.doesNotMatch(
+  pinEffect,
+  /scrollIntoView|behavior:/,
+  "The turns-change pin path must never queue a smooth scrollIntoView per SSE chunk",
+);
+assert.match(
+  pinEffect,
+  /if \(pinFrameRef\.current !== null\) return/,
+  "Pin must coalesce multiple turns updates into one frame, not stack rAF callbacks",
+);
+assert.doesNotMatch(
+  source,
+  /scrollIntoView\(\{ behavior: "smooth"/,
+  "No explicit smooth scrollIntoView anywhere — the reduced-motion CSS kill switch cannot override explicit options",
+);
+assert.match(
+  source,
+  /addEventListener\("wheel", onWheel, \{ passive: true \}\)/,
+  "Release must hook wheel input (passive) for intent detection",
+);
+assert.match(
+  source,
+  /if \(e\.deltaY < 0 && followingRef\.current\) updateFollowing\(false\)/,
+  "Wheel-up (negative deltaY) is the user intent that detaches following",
+);
+assert.match(
+  source,
+  /addEventListener\("touchmove", onTouchMove, \{ passive: true \}\)/,
+  "Release must hook touchmove (passive) for touch intent detection",
+);
+assert.match(
+  source,
+  /<div\b(?=[^>]*\bref=\{scrollRef\})(?=[^>]*\btabIndex=\{0\})(?=[^>]*\bclassName="cave-chat-transcript)[^>]*>/,
+  "Transcript scroller must be focusable so PageUp/Home/ArrowUp keydown releases following",
+);
+assert.match(
+  source,
+  /y > lastTouchY && followingRef\.current\) updateFollowing\(false\)/,
+  "Touch drag toward earlier content (finger moving down) detaches following",
+);
+assert.match(
+  source,
+  /if \(followingRef\.current\) return;[\s\S]{0,200}gap <= 4\) updateFollowing\(true\)/,
+  "Re-pin only on user scrolls reaching the true bottom (small epsilon); pin's own scroll events are no-ops while following",
+);
+assert.match(
+  source,
+  /updateFollowing\(true\);[\s\S]{0,600}prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduceMotion \? "auto" : "smooth"[\s\S]{0,400}aria-label="Scroll to bottom"/,
+  "Scroll FAB must re-engage following and gate its smooth scroll on prefers-reduced-motion",
+);
+assert.match(
+  source,
+  /\{!following && \(/,
+  "Scroll FAB visibility is driven by the following state",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*updateFollowing\(true\);\s*\}, \[sessionId, updateFollowing\]\)/,
+  "A freshly opened chat / session switch must re-engage following by default",
+);
+
+const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const slashHelper = workspaceSource.match(/const handleSlashIntent = [\s\S]*?\n  \};/)?.[0] ?? "";
+assert.match(
+  slashHelper,
+  /\n    return false;\n  \};$/,
+  "Workspace slash helper must return false for unknown commands so chat-view's Unknown-command feedback is reachable",
+);
+assert.equal(
+  (workspaceSource.match(/onSlashFromChat=\{handleSlashIntent\}/g) ?? []).length,
+  2,
+  "Both onSlashFromChat sites must report unhandled slash commands honestly (no unconditional return-true wrappers)",
+);
+
+// — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —
+const pasteHandler = source.match(/onPaste=\{\(e\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? "";
+assert.match(
+  pasteHandler,
+  /e\.clipboardData\.items[\s\S]*item\.kind === "file"[\s\S]*item\.getAsFile\(\)/,
+  "Composer paste must inspect clipboardData.items for files (screenshots, copied images), not just text/plain",
+);
+assert.match(
+  pasteHandler,
+  /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void attachFiles\(pastedFiles\);\s*\n\s*return;/,
+  "Pasted files win over any clipboard text and route through the existing attach pipeline; preventDefault only fires when files were consumed",
+);
+assert.ok(
+  pasteHandler.indexOf("attachFiles(pastedFiles)") < pasteHandler.indexOf("looksLikeCsv"),
+  "Paste precedence: files first, then the plain-text CSV sniff (which must remain intact)",
+);
+assert.match(
+  pasteHandler,
+  /const text = e\.clipboardData\.getData\("text\/plain"\);\s*\n\s*if \(looksLikeCsv\(text\)\) \{ setCsvRaw\(text\); \}/,
+  "Plain-text paste keeps its current behavior — the CSV sniff still runs and the default text insertion is not prevented",
+);
+
+// — CHAT-D1-03: drag-and-drop attach on the chat surface —
+assert.match(
+  source,
+  /onDragEnter=\{\(e\) => \{\s*\n\s*if \(!e\.dataTransfer\.types\.includes\("Files"\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
+  "dragenter must guard on a Files-type drag (text selections must not hijack) and use counter-based depth tracking",
+);
+assert.match(
+  source,
+  /onDragOver=\{\(e\) => \{\s*\n\s*if \(!e\.dataTransfer\.types\.includes\("Files"\)\) return;\s*\n\s*e\.preventDefault\(\);/,
+  "dragover must preventDefault (only for file drags) so the browser allows the drop",
+);
+assert.match(
+  source,
+  /onDragLeave=\{\(e\) => \{[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
+  "dragleave must decrement the depth counter and only hide the overlay at depth 0 — child-element transitions must not flicker it",
+);
+assert.match(
+  source,
+  /onDrop=\{\(e\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?void attachFiles\(e\.dataTransfer\.files\);/,
+  "drop must reset the overlay state and route dataTransfer.files through the existing attach pipeline",
+);
+assert.match(
+  source,
+  /\{dropActive \? \(\s*\n\s*<div className="cave-drop-overlay" aria-hidden="true">[\s\S]*?Drop files to attach/,
+  "A visible drop overlay must render while a file drag is over the chat surface",
+);
+const caveChatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+assert.match(
+  caveChatCss,
+  /\.cave-drop-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\n\}/,
+  "The drop overlay must be pointer-events: none so it never intercepts clicks or the drop itself",
+);
+assert.match(
+  caveChatCss,
+  /\.cave-chat-linear \{\s*\n\s*position: relative;/,
+  "The chat section must anchor the absolutely-positioned drop overlay",
 );

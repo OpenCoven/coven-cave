@@ -7,6 +7,9 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const pluginsView = await readFile(new URL("./plugins-view.tsx", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
+const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
+const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
 assert.match(
   workspaceMode,
@@ -48,4 +51,72 @@ assert.match(
   pluginsView,
   /tabs\?: Tab\[\]/,
   "PluginsView should support caller-selected tab sets",
+);
+
+// --- Keyboard shortcuts sheet (CHAT-D11-03) ---
+
+assert.match(
+  shortcutsCatalog,
+  /export const SHORTCUT_GROUPS/,
+  "Keyboard shortcut catalog should live in src/lib/keyboard-shortcuts.ts",
+);
+
+assert.match(
+  shortcutsCatalog,
+  /Panels & navigation[\s\S]*Composer[\s\S]*Slash menu[\s\S]*Other/,
+  "Catalog should group shortcuts: Panels & navigation / Composer / Slash menu / Other",
+);
+
+assert.match(
+  shortcutsSheet,
+  /from "@\/components\/ui\/modal"/,
+  "Shortcuts sheet should use the shared a11y Modal (focus trap + Esc come free)",
+);
+
+assert.match(
+  shortcutsSheet,
+  /useKeySymbols[\s\S]*SHORTCUT_GROUPS\.map[\s\S]*platformizeHint/,
+  "Sheet should render the catalog with platform-aware key glyphs, never hardcoded ⌘/Ctrl",
+);
+
+assert.match(
+  workspace,
+  /e\.key === "\/"[\s\S]{0,200}setShortcutsOpen/,
+  "⌘/ (Ctrl+/ off-Mac) should toggle the shortcuts sheet from anywhere",
+);
+
+assert.match(
+  workspace,
+  /e\.key === "\?" && !isEditableTarget\(e\.target\)/,
+  "Bare ? should open the sheet only when focus is outside an editable control",
+);
+
+assert.match(
+  workspace,
+  /case "\/shortcuts":[\s\S]{0,80}setShortcutsOpen\(true\)/,
+  "/shortcuts slash command should open the sheet via handleSlashIntent",
+);
+
+assert.match(
+  workspace,
+  /<ShortcutsSheet open=\{shortcutsOpen\}/,
+  "Workspace should mount the ShortcutsSheet alongside the command palette",
+);
+
+assert.match(
+  slashCommands,
+  /name: "\/shortcuts", aliases: \["\/keys"\]/,
+  "/shortcuts (alias /keys) should be a first-class slash command",
+);
+
+assert.match(
+  slashCommands,
+  /lines\.push\("Keyboard"\)[\s\S]*SHORTCUT_GROUPS[\s\S]*neutralizeKeys/,
+  "formatHelp should append a Keyboard section sourced from the shared catalog",
+);
+
+assert.match(
+  slashCommands,
+  /keyboard shortcuts sheet/,
+  "/help footer should mention the shortcuts sheet so it stays discoverable",
 );

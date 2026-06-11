@@ -23,7 +23,6 @@ const SalemCat3D = dynamic(
 type Message = { role: "user" | "salem"; text: string };
 
 type SalemMood = "idle" | "thinking" | "happy" | "listening";
-type PreloadSummary = { docs: number; tools: number; skills: number; context: number };
 
 const GREETING = "I'm Salem, your Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
@@ -70,10 +69,7 @@ export function SalemChatPanel() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [preload, setPreload] = useState<{
-    summary: PreloadSummary;
-    preload: SalemPreloadContext;
-  } | null>(null);
+  const [preload, setPreload] = useState<SalemPreloadContext | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const coarse = useIsCoarsePointer();
 
@@ -85,9 +81,9 @@ export function SalemChatPanel() {
     let alive = true;
     fetch("/api/salem")
       .then((res) => res.json())
-      .then((data: { summary?: PreloadSummary; preload?: SalemPreloadContext }) => {
-        if (alive && data.summary && data.preload) {
-          setPreload({ summary: data.summary, preload: data.preload });
+      .then((data: { preload?: SalemPreloadContext }) => {
+        if (alive && data.preload) {
+          setPreload(data.preload);
         }
       })
       .catch(() => { if (alive) setPreload(null); });
@@ -131,7 +127,7 @@ export function SalemChatPanel() {
           <div>
             <div className="salem-panel__name">Salem</div>
             <div className="salem-panel__subtitle">
-              {preload?.preload.persona.archetype ?? "Male docs familiar"}
+              {preload?.persona.archetype ?? "Male docs familiar"}
             </div>
           </div>
         </div>
@@ -139,23 +135,6 @@ export function SalemChatPanel() {
           <Icon name="ph:book-open" width={14} />
         </div>
       </div>
-
-      {preload ? (
-        <div className="salem-panel__preload" aria-label="Salem loaded context">
-          <span title={preload.preload.docsCorpus.map((item) => item.label).join(", ")}>
-            Docs {preload.summary.docs}
-          </span>
-          <span title={preload.preload.toolLoadout.map((item) => item.label).join(", ")}>
-            Tools {preload.summary.tools}
-          </span>
-          <span title={preload.preload.skillLoadout.map((item) => item.label).join(", ")}>
-            Skills {preload.summary.skills}
-          </span>
-          <span title={preload.preload.routeContext.map((item) => item.label).join(", ")}>
-            Context {preload.summary.context}
-          </span>
-        </div>
-      ) : null}
 
       {/* Messages */}
       <div className="salem-panel__messages">

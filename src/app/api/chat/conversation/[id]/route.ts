@@ -59,6 +59,7 @@ function normalizeTurn(input: unknown): ChatTurn | null {
         : now,
     ...(typeof value.durationMs === "number" ? { durationMs: value.durationMs } : {}),
     ...(typeof value.isError === "boolean" ? { isError: value.isError } : {}),
+    ...(typeof value.cancelled === "boolean" ? { cancelled: value.cancelled } : {}),
   };
 }
 

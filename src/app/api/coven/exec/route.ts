@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const ALLOWED = new Set(["doctor", "daemon"]);
 
 const SUBCOMMAND_ARGS: Record<string, string[]> = {
-  doctor: ["--non-interactive"],
+  doctor: [],
   daemon: ["status"],
 };
 

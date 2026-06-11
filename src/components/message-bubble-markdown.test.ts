@@ -39,4 +39,127 @@ assert.match(
   "Rendered tables substitute positionally for the renderer's own <table> output",
 );
 
+// ── CHAT-D6-04: per-message actions must be keyboard/touch reachable ──────
+// The Copy/Expand bubble actions must be mounted unconditionally (when not
+// pending) and revealed by CSS — never mount-gated on a JS `hovered` state,
+// which keeps them out of the DOM (and the accessibility tree) until
+// onMouseEnter fires.
+assert.doesNotMatch(
+  source,
+  /\bhovered\b/,
+  "Bubble actions must not be gated on a JS hovered state — render always, reveal with CSS",
+);
+assert.match(
+  source,
+  /\{!pending && <CopyBubble/,
+  "User-bubble Copy action renders whenever the message is not pending",
+);
+assert.match(
+  source,
+  /\{!pending && content \? \(\s*<div className="cave-bubble-actions">/,
+  "Assistant bubble actions render whenever there is settled content",
+);
+
+// ── CHAT-D3-01: markdown must render progressively while streaming ────────
+// The pending branch used to bail (`setHtml(null); return;`), leaving the
+// user staring at raw ``` fences and **markers** until `done`, then
+// re-typesetting the whole bubble at once (live-measured CLS 0.53).
+const markdownContent = /function MarkdownContent\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.ok(markdownContent, "MarkdownContent component exists");
+assert.doesNotMatch(
+  markdownContent,
+  /setHtml\(null\)/,
+  "The pending branch must schedule a streaming render, not bail to the plain-text fallback",
+);
+assert.match(
+  markdownContent,
+  /if \(pending\) \{[\s\S]*?mdToHtml\(/,
+  "While pending, the accumulated text re-renders through mdToHtml",
+);
+assert.match(
+  source,
+  /const STREAM_RENDER_INTERVAL_MS = \d+/,
+  "Streaming renders are throttled by a named interval constant",
+);
+assert.match(
+  markdownContent,
+  /STREAM_RENDER_INTERVAL_MS - \(Date\.now\(\) - lastStreamRenderRef\.current\)/,
+  "The throttle is trailing-edge and persists across per-chunk effect re-runs (ref, not per-effect timer state)",
+);
+assert.match(
+  markdownContent,
+  /setTimeout\(run, wait\)/,
+  "Renders inside the throttle window are deferred to a trailing timer",
+);
+
+// Out-of-order protection: mdToHtml is async; a slower earlier render must
+// never overwrite a newer one. Each render takes a monotonic stamp and only
+// commits if newer than the last applied stamp.
+assert.match(
+  markdownContent,
+  /\+\+renderStampRef\.current/,
+  "Each render takes a monotonically increasing stamp",
+);
+assert.match(
+  markdownContent,
+  /if \(stamp <= appliedStampRef\.current\) return;/,
+  "A render result only commits if its stamp is newer than the last applied one",
+);
+
+// Streaming cursor: with rendered HTML during pending, the ▌ affordance must
+// render as a SIBLING after the markdown container — never injected into the
+// sanitized HTML string.
+assert.match(
+  markdownContent,
+  /dangerouslySetInnerHTML=\{\{ __html: html \}\}\s*\/>\s*\{\/\*[\s\S]*?\*\/\}\s*\{pending \? \(\s*<span[^>]*>▌<\/span>/,
+  "While pending, the streaming cursor renders as a sibling element after the markdown container",
+);
+assert.match(
+  markdownContent,
+  /\{pending && text \? \(\s*<span[^>]*>▌<\/span>/,
+  "The plain-text fallback keeps its cursor for the window before the first render lands",
+);
+
+// ── CHAT-D3-03: renderCache must not grow unboundedly ─────────────────────
+// The cache is keyed by the FULL markdown string; mid-stream snapshots would
+// add an entry per throttle tick. Guards: (1) transient streaming renders
+// skip cache writes entirely, (2) the cache is a small LRU with a hard cap.
+assert.match(
+  source,
+  /const RENDER_CACHE_MAX = \d+/,
+  "renderCache has a named size cap",
+);
+assert.match(
+  source,
+  /if \(renderCache\.size > RENDER_CACHE_MAX\) \{\s*const oldest = renderCache\.keys\(\)\.next\(\)\.value;/,
+  "On overflow the least-recently-used entry is evicted",
+);
+assert.match(
+  source,
+  /if \(!opts\?\.transient\) renderCacheSet\(markdown, sanitizedHtml\);/,
+  "Transient mid-stream renders never write to the cache",
+);
+assert.match(
+  markdownContent,
+  /mdToHtml\(closeTrailingFence\(text\), \{ transient: true \}\)/,
+  "Streaming renders are marked transient (and auto-close a trailing unterminated fence)",
+);
+
+const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+assert.match(
+  css,
+  /\.cave-copy-btn:focus-visible \{ opacity: 1; \}/,
+  "Focused action buttons must be visible (focus-visible reveal)",
+);
+assert.match(
+  css,
+  /\.group:focus-within \.cave-copy-btn \{ opacity: 1; \}/,
+  "Tabbing into a bubble's actions must reveal them (focus-within reveal)",
+);
+assert.match(
+  css,
+  /@media \(pointer: coarse\) \{\s*\.cave-copy-btn-bubble \{\s*opacity: 1;/,
+  "Coarse pointers have no hover — bubble actions must be always visible there",
+);
+
 console.log("message-bubble-markdown.test.ts: ok");

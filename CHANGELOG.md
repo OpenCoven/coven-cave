@@ -7,6 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.71] - 2026-06-11
+
+### Added
+- **Chat attachments** — paste or drag-drop files straight into the composer (#412); image attachments reach the harness via temp files instead of being dropped (#407).
+- **Edit and resend** — edit-and-resend user turns and regenerate assistant turns (#409).
+- **Workflow manifest surface** — Cave workflows gain a manifest view.
+
+### Changed
+- **Kanban board** — kanban always uses status columns; the group toggle is hidden there (#393).
+- **Shell chrome** — left-edge reopen tab for collapsed nav, pressable edge-rail chips (#392), and side-panel edge-trigger polish.
+- **Salem panel** — the Docs/Tools/Skills/Context count pills under the header are gone; the panel opens straight into the chat (#408).
+
+### Fixed
+- **Terminal works in the packaged desktop app** — the sidecar now ships the custom PTY-bridge server, so terminal websockets (browser localhost access against the installed app, mobile handoff) reach a real shell instead of hanging on the upgrade; `pnpm dev:app` boots against the live dev server without requiring a prebuilt sidecar bundle; Tauri-mobile rides the same WebSocket bridge instead of rendering a "not available" placeholder. (#401)
+- **Terminal shell environment** — spawned shells no longer inherit pnpm's `npm_config_*` leakage. (#403)
+- **Dev server hardening** — dev binds loopback by default and the PTY websocket rejects cross-site browser origins. (#391)
+- **Chat streaming stability** — markdown renders progressively while streaming (#405), scroll pins instantly with intent-based release and respects reduced motion (#404), composer input typed while streaming survives (#397), code-block copy buttons work (#398), message actions are keyboard- and touch-reachable (#400), and the highlighted slash-menu command runs on Enter.
+- **Home reminders** — reminders can be scheduled from the composer, with timezone-independent draft expectations in tests (#396).
+- **Memory rail** — the inspector failure browser collapses when no entries exist (#394).
+
 ## [0.0.70] - 2026-06-11
 
 ### Fixed

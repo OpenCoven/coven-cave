@@ -35,6 +35,11 @@ type Props = {
   pendingProjectRoot?: string | null;
   /** Route back to the linked board task from the chat header. */
   onOpenTask?: (cardId: string) => void;
+  /** Mirror the open chat into the URL hash (`#chat-<sessionId>`) so chats are
+   *  deep-linkable and browser Back/Forward navigates list ↔ chat. Only the
+   *  main chat surface opts in — the companion-rail ChatRouter must not fight
+   *  it for the hash. Workspace owns mount-time restore + popstate handling. */
+  syncUrlHash?: boolean;
 };
 
 export type ChatRouterHandle = {
@@ -66,6 +71,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenOnboarding,
     pendingProjectRoot,
     onOpenTask,
+    syncUrlHash,
   },
   ref,
 ) {
@@ -121,6 +127,34 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+
+  // ── URL hash sync (CHAT-D9-01) ────────────────────────────────────────────
+  // Follows the existing in-app hash idiom (`#card-<id>`, `library:projects`):
+  // an open chat is reflected as `#chat-<sessionId>`, so reloads and shared
+  // links can re-enter the thread (workspace.tsx owns mount-time restore and
+  // the popstate listener). History semantics: opening a chat *pushes* an
+  // entry — browser Back returns to the list; switching chats and session
+  // promotion are view changes through this same effect. Returning to the
+  // list *replaces* — the hash is cleared without growing the stack, so a
+  // direct deep-link entry isn't trapped behind a synthetic entry.
+  const hashSyncedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!syncUrlHash || typeof window === "undefined") return;
+    const isFirstRun = !hashSyncedOnceRef.current;
+    hashSyncedOnceRef.current = true;
+    const hash = window.location.hash;
+    if (view.kind === "chat" && view.sessionId) {
+      const next = `#chat-${encodeURIComponent(view.sessionId)}`;
+      if (hash !== next) window.history.pushState(null, "", next);
+      return;
+    }
+    // Mount always lands on the list view; never clear a deep-link hash here
+    // before workspace's restore effect has had a chance to open the session.
+    if (isFirstRun) return;
+    if (hash.startsWith("#chat-")) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, [syncUrlHash, view]);
 
   function selectFamiliarForChat(familiarId?: string | null): Familiar | null {
     const next = familiarId

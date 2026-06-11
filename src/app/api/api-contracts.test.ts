@@ -86,6 +86,9 @@ const contracts: RouteContract[] = [
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/transcript", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/workflows/dry-run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/workflows", methods: ["GET"], kind: "json" },
 ];
 
 function walkRoutes(dir: string): string[] {
@@ -146,6 +149,59 @@ for (const contract of contracts) {
     assert.match(source, /isLocalOrigin/, `${contract.route} must preserve local-origin guard`);
     assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
   }
+}
+
+// CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an
+// honest cancelled record — the partial text streamed so far, or a minimal
+// "(cancelled)" marker — never the fabricated empty-response error
+// diagnostic. Both adapter paths (coven stream-json and the OpenClaw bridge)
+// carry the guard, so a reload shows the cancel, not a harness error.
+{
+  const sendSource = readFileSync(
+    path.join(apiRoot, "chat", "send", "route.ts"),
+    "utf8",
+  );
+  const abortReads = [
+    ...sendSource.matchAll(/const cancelledByUser = (?:args\.)?req\.signal\.aborted;/g),
+  ];
+  assert.equal(
+    abortReads.length,
+    2,
+    "/chat/send: both adapter paths must detect a user abort before synthesizing diagnostics",
+  );
+  const guardedDiagnostics = [
+    ...sendSource.matchAll(
+      /if \(cancelledByUser\) \{[\s\S]{0,200}?\} else if \(!assistantText\.trim\(\)\) \{/g,
+    ),
+  ];
+  assert.equal(
+    guardedDiagnostics.length,
+    2,
+    "/chat/send: the empty-response error diagnostic must be skipped when the user cancelled",
+  );
+  assert.match(
+    sendSource,
+    /assistantText = "\(cancelled\)"/,
+    "/chat/send: an abort with no partial text must persist the minimal cancelled marker",
+  );
+  const cancelledFlags = [
+    ...sendSource.matchAll(/\.\.\.\(cancelledByUser \? \{ cancelled: true \} : \{\}\)/g),
+  ];
+  assert.equal(
+    cancelledFlags.length,
+    2,
+    "/chat/send: both adapter paths must persist cancelled: true on the assistant turn",
+  );
+  assert.match(
+    sendSource,
+    /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*result\.is_error = false;/,
+    "/chat/send: a user cancel must never be recorded as a harness error (stream-json path)",
+  );
+  assert.match(
+    sendSource,
+    /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
+    "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
+  );
 }
 
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));

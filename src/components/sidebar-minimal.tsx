@@ -8,7 +8,7 @@
  *   2. App destinations grouped by purpose:
  *      Work  (Home / Chat / Board / Calendar / Inbox)
  *      Knowledge (Library)
- *      Tools (Browser / Terminal / Roles / Capabilities / GitHub)
+ *      Tools (Browser / Terminal / Roles / Workflows / Capabilities / GitHub)
  *   3. Footer: Settings
  */
 
@@ -30,6 +30,7 @@ export type FolderMode =
   | "browser"
   | "github"
   | "roles"
+  | "workflows"
   | "library"
   | "capabilities";
 
@@ -79,6 +80,7 @@ const FOLDER_MODES: Array<{
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" },
+  { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools" },
   { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons" },

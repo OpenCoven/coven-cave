@@ -159,20 +159,30 @@ export function MemoryInspectorPanel({ familiar }: { familiar: Familiar | null }
         <DreamsCard dreams={report.dreams} />
       </div>
 
-      <FilterBar filters={filters} options={options} onChange={setFilters} />
+      {/* Filters and the list/detail panes are noise when the workspace has
+          no failure distillations — collapse to a single quiet line. */}
+      {failures.length === 0 ? (
+        <p className="p-3 text-[11px] text-[var(--text-muted)]">
+          No failure distillations yet.
+        </p>
+      ) : (
+        <>
+          <FilterBar filters={filters} options={options} onChange={setFilters} />
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <FailureList
-          failures={filtered}
-          selectedId={selected?.id ?? null}
-          onSelect={setSelectedId}
-        />
-        <FailureDetail
-          failure={selected}
-          allFailures={failures}
-          onNavigate={setSelectedId}
-        />
-      </div>
+          <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <FailureList
+              failures={filtered}
+              selectedId={selected?.id ?? null}
+              onSelect={setSelectedId}
+            />
+            <FailureDetail
+              failure={selected}
+              allFailures={failures}
+              onNavigate={setSelectedId}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

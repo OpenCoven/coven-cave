@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
-import { parseWhen, splitWhenAndText } from "@/lib/parse-when";
+import { parseWhen } from "@/lib/parse-when";
+import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
 import { Icon } from "@/lib/icon";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
@@ -400,9 +401,7 @@ export function draftFromSlashArgs(args: string): {
   whenText: string;
 } {
   const trimmed = args.trim();
-  const { when, text } = splitWhenAndText(trimmed);
-  if (!when) return { title: trimmed, whenText: "" };
-  // text is the trailing slice; whenText is whatever leads up to it.
-  const whenText = text ? trimmed.slice(0, trimmed.length - text.length).trim() : trimmed;
-  return { title: text, whenText };
+  const draft = draftReminderFromText(trimmed);
+  if (!draft.ok) return { title: trimmed, whenText: "" };
+  return { title: draft.title, whenText: draft.whenText };
 }

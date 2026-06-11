@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import {
@@ -16,7 +16,9 @@ import {
 } from "@/lib/cave-chat-titles";
 import {
   buildPromptWithAttachments,
+  MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
+  stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
@@ -124,6 +126,58 @@ async function resolveFamiliarWorkspace(
     /* not found */
   }
   return undefined;
+}
+
+// ── Image attachment delivery ────────────────────────────────────────────
+// Local coven-run harnesses are agentic CLIs with a Read tool that can open
+// image files, so image payloads are written to private temp files and the
+// prompt points the harness at them. Bridges/remotes that cannot read this
+// machine's filesystem get an explicit unsupported notice instead.
+
+const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
+const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
+  jpeg: "jpg",
+  "svg+xml": "svg",
+};
+
+function imageExtension(mimeType?: string): string {
+  const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
+  const mapped = IMAGE_EXT_BY_SUBTYPE[subtype] ?? subtype;
+  // Extension derives from the validated mime subtype only — never from a
+  // user-controlled filename — and falls back to a fixed token.
+  return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
+}
+
+async function writeImageAttachmentsToTemp(
+  attachments: ChatAttachment[],
+): Promise<Map<number, string>> {
+  const filePaths = new Map<number, string>();
+  for (const [index, attachment] of attachments.entries()) {
+    if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
+    const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
+    const payload = Buffer.from(base64, "base64");
+    // Defense in depth: normalizeChatAttachments already enforces the cap,
+    // but never write more than the cap regardless.
+    if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
+    try {
+      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
+      const filePath = path.join(
+        ATTACHMENT_TMP_DIR,
+        `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
+      );
+      await writeFile(filePath, payload, { mode: 0o600 });
+      filePaths.set(index, filePath);
+    } catch {
+      /* best effort — the prompt falls back to the not-delivered notice */
+    }
+  }
+  return filePaths;
+}
+
+function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
+  for (const filePath of filePaths.values()) {
+    void rm(filePath, { force: true }).catch(() => undefined);
+  }
 }
 
 function scheduleLinkRoute(args: {
@@ -409,6 +463,12 @@ function openClawChatResponse(args: {
           durationMs,
         );
 
+        // User cancel (CHAT-D5-02): a stopped response SIGTERMs the bridge,
+        // so stdout is usually empty or truncated JSON. Persist an honest
+        // cancelled marker — never raw truncated output or the fabricated
+        // "returned no text" error diagnostic.
+        const cancelledByUser = args.req.signal.aborted;
+
         if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
@@ -416,11 +476,14 @@ function openClawChatResponse(args: {
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
-            assistantText = stdout.trim();
+            if (!cancelledByUser) assistantText = stdout.trim();
           }
         }
 
-        if (!assistantText.trim()) {
+        if (cancelledByUser) {
+          if (!assistantText.trim()) assistantText = "(cancelled)";
+          isError = false;
+        } else if (!assistantText.trim()) {
           const tail = stderr
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -469,6 +532,7 @@ function openClawChatResponse(args: {
               createdAt: new Date().toISOString(),
               durationMs,
               isError,
+              ...(cancelledByUser ? { cancelled: true } : {}),
             },
           );
           await saveConversation(conv);
@@ -534,14 +598,9 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildPromptWithCovenIdentityCanon(
-    buildTaskAwarePrompt(
-      buildPromptWithAttachments(promptText, attachments),
-      taskContext,
-    ),
-    body.familiarId,
-  );
+  // Persisted transcripts keep attachment metadata only — base64 image
+  // payloads stay out of the conversation store.
+  const persistedAttachments = stripPreviewOnlyAttachmentFields(attachments);
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
@@ -580,13 +639,33 @@ export async function POST(req: Request) {
       { status: 501, headers: { "content-type": "application/json" } },
     );
   }
+  // Image delivery channel: only local coven-run harnesses can Read files on
+  // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
+  // prompts carry an explicit unsupported notice instead of a dead path.
+  const imagesSupported = !sshRuntime && binding.harness !== "openclaw";
+  const imageFilePaths = imagesSupported
+    ? await writeImageAttachmentsToTemp(attachments)
+    : new Map<number, string>();
+
+  const taskContext = await taskContextForSession(body.sessionId);
+  const harnessPrompt = buildPromptWithCovenIdentityCanon(
+    buildTaskAwarePrompt(
+      buildPromptWithAttachments(promptText, attachments, {
+        imagesSupported,
+        imageFilePaths,
+      }),
+      taskContext,
+    ),
+    body.familiarId,
+  );
+
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
       req,
       body,
       promptText,
       harnessPrompt,
-      attachments,
+      attachments: persistedAttachments,
     });
   }
 
@@ -633,10 +712,12 @@ export async function POST(req: Request) {
   // "thread/resume failed: no rollout found ... (code -32600)" when the
   // rollout DB no longer has the thread. Claude Code emits
   // "Session ID <uuid> is already in use" when --resume hits a session
-  // that is locked by another live process. In both cases we retry once
-  // without the resume flag so the chat starts fresh instead of erroring.
+  // that is locked by another live process. Coven itself emits
+  // "session <uuid> not found in local store" when the requested --continue
+  // id exists only in Cave's local transcript store. In these cases we retry
+  // once without the resume flag so the chat starts fresh instead of erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|session\s+\S+\s+not found in local store/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -922,15 +1003,30 @@ export async function POST(req: Request) {
         result = {};
         toolStartTimes = new Map();
         toolSeq = 0;
+        stderrTail.length = 0;
+        stdoutErrTail.length = 0;
         resumeFailed = false;
         await runAttempt(buildArgs(null));
         pushProgress("resume-retry", "Fresh chat started", "done");
       }
 
-      // Empty-response diagnostic: when the harness reports done but never
-      // produced assistant text, the user otherwise sees a silent empty
-      // bubble. Synthesize a short explanation so they know what to do.
-      if (!assistantText.trim()) {
+      // User cancel (CHAT-D5-02): when the client stops the response
+      // (Esc/Stop), req.signal aborts and the harness child gets SIGTERM —
+      // usually before any "result" event. Without this guard the
+      // empty-response diagnostic below fabricates an auth-hint error and
+      // saves it, so reloading the chat rewrote the user's cancel into a
+      // harness error. Persist the honest record instead: the partial text
+      // streamed so far (or a minimal "(cancelled)" marker), never an error,
+      // and skip the diagnostic SSE chunk — the client already rendered its
+      // own cancelled state and is gone.
+      const cancelledByUser = req.signal.aborted;
+      if (cancelledByUser) {
+        if (!assistantText.trim()) assistantText = "(cancelled)";
+        result.is_error = false;
+      } else if (!assistantText.trim()) {
+        // Empty-response diagnostic: when the harness reports done but never
+        // produced assistant text, the user otherwise sees a silent empty
+        // bubble. Synthesize a short explanation so they know what to do.
         const harness = binding.harness;
         const durMs = result.duration_ms;
         const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
@@ -961,7 +1057,7 @@ export async function POST(req: Request) {
           id: userTurnId,
           role: "user",
           text: promptText,
-          ...(attachments.length ? { attachments } : {}),
+          ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
           createdAt: now,
         };
         const assistantTurn: ChatTurn = {
@@ -971,6 +1067,7 @@ export async function POST(req: Request) {
           createdAt: new Date().toISOString(),
           durationMs: result.duration_ms,
           isError: result.is_error,
+          ...(cancelledByUser ? { cancelled: true } : {}),
         };
         const conv = existing ?? {
           sessionId: finalSessionId,
@@ -1010,6 +1107,10 @@ export async function POST(req: Request) {
         isError: result.is_error,
         sessionId: finalSessionId ?? undefined,
       });
+      // Best-effort temp cleanup: the harness child process has already
+      // exited (including any resume retry), so nothing can still be reading
+      // the saved images. Failures just leave files in tmpdir.
+      cleanupImageTempFiles(imageFilePaths);
       await sleep(20);
       close();
     },

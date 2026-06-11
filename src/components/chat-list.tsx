@@ -21,6 +21,13 @@ import {
   PROJECT_SIDEBAR_KEYS,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
+import {
+  PINNED_SESSIONS_KEY,
+  isSessionPinned,
+  readPinnedSessions,
+  sortPinnedFirst,
+  togglePinnedSession,
+} from "@/lib/chat-session-prefs";
 
 type Props = {
   familiar: Familiar | null;
@@ -92,6 +99,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [unreadsOnly, setUnreadsOnly] = useState(false);
+  // Pins are Cave-local UI state (localStorage), same idiom as the project
+  // sidebar persistence below — the daemon never learns about them.
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  // Archived rows are excluded server-side by /api/sessions/list; the toggle
+  // opts into them with its own includeArchived fetch (the workspace's list
+  // poll stays archive-free).
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveNonce, setArchiveNonce] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
@@ -136,6 +153,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
+    setPinnedIds(readPinnedSessions());
     setSidebarHydrated(true);
   }, []);
   useEffect(() => {
@@ -147,12 +165,41 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
+  }, [sidebarHydrated, pinnedIds]);
+
+  // Archived sessions only load while the toggle is on; archive/unarchive
+  // bumps archiveNonce so the opt-in list refetches after each change.
+  useEffect(() => {
+    if (!showArchived) {
+      setArchivedRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/sessions/list?includeArchived=1", { cache: "no-store" });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
+        setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
+      } catch {
+        // keep whatever archived rows we already have
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showArchived, archiveNonce]);
 
   // ── Data: filter ──────────────────────────────────────────────────────────
 
   const mine = useMemo(() => {
-    return filterVisibleChatSessions(sessions, familiar?.id ?? null);
-  }, [sessions, familiar?.id]);
+    let rows = sessions;
+    if (showArchived && archivedRows.length > 0) {
+      const seen = new Set(sessions.map((s) => s.id));
+      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
+    }
+    return filterVisibleChatSessions(rows, familiar?.id ?? null);
+  }, [sessions, showArchived, archivedRows, familiar?.id]);
 
   const filtered = useMemo(() => {
     let rows = mine;
@@ -192,6 +239,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     () => applyProjectScope(grouped, effectiveSelection),
     [grouped, effectiveSelection],
   );
+  // Pinned rows float to the top of their project group; recency order is
+  // preserved inside both partitions.
+  const displayGroups = useMemo(
+    () => sortPinnedFirst(scopedGroups, pinnedIds),
+    [scopedGroups, pinnedIds],
+  );
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
@@ -216,6 +269,37 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  // ── Pin (Cave-local) + archive (sessions PATCH) ──────────────────────────
+
+  const togglePin = (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+  };
+
+  const setSessionArchived = async (e: React.MouseEvent, sessionId: string, archived: boolean) => {
+    e.stopPropagation();
+    setArchivingId(sessionId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
+        return;
+      }
+      setArchiveNonce((n) => n + 1);
+      onSessionsChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "archive failed");
+    } finally {
+      setArchivingId(null);
     }
   };
 
@@ -372,6 +456,23 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             Unreads
           </button>
 
+          <button
+            type="button"
+            onClick={() => setShowArchived((v) => !v)}
+            aria-pressed={showArchived}
+            aria-label={showArchived ? "Hide archived chats" : "Show archived chats"}
+            title={showArchived ? "Hide archived chats" : "Show archived chats"}
+            className={[
+              "focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
+              showArchived
+                ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
+                : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
+            ].join(" ")}
+          >
+            <Icon name="ph:archive" width={12} aria-hidden />
+            Archived
+          </button>
+
           {/* With the identity row hidden, the + Chat CTA lives here */}
           {familiar && (
             <button
@@ -479,7 +580,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           </div>
         ) : (
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {scopedGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
+            {displayGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
               <li key={projectRoot ?? "__none__"}>
                 {/* Project group header */}
                 {projectRoot !== null && effectiveSelection === "all" && (
@@ -508,6 +609,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     const isActive = activeId === s.id;
                     const rowFamiliar = s.familiarId ? familiarsById.get(s.familiarId) : null;
                     const rowFamiliarName = rowFamiliar?.display_name ?? familiar?.display_name ?? "Familiar";
+                    const pinned = isSessionPinned(pinnedIds, s.id);
+                    const rowName = s.title || s.id;
 
                     return (
                       <li key={s.id}>
@@ -558,17 +661,28 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             {/* Row 2: session title (bold subject line)
                            Running sessions get full white; others are slightly muted
                            — mirrors the unread/read convention in email clients. */}
-                            <span className={[
-                              "truncate text-[13px] font-semibold",
-                              s.status === "running"
-                                ? "text-white"
-                                : "text-[var(--text-primary)]",
-                            ].join(" ")}>
-                              {stripLeadingTrailingEmoji(s.title || "(untitled chat)")}
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              {pinned && (
+                                <Icon
+                                  name="ph:bookmark-simple-fill"
+                                  width={11}
+                                  className="shrink-0 text-[var(--accent-presence)]"
+                                  aria-hidden
+                                />
+                              )}
+                              <span className={[
+                                "truncate text-[13px] font-semibold",
+                                s.status === "running"
+                                  ? "text-white"
+                                  : "text-[var(--text-primary)]",
+                              ].join(" ")}>
+                                {stripLeadingTrailingEmoji(s.title || "(untitled chat)")}
+                              </span>
                             </span>
 
                             {/* Row 3: status preview */}
                             <span className={`truncate text-[12px] ${st.preview}`}>
+                              {s.archived_at ? <span className="text-[var(--text-muted)]">Archived · </span> : null}
                               {st.label === "running"
                                 ? "Active now…"
                                 : st.label === "failed"
@@ -612,15 +726,48 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               </button>
                             </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
-                              title="Delete chat"
-                              aria-label={`Delete chat ${s.title || s.id}`}
-                              className="touch-always-visible self-center shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] group-hover:opacity-100"
+                            /* Row actions — pin (Cave-local), archive (PATCH), delete.
+                               Keyboard Enter on a button must not bubble into the
+                               row's open handler. */
+                            <span
+                              className="flex shrink-0 items-center gap-1 self-center"
+                              onKeyDown={(e) => e.stopPropagation()}
                             >
-                              <Icon name="ph:trash" width={12} aria-hidden />
-                            </button>
+                              <button
+                                type="button"
+                                onClick={(e) => togglePin(e, s.id)}
+                                title={pinned ? "Unpin chat" : "Pin chat"}
+                                aria-label={`${pinned ? "Unpin" : "Pin"} chat ${rowName}`}
+                                aria-pressed={pinned}
+                                className={[
+                                  "touch-always-visible shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 transition-all hover:border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] hover:text-[var(--accent-presence)] focus-visible:opacity-100 group-hover:opacity-100",
+                                  pinned
+                                    ? "text-[var(--accent-presence)] opacity-100"
+                                    : "text-[var(--text-muted)] opacity-0",
+                                ].join(" ")}
+                              >
+                                <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => void setSessionArchived(e, s.id, !s.archived_at)}
+                                disabled={archivingId === s.id}
+                                title={s.archived_at ? "Unarchive chat" : "Archive chat"}
+                                aria-label={`${s.archived_at ? "Unarchive" : "Archive"} chat ${rowName}`}
+                                className="touch-always-visible shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+                              >
+                                <Icon name={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
+                                title="Delete chat"
+                                aria-label={`Delete chat ${s.title || s.id}`}
+                                className="touch-always-visible shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover:opacity-100"
+                              >
+                                <Icon name="ph:trash" width={12} aria-hidden />
+                              </button>
+                            </span>
                           )}
                         </div>
                       </li>

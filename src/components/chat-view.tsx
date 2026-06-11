@@ -14,8 +14,9 @@ import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
+  MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
-  stripPreviewOnlyAttachmentFields,
+  stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { Modal } from "@/components/ui/modal";
@@ -266,6 +267,12 @@ async function fileToAttachment(file: File): Promise<ComposerAttachment> {
     attachment.text = text;
     if (file.size > new Blob([text]).size) attachment.truncated = true;
   } else if (file.type.startsWith("image/")) {
+    if (file.size > MAX_ATTACHMENT_IMAGE_BYTES) {
+      // Mirror the text-truncation idiom: keep the attachment listed but
+      // skip capturing an oversized payload, surfacing the same chip.
+      attachment.truncated = true;
+      return attachment;
+    }
     await new Promise<void>((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -956,14 +963,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [cwdDraft, setCwdDraft] = useState("");
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
+  // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
+  // dragenter/dragleave pairs so transitions across child elements don't
+  // flicker the overlay; only file drags (dataTransfer.types includes
+  // "Files") arm it, so dragging a text selection never hijacks the surface.
+  const [dropActive, setDropActive] = useState(false);
+  const dragDepthRef = useRef(0);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
+  // pinned to the newest content". It releases on user INTENT (wheel up /
+  // touch drag toward earlier content), never on mere scroll position — the
+  // old position-threshold release meant the stream's own smooth-scroll
+  // animation kept re-arming the pin and yanked readers back per SSE chunk.
+  // The ref mirrors the state so passive DOM listeners and rAF callbacks
+  // read the live value without re-subscribing.
+  const [following, setFollowing] = useState(true);
+  const followingRef = useRef(true);
+  const updateFollowing = useCallback((next: boolean) => {
+    followingRef.current = next;
+    setFollowing(next);
+  }, []);
+  const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const initialPromptSentRef = useRef(false);
   const keys = useKeySymbols();
@@ -981,12 +1008,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : 0;
 
   // Slash suggestions
-  const slashSuggestions: SlashCommand[] = useMemo(() => {
+  const slashMatches: SlashCommand[] = useMemo(() => {
     const firstWord = input.trimStart().split(/\s/)[0] ?? "";
     if (!firstWord.startsWith("/") || input.trimStart().includes(" ")) return [];
     return matchSlash(firstWord);
   }, [input]);
   const [slashIdx, setSlashIdx] = useState(0);
+  // Esc hides the menu for the current input; any edit brings it back.
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
   const activeLifecycle = useMemo(() => {
     const activeTurn = [...turns].reverse().find((turn) => turn.role === "assistant" && turn.pending);
     return activeTurn?.lifecycle ?? (busy ? "connecting" : null);
@@ -994,7 +1024,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     setSlashIdx(0);
+    setSlashDismissed(false);
   }, [input]);
+
+  useEffect(() => {
+    if (slashSuggestions.length === 0) return;
+    activeSlashOptionRef.current?.scrollIntoView({ block: "nearest" });
+  }, [slashIdx, slashSuggestions.length]);
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -1077,6 +1113,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   tools?: ToolEvent[];
                   durationMs?: number;
                   isError?: boolean;
+                  cancelled?: boolean;
                   createdAt?: string;
                   origin?: "chat" | "voice";
                   voiceCallId?: string;
@@ -1091,6 +1128,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   tools: t.tools,
                   durationMs: t.durationMs,
                   error: t.isError,
+                  lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
                   createdAt: t.createdAt ?? new Date().toISOString(),
                   origin: t.origin,
                   voiceCallId: t.voiceCallId,
@@ -1129,20 +1167,84 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [sessionId, historyRetryKey]);
 
+  // Pin: while following, every turns mutation snaps the scroller to the
+  // bottom INSTANTLY (scrollTop assignment inside a rAF, coalescing multiple
+  // SSE chunks per frame). Never a queued smooth animation per chunk — that
+  // is the CHAT-D10-01 bug, and instant pinning also satisfies
+  // prefers-reduced-motion during streaming (CHAT-D13-03).
   useEffect(() => {
-    if (atBottom) tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, atBottom]);
+    if (!followingRef.current) return;
+    if (pinFrameRef.current !== null) return;
+    pinFrameRef.current = requestAnimationFrame(() => {
+      pinFrameRef.current = null;
+      const el = scrollRef.current;
+      if (!el || !followingRef.current) return;
+      el.scrollTop = el.scrollHeight;
+    });
+  }, [turns]);
 
+  useEffect(() => () => {
+    if (pinFrameRef.current !== null) cancelAnimationFrame(pinFrameRef.current);
+  }, []);
+
+  // A freshly opened chat (or session switch) follows by default; the pin
+  // effect above then handles the initial scroll-to-bottom once history lands.
+  useEffect(() => {
+    updateFollowing(true);
+  }, [sessionId, updateFollowing]);
+
+  // Release on intent: only USER input events detach following. Programmatic
+  // pins (scrollTop assignment, FAB scrollTo) emit scroll events but never
+  // wheel/touch/key events, so they are structurally excluded from intent
+  // detection here.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let lastTouchY: number | null = null;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0 && followingRef.current) updateFollowing(false);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      lastTouchY = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY;
+      if (y === undefined) return;
+      // Finger moving down the screen drags content down = scrolling up.
+      if (lastTouchY !== null && y > lastTouchY && followingRef.current) updateFollowing(false);
+      lastTouchY = y;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === "PageUp" || e.key === "Home" || e.key === "ArrowUp") && followingRef.current) {
+        updateFollowing(false);
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("keydown", onKeyDown);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("keydown", onKeyDown);
+    };
+  }, [updateFollowing]);
+
+  // Re-pin: only when the user actually returns to the true bottom (small
+  // epsilon). While following this is a no-op, so the pin's own scroll events
+  // can never count as user intent.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onScroll = () => {
-      const threshold = 80;
-      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < threshold);
+      if (followingRef.current) return;
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [updateFollowing]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -1319,7 +1421,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         body: JSON.stringify({
           familiarId: familiar.id,
           prompt: trimmed,
-          ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFields(outgoingAttachments) } : {}),
+          ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
           ...((cwdDraft.trim() || projectRoot) && !currentSessionRef.current
             ? { projectRoot: cwdDraft.trim() || projectRoot }
@@ -1410,10 +1512,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     void sendRaw(lastFailedSend.text, lastFailedSend.attachments);
   }
 
+  // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
+  // the user can revise and send it as a NEW message — append semantics, no
+  // truncation/forking (that's D6-03: the harness session keeps its own
+  // server-side context, so locally rewriting the transcript would lie on
+  // reload). A non-empty draft is never silently destroyed: we only prefill
+  // when the composer is empty, and always hand focus back to it.
+  function editTurnInComposer(turn: Turn) {
+    setInput((current) => (current.trim() ? current : turn.text));
+    inputRef.current?.focus();
+  }
+
+  // CHAT-D6-02: regenerate. Re-sends the PRECEDING user turn (text +
+  // attachments) through the normal guarded sendRaw path as a new turn pair.
+  // Returns undefined (action hidden) while busy, on pending turns, and on
+  // assistant turns with no preceding user turn (e.g. system-injected).
+  function regenerateFor(turn: Turn): (() => void) | undefined {
+    if (busy || turn.role !== "assistant" || turn.pending) return undefined;
+    const idx = turns.findIndex((t) => t.id === turn.id);
+    if (idx < 0) return undefined;
+    let prevUser: Turn | undefined;
+    for (let j = idx - 1; j >= 0; j -= 1) {
+      const candidate = turns[j];
+      if (candidate && candidate.role === "user") { prevUser = candidate; break; }
+    }
+    if (!prevUser) return undefined;
+    const { text, attachments: prevAttachments } = prevUser;
+    if (!text.trim() && !prevAttachments?.length) return undefined;
+    return () => void sendRaw(text, prevAttachments ?? []);
+  }
+
   const send = async () => {
     const text = input.trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
+    // CHAT-D5-01: sendRaw early-returns while a response is streaming, so
+    // clearing the composer first would silently destroy the typed message
+    // (and staged attachments). Bail before touching state — slash intents
+    // above still run mid-stream; plain sends keep the draft intact.
+    if (busy) return;
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
     setInput("");
     setAttachments([]);
@@ -1444,7 +1581,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt, sessionId]);
 
-  const attachFiles = async (files: FileList | null) => {
+  const attachFiles = async (files: FileList | File[] | null) => {
     // Check for CSV files before normal attachment handling
     if (files?.length) {
       const csvFiles = Array.from(files).filter((f) => f.name.endsWith(".csv") || f.type === "text/csv");
@@ -1627,6 +1764,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (cmd) setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
         return;
       }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const cmd = slashSuggestions[slashIdx];
+        // If the highlighted command takes an argument and the input isn't
+        // the exact command yet, autocomplete first (like Tab) so the user
+        // can fill in args; otherwise run the highlighted suggestion — not
+        // the partially typed text. Mirrors home-composer.
+        if (cmd && cmd.argPlaceholder && canonicalize(input.trim()) !== cmd.name) {
+          setInput(cmd.name + " ");
+        } else if (cmd) {
+          intentFromSlash(cmd.name);
+        }
+        return;
+      }
+      // Esc precedence: an open slash menu consumes Esc (dismiss) before
+      // the busy branch below gets a chance to cancel the stream.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashDismissed(true);
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -1694,7 +1852,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 
   return (
-    <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <section
+      className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        dragDepthRef.current += 1;
+        setDropActive(true);
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDropActive(false);
+      }}
+      onDrop={(e) => {
+        dragDepthRef.current = 0;
+        setDropActive(false);
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        void attachFiles(e.dataTransfer.files);
+      }}
+    >
+      {dropActive ? (
+        <div className="cave-drop-overlay" aria-hidden="true">
+          <div className="cave-drop-overlay-inner">
+            <Icon name="ph:paperclip" width={16} aria-hidden />
+            <span>Drop files to attach</span>
+          </div>
+        </div>
+      ) : null}
       <header className="cave-chat-linear-header">
         <div className="cave-mobile-header-identity">
           <div className="cave-mobile-header-familiar">
@@ -1793,7 +1983,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </MetaLine>
         <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
       </header>
-      <div ref={scrollRef} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
           className="cave-chat-thread"
           role="log"
@@ -1868,7 +2058,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   return prev.role !== t.role;
                 })();
                 return (
-                  <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
+                  <TurnRow
+                    key={t.id}
+                    turn={t}
+                    familiar={familiar}
+                    showTimestamp={showTimestamp}
+                    onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
+                    onRegenerate={regenerateFor(t)}
+                  />
                 );
               }
               const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
@@ -1891,7 +2088,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       return prev.role !== t.role;
                     })();
                     return (
-                      <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
+                      <TurnRow
+                        key={t.id}
+                        turn={t}
+                        familiar={familiar}
+                        showTimestamp={showTimestamp}
+                        onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
+                        onRegenerate={regenerateFor(t)}
+                      />
                     );
                   })}
                 </div>
@@ -1902,12 +2106,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </div>
 
         {/* Scroll-to-bottom FAB */}
-        {!atBottom && (
+        {!following && (
           <button
             type="button"
             onClick={() => {
-              setAtBottom(true);
-              tailRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+              updateFollowing(true);
+              const el = scrollRef.current;
+              if (!el) return;
+              // CHAT-D13-03: the global `scroll-behavior: auto !important`
+              // kill switch does NOT override explicit scrollTo options, so
+              // gate the smooth animation on prefers-reduced-motion here.
+              const reduceMotion =
+                typeof window !== "undefined" &&
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+              el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
             }}
             aria-label="Scroll to bottom"
             className="sticky bottom-4 float-right z-20 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
@@ -1950,6 +2162,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   return (
                     <li key={cmd.name}>
                       <button
+                        type="button"
+                        ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => {
                           setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
@@ -2041,6 +2255,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onComposerKey}
               onPaste={(e) => {
+                // Paste-to-attach (CHAT-D1-02): clipboard files (screenshots,
+                // copied images/files) win over any text payload riding along.
+                // Only preventDefault when files were actually consumed so
+                // plain-text paste — including the CSV sniff — is untouched.
+                const pastedFiles = Array.from(e.clipboardData.items)
+                  .filter((item) => item.kind === "file")
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => file !== null);
+                if (pastedFiles.length > 0) {
+                  e.preventDefault();
+                  void attachFiles(pastedFiles);
+                  return;
+                }
                 const text = e.clipboardData.getData("text/plain");
                 if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}
@@ -2180,10 +2407,16 @@ function TurnRow({
   turn,
   familiar,
   showTimestamp = true,
+  onEdit,
+  onRegenerate,
 }: {
   turn: Turn;
   familiar: Familiar;
   showTimestamp?: boolean;
+  /** CHAT-D6-01: present only on user turns — loads the turn into the composer. */
+  onEdit?: () => void;
+  /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
+  onRegenerate?: () => void;
 }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
@@ -2202,6 +2435,7 @@ function TurnRow({
             timestamp={turn.createdAt}
             showTimestamp={false}
             pending={turn.pending}
+            onEdit={onEdit}
           />
           {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
         </div>
@@ -2243,6 +2477,7 @@ function TurnRow({
                 pending={turn.pending}
                 isError={turn.error}
                 label={familiar.display_name}
+                onRegenerate={onRegenerate}
               />
             )}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}

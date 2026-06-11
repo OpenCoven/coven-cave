@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { parse } from "node:url";
@@ -8,6 +8,24 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
+
+// Packaged desktop builds (the Tauri sidecar) run this server from inside the
+// .app bundle, where next.config.ts is not shipped. The standalone build
+// serializes the resolved config into .next/required-server-files.json — hand
+// it to Next the same way the generated standalone server.js does, before
+// next() resolves config.
+if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
+  try {
+    const requiredServerFiles = JSON.parse(
+      readFileSync(new URL(".next/required-server-files.json", import.meta.url), "utf8"),
+    ) as { config?: unknown };
+    if (requiredServerFiles.config) {
+      process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredServerFiles.config);
+    }
+  } catch {
+    // Not fatal — fall through to Next's normal config resolution.
+  }
+}
 
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_access_token";
@@ -38,6 +56,29 @@ function isAuthorized(req: IncomingMessage): boolean {
 
   const auth = req.headers.authorization ?? "";
   return auth.startsWith("Bearer ") && auth.slice("Bearer ".length) === ACCESS_TOKEN;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+// WebSocket upgrades are not subject to the browser same-origin policy, so a
+// page on any site could open ws://localhost:3000/api/pty-ws (and the browser
+// would attach the access cookie). Reject upgrades whose Origin is neither
+// loopback nor the host this socket was opened on; requests without an Origin
+// header come from non-browser clients, which the bind address and access
+// token already govern.
+function isAllowedUpgradeOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (isLoopbackHostname(url.hostname)) return true;
+  return url.host === (req.headers.host ?? "");
 }
 
 function defaultShell(): string {
@@ -94,6 +135,25 @@ function validateCwd(raw: string | undefined): string | undefined {
   return raw;
 }
 
+// The server is usually launched by pnpm (dev) or as a bundled sidecar, and
+// pnpm exports its whole config to children as npm_config_* env vars. A
+// shell that inherits them gets "npm warn Unknown env config …" on every
+// npm command, and npm/pnpm/yarn invoked there read pnpm's settings as if
+// the user had set them. Strip the package-manager lifecycle namespace —
+// and the server's own NODE_ENV — before handing the env to a user shell.
+const PTY_ENV_DROPPED = new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+
+function sanitizedEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    if (/^npm_/i.test(key)) continue;
+    if (PTY_ENV_DROPPED.has(key)) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
 function sendPtyData(ws: WebSocket, data: string): void {
   if (ws.readyState !== WebSocket.OPEN) return;
   const encoded = Buffer.from(data, "utf8");
@@ -118,7 +178,7 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
     rows: rows > 0 ? rows : 40,
     cwd: cwd ?? process.env.HOME ?? process.cwd(),
     env: {
-      ...process.env,
+      ...sanitizedEnv(),
       PATH: augmentedPath(),
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
@@ -204,7 +264,7 @@ function handlePtyConnection(
 }
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
+const hostname = process.env.HOSTNAME ?? (dev ? "127.0.0.1" : "0.0.0.0");
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 
 const app = next({ dev, hostname, port });
@@ -226,6 +286,12 @@ server.on("upgrade", (req, socket, head) => {
       console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);
       socket.destroy();
     });
+    return;
+  }
+
+  if (!isAllowedUpgradeOrigin(req)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
     return;
   }
 
