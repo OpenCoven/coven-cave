@@ -3,7 +3,7 @@
  * Tests for CHAT-D3-07 (P3) render performance optimizations:
  * 1. Turn index map (O(1) vs O(n²) indexOf)
  * 2. renderCache LRU cap (unbounded → 200 cap)
- * 3. memoized regenerateFor (avoid findIndex per render)
+ * 3. regenerateFor stays outside the per-row index lookup path
  */
 
 import assert from "node:assert/strict";
@@ -25,8 +25,14 @@ const messageBubbleSource = readFileSync(
 
 assert.match(
   chatViewSource,
-  /const turnIndexMap = useMemo\(\(\) => \{\s*const map = new Map.*?\}, \[allTurns\]\)/s,
-  "builds turnIndexMap with useMemo keyed on allTurns",
+  /const turnIndexMap = new Map(?:<[^>]+>)?\(\);/,
+  "creates a turnIndexMap Map",
+);
+
+assert.match(
+  chatViewSource,
+  /turnIndexMap\.set\([^;]*\.id,\s*\w+\);/,
+  "populates turnIndexMap with turn ids and numeric indexes",
 );
 
 assert.match(
