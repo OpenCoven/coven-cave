@@ -125,10 +125,30 @@ assert.match(
   "Unknown/stale deep-link ids must fall back to the chat list with the hash cleared — no crash",
 );
 
+const readChatHashHelper =
+  workspaceSource.match(/function readChatHash\(\): string \| null \{[\s\S]*?\n\}/)?.[0] ?? "";
+
 assert.match(
-  workspaceSource,
+  readChatHashHelper,
+  /try \{[\s\S]*decodeURIComponent\(hash\.slice\(CHAT_HASH_PREFIX\.length\)\)[\s\S]*\} catch/,
+  "readChatHash should treat malformed percent-encoding as null instead of throwing during render/popstate",
+);
+
+const popstateEffect =
+  workspaceSource.match(
+    /useEffect\(\(\) => \{\s*const onPopState = \(\) => \{[\s\S]*?\};\s*window\.addEventListener\("popstate", onPopState\);[\s\S]*?\}, \[openAgentSession, showAgentChatList\]\);/,
+  )?.[0] ?? "";
+
+assert.match(
+  popstateEffect,
   /addEventListener\("popstate"/,
   "Workspace must listen for popstate so browser Back/Forward navigates between list and chat",
+);
+
+assert.match(
+  popstateEffect,
+  /if \(target\) \{\s*openAgentSession\(sid, target\.familiarId\);\s*return;\s*\}[\s\S]*clearChatHash\(\);\s*showAgentChatList\(\);/,
+  "Popstate should clear stale chat hashes and return to the list when the target session is missing",
 );
 
 console.log("chat-router-switching.test.ts: ok");
