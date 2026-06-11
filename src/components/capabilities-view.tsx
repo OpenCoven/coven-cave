@@ -99,10 +99,11 @@ export function CapabilitiesViewSurface({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [harnessFilter, setHarnessFilter] = useState<string | null>(() => initialHarness(activeHarness));
-  const [typeFilter, setTypeFilter] = useState<CapabilityType | "all">(() => initialTypeFilter());
-  const [statusFilter, setStatusFilter] = useState<CapabilityStatus | "all">(() => initialStatusFilter());
-  const [query, setQuery] = useState(() => initialQuery());
+  const [harnessFilter, setHarnessFilter] = useState<string | null>(activeHarness ?? null);
+  const [typeFilter, setTypeFilter] = useState<CapabilityType | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<CapabilityStatus | "all">("all");
+  const [query, setQuery] = useState("");
+  const [urlFiltersHydrated, setUrlFiltersHydrated] = useState(false);
   const [selectionId, setSelectionId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -140,13 +141,24 @@ export function CapabilitiesViewSurface({
   }, [load]);
 
   useEffect(() => {
+    if (urlFiltersHydrated) return;
+    setHarnessFilter(initialHarness(activeHarness));
+    setQuery(initialQuery());
+    setTypeFilter(initialTypeFilter());
+    setStatusFilter(initialStatusFilter());
+    setUrlFiltersHydrated(true);
+  }, [activeHarness, urlFiltersHydrated]);
+
+  useEffect(() => {
+    if (!urlFiltersHydrated) return;
     if (activeHarness) {
       setHarnessFilter(activeHarness);
       setSelectionId(null);
     }
-  }, [activeHarness]);
+  }, [activeHarness, urlFiltersHydrated]);
 
   useEffect(() => {
+    if (!urlFiltersHydrated) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (harnessFilter) params.set("harness", harnessFilter);
@@ -159,7 +171,7 @@ export function CapabilitiesViewSurface({
     else params.delete("status");
     const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
     window.history.replaceState(null, "", next);
-  }, [harnessFilter, query, typeFilter, statusFilter]);
+  }, [harnessFilter, query, typeFilter, statusFilter, urlFiltersHydrated]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

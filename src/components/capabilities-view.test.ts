@@ -24,8 +24,13 @@ assert.match(source, /initialHarness\(activeHarness\?: string \| null\)[\s\S]*ac
 assert.match(source, /initialQuery\(\)[\s\S]*readUrlParam\("q"\)/, "query filter should initialize from the URL");
 assert.match(source, /initialTypeFilter\(\)[\s\S]*readCapabilityTypeParam\("type"\)/, "type filter should initialize from the URL");
 assert.match(source, /initialStatusFilter\(\)[\s\S]*readCapabilityStatusParam\("status"\)/, "status filter should initialize from the URL");
+assert.match(source, /const \[urlFiltersHydrated, setUrlFiltersHydrated\] = useState\(false\);/, "URL filters should hydrate after mount, not during SSR initial render");
+assert.doesNotMatch(source, /useState<[^>]+>\(\(\) => initial(?:Harness|TypeFilter|StatusFilter)\(/, "URL-backed typed filters should not read window in useState initializers");
+assert.doesNotMatch(source, /useState\(\(\) => initialQuery\(\)\)/, "query filter should not read window in a useState initializer");
+assert.match(source, /setHarnessFilter\(initialHarness\(activeHarness\)\);[\s\S]*setQuery\(initialQuery\(\)\);[\s\S]*setTypeFilter\(initialTypeFilter\(\)\);[\s\S]*setStatusFilter\(initialStatusFilter\(\)\);[\s\S]*setUrlFiltersHydrated\(true\);/, "URL filters should hydrate together in a mount effect");
+assert.match(source, /if \(!urlFiltersHydrated\) return;[\s\S]*window\.history\.replaceState/, "URL sync should wait until URL filters hydrate");
 assert.match(source, /if \(statusFilter !== "all"\) params\.set\("status", statusFilter\);[\s\S]*else params\.delete\("status"\);/, "status filter should sync into shareable URLs");
-assert.match(source, /\}, \[harnessFilter, query, typeFilter, statusFilter\]\);/, "URL sync should rerun when status changes");
+assert.match(source, /\}, \[harnessFilter, query, typeFilter, statusFilter, urlFiltersHydrated\]\);/, "URL sync should rerun when status changes after hydration");
 assert.match(source, /const applyQueryFilter = \(value: string\) => \{[\s\S]*setQuery\(value\);[\s\S]*setSelectionId\(null\);[\s\S]*\};/, "query changes should clear stale inspector selection");
 assert.match(source, /const applyTypeFilter = \(value: CapabilityType \| "all"\) => \{[\s\S]*setTypeFilter\(value\);[\s\S]*setSelectionId\(null\);[\s\S]*\};/, "type changes should clear stale inspector selection");
 assert.match(source, /const applyStatusFilter = \(value: CapabilityStatus \| "all"\) => \{[\s\S]*setStatusFilter\(value\);[\s\S]*setSelectionId\(null\);[\s\S]*\};/, "status changes should clear stale inspector selection");
