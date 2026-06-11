@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.68] — 2026-06-11
+
+### Added
+- **Project-aware new chats** — new chat launches can carry an explicit working directory from the home composer, task chat actions, terminal/Comux project lists, and project-scoped chat navigation.
+- **Library reader controls** — document reading gains a deduped title treatment, document navigation affordances, themed scroll styling, and reader width controls. (#380, #383)
+
+### Changed
+- **Chat and project surfaces** — the selected-familiar chat list drops redundant dossier chrome, project rows toggle/select as a full row, the project sidebar stays visible, and chat titles use an explicit rename button. (#379, #382)
+- **Library Projects view** — Projects now owns the full Library canvas, with deduped/disambiguated project rail entries instead of cramped nested content. (#381)
+- **Toolbar consistency** — Calendar uses one Add-event entry point with a uniform compact toolbar row. (#384)
+
+### Fixed
+- **Dev-server HMR and stale PWA state** — the custom dev server forwards non-PTY websocket upgrades to Next.js again, while development unregisters stale service workers and clears old CovenCave PWA caches. (#385)
+- **Terminal bridge recovery** — browser PTY bridge support is restored on main after the release polish wave.
+- **Capabilities and skills restoration** — harness manifests and user Claude skills are visible again in Roles → Skills.
+
 ## [0.0.67] — 2026-06-11
 
 ### Added
