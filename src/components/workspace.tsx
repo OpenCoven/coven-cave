@@ -70,9 +70,12 @@ const CHAT_HASH_PREFIX = "#chat-";
 function readChatHash(): string | null {
   if (typeof window === "undefined") return null;
   const hash = window.location.hash;
-  return hash.startsWith(CHAT_HASH_PREFIX)
-    ? decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length))
-    : null;
+  if (!hash.startsWith(CHAT_HASH_PREFIX)) return null;
+  try {
+    return decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length));
+  } catch {
+    return null;
+  }
 }
 
 function clearChatHash() {
@@ -137,6 +140,8 @@ export function Workspace() {
   // often; the listener should not resubscribe on either.
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  const sessionsLoadedRef = useRef(sessionsLoaded);
+  sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -730,7 +735,16 @@ export function Workspace() {
       const sid = readChatHash();
       if (sid) {
         const target = sessionsRef.current.find((s) => s.id === sid);
-        openAgentSession(sid, target?.familiarId);
+        if (target) {
+          openAgentSession(sid, target.familiarId);
+          return;
+        }
+        if (!sessionsLoadedRef.current) {
+          pendingChatDeepLinkRef.current = sid;
+          return;
+        }
+        clearChatHash();
+        showAgentChatList();
         return;
       }
       // Popped back out of a chat entry → show the list, but only while the
