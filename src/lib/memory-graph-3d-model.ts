@@ -24,7 +24,7 @@ export type MemoryGraphFileEntry = {
 
 export type MemoryGraphHubNode = {
   kind: "hub";
-  hubKind: "familiar" | "files";
+  hubKind: "familiar" | "files" | "source";
   id: string;
   label: string;
   glyph?: string;
@@ -80,6 +80,7 @@ export type MemoryGraph = {
   metrics: {
     familiarHubs: number;
     fileHubs: number;
+    sourceHubs: number;
     visibleCovenEntries: number;
     visibleFileEntries: number;
     hiddenEntries: number;
@@ -228,6 +229,7 @@ export function buildMemoryGraphModel({
   query = "",
   familiarFilter = "all",
   maxLeavesPerHub = 30,
+  includeSources = true,
 }: {
   familiars: Familiar[];
   covenEntries: MemoryGraphCovenEntry[];
@@ -235,6 +237,9 @@ export function buildMemoryGraphModel({
   query?: string;
   familiarFilter?: string;
   maxLeavesPerHub?: number;
+  /** Render standalone hubs for source-level (familiar-less) memories.
+   *  false restores the pre-2026-06-10 agent-only focus (b0df474). */
+  includeSources?: boolean;
 }): MemoryGraph {
   const q = query.trim().toLowerCase();
   const nodes: MemoryGraphNode[] = [];
@@ -359,14 +364,69 @@ export function buildMemoryGraphModel({
     }
   }
 
+  // Source-level memories (no familiarId): ~/.coven/memory, harness
+  // workspace/index, runtime memory. These belong to the whole Coven, not
+  // one familiar — they get standalone hubs grouped by source root so the
+  // graph accounts for every memory source, not just the selected agent's.
+  const sourceEntriesByRoot = new Map<string, MemoryGraphFileEntry[]>();
+  for (const entry of includeSources ? fileEntries : []) {
+    if (entry.familiarId) continue;
+    if (!matchesQuery([entry.relPath, entry.rootLabel, entry.sourceContext], q)) continue;
+    const bucket = sourceEntriesByRoot.get(entry.root) ?? [];
+    bucket.push(entry);
+    sourceEntriesByRoot.set(entry.root, bucket);
+  }
+
+  let sourceHubs = 0;
+  let visibleSourceEntries = 0;
+  for (const [root, entries] of sourceEntriesByRoot) {
+    entries.sort((a, b) => compareIsoDesc(a.modified, b.modified));
+    const hubId = `source:${root}`;
+    sourceHubs += 1;
+    visibleSourceEntries += entries.length;
+    nodes.push({
+      kind: "hub",
+      hubKind: "source",
+      id: hubId,
+      label: entries[0]?.rootLabel ?? root,
+      memoryCount: entries.length,
+      latestAt: entries[0]?.modified,
+    });
+    addCappedLeaves({
+      hubId,
+      source: "file",
+      entries,
+      maxLeavesPerHub,
+      nodes,
+      edges,
+      toMemoryNode: (entry) => {
+        const file = entry as MemoryGraphFileEntry;
+        return {
+          kind: "memory",
+          id: `file:${file.fullPath}`,
+          source: "file",
+          hubId,
+          title: file.relPath,
+          path: file.fullPath,
+          updatedAt: file.modified,
+          sourceContext: file.sourceContext,
+          rootLabel: file.rootLabel,
+          relPath: file.relPath,
+        };
+      },
+    });
+    hiddenEntries += Math.max(entries.length - maxLeavesPerHub, 0);
+  }
+
   return {
     nodes,
     edges,
     metrics: {
       familiarHubs: selectedFamiliar ? 1 : 0,
       fileHubs: selectedFamiliar && matchingFileEntries.length > 0 ? 1 : 0,
+      sourceHubs,
       visibleCovenEntries: matchingCovenEntries.length,
-      visibleFileEntries: matchingFileEntries.length,
+      visibleFileEntries: matchingFileEntries.length + visibleSourceEntries,
       hiddenEntries,
     },
   };
@@ -385,8 +445,16 @@ export function buildMemoryGraphSceneModel(graph: MemoryGraph): MemoryGraphScene
     .filter((node): node is MemoryGraphHubNode => node.kind === "hub");
   const hubPositions = new Map<string, ScenePosition>();
 
+  // Familiar constellation keeps its anchor; file/source hubs stack below
+  // so multiple hubs never overlap in the scene.
+  let hubRow = 0;
   hubs.forEach((hub) => {
-    hubPositions.set(hub.id, pos(-2.25, 0, 0));
+    if (hub.hubKind === "familiar") {
+      hubPositions.set(hub.id, pos(-2.25, 0, 0));
+      return;
+    }
+    hubRow += 1;
+    hubPositions.set(hub.id, pos(-2.25, -2.6 * hubRow, 0.4 * hubRow));
   });
 
   const childrenByHub = new Map<string, MemoryGraphChildNode[]>();

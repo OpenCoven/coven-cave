@@ -10,8 +10,8 @@ const devPageSource = await readFile(new URL("../app/dev/memory-graph-3d/page.ts
 
 assert.match(
   memoryViewSource,
-  /import \{ MemoryGraph3D \} from "@\/components\/memory-graph-3d"/,
-  "AgentsMemoryView should render the dedicated memory graph component instead of reusing TraceGraph3D",
+  /import\("@\/components\/memory-graph-3d"\)\.then\(\(m\) => m\.MemoryGraph3D\)/,
+  "AgentsMemoryView should render the dedicated memory graph component (dynamic import for SSR) instead of reusing TraceGraph3D",
 );
 
 assert.match(
@@ -118,8 +118,8 @@ assert.match(
 
 assert.match(
   graphSource,
-  /hasSourceContext[\s\S]*tracked source|tracked source[\s\S]*hasSourceContext/,
-  "Memory graph legend should distinguish traced memory nodes without changing graph topology",
+  /leaves\.filter\(hasSourceContext\)/,
+  "Memory graph should visually distinguish traced memory nodes (provenance ring) without changing graph topology",
 );
 
 assert.match(
@@ -150,4 +150,16 @@ assert.match(
   devPageSource,
   /MemoryGraph3DSmoke/,
   "Memory graph should expose a dev-only smoke route like the trace graph",
+);
+
+assert.match(
+  graphSource,
+  /if \(node\.familiarId == null\) return false;/,
+  "Source-level (familiar-less) memories render undimmed — they are shared, not foreign",
+);
+
+assert.match(
+  modelSource,
+  /hubKind: "familiar" \| "files" \| "source"/,
+  "Memory graph model supports standalone source hubs so every memory source is represented",
 );

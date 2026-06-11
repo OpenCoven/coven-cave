@@ -109,14 +109,14 @@ function disposeObject(object: THREE.Object3D) {
 
 function colorFor(node: MemoryGraphSceneNode, selectedFamiliarId: string): THREE.Color {
   const color = new THREE.Color(node.color);
-  const belongsToSelected =
-    (node.kind === "hub" && node.familiarId === selectedFamiliarId) ||
-    (node.kind !== "hub" && node.familiarId === selectedFamiliarId);
+  // Familiar-less nodes are source-level (shared) memories — never foreign.
+  const belongsToSelected = node.familiarId == null || node.familiarId === selectedFamiliarId;
   if (belongsToSelected) return color;
   return color.lerp(new THREE.Color("#201927"), 0.42);
 }
 
 function nodeIsDimmed(node: MemoryGraphSceneNode, selectedFamiliarId: string): boolean {
+  if (node.familiarId == null) return false;
   if (node.kind === "hub") return node.hubKind === "familiar" && node.familiarId !== selectedFamiliarId;
   return node.familiarId !== selectedFamiliarId;
 }

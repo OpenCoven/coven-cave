@@ -56,6 +56,7 @@ const graph = buildMemoryGraphModel({
   query: "",
   familiarFilter: "nova",
   maxLeavesPerHub: 1,
+  includeSources: false, // legacy agent-only focus (b0df474) stays available
 });
 
 const familiarHubs = graph.nodes.filter((node) => node.kind === "hub" && node.hubKind === "familiar");
@@ -201,7 +202,7 @@ const denseScene = buildMemoryGraphSceneModel(denseGraph);
 const denseCardY = denseScene.nodes.filter((node) => node.kind === "memory").map((node) => node.position.y);
 
 assert.equal(
-  denseGraph.nodes.filter((node) => node.kind === "memory").length,
+  denseGraph.nodes.filter((node) => node.kind === "memory" && node.hubId === "familiar:nova").length,
   24,
   "dense memory maps should cluster before the card field exceeds the initial camera framing",
 );
@@ -214,3 +215,100 @@ assert.ok(
   Math.max(...denseCardY) <= 3,
   "dense memory card fields should stay within the first-frame vertical framing",
 );
+
+// ── Source-level memories (no familiarId) must appear as their own hubs ──
+// ~/.coven/memory, OpenClaw workspace/index, and Codex runtime entries carry
+// no familiarId; the graph previously dropped them silently.
+const sourceFileEntries = [
+  ...fileEntries, // "workspace" root, unscoped
+  {
+    root: "coven-origin",
+    rootLabel: "Coven native memory",
+    relPath: "shared-canon.md",
+    fullPath: "/Users/buns/.coven/memory/shared-canon.md",
+    size: 800,
+    modified: "2026-06-08T06:00:00.000Z",
+  },
+  {
+    root: "coven-origin",
+    rootLabel: "Coven native memory",
+    relPath: "older-note.md",
+    fullPath: "/Users/buns/.coven/memory/older-note.md",
+    size: 400,
+    modified: "2026-06-07T06:00:00.000Z",
+  },
+  {
+    root: "openclaw-familiar",
+    rootLabel: "Nova workspace",
+    relPath: "MEMORY.md",
+    fullPath: "/Users/buns/.openclaw/workspace/nova/MEMORY.md",
+    size: 300,
+    modified: "2026-06-08T03:00:00.000Z",
+    familiarId: "nova",
+  },
+];
+
+const sourceGraph = buildMemoryGraphModel({
+  familiars,
+  covenEntries,
+  fileEntries: sourceFileEntries,
+  query: "",
+  familiarFilter: "nova",
+  maxLeavesPerHub: 1,
+});
+
+const sourceHubs = sourceGraph.nodes.filter(
+  (node) => node.kind === "hub" && node.hubKind === "source",
+);
+assert.equal(sourceHubs.length, 2, "each unscoped memory root becomes a source hub (workspace + coven-origin)");
+assert.ok(
+  sourceHubs.some((hub) => hub.label === "Coven native memory"),
+  "source hubs are labeled by their memory source",
+);
+
+const sourceLeafIds = sourceGraph.nodes
+  .filter((node) => node.kind === "memory" && node.hubId.startsWith("source:"))
+  .map((node) => node.id);
+assert.ok(
+  sourceLeafIds.includes("file:/Users/buns/.coven/memory/shared-canon.md"),
+  "unscoped source memories render as leaves under their source hub",
+);
+assert.ok(
+  !sourceGraph.nodes.some((node) => node.kind === "memory" && node.id === "file:/Users/buns/.openclaw/workspace/nova/MEMORY.md" && node.hubId.startsWith("source:")),
+  "familiar-scoped entries stay under the familiar, not a source hub",
+);
+
+// Capping applies per source hub and surfaces a cluster
+const covenOriginCluster = sourceGraph.nodes.find(
+  (node) => node.kind === "cluster" && node.hubId === "source:coven-origin",
+);
+assert.equal(covenOriginCluster?.count, 1, "older source memories collapse into a cluster per hub");
+
+assert.equal(sourceGraph.metrics.sourceHubs, 2, "metrics expose the source hub count");
+
+// Scene: hubs must not overlap when source hubs join the familiar constellation
+const sourceScene = buildMemoryGraphSceneModel(sourceGraph);
+const hubPositions = sourceScene.nodes
+  .filter((node) => node.kind === "hub")
+  .map((node) => `${node.position.x},${node.position.y},${node.position.z}`);
+assert.equal(new Set(hubPositions).size, hubPositions.length, "every hub gets a distinct scene position");
+
+// Query filtering still applies to source memories
+const filteredSourceGraph = buildMemoryGraphModel({
+  familiars,
+  covenEntries,
+  fileEntries: sourceFileEntries,
+  query: "shared-canon",
+  familiarFilter: "nova",
+  maxLeavesPerHub: 8,
+});
+assert.ok(
+  filteredSourceGraph.nodes.some((node) => node.kind === "memory" && node.title === "shared-canon.md"),
+  "query matches source memory relPath",
+);
+assert.ok(
+  !filteredSourceGraph.nodes.some((node) => node.kind === "hub" && node.id === "source:workspace"),
+  "source hubs with no query matches drop out",
+);
+
+console.log("memory-graph-3d-model.test.ts: source-hub assertions ok");
