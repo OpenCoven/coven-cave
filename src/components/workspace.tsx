@@ -1143,7 +1143,9 @@ export function Workspace() {
                 shellRef.current?.toggleAgent();
               }}
             >
-              <Icon name="ph:cat" width={14} />
+              <span className="edge-rail-chip">
+                <Icon name="ph:cat" width={14} />
+              </span>
             </button>
           </aside>
         ) : undefined}
