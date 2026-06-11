@@ -2617,13 +2617,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // Build a flat ordered list of turns for timestamp gap logic (prev-turn lookup).
             // CHAT-D10-02: pre-build a Map keyed by turn.id to avoid O(n) indexOf per row.
             const allTurns = turns;
-            const turnIndexMap = useMemo(() => {
-              const map = new Map<string, number>();
-              for (let idx = 0; idx < allTurns.length; idx++) {
-                map.set(allTurns[idx].id, idx);
-              }
-              return map;
-            }, [allTurns]);
+            const turnIndexMap = new Map<string, number>();
+            for (let idx = 0; idx < allTurns.length; idx++) {
+              turnIndexMap.set(allTurns[idx].id, idx);
+            }
 
             return grouped.map((g) => {
               if (g.kind === "single") {
