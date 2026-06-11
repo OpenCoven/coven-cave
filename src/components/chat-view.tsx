@@ -963,6 +963,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [cwdDraft, setCwdDraft] = useState("");
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
+  // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
+  // dragenter/dragleave pairs so transitions across child elements don't
+  // flicker the overlay; only file drags (dataTransfer.types includes
+  // "Files") arm it, so dragging a text selection never hijacks the surface.
+  const [dropActive, setDropActive] = useState(false);
+  const dragDepthRef = useRef(0);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const turnsRef = useRef<Turn[]>([]);
@@ -1573,7 +1579,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt, sessionId]);
 
-  const attachFiles = async (files: FileList | null) => {
+  const attachFiles = async (files: FileList | File[] | null) => {
     // Check for CSV files before normal attachment handling
     if (files?.length) {
       const csvFiles = Array.from(files).filter((f) => f.name.endsWith(".csv") || f.type === "text/csv");
@@ -1844,7 +1850,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 
   return (
-    <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <section
+      className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
+      onDragEnter={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        dragDepthRef.current += 1;
+        setDropActive(true);
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDropActive(false);
+      }}
+      onDrop={(e) => {
+        dragDepthRef.current = 0;
+        setDropActive(false);
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        void attachFiles(e.dataTransfer.files);
+      }}
+    >
+      {dropActive ? (
+        <div className="cave-drop-overlay" aria-hidden="true">
+          <div className="cave-drop-overlay-inner">
+            <Icon name="ph:paperclip" width={16} aria-hidden />
+            <span>Drop files to attach</span>
+          </div>
+        </div>
+      ) : null}
       <header className="cave-chat-linear-header">
         <div className="cave-mobile-header-identity">
           <div className="cave-mobile-header-familiar">
@@ -2215,6 +2253,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onComposerKey}
               onPaste={(e) => {
+                // Paste-to-attach (CHAT-D1-02): clipboard files (screenshots,
+                // copied images/files) win over any text payload riding along.
+                // Only preventDefault when files were actually consumed so
+                // plain-text paste — including the CSV sniff — is untouched.
+                const pastedFiles = Array.from(e.clipboardData.items)
+                  .filter((item) => item.kind === "file")
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => file !== null);
+                if (pastedFiles.length > 0) {
+                  e.preventDefault();
+                  void attachFiles(pastedFiles);
+                  return;
+                }
                 const text = e.clipboardData.getData("text/plain");
                 if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}

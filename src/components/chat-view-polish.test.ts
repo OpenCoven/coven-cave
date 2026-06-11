@@ -371,3 +371,63 @@ assert.equal(
   2,
   "Both onSlashFromChat sites must report unhandled slash commands honestly (no unconditional return-true wrappers)",
 );
+
+// — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —
+const pasteHandler = source.match(/onPaste=\{\(e\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? "";
+assert.match(
+  pasteHandler,
+  /e\.clipboardData\.items[\s\S]*item\.kind === "file"[\s\S]*item\.getAsFile\(\)/,
+  "Composer paste must inspect clipboardData.items for files (screenshots, copied images), not just text/plain",
+);
+assert.match(
+  pasteHandler,
+  /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void attachFiles\(pastedFiles\);\s*\n\s*return;/,
+  "Pasted files win over any clipboard text and route through the existing attach pipeline; preventDefault only fires when files were consumed",
+);
+assert.ok(
+  pasteHandler.indexOf("attachFiles(pastedFiles)") < pasteHandler.indexOf("looksLikeCsv"),
+  "Paste precedence: files first, then the plain-text CSV sniff (which must remain intact)",
+);
+assert.match(
+  pasteHandler,
+  /const text = e\.clipboardData\.getData\("text\/plain"\);\s*\n\s*if \(looksLikeCsv\(text\)\) \{ setCsvRaw\(text\); \}/,
+  "Plain-text paste keeps its current behavior — the CSV sniff still runs and the default text insertion is not prevented",
+);
+
+// — CHAT-D1-03: drag-and-drop attach on the chat surface —
+assert.match(
+  source,
+  /onDragEnter=\{\(e\) => \{\s*\n\s*if \(!e\.dataTransfer\.types\.includes\("Files"\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
+  "dragenter must guard on a Files-type drag (text selections must not hijack) and use counter-based depth tracking",
+);
+assert.match(
+  source,
+  /onDragOver=\{\(e\) => \{\s*\n\s*if \(!e\.dataTransfer\.types\.includes\("Files"\)\) return;\s*\n\s*e\.preventDefault\(\);/,
+  "dragover must preventDefault (only for file drags) so the browser allows the drop",
+);
+assert.match(
+  source,
+  /onDragLeave=\{\(e\) => \{[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
+  "dragleave must decrement the depth counter and only hide the overlay at depth 0 — child-element transitions must not flicker it",
+);
+assert.match(
+  source,
+  /onDrop=\{\(e\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?void attachFiles\(e\.dataTransfer\.files\);/,
+  "drop must reset the overlay state and route dataTransfer.files through the existing attach pipeline",
+);
+assert.match(
+  source,
+  /\{dropActive \? \(\s*\n\s*<div className="cave-drop-overlay" aria-hidden="true">[\s\S]*?Drop files to attach/,
+  "A visible drop overlay must render while a file drag is over the chat surface",
+);
+const caveChatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+assert.match(
+  caveChatCss,
+  /\.cave-drop-overlay \{[\s\S]*?pointer-events: none;[\s\S]*?\n\}/,
+  "The drop overlay must be pointer-events: none so it never intercepts clicks or the drop itself",
+);
+assert.match(
+  caveChatCss,
+  /\.cave-chat-linear \{\s*\n\s*position: relative;/,
+  "The chat section must anchor the absolutely-positioned drop overlay",
+);
