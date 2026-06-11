@@ -24,6 +24,7 @@ type MergeOptions = {
   localConversations: LocalConversationSummary[];
   state: CaveState;
   includeArchived: boolean;
+  isValidDaemonProjectRoot?: (projectRoot: string) => boolean;
 };
 
 function localConversationToSession(
@@ -71,11 +72,15 @@ export function mergeSessionRows({
   localConversations,
   state,
   includeArchived,
+  isValidDaemonProjectRoot,
 }: MergeOptions): SessionRow[] {
   const seen = new Set<string>();
   const rows: SessionRow[] = [];
 
   for (const session of daemonSessions) {
+    if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
+      continue;
+    }
     seen.add(session.id);
     const titleOverride = state.sessionTitles[session.id];
     const archivedLocal = state.sessionArchived[session.id] ?? null;

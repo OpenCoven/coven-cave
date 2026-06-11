@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import fs from "node:fs";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
@@ -20,6 +21,16 @@ type DaemonSession = {
   created_at: string;
   updated_at: string;
 };
+
+function isTrueProjectCwd(projectRoot: string): boolean {
+  const trimmed = projectRoot.trim();
+  if (!trimmed) return false;
+  try {
+    return fs.statSync(trimmed).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -51,6 +62,7 @@ export async function GET(req: Request) {
     localConversations,
     state,
     includeArchived,
+    isValidDaemonProjectRoot: isTrueProjectCwd,
   });
 
   return NextResponse.json({ ok: true, sessions });

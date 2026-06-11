@@ -67,6 +67,43 @@ assert.deepEqual(
   "session list should include local-only saved chats alongside daemon sessions",
 );
 
+const cwdFiltered = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "daemon-valid",
+      project_root: "/repo",
+      harness: "codex",
+      title: "Valid daemon chat",
+      status: "completed",
+      exit_code: 0,
+      archived_at: null,
+      created_at: "2026-06-08T18:00:00.000Z",
+      updated_at: "2026-06-08T18:05:00.000Z",
+    },
+    {
+      id: "daemon-missing-cwd",
+      project_root: "/deleted/worktree",
+      harness: "codex",
+      title: "Stale daemon chat",
+      status: "orphaned",
+      exit_code: null,
+      archived_at: null,
+      created_at: "2026-06-08T18:10:00.000Z",
+      updated_at: "2026-06-08T18:15:00.000Z",
+    },
+  ],
+  localConversations: [localConversation],
+  state,
+  includeArchived: false,
+  isValidDaemonProjectRoot: (root) => root === "/repo",
+});
+
+assert.deepEqual(
+  cwdFiltered.map((s) => s.id),
+  ["local-1", "daemon-valid"],
+  "daemon sessions without a true project cwd should be filtered while local Cave chats remain visible",
+);
+
 assert.equal(
   mergeSessionRows({
     daemonSessions: [],
