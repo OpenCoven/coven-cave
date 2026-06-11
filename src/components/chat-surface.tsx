@@ -6,6 +6,7 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { DebugPane } from "@/components/debug-pane";
+import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -15,7 +16,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type AgentsScope = "conversation" | "memory";
 
-export type RightPanelKind = "inspector" | "debug";
+export type RightPanelKind = "inspector" | "changes" | "debug";
 
 type Props = {
   familiars: Familiar[];
@@ -82,6 +83,14 @@ function RightPanel({
         </button>
         <button
           type="button"
+          className={`right-panel-tab${panel === "changes" ? " right-panel-tab--active" : ""}`}
+          onClick={() => onSetPanel("changes")}
+        >
+          <Icon name="ph:git-diff" width={13} />
+          Changes
+        </button>
+        <button
+          type="button"
           className={`right-panel-tab${panel === "debug" ? " right-panel-tab--active" : ""}`}
           onClick={() => onSetPanel("debug")}
         >
@@ -103,6 +112,7 @@ function RightPanel({
             onInboxItemChanged={onInboxItemChanged}
           />
         )}
+        {panel === "changes" && <SessionChangesPanel />}
         {panel === "debug" && <DebugPane />}
       </div>
     </aside>
