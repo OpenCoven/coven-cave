@@ -69,6 +69,26 @@ assert.match(
 assert.doesNotMatch(src, /library-reader-footer/, "Reader footer bar is removed");
 assert.doesNotMatch(src, /Exit reader/, "Duplicate Exit-reader affordance is gone (X + Esc + backdrop remain)");
 assert.match(src, /className="library-reader-actions"/, "Header hosts the consolidated action cluster");
+assert.doesNotMatch(
+  src,
+  /library-reader-iconbtn"[\s\S]{0,300}Open in editor/,
+  "Reader cluster has no open-in-editor button (it stays in the inline preview header)",
+);
+assert.match(
+  src,
+  /READER_WIDE_KEY = "cave:library:reader-wide"/,
+  "Reader width preference persists",
+);
+assert.match(
+  src,
+  /aria-pressed=\{readerWide\}[\s\S]{0,200}ph:arrows-(in|out)-simple/,
+  "Width toggle is a labeled pressed-state button",
+);
+assert.match(
+  css,
+  /\.library-reader-modal--wide \{[\s\S]*?max-width: min\(1240px/,
+  "Wide mode grows the modal and unlocks the measure",
+);
 
 // ── P2: prev/next document nav ──
 assert.match(src, /export type DocNav = \{ index: number; total: number; onPrev/, "DocNav contract exported");

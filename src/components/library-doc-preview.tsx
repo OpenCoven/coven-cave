@@ -470,12 +470,19 @@ function stripLeadingTitleHeading(body: string, title: string): string {
 }
 
 const READER_FONT_KEY = "cave:library:reader-font";
+const READER_WIDE_KEY = "cave:library:reader-wide";
 const READER_FONT_SIZES = [15, 17, 19, 21];
 
 function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
   const [readerOpen, setReaderOpen] = useState(false);
 
   const renderBody = stripLeadingTitleHeading(doc.body, doc.title);
+
+  // Reader width — narrow (~68ch measure) or wide (fills the modal).
+  const [readerWide, setReaderWide] = useState(false);
+  useEffect(() => {
+    try { setReaderWide(window.localStorage.getItem(READER_WIDE_KEY) === "true"); } catch { /* private mode */ }
+  }, []);
 
   // Reader font size — persisted, stepped through READER_FONT_SIZES.
   const [readerFont, setReaderFont] = useState(17);
@@ -776,7 +783,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
           aria-label={`Reader: ${doc.title}`}
           tabIndex={-1}
         >
-          <div className="library-reader-modal" style={{ "--reader-font-size": `${readerFont}px` } as CSSProperties}>
+          <div className={readerWide ? "library-reader-modal library-reader-modal--wide" : "library-reader-modal"} style={{ "--reader-font-size": `${readerFont}px` } as CSSProperties}>
             {/* Reader scroll progress bar */}
             <div className="library-scroll-progress">
               <div className="library-scroll-progress-fill" style={{ width: `${readerScrollPct}%` }} />
@@ -849,11 +856,12 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
                 <button
                   type="button"
                   className="library-reader-iconbtn"
-                  onClick={() => { if (doc.absolutePath) void openUrl(`vscode://file${doc.absolutePath}`, "vscode-file"); }}
-                  title="Open in editor"
-                  aria-label="Open in editor"
+                  onClick={() => setReaderWide((v) => { const next = !v; try { window.localStorage.setItem(READER_WIDE_KEY, String(next)); } catch { /* ignore */ } return next; })}
+                  title={readerWide ? "Narrow reading width" : "Widen reading width"}
+                  aria-label={readerWide ? "Narrow reading width" : "Widen reading width"}
+                  aria-pressed={readerWide}
                 >
-                  <Icon name="ph:code" width={13} />
+                  <Icon name={readerWide ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={13} />
                 </button>
                 <button
                   type="button"
