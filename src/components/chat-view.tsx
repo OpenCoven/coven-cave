@@ -30,6 +30,7 @@ import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolInputAsDiff } from "@/lib/tool-input-diff";
+import { findMatchingTurnIds } from "@/lib/transcript-find";
 
 type ToolEvent = {
   id: string;
@@ -676,6 +677,121 @@ function metaLineString(args: {
   return parts.join(" · ");
 }
 
+/** In-transcript find bar (CHAT-D9-04). Collapsed: a search icon button in
+ *  the meta line. Expanded: query input + `n / m` matching-TURN count +
+ *  prev/next/close, styled to extend the meta line without displacing the
+ *  rename/voice/debug/delete actions. Esc layering is self-contained: the
+ *  input's own onKeyDown stops propagation so closing find never reaches the
+ *  composer's Esc handling (slash dismiss / stream cancel). */
+function ChatFindBar({
+  open,
+  query,
+  activeIndex,
+  matchCount,
+  focusNonce,
+  onOpen,
+  onClose,
+  onQueryChange,
+  onNext,
+  onPrev,
+}: {
+  open: boolean;
+  query: string;
+  /** 0-based index of the active match; rendered 1-based. */
+  activeIndex: number;
+  matchCount: number;
+  /** Bumped on every section-level ⌘F so an already-open bar refocuses. */
+  focusNonce: number;
+  onOpen: () => void;
+  onClose: () => void;
+  onQueryChange: (value: string) => void;
+  onNext: () => void;
+  onPrev: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [open, focusNonce]);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+        title="Find in conversation (⌘F)"
+        aria-label="Find in conversation"
+        onClick={onOpen}
+      >
+        <Icon name="ph:magnifying-glass" width={12} aria-hidden />
+      </button>
+    );
+  }
+
+  return (
+    <span className="cave-chat-find" role="search" aria-label="Find in conversation">
+      <Icon name="ph:magnifying-glass" width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.shiftKey) onPrev();
+            else onNext();
+            return;
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }
+        }}
+        placeholder="Find in chat…"
+        aria-label="Find in conversation"
+        className="cave-chat-find__input"
+      />
+      <span className="cave-chat-find__count" aria-live="polite">
+        {matchCount > 0 ? `${activeIndex + 1} / ${matchCount}` : "0 / 0"}
+      </span>
+      <button
+        type="button"
+        className="cave-chat-find__nav focus-ring"
+        aria-label="Previous match"
+        title="Previous match (shift+enter)"
+        disabled={matchCount === 0}
+        onClick={onPrev}
+      >
+        <Icon name="ph:caret-up" width={10} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className="cave-chat-find__nav focus-ring"
+        aria-label="Next match"
+        title="Next match (enter)"
+        disabled={matchCount === 0}
+        onClick={onNext}
+      >
+        <Icon name="ph:caret-down" width={10} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className="cave-chat-find__nav focus-ring"
+        aria-label="Close find"
+        title="Close find (esc)"
+        onClick={onClose}
+      >
+        <Icon name="ph:x-bold" width={9} aria-hidden />
+      </button>
+    </span>
+  );
+}
+
 function ChatBackButton({ onBack }: { onBack: () => void }) {
   return (
     <button
@@ -1034,6 +1150,139 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const abortRef = useRef<AbortController | null>(null);
   const initialPromptSentRef = useRef(false);
   const keys = useKeySymbols();
+
+  // ── In-transcript find (CHAT-D9-04) ────────────────────────────────────
+  // Turn-level find: case-insensitive substring over each turn's VISIBLE
+  // text. `m` counts matching TURNS (honest scope — intra-turn highlighting
+  // inside sanitized rendered HTML is deferred render-pipeline surgery).
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findDebouncedQuery, setFindDebouncedQuery] = useState("");
+  const [findActiveIdx, setFindActiveIdx] = useState(0);
+  const [findFocusNonce, setFindFocusNonce] = useState(0);
+  // Turn id flashed with the cave-turn-found highlight after a jump.
+  const [foundTurnId, setFoundTurnId] = useState<string | null>(null);
+  const foundClearTimerRef = useRef<number | null>(null);
+  const lastJumpedQueryRef = useRef("");
+
+  // Debounce the query ~150ms so matching doesn't churn per keystroke.
+  useEffect(() => {
+    if (!findOpen) return;
+    const timer = window.setTimeout(() => setFindDebouncedQuery(findQuery), 150);
+    return () => window.clearTimeout(timer);
+  }, [findOpen, findQuery]);
+
+  // Recompute on (debounced) query change AND on turns change while open —
+  // a streaming chunk can create or grow a matching turn.
+  const findMatches = useMemo(() => {
+    if (!findOpen) return [];
+    return findMatchingTurnIds(
+      turns.map((t) => ({
+        id: t.id,
+        // Visible text only: assistant turns may carry inline <thinking>
+        // blocks in `text`; match what the transcript actually renders.
+        text: t.role === "assistant" ? splitReasoning(t.text).visible : t.text,
+      })),
+      findDebouncedQuery,
+    );
+  }, [findOpen, findDebouncedQuery, turns]);
+
+  // Keep the active pointer in bounds when the match set shrinks.
+  useEffect(() => {
+    setFindActiveIdx((i) => (findMatches.length === 0 ? 0 : Math.min(i, findMatches.length - 1)));
+  }, [findMatches]);
+
+  const jumpToFindMatch = useCallback(
+    (idx: number, matches: string[]) => {
+      const id = matches[idx];
+      if (!id) return;
+      setFindActiveIdx(idx);
+      // A find jump is explicit navigation away from the tail — release the
+      // stream follow-pin (CHAT-D10-01) so the next SSE chunk doesn't yank
+      // the reader back to the bottom.
+      if (followingRef.current) updateFollowing(false);
+      const el = scrollRef.current?.querySelector<HTMLElement>(
+        `[data-turn-id="${CSS.escape(id)}"]`,
+      );
+      // Always instant: the pin/release machinery owns smooth behavior, and
+      // "auto" is reduced-motion-safe without a matchMedia branch.
+      el?.scrollIntoView({ block: "center", behavior: "auto" });
+      // Restart the 1.5s highlight fade even when re-landing on the same
+      // turn: clear, then re-set on the next frame so the class re-applies.
+      if (foundClearTimerRef.current !== null) window.clearTimeout(foundClearTimerRef.current);
+      setFoundTurnId(null);
+      requestAnimationFrame(() => setFoundTurnId(id));
+      foundClearTimerRef.current = window.setTimeout(() => setFoundTurnId(null), 1500);
+    },
+    [updateFollowing],
+  );
+
+  useEffect(() => () => {
+    if (foundClearTimerRef.current !== null) window.clearTimeout(foundClearTimerRef.current);
+  }, []);
+
+  // A fresh (debounced) query jumps to its first matching turn. Guarded by
+  // ref so turns-driven recomputes (e.g. streaming) never re-trigger a jump.
+  useEffect(() => {
+    if (!findOpen) return;
+    if (findDebouncedQuery === lastJumpedQueryRef.current) return;
+    lastJumpedQueryRef.current = findDebouncedQuery;
+    if (findMatches.length > 0) jumpToFindMatch(0, findMatches);
+    else setFindActiveIdx(0);
+  }, [findOpen, findDebouncedQuery, findMatches, jumpToFindMatch]);
+
+  const findNext = useCallback(() => {
+    if (findMatches.length === 0) return;
+    jumpToFindMatch((findActiveIdx + 1) % findMatches.length, findMatches);
+  }, [findActiveIdx, findMatches, jumpToFindMatch]);
+
+  const findPrev = useCallback(() => {
+    if (findMatches.length === 0) return;
+    jumpToFindMatch((findActiveIdx - 1 + findMatches.length) % findMatches.length, findMatches);
+  }, [findActiveIdx, findMatches, jumpToFindMatch]);
+
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    setFindFocusNonce((n) => n + 1);
+  }, []);
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setFindQuery("");
+    setFindDebouncedQuery("");
+    lastJumpedQueryRef.current = "";
+    setFindActiveIdx(0);
+    setFoundTurnId(null);
+    // Esc hands focus back to the composer.
+    inputRef.current?.focus();
+  }, []);
+
+  // Reset find when switching sessions — match indices are per-transcript.
+  useEffect(() => {
+    setFindOpen(false);
+    setFindQuery("");
+    setFindDebouncedQuery("");
+    lastJumpedQueryRef.current = "";
+    setFindActiveIdx(0);
+    setFoundTurnId(null);
+  }, [sessionId]);
+
+  // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
+  // on the section root — NOT a window-level listener — so ChatList's ⌘F
+  // (session search) and browser-native find elsewhere keep working.
+  const onChatSectionKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        // Stop the event short of window so a co-mounted ChatList (its ⌘F
+        // session-search listener lives on window) can't steal focus while
+        // the user is finding inside this chat.
+        e.stopPropagation();
+        openFind();
+      }
+    },
+    [openFind],
+  );
 
   // Track the iOS visual viewport so the composer dock can translate up
   // by the on-screen keyboard height. `100dvh` shrinks the layout for
@@ -1925,6 +2174,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
+      onKeyDown={onChatSectionKeyDown}
       onDragEnter={(e) => {
         if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
@@ -2002,6 +2252,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           onBack={onBack}
         >
+          {turns.length > 0 ? (
+            <ChatFindBar
+              open={findOpen}
+              query={findQuery}
+              activeIndex={findActiveIdx}
+              matchCount={findMatches.length}
+              focusNonce={findFocusNonce}
+              onOpen={openFind}
+              onClose={closeFind}
+              onQueryChange={setFindQuery}
+              onNext={findNext}
+              onPrev={findPrev}
+            />
+          ) : null}
           {sessionId && (
             <>
               <VoiceCallButton
@@ -2133,6 +2397,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     turn={t}
                     familiar={familiar}
                     showTimestamp={showTimestamp}
+                    found={foundTurnId === t.id}
                     onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
                     onRegenerate={regenerateFor(t)}
                   />
@@ -2163,6 +2428,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         turn={t}
                         familiar={familiar}
                         showTimestamp={showTimestamp}
+                        found={foundTurnId === t.id}
                         onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
                         onRegenerate={regenerateFor(t)}
                       />
@@ -2490,12 +2756,16 @@ function TurnRow({
   turn,
   familiar,
   showTimestamp = true,
+  found = false,
   onEdit,
   onRegenerate,
 }: {
   turn: Turn;
   familiar: Familiar;
   showTimestamp?: boolean;
+  /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
+   *  applies the temporary cave-turn-found highlight flash. */
+  found?: boolean;
   /** CHAT-D6-01: present only on user turns — loads the turn into the composer. */
   onEdit?: () => void;
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
@@ -2503,7 +2773,10 @@ function TurnRow({
 }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
-      <div className={`cave-linear-turn cave-linear-turn--${turn.role}`}>
+      <div
+        data-turn-id={turn.id}
+        className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}`}
+      >
         <div className="cave-linear-turn-content">
           <div className="cave-linear-turn-meta">
             {turn.role === "system" ? (
@@ -2531,7 +2804,10 @@ function TurnRow({
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
 
   return (
-    <div className="cave-linear-turn cave-linear-turn--assistant">
+    <div
+      data-turn-id={turn.id}
+      className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
+    >
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
         {/* Avatar + right column */}
         <div className="cave-linear-turn-avatar" aria-hidden>
