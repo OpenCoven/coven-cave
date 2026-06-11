@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
+import {
+  stripPreviewOnlyAttachmentFields,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
 import { useChatDebugSnapshot, type ChatDebugSnapshot } from "@/lib/chat-debug-store";
 import {
   appendEvents,
@@ -188,21 +192,33 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const cursorRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  const fetchInFlightRef = useRef(false);
+
+  // Pages until the tail is drained (a full page means more may remain), so
+  // finished sessions with >200 events aren't silently truncated. Capped as a
+  // runaway guard; the in-flight ref keeps interval ticks and Retry clicks
+  // from interleaving cursor updates.
   const fetchEvents = useCallback(async () => {
-    if (!sessionId) return;
+    if (!sessionId || fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
-      const res = await fetch(
-        `/api/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${cursorRef.current}&limit=200`,
-        { cache: "no-store" },
-      );
-      const json = (await res.json()) as { ok?: boolean; events?: CovenEvent[]; error?: string };
-      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
-      const incoming = json.events ?? [];
-      setEvents((prev) => appendEvents(prev, incoming));
-      cursorRef.current = Math.max(cursorRef.current, nextAfterSeq(incoming));
+      for (let page = 0; page < 50; page++) {
+        const res = await fetch(
+          `/api/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${cursorRef.current}&limit=200`,
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as { ok?: boolean; events?: CovenEvent[]; error?: string };
+        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        const incoming = json.events ?? [];
+        setEvents((prev) => appendEvents(prev, incoming));
+        cursorRef.current = Math.max(cursorRef.current, nextAfterSeq(incoming));
+        if (incoming.length < 200) break;
+      }
       setEventsError(null);
     } catch (err) {
       setEventsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, [sessionId]);
 
@@ -250,10 +266,17 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, []);
 
-  const bundleJson = useCallback(
-    () => JSON.stringify(buildDebugBundle({ session, familiar, turns, events }), null, 2),
-    [session, familiar, turns, events],
-  );
+  const bundleJson = useCallback(() => {
+    // Attachment previews carry base64 data-URLs; drop them from exports the
+    // same way sends do, so Copy all / Download stay reasonably sized.
+    const exportTurns = turns.map((turn) => {
+      const attachments = (turn as { attachments?: ChatAttachment[] }).attachments;
+      return attachments?.length
+        ? { ...turn, attachments: stripPreviewOnlyAttachmentFields(attachments) }
+        : turn;
+    });
+    return JSON.stringify(buildDebugBundle({ session, familiar, turns: exportTurns, events }), null, 2);
+  }, [session, familiar, turns, events]);
 
   const downloadBundle = useCallback(() => {
     const blob = new Blob([bundleJson()], { type: "application/json" });

@@ -865,10 +865,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [debugModalOpen, setDebugModalOpen] = useState(false);
 
   // Publish live chat state for the session debug pane (right panel / modal).
+  // Per-instance token: a second ChatView (right-panel Chat tab) unmounting
+  // must not clear state this instance published after it.
+  const debugToken = useMemo(() => Symbol("chat-debug-publisher"), []);
   useEffect(() => {
-    publishChatDebugState({ sessionId, session: session ?? null, familiar, turns });
-  }, [sessionId, session, familiar, turns]);
-  useEffect(() => () => clearChatDebugState(), []);
+    publishChatDebugState(debugToken, { sessionId, session: session ?? null, familiar, turns });
+  }, [debugToken, sessionId, session, familiar, turns]);
+  useEffect(() => () => clearChatDebugState(debugToken), [debugToken]);
 
   const openDebug = useCallback(() => {
     // lg+ has the right panel; below that, fall back to a modal.

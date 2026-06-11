@@ -2,10 +2,11 @@
 
 /**
  * Tiny in-memory store bridging ChatView's live chat state to the session
- * debug pane. ChatView is the single publisher; DebugPane (rendered in the
- * right panel or a mobile modal — a different React subtree) subscribes.
+ * debug pane. Each ChatView instance publishes under its own token; DebugPane
+ * (rendered in the right panel or a mobile modal — a different React subtree)
+ * subscribes. Last publisher wins; clearing is token-guarded.
  *
- * Not persisted. Cleared when ChatView unmounts.
+ * Not persisted. Cleared when the publishing ChatView unmounts.
  */
 
 import { useSyncExternalStore } from "react";
@@ -29,18 +30,25 @@ const EMPTY: ChatDebugSnapshot = Object.freeze({
 });
 
 let state: ChatDebugSnapshot = EMPTY;
+let publisher: symbol | null = null;
 const listeners = new Set<() => void>();
 
 function notify() {
   for (const fn of listeners) fn();
 }
 
-export function publishChatDebugState(next: ChatDebugSnapshot): void {
+export function publishChatDebugState(token: symbol, next: ChatDebugSnapshot): void {
+  publisher = token;
   state = next;
   notify();
 }
 
-export function clearChatDebugState(): void {
+/** No-op unless `token` is the current publisher. Two ChatViews can coexist
+ *  (main surface + right-panel Chat tab); one unmounting must not wipe state
+ *  the other published after it. */
+export function clearChatDebugState(token: symbol): void {
+  if (publisher !== token) return;
+  publisher = null;
   if (state === EMPTY) return;
   state = EMPTY;
   notify();
