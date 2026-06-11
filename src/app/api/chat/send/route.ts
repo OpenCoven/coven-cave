@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
@@ -63,6 +63,11 @@ type SendBody = {
   sessionId?: string;
   projectRoot?: string;
   attachments?: ChatAttachment[];
+  /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
+  mentionedFiles?: string[];
+  /** Project root the mentions are relative to — resumed sessions don't carry
+   * projectRoot in the body, so the composer sends the root it knows. */
+  mentionedFilesRoot?: string;
 };
 
 type StreamEvent =
@@ -196,6 +201,58 @@ function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
   for (const filePath of filePaths.values()) {
     void rm(filePath, { force: true }).catch(() => undefined);
   }
+}
+
+// ── @-mentioned file delivery (CHAT-D1-04) ───────────────────────────────
+// The composer's `@` picker records repo-relative paths; the prompt gets a
+// compact "Referenced files" block of absolute paths the harness can open
+// with its Read tool. Validation mirrors /api/changes: repo-relative paths
+// only, resolved against the realpathed root with a prefix containment
+// check — absolute paths, NUL bytes, `..` segments, and symlinks that
+// escape the root are silently skipped, never errors.
+
+const MAX_MENTIONED_FILES = 10;
+
+async function resolveMentionedFiles(
+  relPaths: unknown,
+  root: unknown,
+): Promise<string[]> {
+  if (!Array.isArray(relPaths) || relPaths.length === 0) return [];
+  if (typeof root !== "string" || !path.isAbsolute(root)) return [];
+  let realRoot: string;
+  try {
+    realRoot = await realpath(path.resolve(root));
+    if (!(await stat(realRoot)).isDirectory()) return [];
+  } catch {
+    return [];
+  }
+  const resolved: string[] = [];
+  for (const rel of relPaths.slice(0, MAX_MENTIONED_FILES)) {
+    if (typeof rel !== "string" || !rel || rel.includes("\0") || path.isAbsolute(rel)) continue;
+    if (rel.split(/[\\/]+/).includes("..")) continue;
+    const candidate = path.resolve(realRoot, rel);
+    if (candidate === realRoot || !candidate.startsWith(realRoot + path.sep)) continue;
+    try {
+      // Containment must hold for the real file too, or a symlink inside the
+      // root could point the prompt at an arbitrary path outside it.
+      const real = await realpath(candidate);
+      if (real !== candidate && !real.startsWith(realRoot + path.sep)) continue;
+      if (!(await stat(real)).isFile()) continue;
+      if (!resolved.includes(candidate)) resolved.push(candidate);
+    } catch {
+      /* missing or unreadable — skip */
+    }
+  }
+  return resolved;
+}
+
+function appendMentionedFilesBlock(prompt: string, absPaths: string[]): string {
+  if (absPaths.length === 0) return prompt;
+  const block = [
+    "Referenced files (open with the Read tool):",
+    ...absPaths.map((p) => `- ${p}`),
+  ].join("\n");
+  return prompt ? `${prompt}\n\n${block}` : block;
 }
 
 function scheduleLinkRoute(args: {
@@ -664,14 +721,26 @@ export async function POST(req: Request) {
   const imageFilePaths = imagesSupported
     ? await writeImageAttachmentsToTemp(attachments)
     : new Map<number, string>();
+  // @-mentioned files share the image-delivery constraint: only local
+  // coven-run harnesses can Read this machine's filesystem, so bridges and
+  // SSH runtimes never get a block of unreachable absolute paths.
+  const mentionedFiles = imagesSupported
+    ? await resolveMentionedFiles(
+        body.mentionedFiles,
+        body.mentionedFilesRoot ?? body.projectRoot,
+      )
+    : [];
 
   const taskContext = await taskContextForSession(body.sessionId);
   const harnessPrompt = buildPromptWithCovenIdentityCanon(
     buildTaskAwarePrompt(
-      buildPromptWithAttachments(promptText, attachments, {
-        imagesSupported,
-        imageFilePaths,
-      }),
+      appendMentionedFilesBlock(
+        buildPromptWithAttachments(promptText, attachments, {
+          imagesSupported,
+          imageFilePaths,
+        }),
+        mentionedFiles,
+      ),
       taskContext,
     ),
     body.familiarId,

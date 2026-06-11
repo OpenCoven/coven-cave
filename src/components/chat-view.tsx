@@ -3,7 +3,8 @@
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
+import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { segmentTurn } from "@/lib/turn-segments";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
@@ -19,6 +20,12 @@ import {
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import {
+  FILE_MENTION_RESULT_LIMIT,
+  fileMentionToken,
+  filterFileMentions,
+  MAX_FILE_MENTIONS,
+} from "@/lib/file-mention";
 import { Modal } from "@/components/ui/modal";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
@@ -39,6 +46,12 @@ type ToolEvent = {
   output?: string;
   status: "running" | "ok" | "error";
   durationMs?: number;
+  /** CHAT-D4-01: length of the turn's accumulated text when this tool's
+   *  FIRST event arrived — lets TurnRow interleave the tool block at its
+   *  chronological position between prose spans. Absent on tool events from
+   *  stored transcripts that predate the field (legacy turns keep the
+   *  trailing rollup). */
+  textOffset?: number;
 };
 
 type ProgressEvent = {
@@ -119,6 +132,7 @@ type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
 type FailedSend = {
   text: string;
   attachments: ChatAttachment[];
+  mentionedFiles?: string[];
 };
 
 function shouldKeepLiveNewChatState({
@@ -390,6 +404,7 @@ function ChatEmptyState({
   cwd,
   defaultCwd,
   onCwdChange,
+  fileMentions = false,
 }: {
   familiar: Familiar;
   onPrompt?: (text: string) => void;
@@ -399,6 +414,8 @@ function ChatEmptyState({
   defaultCwd?: string;
   /** Present only while the chat has no session — the CWD is fixed after the first send. */
   onCwdChange?: (value: string) => void;
+  /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
+  fileMentions?: boolean;
 }) {
 
   return (
@@ -419,6 +436,15 @@ function ChatEmptyState({
           /
         </kbd>
         {" "}for commands
+        {fileMentions ? (
+          <>
+            {" "}·{" "}
+            <kbd className="rounded px-1 py-0.5 font-mono text-[11px] bg-[var(--bg-raised)] text-[var(--text-secondary)]">
+              @
+            </kbd>
+            {" "}to reference files
+          </>
+        ) : null}
       </p>
 
       {onCwdChange && (
@@ -1193,7 +1219,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Turn id flashed with the cave-turn-found highlight after a jump.
   const [foundTurnId, setFoundTurnId] = useState<string | null>(null);
   const foundClearTimerRef = useRef<number | null>(null);
+  const foundFrameRef = useRef<number | null>(null);
   const lastJumpedQueryRef = useRef("");
+
+  const clearFoundHighlightTimer = useCallback(() => {
+    if (foundFrameRef.current !== null) {
+      window.cancelAnimationFrame(foundFrameRef.current);
+      foundFrameRef.current = null;
+    }
+    if (foundClearTimerRef.current !== null) {
+      window.clearTimeout(foundClearTimerRef.current);
+      foundClearTimerRef.current = null;
+    }
+  }, []);
 
   // Debounce the query ~150ms so matching doesn't churn per keystroke.
   useEffect(() => {
@@ -1239,17 +1277,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       el?.scrollIntoView({ block: "center", behavior: "auto" });
       // Restart the 1.5s highlight fade even when re-landing on the same
       // turn: clear, then re-set on the next frame so the class re-applies.
-      if (foundClearTimerRef.current !== null) window.clearTimeout(foundClearTimerRef.current);
+      clearFoundHighlightTimer();
       setFoundTurnId(null);
-      requestAnimationFrame(() => setFoundTurnId(id));
-      foundClearTimerRef.current = window.setTimeout(() => setFoundTurnId(null), 1500);
+      foundFrameRef.current = requestAnimationFrame(() => {
+        setFoundTurnId(id);
+        foundFrameRef.current = null;
+      });
+      foundClearTimerRef.current = window.setTimeout(() => {
+        setFoundTurnId(null);
+        foundClearTimerRef.current = null;
+      }, 1500);
     },
-    [updateFollowing],
+    [clearFoundHighlightTimer, updateFollowing],
   );
 
-  useEffect(() => () => {
-    if (foundClearTimerRef.current !== null) window.clearTimeout(foundClearTimerRef.current);
-  }, []);
+  useEffect(() => () => clearFoundHighlightTimer(), [clearFoundHighlightTimer]);
 
   // A fresh (debounced) query jumps to its first matching turn. Guarded by
   // ref so turns-driven recomputes (e.g. streaming) never re-trigger a jump.
@@ -1282,10 +1324,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindDebouncedQuery("");
     lastJumpedQueryRef.current = "";
     setFindActiveIdx(0);
+    clearFoundHighlightTimer();
     setFoundTurnId(null);
     // Esc hands focus back to the composer.
     inputRef.current?.focus();
-  }, []);
+  }, [clearFoundHighlightTimer]);
 
   // Reset find when switching sessions — match indices are per-transcript.
   useEffect(() => {
@@ -1294,8 +1337,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindDebouncedQuery("");
     lastJumpedQueryRef.current = "";
     setFindActiveIdx(0);
+    clearFoundHighlightTimer();
     setFoundTurnId(null);
-  }, [sessionId]);
+  }, [clearFoundHighlightTimer, sessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
@@ -1339,6 +1383,96 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
+
+  // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
+  // when the chat knows its project root — the session's project_root, the
+  // CWD draft, or the pre-wired projectRoot prop, i.e. the same sources the
+  // send body uses. The file index is fetched once per root from
+  // /api/project/files and fuzzy-filtered client-side. Mentions stay
+  // disjoint from the slash menu: `@` is mid-token, `/` is first-token only.
+  const mentionRoot = (session?.project_root?.trim() || cwdDraft.trim() || projectRoot || "").trim();
+  const [composerCaret, setComposerCaret] = useState(0);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  // Esc hides the picker for the current input; any edit brings it back.
+  const [mentionDismissed, setMentionDismissed] = useState(false);
+  // Paths the user picked this draft — sent alongside the prompt so the
+  // server can hand the harness resolvable absolute paths.
+  const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
+  const [mentionIndex, setMentionIndex] = useState<{ root: string; repo: boolean; files: string[] } | null>(null);
+  const mentionListboxId = useId();
+  const activeMentionOptionRef = useRef<HTMLButtonElement | null>(null);
+
+  const mentionToken = useMemo(
+    () => (mentionRoot ? fileMentionToken(input, composerCaret) : null),
+    [input, composerCaret, mentionRoot],
+  );
+  const mentionMatches: string[] = useMemo(() => {
+    if (!mentionToken || mentionDismissed) return [];
+    if (!mentionIndex || mentionIndex.root !== mentionRoot || !mentionIndex.repo) return [];
+    return filterFileMentions(mentionIndex.files, mentionToken.query, FILE_MENTION_RESULT_LIMIT);
+  }, [mentionToken, mentionDismissed, mentionIndex, mentionRoot]);
+  const mentionOpen = mentionMatches.length > 0;
+  // The mention picker shares the composer combobox with the slash menu but
+  // the two can never open together (`@` is mid-token, `/` first-token-only),
+  // so while the picker IS open these override the closed slash menu's ARIA
+  // wiring (later JSX attributes win; AriaAttributes keys are optional so the
+  // override spread typechecks).
+  const mentionAriaOverrides: React.AriaAttributes = mentionOpen
+    ? {
+        "aria-expanded": true,
+        "aria-controls": mentionListboxId,
+        "aria-activedescendant": `${mentionListboxId}-opt-${mentionIdx}`,
+      }
+    : {};
+
+  // Lazy index fetch: first `@` for a given root loads it; the API's own
+  // short-lived cache absorbs re-opens across composer instances.
+  useEffect(() => {
+    if (!mentionToken || !mentionRoot) return;
+    if (mentionIndex?.root === mentionRoot) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/project/files?root=${encodeURIComponent(mentionRoot)}`, { cache: "no-store" });
+        const json = await res.json() as { ok?: boolean; repo?: boolean; files?: string[] };
+        if (cancelled) return;
+        setMentionIndex({
+          root: mentionRoot,
+          repo: json.ok === true && json.repo === true,
+          files: Array.isArray(json.files) ? json.files : [],
+        });
+      } catch {
+        if (!cancelled) setMentionIndex({ root: mentionRoot, repo: false, files: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionToken, mentionRoot, mentionIndex]);
+
+  // Insert the picked path inline, replacing the `@query` token (Claude Code
+  // convention: `@src/foo.ts`), and record it for the send body.
+  const selectMention = (relPath: string) => {
+    if (!mentionToken) return;
+    const insert = `@${relPath} `;
+    const next = input.slice(0, mentionToken.start) + insert + input.slice(composerCaret);
+    const nextCaret = mentionToken.start + insert.length;
+    setInput(next);
+    setComposerCaret(nextCaret);
+    setMentionedFiles((prev) =>
+      (prev.includes(relPath) ? prev : [...prev, relPath]).slice(0, MAX_FILE_MENTIONS),
+    );
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const syncComposerCaret = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    setComposerCaret(e.currentTarget.selectionStart ?? e.currentTarget.value.length);
+  };
   // In-flight assistant turn drives the MetaLine's live state: its lifecycle
   // picks the phase wording and its createdAt anchors the elapsed ticker
   // (CHAT-D3-06).
@@ -1365,12 +1499,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     setSlashIdx(0);
     setSlashDismissed(false);
+    setMentionIdx(0);
+    setMentionDismissed(false);
   }, [input]);
 
   useEffect(() => {
     if (slashSuggestions.length === 0) return;
     activeSlashOptionRef.current?.scrollIntoView({ block: "nearest" });
   }, [slashIdx, slashSuggestions.length]);
+
+  useEffect(() => {
+    if (mentionMatches.length === 0) return;
+    activeMentionOptionRef.current?.scrollIntoView({ block: "nearest" });
+  }, [mentionIdx, mentionMatches.length]);
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -1723,10 +1864,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return true;
   };
 
-  const sendRaw = async (text: string, outgoingAttachments: ChatAttachment[] = []) => {
+  const sendRaw = async (text: string, outgoingAttachments: ChatAttachment[] = [], outgoingMentions: string[] = []) => {
     const trimmed = text.trim();
     if ((!trimmed && outgoingAttachments.length === 0) || busy) return;
-    const request: FailedSend = { text: trimmed, attachments: outgoingAttachments };
+    const request: FailedSend = {
+      text: trimmed,
+      attachments: outgoingAttachments,
+      ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
+    };
     setBusy(true);
     setError(null);
     setLastFailedSend(null);
@@ -1771,6 +1916,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           sessionId: currentSessionRef.current,
           ...((cwdDraft.trim() || projectRoot) && !currentSessionRef.current
             ? { projectRoot: cwdDraft.trim() || projectRoot }
+            : {}),
+          // CHAT-D1-04: @-mentioned repo files ride with the root they are
+          // relative to — resumed sessions don't resend projectRoot above.
+          ...(outgoingMentions.length && mentionRoot
+            ? {
+                mentionedFiles: outgoingMentions.slice(0, MAX_FILE_MENTIONS),
+                mentionedFilesRoot: mentionRoot,
+              }
             : {}),
         }),
         signal: controller.signal,
@@ -1855,7 +2008,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!lastFailedSend || busy) return;
     setError(null);
     setLastFailedSend(null);
-    void sendRaw(lastFailedSend.text, lastFailedSend.attachments);
+    void sendRaw(lastFailedSend.text, lastFailedSend.attachments, lastFailedSend.mentionedFiles ?? []);
   }
 
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
@@ -1898,9 +2051,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // above still run mid-stream; plain sends keep the draft intact.
     if (busy) return;
     const outgoingAttachments = attachments.map(({ id: _id, ...attachment }) => attachment);
+    // Only mentions whose `@path` token survived editing ride along — a
+    // deleted reference must not silently re-enter the prompt.
+    const outgoingMentions = mentionedFiles
+      .filter((p) => text.includes(`@${p}`))
+      .slice(0, MAX_FILE_MENTIONS);
     setInput("");
     setAttachments([]);
-    await sendRaw(text, outgoingAttachments);
+    setMentionedFiles([]);
+    await sendRaw(text, outgoingAttachments, outgoingMentions);
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -2011,10 +2170,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           // update doesn't supply them.
                           input: incoming.input ?? x.input,
                           output: incoming.output ?? x.output,
+                          // CHAT-D4-01: keep the offset captured when the
+                          // call first arrived — settle events must not move
+                          // the block.
+                          textOffset: x.textOffset,
                         }
                       : x,
                   )
-                : [...tools, incoming];
+                : // CHAT-D4-01: first event for this call — record how much
+                  // text had streamed so far, so the tool block renders at
+                  // its chronological position between prose spans.
+                  [...tools, { ...incoming, textOffset: t.text.length }];
             // Post-tool events carry no input, so summarize from the merged
             // record (which preserves the input captured at pre-tool time).
             const argSummary = toolArgSummary(
@@ -2105,6 +2271,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }
 
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionIdx((i) => Math.min(i + 1, mentionMatches.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        const file = mentionMatches[Math.min(mentionIdx, mentionMatches.length - 1)];
+        if (file) selectMention(file);
+        return;
+      }
+      // Esc precedence: an open mention menu consumes Esc (dismiss) before
+      // the slash-menu and busy-cancel branches below (#402 ordering). The
+      // two menus never open together — `@` is mid-token, `/` first-token.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionDismissed(true);
+        return;
+      }
+    }
     if (slashSuggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -2155,11 +2347,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  // Disarm a pending delete confirmation (and drop any CWD draft) when
-  // switching sessions.
+  // Disarm a pending delete confirmation (and drop any CWD draft and staged
+  // file mentions) when switching sessions.
   useEffect(() => {
     setConfirmDelete(false);
     setCwdDraft("");
+    setMentionedFiles([]);
   }, [sessionId]);
 
   const deleteChat = async () => {
@@ -2391,6 +2584,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 cwd={cwdDraft}
                 defaultCwd={projectRoot}
                 onCwdChange={!sessionId ? setCwdDraft : undefined}
+                fileMentions={Boolean(mentionRoot)}
               />
             )
           ) : null}
@@ -2529,6 +2723,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         style={{ "--composer-kb-offset": `${keyboardOffset}px` } as React.CSSProperties}
       >
         <div className="cave-composer-shell">
+          {mentionOpen ? (
+            <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+              <ul className="max-h-64 overflow-y-auto py-1" id={mentionListboxId} role="listbox" aria-label="Workspace files">
+                {mentionMatches.map((file, i) => {
+                  const active = i === mentionIdx;
+                  const base = file.split("/").pop() ?? file;
+                  return (
+                    <li
+                      key={file}
+                      role="option"
+                      id={`${mentionListboxId}-opt-${i}`}
+                      aria-selected={active}
+                    >
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        ref={active ? activeMentionOptionRef : null}
+                        onMouseEnter={() => setMentionIdx(i)}
+                        onClick={() => selectMention(file)}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        }`}
+                      >
+                        <Icon name="ph:file-code" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-mono text-[var(--text-primary)]">{base}</span>
+                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">{file}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+                {keys.up}{keys.down} navigate · {keys.enter} insert · Tab insert · esc cancel
+              </div>
+            </div>
+          ) : null}
           {slashSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
@@ -2633,8 +2863,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <textarea
               ref={inputRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                syncComposerCaret(e);
+              }}
               onKeyDown={onComposerKey}
+              onKeyUp={syncComposerCaret}
+              onClick={syncComposerCaret}
+              onSelect={syncComposerCaret}
               onPaste={(e) => {
                 // Paste-to-attach (CHAT-D1-02): clipboard files (screenshots,
                 // copied images/files) win over any text payload riding along.
@@ -2665,6 +2901,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               aria-activedescendant={
                 slashSuggestions.length > 0 ? `${slashListboxId}-opt-${slashIdx}` : undefined
               }
+              {...mentionAriaOverrides}
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
               <div className="flex items-center gap-1 text-[var(--text-muted)]">
@@ -2848,6 +3085,33 @@ function TurnRow({
   // chip that anchors the Retry pill (#416/#420) always renders.
   const indicatorVisible = Boolean(turn.pending) && !visible;
 
+  // CHAT-D4-01: when every tool event carries a textOffset (live turns from
+  // this session), render the turn as ordered segments — prose spans with
+  // each tool call inline at its chronological position — instead of the
+  // legacy "all text, then a trailing Tool activity rollup" stack that
+  // inverted causality. Offsets were captured against the raw streamed text;
+  // segmentTurn snaps them forward to fence-safe paragraph boundaries (and
+  // clamps past-end offsets, e.g. when splitReasoning stripped thinking
+  // markup), so a drifted offset degrades toward trailing — never a split
+  // inside a code fence. Stored transcripts without offsets return null and
+  // keep today's trailing ToolGroup.
+  const segments = segmentTurn(visible, turn.tools);
+  const bubbleSegments: MessageBubbleSegment[] | undefined = segments?.map((seg, i) =>
+    seg.kind === "text"
+      ? { kind: "text" as const, text: seg.text }
+      : {
+          kind: "block" as const,
+          key: `tools-${seg.tools[0]?.id ?? i}`,
+          // Reuse the EXISTING collapsed ToolBlock (arg summary + diff
+          // inputs); same-offset tools render consecutively in one group.
+          node: (
+            <div className="space-y-2">
+              {seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+            </div>
+          ),
+        },
+  );
+
   return (
     <div
       data-turn-id={turn.id}
@@ -2899,11 +3163,26 @@ function TurnRow({
                 isError={turn.error}
                 label={familiar.display_name}
                 onRegenerate={onRegenerate}
+                segments={bubbleSegments}
               />
             )}
+            {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
+                (research-style turns) — show them inline immediately so
+                they don't teleport out of a rollup once text arrives. */}
+            {indicatorVisible && segments?.length ? (
+              <div className="mt-3 space-y-2">
+                {segments.flatMap((seg) =>
+                  seg.kind === "tools"
+                    ? seg.tools.map((tool) => <ToolBlock key={tool.id} tool={tool} />)
+                    : [],
+                )}
+              </div>
+            ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
-            {turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+            {/* Legacy trailing rollup — ONLY for turns whose tools predate
+                textOffset; segmented turns render their tools inline. */}
+            {!segments && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
           </div>
         </div>
       </div>

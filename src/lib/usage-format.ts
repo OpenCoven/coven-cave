@@ -67,11 +67,17 @@ export function normalizeTurnUsage(raw: unknown): TurnUsage | undefined {
 export function formatTokens(n: number): string | null {
   if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return null;
   if (n < 1000) return String(Math.round(n));
-  const scaled = n < 1_000_000 ? n / 1000 : n / 1_000_000;
-  const suffix = n < 1_000_000 ? "k" : "M";
+  let scaled = n < 1_000_000 ? n / 1000 : n / 1_000_000;
+  let suffix = n < 1_000_000 ? "k" : "M";
   // Half-up to one decimal without toFixed's float drift (12350 → "12.4k");
   // integral results render bare ("1k", not "1.0k").
-  return `${Math.round(scaled * 10) / 10}${suffix}`;
+  let rounded = Math.round(scaled * 10) / 10;
+  if (suffix === "k" && rounded >= 1000) {
+    scaled = n / 1_000_000;
+    suffix = "M";
+    rounded = Math.round(scaled * 10) / 10;
+  }
+  return `${rounded}${suffix}`;
 }
 
 /** "$0.08"; "<$0.01" under a cent; null when zero, undefined, or invalid —
@@ -100,8 +106,8 @@ export function usageSummary(
   return parts.length ? parts.join(" · ") : null;
 }
 
-/** Full breakdown for tooltips: every captured counter plus a higher-precision
- *  cost. Null when there is nothing to break down. */
+/** Full breakdown for tooltips: every captured counter plus a cost, preserving
+ *  four decimals only for sub-cent values. Null when there is nothing to break down. */
 export function usageBreakdown(
   usage?: TurnUsage,
   costUsd?: number,

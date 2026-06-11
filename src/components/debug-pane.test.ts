@@ -60,6 +60,16 @@ assert.match(
   /All uncommitted changes in/,
   "Panel caption must be honest that git shows repo-wide changes, not per-session ones",
 );
+assert.match(
+  changesPanel,
+  /notARepo\s*\?\s*<>\s*No git working tree at[\s\S]*?:\s*<>\s*All uncommitted changes in/,
+  "Panel caption should switch copy when the project is not a git repository",
+);
+assert.match(
+  changesPanel,
+  /title=\{untracked \? `Delete \$\{file\.path\}` : `Revert \$\{file\.path\}`\}[\s\S]*?<Icon name=\{untracked \? "ph:trash" : "ph:arrow-counter-clockwise"\}/,
+  "Untracked file delete action should use a trash icon before confirm, matching its label",
+);
 
 const changesRoute = await readFile(
   new URL("../app/api/changes/route.ts", import.meta.url),

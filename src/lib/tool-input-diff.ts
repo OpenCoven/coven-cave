@@ -31,8 +31,9 @@ function filePathOf(record: Rec): string {
 
 function prefixLines(text: string, prefix: "+" | "-"): string[] {
   // A trailing newline would otherwise render a spurious empty +/- row.
+  if (text === "") return [];
   const body = text.endsWith("\n") ? text.slice(0, -1) : text;
-  if (!body) return [];
+  if (!body) return [`${prefix}`];
   return body.split("\n").map((line) => `${prefix}${line}`);
 }
 

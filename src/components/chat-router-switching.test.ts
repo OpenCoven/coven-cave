@@ -252,7 +252,7 @@ assert.doesNotMatch(
 //    so the next SSE chunk doesn't yank the reader back to the bottom, and
 //    the jump itself is instant (behavior: "auto" — reduced-motion-safe).
 const jumpFn =
-  chatViewSource.match(/const jumpToFindMatch = useCallback\([\s\S]*?\[updateFollowing\],\s*\);/)?.[0] ?? "";
+  chatViewSource.match(/const jumpToFindMatch = useCallback\([\s\S]*?\[[^\]]*updateFollowing[^\]]*\],\s*\);/)?.[0] ?? "";
 
 assert.ok(jumpFn.length > 0, "ChatView should define jumpToFindMatch");
 
