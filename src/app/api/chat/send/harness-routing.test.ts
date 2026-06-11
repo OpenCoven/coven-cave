@@ -568,6 +568,7 @@ assert.match(
   assert.equal(formatTokens(1000), "1k", "trailing .0 is trimmed");
   assert.equal(formatTokens(1234), "1.2k");
   assert.equal(formatTokens(12350), "12.4k", "12350 tokens read as 12.4k");
+  assert.equal(formatTokens(999_950), "1M", "rounded token counts should promote across suffix boundaries");
   assert.equal(formatTokens(2_500_000), "2.5M");
   assert.equal(formatTokens(0), "0");
   assert.equal(formatTokens(-5), null);
