@@ -27,6 +27,12 @@ assert.match(
 
 assert.match(
   source,
+  /onBack &&[\s\S]*aria-label="Back to chats"[\s\S]*onClick=\{onBack\}/,
+  "ChatView should expose a normal back button in the chat header",
+);
+
+assert.match(
+  source,
   /<LinkedContextRow\b/,
   "ChatView renders LinkedContextRow for task/GitHub chips",
 );

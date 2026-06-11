@@ -1603,6 +1603,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   return (
     <section className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       <header className="cave-chat-linear-header">
+        {onBack && (
+          <button
+            type="button"
+            className="focus-ring mb-2 inline-flex h-7 w-fit items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            aria-label="Back to chats"
+            onClick={onBack}
+          >
+            <Icon name="ph:arrow-left-bold" width={12} aria-hidden />
+            Back
+          </button>
+        )}
         <div className="cave-mobile-header-identity">
           <div className="cave-mobile-header-familiar">
             <FamiliarIcon familiar={familiar} size="sm" />

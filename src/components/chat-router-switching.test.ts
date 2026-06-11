@@ -30,4 +30,16 @@ assert.match(
   "A familiar change that matches the chat view's own familiarId (router-initiated open) must keep the view — not wipe the sessionId",
 );
 
+assert.match(
+  source,
+  /import \{ ChatProjectSidebar \} from "@\/components\/chat-project-sidebar"/,
+  "ChatRouter should own the project sidebar so it can stay visible in chat detail, not only the chat list",
+);
+
+assert.match(
+  source,
+  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatView/,
+  "ChatRouter should render the projects sidebar next to ChatView while a chat is open",
+);
+
 console.log("chat-router-switching.test.ts: ok");

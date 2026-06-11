@@ -1,9 +1,20 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
+import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView } from "@/components/chat-view";
 import { useIsMobile } from "@/lib/use-viewport";
+import {
+  deriveChatProjectGroups,
+  filterVisibleChatSessions,
+} from "@/lib/chat-projects";
+import {
+  normalizeSelection,
+  readPersisted,
+  PROJECT_SIDEBAR_KEYS,
+  type ProjectSelection,
+} from "@/lib/chat-project-selection";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type View =
@@ -61,6 +72,10 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const [view, setView] = useState<View>({ kind: "list" });
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [selection, setSelection] = useState<ProjectSelection>("all");
+  const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const isMobile = useIsMobile();
   const activeSession = view.kind === "chat" && view.sessionId
     ? sessions.find((s) => s.id === view.sessionId) ?? null
@@ -73,6 +88,39 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
   const chatFamiliar = familiar ?? selectedViewFamiliar ?? sessionFamiliar ?? null;
+  const fallbackFamiliarId = familiar?.id ?? familiars[0]?.id ?? null;
+
+  const sidebarSessions = useMemo(
+    () => filterVisibleChatSessions(sessions, familiar?.id ?? null),
+    [familiar?.id, sessions],
+  );
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(sidebarSessions), [sidebarSessions]);
+  const effectiveSelection = useMemo(
+    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
+    [isMobile, selection, sidebarGroups],
+  );
+
+  useEffect(() => {
+    setSidebarOpen(readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.open, true) !== false);
+    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, []);
+    setExpandedKeys(
+      Array.isArray(storedExpanded)
+        ? storedExpanded.filter((k): k is string => typeof k === "string")
+        : [],
+    );
+    const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
+    setSelection(typeof storedSelection === "string" ? storedSelection : "all");
+    setSidebarHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.open, JSON.stringify(sidebarOpen));
+  }, [sidebarHydrated, sidebarOpen]);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
+  }, [sidebarHydrated, expandedKeys]);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
+  }, [sidebarHydrated, selection]);
 
   function selectFamiliarForChat(familiarId?: string | null): Familiar | null {
     const next = familiarId
@@ -209,31 +257,64 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }
 
   return (
-    <ChatView
-      ref={viewHandle}
-      familiar={chatFamiliar}
-      sessionId={view.sessionId}
-      session={activeSession}
-      projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
-      initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
-      daemonRunning={daemonRunning}
-      onSessionsChanged={onSessionsChanged}
-      onBack={() => setView({ kind: "list" })}
-      onSessionStarted={(sid) => {
-        // Only promote the sessionId in the view state when the current chat
-        // has no session yet (null). If a session is already set, leave the
-        // view alone — updating it would re-mount ChatView and lose the live
-        // currentSessionRef, breaking follow-up messages.
-        setView((prev) =>
-          prev.kind === "chat" && prev.sessionId === null
-            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
-            : prev,
-        );
-        onSessionStarted?.();
-      }}
-      onSlashCommand={onSlashFromChat}
-      onOpenOnboarding={onOpenOnboarding}
-      onOpenTask={onOpenTask}
-    />
+    <div className="flex h-full min-w-0">
+      <ChatProjectSidebar
+        groups={sidebarGroups}
+        selection={effectiveSelection}
+        expandedKeys={expandedKeys}
+        open={sidebarOpen}
+        activeSessionId={view.kind === "chat" ? view.sessionId : null}
+        onSetOpen={setSidebarOpen}
+        onSelect={setSelection}
+        onToggleExpanded={(key) =>
+          setExpandedKeys((prev) =>
+            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+          )
+        }
+        onOpenSession={(s) => {
+          const next = selectFamiliarForChat(s.familiarId);
+          setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
+        }}
+        onNewChat={(root) => {
+          const group = sidebarGroups.find((g) => g.projectRoot === root);
+          const nextFamiliarId = group?.defaultFamiliarId ?? fallbackFamiliarId;
+          const next = selectFamiliarForChat(nextFamiliarId);
+          setView({
+            kind: "chat",
+            sessionId: null,
+            projectRoot: root ?? undefined,
+            familiarId: next?.id ?? nextFamiliarId ?? null,
+          });
+        }}
+      />
+      <div className="min-h-0 min-w-0 flex-1">
+        <ChatView
+          ref={viewHandle}
+          familiar={chatFamiliar}
+          sessionId={view.sessionId}
+          session={activeSession}
+          projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
+          initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+          daemonRunning={daemonRunning}
+          onSessionsChanged={onSessionsChanged}
+          onBack={() => setView({ kind: "list" })}
+          onSessionStarted={(sid) => {
+            // Only promote the sessionId in the view state when the current chat
+            // has no session yet (null). If a session is already set, leave the
+            // view alone — updating it would re-mount ChatView and lose the live
+            // currentSessionRef, breaking follow-up messages.
+            setView((prev) =>
+              prev.kind === "chat" && prev.sessionId === null
+                ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+                : prev,
+            );
+            onSessionStarted?.();
+          }}
+          onSlashCommand={onSlashFromChat}
+          onOpenOnboarding={onOpenOnboarding}
+          onOpenTask={onOpenTask}
+        />
+      </div>
+    </div>
   );
 });
