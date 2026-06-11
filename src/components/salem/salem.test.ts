@@ -51,10 +51,12 @@ assert.match(route, /plugin|Plugin/, "must know about plugins");
 assert.match(route, /Male black cat/, "must answer with Salem's persona");
 assert.doesNotMatch(route, /🐱|😅/, "Salem API replies must stay emoji-free inside chat");
 
-// 5. SalemWidget surfaces preload status
+// 5. SalemWidget loads preload metadata for the persona subtitle, but the
+//    Docs/Tools/Skills/Context count pills were removed on purpose
+//    (2026-06-11, Val: "no one cares about the docs count") — they must
+//    not come back.
 assert.match(widget, /preload/, "widget must load Salem preload metadata");
-assert.match(widget, /salem-panel__preload/, "widget must render preload metadata");
-assert.match(widget, /Docs|Tools|Skills|Context/, "widget must label loaded docs/tools/skills/context");
+assert.doesNotMatch(widget, /salem-panel__preload/, "preload count pills stay removed from the Salem header");
 
 // 6. Workspace exposes Salem via a right-edge agentRail toggle that mirrors
 //    the left-edge sidebar-trigger-rail. The standalone perch in layout.tsx
@@ -78,7 +80,7 @@ assert.match(css, /\.salem-perch/, "must have .salem-perch CSS");
 assert.match(css, /\.salem-panel/, "must have .salem-panel CSS");
 assert.match(css, /\.salem-panel--rail/, "must support Salem inside the right rail");
 assert.match(css, /\.salem-msg/, "must have .salem-msg CSS");
-assert.match(css, /\.salem-panel__preload/, "must style Salem preload metadata");
+assert.doesNotMatch(css, /\.salem-panel__preload/, "preload pill CSS removed with the pills — no dead rules");
 assert.match(css, /--background:\s*oklch\([^)]+\);/, "default dark app background must be lifted for black-cat contrast");
 assert.match(css, /\.salem-perch::before/, "Salem perch must include a visibility halo");
 assert.doesNotMatch(css, /\.salem-msg__glyph/, "open Salem chat must not keep unused emoji glyph CSS");
