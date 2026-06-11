@@ -7,7 +7,25 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-## [0.0.66] — 2026-06-10
+## [0.0.67] — 2026-06-11
+
+### Added
+- **Chat deletion** — chats can be deleted from the Chats page behind an inline Cancel/Delete confirmation; deletion goes through `DELETE /api/chat/conversation/[id]`, removing the transcript file and sacrificing the session. (#373, follow-up unification)
+- **Session debug panel** — bug button, right-panel Debug tab, and a live event tail for diagnosing a session in place. (#370)
+- **Project-context chat grouping** — the chat list groups conversations by project, with local Coven Cave branch collapsing. (#368, #377)
+- **Memory graph source hubs** — graph mode now renders source-level memories (Coven native, OpenClaw workspace/index, Codex runtime) as standalone hubs instead of silently dropping them; `includeSources: false` preserves the agent-only view. (#369)
+- **Library workflows** — search, URL field, inline status, and error states for the list sections, plus an undo-delete toast. (MF-1/2/3/6, DF-4)
+
+### Changed
+- **First-fetch loading skeletons** — Chat list, Inbox, and Settings Add-ons show row-shaped skeletons until their first fetch settles instead of flashing empty states. (#375)
+- **Send on Enter** — home and dock-chat composers send on plain Enter, matching the chat composer.
+- **Quieter row actions** — Board/GitHub/Agents/Plugins row CTAs shortened to `Start` / `Open`; library timeline sidebar polished; right-panel content scrolls properly.
+
+### Fixed
+- **Inspector tab flicker** — selecting any non-Memory tab oscillated between tabs every frame (bidirectional roving-tabindex sync); the pane is now stable with selection-follows-focus keyboard navigation. (#374)
+- **Identity canon leaking into session titles** — canon-binding text no longer appears as chat titles, legacy variants are sanitized, and prompt-derived titles are dropped from the send route. (#371, #372)
+- **Home-screen chat handoff** — no longer kills the harness and 404s; auto-send deferred past React strict-mode effect replay.
+- **e2e suite repair** — un-nested a Playwright test that silently never ran (15→21 passing across the three device projects). (#376)
 
 ### Added
 - **Runtime demo mode** — demo data for screenshots and simple testing can now be activated with `?demo=1`, from onboarding, or from Settings → General → Startup without editing environment files.
