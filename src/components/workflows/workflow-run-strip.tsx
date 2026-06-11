@@ -38,6 +38,7 @@ export function WorkflowRunStrip({ workflow, action, busyId, onValidate, onDryRu
           Play
         </button>
       </div>
+      <p className="workflow-run-hint">Run endpoint pending</p>
       <p className="workflow-run-feedback">
         {action
           ? `${action.kind === "validate" ? "Validation" : "Dry-run"} ${action.result.ok ? "ready" : "blocked"} · ${

@@ -39,11 +39,29 @@ for (const label of ["Familiars", "Roles", "Boards", "Projects"]) {
 for (const label of ["Validate", "Dry-run", "Play"]) {
   assert.match(runStrip, new RegExp(label), `WorkflowRunStrip should include ${label}`);
 }
+assert.match(runStrip, /workflowIssueSummary/, "WorkflowRunStrip should summarize validator and dry-run issues");
+assert.match(runStrip, /Run endpoint pending/, "WorkflowRunStrip should guard Play until daemon execution exists");
+assert.match(
+  runStrip,
+  /<p[^>]*>[\s\S]*Run endpoint pending/,
+  "WorkflowRunStrip should show a visible pending-run hint",
+);
+
+assert.match(
+  attachments,
+  /Persistence pending daemon API/,
+  "WorkflowAttachments should make attachment saves visibly non-destructive",
+);
 
 assert.match(
   manifestPreview,
   /schema_version|WORKFLOW\.md|\.workflow\.yaml/,
   "WorkflowManifestPreview should preview canonical workflow manifest fields",
+);
+assert.match(
+  manifestPreview,
+  /Cave-only layout stays in WORKFLOW\.cave\.json/,
+  "WorkflowManifestPreview should keep the sidecar boundary visible",
 );
 assert.match(css, /\.workflow-studio-shell/, "workflow CSS should style the studio shell");
 assert.match(css, /@media \(max-width: 860px\)/, "workflow CSS should include mobile studio layout");
