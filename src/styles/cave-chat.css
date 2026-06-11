@@ -345,6 +345,14 @@
   border-left: 2px solid oklch(0.55 0.2 15 / 55%);
   padding-left: calc(1em - 2px);
 }
+/* CHAT-D8-03: @@ hunk headers read as muted metadata, not content. Shiki
+   tokens carry inline colors, so the ink override needs !important. */
+.cave-diff-meta {
+  opacity: 0.65;
+}
+.cave-diff-meta span {
+  color: var(--text-muted) !important;
+}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    COPY BUTTON

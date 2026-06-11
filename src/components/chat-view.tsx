@@ -28,6 +28,7 @@ import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
+import { toolInputAsDiff } from "@/lib/tool-input-diff";
 
 type ToolEvent = {
   id: string;
@@ -2633,6 +2634,10 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   const argSummary = toolArgSummary(tool.name, tool.input);
+  // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
+  // structured before/after diff instead of the raw JSON payload; null for
+  // every other tool (or unparseable input) falls back to the plain block.
+  const inputDiff = toolInputAsDiff(tool.name, tool.input);
   return (
     <details className="cave-tool-block" data-default-collapsed="true">
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
@@ -2656,7 +2661,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       {tool.input ? (
         <div className="mt-2">
           <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Input</div>
-          <SyntaxBlock text={tool.input} />
+          {inputDiff ? <SyntaxBlock text={inputDiff} lang="diff" /> : <SyntaxBlock text={tool.input} />}
         </div>
       ) : null}
       {tool.output ? (
