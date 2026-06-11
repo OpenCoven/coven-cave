@@ -65,12 +65,12 @@ assert.doesNotMatch(
   "HomeComposer should allow OpenClaw familiars through native chat send",
 );
 
-// ─── CHAT-D2-04: combobox/listbox ARIA on both slash menus ───────────────────
+// ─── CHAT-D2-04: textarea/listbox ARIA on both slash menus ───────────────────
 // The slash menus were plain ul/li/button with a visual-only active class —
 // screen readers announced nothing about the menu or the highlighted command.
-// Both composers must carry the WAI-ARIA combobox pattern: textarea =
-// combobox, menu = listbox, rows = options, aria-activedescendant conveys the
-// highlight while DOM focus stays in the textarea.
+// Both composers keep native textarea semantics while exposing their popup:
+// menu = listbox, rows = options, aria-haspopup points at the popup kind, and
+// aria-activedescendant conveys the highlight while focus stays in the textarea.
 
 const chatSource = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
@@ -95,8 +95,13 @@ for (const [name, src] of [
   );
   assert.match(
     src,
-    /role="combobox"\s+aria-autocomplete="list"\s+aria-expanded=\{slashSuggestions\.length > 0\}/,
-    `${name} composer textarea should expose combobox semantics with aria-expanded tracking the open menu`,
+    /aria-autocomplete="list"\s+aria-haspopup="listbox"\s+aria-expanded=\{slashSuggestions\.length > 0\}/,
+    `${name} composer textarea should expose listbox popup semantics with aria-expanded tracking the open menu`,
+  );
+  assert.doesNotMatch(
+    src,
+    /<textarea[\s\S]*?role="combobox"/,
+    `${name} composer textarea should keep its implicit textbox role; combobox is invalid on native textarea`,
   );
   assert.match(
     src,
