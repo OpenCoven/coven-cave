@@ -37,7 +37,12 @@ export function normalizeFamiliarRuntime(value: RuntimeInput): FamiliarRuntime {
 export function isSshRuntime(
   runtime: FamiliarRuntime | Partial<FamiliarRuntime> | undefined,
 ): runtime is SshFamiliarRuntime {
-  return normalizeFamiliarRuntime(runtime).kind === "ssh";
+  if (!isRecord(runtime) || runtime.kind !== "ssh") return false;
+  const host = typeof runtime.host === "string" ? runtime.host.trim() : "";
+  const cwd = typeof runtime.cwd === "string" ? runtime.cwd.trim() : "";
+  const command =
+    typeof runtime.command === "string" ? runtime.command.trim() : "";
+  return !!host && SAFE_SSH_HOST_RE.test(host) && !!cwd && !!command;
 }
 
 function shellQuote(value: string): string {
