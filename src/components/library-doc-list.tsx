@@ -138,6 +138,7 @@ export function LibraryDocList({
                       {tag}
                     </span>
                   ))}
+                  {doc.tags.length > 4 && <span className="board-table-muted">+{doc.tags.length - 4}</span>}
                 </div>
               )}
             </button>

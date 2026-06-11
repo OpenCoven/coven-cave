@@ -546,8 +546,8 @@ tr:focus-within .library-row-delete {
   opacity: 1;
 }
 .library-row-delete:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
 }
 .library-row-delete:focus-visible {
   opacity: 1;
@@ -733,17 +733,7 @@ tr:focus-within .library-row-delete {
   text-decoration: underline;
 }
 
-/* ── row delete btn ─────────────────────────────────────────────── */
-.library-row-delete {
-  opacity: 0;
-  transition: opacity 0.15s;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  padding: 2px 4px;
-  border-radius: 4px;
-}
+/* duplicate .library-row-delete removed — see line ~533 */
 tr:hover .library-row-delete,
 .library-row-delete:focus {
   opacity: 1;
@@ -937,13 +927,7 @@ tr:hover .library-row-delete,
   50%       { opacity: 1;   }
 }
 
-/* ── Rail: shared icon wrap ───────────────────────────────────── */
-.library-rail-icon-wrap {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
+/* duplicate .library-rail-icon-wrap removed — see line ~559 */
 
 /* ── Rail: hairline divider ───────────────────────────────────── */
 .library-rail-divider {

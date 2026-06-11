@@ -242,7 +242,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
         <div className="library-list-empty">No bookmarks yet. Add one above.</div>
       ) : (
         <div className="board-table-wrap">
-          <table className="board-table">
+          <table aria-label="Bookmarks" className="board-table">
             <thead>
               <tr>
                 {COLS.map((col) => (
@@ -318,7 +318,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                               <span
                                 className="library-row-delete"
                                 title="Added to Board"
-                                style={{ color: "var(--color-success, #16a34a)", cursor: "default" }}
+                                style={{ color: "var(--color-success, #34d399)", cursor: "default" }}
                               >
                                 <Icon name="ph:check" width={11} />
                               </span>

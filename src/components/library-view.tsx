@@ -150,7 +150,7 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
       )}
 
       {/* Collapsible list panel — hidden when graph is active (graph owns full canvas) */}
-      {activeSection !== "graph" && <div
+      {activeSection !== "graph" && activeSection !== "skills" && <div
         className={[
           "library-list-panel",
           "transition-[width] duration-200 ease-out",
@@ -170,7 +170,7 @@ export function LibraryView({ onOpenUrl, sessions, onOpenSession, onNewProjectCh
             type="button"
             className="library-list-toggle-btn"
             onClick={() => setListPinned((v) => !v)}
-            title={listPinned ? "Collapse list" : "Pin list open"}
+            title={listPinned ? "Collapse list  [ ]" : "Pin list open  [ ]"}
           >
             <Icon
               name={listPinned ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"}
