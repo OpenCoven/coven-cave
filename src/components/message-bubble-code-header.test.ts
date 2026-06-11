@@ -82,3 +82,127 @@ assert.match(
   /useWireCopyButtons\(/,
   "MarkdownContent must keep wiring its copy buttons (chat message bubbles)",
 );
+
+// ---------------------------------------------------------------------------
+// CHAT-D10-04 — the shipped linear layout must cap its reading measure.
+// Without a cap, assistant prose runs 150+ chars/line on wide panes
+// (benchmarks: Claude.ai ~48rem, ChatGPT ~768px; we match the workbench's
+// 920px content cap). The composer shell shares the same measure so the
+// input lines up with the conversation column.
+// ---------------------------------------------------------------------------
+
+const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
+assert.match(
+  linearThread,
+  /max-width:\s*min\(100%,\s*920px\)/,
+  "Linear thread must cap its measure at 920px on wide panes",
+);
+assert.match(
+  linearThread,
+  /margin-inline:\s*auto/,
+  "Linear thread column must center inside wide panes",
+);
+
+const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
+assert.match(
+  linearComposerShell,
+  /max-width:\s*920px/,
+  "Linear composer shell must share the thread's 920px measure so the input aligns with the column",
+);
+
+// ---------------------------------------------------------------------------
+// CHAT-D13-01 — dark-terminal chrome must pin its inks, not follow the theme.
+// Code blocks and system turns keep fixed dark surfaces in BOTH modes; any
+// var(--text-*) inside them flips to dark ink under [data-mode="light"] and
+// becomes unreadable. The fixed --code-chrome-* properties mirror the
+// dark-mode palette instead.
+// ---------------------------------------------------------------------------
+
+assert.match(css, /--code-chrome-ink:\s*oklch\(/, "Fixed dark-chrome primary ink must exist");
+assert.match(css, /--code-chrome-ink-muted:\s*oklch\(/, "Fixed dark-chrome muted ink must exist");
+assert.match(css, /--code-chrome-ink-faint:\s*oklch\(/, "Fixed dark-chrome faint ink must exist");
+assert.match(css, /--code-chrome-accent:/, "Fixed dark-chrome accent must exist");
+
+function ruleBlock(selector) {
+  const start = css.indexOf(`${selector} {`);
+  assert.notEqual(start, -1, `Expected a rule for "${selector}"`);
+  return css.slice(start, css.indexOf("}", start) + 1);
+}
+
+// Every dark-chrome block that previously leaked theme ink must now use the
+// fixed properties — and none may still reference var(--text-*).
+const darkChromeSelectors = [
+  ".cave-code-wrap",
+  ".cave-code-header",
+  ".cave-code-lang",
+  ".cave-code-filename",
+  ".cave-ln",
+  ".cave-copy-btn",
+  ".cave-copy-btn:hover",
+  ".cave-bubble-system",
+  ".cave-bubble-system-header",
+  ".cave-bubble-system-sigil",
+  ".cave-bubble-system-label",
+  ".cave-bubble-system-label--dim",
+  ".cave-bubble-system-body",
+];
+for (const selector of darkChromeSelectors) {
+  assert.doesNotMatch(
+    ruleBlock(selector),
+    /var\(--text-/,
+    `${selector} is fixed dark chrome — it must not take theme ink (var(--text-*) flips dark in light mode)`,
+  );
+}
+
+assert.match(
+  ruleBlock(".cave-copy-btn"),
+  /color:\s*var\(--code-chrome-ink-faint\)/,
+  "Copy button resting ink must be the fixed faint chrome ink",
+);
+assert.match(
+  ruleBlock(".cave-copy-btn:hover"),
+  /color:\s*var\(--code-chrome-ink\)/,
+  "Copy button hover ink must be the fixed primary chrome ink",
+);
+assert.match(
+  ruleBlock(".cave-code-lang"),
+  /var\(--code-chrome-accent\)/,
+  "Code-header language tag must mix from the fixed chrome accent",
+);
+assert.match(
+  ruleBlock(".cave-code-filename"),
+  /color:\s*var\(--code-chrome-ink-faint\)/,
+  "Code-header filename ink must be the fixed faint chrome ink",
+);
+assert.match(
+  ruleBlock(".cave-ln"),
+  /var\(--code-chrome-accent\)/,
+  "Line numbers must mix from the fixed chrome accent",
+);
+assert.match(
+  ruleBlock(".cave-bubble-system-label"),
+  /color:\s*var\(--code-chrome-ink-muted\)/,
+  "System-turn header label ink must be the fixed muted chrome ink",
+);
+assert.match(
+  ruleBlock(".cave-bubble-system-body"),
+  /color:\s*var\(--code-chrome-ink-muted\)/,
+  "System-turn body ink must be the fixed muted chrome ink",
+);
+
+// The fixed dark surfaces must be near-opaque so they stay self-consistent
+// over a light --bg-base (a 60%-alpha wash goes muddy), and must not mix
+// with theme surfaces.
+for (const selector of [".cave-code-wrap", ".cave-bubble-system"]) {
+  const block = ruleBlock(selector);
+  assert.match(
+    block,
+    /background:\s*oklch\([^)]*\/\s*9\d%\)/,
+    `${selector} surface must be a near-opaque fixed dark oklch`,
+  );
+  assert.doesNotMatch(
+    block,
+    /var\(--bg-/,
+    `${selector} surface must not mix with theme backgrounds`,
+  );
+}
