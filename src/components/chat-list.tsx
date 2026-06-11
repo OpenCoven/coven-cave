@@ -5,6 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
+import { useIsMobile } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -12,6 +13,14 @@ import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
+import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
+import {
+  applyProjectScope,
+  normalizeSelection,
+  readPersisted,
+  PROJECT_SIDEBAR_KEYS,
+  type ProjectSelection,
+} from "@/lib/chat-project-selection";
 
 type Props = {
   familiar: Familiar | null;
@@ -74,8 +83,13 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [search, setSearch] = useState("");
   const [unreadsOnly, setUnreadsOnly] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [selection, setSelection] = useState<ProjectSelection>("all");
+  const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
+  const isMobile = useIsMobile();
   const allFamiliars = familiar ? [familiar] : familiars;
   const resolvedFamiliars = useResolvedFamiliars(allFamiliars, { includeArchived: true });
   const resolvedFamiliar = familiar ? resolvedFamiliars[0] : null;
@@ -99,6 +113,30 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Sidebar state loads after mount (not in initializers) so SSR markup and
+  // first client render agree; persistence is gated until that load lands.
+  useEffect(() => {
+    setSidebarOpen(readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.open, true) !== false);
+    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, []);
+    setExpandedKeys(
+      Array.isArray(storedExpanded)
+        ? storedExpanded.filter((k): k is string => typeof k === "string")
+        : [],
+    );
+    const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
+    setSelection(typeof storedSelection === "string" ? storedSelection : "all");
+    setSidebarHydrated(true);
+  }, []);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.open, JSON.stringify(sidebarOpen));
+  }, [sidebarHydrated, sidebarOpen]);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.expanded, JSON.stringify(expandedKeys));
+  }, [sidebarHydrated, expandedKeys]);
+  useEffect(() => {
+    if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
+  }, [sidebarHydrated, selection]);
 
   // ── Data: filter ──────────────────────────────────────────────────────────
 
@@ -130,6 +168,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     return deriveChatProjectGroups(filtered);
   }, [filtered]);
 
+  // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
+  // so it stays stable while typing. The persisted selection is normalized
+  // every render: stale projects degrade to "all" silently. Below lg the
+  // sidebar is hidden, so a persisted project selection must not scope the
+  // list there — no affordance would exist to unscope it.
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine), [mine]);
+  const effectiveSelection = useMemo(
+    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
+    [isMobile, selection, sidebarGroups],
+  );
+  const scopedGroups = useMemo(
+    () => applyProjectScope(grouped, effectiveSelection),
+    [grouped, effectiveSelection],
+  );
+  const visibleRows = useMemo(
+    () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
+    [scopedGroups],
+  );
   // ── Delete (two-step confirm) ────────────────────────────────────────────
 
   const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
@@ -156,7 +212,30 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <section className="chat-list-surface flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <div className="flex h-full min-w-0">
+      <ChatProjectSidebar
+        groups={sidebarGroups}
+        selection={effectiveSelection}
+        expandedKeys={expandedKeys}
+        open={sidebarOpen}
+        activeSessionId={activeId}
+        onSetOpen={setSidebarOpen}
+        onSelect={setSelection}
+        onToggleExpanded={(key) =>
+          setExpandedKeys((prev) =>
+            prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+          )
+        }
+        onOpenSession={(s) => {
+          setActiveId(s.id);
+          onOpen(s.id, s.familiarId);
+        }}
+        onNewChat={(root) => {
+          const group = sidebarGroups.find((g) => g.projectRoot === root);
+          onNewChat(root ?? undefined, group?.defaultFamiliarId ?? fallbackFamiliarId);
+        }}
+      />
+      <section className="chat-list-surface flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
       {/* ── Agent dossier + command strip ── */}
       <header className="agent-panel-dossier chat-list-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)]">
@@ -357,13 +436,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               to jump back to chat search after this list has history.
             </div>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : visibleRows === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Icon name="ph:magnifying-glass" width={20} className="text-[var(--text-muted)]" />
-            <p className="text-sm text-[var(--text-muted)]">No results for "{search}"</p>
+            <p className="text-sm text-[var(--text-muted)]">
+              {search.trim() ? `No results for "${search}"` : "No chats match the current filters"}
+            </p>
             <button
               type="button"
-              onClick={() => { setSearch(""); setUnreadsOnly(false); }}
+              onClick={() => { setSearch(""); setUnreadsOnly(false); setSelection("all"); }}
               className="text-[12px] text-[var(--accent-presence)] hover:underline"
             >
               Clear filters
@@ -371,10 +452,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           </div>
         ) : (
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {grouped.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
+            {scopedGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
               <li key={projectRoot ?? "__none__"}>
                 {/* Project group header */}
-                {projectRoot !== null && (
+                {projectRoot !== null && effectiveSelection === "all" && (
                   <div className="group relative flex items-center gap-1.5 px-4 py-1.5 bg-[var(--bg-raised)]/30 border-b border-[var(--border-hairline)]">
                     <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-muted)]" />
                     <span className="truncate text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">
@@ -527,6 +608,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       <footer className="chat-list-footer border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
         {keys.enter} open · {keys.mod}K palette · / commands in chat
       </footer>
-    </section>
+      </section>
+    </div>
   );
 }
