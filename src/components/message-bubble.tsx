@@ -34,6 +34,7 @@ import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
 import { sanitizeHtml } from "@/lib/html-sanitize";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -827,12 +828,13 @@ function MarkdownExpandModal({
 }) {
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // CHAT-D11-02: shared focus trap — focuses the first control on open,
+  // cycles Tab/Shift+Tab inside the dialog, closes on Escape, and restores
+  // focus to the Expand trigger on close. Always active: this component only
+  // mounts while the modal is open.
+  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
 
@@ -845,11 +847,13 @@ function MarkdownExpandModal({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Expanded ${label}`}
+      tabIndex={-1}
     >
       <div
         className="relative flex h-[90vh] w-[92vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"

@@ -20,6 +20,7 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { Modal } from "@/components/ui/modal";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallButton } from "./voice-call-button";
@@ -2621,18 +2622,21 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
 
 function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
   const isImage = (attachment.mimeType ?? attachment.type)?.startsWith("image/");
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  // CHAT-D11-02: shared focus trap — focuses the first control on open,
+  // cycles Tab/Shift+Tab inside the dialog, closes on Escape, and restores
+  // focus to the attachment-chip trigger on close. Always active: this
+  // component only mounts while the lightbox is open.
+  useFocusTrap(true, dialogRef, { onEscape: onClose });
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label={`Preview ${attachment.name}`}
+      tabIndex={-1}
     >
       <div
         className="relative max-h-[90vh] w-[90vw] max-w-screen-2xl overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
