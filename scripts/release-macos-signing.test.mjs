@@ -37,3 +37,15 @@ test("notary rejection stops before stapling and prints the Apple log", () => {
       releaseScript.indexOf('echo "==> Stapling notarization ticket"'),
   );
 });
+
+test("DMG packaging retries transient hdiutil resource-busy failures", () => {
+  assert.match(releaseScript, /create_dmg_with_retry\(\)/);
+  assert.match(releaseScript, /hdiutil detach "\$mount" -force/);
+  assert.match(releaseScript, /Resource busy/);
+  assert.match(releaseScript, /hdiutil create[\s\S]*"\$DMG_PATH"/);
+  assert.match(releaseScript, /create_dmg_with_retry\n\n/);
+  assert(
+    releaseScript.indexOf("create_dmg_with_retry") <
+      releaseScript.indexOf('echo "==> Signing DMG container"'),
+  );
+});
