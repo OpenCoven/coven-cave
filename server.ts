@@ -40,6 +40,29 @@ function isAuthorized(req: IncomingMessage): boolean {
   return auth.startsWith("Bearer ") && auth.slice("Bearer ".length) === ACCESS_TOKEN;
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+// WebSocket upgrades are not subject to the browser same-origin policy, so a
+// page on any site could open ws://localhost:3000/api/pty-ws (and the browser
+// would attach the access cookie). Reject upgrades whose Origin is neither
+// loopback nor the host this socket was opened on; requests without an Origin
+// header come from non-browser clients, which the bind address and access
+// token already govern.
+function isAllowedUpgradeOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (isLoopbackHostname(url.hostname)) return true;
+  return url.host === (req.headers.host ?? "");
+}
+
 function defaultShell(): string {
   if (process.platform === "darwin") return "/bin/zsh";
   if (process.platform === "win32") {
@@ -204,7 +227,7 @@ function handlePtyConnection(
 }
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
+const hostname = process.env.HOSTNAME ?? (dev ? "127.0.0.1" : "0.0.0.0");
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 
 const app = next({ dev, hostname, port });
@@ -226,6 +249,12 @@ server.on("upgrade", (req, socket, head) => {
       console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);
       socket.destroy();
     });
+    return;
+  }
+
+  if (!isAllowedUpgradeOrigin(req)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
     return;
   }
 
