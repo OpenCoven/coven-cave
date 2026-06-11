@@ -1,6 +1,7 @@
 /* cave-chat.css — Markdown + Shiki styles for Cave chat bubbles.
  * Scoped to .cave-md so styles don't bleed into app chrome.
- * Tokens reference globals.css custom properties only.
+ * Tokens reference globals.css custom properties except the fixed code-chrome
+ * inks below, which intentionally mirror the dark palette in both themes.
  */
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
