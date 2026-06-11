@@ -43,6 +43,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /if \(sshRuntime && binding\.harness === "openclaw"\)[\s\S]*OpenClaw SSH runtime is not supported yet/,
+  "OpenClaw over SSH should fail clearly until Cave has a dedicated remote OpenClaw bridge",
+);
+
+assert.match(
+  chatRoute,
   /const sshRuntime = isSshRuntime\(binding\.runtime\) \? binding\.runtime : null;[\s\S]*buildSshSpawnArgs/,
   "SSH runtime familiars should build SSH argv before local process spawning",
 );

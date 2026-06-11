@@ -567,6 +567,16 @@ export async function POST(req: Request) {
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
+  if (sshRuntime && binding.harness === "openclaw") {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error:
+          "OpenClaw SSH runtime is not supported yet. Use a local OpenClaw familiar or connect the remote agent through a future OpenClaw node bridge.",
+      }),
+      { status: 501, headers: { "content-type": "application/json" } },
+    );
+  }
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
       req,
