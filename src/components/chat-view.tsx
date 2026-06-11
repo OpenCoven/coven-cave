@@ -1498,6 +1498,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     void sendRaw(lastFailedSend.text, lastFailedSend.attachments);
   }
 
+  // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
+  // the user can revise and send it as a NEW message — append semantics, no
+  // truncation/forking (that's D6-03: the harness session keeps its own
+  // server-side context, so locally rewriting the transcript would lie on
+  // reload). A non-empty draft is never silently destroyed: we only prefill
+  // when the composer is empty, and always hand focus back to it.
+  function editTurnInComposer(turn: Turn) {
+    setInput((current) => (current.trim() ? current : turn.text));
+    inputRef.current?.focus();
+  }
+
+  // CHAT-D6-02: regenerate. Re-sends the PRECEDING user turn (text +
+  // attachments) through the normal guarded sendRaw path as a new turn pair.
+  // Returns undefined (action hidden) while busy, on pending turns, and on
+  // assistant turns with no preceding user turn (e.g. system-injected).
+  function regenerateFor(turn: Turn): (() => void) | undefined {
+    if (busy || turn.role !== "assistant" || turn.pending) return undefined;
+    const idx = turns.findIndex((t) => t.id === turn.id);
+    if (idx < 0) return undefined;
+    let prevUser: Turn | undefined;
+    for (let j = idx - 1; j >= 0; j -= 1) {
+      const candidate = turns[j];
+      if (candidate && candidate.role === "user") { prevUser = candidate; break; }
+    }
+    if (!prevUser) return undefined;
+    const { text, attachments: prevAttachments } = prevUser;
+    if (!text.trim() && !prevAttachments?.length) return undefined;
+    return () => void sendRaw(text, prevAttachments ?? []);
+  }
+
   const send = async () => {
     const text = input.trim();
     if (!text && attachments.length === 0) return;
@@ -1982,7 +2012,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   return prev.role !== t.role;
                 })();
                 return (
-                  <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
+                  <TurnRow
+                    key={t.id}
+                    turn={t}
+                    familiar={familiar}
+                    showTimestamp={showTimestamp}
+                    onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
+                    onRegenerate={regenerateFor(t)}
+                  />
                 );
               }
               const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
@@ -2005,7 +2042,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       return prev.role !== t.role;
                     })();
                     return (
-                      <TurnRow key={t.id} turn={t} familiar={familiar} showTimestamp={showTimestamp} />
+                      <TurnRow
+                        key={t.id}
+                        turn={t}
+                        familiar={familiar}
+                        showTimestamp={showTimestamp}
+                        onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
+                        onRegenerate={regenerateFor(t)}
+                      />
                     );
                   })}
                 </div>
@@ -2302,10 +2346,16 @@ function TurnRow({
   turn,
   familiar,
   showTimestamp = true,
+  onEdit,
+  onRegenerate,
 }: {
   turn: Turn;
   familiar: Familiar;
   showTimestamp?: boolean;
+  /** CHAT-D6-01: present only on user turns — loads the turn into the composer. */
+  onEdit?: () => void;
+  /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
+  onRegenerate?: () => void;
 }) {
   if (turn.role === "system" || turn.role === "user") {
     return (
@@ -2324,6 +2374,7 @@ function TurnRow({
             timestamp={turn.createdAt}
             showTimestamp={false}
             pending={turn.pending}
+            onEdit={onEdit}
           />
           {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
         </div>
@@ -2365,6 +2416,7 @@ function TurnRow({
                 pending={turn.pending}
                 isError={turn.error}
                 label={familiar.display_name}
+                onRegenerate={onRegenerate}
               />
             )}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}

@@ -679,9 +679,15 @@ export type MessageBubbleProps = {
   pending?: boolean;
   isError?: boolean;
   label?: string;
+  /** CHAT-D6-01: edit-and-resend — renders an Edit action in the user bubble's
+   *  revealed action row. Caller decides availability (user turns with text). */
+  onEdit?: () => void;
+  /** CHAT-D6-02: regenerate — renders a Regenerate action in the assistant
+   *  bubble's revealed action row. Caller gates it on !busy/!pending. */
+  onRegenerate?: () => void;
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -729,8 +735,21 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         <div className="relative cave-bubble-user">
           <MarkdownContent text={content} pending={pending} />
           {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
-              button is reachable by keyboard (Tab), screen readers, and touch. */}
-          {!pending && <CopyBubble text={content} />}
+              buttons are reachable by keyboard (Tab), screen readers, and touch. */}
+          <div className="cave-bubble-actions">
+            {!pending && onEdit ? (
+              <button
+                type="button"
+                aria-label="Edit message"
+                title="Edit and resend"
+                onClick={onEdit}
+                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              >
+                <Icon name="ph:pencil-simple" width={11} aria-hidden />
+              </button>
+            ) : null}
+            {!pending && <CopyBubble text={content} />}
+          </div>
         </div>
         <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
           {fmtBubbleTime(timestamp)}
@@ -753,6 +772,17 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
       {!pending && content ? (
         <div className="cave-bubble-actions">
+          {onRegenerate ? (
+            <button
+              type="button"
+              aria-label="Regenerate response"
+              title="Regenerate"
+              onClick={onRegenerate}
+              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+            >
+              <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+            </button>
+          ) : null}
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />
         </div>

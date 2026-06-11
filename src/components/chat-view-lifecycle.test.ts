@@ -161,4 +161,50 @@ assert.match(
   "Tooling lifecycle should have its own status style",
 );
 
+// ── CHAT-D6-01 / CHAT-D6-02: edit-and-resend + regenerate (append semantics) ──
+
+const bubbleSource = readFileSync(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+
+assert.match(
+  source,
+  /function editTurnInComposer\(turn: Turn\)[\s\S]*?setInput\(\(current\) => \(current\.trim\(\) \? current : turn\.text\)\);[\s\S]*?inputRef\.current\?\.focus\(\);/,
+  "Edit on a user turn loads its text into the composer only when the draft is empty, then focuses it (CHAT-D6-01)",
+);
+
+assert.match(
+  source,
+  /onEdit=\{t\.role === "user" && t\.text\.trim\(\) \? \(\) => editTurnInComposer\(t\) : undefined\}/,
+  "Only user turns with text get the Edit affordance (CHAT-D6-01)",
+);
+
+assert.match(
+  source,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?if \(busy \|\| turn\.role !== "assistant" \|\| turn\.pending\) return undefined;/,
+  "Regenerate is hidden while busy and on pending turns (CHAT-D6-02)",
+);
+
+assert.match(
+  source,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]\);/,
+  "Regenerate re-sends the preceding user turn (text + attachments) through the guarded sendRaw path, and hides when no user turn precedes (CHAT-D6-02)",
+);
+
+assert.match(
+  source,
+  /onRegenerate=\{regenerateFor\(t\)\}/,
+  "Assistant turns get the Regenerate affordance via the gated helper (CHAT-D6-02)",
+);
+
+assert.match(
+  bubbleSource,
+  /aria-label="Edit message"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"/,
+  "Edit renders in the user bubble's CSS-revealed action row with the shared button styling (CHAT-D6-01)",
+);
+
+assert.match(
+  bubbleSource,
+  /aria-label="Regenerate response"[\s\S]{0,200}className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"/,
+  "Regenerate renders in the assistant bubble's CSS-revealed action row with the shared button styling (CHAT-D6-02)",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");
