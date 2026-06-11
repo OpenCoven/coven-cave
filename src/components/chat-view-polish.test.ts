@@ -402,12 +402,22 @@ assert.match(
 // — CHAT-D1-03: drag-and-drop attach on the chat surface —
 assert.match(
   source,
-  /onDragEnter=\{\(e\) => \{\s*\n\s*if \(!e\.dataTransfer\.types\.includes\("Files"\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
+  /function hasDraggedFiles\(types: DataTransfer\["types"\]\): boolean \{[\s\S]*Array\.from\(types\)\.includes\("Files"\)/,
+  "Drag file detection must normalize DataTransfer.types before calling includes for WebKit/WebView DOMStringList compatibility",
+);
+assert.doesNotMatch(
+  source,
+  /dataTransfer\.types\.includes\("Files"\)/,
+  "Drag handlers must not call DataTransfer.types.includes directly; WebKit DOMStringList may not implement includes",
+);
+assert.match(
+  source,
+  /onDragEnter=\{\(e\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
   "dragenter must guard on a Files-type drag (text selections must not hijack) and use counter-based depth tracking",
 );
 assert.match(
   source,
-  /onDragOver=\{\(e\) => \{\s*\n\s*if \(!e\.dataTransfer\.types\.includes\("Files"\)\) return;\s*\n\s*e\.preventDefault\(\);/,
+  /onDragOver=\{\(e\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;\s*\n\s*e\.preventDefault\(\);/,
   "dragover must preventDefault (only for file drags) so the browser allows the drop",
 );
 assert.match(
@@ -417,7 +427,7 @@ assert.match(
 );
 assert.match(
   source,
-  /onDrop=\{\(e\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?void attachFiles\(e\.dataTransfer\.files\);/,
+  /onDrop=\{\(e\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?void attachFiles\(e\.dataTransfer\.files\);/,
   "drop must reset the overlay state and route dataTransfer.files through the existing attach pipeline",
 );
 assert.match(

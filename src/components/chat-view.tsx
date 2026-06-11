@@ -254,6 +254,10 @@ function isTextLike(file: File): boolean {
   return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
 }
 
+function hasDraggedFiles(types: DataTransfer["types"]): boolean {
+  return Array.from(types).includes("Files");
+}
+
 async function fileToAttachment(file: File): Promise<ComposerAttachment> {
   const attachment: ComposerAttachment = {
     id: crypto.randomUUID(),
@@ -1855,24 +1859,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onDragEnter={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
         dragDepthRef.current += 1;
         setDropActive(true);
       }}
       onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
       }}
       onDragLeave={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
         if (dragDepthRef.current === 0) setDropActive(false);
       }}
       onDrop={(e) => {
         dragDepthRef.current = 0;
         setDropActive(false);
-        if (!e.dataTransfer.types.includes("Files")) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
         void attachFiles(e.dataTransfer.files);
       }}
