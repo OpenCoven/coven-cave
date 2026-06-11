@@ -22,12 +22,36 @@ const graph = workflowToGraph(workflow);
 
 assert.equal(graph.nodes.length, 4, "each workflow step becomes a graph node");
 assert.equal(graph.edges.length, 3, "sequential workflows connect adjacent steps");
+assert.deepEqual(
+  graph.edges.map((edge) => `${edge.source}->${edge.target}`),
+  ["gate->review", "review->lint", "lint->brief"],
+  "steps without requires fall back to adjacent sequential edges",
+);
 assert.equal(graph.nodes[0].id, "gate", "node IDs use stable step IDs");
 assert.equal(graph.nodes[0].type, "workflowStep", "graph nodes use the workflow step renderer type");
 assert.equal(graph.nodes[0].data.kind, "human-gate", "node data preserves step kind");
 assert.equal(graph.nodes[0].data.tone, "gate", "human gates use gate tone");
 assert.equal(graph.nodes[1].position.x > graph.nodes[0].position.x, true, "nodes are laid out left to right");
 assert.equal(workflowNodeTone("workflow"), "workflow", "nested workflow nodes get workflow tone");
+
+const dependencyWorkflow: WorkflowSummary = {
+  id: "fanout-synthesis",
+  version: "1.0.0",
+  pattern: "fan-out-and-synthesize",
+  steps: [
+    { id: "intake", kind: "human-gate" },
+    { id: "research", kind: "agent", requires: ["intake"] },
+    { id: "risk", kind: "agent", requires: ["intake"] },
+    { id: "synthesize", kind: "agent", requires: ["research", "risk"] },
+    { id: "brief", kind: "tool", requires: ["synthesize"] },
+  ],
+};
+const dependencyGraph = workflowToGraph(dependencyWorkflow);
+assert.deepEqual(
+  dependencyGraph.edges.map((edge) => `${edge.source}->${edge.target}`),
+  ["intake->research", "intake->risk", "research->synthesize", "risk->synthesize", "synthesize->brief"],
+  "steps with requires render manifest dependency edges instead of array-order edges",
+);
 
 const dryRun: WorkflowDryRunPlan = {
   ok: true,

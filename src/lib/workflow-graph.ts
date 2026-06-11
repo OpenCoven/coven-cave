@@ -59,6 +59,31 @@ function dryRunStepFor(step: WorkflowStepSummary, dryRun?: WorkflowDryRunPlan): 
   return dryRun?.steps?.find((planStep) => planStep.id === step.id);
 }
 
+function workflowEdges(steps: WorkflowStepSummary[], dryRun?: WorkflowDryRunPlan): WorkflowGraphEdge[] {
+  const animated = dryRun?.ok === true;
+  const hasDependencyEdges = steps.some((step) => step.requires && step.requires.length > 0);
+  if (hasDependencyEdges) {
+    return steps.flatMap((step) =>
+      (step.requires ?? []).map((source) => ({
+        id: `${source}->${step.id}`,
+        source,
+        target: step.id,
+        animated,
+      })),
+    );
+  }
+
+  return steps.slice(1).map((step, index): WorkflowGraphEdge => {
+    const previous = steps[index];
+    return {
+      id: `${previous.id}->${step.id}`,
+      source: previous.id,
+      target: step.id,
+      animated,
+    };
+  });
+}
+
 export function workflowToGraph(workflow: WorkflowSummary, dryRun?: WorkflowDryRunPlan): WorkflowGraph {
   const steps = workflow.steps && workflow.steps.length > 0 ? workflow.steps : [fallbackStep(workflow)];
   const nodes = steps.map((step, index): WorkflowGraphNode => {
@@ -81,15 +106,7 @@ export function workflowToGraph(workflow: WorkflowSummary, dryRun?: WorkflowDryR
       },
     };
   });
-  const edges = steps.slice(1).map((step, index): WorkflowGraphEdge => {
-    const previous = steps[index];
-    return {
-      id: `${previous.id}->${step.id}`,
-      source: previous.id,
-      target: step.id,
-      animated: dryRun?.ok === true,
-    };
-  });
+  const edges = workflowEdges(steps, dryRun);
 
   return { nodes, edges };
 }
