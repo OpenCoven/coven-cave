@@ -90,6 +90,24 @@ assert.match(
 );
 
 assert.match(
+  chatRoute,
+  /defaultChatTitleForSession\(finalSessionId\)/,
+  "Fresh persisted chats should use a neutral New Session title instead of the first user prompt",
+);
+
+assert.match(
+  chatRoute,
+  /await setDefaultSessionTitleIfMissing\(finalSessionId, chatTitle\)/,
+  "Fresh chats should store a Cave-side title override so daemon prompt-derived titles do not win in the session list",
+);
+
+assert.match(
+  chatRoute,
+  /async function setDefaultSessionTitleIfMissing[\s\S]*await setSessionTitle\(sessionId, title\)/,
+  "The default title override helper should preserve existing titles and write only through the Cave title override path",
+);
+
+assert.match(
   boardRoute,
   /isTrustedChatHarness\(binding\.harness\)/,
   "Board step enrichment should enforce the same trusted Coven harness gate",

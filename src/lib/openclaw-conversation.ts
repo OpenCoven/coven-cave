@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { defaultChatTitleForSession } from "./cave-chat-titles.ts";
 import type { ChatTurn, ConversationFile } from "./cave-conversations";
 
 /**
@@ -166,8 +167,7 @@ export async function loadConversationFromJsonl(
   if (turns.length === 0) return null;
 
   const now = new Date().toISOString();
-  const firstUserTurn = turns.find((t) => t.role === "user");
-  const title = (firstUserTurn?.text ?? "").slice(0, 60) || "Chat";
+  const title = defaultChatTitleForSession(sessionId);
 
   return {
     sessionId,

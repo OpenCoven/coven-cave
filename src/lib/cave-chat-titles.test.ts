@@ -1,6 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mergeSessionTitleOverrides, normalizeChatTitle } from "./cave-chat-titles.ts";
+import {
+  defaultChatTitleForSession,
+  mergeSessionTitleOverrides,
+  normalizeChatTitle,
+} from "./cave-chat-titles.ts";
 
 const sessions = [
   { id: "s1", title: "daemon title", updated_at: "2026-06-01T00:00:00.000Z" },
@@ -11,6 +15,8 @@ assert.equal(normalizeChatTitle("  Renamed chat  "), "Renamed chat");
 assert.equal(normalizeChatTitle("one\n  two\tthree"), "one two three");
 assert.equal(normalizeChatTitle("   "), null);
 assert.equal(normalizeChatTitle("x".repeat(130)), "x".repeat(120));
+assert.equal(defaultChatTitleForSession("session-1234567890"), "New Session 12345678");
+assert.equal(defaultChatTitleForSession(""), "New Session");
 
 assert.deepEqual(
   mergeSessionTitleOverrides(sessions, {
