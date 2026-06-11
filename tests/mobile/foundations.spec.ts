@@ -61,8 +61,11 @@ test.describe("mobile foundations", () => {
   test("desktop home route hides the global top header without window scroll", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
+    await page.waitForSelector(".shell-frame");
 
-    await expect(page.locator(".top-bar")).toBeHidden();
+    const topBar = page.locator(".top-bar");
+    await expect(topBar).toHaveCount(1);
+    await expect(topBar).toBeHidden();
 
     const metrics = await page.evaluate(() => {
       return {
