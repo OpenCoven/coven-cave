@@ -1043,7 +1043,7 @@ export function Workspace() {
       />
     ) : mode === "roles" ? (
       <PluginsView
-        tabs={["roles", "workflows"]}
+        tabs={["roles", "workflows", "plugins", "skills"]}
         initialTab="roles"
         familiars={resolvedFamiliars}
         onOpenChat={() => setMode("chat")}
