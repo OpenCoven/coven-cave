@@ -1110,6 +1110,12 @@ details[open] > .cave-tool-summary::before {
   font-size: 11px;
 }
 
+/* CHAT-D3-06: ticking elapsed inside the streaming meta line. Tabular digits
+   keep the line from jittering as the counter advances each second. */
+.cave-chat-meta-line__elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
 .cave-chat-meta-line__dot {
   width: 7px;
   height: 7px;
