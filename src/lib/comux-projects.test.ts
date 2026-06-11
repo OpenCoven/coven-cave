@@ -75,3 +75,35 @@ assert.deepEqual(deriveComuxProjects([], "/workspace/fallback"), [
     updatedAt: null,
   },
 ]);
+
+// ── Trailing-slash roots bucket as ONE project (was: duplicate rail rows) ──
+{
+  const merged = deriveComuxProjects([
+    session("a", "/work/server", "2026-06-02T00:00:00.000Z"),
+    session("b", "/work/server/", "2026-06-03T00:00:00.000Z"),
+  ]);
+  assert.equal(merged.length, 1, "trailing-slash variant of the same root must not create a second project");
+  assert.equal(merged[0].sessionCount, 2, "both sessions land in the merged bucket");
+  assert.equal(merged[0].root, "/work/server", "root is stored normalized");
+}
+
+// ── Basename collisions get parent/name labels ──
+{
+  const collided = deriveComuxProjects([
+    session("a", "/work/server", "2026-06-02T00:00:00.000Z"),
+    session("b", "/infra/server", "2026-06-03T00:00:00.000Z"),
+  ]);
+  assert.equal(collided.length, 2, "distinct roots stay distinct projects");
+  const names = collided.map((p) => p.name).sort();
+  assert.deepEqual(names, ["infra/server", "work/server"], "colliding basenames are disambiguated with the parent segment");
+}
+
+// ── Unique basenames keep their short label ──
+{
+  const plain = deriveComuxProjects([
+    session("a", "/work/alpha", "2026-06-02T00:00:00.000Z"),
+  ]);
+  assert.equal(plain[0].name, "alpha", "non-colliding projects keep the bare basename");
+}
+
+console.log("comux-projects.test.ts: dedup + disambiguation ok");

@@ -86,4 +86,15 @@ assert.match(
   "Narrow panels drop the Type/Progress columns so Title keeps the space",
 );
 
-console.log("library-polish.test.ts: ok");
+// ── Projects section owns the full canvas (was: ComuxView crushed into the
+//    narrow list panel while an empty doc preview hogged the width) ──
+assert.match(
+  view,
+  /activeSection === "projects" \? \([\s\S]{0,200}<ComuxView/,
+  "Projects renders in the dominant full-canvas branch, not the list panel",
+);
+assert.match(
+  view,
+  /activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" &&/,
+  "List panel is hidden while Projects is active",
+);
