@@ -7,6 +7,12 @@ const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.me
 
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
+assert.match(src, /app\.getUpgradeHandler\(\)/, "server forwards non-PTY upgrades to Next.js");
+assert.match(
+  src,
+  /pathname !== "\/api\/pty-ws"[\s\S]*nextUpgradeHandler\(req, socket, head\)/,
+  "server must not drop Next.js dev websocket upgrades",
+);
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
 assert.match(src, /coven_access_token/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");

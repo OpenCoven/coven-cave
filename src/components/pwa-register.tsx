@@ -25,6 +25,31 @@ export function PwaRegister() {
     ) {
       return;
     }
+    if (process.env.NODE_ENV === "development") {
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((r) => r.unregister())))
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn("[pwa] service worker cleanup failed:", err);
+        });
+      if ("caches" in window) {
+        void window.caches
+          .keys()
+          .then((keys) =>
+            Promise.all(
+              keys
+                .filter((key) => key.startsWith("covencave-pwa"))
+                .map((key) => window.caches.delete(key)),
+            ),
+          )
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn("[pwa] cache cleanup failed:", err);
+          });
+      }
+      return;
+    }
     // Defer to idle so the SW registration doesn't compete with first
     // paint / hydration work.
     const register = () => {
