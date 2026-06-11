@@ -53,7 +53,7 @@ assert.match(
 
 assert.match(
   chatRouter,
-  /const previousFamiliarIdRef = useRef<string \| null>\(null\)[\s\S]*if \(previousFamiliarIdRef\.current === null\)[\s\S]*previousFamiliarIdRef\.current = familiar\?\.id \?\? null[\s\S]*return/,
+  /const previousFamiliarIdRef = useRef<string \| null \| undefined>\(undefined\)[\s\S]*if \(previousFamiliarIdRef\.current === undefined\)[\s\S]*previousFamiliarIdRef\.current = nextFamiliarId[\s\S]*return/,
   "ChatRouter familiar-change reset should skip initial mount so opening a session does not become a blank new chat",
 );
 
@@ -77,7 +77,7 @@ assert.match(
 
 assert.match(
   chatView,
-  /function ChatContextStrip[\s\S]*const task = linkedContext\?\.task[\s\S]*const github = linkedContext\?\.github[\s\S]*github\.map[\s\S]*Open on GitHub/,
+  /function LinkedContextRow[\s\S]*const task = linkedContext\?\.task[\s\S]*const github = linkedContext\?\.github[\s\S]*github\.map[\s\S]*Open on GitHub/,
   "ChatView should render task and GitHub context chips in the chat header",
 );
 

@@ -14,7 +14,7 @@ assert.match(
 
 assert.match(
   familiarChangeEffect,
-  /\{ kind: "chat", sessionId: null, projectRoot: prev\.projectRoot \}/,
+  /\{[\s\S]*kind: "chat"[\s\S]*sessionId: null[\s\S]*projectRoot: prev\.projectRoot[\s\S]*initialPrompt: prev\.initialPrompt[\s\S]*familiarId: nextFamiliarId[\s\S]*\}/,
   "A familiar switch in chat mode should preserve pending project context for the fresh chat",
 );
 

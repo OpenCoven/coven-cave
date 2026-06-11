@@ -8,13 +8,18 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import {
+  deriveChatProjectGroups,
+  filterVisibleChatSessions,
+} from "@/lib/chat-projects";
 
 type Props = {
-  familiar: Familiar;
+  familiar: Familiar | null;
+  familiars?: Familiar[];
   sessions: SessionRow[];
   daemonRunning?: boolean;
-  onOpen: (sessionId: string) => void;
-  onNewChat: (projectRoot?: string) => void;
+  onOpen: (sessionId: string, familiarId?: string | null) => void;
+  onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
 };
 
 function age(iso: string): string {
@@ -54,7 +59,7 @@ function statusStyle(s: string) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat }: Props) {
   const [busyTuiId, setBusyTuiId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -62,8 +67,17 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   const [activeId, setActiveId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
-  const resolvedFamiliars = useResolvedFamiliars([familiar], { includeArchived: true });
-  const resolvedFamiliar = resolvedFamiliars[0];
+  const allFamiliars = familiar ? [familiar] : familiars;
+  const resolvedFamiliars = useResolvedFamiliars(allFamiliars, { includeArchived: true });
+  const resolvedFamiliar = familiar ? resolvedFamiliars[0] : null;
+  const familiarsById = useMemo(
+    () => new Map(familiars.map((entry) => [entry.id, entry])),
+    [familiars],
+  );
+  const fallbackFamiliarId = familiar?.id ?? familiars[0]?.id ?? null;
+  const panelTitle = familiar?.display_name ?? "Familiars";
+  const panelRole = familiar?.role ?? "All project conversations";
+  const panelRuntime = familiar ? (familiar.harness ?? "codex") : "mixed";
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -80,11 +94,8 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   // ── Data: filter ──────────────────────────────────────────────────────────
 
   const mine = useMemo(() => {
-    const DEAD = new Set(["killed", "orphaned", "stopped", "archived"]);
-    return sessions
-      .filter((s) => s.familiarId === familiar.id && !DEAD.has(s.status))
-      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-  }, [sessions, familiar.id]);
+    return filterVisibleChatSessions(sessions, familiar?.id ?? null);
+  }, [sessions, familiar?.id]);
 
   const filtered = useMemo(() => {
     let rows = mine;
@@ -107,15 +118,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const grouped = useMemo(() => {
-    // Build ordered groups: sessions with a project_root grouped together,
-    // remaining (no project) collected into a null group at the end.
-    const map = new Map<string | null, SessionRow[]>();
-    for (const s of filtered) {
-      const key = s.project_root ?? null;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(s);
-    }
-    return map;
+    return deriveChatProjectGroups(filtered);
   }, [filtered]);
 
   // ── TUI launcher ─────────────────────────────────────────────────────────
@@ -155,7 +158,11 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
             {/* Avatar — larger + glyph-forward */}
             <div className="relative shrink-0">
               <div className="grid h-11 w-11 place-items-center rounded-xl border border-[var(--accent-presence)]/30 bg-[color-mix(in_oklch,var(--accent-presence)_12%,var(--bg-raised))] shadow-[0_0_12px_color-mix(in_oklch,var(--accent-presence)_18%,transparent)]">
-                {resolvedFamiliar ? <FamiliarAvatar familiar={resolvedFamiliar} size="md" /> : null}
+                {resolvedFamiliar ? (
+                  <FamiliarAvatar familiar={resolvedFamiliar} size="md" />
+                ) : (
+                  <Icon name="ph:users-three" width={20} className="text-[var(--accent-presence)]" />
+                )}
               </div>
               {/* Online/offline dot */}
               <span
@@ -168,25 +175,26 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex min-w-0 items-center gap-2">
                 <h2 className="min-w-0 truncate text-[15px] font-semibold text-[var(--text-primary)]">
-                  {familiar.display_name}
+                  {panelTitle}
                 </h2>
               </div>
               <p className="mt-0.5 truncate text-[11px] leading-snug text-[var(--text-muted)]">
-                {familiar.role ? (
+                {panelRole ? (
                   <>
-                    <span className="text-[var(--text-secondary)]">{familiar.role}</span>
+                    <span className="text-[var(--text-secondary)]">{panelRole}</span>
                     {" · "}
                   </>
                 ) : null}
                 Agent runtime{" "}
-                <span className="font-mono">{familiar.harness ?? "codex"}</span>
+                <span className="font-mono">{panelRuntime}</span>
               </p>
             </div>
 
             {/* + Chat CTA */}
             <button
               type="button"
-              onClick={() => onNewChat()}
+              onClick={() => onNewChat(undefined, fallbackFamiliarId)}
+              disabled={!fallbackFamiliarId}
               className="mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
@@ -296,7 +304,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-[var(--text-primary)]">Ready for a new thread</p>
                   <p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">
-                    Start a focused chat with {familiar.display_name}. The thread will inherit this
+                    Start a focused chat with {panelTitle}. The thread will inherit the selected
                     familiar's runtime and show up here once it starts.
                   </p>
                 </div>
@@ -304,15 +312,16 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
               <div className="mt-4 divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
                 <div className="flex items-center justify-between gap-3 py-2">
                   <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Harness</p>
-                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar.harness ?? "codex"}</p>
+                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{panelRuntime}</p>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2">
                   <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</p>
-                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar.model ?? "default"}</p>
+                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar?.model ?? "default"}</p>
                 </div>
               </div>
               <button
-                onClick={() => onNewChat()}
+                onClick={() => onNewChat(undefined, fallbackFamiliarId)}
+                disabled={!fallbackFamiliarId}
                 className="mt-4 flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
               >
                 <Icon name="ph:plus-bold" width={12} />
@@ -338,7 +347,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
           </div>
         ) : (
           <ul className="divide-y divide-[var(--border-hairline)]">
-            {Array.from(grouped.entries()).map(([projectRoot, rows]) => (
+            {grouped.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
               <li key={projectRoot ?? "__none__"}>
                 {/* Project group header */}
                 {projectRoot !== null && (
@@ -351,7 +360,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                       className="touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNewChat(projectRoot);
+                        onNewChat(projectRoot, defaultFamiliarId ?? fallbackFamiliarId);
                       }}
                       title={`New chat in ${repoName(projectRoot)}`}
                       aria-label={`New chat in ${repoName(projectRoot)}`}
@@ -365,15 +374,17 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                     const st = statusStyle(s.status);
                     const project = repoName(s.project_root ?? "");
                     const isActive = activeId === s.id;
+                    const rowFamiliar = s.familiarId ? familiarsById.get(s.familiarId) : null;
+                    const rowFamiliarName = rowFamiliar?.display_name ?? familiar?.display_name ?? "Familiar";
 
                     return (
                       <li key={s.id}>
                         <div
                           role="button"
                           tabIndex={0}
-                          onClick={() => { setActiveId(s.id); onOpen(s.id); }}
+                          onClick={() => { setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id); }
+                            if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id, s.familiarId); }
                           }}
                           className={[
                             "focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
@@ -401,7 +412,7 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                             <span className="flex items-baseline justify-between gap-2">
                               <span className="flex items-center gap-1.5 min-w-0">
                                 <span className="truncate text-[12px] font-medium text-[var(--text-secondary)]">
-                                  {project || familiar.display_name}
+                                  {project || rowFamiliarName}
                                 </span>
                                 {s.origin ? <OriginChip origin={s.origin} /> : null}
                               </span>
@@ -433,8 +444,8 @@ export function ChatList({ familiar, sessions, daemonRunning, onOpen, onNewChat 
                                     : st.label === "paused"
                                       ? "Paused"
                                       : project
-                                        ? `${familiar.display_name} · ${project}`
-                                        : `${familiar.display_name}`}
+                                        ? `${rowFamiliarName} · ${project}`
+                                        : `${rowFamiliarName}`}
                             </span>
                           </span>
 
