@@ -18,11 +18,11 @@
 // consecutive group, preserving arrival order.
 //
 // Streaming stability falls out of the offset model: offsets are captured
-// against a text that only ever grows, so text appended after a tool arrived
-// always lands in the span FOLLOWING that tool. A tool that arrives
-// mid-paragraph floats at the end of the current text until the paragraph
-// boundary streams in, then anchors there permanently — settled spans never
-// change retroactively.
+// against text that only ever grows. A tool that arrives at a safe boundary can
+// render before later prose immediately; a tool that arrives mid-paragraph
+// floats at the end of the current text, so later text in that same paragraph
+// can remain before the tool until the paragraph boundary streams in. Once a
+// safe boundary exists, the tool anchors there permanently.
 //
 // Legacy compatibility (graceful degradation, NO transcript migration):
 // stored transcripts predate `textOffset`. When there are no tools, or ANY

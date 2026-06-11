@@ -80,7 +80,7 @@ assert.equal(
 assert.equal(debugFileName("s1"), "debug-s1.json");
 assert.equal(debugFileName(null), "debug-session.json");
 
-console.log("session-debug tests passed");
+console.log("session-debug core assertions passed");
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CHAT-D4-01 — interleaved tool segments (src/lib/turn-segments.ts).
@@ -189,6 +189,7 @@ assert.equal(
 // ── Source pins ─────────────────────────────────────────────────────────────
 const chatViewSource = readFileSync(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const bubbleSource = readFileSync(new URL("../components/message-bubble.tsx", import.meta.url), "utf8");
+const turnSegmentsSource = readFileSync(new URL("./turn-segments.ts", import.meta.url), "utf8");
 const convRouteSource = readFileSync(
   new URL("../app/api/chat/conversation/[id]/route.ts", import.meta.url),
   "utf8",
@@ -205,6 +206,16 @@ assert.match(
   chatViewSource,
   /textOffset: x\.textOffset,/,
   "CHAT-D4-01: settle/update events keep the offset captured at first arrival",
+);
+assert.doesNotMatch(
+  turnSegmentsSource,
+  /always lands in the span FOLLOWING that tool/,
+  "CHAT-D4-01: turn-segments comments must not overstate mid-paragraph snap behavior",
+);
+assert.match(
+  turnSegmentsSource,
+  /later text in that same paragraph[\s\S]*?can remain before the tool/,
+  "CHAT-D4-01: turn-segments comments should document mid-paragraph streaming behavior",
 );
 
 // TurnRow renders the segmented path from the reasoning-stripped visible
