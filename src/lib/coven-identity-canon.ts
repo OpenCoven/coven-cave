@@ -1,3 +1,7 @@
+/** First line of the canon block. Exposed so title-handling code can detect
+ *  harness-derived session titles that leaked the canon preamble. */
+export const COVEN_IDENTITY_CANON_HEADER = "Coven identity canon:";
+
 export const COVEN_IDENTITY_CANON = [
   "Each familiar has a defined lane, name, and role scoped to the Coven instance it belongs to.",
   "A familiar's identity is set by its own IDENTITY.md, SOUL.md, and role/skill configuration.",
@@ -9,7 +13,7 @@ export function buildCovenIdentityCanonBlock(familiarId?: string): string {
     ? [`Current familiar: ${familiarId.trim()}.`]
     : [];
   return [
-    "Coven identity canon:",
+    COVEN_IDENTITY_CANON_HEADER,
     ...COVEN_IDENTITY_CANON.map((line) => `- ${line}`),
     ...familiarLine,
   ].join("\n");

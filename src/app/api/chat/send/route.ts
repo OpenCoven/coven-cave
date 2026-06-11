@@ -10,7 +10,10 @@ import {
   recordSessionFamiliar,
   setSessionTitle,
 } from "@/lib/cave-config";
-import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
+import {
+  chatTitleFromPrompt,
+  defaultChatTitleForSession,
+} from "@/lib/cave-chat-titles";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
@@ -440,7 +443,10 @@ function openClawChatResponse(args: {
           const now = new Date().toISOString();
           const userTurnId = crypto.randomUUID();
           const assistantTurnId = crypto.randomUUID();
-          const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
+          const chatTitle =
+            existing?.title ??
+            chatTitleFromPrompt(args.promptText) ??
+            defaultChatTitleForSession(sessionId);
           if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
           const conv = existing ?? {
             sessionId,
@@ -718,6 +724,14 @@ export async function POST(req: Request) {
             if (ev.session_id && !sessionId) {
               sessionId = ev.session_id;
               push({ kind: "session", sessionId });
+              // Title the session from the user's prompt as soon as the id
+              // exists. The daemon's own title derives from the harness
+              // prompt \u2014 i.e. the identity-canon preamble \u2014 and is what the
+              // UI would otherwise show until the transcript save runs.
+              void setDefaultSessionTitleIfMissing(
+                sessionId,
+                chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(sessionId),
+              ).catch(() => undefined);
             }
             if (ev.type === "result") {
               result = { duration_ms: ev.duration_ms, is_error: ev.is_error };
@@ -944,7 +958,10 @@ export async function POST(req: Request) {
         const now = new Date().toISOString();
         const userTurnId = crypto.randomUUID();
         const assistantTurnId = crypto.randomUUID();
-        const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
+        const chatTitle =
+          existing?.title ??
+          chatTitleFromPrompt(promptText) ??
+          defaultChatTitleForSession(finalSessionId);
         if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
         const userTurn: ChatTurn = {
           id: userTurnId,

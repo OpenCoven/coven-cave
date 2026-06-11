@@ -1,4 +1,8 @@
 import type { CaveState } from "./cave-config.ts";
+import {
+  defaultChatTitleForSession,
+  sanitizeSessionTitle,
+} from "./cave-chat-titles.ts";
 import { inferOrigin } from "./session-origin.ts";
 import type { SessionRow } from "./types.ts";
 
@@ -24,7 +28,8 @@ function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
 ): SessionRow {
-  const title = state.sessionTitles[conv.sessionId] ?? conv.title ?? "Chat";
+  const title =
+    state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
   const familiarId = state.sessionFamiliar[conv.sessionId] ?? conv.familiarId ?? null;
   return {
     id: conv.sessionId,
@@ -73,7 +78,13 @@ export function mergeSessionRows({
     const archived_at = archivedLocal ?? session.archived_at;
     const row: SessionRow = {
       ...session,
-      title: titleOverride ?? session.title,
+      // Daemon titles derive from the harness prompt, which the chat route
+      // prefixes with the identity canon \u2014 sanitize so the preamble never
+      // surfaces as a session title.
+      title:
+        titleOverride ??
+        sanitizeSessionTitle(session.title) ??
+        defaultChatTitleForSession(session.id),
       archived_at,
       familiarId: state.sessionFamiliar[session.id] ?? null,
       origin: inferOrigin(session),
