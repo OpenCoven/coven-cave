@@ -838,7 +838,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               <button
                                 type="button"
                                 onClick={(e) => void setSessionArchived(e, s.id, !s.archived_at)}
-                                disabled={archivingId === s.id}
+                                disabled={archivingId !== null}
                                 title={s.archived_at ? "Unarchive chat" : "Archive chat"}
                                 aria-label={`${s.archived_at ? "Unarchive" : "Archive"} chat ${rowName}`}
                                 className="touch-always-visible shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
