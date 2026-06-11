@@ -115,7 +115,7 @@ cleanup_dmg_artifacts() {
     hdiutil detach "$mount" -force >/dev/null 2>&1 || true
   done < <(
     hdiutil info 2>/dev/null |
-      awk -v app="$APP_NAME" '$1 == "/dev/disk" { next } $0 ~ "^/Volumes/" app { print $0 }'
+      awk -v app="$APP_NAME" '$NF ~ ("^/Volumes/" app) { print $NF }'
   )
 }
 create_dmg_with_retry() {
