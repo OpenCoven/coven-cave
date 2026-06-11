@@ -6,16 +6,16 @@ import { readFileSync } from "node:fs";
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-const inbox = read("./inbox-escalations-view.tsx");
+const inbox = read("./automations-view.tsx");
 assert.match(
   inbox,
   /initialLoadDone[\s\S]*?finally \{\s*setInitialLoadDone\(true\);/,
-  "Inbox tracks first-fetch settlement (success or failure)",
+  "Inbox/automations tracks first-fetch settlement (success or failure)",
 );
 assert.match(
   inbox,
-  /\{!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : visible\.length === 0 \? \(/,
-  "Inbox shows a skeleton before first load, ahead of the empty state",
+  /\{!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : isEmpty \? \(/,
+  "Inbox/automations shows a skeleton before first load, ahead of the empty state",
 );
 
 const chatList = read("./chat-list.tsx");

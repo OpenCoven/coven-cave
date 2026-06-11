@@ -32,4 +32,16 @@ assert.match(
   "BoardView blocked count must derive from filtered, not cards",
 );
 
+assert.match(
+  source,
+  /const tableGroupBy: GroupBy = activeFamiliarId === null \? groupBy : "status";/,
+  "Scoped familiar table view should force status grouping instead of offering a redundant familiar/status switch",
+);
+
+assert.match(
+  source,
+  /<BoardTable[\s\S]{0,180}groupBy=\{tableGroupBy\}/,
+  "BoardTable should receive the effective scoped table grouping",
+);
+
 console.log("board-view-familiar-scope.test.ts: ok");

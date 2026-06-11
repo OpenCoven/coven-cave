@@ -54,6 +54,18 @@ assert.match(
   "Drawer must provide a way to clear the selection",
 );
 
+assert.doesNotMatch(
+  source,
+  /memory-graph-3d|MemoryGraph3D|buildMemoryGraphModel|Loading 3D memory graph|viewMode.*graph/s,
+  "AgentsMemoryView must not mount or import the removed 3D memory graph",
+);
+
+assert.doesNotMatch(
+  source,
+  /Selected memory|Click any card in the map|graph-recent-list/,
+  "AgentsMemoryView must not keep graph-only side panel copy",
+);
+
 // ───────── Task 8: empty-state min-height collapsed ─────────
 
 assert.doesNotMatch(

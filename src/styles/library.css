@@ -657,6 +657,10 @@
   gap: 10px;
 }
 
+.library-preview--full-canvas {
+  min-height: 0;
+}
+
 .library-browse-canvas {
   flex: 1;
   min-height: 0;
@@ -676,6 +680,14 @@
   border-inline: 0;
   background: var(--bg-base);
   overflow: hidden;
+}
+
+.library-graph-toolbar {
+  min-width: 0;
+}
+
+.library-graph-select {
+  min-width: 0;
 }
 
 .library-preview-empty-icon {
@@ -1812,43 +1824,86 @@ h3:hover .library-heading-anchor,
 }
 .library-heading-anchor:hover { color: var(--accent-presence); }
 
-/* ── GitHub row action buttons ────────────────────────────────── */
+/* ── GitHub saved list rows ───────────────────────────────────── */
 .board-table tbody tr.gh-row-main {
-  border-bottom: none;
+  min-height: 58px;
 }
-.board-table tbody tr.gh-row-action-strip-row {
-  cursor: default;
+.library-github-table .gh-col-saved {
+  text-align: right;
 }
-.board-table tbody tr.gh-row-action-strip-row:hover {
-  background: transparent;
+.gh-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
-.board-table tbody tr.gh-row-action-strip-row.selected {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  box-shadow: inset 3px 0 0 var(--accent-presence);
+.gh-title-text {
+  max-width: min(420px, 100%);
 }
-.gh-row-action-strip-row td {
-  padding: 0 10px 9px;
+.gh-open-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.gh-row-main:hover .gh-open-link,
+.gh-open-link:focus-visible {
+  opacity: 1;
+}
+.gh-open-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.gh-subtitle {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gh-repo-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.35;
+}
+.gh-kind-pill {
+  color: var(--text-secondary);
+}
+.library-gh-state-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 550;
+  text-transform: capitalize;
+  white-space: nowrap;
 }
 .gh-row-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
+  justify-content: flex-end;
+  gap: 5px;
+  width: auto;
 }
 .gh-row-action-btn {
   display: inline-flex;
-  min-width: 0;
-  height: 30px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--border-hairline);
   border-radius: 6px;
   background: color-mix(in oklch, var(--bg-raised) 76%, transparent);
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 500;
   cursor: pointer;
   transition: color 0.1s, background 0.1s, border-color 0.1s;
 }
@@ -1861,6 +1916,11 @@ h3:hover .library-heading-anchor,
 .gh-row-action-btn:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 1px;
+}
+.gh-row-action-btn--danger:hover {
+  color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 34%, var(--border-strong));
+  background: color-mix(in oklch, var(--color-danger) 10%, var(--bg-hover));
 }
 
 /* ── GitHub modals (shared shell) ─────────────────────────────── */
@@ -2360,6 +2420,29 @@ h3:hover .library-heading-anchor,
     display: none;
   }
 
+  .library-preview--full-canvas {
+    display: flex;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .library-graph-toolbar {
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 8px 12px;
+  }
+
+  .library-graph-select {
+    flex: 1 1 190px;
+    max-width: 100%;
+    margin-left: 0 !important;
+  }
+
+  .library-graph-actions {
+    margin-left: 0 !important;
+  }
+
   .library-browse-canvas {
     width: 100%;
     min-height: 0;
@@ -2634,30 +2717,77 @@ h3:hover .library-heading-anchor,
   .library-bookmarks-table td:nth-child(3),
   .library-bookmarks-table th:nth-child(4),
   .library-bookmarks-table td:nth-child(4),
-  .library-github-table th:nth-child(3),
-  .library-github-table td:nth-child(3),
-  .library-github-table th:nth-child(4),
-  .library-github-table td:nth-child(4),
-  .library-github-table th:nth-child(6),
-  .library-github-table td:nth-child(6) {
+  .library-github-table thead {
     display: none;
+  }
+
+  .library-github-table {
+    table-layout: auto;
+  }
+  .library-github-table tbody {
+    display: block;
+    width: 100%;
+  }
+  .library-github-table .board-table-group-row {
+    display: block;
+  }
+  .library-github-table .board-table-group-row td {
+    box-sizing: border-box;
+    display: flex;
+    width: 100%;
+  }
+  .library-github-table .gh-row-main {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "title title actions"
+      "kind state actions"
+      "labels labels actions";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 8px;
+    min-height: 86px;
+    padding: 12px;
+    width: 100%;
+  }
+  .library-github-table .gh-row-main > td {
+    box-sizing: border-box;
+    display: block;
+    min-width: 0;
+    padding: 0;
+  }
+  .library-github-table .gh-col-title { grid-area: title; }
+  .library-github-table .gh-col-kind { grid-area: kind; }
+  .library-github-table .gh-col-state { grid-area: state; }
+  .library-github-table .gh-col-labels { grid-area: labels; }
+  .library-github-table .gh-col-actions {
+    grid-area: actions;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+  .library-github-table .gh-col-repo,
+  .library-github-table .gh-col-saved {
+    display: none;
+  }
+  .library-github-table .gh-row-actions {
+    flex-direction: column;
+  }
+  .library-github-table .gh-open-link {
+    opacity: 1;
   }
 }
 
 @container (max-width: 460px) {
   .library-bookmarks-table th:nth-child(2),
   .library-bookmarks-table td:nth-child(2),
-  .library-github-table th:nth-child(2),
-  .library-github-table td:nth-child(2),
-  .library-github-table th:nth-child(5),
-  .library-github-table td:nth-child(5) {
+  .library-github-table .gh-col-labels {
     display: none;
   }
 
   .library-bookmarks-table thead th,
-  .library-bookmarks-table tbody td,
-  .library-github-table thead th,
-  .library-github-table tbody td {
+  .library-bookmarks-table tbody td {
     padding-left: 8px;
     padding-right: 8px;
   }

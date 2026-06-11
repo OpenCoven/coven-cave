@@ -91,7 +91,7 @@ to refresh against a running dev server.
 - **Board** — kanban or table view of active work across familiars, with zero-card hero CTA
 - **HomeComposer** — universal intent surface on cold start; describe what you need and let the Coven route it
 - **Inbox** — cross-familiar notification feed with snooze and quick-reply; reminders fire via the system tray
-- **Memory inspector + 3D graph** — list and constellation views of every familiar's memory entries
+- **Memory inspector** — searchable list and reader views of each familiar's memory entries
 - **Schedules & reminders** — manage cron jobs and one-shot reminders from the UI
 - **Plugins / skills** — install and view from the app
 - **Terminal & Browser panes** — embedded xterm.js terminal and Tauri-driven browser

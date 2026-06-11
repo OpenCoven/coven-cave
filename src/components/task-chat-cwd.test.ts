@@ -59,7 +59,7 @@ assert.doesNotMatch(
   "ChatView should not expose user-facing ROOT/CWD inputs for normal chats",
 );
 
-// ── Task chat: card CWD wins; optional prompt when absent ───────────────────
+// ── Task chat: card CWD wins; project selection when absent ─────────────────
 
 assert.match(
   taskChatRoute,
@@ -74,17 +74,32 @@ assert.match(
 assert.match(
   boardView,
   /if \(card && !card\.sessionId && !card\.cwd\) \{\s*\n\s*setCwdPromptCardId\(id\);/,
-  "Starting a task chat for a CWD-less card prompts instead of POSTing immediately",
+  "Starting a task chat for a CWD-less card prompts for project selection instead of POSTing immediately",
 );
 assert.match(
   boardView,
-  /Skip[\s\S]*?Set &amp; start/,
-  "The prompt is optional — Skip starts without a CWD, Set & start uses the typed one",
+  /CHAT_PROJECTS\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>/,
+  "The task chat prompt should render the predetermined project registry, not a free-form path input",
 );
 assert.match(
   boardView,
-  /onStart\(trimmed \? trimmed : undefined\)/,
-  "Submitting an empty path behaves like Skip",
+  /const selectedProject = chatProjectById\(projectId\) \?\? DEFAULT_CHAT_PROJECT/,
+  "The selected task-chat project should resolve through the shared project registry",
+);
+assert.match(
+  boardView,
+  /onStart\(selectedProject\.root\)/,
+  "Starting from the prompt should pass the selected project root",
+);
+assert.match(
+  boardView,
+  /aria-label="Project for this task chat"/,
+  "The task chat prompt should expose a labeled project selector",
+);
+assert.doesNotMatch(
+  boardView,
+  /Set a working directory|Working directory for this task chat|\/path\/to\/project|Set &amp; start/,
+  "The task chat prompt should not expose working-directory copy or a free-form path action",
 );
 
 console.log("task-chat-cwd.test.ts: ok");

@@ -100,6 +100,17 @@ export type GraphifyGraph = {
   edges: GraphifyEdge[];
 };
 
+export type GraphifyRunSnapshot = {
+  id: string;
+  targetPath: string;
+  generatedAt: string;
+  status: "started" | "completed" | "failed";
+  nodeCount: number;
+  edgeCount: number;
+  label?: string;
+  error?: string;
+};
+
 export type GraphifyResult = {
   id: string;
   label: string;          // folder name
@@ -107,6 +118,7 @@ export type GraphifyResult = {
   generatedAt: string;    // ISO timestamp
   reportMd?: string;      // contents of GRAPH_REPORT.md
   graphJson: GraphifyGraph; // parsed graph.json
+  snapshots?: GraphifyRunSnapshot[];
 };
 
 // ── Link routing (familiar-driven ingestion) ────────────────────

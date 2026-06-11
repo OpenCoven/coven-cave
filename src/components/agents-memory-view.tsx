@@ -1,32 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import { useIsMobile } from "@/lib/use-viewport";
-import { buildMemoryGraphModel, resolveMemoryFamiliarFilter } from "@/lib/memory-graph-3d-model";
-import type { MemoryGraphMemoryNode } from "@/lib/memory-graph-3d-model";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
-
-// Three.js is ~600KB minified — gz it's still ~150KB. Dynamic-import the
-// 3D graph so the agents-memory route stays under budget when the user
-// has the list view selected (which is the default on phones — see
-// `effectiveViewMode` below). SSR is disabled because WebGL has no
-// equivalent at render-on-server time. The skeleton matches the actual
-// graph's "Loading…" state — same intent as the canvas's first frame.
-const MemoryGraph3D = dynamic(
-  () => import("@/components/memory-graph-3d").then((m) => m.MemoryGraph3D),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full min-h-[320px] items-center justify-center text-[11px] text-[var(--text-muted)]">
-        Loading 3D memory graph…
-      </div>
-    ),
-  },
-);
 
 export type FileMemoryEntry = {
   root: string;
@@ -50,8 +28,6 @@ type Props = {
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
   onOpenMemoryFile?: (path: string) => void;
-  /** Lock to a specific view mode; when set, hides the mode toggle. */
-  mode?: "list" | "graph";
   /** Cap the number of entries rendered per section. */
   limit?: number;
   /** Suppress the familiar <select>; render the active familiar as a chip. */
@@ -115,22 +91,12 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, mode, limit, lockToFamiliar, compact }: Props) {
+export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
-  const [viewMode, setViewMode] = useState<"list" | "graph">("graph");
-  const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  // Force list mode on phones — the 3D graph (Three.js + OrbitControls)
-  // is unusable at 360px and burns battery rendering a WebGL scene the
-  // user can't navigate. The MemoryGraph3D component never mounts when
-  // effectiveViewMode is "list", so the scene + raycaster cost is
-  // skipped at runtime. The Three.js bundle itself still loads — that
-  // belongs to phase 7 perf work.
-  const isMobile = useIsMobile();
-  const effectiveViewMode = isMobile ? "list" : (mode ?? viewMode);
   const effectiveLimit = limit ?? Infinity;
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -202,12 +168,22 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   }), [fileEntries]);
 
   useEffect(() => {
-    const next = resolveMemoryFamiliarFilter({
-      familiars,
-      covenEntries,
-      currentFamiliarId: familiarFilter,
-      activeFamiliarId: activeFamiliar?.id ?? null,
-    });
+    const familiarIds = new Set(familiars.map((familiar) => familiar.id));
+    if (activeFamiliar?.id && familiarIds.has(activeFamiliar.id)) {
+      if (activeFamiliar.id !== familiarFilter) setFamiliarFilter(activeFamiliar.id);
+      return;
+    }
+
+    const memoryFamiliarIds = new Set(covenEntries.map((entry) => entry.familiar_id));
+    if (
+      familiarFilter &&
+      familiarIds.has(familiarFilter) &&
+      (memoryFamiliarIds.size === 0 || memoryFamiliarIds.has(familiarFilter))
+    ) {
+      return;
+    }
+
+    const next = familiars.find((familiar) => memoryFamiliarIds.has(familiar.id))?.id ?? familiars[0]?.id ?? "";
     if (next && next !== familiarFilter) setFamiliarFilter(next);
   }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars]);
 
@@ -217,65 +193,6 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     if (!selectedFamiliar || options.some((familiar) => familiar.id === selectedFamiliar.id)) return options;
     return [selectedFamiliar, ...options];
   }, [familiars, familiarsWithMemory, selectedFamiliar]);
-
-  const memoryGraph = useMemo(
-    () =>
-      buildMemoryGraphModel({
-        familiars,
-        covenEntries,
-        fileEntries,
-        query,
-        familiarFilter,
-        maxLeavesPerHub: 24,
-      }),
-    [covenEntries, familiarFilter, familiars, fileEntries, query],
-  );
-
-  const selectedMemory = useMemo(
-    () =>
-      memoryGraph.nodes.find(
-        (node): node is MemoryGraphMemoryNode => node.kind === "memory" && node.id === selectedMemoryId,
-      ) ?? null,
-    [memoryGraph, selectedMemoryId],
-  );
-
-  type RecentItem = {
-    id: string;
-    kind: "coven" | "file";
-    title: string;
-    subtitle: string;
-    updatedAt: string;
-    path: string;
-  };
-
-  const recentInView = useMemo<RecentItem[]>(() => {
-    const covenRows: RecentItem[] = visibleCoven.map((entry) => ({
-      id: `memory:coven:${entry.id}`,
-      kind: "coven",
-      title: entry.title,
-      subtitle: `${familiarById.get(entry.familiar_id)?.display_name ?? entry.familiar_id} · ${age(entry.updated_at)}`,
-      updatedAt: entry.updated_at,
-      path: entry.path,
-    }));
-    const fileRows: RecentItem[] = visibleFiles.map((entry) => ({
-      id: `file:${entry.fullPath}`,
-      kind: "file",
-      title: entry.relPath,
-      subtitle: `${entry.sourceKindLabel} · ${age(entry.modified)}`,
-      updatedAt: entry.modified,
-      path: entry.fullPath,
-    }));
-    return [...covenRows, ...fileRows].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  }, [visibleCoven, visibleFiles, familiarById]);
-  const firstMemoryId = useMemo(
-    () => memoryGraph.nodes.find((node) => node.kind === "memory")?.id ?? null,
-    [memoryGraph],
-  );
-
-  useEffect(() => {
-    if (selectedMemoryId && selectedMemory) return;
-    setSelectedMemoryId(firstMemoryId);
-  }, [firstMemoryId, selectedMemory, selectedMemoryId]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
@@ -291,32 +208,10 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                 Focused recall for one agent at a time, with local memory files kept in the list surface.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {!mode && !isMobile && (
-                <div className="flex overflow-hidden rounded-md border border-[var(--border-hairline)]">
-                  {(["list", "graph"] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setViewMode(m)}
-                      className={[
-                        "focus-ring-inset inline-flex h-7 items-center gap-1.5 px-2.5 text-[11px] capitalize transition-colors",
-                        viewMode === m
-                          ? "bg-[var(--accent-presence)] text-white"
-                          : "bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
-                      ].join(" ")}
-                    >
-                      <Icon name={m === "list" ? "ph:list-bullets" : "ph:graph"} width={12} />
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
-                <Icon name="ph:arrows-clockwise" width={12} />
-                Refresh
-              </button>
-            </div>
+            <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+              <Icon name="ph:arrows-clockwise" width={12} />
+              Refresh
+            </button>
           </div>
         )}
 
@@ -357,121 +252,6 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
 
-      {effectiveViewMode === "graph" ? (
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="min-h-[560px] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
-            <MemoryGraph3D
-              graph={memoryGraph}
-              familiars={familiarById}
-              selectedFamiliarId={familiarFilter}
-              selectedMemoryId={selectedMemoryId}
-              onSelectFamiliar={(familiarId) => setFamiliarFilter(familiarId)}
-              onSelectMemory={setSelectedMemoryId}
-              onOpenMemoryFile={onOpenMemoryFile}
-            />
-          </section>
-          <aside className="min-h-0">
-            {selectedMemory ? (
-              <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                  Selected memory
-                </div>
-                <div className="mt-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="line-clamp-3 text-[15px] font-semibold leading-5 text-[var(--text-primary)]">
-                      {selectedMemory.title}
-                    </h3>
-                    <Icon
-                      name={selectedMemory.source === "file" ? "ph:file-text" : "ph:brain"}
-                      width={15}
-                      className="mt-0.5 shrink-0 text-[var(--accent-presence)]"
-                    />
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
-                    <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
-                      {selectedFamiliar?.display_name ?? selectedMemory.familiarId ?? "Memory"}
-                    </span>
-                    <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">
-                      {selectedMemory.source === "file" ? selectedMemory.rootLabel ?? "File" : "Coven memory"}
-                    </span>
-                    <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(selectedMemory.updatedAt)}</span>
-                  </div>
-                  {selectedMemory.excerpt ? (
-                    <p className="mt-3 line-clamp-6 text-[12px] leading-5 text-[var(--text-secondary)]">
-                      {selectedMemory.excerpt}
-                    </p>
-                  ) : null}
-                  {selectedMemory.sourceContext ? (
-                    <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 px-2.5 py-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                        Provenance
-                      </div>
-                      <code className="mt-1 block break-all font-mono text-[11px] leading-4 text-[var(--text-primary)]">
-                        {selectedMemory.sourceContext}
-                      </code>
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => onOpenMemoryFile?.(selectedMemory.path)}
-                      className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                    >
-                      <Icon name="ph:file-text" width={13} />
-                      Open memory
-                    </button>
-                    <ExpandMemoryButton path={selectedMemory.path} title={selectedMemory.title} />
-                  </div>
-                </div>
-              </section>
-            ) : (
-              <p className="px-1 text-[11px] leading-5 text-[var(--text-muted)]">
-                {loaded
-                  ? "Click any card in the map to inspect it, or pick from the list below."
-                  : "Loading memories..."}
-              </p>
-            )}
-
-            {recentInView.length > 0 ? (
-              <section className={selectedMemory ? "mt-4" : "mt-3"}>
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                    Recent in view
-                  </h3>
-                  <span className="text-[10px] text-[var(--text-muted)]">{recentInView.length} visible</span>
-                </div>
-                <div data-testid="graph-recent-list" className="max-h-[420px] overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
-                  {recentInView.slice(0, 24).map((item) => {
-                    const isSelected = item.id === selectedMemoryId;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedMemoryId(item.id)}
-                        className={`focus-ring-inset flex w-full min-w-0 items-start gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-left ${isSelected ? "bg-[var(--bg-raised)]/55" : "hover:bg-[var(--bg-raised)]"}`}
-                      >
-                        <Icon
-                          name={item.kind === "file" ? "ph:file-text" : "ph:brain"}
-                          width={13}
-                          className={`mt-0.5 shrink-0 ${item.kind === "file" ? "text-[var(--text-muted)]" : "text-[var(--accent-presence)]"}`}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12px] text-[var(--text-primary)]">{item.title}</span>
-                          <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">{item.subtitle}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            ) : loaded && !error ? null : (
-              <p className="mt-3 px-1 text-[11px] leading-5 text-[var(--text-muted)]">
-                {error ? "Couldn’t load memories. See the error above and try again." : "Loading memories..."}
-              </p>
-            )}
-          </aside>
-        </div>
-      ) : (
       <div className={`min-h-0 flex-1 ${compact ? "flex flex-col gap-4 overflow-y-auto p-4" : selectedRowId ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,360px)]" : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"}`}>
         {compact && loaded && !error && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
           <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-10 text-center">
@@ -641,15 +421,14 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </>
         )}
       </div>
-      )}
     </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Rail variant — most-recent memory writes, no graph.
-// The full 3D constellation stays as the detail-pane Memory view; the rail
-// tab is a quick "what changed" feed.
+// The full view uses the same list/reader surface; the rail tab is a quick
+// "what changed" feed.
 // ────────────────────────────────────────────────────────────────────────────
 
 export function RailMemoryList({
@@ -674,7 +453,6 @@ export function RailMemoryList({
         <AgentsMemoryView
           familiars={familiars}
           activeFamiliar={familiar}
-          mode="list"
           limit={20}
           compact
           lockToFamiliar

@@ -239,12 +239,12 @@ assert.match(
 );
 assert.match(
   libraryCss,
-  /@container \(max-width: 520px\) \{[\s\S]*?\.library-bookmarks-table th:nth-child\(3\)[\s\S]*?\.library-github-table th:nth-child\(3\)/,
-  "Saved-list side-panel tables should drop timestamp columns before horizontal overflow appears",
+  /@container \(max-width: 520px\) \{[\s\S]*?\.library-bookmarks-table th:nth-child\(3\)[\s\S]*?\.library-github-table thead\s*\{[\s\S]*?display:\s*none;/,
+  "Saved-list side-panel tables should drop low-value table chrome before horizontal overflow appears",
 );
 assert.match(
   libraryCss,
-  /@container \(max-width: 460px\) \{[\s\S]*?\.library-bookmarks-table th:nth-child\(2\)[\s\S]*?\.library-github-table th:nth-child\(2\)/,
+  /@container \(max-width: 460px\) \{[\s\S]*?\.library-bookmarks-table th:nth-child\(2\)[\s\S]*?\.library-github-table \.gh-col-labels\s*\{[\s\S]*?display:\s*none;/,
   "Very narrow saved-list side-panel tables should prioritize title/action columns over metadata",
 );
 assert.match(
@@ -256,6 +256,26 @@ assert.match(
   libraryCss,
   /\.library-title-cell\s*\{[\s\S]*?min-width:\s*0;/,
   "Bookmark title cells should be allowed to shrink inside the side panel",
+);
+assert.doesNotMatch(
+  github,
+  /gh-row-action-strip-row/,
+  "GitHub saved rows should not render a second full-width action strip row",
+);
+assert.match(
+  github,
+  /className="gh-title-cell"[\s\S]*?className="gh-open-link"[\s\S]*?className="gh-col-actions"[\s\S]*?className="gh-row-actions"/,
+  "GitHub saved rows should expose title/open-link and inline action cells",
+);
+assert.match(
+  libraryCss,
+  /\.gh-row-actions\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?justify-content:\s*flex-end;/,
+  "GitHub row actions should render as compact inline icon controls",
+);
+assert.match(
+  libraryCss,
+  /@container \(max-width: 520px\) \{[\s\S]*?\.library-github-table \.gh-row-main\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-areas:/,
+  "Narrow GitHub saved rows should become compact card-style grids",
 );
 assert.match(
   libraryCss,

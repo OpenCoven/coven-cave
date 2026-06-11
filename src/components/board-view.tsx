@@ -14,6 +14,12 @@ import { BoardTable, type GroupBy } from "@/components/board-table";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
+import {
+  CHAT_PROJECTS,
+  DEFAULT_CHAT_PROJECT,
+  DEFAULT_CHAT_PROJECT_ID,
+  chatProjectById,
+} from "@/lib/chat-projects";
 
 type ViewMode = "kanban" | "table";
 
@@ -43,8 +49,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
-  // Card awaiting an (optional) working-directory choice before its task
-  // chat starts — only set for cards with no cwd and no session yet.
+  // Card awaiting a project selection before its task chat starts — only set
+  // for cards with no persisted project root and no session yet.
   const [cwdPromptCardId, setCwdPromptCardId] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
@@ -124,6 +130,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     blocked: filtered.filter((c) => c.status === "blocked" || c.needsHuman).length,
   }), [filtered]);
 
+  const tableGroupBy: GroupBy = activeFamiliarId === null ? groupBy : "status";
+  const showTableGroupToggle = !isMobile && viewMode === "table" && activeFamiliarId === null;
+
   const selectedCard = useMemo(() => cards.find((c) => c.id === selectedCardId) ?? null, [cards, selectedCardId]);
 
   useEffect(() => {
@@ -193,9 +202,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
   const onOpenTaskChat = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
-    // Task chats run in the task's CWD. When the card doesn't have one yet
-    // (and there's no session to reattach to), offer — optionally — to set
-    // one before the session starts; skipping falls back to the default.
+    // Task chats run in the task's project root. When the card doesn't have one
+    // yet (and there's no session to reattach to), ask which known project to use.
     if (card && !card.sessionId && !card.cwd) {
       setCwdPromptCardId(id);
       return;
@@ -276,7 +284,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         <div className="board-header-controls">
           {/* Grouping only applies to the table view — kanban always uses
               status columns, so the toggle would be noise there. */}
-          {!isMobile && viewMode === "table" ? (
+          {showTableGroupToggle ? (
             <div className="board-group-toggle" role="group" aria-label="Group tasks by">
             <button
               type="button"
@@ -403,7 +411,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             chatLinkingId={chatLinkingId} />
         ) : (
           <BoardTable cards={filtered} familiars={familiars}
-            groupBy={groupBy} selectedCardId={selectedCardId}
+            groupBy={tableGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
             onPatch={patchCard} />
         )}
@@ -446,9 +454,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 }
 
 // ── TaskChatCwdPrompt ─────────────────────────────────────────────────────────
-// Shown when a task chat is started for a card with no CWD: lets the user
-// set a working directory for the session (persisted onto the card), or
-// skip and start with the default.
+// Shown when a task chat is started for a card with no project root: lets the
+// user choose a known project, which is persisted onto the card as its cwd.
 
 function TaskChatCwdPrompt({
   cardTitle,
@@ -459,7 +466,8 @@ function TaskChatCwdPrompt({
   onCancel: () => void;
   onStart: (projectRoot?: string) => void;
 }) {
-  const [value, setValue] = useState("");
+  const [projectId, setProjectId] = useState(DEFAULT_CHAT_PROJECT_ID);
+  const selectedProject = chatProjectById(projectId) ?? DEFAULT_CHAT_PROJECT;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
@@ -468,8 +476,7 @@ function TaskChatCwdPrompt({
   }, [onCancel]);
 
   const submit = () => {
-    const trimmed = value.trim();
-    onStart(trimmed ? trimmed : undefined);
+    onStart(selectedProject.root);
   };
 
   return (
@@ -480,7 +487,7 @@ function TaskChatCwdPrompt({
       onClick={onCancel}
       role="dialog"
       aria-modal="true"
-      aria-label="Set a working directory for this task chat"
+      aria-label="Select a project for this task chat"
     >
       <div
         className="w-[480px] max-w-[92vw] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-5 shadow-2xl"
@@ -488,23 +495,32 @@ function TaskChatCwdPrompt({
       >
         <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold text-[var(--text-primary)]">
           <Icon name="ph:folder-open" width={14} aria-hidden />
-          Set a working directory?
+          Select a project
         </div>
         <p className="mb-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
-          {cardTitle ? <>“{cardTitle}” has</> : <>This task has</>} no working directory yet.
-          The chat session runs inside the directory you pick (it is saved on the task);
-          skip to start in the default workspace.
+          {cardTitle ? <>“{cardTitle}” has</> : <>This task has</>} no project yet.
+          Pick the project this task belongs to; the selected project is saved on the task and used for the chat session.
         </p>
-        <input
-          autoFocus
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder="/path/to/project (optional)"
-          aria-label="Working directory for this task chat"
-          className="focus-ring mb-4 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
+        <label className="focus-within:border-[var(--border-strong)] mb-2 flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-2">
+          <span className="shrink-0 font-mono text-[10px] font-semibold uppercase text-[var(--text-muted)]">Project</span>
+          <select
+            autoFocus
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            aria-label="Project for this task chat"
+            className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-[var(--text-primary)] outline-none"
+          >
+            {CHAT_PROJECTS.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="mb-4 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 px-2.5 py-1.5 font-mono text-[11px] text-[var(--text-muted)]">
+          {selectedProject.root}
+        </div>
         <div className="flex justify-end gap-2">
           <button
             type="button"
@@ -515,18 +531,10 @@ function TaskChatCwdPrompt({
           </button>
           <button
             type="button"
-            onClick={() => onStart(undefined)}
-            className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            Skip
-          </button>
-          <button
-            type="button"
             onClick={submit}
-            disabled={!value.trim()}
             className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
           >
-            Set &amp; start
+            Start chat
           </button>
         </div>
       </div>

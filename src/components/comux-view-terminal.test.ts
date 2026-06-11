@@ -166,4 +166,27 @@ assert.match(
   "Projects preview pane should be the right full-height half of the split",
 );
 
+// Projects file preview: visual formats should render as media, not an
+// unsupported-extension code block.
+assert.match(
+  source,
+  /type ProjectFilePreview =[\s\S]*?\| \{ kind: "image"; dataUrl: string; mimeType: string; size\?: number \};/,
+  "Projects file preview state tracks image previews separately from text",
+);
+assert.match(
+  source,
+  /json\.kind === "image"[\s\S]*?setPreview\(\{ kind: "image", dataUrl: json\.dataUrl, mimeType: json\.mimeType, size: json\.size \}\)/,
+  "Projects file preview should accept image responses from /api/project-file",
+);
+assert.match(
+  source,
+  /preview\?\.kind === "image" \? \([\s\S]*?<img[\s\S]*?src=\{preview\.dataUrl\}[\s\S]*?object-contain/,
+  "Projects file preview should render images as contained visual media",
+);
+assert.match(
+  source,
+  /disabled=\{!preview \|\| preview\.kind !== "text"\}/,
+  "Copy preview content should stay disabled for binary image previews",
+);
+
 console.log("comux-view-terminal.test.ts OK");

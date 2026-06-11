@@ -223,11 +223,11 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
       <div className="library-divider" />
       {/* Preview pane — dominant left content area; graph and projects own the full canvas */}
       {activeSection === "graph" ? (
-        <div className="library-preview" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+        <div className="library-preview library-preview--full-canvas" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           <LibraryGraphView />
         </div>
       ) : activeSection === "projects" ? (
-        <div className="library-preview" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+        <div className="library-preview library-preview--full-canvas" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           <ComuxView
             view="projects"
             sessions={sessions ?? []}

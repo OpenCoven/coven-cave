@@ -4,9 +4,19 @@ import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
-import type { GraphifyResult, GraphifyGraph } from "@/lib/library-types";
+import type { GraphifyResult, GraphifyGraph, GraphifyRunSnapshot } from "@/lib/library-types";
+import { resolveSecret } from "@/lib/vault";
 
 const execFileAsync = promisify(execFile);
+
+const GRAPHIFY_LLM_ENV_KEYS = [
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "MOONSHOT_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "DEEPSEEK_API_KEY",
+] as const;
 
 const GRAPHS_DIR = path.join(
   process.env.CAVE_LIBRARY_DIR ?? path.join(homedir(), ".coven", "library"),
@@ -87,10 +97,64 @@ async function readAllGraphMeta(): Promise<Omit<GraphifyResult, "graphJson" | "r
 async function readGraphById(id: string): Promise<GraphifyResult | null> {
   try {
     const raw = await fs.readFile(path.join(GRAPHS_DIR, `${id}.json`), "utf-8");
-    return JSON.parse(raw) as GraphifyResult;
+    return withGraphRunSnapshots(JSON.parse(raw) as GraphifyResult);
   } catch {
     return null;
   }
+}
+
+function makeGraphRunSnapshot({
+  id,
+  targetPath,
+  label,
+  status,
+  graphJson,
+  error,
+}: {
+  id: string;
+  targetPath: string;
+  label?: string;
+  status: GraphifyRunSnapshot["status"];
+  graphJson?: GraphifyGraph;
+  error?: string;
+}): GraphifyRunSnapshot {
+  return {
+    id,
+    targetPath,
+    label,
+    status,
+    generatedAt: new Date().toISOString(),
+    nodeCount: graphJson?.nodes.length ?? 0,
+    edgeCount: graphJson?.edges.length ?? 0,
+    error,
+  };
+}
+
+function withGraphRunSnapshots(result: GraphifyResult): GraphifyResult {
+  if (Array.isArray(result.snapshots) && result.snapshots.length > 0) return result;
+  return {
+    ...result,
+    snapshots: [
+      {
+        id: `${result.id}_completed`,
+        targetPath: result.targetPath,
+        label: result.label,
+        status: "completed",
+        generatedAt: result.generatedAt,
+        nodeCount: result.graphJson?.nodes?.length ?? 0,
+        edgeCount: result.graphJson?.edges?.length ?? 0,
+      },
+    ],
+  };
+}
+
+async function writeGraphResult(result: GraphifyResult): Promise<void> {
+  await ensureGraphsDir();
+  await fs.writeFile(
+    path.join(GRAPHS_DIR, `${result.id}.json`),
+    JSON.stringify(result, null, 2),
+    "utf-8",
+  );
 }
 
 // Resolve graphify binary — try PATH first, then uv tool path
@@ -118,6 +182,18 @@ async function resolveGraphifyBin(): Promise<string> {
   return "graphify";
 }
 
+function buildGraphifyEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${process.env.PATH}:${path.join(homedir(), ".local", "bin")}`,
+  };
+  for (const key of GRAPHIFY_LLM_ENV_KEYS) {
+    const value = resolveSecret(key);
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
 
@@ -143,6 +219,15 @@ export async function GET(req: NextRequest) {
         label,
         targetPath: rawPath,
         generatedAt: new Date().toISOString(),
+        snapshots: [
+          makeGraphRunSnapshot({
+            id: `${id}_loaded`,
+            targetPath: rawPath,
+            label,
+            status: "completed",
+            graphJson,
+          }),
+        ],
         graphJson,
       };
       return NextResponse.json({ ok: true, result });
@@ -174,16 +259,50 @@ export async function POST(req: NextRequest) {
   }
 
   const graphifyBin = await resolveGraphifyBin();
+  const id = generateId();
+  const label = body.label ?? path.basename(targetPath);
+  const snapshots: GraphifyRunSnapshot[] = [
+    makeGraphRunSnapshot({
+      id: `${id}_started`,
+      targetPath,
+      label,
+      status: "started",
+    }),
+  ];
+  const startedResult: GraphifyResult = {
+    id,
+    label,
+    targetPath,
+    generatedAt: snapshots[0]!.generatedAt,
+    snapshots,
+    graphJson: { nodes: [], edges: [] },
+  };
+  await writeGraphResult(startedResult);
 
   // Run graphify with timeout
   try {
     await execFileAsync(graphifyBin, [targetPath], {
       cwd: targetPath,
       timeout: 120_000,
-      env: { ...process.env, PATH: `${process.env.PATH}:${path.join(homedir(), ".local", "bin")}` },
+      env: buildGraphifyEnv(),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const failedSnapshots = [
+      ...snapshots,
+      makeGraphRunSnapshot({
+        id: `${id}_failed`,
+        targetPath,
+        label,
+        status: "failed",
+        error: msg,
+      }),
+    ];
+    await writeGraphResult({
+      ...startedResult,
+      snapshots: failedSnapshots,
+      generatedAt: failedSnapshots[failedSnapshots.length - 1]!.generatedAt,
+    });
     console.error("[graph/route] graphify error:", msg);
     return NextResponse.json({ ok: false, error: `graphify failed: ${msg}` }, { status: 500 });
   }
@@ -216,24 +335,25 @@ export async function POST(req: NextRequest) {
     reportMd = undefined;
   }
 
-  const id = generateId();
-  const label = body.label ?? path.basename(targetPath);
+  snapshots.push(makeGraphRunSnapshot({
+    id: `${id}_completed`,
+    targetPath,
+    label,
+    status: "completed",
+    graphJson,
+  }));
 
   const result: GraphifyResult = {
     id,
     label,
     targetPath,
-    generatedAt: new Date().toISOString(),
+    generatedAt: snapshots[snapshots.length - 1]!.generatedAt,
     reportMd,
+    snapshots,
     graphJson,
   };
 
-  await ensureGraphsDir();
-  await fs.writeFile(
-    path.join(GRAPHS_DIR, `${id}.json`),
-    JSON.stringify(result, null, 2),
-    "utf-8",
-  );
+  await writeGraphResult(result);
 
   return NextResponse.json({ ok: true, result });
 }

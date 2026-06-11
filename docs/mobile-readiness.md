@@ -97,8 +97,8 @@ see `docs/mobile-tailscale.md`.
   content (no picker shown).
 - [ ] Familiar avatar rail: long-press an avatar then drag to reorder.
   Quick tap selects the familiar instead of dragging.
-- [ ] Agents → memory: agenda/list view is the default on phone. The
-  3D graph toggle is hidden. The phone doesn't burn battery.
+- [ ] Agents -> memory: list view is the only memory view on phone and
+  desktop. The phone does not burn battery on a WebGL memory scene.
 - [ ] Agents memory overlay: opens edge-to-edge (no scrim around it).
 
 ## PWA (phase 5)

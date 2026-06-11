@@ -35,5 +35,20 @@ assert.match(
   /shell_pick_directory,/,
   "Directory picker command should be registered with Tauri",
 );
+assert.match(
+  source,
+  /import \{ LibraryGraph3D \} from "@\/components\/library-graph-3d"/,
+  "Library graph view should render the Three.js graph surface",
+);
+assert.match(
+  source,
+  /<LibraryGraph3D[\s\S]*snapshots=\{activeSnapshots\}/,
+  "Library graph view should pass snapshot history into the 3D graph",
+);
+assert.match(
+  source,
+  /onRunStart=\{handleRunStart\}/,
+  "Graphify modal should publish a live started snapshot while extraction runs",
+);
 
 console.log("library-graph-view.test.ts: ok");

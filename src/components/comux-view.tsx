@@ -34,6 +34,10 @@ type Props = {
   active?: boolean;
 };
 
+type ProjectFilePreview =
+  | { kind: "text"; content: string; size?: number }
+  | { kind: "image"; dataUrl: string; mimeType: string; size?: number };
+
 const STORAGE_SESSIONS = "cave:comux:sessions";
 const TERMINAL_SESSION_DRAG_TYPE = "application/x-cave-terminal-session";
 
@@ -166,7 +170,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
 
   // Project tab state
   const [previewPath, setPreviewPath] = useState<string | null>(null);
-  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ProjectFilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
@@ -372,7 +376,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const openFilePreview = useCallback(async (path: string) => {
     setPreviewPath(path);
     setPreviewLoading(true);
-    setPreviewContent(null);
+    setPreview(null);
     try {
       const res = await fetch(
         `/api/project-file?path=${encodeURIComponent(path)}`,
@@ -380,33 +384,39 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       );
       const json = (await res.json()) as {
         ok: boolean;
+        kind?: "text" | "image";
         content?: string;
+        dataUrl?: string;
+        mimeType?: string;
+        size?: number;
         error?: string;
       };
-      if (json.ok && typeof json.content === "string") {
-        setPreviewContent(json.content);
+      if (json.ok && json.kind === "image" && typeof json.dataUrl === "string" && typeof json.mimeType === "string") {
+        setPreview({ kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size });
+      } else if (json.ok && typeof json.content === "string") {
+        setPreview({ kind: "text", content: json.content, size: json.size });
       } else {
-        setPreviewContent(`// Error: ${json.error ?? "unknown"}`);
+        setPreview({ kind: "text", content: `// Error: ${json.error ?? "unknown"}` });
       }
     } catch (err) {
-      setPreviewContent(`// Fetch failed: ${String(err)}`);
+      setPreview({ kind: "text", content: `// Fetch failed: ${String(err)}` });
     } finally {
       setPreviewLoading(false);
     }
   }, []);
 
   const copyPreview = useCallback(() => {
-    if (!previewContent) return;
-    void navigator.clipboard.writeText(previewContent).then(() => {
+    if (!preview || preview.kind !== "text") return;
+    void navigator.clipboard.writeText(preview.content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
-  }, [previewContent]);
+  }, [preview]);
 
   const selectProject = useCallback((project: ComuxProject) => {
     setSelectedProjectRoot(project.root);
     setPreviewPath(null);
-    setPreviewContent(null);
+    setPreview(null);
   }, []);
 
   const recentProjectSessions = useMemo(() => {
@@ -773,7 +783,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     <>
                       {/* Preview header */}
                       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
-                        <Icon name="ph:file-code" width={12} className="shrink-0 text-[var(--text-muted)]" />
+                        <Icon
+                          name={preview?.kind === "image" ? "ph:file-image" : "ph:file-code"}
+                          width={12}
+                          className="shrink-0 text-[var(--text-muted)]"
+                        />
                         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">
                           {previewPath.startsWith(selectedProject.root)
                             ? previewPath.slice(selectedProject.root.length).replace(/^\//, "")
@@ -782,7 +796,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         <button
                           type="button"
                           onClick={copyPreview}
-                          disabled={!previewContent}
+                          disabled={!preview || preview.kind !== "text"}
                           className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
                         >
                           <Icon name="ph:copy" width={11} />
@@ -797,11 +811,25 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             Loading…
                           </div>
                         ) : (
-                          <SyntaxBlock
-                            text={previewContent ?? ""}
-                            lang={previewPath.split(".").pop()}
-                            className="leading-relaxed"
-                          />
+                          preview?.kind === "image" ? (
+                            <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4">
+                              <img
+                                src={preview.dataUrl}
+                                alt={`Preview of ${previewPath.split("/").pop() ?? "image"}`}
+                                className="max-h-full max-w-full rounded border border-[var(--border-hairline)] object-contain"
+                              />
+                              <div className="font-mono text-[10px] text-[var(--text-muted)]">
+                                {preview.mimeType}
+                                {typeof preview.size === "number" ? ` · ${preview.size.toLocaleString()} bytes` : ""}
+                              </div>
+                            </div>
+                          ) : (
+                            <SyntaxBlock
+                              text={preview?.content ?? ""}
+                              lang={previewPath.split(".").pop()}
+                              className="leading-relaxed"
+                            />
+                          )
                         )}
                       </div>
                     </>

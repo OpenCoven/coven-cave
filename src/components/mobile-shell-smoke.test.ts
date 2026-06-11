@@ -20,11 +20,11 @@ assert.match(
 
 assert.match(
   workspace,
-  /const showCompanionRail = railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\);/,
-  "Browser and Agents modes should suppress the desktop agent pane unless Salem is selected",
+  /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
+  "Browser and Agents modes suppress the default companion pane unless a floating Browser or Salem tab is selected",
 );
 assert.match(
   workspace,
   /agentRail=\{showCompanionRail \? \(/,
-  "Browser and Agents modes should suppress the desktop companion trigger rail",
+  "Browser and Agents modes should suppress the desktop companion trigger rail unless a floating rail tab is selected",
 );

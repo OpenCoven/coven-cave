@@ -207,6 +207,28 @@ for (const contract of contracts) {
   );
 }
 
+{
+  const projectFileSource = readFileSync(
+    path.join(apiRoot, "project-file", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    projectFileSource,
+    /const IMAGE_EXTENSIONS = new Map\(\[[\s\S]*?\["\.png", "image\/png"\][\s\S]*?\["\.webp", "image\/webp"\][\s\S]*?\["\.svg", "image\/svg\+xml"\]/,
+    "/project-file: browser-supported visual formats should be previewable, not rejected as unsupported extensions",
+  );
+  assert.match(
+    projectFileSource,
+    /kind: "image"[\s\S]*?dataUrl: `data:\$\{imageMimeType\};base64,\$\{data\.toString\("base64"\)\}`[\s\S]*?mimeType: imageMimeType/,
+    "/project-file: image responses must include a data URL and mime type for the Projects preview",
+  );
+  assert.match(
+    projectFileSource,
+    /const maxSize = imageMimeType \? MAX_IMAGE_SIZE : MAX_TEXT_SIZE;/,
+    "/project-file: image previews should have their own bounded size cap instead of using the text-file cap",
+  );
+}
+
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 assert.match(packageJson.scripts?.["test:api"] ?? "", /api-contracts\.test\.ts/, "package.json must expose this API contract suite");
 

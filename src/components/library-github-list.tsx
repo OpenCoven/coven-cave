@@ -73,6 +73,11 @@ function kindIcon(kind: GitHubItemKind) {
   }
 }
 
+function kindLabel(kind: GitHubItemKind): string {
+  if (kind === "pr") return "PR";
+  return kind;
+}
+
 function stateStyle(state?: LibraryGitHubItem["state"]): React.CSSProperties & { label: string } {
   if (state === "open")   return { color: "var(--color-success)", label: "open" };
   if (state === "merged") return { color: "var(--accent-presence)", label: "merged" };
@@ -724,10 +729,10 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                     </span>
                   </th>
                 ))}
-                <th style={{ width: "80px" }}>Kind</th>
-                <th style={{ width: "70px" }}>State</th>
-                <th style={{ width: "160px" }}>Labels</th>
-                <th style={{ width: "32px" }} />
+                <th className="gh-col-kind" style={{ width: "86px" }}>Kind</th>
+                <th className="gh-col-state" style={{ width: "82px" }}>State</th>
+                <th className="gh-col-labels" style={{ width: "190px" }}>Labels</th>
+                <th className="gh-col-actions" style={{ width: "124px" }} />
               </tr>
             </thead>
             <tbody>
@@ -752,32 +757,44 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                           className={`gh-row-main${item.id === selectedId ? " selected" : ""}`}
                           onClick={() => onSelect(item)}
                         >
-                          <td>
-                            <span className="board-table-title">{item.title}</span>
+                          <td className="gh-col-title">
+                            <div className="gh-title-cell">
+                              <span className="board-table-title gh-title-text">{item.title}</span>
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="gh-open-link"
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Open ${item.title} on GitHub`}
+                              >
+                                <Icon name="ph:arrow-square-out" width={12} />
+                              </a>
+                            </div>
                             {item.number && (
-                              <div className="board-table-muted" style={{ marginTop: 2 }}>
+                              <div className="board-table-muted gh-subtitle">
                                 {item.repo}#{item.number}
                               </div>
                             )}
                           </td>
-                          <td>
-                            <span className="board-table-muted">{item.repo}</span>
+                          <td className="gh-col-repo">
+                            <span className="board-table-muted gh-repo-cell">{item.repo}</span>
                           </td>
-                          <td style={{ textAlign: "right" }}>
+                          <td className="gh-col-saved">
                             <span className="board-table-muted">{relTime(item.savedAt)}</span>
                           </td>
-                          <td>
-                            <span className="board-table-muted library-source-type">
+                          <td className="gh-col-kind">
+                            <span className="board-table-muted library-source-type gh-kind-pill">
                               {kindIcon(item.kind)}
-                              <span style={{ marginLeft: 3 }}>{item.kind}</span>
+                              <span className="library-source-type__label">{kindLabel(item.kind)}</span>
                             </span>
                           </td>
-                          <td>
+                          <td className="gh-col-state">
                             <span className="library-gh-state-dot" style={{ color: st.color }}>
                               ● {st.label}
                             </span>
                           </td>
-                          <td>
+                          <td className="gh-col-labels">
                             <div className="library-tag-chips">
                               {item.labels.slice(0, 3).map((l: string) => (
                                 <span key={l} className="library-doclist-tag">{l}</span>
@@ -787,30 +804,34 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                               )}
                             </div>
                           </td>
-                          <td onClick={(e) => { e.stopPropagation(); handleDelete(item); }}>
-                            <span className="library-row-delete" title="Remove">
-                              <Icon name="ph:x" width={11} />
-                            </span>
-                          </td>
-                        </tr>
-                        <tr className={`gh-row-action-strip-row${item.id === selectedId ? " selected" : ""}`}>
-                          <td colSpan={GITHUB_TABLE_COLUMN_COUNT}>
+                          <td className="gh-col-actions">
                             <div className="gh-row-actions" onClick={(e) => e.stopPropagation()}>
                               <button
                                 type="button"
                                 className="gh-row-action-btn"
                                 onClick={() => setAttachItem(item)}
+                                aria-label={`Attach ${item.title} to task`}
+                                title="Attach to task"
                               >
                                 <Icon name="ph:clipboard-text" width={12} />
-                                <span>Attach to task</span>
                               </button>
                               <button
                                 type="button"
                                 className="gh-row-action-btn"
                                 onClick={() => setHandoffItem(item)}
+                                aria-label={`Handoff ${item.title} to agent`}
+                                title="Handoff to agent"
                               >
                                 <Icon name="ph:share-network" width={12} />
-                                <span>Handoff to agent</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="gh-row-action-btn gh-row-action-btn--danger"
+                                onClick={() => handleDelete(item)}
+                                aria-label={`Remove ${item.title}`}
+                                title="Remove"
+                              >
+                                <Icon name="ph:x" width={12} />
                               </button>
                             </div>
                           </td>

@@ -813,6 +813,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
@@ -832,6 +833,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "fetch failed");
+    } finally {
+      setInitialLoadDone(true);
     }
   }, []);
 
@@ -1019,14 +1022,34 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
         </div>
 
         {error && (
-          <div className="mx-8 mb-3 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]">
-            {error}
+          <div
+            role="alert"
+            className="mx-8 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
+          >
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{error}</span>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-white/10"
+            >
+              Retry
+            </button>
           </div>
         )}
 
         {/* List */}
         <div className="flex-1 overflow-y-auto px-8 pb-8">
-          {isEmpty ? (
+          {!initialLoadDone ? (
+            <div className="space-y-2 pt-2">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-14 animate-pulse rounded-lg bg-[var(--bg-raised)]"
+                />
+              ))}
+            </div>
+          ) : isEmpty ? (
             <div className="mt-12 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
               No automations yet.{" "}
               {onNewReminder && (

@@ -9,8 +9,13 @@ const view = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");
 
 assert.match(
   view,
-  /\{!isMobile && viewMode === "table" \? \(\s*<div className="board-group-toggle"/,
-  "group toggle renders only for the desktop table view",
+  /const showTableGroupToggle = !isMobile && viewMode === "table" && activeFamiliarId === null;/,
+  "group toggle renders only for the unscoped desktop table view",
+);
+assert.match(
+  view,
+  /\{showTableGroupToggle \? \(\s*<div className="board-group-toggle"/,
+  "group toggle visibility should be centralized behind showTableGroupToggle",
 );
 assert.match(
   view,

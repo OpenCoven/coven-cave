@@ -14,11 +14,11 @@ assert.match(
   "Board load-failure banner has icon + Retry wired to load()",
 );
 
-const inbox = read("./inbox-escalations-view.tsx");
+const inbox = read("./automations-view.tsx");
 assert.match(
   inbox,
-  /\{error \? \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void refresh\(\)[\s\S]*?Retry/,
-  "Inbox load-failure banner has icon + Retry wired to refresh()",
+  /\{error && \([\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(\)[\s\S]*?Retry/,
+  "Inbox/automations load-failure banner has icon + Retry wired to load()",
 );
 
 const chatList = read("./chat-list.tsx");

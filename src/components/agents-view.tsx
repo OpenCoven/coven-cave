@@ -171,7 +171,7 @@ export function AgentsView({
               title={memoryFamiliar ? `Memory for ${memoryFamiliar.display_name}` : "Select a familiar to view memory"}
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[11px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
             >
-              <Icon name="ph:graph" width={12} />
+              <Icon name="ph:brain" width={12} />
               Familiar memory
             </button>
             <button
@@ -438,7 +438,6 @@ function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: 
         <AgentsMemoryView
           familiars={familiars}
           activeFamiliar={familiar}
-          mode="graph"
           lockToFamiliar
           onOpenMemoryFile={onOpenMemoryFile}
         />
@@ -604,7 +603,6 @@ function AgentDetailPanel({
           <AgentsMemoryView
             familiars={familiars}
             activeFamiliar={familiar}
-            mode="list"
             lockToFamiliar
             onOpenMemoryFile={onOpenMemoryFile}
           />
