@@ -1907,7 +1907,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </MetaLine>
         <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
       </header>
-      <div ref={scrollRef} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
           className="cave-chat-thread"
           role="log"

@@ -319,6 +319,11 @@ assert.match(
 );
 assert.match(
   source,
+  /<div\b(?=[^>]*\bref=\{scrollRef\})(?=[^>]*\btabIndex=\{0\})(?=[^>]*\bclassName="cave-chat-transcript)[^>]*>/,
+  "Transcript scroller must be focusable so PageUp/Home/ArrowUp keydown releases following",
+);
+assert.match(
+  source,
   /y > lastTouchY && followingRef\.current\) updateFollowing\(false\)/,
   "Touch drag toward earlier content (finger moving down) detaches following",
 );
