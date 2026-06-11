@@ -134,6 +134,21 @@ test("CHAT-D11-02: overlays keep dialog semantics", () => {
   }
 });
 
+test("CHAT-D11-02: overlay backdrops are presentation-only and panels own dialog semantics", () => {
+  for (const [name, body] of [["MarkdownExpandModal", expandModal], ["AttachmentLightbox", lightbox]]) {
+    assert.match(
+      body,
+      /<div\s+(?=[^>]*className="fixed inset-0)(?=[^>]*onClick=\{onClose\})(?=[^>]*role="presentation")[^>]*>/,
+      `${name} backdrop should be presentation-only`,
+    );
+    assert.match(
+      body,
+      /<div\s+[\s\S]{0,80}ref=\{dialogRef\}[\s\S]{0,300}className="relative[\s\S]{0,300}onClick=\{\(e\) => e\.stopPropagation\(\)\}[\s\S]{0,160}role="dialog"[\s\S]{0,80}aria-modal="true"[\s\S]{0,120}aria-label=\{[\s\S]{0,120}tabIndex=\{-1\}/,
+      `${name} panel should own the focus trap ref and dialog semantics`,
+    );
+  }
+});
+
 test("CHAT-D11-02: shared trap provides the focus-restore path the overlays rely on", () => {
   assert.match(
     focusTrapSource,

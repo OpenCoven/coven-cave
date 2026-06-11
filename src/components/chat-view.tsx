@@ -3354,17 +3354,18 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
   useFocusTrap(true, dialogRef, { onEscape: onClose });
   return (
     <div
-      ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Preview ${attachment.name}`}
-      tabIndex={-1}
+      role="presentation"
     >
       <div
+        ref={dialogRef}
         className="relative max-h-[90vh] w-[90vw] max-w-screen-2xl overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Preview ${attachment.name}`}
+        tabIndex={-1}
       >
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">

@@ -948,17 +948,18 @@ function MarkdownExpandModal({
 
   return (
     <div
-      ref={dialogRef}
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Expanded ${label}`}
-      tabIndex={-1}
+      role="presentation"
     >
       <div
+        ref={dialogRef}
         className="relative flex h-[90vh] w-[92vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Expanded ${label}`}
+        tabIndex={-1}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
           <Icon name="ph:arrows-out-simple" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
