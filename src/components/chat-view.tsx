@@ -351,9 +351,18 @@ const STARTER_PROMPTS = [
 function ChatEmptyState({
   familiar,
   onPrompt,
+  cwd,
+  defaultCwd,
+  onCwdChange,
 }: {
   familiar: Familiar;
   onPrompt?: (text: string) => void;
+  /** Draft working directory for the not-yet-started session. */
+  cwd?: string;
+  /** Pre-wired project root (e.g. "New chat in <project>") shown as the placeholder. */
+  defaultCwd?: string;
+  /** Present only while the chat has no session — the CWD is fixed after the first send. */
+  onCwdChange?: (value: string) => void;
 }) {
 
   return (
@@ -364,7 +373,7 @@ function ChatEmptyState({
       <h2 className="mb-1 text-base font-semibold text-[var(--text-primary)]">
         {familiar.display_name}
       </h2>
-      <p className="mb-6 text-[13px] text-[var(--text-muted)]">
+      <p className="mb-4 text-[13px] text-[var(--text-muted)]">
         Runs on{" "}
         <code className="rounded px-1 py-0.5 font-mono text-[11px] bg-[var(--bg-raised)] text-[var(--text-secondary)]">
           {familiar.harness}
@@ -375,6 +384,20 @@ function ChatEmptyState({
         </kbd>
         {" "}for commands
       </p>
+
+      {onCwdChange && (
+        <label className="mb-6 flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 focus-within:border-[var(--border-strong)]">
+          <Icon name="ph:folder-open" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <input
+            type="text"
+            value={cwd ?? ""}
+            onChange={(e) => onCwdChange(e.target.value)}
+            placeholder={defaultCwd || "Working directory (optional)"}
+            aria-label="Working directory for this chat"
+            className="w-72 bg-transparent font-mono text-[11px] text-[var(--text-secondary)] outline-none placeholder:text-[var(--text-muted)]/70"
+          />
+        </label>
+      )}
 
       {onPrompt && (
         <div className="flex flex-wrap justify-center gap-2">
@@ -927,6 +950,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the inline Cancel/Delete confirm; only the explicit Delete commits.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // User-typed working directory for a not-yet-started chat. Overrides the
+  // pre-wired projectRoot prop on the first send; ignored once a session
+  // exists (the CWD is fixed at session start).
+  const [cwdDraft, setCwdDraft] = useState("");
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const currentSessionRef = useRef<string | null>(sessionId);
@@ -1294,7 +1321,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           prompt: trimmed,
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFields(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
-          ...(projectRoot && !currentSessionRef.current ? { projectRoot } : {}),
+          ...((cwdDraft.trim() || projectRoot) && !currentSessionRef.current
+            ? { projectRoot: cwdDraft.trim() || projectRoot }
+            : {}),
         }),
         signal: controller.signal,
       });
@@ -1610,9 +1639,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  // Disarm a pending delete confirmation when switching sessions.
+  // Disarm a pending delete confirmation (and drop any CWD draft) when
+  // switching sessions.
   useEffect(() => {
     setConfirmDelete(false);
+    setCwdDraft("");
   }, [sessionId]);
 
   const deleteChat = async () => {
@@ -1788,10 +1819,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onBack={onBack}
               />
             ) : (
-              <ChatEmptyState familiar={familiar} onPrompt={(text) => {
-                setInput(text);
-                inputRef.current?.focus();
-              }} />
+              <ChatEmptyState
+                familiar={familiar}
+                onPrompt={(text) => {
+                  setInput(text);
+                  inputRef.current?.focus();
+                }}
+                cwd={cwdDraft}
+                defaultCwd={projectRoot}
+                onCwdChange={!sessionId ? setCwdDraft : undefined}
+              />
             )
           ) : null}
           {(() => {

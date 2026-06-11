@@ -42,6 +42,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
+  // Card awaiting an (optional) working-directory choice before its task
+  // chat starts — only set for cards with no cwd and no session yet.
+  const [cwdPromptCardId, setCwdPromptCardId] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -160,7 +163,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     if (json.ok) { if (selectedCardId === id) setSelectedCardId(null); await load(); }
   };
 
-  const onOpenTaskChat = async (id: string) => {
+  const startTaskChat = async (id: string, projectRoot?: string) => {
     const card = cards.find((candidate) => candidate.id === id);
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
@@ -169,7 +172,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       const res = await fetch(`/api/board/${id}/chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ familiarId: fallbackFamiliarId }),
+        body: JSON.stringify({
+          familiarId: fallbackFamiliarId,
+          ...(projectRoot ? { projectRoot } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error ?? "failed to open task chat");
@@ -182,6 +188,18 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     } finally {
       setChatLinkingId(null);
     }
+  };
+
+  const onOpenTaskChat = async (id: string) => {
+    const card = cards.find((candidate) => candidate.id === id);
+    // Task chats run in the task's CWD. When the card doesn't have one yet
+    // (and there's no session to reattach to), offer — optionally — to set
+    // one before the session starts; skipping falls back to the default.
+    if (card && !card.sessionId && !card.cwd) {
+      setCwdPromptCardId(id);
+      return;
+    }
+    await startTaskChat(id);
   };
 
   const handleEnrichSteps = async () => {
@@ -405,6 +423,107 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         familiars={familiars} sessions={sessions}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
+
+      {cwdPromptCardId && (
+        <TaskChatCwdPrompt
+          cardTitle={cards.find((c) => c.id === cwdPromptCardId)?.title ?? ""}
+          onCancel={() => setCwdPromptCardId(null)}
+          onStart={(projectRoot) => {
+            const id = cwdPromptCardId;
+            setCwdPromptCardId(null);
+            void startTaskChat(id, projectRoot);
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+// ── TaskChatCwdPrompt ─────────────────────────────────────────────────────────
+// Shown when a task chat is started for a card with no CWD: lets the user
+// set a working directory for the session (persisted onto the card), or
+// skip and start with the default.
+
+function TaskChatCwdPrompt({
+  cardTitle,
+  onCancel,
+  onStart,
+}: {
+  cardTitle: string;
+  onCancel: () => void;
+  onStart: (projectRoot?: string) => void;
+}) {
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const submit = () => {
+    const trimmed = value.trim();
+    onStart(trimmed ? trimmed : undefined);
+  };
+
+  return (
+    <div
+      // Above the board inspector drawer (z-index 301 in board.css), which can
+      // be open underneath when the chat starts from the drawer's CTA.
+      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Set a working directory for this task chat"
+    >
+      <div
+        className="w-[480px] max-w-[92vw] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold text-[var(--text-primary)]">
+          <Icon name="ph:folder-open" width={14} aria-hidden />
+          Set a working directory?
+        </div>
+        <p className="mb-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
+          {cardTitle ? <>“{cardTitle}” has</> : <>This task has</>} no working directory yet.
+          The chat session runs inside the directory you pick (it is saved on the task);
+          skip to start in the default workspace.
+        </p>
+        <input
+          autoFocus
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          placeholder="/path/to/project (optional)"
+          aria-label="Working directory for this task chat"
+          className="focus-ring mb-4 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onStart(undefined)}
+            className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!value.trim()}
+            className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
+          >
+            Set &amp; start
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -54,11 +54,14 @@ export async function POST(
 
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
+  // The task's own CWD wins; body.projectRoot covers the "card had no CWD,
+  // user supplied one at start time" prompt flow.
+  const projectRoot = card.cwd ?? body.projectRoot ?? process.cwd();
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
     body: {
-      projectRoot: body.projectRoot ?? process.cwd(),
+      projectRoot,
       harness: binding.harness,
       prompt: buildInitialTaskChatPrompt(card),
     },
@@ -88,7 +91,13 @@ export async function POST(
   }
 
   const sessionId = res.data.id;
-  const updated = await updateCard(card.id, { sessionId, familiarId });
+  // Persist a start-time CWD onto the card so the next chat (and the
+  // board inspector) see it.
+  const updated = await updateCard(card.id, {
+    sessionId,
+    familiarId,
+    ...(!card.cwd && body.projectRoot ? { cwd: body.projectRoot } : {}),
+  });
   if (!updated) {
     return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
   }
