@@ -32,13 +32,22 @@ export function chatTitleFromPrompt(prompt: string | null | undefined): string |
   return `${normalized.slice(0, MAX_PROMPT_TITLE_LENGTH - 1).trimEnd()}\u2026`;
 }
 
+// Matches the current header ("Coven identity canon:") and legacy variants
+// with a parenthetical before the colon ("Coven identity canon (binding):"),
+// which ~17 historical sessions still carry. A colon-less title like
+// "Coven identity canon (binding)" is a legitimate human-chosen name and
+// passes through.
+const CANON_TITLE_LEAK_RE = new RegExp(
+  `^${COVEN_IDENTITY_CANON_HEADER.replace(/:$/, "")}\\s*(\\([^)]*\\))?\\s*:`,
+);
+
 /** Reject harness-derived titles that leaked the identity-canon preamble the
  *  chat route prepends to every harness prompt. Returns the normalized title,
  *  or null when the caller should fall back to a default. */
 export function sanitizeSessionTitle(title: string | null | undefined): string | null {
   const normalized = normalizeChatTitle(title);
   if (!normalized) return null;
-  if (normalized.startsWith(COVEN_IDENTITY_CANON_HEADER)) return null;
+  if (CANON_TITLE_LEAK_RE.test(normalized)) return null;
   return normalized;
 }
 
