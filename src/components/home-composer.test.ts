@@ -64,3 +64,48 @@ assert.doesNotMatch(
   /native Cave chat only supports Codex, Claude Code, and Hermes right now/,
   "HomeComposer should allow OpenClaw familiars through native chat send",
 );
+
+// ─── CHAT-D2-04: combobox/listbox ARIA on both slash menus ───────────────────
+// The slash menus were plain ul/li/button with a visual-only active class —
+// screen readers announced nothing about the menu or the highlighted command.
+// Both composers must carry the WAI-ARIA combobox pattern: textarea =
+// combobox, menu = listbox, rows = options, aria-activedescendant conveys the
+// highlight while DOM focus stays in the textarea.
+
+const chatSource = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+
+for (const [name, src] of [
+  ["HomeComposer", source],
+  ["ChatView", chatSource],
+]) {
+  assert.match(
+    src,
+    /id=\{slashListboxId\} role="listbox" aria-label="Slash commands"/,
+    `${name} slash menu should be a labelled listbox with a stable id`,
+  );
+  assert.match(
+    src,
+    /role="option"\s+id=\{`\$\{slashListboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
+    `${name} slash rows should be options with stable ids and aria-selected on the highlighted row`,
+  );
+  assert.match(
+    src,
+    /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
+    `${name} option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection`,
+  );
+  assert.match(
+    src,
+    /role="combobox"\s+aria-autocomplete="list"\s+aria-expanded=\{slashSuggestions\.length > 0\}/,
+    `${name} composer textarea should expose combobox semantics with aria-expanded tracking the open menu`,
+  );
+  assert.match(
+    src,
+    /aria-controls=\{slashSuggestions\.length > 0 \? slashListboxId : undefined\}/,
+    `${name} aria-controls should reference the listbox only while the menu is open`,
+  );
+  assert.match(
+    src,
+    /aria-activedescendant=\{\s*slashSuggestions\.length > 0 \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
+    `${name} aria-activedescendant should track the highlighted index and be absent when the menu is closed`,
+  );
+}

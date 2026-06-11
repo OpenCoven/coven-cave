@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -81,6 +82,9 @@ export function HomeComposer({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const [slashIdx, setSlashIdx] = useState(0);
+  // Stable per-mount listbox id — the chat composer mounts its own slash menu,
+  // so ids must be unique across simultaneously mounted composers.
+  const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? "";
 
@@ -296,13 +300,19 @@ export function HomeComposer({
             push the rest of the layout when it opens. */}
         {slashSuggestions.length > 0 ? (
           <div className="hc-slash-menu">
-            <ul className="hc-slash-list">
+            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Slash commands">
               {slashSuggestions.map((cmd, i) => {
                 const active = i === slashIdx;
                 return (
-                  <li key={cmd.name}>
+                  <li
+                    key={cmd.name}
+                    role="option"
+                    id={`${slashListboxId}-opt-${i}`}
+                    aria-selected={active}
+                  >
                     <button
                       type="button"
+                      tabIndex={-1}
                       onMouseEnter={() => setSlashIdx(i)}
                       onClick={() => {
                         setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
@@ -339,6 +349,13 @@ export function HomeComposer({
           onKeyDown={handleKeyDown}
           disabled={sending}
           aria-label="Ask anything"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={slashSuggestions.length > 0}
+          aria-controls={slashSuggestions.length > 0 ? slashListboxId : undefined}
+          aria-activedescendant={
+            slashSuggestions.length > 0 ? `${slashListboxId}-opt-${slashIdx}` : undefined
+          }
           inputMode="text"
           enterKeyHint="send"
         />
