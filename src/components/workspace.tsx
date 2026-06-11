@@ -38,6 +38,7 @@ import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
+import { WorkflowsView } from "@/components/workflows-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
@@ -1050,6 +1051,8 @@ export function Workspace() {
         onCreateSkill={() => setMode("capabilities")}
         onCreatePlugin={() => setMode("capabilities")}
       />
+    ) : mode === "workflows" ? (
+      <WorkflowsView />
     ) : mode === "capabilities" ? (
       <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (

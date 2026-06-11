@@ -10,4 +10,5 @@ export type WorkspaceMode =
   | "terminal"
   | "github"
   | "roles"
+  | "workflows"
   | "capabilities";
