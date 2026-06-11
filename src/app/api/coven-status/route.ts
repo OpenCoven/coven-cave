@@ -16,6 +16,7 @@ import {
   type SessionSummary,
 } from "@/lib/coven-status-types";
 import { DEMO_FAMILIARS, DEMO_MODE } from "@/lib/demo-seed";
+import { isDemoModeRequest } from "@/lib/demo-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -228,8 +229,9 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: Request) {
   const now = Date.now();
+  const demoMode = DEMO_MODE || isDemoModeRequest(req);
 
   // Build familiar ids from local agent directories. Demo defaults are opt-in
   // only so production installs show just the user's own familiars.
@@ -242,7 +244,7 @@ export async function GET() {
     // ignore
   }
 
-  const knownIds = DEMO_MODE ? DEMO_FAMILIARS.map((f) => f.id) : [];
+  const knownIds = demoMode ? DEMO_FAMILIARS.map((f) => f.id) : [];
   const familiarIds = Array.from(new Set([...diskIds, ...knownIds]));
   const familiarMeta = familiarIds.map((id) => ({
     id,

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { setDemoModeEnabled } from "@/lib/demo-mode";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
@@ -361,6 +362,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     } finally {
       setPicking(null);
     }
+  };
+
+  const enableDemoMode = () => {
+    setDemoModeEnabled(true);
+    try {
+      localStorage.setItem("cave:onboarding:dismissed", "1");
+    } catch {
+      /* private mode */
+    }
+    onDismiss();
   };
 
   const createLocalFamiliar = async () => {
@@ -982,7 +993,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               />
             </div>
             <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
-              NEXT_PUBLIC_DEMO=true pnpm dev
+              <button
+                type="button"
+                onClick={enableDemoMode}
+                className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-2 font-sans text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
+              >
+                <Icon name="ph:sparkle" />
+                Open demo Cave
+              </button>
             </div>
           </section>
 

@@ -18,6 +18,12 @@ import {
   readScreenScale,
   type ScreenScale,
 } from "@/lib/screen-magnification";
+import {
+  DEMO_MODE_EVENT,
+  clearDemoModeData,
+  isDemoModeEnabled,
+  setDemoModeEnabled,
+} from "@/lib/demo-mode";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -201,6 +207,24 @@ export function SettingsShell() {
 // ─── Section: General ─────────────────────────────────────────────────────────
 
 function GeneralSection() {
+  const [demoMode, setDemoMode] = useState(() => isDemoModeEnabled());
+
+  useEffect(() => {
+    const sync = () => setDemoMode(isDemoModeEnabled());
+    window.addEventListener(DEMO_MODE_EVENT, sync);
+    return () => window.removeEventListener(DEMO_MODE_EVENT, sync);
+  }, []);
+
+  const updateDemoMode = (enabled: boolean) => {
+    setDemoModeEnabled(enabled);
+    setDemoMode(enabled);
+  };
+
+  const resetDemoMode = () => {
+    clearDemoModeData();
+    setDemoMode(false);
+  };
+
   return (
     <SettingsPage title="General" description="App-wide preferences.">
       <SettingsGroup label="Workspace">
@@ -211,6 +235,32 @@ function GeneralSection() {
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
+        <SettingsRow
+          label="Demo mode"
+          description="Use local sample familiars, board cards, and inbox items for screenshots."
+        >
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => updateDemoMode(!demoMode)}
+              aria-pressed={demoMode}
+              className={`focus-ring rounded-md border px-3 py-1.5 text-[12px] font-medium ${
+                demoMode
+                  ? "border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] text-[var(--accent-presence)]"
+                  : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              {demoMode ? "On" : "Off"}
+            </button>
+            <button
+              type="button"
+              onClick={resetDemoMode}
+              className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            >
+              Clear demo
+            </button>
+          </div>
+        </SettingsRow>
       </SettingsGroup>
     </SettingsPage>
   );

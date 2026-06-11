@@ -3,7 +3,8 @@
 import "@/styles/board.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { DEMO_MODE, DEMO_BOARD_CARDS } from "@/lib/demo-seed";
+import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
+import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus } from "@/lib/cave-board-types";
@@ -52,7 +53,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         const loaded = json.cards as Card[];
         // Demo mode only seeds when the API actually returned ok+empty.
         // On error, fall through so the user sees the failure.
-        setCards(DEMO_MODE && loaded.length === 0 ? DEMO_BOARD_CARDS : loaded);
+        setCards(isDemoModeEnabled() && loaded.length === 0 ? DEMO_BOARD_CARDS : loaded);
         setError(null);
       } else {
         setCards([]);
@@ -65,6 +66,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const onDemoModeChange = () => { void load(); };
+    window.addEventListener(DEMO_MODE_EVENT, onDemoModeChange);
+    return () => window.removeEventListener(DEMO_MODE_EVENT, onDemoModeChange);
+  }, [load]);
   useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
   useEffect(() => { localStorage.setItem("cave:board:groupBy", groupBy); }, [groupBy]);
 

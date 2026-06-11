@@ -132,3 +132,15 @@ assert.match(
   /zoom: var\(--cave-screen-scale\)/,
   "Global CSS should magnify the entire app surface via the screen scale token",
 );
+
+assert.match(
+  settings,
+  /Demo mode/,
+  "Settings should expose demo mode for tester screenshots without env-file editing",
+);
+
+assert.match(
+  settings,
+  /clearDemoModeData/,
+  "Settings should offer an easy demo-mode reset path",
+);

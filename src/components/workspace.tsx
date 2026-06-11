@@ -47,7 +47,13 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { DEMO_MODE, DEMO_FAMILIARS } from "@/lib/demo-seed";
+import { DEMO_FAMILIARS } from "@/lib/demo-seed";
+import {
+  DEMO_MODE_EVENT,
+  demoModeFetchHeaders,
+  isDemoModeEnabled,
+  persistDemoModeLaunchFlag,
+} from "@/lib/demo-mode";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
@@ -62,6 +68,7 @@ export function Workspace() {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState(() => isDemoModeEnabled());
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
@@ -114,6 +121,14 @@ export function Workspace() {
       try { window.localStorage.removeItem(k); } catch { /* ignore */ }
     }
     window.localStorage.setItem("cave:legacy-keys-swept", "1");
+  }, []);
+
+  useEffect(() => {
+    persistDemoModeLaunchFlag();
+    const syncDemoMode = () => setDemoMode(isDemoModeEnabled());
+    syncDemoMode();
+    window.addEventListener(DEMO_MODE_EVENT, syncDemoMode);
+    return () => window.removeEventListener(DEMO_MODE_EVENT, syncDemoMode);
   }, []);
 
   useEffect(() => {
@@ -199,27 +214,30 @@ export function Workspace() {
 
   const loadFamiliars = useCallback(async () => {
     try {
-      const res = await fetch("/api/familiars", { cache: "no-store" });
+      const res = await fetch("/api/familiars", {
+        cache: "no-store",
+        headers: demoModeFetchHeaders(demoMode),
+      });
       const json = await res.json();
       if (!json.ok) {
-        const fallback = DEMO_MODE ? DEMO_FAMILIARS : [];
+        const fallback = demoMode ? DEMO_FAMILIARS : [];
         setFamiliars(fallback);
-        setFamiliarsError(DEMO_MODE ? null : (json.error ?? "daemon offline"));
+        setFamiliarsError(demoMode ? null : (json.error ?? "daemon offline"));
         return;
       }
       setFamiliarsError(null);
       const list = (json.familiars ?? []) as Familiar[];
       // In demo mode, merge demo familiars for any ids not returned by daemon.
-      const merged = DEMO_MODE
+      const merged = demoMode
         ? [...list, ...DEMO_FAMILIARS.filter((d) => !list.find((l) => l.id === d.id))]
         : list;
       setFamiliars(merged);
     } catch (err) {
-      const fallback = DEMO_MODE ? DEMO_FAMILIARS : [];
+      const fallback = demoMode ? DEMO_FAMILIARS : [];
       setFamiliars(fallback);
-      setFamiliarsError(DEMO_MODE ? null : (err instanceof Error ? err.message : "fetch failed"));
+      setFamiliarsError(demoMode ? null : (err instanceof Error ? err.message : "fetch failed"));
     }
-  }, []);
+  }, [demoMode]);
 
   const selectFamiliarScope = useCallback((id: string | null) => {
     setActiveId(id);

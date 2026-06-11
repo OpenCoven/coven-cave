@@ -73,4 +73,16 @@ assert.ok(
   `Both create buttons should refuse invalid glyphs; found ${glyphGated.length} guarded block(s)`,
 );
 
+assert.match(
+  source,
+  /enableDemoMode/,
+  "Onboarding should let testers activate demo mode during setup",
+);
+
+assert.match(
+  source,
+  /setDemoModeEnabled\(true\)/,
+  "Onboarding demo activation should use the shared local-only demo mode toggle",
+);
+
 console.log("onboarding-polish.test.ts: ok");

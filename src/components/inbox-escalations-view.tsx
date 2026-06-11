@@ -12,7 +12,8 @@ import {
   type SnoozePresetId,
   sortEscalations,
 } from "@/lib/escalations-types";
-import { DEMO_MODE, DEMO_ESCALATIONS } from "@/lib/demo-seed";
+import { DEMO_ESCALATIONS } from "@/lib/demo-seed";
+import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import type { Familiar } from "@/lib/types";
 import { AutomationsView } from "@/components/automations-view";
 
@@ -109,7 +110,7 @@ export function InboxEscalationsView({
         // Demo mode only seeds when the API actually returned ok+empty —
         // never when the API errored. Otherwise demo dogfooding silently
         // hides production failures from the developer.
-        setItems(DEMO_MODE && loaded.length === 0 ? DEMO_ESCALATIONS : loaded);
+        setItems(isDemoModeEnabled() && loaded.length === 0 ? DEMO_ESCALATIONS : loaded);
         setError(null);
       } else {
         setItems([]);
@@ -125,6 +126,12 @@ export function InboxEscalationsView({
     void refresh();
     const id = setInterval(() => void refresh(), 30_000);
     return () => clearInterval(id);
+  }, [refresh]);
+
+  useEffect(() => {
+    const onDemoModeChange = () => { void refresh(); };
+    window.addEventListener(DEMO_MODE_EVENT, onDemoModeChange);
+    return () => window.removeEventListener(DEMO_MODE_EVENT, onDemoModeChange);
   }, [refresh]);
 
   // Hard-scope to the active familiar — escalations whose fromFamiliar or

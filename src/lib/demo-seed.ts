@@ -1,17 +1,15 @@
 /**
  * demo-seed.ts — fixture data for the Open Coven weekly demo.
  *
- * Gated behind NEXT_PUBLIC_DEMO=true. Zero effect on production.
- * Burn after the call.
+ * Gated behind the local demo-mode helpers. Zero effect on normal installs.
  */
 
 import type { Familiar } from "@/lib/types";
 import type { Escalation } from "@/lib/escalations-types";
 import type { Card } from "@/lib/cave-board-types";
+import { DEMO_MODE_ENV } from "@/lib/demo-mode";
 
-export const DEMO_MODE =
-  typeof process !== "undefined" &&
-  process.env.NEXT_PUBLIC_DEMO === "true";
+export const DEMO_MODE = DEMO_MODE_ENV;
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
