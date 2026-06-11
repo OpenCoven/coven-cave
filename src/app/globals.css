@@ -3085,9 +3085,9 @@ select {
 }
 
 .agent-trigger-rail--stacked {
-  justify-content: flex-start;
-  gap: 4px;
-  padding-top: 8px;
+  justify-content: stretch;
+  gap: 0;
+  padding-top: 0;
 }
 
 .agent-trigger-rail::before {
@@ -3131,8 +3131,8 @@ select {
 }
 
 .agent-trigger-rail--stacked .agent-trigger-rail__toggle {
-  flex: 0 0 auto;
-  min-height: 52px;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .agent-trigger-rail__toggle:hover {
