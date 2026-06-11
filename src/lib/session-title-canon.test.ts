@@ -45,6 +45,16 @@ assert.equal(
   "Fix the parser bug",
   "ordinary titles pass through",
 );
+assert.equal(
+  sanitizeSessionTitle("Coven identity canon (binding): - Valentina is the arbiter"),
+  null,
+  "legacy '(binding):' preamble variants are rejected too",
+);
+assert.equal(
+  sanitizeSessionTitle("Coven identity canon (binding)"),
+  "Coven identity canon (binding)",
+  "a colon-less canon-themed name is a legitimate human title and passes through",
+);
 
 // ── merge layer falls back when the daemon title is canon-leaked ──
 const daemonRow = {
