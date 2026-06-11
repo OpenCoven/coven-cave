@@ -26,13 +26,13 @@ const surface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "
 
 assert.match(
   surface,
-  /onSetPanel\("changes"\)[\s\S]*?Changes/,
-  "Chat right panel should expose a Changes tab alongside Inspector/Debug",
+  /right-panel-changes-header[\s\S]*?Changes/,
+  "Chat right panel should expose a persistent Changes half beneath Inspector/Debug",
 );
 assert.match(
   surface,
-  /\{panel === "changes" && <SessionChangesPanel \/>\}/,
-  "Changes tab should render SessionChangesPanel",
+  /<Panel[\s\S]*id="right-panel-changes"[\s\S]*<SessionChangesPanel \/>/,
+  "Changes half should render SessionChangesPanel persistently",
 );
 
 const changesPanel = await readFile(

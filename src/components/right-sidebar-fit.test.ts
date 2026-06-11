@@ -38,7 +38,19 @@ assert.match(
 assert.match(
   chatSurface,
   /right-panel-close[\s\S]*?className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"/,
-  "Right panel content wrapper must scroll vertically so pane content without an internal scroller is reachable",
+  "Right panel top content wrapper must scroll vertically so pane content without an internal scroller is reachable",
+);
+
+assert.match(
+  chatSurface,
+  /<Group[\s\S]*className="right-panel-split"[\s\S]*orientation="vertical"/,
+  "ChatSurface right sidebar should use a vertical split inside the right panel",
+);
+
+assert.match(
+  chatSurface,
+  /<Panel[\s\S]*id="right-panel-primary"[\s\S]*defaultSize="50%"[\s\S]*<Separator[\s\S]*className="shell-separator-h right-panel-splitter"[\s\S]*<Panel[\s\S]*id="right-panel-changes"[\s\S]*defaultSize="50%"/,
+  "ChatSurface right sidebar should default to a 50/50 vertical split",
 );
 
 console.log("right-sidebar-fit.test.ts OK");
