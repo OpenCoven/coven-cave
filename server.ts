@@ -135,6 +135,25 @@ function validateCwd(raw: string | undefined): string | undefined {
   return raw;
 }
 
+// The server is usually launched by pnpm (dev) or as a bundled sidecar, and
+// pnpm exports its whole config to children as npm_config_* env vars. A
+// shell that inherits them gets "npm warn Unknown env config …" on every
+// npm command, and npm/pnpm/yarn invoked there read pnpm's settings as if
+// the user had set them. Strip the package-manager lifecycle namespace —
+// and the server's own NODE_ENV — before handing the env to a user shell.
+const PTY_ENV_DROPPED = new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+
+function sanitizedEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    if (/^npm_/i.test(key)) continue;
+    if (PTY_ENV_DROPPED.has(key)) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
 function sendPtyData(ws: WebSocket, data: string): void {
   if (ws.readyState !== WebSocket.OPEN) return;
   const encoded = Buffer.from(data, "utf8");
@@ -159,7 +178,7 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
     rows: rows > 0 ? rows : 40,
     cwd: cwd ?? process.env.HOME ?? process.cwd(),
     env: {
-      ...process.env,
+      ...sanitizedEnv(),
       PATH: augmentedPath(),
       TERM: "xterm-256color",
       COLORTERM: "truecolor",

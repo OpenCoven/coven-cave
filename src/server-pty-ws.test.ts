@@ -19,6 +19,21 @@ assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients"
 assert.match(src, /pty\.spawn\(defaultShell\(\),\s*defaultShellArgs\(\)/, "server hardcodes shell and args");
 assert.doesNotMatch(src, /query\.command|query\.args|query\.env/, "renderer must not supply process authority through query params");
 assert.match(src, /statSync\(raw\)/, "projectRoot is stat-validated before use as cwd");
+assert.match(
+  src,
+  /\.\.\.sanitizedEnv\(\)/,
+  "PTY shells receive a sanitized environment, not raw process.env",
+);
+assert.doesNotMatch(
+  src,
+  /env: \{\s*\.\.\.process\.env/,
+  "spawnPty must not spread raw process.env — pnpm leaks npm_config_* into it",
+);
+assert.match(
+  src,
+  /\^npm_/,
+  "sanitizer strips the npm_* lifecycle/config namespace",
+);
 assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
