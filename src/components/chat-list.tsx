@@ -283,8 +283,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }, [mine, search, unreadsOnly]);
 
   const hasAny = mine.length > 0;
-  const runningCount = mine.filter((s) => s.status === "running").length;
-  const projectCount = new Set(mine.map((s) => s.project_root).filter(Boolean)).size;
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
