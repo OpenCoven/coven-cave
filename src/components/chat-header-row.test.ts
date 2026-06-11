@@ -210,6 +210,11 @@ assert.equal(
   ["+++ b/new.ts", "+alpha", "+beta"].join("\n"),
   "Write content renders as all-plus lines without a phantom trailing row",
 );
+assert.equal(
+  toolInputAsDiff("Write", JSON.stringify({ file_path: "empty.ts", content: "" })),
+  "+++ b/empty.ts",
+  "Empty Write content renders only the file header, not a phantom + row",
+);
 
 // MultiEdit → one @@-labelled hunk per edit, concatenated.
 const multi = toolInputAsDiff(

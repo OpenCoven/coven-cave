@@ -169,6 +169,16 @@ assert.equal(await deleteConversation("usage-turn"), true);
     fixture("search-miss", "2026-06-11T02:00:00.000Z", ["nothing relevant here"]),
     "utf8",
   );
+  await writeFile(
+    path.join(CONV_DIR, "same-date-a.json"),
+    fixture("same-date-a", "2026-06-11T03:00:00.000Z", ["same timestamp match"]),
+    "utf8",
+  );
+  await writeFile(
+    path.join(CONV_DIR, "same-date-b.json"),
+    fixture("same-date-b", "2026-06-11T03:00:00.000Z", ["same timestamp match"]),
+    "utf8",
+  );
   await writeFile(path.join(CONV_DIR, "search-corrupt.json"), "{ not json", "utf8");
 
   // Body match → one hit per conversation, with snippet + match count;
@@ -183,6 +193,13 @@ assert.equal(await deleteConversation("usage-turn"), true);
 
   // No match → empty; never an error.
   assert.deepEqual(await searchConversations("zanzibar"), []);
+
+  const sameDateHits = await searchConversations("same timestamp", { limit: 2 });
+  assert.deepEqual(
+    sameDateHits.map((h) => h.sessionId),
+    ["same-date-a", "same-date-b"],
+    "equal updatedAt values keep deterministic filename order",
+  );
 
   // Min query length 2 (whitespace doesn't count).
   assert.deepEqual(await searchConversations("k"), []);

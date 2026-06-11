@@ -231,6 +231,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return;
     }
     const controller = new AbortController();
+    setContentHits([]);
     setContentLoading(true);
     const timer = window.setTimeout(async () => {
       try {
@@ -244,7 +245,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         setContentLoading(false);
       } catch {
         // aborted retype or network hiccup — a newer effect owns the state
-        if (!controller.signal.aborted) setContentLoading(false);
+        if (!controller.signal.aborted) {
+          setContentHits([]);
+          setContentLoading(false);
+        }
       }
     }, 300);
     return () => {

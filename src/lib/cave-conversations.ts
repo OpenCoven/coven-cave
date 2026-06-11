@@ -240,7 +240,11 @@ export async function searchConversations(
     }
   }
 
-  hits.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  hits.sort((a, b) => {
+    if (a.updatedAt < b.updatedAt) return 1;
+    if (a.updatedAt > b.updatedAt) return -1;
+    return a.sessionId.localeCompare(b.sessionId);
+  });
   return hits.slice(0, limit).map(({ updatedAt: _updatedAt, ...hit }) => hit);
 }
 
