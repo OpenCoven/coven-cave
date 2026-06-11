@@ -434,9 +434,15 @@ function ShellInner({
     </Group>
   );
 
+  const homeCenteringActive = navOpen && agentOpen;
+  const homeCenterShift = homeCenteringActive
+    ? Math.round((detailGaps.right - detailGaps.left) / 2)
+    : 0;
+
   const shellFrameStyle: CSSProperties & {
     "--shell-left-gap-px": string;
     "--shell-right-gap-px": string;
+    "--shell-home-center-shift-px": string;
   } = {
     // The detail panel's real left/right viewport gaps (side panels +
     // separators + edge rails). Surfaces can read these to reason about the
@@ -444,6 +450,7 @@ function ShellInner({
     // rather than translating toward the viewport center.
     "--shell-left-gap-px": `${detailGaps.left}px`,
     "--shell-right-gap-px": `${detailGaps.right}px`,
+    "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
 
   // Floating reopen affordance — once the sidebar is collapsed (via its own
