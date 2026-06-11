@@ -4445,30 +4445,6 @@ button:active > .edge-rail-chip {
   background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
 }
 
-.salem-panel__preload {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-panel) 82%, var(--bg-base));
-  flex-shrink: 0;
-}
-
-.salem-panel__preload span {
-  min-width: 0;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 16%, var(--border-hairline));
-  border-radius: var(--radius-control);
-  padding: 5px 6px;
-  color: var(--text-secondary);
-  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
-  font-size: var(--text-2xs);
-  font-weight: 650;
-  line-height: 1.1;
-  text-align: center;
-  white-space: nowrap;
-}
-
 .salem-panel__messages {
   flex: 1;
   overflow-y: auto;
