@@ -78,8 +78,33 @@ assert.doesNotMatch(
 );
 assert.match(
   changesRoute,
-  /function resolveContainedFile[\s\S]*?path\.isAbsolute\(relPath\)[\s\S]*?includes\("\.\."\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)/,
+  /import \{ resolveAllowedProjectPath \} from "@\/lib\/server\/project-paths"/,
+  "Changes API must reuse the repo-standard project-root allow-list",
+);
+assert.match(
+  changesRoute,
+  /const allowedRoot = resolveAllowedProjectPath\(projectRoot\);[\s\S]*?if \(!allowedRoot\)[\s\S]*?status: 403/,
+  "projectRoot must be denied before git access when it is outside the allowed workspace roots",
+);
+assert.match(
+  changesRoute,
+  /fs\.statSync\(real\)[\s\S]*?catch/,
+  "projectRoot stat failures must return structured JSON errors instead of throwing",
+);
+assert.match(
+  changesRoute,
+  /function resolveContainedFile[\s\S]*?path\.isAbsolute\(relPath\)[\s\S]*?includes\("\.\."\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)[\s\S]*?fs\.realpathSync\(resolved\)[\s\S]*?startsWith\(repoRoot \+ path\.sep\)/,
   "File paths must pass a resolve + prefix containment check (no absolute paths, no ..)",
+);
+assert.match(
+  changesRoute,
+  /code === "ENOENT"[\s\S]*?git unavailable/,
+  "git execution failures such as ENOENT should not be mislabeled as not-a-git-repository",
+);
+assert.match(
+  changesRoute,
+  /const MAX_GIT_BUFFER = 64 \* 1024 \* 1024/,
+  "Changes API should leave enough git stdout buffer headroom for the 200KB diff truncation path",
 );
 assert.match(
   changesRoute,

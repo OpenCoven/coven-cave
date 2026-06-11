@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export const dynamic = "force-dynamic";
 const execFileAsync = promisify(execFile);
 
 const GIT_TIMEOUT_MS = 10_000;
-const MAX_GIT_BUFFER = 8 * 1024 * 1024;
+const MAX_GIT_BUFFER = 64 * 1024 * 1024;
 /** Diff payload cap (~200KB) so one giant lockfile diff can't flood the panel. */
 const DIFF_CAP_CHARS = 200 * 1024;
 
@@ -60,21 +61,35 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
   if (!path.isAbsolute(projectRoot)) {
     return { ok: false, status: 400, error: "projectRoot must be an absolute path" };
   }
+  const allowedRoot = resolveAllowedProjectPath(projectRoot);
+  if (!allowedRoot) {
+    return { ok: false, status: 403, error: "path not allowed" };
+  }
   let real: string;
+  let stat: fs.Stats;
   try {
-    real = fs.realpathSync(path.resolve(projectRoot));
+    real = fs.realpathSync(path.resolve(allowedRoot));
+    stat = fs.statSync(real);
   } catch {
     return { ok: false, status: 404, error: "projectRoot does not exist" };
   }
-  if (!fs.statSync(real).isDirectory()) {
+  if (!stat.isDirectory()) {
     return { ok: false, status: 400, error: "projectRoot is not a directory" };
   }
   try {
     const { stdout } = await git(real, ["rev-parse", "--show-toplevel"]);
     const top = stdout.trim();
     if (!top) return { ok: false, status: 422, error: "not a git repository", notARepo: true };
-    return { ok: true, repoRoot: fs.realpathSync(top) };
-  } catch {
+    const repoRoot = fs.realpathSync(top);
+    if (!resolveAllowedProjectPath(repoRoot)) {
+      return { ok: false, status: 403, error: "path not allowed" };
+    }
+    return { ok: true, repoRoot };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return { ok: false, status: 500, error: "git unavailable" };
+    }
     return { ok: false, status: 422, error: "not a git repository", notARepo: true };
   }
 }
@@ -87,6 +102,15 @@ function resolveContainedFile(repoRoot: string, relPath: string): string | null 
   const resolved = path.resolve(repoRoot, relPath);
   if (resolved === repoRoot) return null;
   if (!resolved.startsWith(repoRoot + path.sep)) return null;
+  try {
+    if (fs.existsSync(resolved)) {
+      const real = fs.realpathSync(resolved);
+      if (real === repoRoot) return null;
+      if (!real.startsWith(repoRoot + path.sep)) return null;
+    }
+  } catch {
+    return null;
+  }
   return resolved;
 }
 
