@@ -2562,12 +2562,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             }
 
             // Build a flat ordered list of turns for timestamp gap logic (prev-turn lookup).
+            // CHAT-D10-02: pre-build a Map keyed by turn.id to avoid O(n) indexOf per row.
             const allTurns = turns;
+            const turnIndexMap = useMemo(() => {
+              const map = new Map<string, number>();
+              for (let idx = 0; idx < allTurns.length; idx++) {
+                map.set(allTurns[idx].id, idx);
+              }
+              return map;
+            }, [allTurns]);
 
             return grouped.map((g) => {
               if (g.kind === "single") {
                 const t = g.turn;
-                const i = allTurns.indexOf(t);
+                const i = turnIndexMap.get(t.id) ?? -1;
                 const prev = allTurns[i - 1];
                 const showTimestamp = (() => {
                   if (!t.createdAt) return false;
@@ -2598,7 +2606,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     Voice call · {mm}:{ss}
                   </div>
                   {g.turns.map((t) => {
-                    const i = allTurns.indexOf(t);
+                    const i = turnIndexMap.get(t.id) ?? -1;
                     const prev = allTurns[i - 1];
                     const showTimestamp = (() => {
                       if (!t.createdAt) return false;
