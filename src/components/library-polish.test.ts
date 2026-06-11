@@ -25,8 +25,8 @@ assert.match(
 );
 assert.match(
   libraryCss,
-  /\.library-reading-title\s*\{[\s\S]*?-webkit-line-clamp:\s*3[\s\S]*?white-space:\s*normal/,
-  "reading titles should wrap and clamp at three visible lines",
+  /\.library-reading-title\s*\{[\s\S]*?-webkit-line-clamp:\s*2[\s\S]*?white-space:\s*normal/,
+  "reading titles should wrap and clamp at two visible lines",
 );
 
 // github — title, repo, savedAt
@@ -61,5 +61,29 @@ const view2 = await readFile(new URL("./library-view.tsx", import.meta.url), "ut
 assert.match(view2, /if \(e\.key !== "\["\) return;/, "library-view must filter keydown events for '['");
 assert.match(view2, /setListPinned\(\(v\) => !v\)/, "library-view must call setListPinned((v) => !v)");
 assert.match(view2, /\["input", "textarea", "select"\]\.includes\(tag\)/, "library-view must skip when focus is in an input");
+
+console.log("library-polish.test.ts: ok");
+
+// ── Reading list fit (narrow panel) ──
+assert.match(
+  reading,
+  /className="board-table library-reading-table"/,
+  "Reading table carries its own class so narrow-container rules can scope to it",
+);
+assert.match(
+  libraryCss,
+  /overflow-wrap: break-word;/,
+  "Reading titles wrap at word boundaries instead of shattering mid-word",
+);
+assert.match(
+  libraryCss,
+  /\.library-list-shell \{\s*container-type: inline-size;/,
+  "List shell is a size container so the table adapts to the panel, not the viewport",
+);
+assert.match(
+  libraryCss,
+  /@container \(max-width: 560px\) \{[\s\S]*?\.library-reading-table th:nth-child\(4\)/,
+  "Narrow panels drop the Type/Progress columns so Title keeps the space",
+);
 
 console.log("library-polish.test.ts: ok");

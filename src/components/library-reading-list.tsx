@@ -175,8 +175,8 @@ type Props = {
 
 const COLS: { key: SortKey; label: string; width?: string }[] = [
   { key: "title",   label: "Title" },
-  { key: "status",  label: "Status",   width: "110px" },
-  { key: "addedAt", label: "Added",    width: "80px" },
+  { key: "status",  label: "Status",   width: "104px" },
+  { key: "addedAt", label: "Added",    width: "64px" },
 ];
 
 export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
@@ -334,7 +334,7 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
         <div className="library-list-empty">No results for &quot;{query}&quot;.</div>
       ) : (
         <div className="board-table-wrap">
-          <table aria-label="Reading list" className="board-table">
+          <table aria-label="Reading list" className="board-table library-reading-table">
             <thead>
               <tr>
                 {COLS.map((col) => (

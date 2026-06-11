@@ -916,10 +916,12 @@
   max-width: 100%;
   line-height: 1.35;
   overflow: hidden;
-  overflow-wrap: anywhere;
+  /* break-word, not anywhere: only split words that genuinely can't fit,
+     instead of shattering "Confirmation" into "Confirmati on". */
+  overflow-wrap: break-word;
   text-overflow: clip;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   white-space: normal;
 }
 
@@ -993,7 +995,8 @@ tr:focus-within .library-row-delete {
   white-space: nowrap;
 }
 .library-status-select {
-  min-width: 92px;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
   cursor: pointer;
@@ -1043,6 +1046,7 @@ tr:focus-within .library-row-delete {
 
 /* ── list shell & header ────────────────────────────────────────── */
 .library-list-shell {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -2321,5 +2325,59 @@ h3:hover .library-heading-anchor,
   }
   .library-heading--active {
     transition: none;
+  }
+}
+
+
+/* ── Reading table fit ──────────────────────────────────────────────
+   The list panel can be a narrow column; six fixed-width columns were
+   crushing Title into a sliver and overflowing horizontally. In narrow
+   containers the low-value Type and Progress columns drop out, padding
+   tightens, and Title keeps the remaining space. */
+.library-list-shell .board-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 22%, transparent) transparent;
+}
+.library-list-shell .board-table-wrap::-webkit-scrollbar { height: 6px; width: 6px; }
+.library-list-shell .board-table-wrap::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 999px;
+}
+
+@container (max-width: 560px) {
+  .library-reading-table th:nth-child(4),
+  .library-reading-table td:nth-child(4),
+  .library-reading-table th:nth-child(5),
+  .library-reading-table td:nth-child(5) {
+    display: none;
+  }
+  .library-reading-table thead th,
+  .library-reading-table tbody td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .library-reading-table .library-status-select {
+    padding-left: 6px;
+    padding-right: 18px;
+  }
+}
+
+
+/* ── Reader wide mode ───────────────────────────────────────────────
+   Toggled from the header cluster: the modal grows and the prose
+   measure unlocks from 68ch to fill it. */
+.library-reader-modal--wide {
+  max-width: min(1240px, calc(100vw - 64px));
+}
+.library-reader-modal--wide .library-reader-body .cave-md.library-preview-md {
+  max-width: 100%;
+}
+
+/* Ultra-narrow panels: the Added timestamp goes too (Title + Status +
+   delete remain) so the table never scrolls horizontally. */
+@container (max-width: 400px) {
+  .library-reading-table th:nth-child(3),
+  .library-reading-table td:nth-child(3) {
+    display: none;
   }
 }
