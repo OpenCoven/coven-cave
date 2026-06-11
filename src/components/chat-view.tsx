@@ -981,12 +981,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       : 0;
 
   // Slash suggestions
-  const slashSuggestions: SlashCommand[] = useMemo(() => {
+  const slashMatches: SlashCommand[] = useMemo(() => {
     const firstWord = input.trimStart().split(/\s/)[0] ?? "";
     if (!firstWord.startsWith("/") || input.trimStart().includes(" ")) return [];
     return matchSlash(firstWord);
   }, [input]);
   const [slashIdx, setSlashIdx] = useState(0);
+  // Esc hides the menu for the current input; any edit brings it back.
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
   const activeLifecycle = useMemo(() => {
     const activeTurn = [...turns].reverse().find((turn) => turn.role === "assistant" && turn.pending);
     return activeTurn?.lifecycle ?? (busy ? "connecting" : null);
@@ -994,6 +997,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     setSlashIdx(0);
+    setSlashDismissed(false);
   }, [input]);
 
   useEffect(() => {
@@ -1625,6 +1629,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         e.preventDefault();
         const cmd = slashSuggestions[slashIdx];
         if (cmd) setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const cmd = slashSuggestions[slashIdx];
+        // If the highlighted command takes an argument and the input isn't
+        // the exact command yet, autocomplete first (like Tab) so the user
+        // can fill in args; otherwise run the highlighted suggestion — not
+        // the partially typed text. Mirrors home-composer.
+        if (cmd && cmd.argPlaceholder && canonicalize(input.trim()) !== cmd.name) {
+          setInput(cmd.name + " ");
+        } else if (cmd) {
+          intentFromSlash(cmd.name);
+        }
+        return;
+      }
+      // Esc precedence: an open slash menu consumes Esc (dismiss) before
+      // the busy branch below gets a chance to cancel the stream.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashDismissed(true);
         return;
       }
     }

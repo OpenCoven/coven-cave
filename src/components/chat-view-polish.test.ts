@@ -238,3 +238,51 @@ assert.match(
   /ph:pencil-simple/,
   "Rename affordance uses the pencil icon",
 );
+
+// — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —
+const composerKey = source.match(/const onComposerKey = [\s\S]*?\n  \};/)?.[0] ?? "";
+const slashBranch = composerKey.match(/if \(slashSuggestions\.length > 0\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
+
+assert.match(
+  slashBranch,
+  /if \(e\.key === "Enter" && !e\.shiftKey\) \{[\s\S]*slashSuggestions\[slashIdx\][\s\S]*intentFromSlash\(cmd\.name\)/,
+  "Slash-menu Enter must run the highlighted suggestion, not send the partially typed text",
+);
+assert.match(
+  slashBranch,
+  /cmd\.argPlaceholder && canonicalize\(input\.trim\(\)\) !== cmd\.name[\s\S]*setInput\(cmd\.name \+ " "\)/,
+  "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
+);
+assert.match(
+  slashBranch,
+  /if \(e\.key === "Escape"\) \{[\s\S]*setSlashDismissed\(true\)/,
+  "Esc with the slash menu open must dismiss the menu",
+);
+assert.ok(
+  composerKey.includes("setSlashDismissed(true)") &&
+    composerKey.indexOf("setSlashDismissed(true)") < composerKey.indexOf("cancelSend()"),
+  "Esc precedence: dismiss the slash menu before the busy-cancel branch can kill the stream",
+);
+assert.match(
+  source,
+  /setSlashIdx\(0\);\s*\n\s*setSlashDismissed\(false\);/,
+  "Editing the input must re-arm dismissed slash suggestions",
+);
+assert.match(
+  source,
+  /\{keys\.up\}\{keys\.down\} navigate · \{keys\.enter\} run · Tab complete · esc cancel/,
+  "Slash menu footer promises run/complete/cancel — keep it in sync with onComposerKey",
+);
+
+const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const slashHelper = workspaceSource.match(/const handleSlashIntent = [\s\S]*?\n  \};/)?.[0] ?? "";
+assert.match(
+  slashHelper,
+  /\n    return false;\n  \};$/,
+  "Workspace slash helper must return false for unknown commands so chat-view's Unknown-command feedback is reachable",
+);
+assert.equal(
+  (workspaceSource.match(/onSlashFromChat=\{handleSlashIntent\}/g) ?? []).length,
+  2,
+  "Both onSlashFromChat sites must report unhandled slash commands honestly (no unconditional return-true wrappers)",
+);
