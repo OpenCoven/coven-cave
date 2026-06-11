@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock } from "@/components/message-bubble";
@@ -1017,6 +1017,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Esc hides the menu for the current input; any edit brings it back.
   const [slashDismissed, setSlashDismissed] = useState(false);
   const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
+  // Stable per-mount listbox id — the home composer mounts its own slash menu,
+  // so ids must be unique across simultaneously mounted composers.
+  const slashListboxId = useId();
   const activeLifecycle = useMemo(() => {
     const activeTurn = [...turns].reverse().find((turn) => turn.role === "assistant" && turn.pending);
     return activeTurn?.lifecycle ?? (busy ? "connecting" : null);
@@ -2154,13 +2157,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <div className="cave-composer-shell">
           {slashSuggestions.length > 0 ? (
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1">
+              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
                 {slashSuggestions.map((cmd, i) => {
                   const active = i === slashIdx;
                   return (
-                    <li key={cmd.name}>
+                    <li
+                      key={cmd.name}
+                      role="option"
+                      id={`${slashListboxId}-opt-${i}`}
+                      aria-selected={active}
+                    >
                       <button
                         type="button"
+                        tabIndex={-1}
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => {
@@ -2275,6 +2284,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               enterKeyHint="send"
               className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
               aria-label="Message"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={slashSuggestions.length > 0}
+              aria-controls={slashSuggestions.length > 0 ? slashListboxId : undefined}
+              aria-activedescendant={
+                slashSuggestions.length > 0 ? `${slashListboxId}-opt-${slashIdx}` : undefined
+              }
             />
             <div className="flex items-center justify-between px-3 pb-2.5">
               <div className="flex items-center gap-1 text-[var(--text-muted)]">
