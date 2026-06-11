@@ -4,6 +4,7 @@ import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
   stripPreviewOnlyAttachmentFields,
+  stripPreviewOnlyAttachmentFieldsKeepingImages,
 } from "./chat-attachments.ts";
 
 const attachments = normalizeChatAttachments([
@@ -37,7 +38,10 @@ assert.match(prompt, /^Please review these\./);
 assert.match(prompt, /Attached files:/);
 assert.match(prompt, /1\. notes\.md \(text\/markdown, 42 B\)/);
 assert.match(prompt, /```text\nFirst line\nSecond line\n```/);
-assert.match(prompt, /2\. diagram\.png \(image\/png, 128 B\)\n\(content unavailable\)/);
+// Image attachments never render the misleading "(content unavailable)" —
+// without a delivered payload they get an explicit not-delivered notice.
+assert.match(prompt, /2\. diagram\.png \(image\/png, 128 B\)\n\(image attachment was not delivered — payload missing or over the size limit\)/);
+assert.doesNotMatch(prompt, /2\. diagram\.png[^\n]*\n\(content unavailable\)/);
 assert.match(prompt, /3\. secret\.txt \(text\/plain, 12 B\)/);
 
 const attachmentOnly = buildPromptWithAttachments("", [attachments[0]]);
@@ -70,6 +74,41 @@ assert.deepEqual(
       name: "diagram.png",
       type: "image/png",
       size: 128,
+    },
+  ],
+);
+
+// The send-body variant keeps valid image payloads (so the server can deliver
+// them to the harness) but still strips preview fields from non-images.
+assert.deepEqual(
+  stripPreviewOnlyAttachmentFieldsKeepingImages([
+    {
+      name: "diagram.png",
+      type: "image/png",
+      mimeType: "image/png",
+      size: 128,
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+    },
+    {
+      name: "doc.pdf",
+      type: "application/pdf",
+      mimeType: "application/pdf",
+      size: 64,
+      dataUrl: "data:application/pdf;base64,aGVsbG8=",
+    },
+  ]),
+  [
+    {
+      name: "diagram.png",
+      type: "image/png",
+      size: 128,
+      mimeType: "image/png",
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+    },
+    {
+      name: "doc.pdf",
+      type: "application/pdf",
+      size: 64,
     },
   ],
 );

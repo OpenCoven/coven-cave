@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import {
@@ -16,7 +16,9 @@ import {
 } from "@/lib/cave-chat-titles";
 import {
   buildPromptWithAttachments,
+  MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
+  stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
@@ -124,6 +126,58 @@ async function resolveFamiliarWorkspace(
     /* not found */
   }
   return undefined;
+}
+
+// ── Image attachment delivery ────────────────────────────────────────────
+// Local coven-run harnesses are agentic CLIs with a Read tool that can open
+// image files, so image payloads are written to private temp files and the
+// prompt points the harness at them. Bridges/remotes that cannot read this
+// machine's filesystem get an explicit unsupported notice instead.
+
+const ATTACHMENT_TMP_DIR = path.join(tmpdir(), "coven-cave-attachments");
+const IMAGE_EXT_BY_SUBTYPE: Record<string, string> = {
+  jpeg: "jpg",
+  "svg+xml": "svg",
+};
+
+function imageExtension(mimeType?: string): string {
+  const subtype = mimeType?.split("/")[1]?.toLowerCase() ?? "";
+  const mapped = IMAGE_EXT_BY_SUBTYPE[subtype] ?? subtype;
+  // Extension derives from the validated mime subtype only — never from a
+  // user-controlled filename — and falls back to a fixed token.
+  return /^[a-z0-9]{1,8}$/.test(mapped) ? mapped : "img";
+}
+
+async function writeImageAttachmentsToTemp(
+  attachments: ChatAttachment[],
+): Promise<Map<number, string>> {
+  const filePaths = new Map<number, string>();
+  for (const [index, attachment] of attachments.entries()) {
+    if (!attachment.dataUrl || !attachment.mimeType?.startsWith("image/")) continue;
+    const base64 = attachment.dataUrl.slice(attachment.dataUrl.indexOf(",") + 1);
+    const payload = Buffer.from(base64, "base64");
+    // Defense in depth: normalizeChatAttachments already enforces the cap,
+    // but never write more than the cap regardless.
+    if (payload.byteLength === 0 || payload.byteLength > MAX_ATTACHMENT_IMAGE_BYTES) continue;
+    try {
+      await mkdir(ATTACHMENT_TMP_DIR, { recursive: true, mode: 0o700 });
+      const filePath = path.join(
+        ATTACHMENT_TMP_DIR,
+        `${crypto.randomUUID()}.${imageExtension(attachment.mimeType)}`,
+      );
+      await writeFile(filePath, payload, { mode: 0o600 });
+      filePaths.set(index, filePath);
+    } catch {
+      /* best effort — the prompt falls back to the not-delivered notice */
+    }
+  }
+  return filePaths;
+}
+
+function cleanupImageTempFiles(filePaths: ReadonlyMap<number, string>) {
+  for (const filePath of filePaths.values()) {
+    void rm(filePath, { force: true }).catch(() => undefined);
+  }
 }
 
 function scheduleLinkRoute(args: {
@@ -534,14 +588,9 @@ export async function POST(req: Request) {
       { status: 400, headers: { "content-type": "application/json" } },
     );
   }
-  const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildPromptWithCovenIdentityCanon(
-    buildTaskAwarePrompt(
-      buildPromptWithAttachments(promptText, attachments),
-      taskContext,
-    ),
-    body.familiarId,
-  );
+  // Persisted transcripts keep attachment metadata only — base64 image
+  // payloads stay out of the conversation store.
+  const persistedAttachments = stripPreviewOnlyAttachmentFields(attachments);
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
@@ -580,13 +629,33 @@ export async function POST(req: Request) {
       { status: 501, headers: { "content-type": "application/json" } },
     );
   }
+  // Image delivery channel: only local coven-run harnesses can Read files on
+  // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
+  // prompts carry an explicit unsupported notice instead of a dead path.
+  const imagesSupported = !sshRuntime && binding.harness !== "openclaw";
+  const imageFilePaths = imagesSupported
+    ? await writeImageAttachmentsToTemp(attachments)
+    : new Map<number, string>();
+
+  const taskContext = await taskContextForSession(body.sessionId);
+  const harnessPrompt = buildPromptWithCovenIdentityCanon(
+    buildTaskAwarePrompt(
+      buildPromptWithAttachments(promptText, attachments, {
+        imagesSupported,
+        imageFilePaths,
+      }),
+      taskContext,
+    ),
+    body.familiarId,
+  );
+
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
       req,
       body,
       promptText,
       harnessPrompt,
-      attachments,
+      attachments: persistedAttachments,
     });
   }
 
@@ -961,7 +1030,7 @@ export async function POST(req: Request) {
           id: userTurnId,
           role: "user",
           text: promptText,
-          ...(attachments.length ? { attachments } : {}),
+          ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
           createdAt: now,
         };
         const assistantTurn: ChatTurn = {
@@ -1010,6 +1079,10 @@ export async function POST(req: Request) {
         isError: result.is_error,
         sessionId: finalSessionId ?? undefined,
       });
+      // Best-effort temp cleanup: the harness child process has already
+      // exited (including any resume retry), so nothing can still be reading
+      // the saved images. Failures just leave files in tmpdir.
+      cleanupImageTempFiles(imageFilePaths);
       await sleep(20);
       close();
     },

@@ -8,8 +8,14 @@ const splitReasoning = source.match(/function splitReasoning[\s\S]*?\n}\n\n\/\/ 
 
 assert.match(
   source,
-  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*attachments: stripPreviewOnlyAttachmentFields\(outgoingAttachments\)/,
-  "Chat send should strip preview-only attachment fields before POSTing",
+  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*attachments: stripPreviewOnlyAttachmentFieldsKeepingImages\(outgoingAttachments\)/,
+  "Chat send should strip preview-only attachment fields before POSTing, keeping image payloads so the harness can see them",
+);
+
+assert.match(
+  source,
+  /if \(file\.size > MAX_ATTACHMENT_IMAGE_BYTES\) \{[\s\S]*?attachment\.truncated = true;/,
+  "Oversized image attachments should be capped at capture time and marked like truncated text",
 );
 
 assert.match(

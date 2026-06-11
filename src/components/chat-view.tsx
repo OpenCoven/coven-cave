@@ -14,8 +14,9 @@ import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
 import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
+  MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
-  stripPreviewOnlyAttachmentFields,
+  stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { Modal } from "@/components/ui/modal";
@@ -266,6 +267,12 @@ async function fileToAttachment(file: File): Promise<ComposerAttachment> {
     attachment.text = text;
     if (file.size > new Blob([text]).size) attachment.truncated = true;
   } else if (file.type.startsWith("image/")) {
+    if (file.size > MAX_ATTACHMENT_IMAGE_BYTES) {
+      // Mirror the text-truncation idiom: keep the attachment listed but
+      // skip capturing an oversized payload, surfacing the same chip.
+      attachment.truncated = true;
+      return attachment;
+    }
     await new Promise<void>((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -1323,7 +1330,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         body: JSON.stringify({
           familiarId: familiar.id,
           prompt: trimmed,
-          ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFields(outgoingAttachments) } : {}),
+          ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
           ...((cwdDraft.trim() || projectRoot) && !currentSessionRef.current
             ? { projectRoot: cwdDraft.trim() || projectRoot }
