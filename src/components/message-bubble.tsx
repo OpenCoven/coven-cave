@@ -199,6 +199,7 @@ type SyntaxBlockProps = {
  */
 export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
+  const containerRef = useWireCopyButtons(html);
   const resolvedLang = lang ?? autoDetectLang(text);
 
   useEffect(() => {
@@ -220,6 +221,7 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
 
   return (
     <div
+      ref={containerRef}
       className={`cave-syntax-block text-[12px] ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
@@ -234,6 +236,7 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
 
 export function MarkdownBlock({ text, className }: { text: string; className?: string }) {
   const [html, setHtml] = useState<string | null>(null);
+  const containerRef = useWireCopyButtons(html);
 
   useEffect(() => {
     if (!text) return;
@@ -254,6 +257,7 @@ export function MarkdownBlock({ text, className }: { text: string; className?: s
 
   return (
     <div
+      ref={containerRef}
       className={`cave-md ${className ?? ""}`}
       // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
@@ -464,13 +468,28 @@ function wireCopyButtons(container: HTMLElement) {
   }
 }
 
+/**
+ * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
+ * whenever the injected HTML changes. Every component that injects
+ * renderCodeBlock/mdToHtml output via dangerouslySetInnerHTML must attach the
+ * returned ref, otherwise its Copy buttons render but silently do nothing
+ * (wireCopyButtons is idempotent per button via the `_wired` flag).
+ */
+function useWireCopyButtons(html: string | null) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (html && containerRef.current) wireCopyButtons(containerRef.current);
+  }, [html]);
+  return containerRef;
+}
+
 // ---------------------------------------------------------------------------
 // MarkdownContent — async render; plain fallback while streaming
 // ---------------------------------------------------------------------------
 
 function MarkdownContent({ text, pending }: { text: string; pending?: boolean }) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useWireCopyButtons(html);
 
   useEffect(() => {
     if (pending) {
@@ -490,10 +509,6 @@ function MarkdownContent({ text, pending }: { text: string; pending?: boolean })
       .catch((err) => { console.error("[MarkdownContent] mdToHtml failed", err); });
     return () => { cancelled = true; };
   }, [text, pending]);
-
-  useEffect(() => {
-    if (html && containerRef.current) wireCopyButtons(containerRef.current);
-  }, [html]);
 
   if (!html) {
     return (
@@ -561,18 +576,15 @@ export type MessageBubbleProps = {
 };
 
 export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label }: MessageBubbleProps) {
-  const [hovered, setHovered] = useState(false);
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
-    setHovered(true);
     if (!showTimestamp) {
       hoverTimer.current = setTimeout(() => setTsVisible(true), 600);
     }
   };
   const handleMouseLeave = () => {
-    setHovered(false);
     setTsVisible(false);
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   };
@@ -610,7 +622,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
       >
         <div className="relative cave-bubble-user">
           <MarkdownContent text={content} pending={pending} />
-          {hovered && !pending && <CopyBubble text={content} />}
+          {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
+              button is reachable by keyboard (Tab), screen readers, and touch. */}
+          {!pending && <CopyBubble text={content} />}
         </div>
         <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
           {fmtBubbleTime(timestamp)}
@@ -629,7 +643,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
       <div className={isError ? "text-[var(--color-warning)]" : ""}>
         <MarkdownContent text={content} pending={pending} />
       </div>
-      {hovered && !pending && content ? (
+      {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
+          actions are reachable by keyboard (Tab), screen readers, and touch. */}
+      {!pending && content ? (
         <div className="cave-bubble-actions">
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />

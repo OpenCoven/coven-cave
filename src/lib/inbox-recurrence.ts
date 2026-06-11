@@ -4,7 +4,7 @@
 // own copies as the canonical server-side surface; this module is the
 // client-safe twin. Keep the two definitions in sync.
 
-import { nextCronFireFromLocal, parseCron } from "@/lib/cron";
+import { nextCronFireFromLocal, parseCron } from "./cron.ts";
 
 export type Recurrence =
   | { type: "none" }

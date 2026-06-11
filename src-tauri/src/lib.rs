@@ -381,6 +381,41 @@ fn find_free_port() -> Option<u16> {
         .map(|a| a.port())
 }
 
+/// Dev builds only: the dev-server URL from tauri.conf.json `build.devUrl`,
+/// returned only when something is actually listening on it. Release builds
+/// always get `None` so they can never be pointed away from the bundled
+/// sidecar.
+#[cfg(desktop)]
+fn live_dev_server_url(app: &tauri::App) -> Option<tauri::Url> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let url = app.config().build.dev_url.clone()?;
+    let host = url.host_str()?.to_string();
+    let port = url.port_or_known_default()?;
+    let reachable = std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), port))
+        .ok()
+        .map(|addrs| {
+            addrs.into_iter().any(|addr| {
+                std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(1500)).is_ok()
+            })
+        })
+        .unwrap_or(false);
+    if reachable {
+        log::info!(
+            "[cave] dev server live at {} — using it for the main webview (bundled sidecar skipped)",
+            url
+        );
+        Some(url)
+    } else {
+        log::warn!(
+            "[cave] dev build but {} is not serving — falling back to the bundled sidecar",
+            url
+        );
+        None
+    }
+}
+
 #[cfg(desktop)]
 fn wait_for_port(port: u16, timeout: Duration) -> bool {
     use std::net::TcpStream;
@@ -790,21 +825,41 @@ pub fn run() {
 
             check_app_translocation();
 
+            // Dev builds: when the configured dev server (tauri.conf.json
+            // `build.devUrl` — `pnpm dev`) is live, point the main webview
+            // straight at it and skip the bundled sidecar entirely. The
+            // sidecar bundle only exists after a release build
+            // (scripts/sidecar-bundle.sh), so requiring it here meant a clean
+            // checkout could not boot `pnpm dev:app` at all — and when a
+            // stale bundle did exist, the dev app silently rendered an old
+            // production build instead of live code.
+            let main_url: tauri::Url = if let Some(dev_url) = live_dev_server_url(app) {
+                dev_url
+            } else {
             let resource_dir = match app.path().resource_dir() {
                 Ok(d) => d,
                 Err(e) => fatal_exit(&format!("could not resolve resource dir: {}", e)),
             };
-            let server_js = resource_dir
-                .join("resources")
-                .join("server")
-                .join("server.js");
-
-            if !server_js.exists() {
+            // Prefer the custom server (server.ts → server.mjs): it carries
+            // the /api/pty-ws terminal websocket bridge. server.js is Next's
+            // generated standalone entrypoint, kept as a fallback for old
+            // bundles — it serves the app but has no terminal bridge.
+            let server_dir_root = resource_dir.join("resources").join("server");
+            let server_mjs = server_dir_root.join("server.mjs");
+            let server_js = server_dir_root.join("server.js");
+            let server_entry = if server_mjs.exists() {
+                server_mjs
+            } else if server_js.exists() {
+                log::warn!(
+                    "[cave] bundle has no server.mjs — terminal websocket bridge unavailable in this build"
+                );
+                server_js
+            } else {
                 fatal_exit(&format!(
                     "standalone server not found at {}",
                     server_js.display()
                 ));
-            }
+            };
 
             let port = match find_free_port() {
                 Some(p) => p,
@@ -860,12 +915,12 @@ pub fn run() {
                 .as_ref()
                 .and_then(|f| f.try_clone().ok());
 
-            // Crucially, run from the directory that contains server.js so
-            // Next.js standalone can locate its sibling .next/ and public/.
-            let server_dir = server_js
+            // Crucially, run from the directory that contains the server
+            // entrypoint so Next.js can locate its sibling .next/ and public/.
+            let server_dir = server_entry
                 .parent()
-                .ok_or("server_js has no parent dir")?;
-            let server_js_arg = node_arg_path(&server_js);
+                .ok_or("server entry has no parent dir")?;
+            let server_js_arg = node_arg_path(&server_entry);
             let server_dir_arg = node_arg_path(server_dir);
 
             // GUI launches often inherit a stripped PATH. Prepend the
@@ -956,13 +1011,16 @@ pub fn run() {
                 ));
             }
 
-            let url = format!(
+            format!(
                 "http://127.0.0.1:{}/?covenCaveToken={}&coven_access_token={}",
                 port, auth_token, mobile_access_token
-            );
-            let main_url = url.parse().expect("valid url");
+            )
+            .parse()
+            .expect("valid url")
+            };
+
             pty::trust_main_origin(&main_url);
-            if let Err(e) = WebviewWindowBuilder::new(
+            let mut main_window = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::External(main_url),
@@ -975,9 +1033,23 @@ pub fn run() {
             // work in the webview — otherwise Tauri's OS-level file-drop
             // handler intercepts dragenter/dragover/drop before the DOM sees
             // them.
-            .disable_drag_drop_handler()
-            .build()
-            {
+            .disable_drag_drop_handler();
+            // Dev-only automation hook: WKWebView has no external driver
+            // protocol, so dev tooling (terminal e2e checks, screenshots)
+            // can inject a script that runs before the page loads. No-op in
+            // release builds.
+            if cfg!(debug_assertions) {
+                if let Ok(script) = std::env::var("COVEN_CAVE_DEV_INIT_SCRIPT") {
+                    if !script.is_empty() {
+                        log::info!(
+                            "[cave] injecting COVEN_CAVE_DEV_INIT_SCRIPT ({} bytes)",
+                            script.len()
+                        );
+                        main_window = main_window.initialization_script(&script);
+                    }
+                }
+            }
+            if let Err(e) = main_window.build() {
                 fatal_exit(&format!("failed to build main window: {}", e));
             }
 

@@ -38,6 +38,7 @@ import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
+import { WorkflowsView } from "@/components/workflows-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
@@ -746,103 +747,110 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "slash") {
-      // Map slash commands directly to local actions
-      switch (intent.command) {
-        case "/new":
-          startAgentChat(activeId);
-          return;
-        case "/board":
-          setMode("board");
-          return;
-        case "/chats":
-        case "/agents":
-        case "/chat":
-          showAgentChatList();
-          return;
-        case "/inbox":
-          setMode("inbox");
-          return;
-        case "/remind": {
-          const args = (intent.args ?? "").trim();
-          const { title, whenText } = args
-            ? draftFromSlashArgs(args)
-            : { title: "", whenText: "" };
-          openReminderModal(title, whenText);
-          return;
-        }
-        case "/palette":
-          setPaletteOpen(true);
-          return;
-        case "/terminal":
-          setMode("terminal");
-          return;
-        case "/projects":
-          setMode("library");
-          window.location.hash = "library:projects";
-          return;
-        case "/library":
-          setMode("library");
-          return;
-        case "/toggle-agent":
-          toggleAgentPanel();
-          return;
-        case "/quit":
-          showAgentChatList();
-          return;
-        case "/sessions":
-          setMode("chat");
-          showAgentChatList();
-          return;
-        case "/familiar": {
-          const name = (intent.args ?? "").trim().toLowerCase();
-          if (name) {
-            const match = familiars.find(
-              (f) => f.id === name || f.display_name.toLowerCase() === name,
-            );
-            if (match) {
-              setActiveId(match.id);
-              showAgentChatList();
-              return;
-            }
-          }
-          setPaletteOpen(true);
-          return;
-        }
-        case "/attach": {
-          const sid = (intent.args ?? "").trim();
-          if (!sid) {
-            setPaletteOpen(true);
-            return;
-          }
-          // Find which familiar this session belongs to so we surface the right rail row
-          const target = sessions.find((s) => s.id === sid);
-          openAgentSession(sid, target?.familiarId);
-          return;
-        }
-        case "/tui": {
-          const sid = routerRef.current?.currentSessionId();
-          if (sid) {
-            void fetch("/api/launch", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ mode: "attach", sessionId: sid }),
-            });
-          }
-          return;
-        }
-        case "/clear":
-          routerRef.current?.clearTranscript();
-          return;
-        case "/help":
-        case "/familiar":
-        case "/run":
-        case "/codex":
-        case "/claude":
-          // These need composer context; route to the chat view's slash handler.
-          routerRef.current?.runSlash(intent.command);
-          return;
-      }
+      handleSlashIntent(intent.command, intent.args);
+      return;
     }
+  };
+
+  // Map slash commands directly to local actions. Returns false for commands
+  // this surface doesn't know so the chat composer can show its
+  // "Unknown command" feedback instead of silently swallowing the input.
+  const handleSlashIntent = (command: string, args = ""): boolean => {
+    switch (command) {
+      case "/new":
+        startAgentChat(activeId);
+        return true;
+      case "/board":
+        setMode("board");
+        return true;
+      case "/chats":
+      case "/agents":
+      case "/chat":
+        showAgentChatList();
+        return true;
+      case "/inbox":
+        setMode("inbox");
+        return true;
+      case "/remind": {
+        const trimmedArgs = args.trim();
+        const { title, whenText } = trimmedArgs
+          ? draftFromSlashArgs(trimmedArgs)
+          : { title: "", whenText: "" };
+        openReminderModal(title, whenText);
+        return true;
+      }
+      case "/palette":
+        setPaletteOpen(true);
+        return true;
+      case "/terminal":
+        setMode("terminal");
+        return true;
+      case "/projects":
+        setMode("library");
+        window.location.hash = "library:projects";
+        return true;
+      case "/library":
+        setMode("library");
+        return true;
+      case "/toggle-agent":
+        toggleAgentPanel();
+        return true;
+      case "/quit":
+        showAgentChatList();
+        return true;
+      case "/sessions":
+        setMode("chat");
+        showAgentChatList();
+        return true;
+      case "/familiar": {
+        const name = args.trim().toLowerCase();
+        if (name) {
+          const match = familiars.find(
+            (f) => f.id === name || f.display_name.toLowerCase() === name,
+          );
+          if (match) {
+            setActiveId(match.id);
+            showAgentChatList();
+            return true;
+          }
+        }
+        setPaletteOpen(true);
+        return true;
+      }
+      case "/attach": {
+        const sid = args.trim();
+        if (!sid) {
+          setPaletteOpen(true);
+          return true;
+        }
+        // Find which familiar this session belongs to so we surface the right rail row
+        const target = sessions.find((s) => s.id === sid);
+        openAgentSession(sid, target?.familiarId);
+        return true;
+      }
+      case "/tui": {
+        const sid = routerRef.current?.currentSessionId();
+        if (sid) {
+          void fetch("/api/launch", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ mode: "attach", sessionId: sid }),
+          });
+        }
+        return true;
+      }
+      case "/clear":
+        routerRef.current?.clearTranscript();
+        return true;
+      case "/help":
+      case "/run":
+      case "/codex":
+      case "/claude":
+        // These need composer context; route to the chat view's slash handler.
+        routerRef.current?.runSlash(command);
+        return true;
+    }
+    return false;
   };
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
@@ -977,10 +985,7 @@ export function Workspace() {
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
         onSessionStarted={loadSessions}
-        onSlashFromChat={(command, args) => {
-          onPaletteIntent({ kind: "slash", command, args });
-          return true;
-        }}
+        onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
         onOpenInbox={() => setMode("inbox")}
         onCreateReminder={openReminderForFamiliar}
@@ -1050,6 +1055,8 @@ export function Workspace() {
         onCreateSkill={() => setMode("capabilities")}
         onCreatePlugin={() => setMode("capabilities")}
       />
+    ) : mode === "workflows" ? (
+      <WorkflowsView />
     ) : mode === "capabilities" ? (
       <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (
@@ -1143,7 +1150,9 @@ export function Workspace() {
                 shellRef.current?.toggleAgent();
               }}
             >
-              <Icon name="ph:cat" width={14} />
+              <span className="edge-rail-chip">
+                <Icon name="ph:cat" width={14} />
+              </span>
             </button>
           </aside>
         ) : undefined}
@@ -1169,10 +1178,7 @@ export function Workspace() {
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   onSessionStarted={loadSessions}
-                  onSlashFromChat={(command, args) => {
-                    onPaletteIntent({ kind: "slash", command, args });
-                    return true;
-                  }}
+                  onSlashFromChat={handleSlashIntent}
                   onOpenOnboarding={openOnboarding}
                 />
               }

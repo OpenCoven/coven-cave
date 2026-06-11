@@ -103,6 +103,12 @@ assert.match(
 
 assert.match(
   source,
+  /\{ id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools" \}/,
+  "Workflows should appear as a Tools surface",
+);
+
+assert.match(
+  source,
   /\{ id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" \}/,
   "Capabilities should appear as a Tools surface",
 );
@@ -143,7 +149,7 @@ assert.match(
   "Footer rows should align labels from matching icon cells",
 );
 
-// Tools-group entries include browser, terminal, roles, and capabilities.
+// Tools-group entries include browser, terminal, roles, workflows, and capabilities.
 assert.match(
   source,
   /id:\s*"browser"[^}]*group:\s*"tools"/,
@@ -158,6 +164,11 @@ assert.match(
   source,
   /id:\s*"roles"[^}]*group:\s*"tools"/,
   "roles stays in Tools",
+);
+assert.match(
+  source,
+  /id:\s*"workflows"[^}]*group:\s*"tools"/,
+  "workflows stays in Tools",
 );
 assert.match(
   source,

@@ -353,6 +353,11 @@
 .cave-code-wrap:hover .cave-copy-btn,
 .group:hover .cave-copy-btn { opacity: 1; }
 
+/* Keyboard reach (CHAT-D6-04): the buttons are always in the DOM; tabbing
+ * into them must reveal them even without a pointer. */
+.cave-code-wrap:focus-within .cave-copy-btn,
+.group:focus-within .cave-copy-btn { opacity: 1; }
+
 .cave-copy-btn--confirmed {
   opacity: 1 !important;
   color: oklch(0.65 0.15 170);
@@ -392,6 +397,14 @@
   position: static;
   top: auto;
   right: auto;
+}
+
+/* Touch devices have no hover (CHAT-D6-04) — keep per-message actions
+ * always visible on coarse pointers. */
+@media (pointer: coarse) {
+  .cave-copy-btn-bubble {
+    opacity: 1;
+  }
 }
 
 /* Icon-only copy/expand button variant — tighter padding */

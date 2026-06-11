@@ -86,6 +86,9 @@ const contracts: RouteContract[] = [
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/transcript", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/workflows/dry-run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/workflows", methods: ["GET"], kind: "json" },
 ];
 
 function walkRoutes(dir: string): string[] {

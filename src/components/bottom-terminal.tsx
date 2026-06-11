@@ -8,8 +8,9 @@ import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 // portable-pty session on the Rust side (see src-tauri/src/pty.rs).
 //
 // Desktop Tauri uses native pty.* commands. Browser dev/prod uses the
-// WebSocket PTY bridge. Tauri-mobile (iOS, Android) renders a placeholder
-// because the native sandbox cannot spawn a shell.
+// WebSocket PTY bridge (server.ts /api/pty-ws). Tauri-mobile (iOS, Android)
+// cannot spawn a local shell, but its webview points at a remote Cave
+// server — so it rides the same WebSocket bridge and gets a shell there.
 
 // Screen-reader mirror: xterm renders to a <canvas>, which is opaque to AT.
 // We keep an offscreen text mirror of recent PTY output (ANSI stripped) and
@@ -66,14 +67,10 @@ export function BottomTerminal({
   useEffect(() => { projectRootRef.current = projectRoot; }, [projectRoot]);
   const [unavailable, setUnavailable] = useState(false);
   // useTauriPlatform() resolves async and starts at "unknown". Desktop uses
-  // Tauri IPC, browser dev/prod uses the WebSocket PTY bridge, and native
-  // mobile remains unavailable because the sandbox cannot spawn a shell.
+  // Tauri IPC; browser dev/prod AND Tauri-mobile use the WebSocket PTY
+  // bridge — the mobile webview is served by a remote Cave server, and the
+  // bridge opens the shell on that machine.
   const platform = useTauriPlatform();
-  useEffect(() => {
-    if (platform === "ios" || platform === "android") {
-      setUnavailable(true);
-    }
-  }, [platform]);
   // Screen-reader mirror state: see comment block near top of file.
   const [mirrorLines, setMirrorLines] = useState<string[]>([]);
   const pendingMirrorRef = useRef<string>("");
@@ -145,10 +142,8 @@ export function BottomTerminal({
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    // The pty.* Tauri commands are only registered on desktop. Don't
-    // even attempt xterm setup on Tauri-mobile or in the browser —
-    // the dedicated useEffect above sets `unavailable` and the JSX
-    // renders the placeholder instead.
+    // The pty.* Tauri commands are only registered on desktop. Browser and
+    // Tauri-mobile use the WebSocket-bridge effect below instead.
     if (platform !== "desktop") return;
 
     let disposed = false;
@@ -315,7 +310,9 @@ export function BottomTerminal({
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    if (platform !== "browser") return;
+    // Browser and Tauri-mobile both reach the shell through the WebSocket
+    // bridge served by the Cave server the page was loaded from.
+    if (platform !== "browser" && platform !== "ios" && platform !== "android") return;
 
     let disposed = false;
     let cleanup: (() => void) | null = null;

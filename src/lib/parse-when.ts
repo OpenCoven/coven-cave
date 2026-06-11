@@ -1,4 +1,4 @@
-import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
+import { computeNextOccurrence, type Recurrence } from "./inbox-recurrence.ts";
 
 export type ParsedWhen = {
   fireAt: string;

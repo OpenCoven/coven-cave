@@ -33,3 +33,52 @@ assert.match(
   /\.cave-code-header \.cave-copy-btn[\s\S]*order:\s*3[\s\S]*margin-left:\s*auto/,
   "The copy button should stay at the far edge after the label and traffic lights",
 );
+
+// ---------------------------------------------------------------------------
+// Copy buttons must be WIRED, not just rendered. renderCodeBlock emits the
+// <button class="cave-copy-btn" data-code> markup, but the click handler only
+// attaches via wireCopyButtons after the HTML lands in the DOM. Every
+// component that injects this HTML (MarkdownContent, SyntaxBlock,
+// MarkdownBlock) must run the post-render wiring — otherwise Copy silently
+// does nothing in tool blocks, the inspector pane, comux previews, and the
+// markdown expand modal (audit finding CHAT-D7-01).
+// ---------------------------------------------------------------------------
+
+const source = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
+
+assert.match(
+  source,
+  /function useWireCopyButtons\([\s\S]*?wireCopyButtons\(containerRef\.current\)/,
+  "A shared post-render hook should wire copy buttons once the injected HTML lands",
+);
+
+const syntaxBlock = /export function SyntaxBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.match(
+  syntaxBlock,
+  /useWireCopyButtons\(/,
+  "SyntaxBlock must wire its copy buttons (tool I/O, inspector pane, comux preview)",
+);
+assert.match(
+  syntaxBlock,
+  /ref=\{containerRef\}/,
+  "SyntaxBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
+);
+
+const markdownBlock = /export function MarkdownBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.match(
+  markdownBlock,
+  /useWireCopyButtons\(/,
+  "MarkdownBlock must wire its copy buttons (inspector pane, markdown expand modal)",
+);
+assert.match(
+  markdownBlock,
+  /ref=\{containerRef\}/,
+  "MarkdownBlock must attach the wiring ref to its dangerouslySetInnerHTML container",
+);
+
+const markdownContent = /function MarkdownContent\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
+assert.match(
+  markdownContent,
+  /useWireCopyButtons\(/,
+  "MarkdownContent must keep wiring its copy buttons (chat message bubbles)",
+);

@@ -455,6 +455,29 @@ function ShellInner({
     "--shell-home-asymmetry-px": `${homeCenterAsymmetry}px`,
   };
 
+  // Closed-state reopen tab for the nav panel — the left-edge mirror of the
+  // agent trigger rail, so a collapsed sidebar stays discoverable.
+  const navRail =
+    !isMobile && !navOpen ? (
+      <aside className="agent-trigger-rail agent-trigger-rail--left" aria-label="Navigation toggle">
+        <button
+          type="button"
+          className="agent-trigger-rail__toggle"
+          aria-label="Show navigation"
+          aria-expanded={false}
+          title="Show navigation (⌘B)"
+          onClick={() => {
+            navRef.current?.expand();
+            setNavOpen(true);
+          }}
+        >
+          <span className="edge-rail-chip">
+            <Icon name="ph:sidebar-simple" width={14} />
+          </span>
+        </button>
+      </aside>
+    ) : null;
+
   return (
     <div
       className="shell-frame flex h-full w-full flex-col"
@@ -464,6 +487,7 @@ function ShellInner({
       {topBar}
       <div className="shell-body flex flex-1 min-h-0">
         {familiarRail}
+        {navRail}
         {hasBottom ? (
           <Group
             className="flex-1 min-h-0"

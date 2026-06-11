@@ -273,7 +273,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           ) : null}
         </div>
         <div className="board-header-controls">
-          <div className="board-group-toggle" role="group" aria-label="Group tasks by">
+          {/* Grouping only applies to the table view — kanban always uses
+              status columns, so the toggle would be noise there. */}
+          {!isMobile && viewMode === "table" ? (
+            <div className="board-group-toggle" role="group" aria-label="Group tasks by">
             <button
               type="button"
               className={`board-group-toggle-btn${groupBy === "status" ? " board-group-toggle-btn--active" : ""}`}
@@ -290,7 +293,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             >
               Familiar
             </button>
-          </div>
+            </div>
+          ) : null}
 
           {/* Kanban/Table toggle — hidden on phones; BoardCardStack
               replaces both at <768px (see render branch below). */}
@@ -390,7 +394,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
           <BoardKanban cards={filtered} familiars={familiars} sessions={sessions}
-            groupBy={groupBy} selectedCardId={selectedCardId}
+            groupBy="status" selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
             onJumpToSession={onJumpToSession}

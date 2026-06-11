@@ -126,6 +126,18 @@ assert.match(
 );
 
 assert.match(
+  source,
+  /const send = async \(\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?setAttachments\(\[\]\);[\s\S]*?await sendRaw\(/,
+  "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
+);
+
+assert.match(
+  source,
+  /const sendRaw = async [\s\S]*?\|\| busy\) return;/,
+  "sendRaw should keep its own busy guard as the backstop behind send()'s",
+);
+
+assert.match(
   styles,
   /\.cave-chat-meta-line\s*\{[\s\S]*min-height:/,
   "Lifecycle header meta line should have stable dimensions",

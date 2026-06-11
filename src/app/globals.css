@@ -2940,6 +2940,11 @@ select {
   user-select: none;
 }
 
+.agent-trigger-rail--left {
+  border-left: 0;
+  border-right: 1px solid var(--border-hairline);
+}
+
 .agent-trigger-rail__toggle {
   display: flex;
   align-items: center;
@@ -2954,14 +2959,7 @@ select {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  opacity: 0;
-  transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
-}
-
-.agent-trigger-rail:hover .agent-trigger-rail__toggle,
-.agent-trigger-rail__toggle:hover,
-.agent-trigger-rail__toggle:focus-visible {
-  opacity: 1;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .agent-trigger-rail__toggle:hover {
@@ -2972,6 +2970,31 @@ select {
 .agent-trigger-rail__toggle:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: -2px;
+}
+
+/* Chip that makes edge-rail toggles read as pressable buttons rather than
+   bare hover-revealed icons. Shared by the nav/agent trigger rails and the
+   collapsed chat-projects strip. */
+.edge-rail-chip {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 44px;
+  border-radius: 7px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: inherit;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+
+button:hover > .edge-rail-chip,
+button:focus-visible > .edge-rail-chip {
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--text-muted) 45%, transparent);
+}
+
+button:active > .edge-rail-chip {
+  transform: scale(0.94);
 }
 
 /* ────────────────────────────────────────────────

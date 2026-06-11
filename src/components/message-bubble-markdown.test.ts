@@ -39,4 +39,42 @@ assert.match(
   "Rendered tables substitute positionally for the renderer's own <table> output",
 );
 
+// ── CHAT-D6-04: per-message actions must be keyboard/touch reachable ──────
+// The Copy/Expand bubble actions must be mounted unconditionally (when not
+// pending) and revealed by CSS — never mount-gated on a JS `hovered` state,
+// which keeps them out of the DOM (and the accessibility tree) until
+// onMouseEnter fires.
+assert.doesNotMatch(
+  source,
+  /\bhovered\b/,
+  "Bubble actions must not be gated on a JS hovered state — render always, reveal with CSS",
+);
+assert.match(
+  source,
+  /\{!pending && <CopyBubble/,
+  "User-bubble Copy action renders whenever the message is not pending",
+);
+assert.match(
+  source,
+  /\{!pending && content \? \(\s*<div className="cave-bubble-actions">/,
+  "Assistant bubble actions render whenever there is settled content",
+);
+
+const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+assert.match(
+  css,
+  /\.cave-copy-btn:focus-visible \{ opacity: 1; \}/,
+  "Focused action buttons must be visible (focus-visible reveal)",
+);
+assert.match(
+  css,
+  /\.group:focus-within \.cave-copy-btn \{ opacity: 1; \}/,
+  "Tabbing into a bubble's actions must reveal them (focus-within reveal)",
+);
+assert.match(
+  css,
+  /@media \(pointer: coarse\) \{\s*\.cave-copy-btn-bubble \{\s*opacity: 1;/,
+  "Coarse pointers have no hover — bubble actions must be always visible there",
+);
+
 console.log("message-bubble-markdown.test.ts: ok");

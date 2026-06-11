@@ -59,7 +59,9 @@ export function ChatProjectSidebar({
           aria-expanded={false}
           className="focus-ring flex w-7 flex-col items-center pt-3 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]"
         >
-          <Icon name="ph:sidebar-simple" width={14} aria-hidden />
+          <span className="edge-rail-chip">
+            <Icon name="ph:sidebar-simple" width={14} aria-hidden />
+          </span>
         </button>
       </aside>
     );
