@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.69] - 2026-06-11
+
+### Fixed
+- **macOS notarized DMGs** - restores the macOS release lane after the packaged `node-pty` sidecar added unsigned `spawn-helper` Mach-O files. The sidecar bundle now restores executable mode for those helpers, the release signing sweep signs them explicitly, and invalid Apple notarization responses print the notary log instead of falling through to a vague stapler Error 65.
+
+### Notes
+- This is the replacement desktop release for `v0.0.68`; it includes the `v0.0.68` project-aware chat, library reader, dev-server, and terminal bridge changes with the macOS packaging fix applied.
+
 ## [0.0.68] — 2026-06-11
 
 ### Added
