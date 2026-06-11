@@ -6,7 +6,8 @@ import { expect, test } from "@playwright/test";
 //   - viewport meta is set to viewport-fit=cover so env() returns
 //     non-zero on iOS
 //   - the layout doesn't trigger horizontal scrolling at 360px
-//   - the desktop shell does not render the global top header
+//   - desktop app chrome is headerless and does not create window scroll
+//     on the primary shell surfaces
 //   - the top-bar mobile-toggle is visible (since mobile viewports
 //     still need drawer controls)
 //
@@ -58,24 +59,105 @@ test.describe("mobile foundations", () => {
     expect(metrics.frameBottom, "app frame should fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
   });
 
-  test("desktop home route hides the global top header without window scroll", async ({ page }) => {
+  test("desktop shell is headerless and non-scrollable across primary surfaces", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    const topBar = page.locator(".top-bar");
-    await expect(topBar).toHaveCount(1);
-    await expect(topBar).toBeHidden();
+    const surfaces = ["Home", "Chat", "Board", "Inbox", "Library", "Browser", "Terminal"];
+    const sidebar = page.locator(".sidebar-nav-scroll");
+
+    for (const surface of surfaces) {
+      if (surface !== "Home") {
+        await sidebar.getByRole("button", { name: new RegExp(`^${surface}\\b`) }).click();
+      }
+
+      await expect(page.locator(".top-bar"), `desktop top bar should stay hidden on ${surface}`).toBeHidden();
+
+      const metrics = await page.evaluate(() => {
+        const frame = document.querySelector(".shell-frame");
+        const frameRect = frame?.getBoundingClientRect();
+        return {
+          documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+          bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
+          frameBottom: frameRect?.bottom ?? 0,
+          viewportHeight: window.innerHeight,
+        };
+      });
+
+      expect(metrics.documentOverflow, `${surface} should not create document vertical scroll`).toBeLessThanOrEqual(1);
+      expect(metrics.bodyOverflow, `${surface} should not create body vertical scroll`).toBeLessThanOrEqual(1);
+      expect(metrics.frameBottom, `${surface} app frame should fit the viewport`).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+    }
+  });
+
+  test("library document rail scrolls inside the right panel", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    const docs = Array.from({ length: 42 }, (_, index) => ({
+      id: `doc-${index}`,
+      title: `Knowledge graph source ${index + 1}`,
+      familiar: "sage",
+      collection: "all",
+      modifiedAt: new Date(Date.now() - index * 60_000).toISOString(),
+      tags: index % 4 === 0 ? ["coven-cave", "knowledge-graph"] : [],
+      excerpt: "A deliberately long library entry used to prove the right-side document rail owns its scrolling.",
+    }));
+
+    await page.route("**/api/library?**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          docs,
+          collections: [
+            {
+              id: "all",
+              label: "All",
+              path: "/tmp/coven-cave-test-library",
+              familiar: "sage",
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/");
+    await page.waitForSelector(".shell-frame");
+
+    const sidebar = page.locator(".sidebar-nav-scroll");
+    await sidebar.getByRole("button", { name: /^Library\b/ }).click();
+    await page.waitForSelector(".library-shell");
+    await page.locator(".library-rail-item").filter({ hasText: /^All/ }).first().click();
+    await expect(page.getByPlaceholder("Search documents…")).toBeVisible();
+    await expect(page.locator(".library-doclist-item")).toHaveCount(docs.length);
 
     const metrics = await page.evaluate(() => {
+      const panel = document.querySelector(".library-list-panel");
+      const doclist = document.querySelector(".library-doclist");
+      const items = document.querySelector(".library-doclist-items");
+      const panelRect = panel?.getBoundingClientRect();
+      const doclistRect = doclist?.getBoundingClientRect();
+      const itemsRect = items?.getBoundingClientRect();
+      const itemsStyle = items ? window.getComputedStyle(items) : null;
+
       return {
         documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
         bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
+        panelHeight: panelRect?.height ?? 0,
+        doclistHeight: doclistRect?.height ?? 0,
+        itemsHeight: itemsRect?.height ?? 0,
+        itemsScrollHeight: items?.scrollHeight ?? 0,
+        itemsOverflowY: itemsStyle?.overflowY ?? "",
       };
     });
-    expect(metrics.documentOverflow, "document should not be vertically scrollable").toBeLessThanOrEqual(1);
-    expect(metrics.bodyOverflow, "body should not be vertically scrollable").toBeLessThanOrEqual(1);
-  });
+
+    expect(metrics.documentOverflow, "Library must not push scrolling onto the document").toBeLessThanOrEqual(1);
+    expect(metrics.bodyOverflow, "Library must not push scrolling onto body").toBeLessThanOrEqual(1);
+    expect(metrics.doclistHeight, "Document list should stay bounded by the right panel").toBeLessThanOrEqual(metrics.panelHeight + 1);
+    expect(metrics.itemsOverflowY, "Document rows should be the inner scroll container").toBe("auto");
+    expect(metrics.itemsScrollHeight, "Document rows should have more content than visible space").toBeGreaterThan(metrics.itemsHeight + 1);
 
   test("persisted screen magnification scales the app without window scroll", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -104,6 +186,8 @@ test.describe("mobile foundations", () => {
     expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
     expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
     expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  });
+
   });
 
   test("mobile drawer toggles render on phone viewport", async ({ page }) => {
