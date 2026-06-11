@@ -37,7 +37,7 @@ export type DebugTurn = {
   createdAt: string;
   pending?: boolean;
   error?: boolean;
-  lifecycle?: string;
+  lifecycle?: "queued" | "connecting" | "streaming" | "tooling" | "cancelled" | "failed" | "complete";
   durationMs?: number;
   origin?: "chat" | "voice";
 };
@@ -62,7 +62,7 @@ export function appendEvents(existing: CovenEvent[], incoming: CovenEvent[]): Co
 
 /** Cursor for the next ?afterSeq= fetch. */
 export function nextAfterSeq(events: CovenEvent[]): number {
-  return events.length === 0 ? 0 : events[events.length - 1].seq;
+  return events.reduce((max, e) => (e.seq > max ? e.seq : max), 0);
 }
 
 export function shouldPollEvents(args: { status: string | null; visible: boolean }): boolean {
@@ -77,6 +77,10 @@ export function formatEventPayload(payloadJson: string): string {
   }
 }
 
+/** Typed constructor for the export bundle. Callers pass a full Familiar;
+ *  the explicit field-pick strips everything but {id, harness, model} from
+ *  the export. Arrays are passed by reference (snapshot at call time), not
+ *  cloned. */
 export function buildDebugBundle(args: {
   session: SessionRow | null;
   familiar: { id: string; harness?: string; model?: string } | null;

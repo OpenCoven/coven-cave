@@ -60,6 +60,12 @@ assert.deepEqual(bundle.familiar, { id: "f1", harness: "claude", model: "opus" }
 assert.equal(bundle.turns.length, 1);
 assert.equal(bundle.events.length, 1);
 assert.equal(buildDebugBundle({ session: null, familiar: null, turns: [], events: [] }).familiar, null);
+const turnsRef = [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }];
+assert.equal(
+  buildDebugBundle({ session: null, familiar: null, turns: turnsRef, events: [] }).turns,
+  turnsRef,
+  "turns are passed by reference, not cloned",
+);
 
 // debugFileName
 assert.equal(debugFileName("s1"), "debug-s1.json");
