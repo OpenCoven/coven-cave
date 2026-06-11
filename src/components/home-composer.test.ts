@@ -93,10 +93,12 @@ for (const [name, src] of [
     /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
     `${name} option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection`,
   );
+  assert.match(src, /aria-autocomplete="list"/, `${name} composer textarea should expose list autocomplete`);
+  assert.match(src, /aria-haspopup="listbox"/, `${name} composer textarea should advertise the listbox popup`);
   assert.match(
     src,
-    /aria-autocomplete="list"\s+aria-haspopup="listbox"\s+aria-expanded=\{slashSuggestions\.length > 0\}/,
-    `${name} composer textarea should expose listbox popup semantics with aria-expanded tracking the open menu`,
+    /aria-expanded=\{slashSuggestions\.length > 0\}/,
+    `${name} composer textarea should track whether the slash menu is open`,
   );
   assert.doesNotMatch(
     src,

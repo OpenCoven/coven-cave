@@ -161,6 +161,16 @@ assert.match(
   /if \(q\.length < 2\) \{\s*\n\s*setContentHits\(\[\]\);\s*\n\s*setContentLoading\(false\);/,
   "Queries under 2 chars must clear content hits instead of fetching",
 );
+assert.match(
+  source,
+  /const controller = new AbortController\(\);\s*\n\s*setContentHits\(\[\]\);\s*\n\s*setContentLoading\(true\);/,
+  "Starting a new content-search request must clear prior hits during debounce",
+);
+assert.match(
+  source,
+  /if \(!controller\.signal\.aborted\) \{\s*\n\s*setContentHits\(\[\]\);\s*\n\s*setContentLoading\(false\);\s*\n\s*\}/,
+  "Non-abort content-search failures must clear stale hits",
+);
 
 // Title-filtered rows stay primary: sessions already visible by title match
 // are deduped out of the content section, and hits resolve against the
