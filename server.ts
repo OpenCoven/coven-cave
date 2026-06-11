@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { parse } from "node:url";
@@ -8,6 +8,24 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
+
+// Packaged desktop builds (the Tauri sidecar) run this server from inside the
+// .app bundle, where next.config.ts is not shipped. The standalone build
+// serializes the resolved config into .next/required-server-files.json — hand
+// it to Next the same way the generated standalone server.js does, before
+// next() resolves config.
+if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDALONE_CONFIG) {
+  try {
+    const requiredServerFiles = JSON.parse(
+      readFileSync(new URL(".next/required-server-files.json", import.meta.url), "utf8"),
+    ) as { config?: unknown };
+    if (requiredServerFiles.config) {
+      process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(requiredServerFiles.config);
+    }
+  } catch {
+    // Not fatal — fall through to Next's normal config resolution.
+  }
+}
 
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_access_token";

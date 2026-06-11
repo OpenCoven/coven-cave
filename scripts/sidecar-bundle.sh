@@ -100,6 +100,18 @@ echo "==> grafting fresh node_modules → $DEST/node_modules"
 cp -a "$NPM_STAGE/node_modules" "$DEST/node_modules"
 fix_node_pty_spawn_helpers "$DEST/node_modules"
 
+# The standalone tree's server.js is Next's generated entrypoint — it serves
+# the app but has no /api/pty-ws websocket bridge, so the terminal cannot
+# reach a shell through the sidecar. Ship the custom server (server.ts →
+# server.mjs, produced by `pnpm build:server` inside `pnpm build` above);
+# the Tauri launcher prefers server.mjs when present.
+echo "==> shipping custom PTY-bridge server → $DEST/server.mjs"
+if [ ! -f "$ROOT/server.mjs" ]; then
+  echo "ERROR: $ROOT/server.mjs missing after build — build:server should have produced it" >&2
+  exit 1
+fi
+cp "$ROOT/server.mjs" "$DEST/server.mjs"
+
 # But Next.js's compiled server.js requires the standalone's own internal
 # next package layout. Merge any package the standalone shipped that npm
 # didn't reinstall (rare, but cheap to do).
