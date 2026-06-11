@@ -4,13 +4,28 @@ import { draftReminderFromText } from "./reminder-draft.ts";
 
 const now = new Date("2026-06-11T14:00:00.000Z");
 
+// parseWhen resolves wall-clock phrases ("10am", "5pm") in the process
+// timezone, so expected instants must be derived the same way — hard-coded
+// UTC strings only hold in the timezone they were written in (this one
+// failed on UTC CI runners after passing in UTC-5).
+const localISO = (dayOffset, hour) =>
+  new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset, hour, 0).toISOString();
+
+// Bare times roll to the next day once passed (parse-when.ts), so the
+// expectation has to apply the same rule.
+const nextLocalISO = (hour) => {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0);
+  if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+  return d.toISOString();
+};
+
 {
   const draft = draftReminderFromText("review PRs @ tomorrow 10am", now);
 
   assert.equal(draft.ok, true);
   assert.equal(draft.title, "review PRs");
   assert.equal(draft.whenText, "tomorrow 10am");
-  assert.equal(draft.fireAt, "2026-06-12T15:00:00.000Z");
+  assert.equal(draft.fireAt, localISO(1, 10));
   assert.deepEqual(draft.recurrence, { type: "none" });
 }
 
@@ -20,7 +35,7 @@ const now = new Date("2026-06-11T14:00:00.000Z");
   assert.equal(draft.ok, true);
   assert.equal(draft.title, "check deploy");
   assert.equal(draft.whenText, "5pm");
-  assert.equal(draft.fireAt, "2026-06-11T22:00:00.000Z");
+  assert.equal(draft.fireAt, nextLocalISO(17));
 }
 
 {
