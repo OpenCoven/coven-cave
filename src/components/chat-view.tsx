@@ -661,7 +661,9 @@ function metaLineString(args: {
   } else if (args.state === "streaming") {
     if (args.model) parts.push(args.model);
     parts.push(args.lifecycle === "tooling" ? "using tools…" : args.lifecycle === "connecting" || args.lifecycle === "queued" ? "connecting…" : "writing…");
-    parts.push("esc to cancel");
+    // CHAT-D3-06: the "· 14s" ticker + esc hint tail is rendered by MetaLine
+    // itself so the ticking elapsed can live in an aria-hidden span — keeping
+    // the per-second rewrite out of the role="status" live region.
   } else {
     if (args.harness) parts.push(args.harness);
     if (args.model) parts.push(args.model);
@@ -805,6 +807,27 @@ function ChatBackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
+/** CHAT-D3-06: compact ticking elapsed for the streaming/tooling meta line,
+ *  so the wall-clock counter survives past the first token (ThinkingIndicator
+ *  swaps to text and takes its counter with it). Same 1s interval pattern as
+ *  ThinkingIndicator. SR-quiet by construction: the span is aria-hidden INSIDE
+ *  the role="status" live region, so the per-second rewrite is excluded from
+ *  the accessibility tree and never announced (the rewrites-per-second
+ *  problem from CHAT-D12-04). */
+function MetaLineElapsed({ since }: { since: string }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = new Date(since).getTime();
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [since]);
+  return (
+    <span aria-hidden="true" className="cave-chat-meta-line__elapsed">{` · ${elapsed}s`}</span>
+  );
+}
+
 /** Single header row: editable title left, harness/model/status meta right.
  *  Ephemeral state (streaming, failed, daemon offline) recolors the line and
  *  rewrites the meta string instead of emitting separate pills/bars. */
@@ -813,6 +836,7 @@ function MetaLine({
   linkedContext,
   busy,
   lifecycle,
+  pendingSince,
   error,
   daemonRunning,
   durationMs,
@@ -828,6 +852,8 @@ function MetaLine({
   linkedContext: ChatLinkedContext | null;
   busy: boolean;
   lifecycle: ChatTurnLifecycle | null;
+  /** createdAt of the in-flight assistant turn — start of the elapsed ticker. */
+  pendingSince?: string | null;
   error: boolean;
   daemonRunning: boolean | undefined;
   durationMs: number | undefined;
@@ -868,7 +894,11 @@ function MetaLine({
           onSessionsChanged={onSessionsChanged}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta">{meta}</span>
+      <span className="cave-chat-meta-line__meta">
+        {meta}
+        {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
+        {state === "streaming" ? " · esc to cancel" : null}
+      </span>
       {children}
     </div>
   );
@@ -1309,10 +1339,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
-  const activeLifecycle = useMemo(() => {
-    const activeTurn = [...turns].reverse().find((turn) => turn.role === "assistant" && turn.pending);
-    return activeTurn?.lifecycle ?? (busy ? "connecting" : null);
-  }, [busy, turns]);
+  // In-flight assistant turn drives the MetaLine's live state: its lifecycle
+  // picks the phase wording and its createdAt anchors the elapsed ticker
+  // (CHAT-D3-06).
+  const activePendingTurn = useMemo(
+    () => [...turns].reverse().find((turn) => turn.role === "assistant" && turn.pending),
+    [turns],
+  );
+  const activeLifecycle = activePendingTurn?.lifecycle ?? (busy ? "connecting" : null);
   // Latest settled assistant turn feeds the MetaLine's complete-state
   // one-liner: duration plus token usage / cost (CHAT-D12-02).
   const lastSettledAssistantTurn = useMemo(
@@ -1932,10 +1966,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   text: (t.text + ev.text).replace(/\n{3,}/g, "\n\n"),
                   pending: true,
                   lifecycle: "streaming",
+                  // CHAT-D12-01: settle the synthetic row the moment text is
+                  // flowing — the streamed text IS the live signal from here
+                  // on. Leaving it "running" kept the auto-open ProgressGroup
+                  // pulsing for the entire stream.
                   progress: upsertProgressEvent(t.progress, {
                     id: "stream",
                     label: "Receiving response",
-                    status: "running",
+                    status: "done",
                   }),
                 }
               : t,
@@ -2242,6 +2280,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           linkedContext={linkedContext}
           busy={busy}
           lifecycle={activeLifecycle}
+          pendingSince={activePendingTurn?.createdAt ?? null}
           error={!!error}
           daemonRunning={daemonRunning}
           durationMs={lastSettledAssistantTurn?.durationMs}
@@ -2802,6 +2841,12 @@ function TurnRow({
   const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
+  // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
+  // visible text yet), a Queued/Connecting/Writing chip in the same meta row
+  // duplicates it — suppress the chip until text flows or the turn settles.
+  // Settled chips never hit this (pending is false by then), so the Failed
+  // chip that anchors the Retry pill (#416/#420) always renders.
+  const indicatorVisible = Boolean(turn.pending) && !visible;
 
   return (
     <div
@@ -2816,7 +2861,7 @@ function TurnRow({
         <div className="cave-linear-turn-right">
           <div className="cave-linear-turn-meta">
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            {turnStatus !== "complete" && (
+            {turnStatus !== "complete" && !indicatorVisible && (
               <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
                 {lifecycleLabel(turnStatus)}
               </span>
@@ -2842,7 +2887,7 @@ function TurnRow({
           </div>
 
           <div className="cave-linear-turn-body">
-            {turn.pending && !visible ? (
+            {indicatorVisible ? (
               <ThinkingIndicator since={turn.createdAt} />
             ) : (
               <MessageBubble

@@ -304,4 +304,82 @@ assert.match(
   "ChatView passes the settled turn's duration, usage, and cost into MetaLine together (CHAT-D12-02)",
 );
 
+// ── CHAT-D12-01: consolidate simultaneous streaming status signals ──
+
+// (a) While the turn's own live indicator shows (pending, no visible text),
+// the Queued/Connecting/Writing chip in the same meta row is redundant —
+// suppressed until text flows or the turn settles. One shared flag gates both
+// so the chip and the indicator can never double up.
+assert.match(
+  source,
+  /const indicatorVisible = Boolean\(turn\.pending\) && !visible;/,
+  "TurnRow derives a single indicator-visibility flag from pending + visible text (CHAT-D12-01)",
+);
+assert.match(
+  source,
+  /\{turnStatus !== "complete" && !indicatorVisible && \(/,
+  "Lifecycle chip is suppressed while the turn's own ThinkingIndicator is visible (CHAT-D12-01)",
+);
+assert.match(
+  source,
+  /\{indicatorVisible \? \(\s*\n\s*<ThinkingIndicator since=\{turn\.createdAt\} \/>/,
+  "ThinkingIndicator renders off the same flag that suppresses the chip (CHAT-D12-01)",
+);
+// Settled chips stay load-bearing: the suppression must key off pending, so a
+// failed turn (pending: false) always shows the Failed chip that anchors the
+// Retry pill (#416/#420).
+assert.doesNotMatch(
+  source,
+  /const indicatorVisible =[^\n]*turn\.error/,
+  "Indicator-visibility flag must not involve turn.error — settled Failed chips always render (CHAT-D12-01)",
+);
+
+// (b) The synthetic "Receiving response" progress row settles at the first
+// assistant chunk instead of staying "running" for the whole stream — the
+// streamed text itself is the live signal, and the auto-open ProgressGroup
+// quiets down to real connect/tool events.
+assert.match(
+  source,
+  /case "assistant_chunk":[\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
+  "The synthetic Receiving-response row settles (done) at first chunk (CHAT-D12-01)",
+);
+
+// (c) CHAT-D3-06: the MetaLine streaming state carries a compact ticking
+// elapsed ("writing… · 14s · esc to cancel") so the wall-clock counter
+// survives past the first token. SR-quiet: the ticker lives in an aria-hidden
+// span INSIDE the role="status" live region, so the per-second rewrite is
+// excluded from the accessibility tree (the CHAT-D12-04 rewrites-per-second
+// problem); the announced meta string only changes on state transitions.
+assert.match(
+  source,
+  /function MetaLineElapsed\(\{ since \}: \{ since: string \}\)[\s\S]*?setInterval\(tick, 1000\)[\s\S]*?aria-hidden="true"/,
+  "MetaLineElapsed ticks on a 1s interval and renders aria-hidden (CHAT-D3-06)",
+);
+assert.match(
+  source,
+  /\{state === "streaming" && pendingSince \? <MetaLineElapsed since=\{pendingSince\} \/> : null\}\s*\n\s*\{state === "streaming" \? " · esc to cancel" : null\}/,
+  "Streaming meta line renders elapsed between the phase wording and the esc hint (CHAT-D3-06)",
+);
+// The esc hint moved out of metaLineString into MetaLine's JSX so the ticker
+// could slot in before it — the string builder must not duplicate it.
+const metaLineStringBody =
+  source.match(/function metaLineString\([\s\S]*?\n}\n/)?.[0] ?? "";
+assert.ok(metaLineStringBody, "metaLineString body should be extractable (CHAT-D3-06)");
+assert.doesNotMatch(
+  metaLineStringBody,
+  /esc to cancel/,
+  "metaLineString no longer carries the esc hint — MetaLine renders it after the ticker (CHAT-D3-06)",
+);
+// The ticker anchors to the in-flight assistant turn's createdAt.
+assert.match(
+  source,
+  /pendingSince=\{activePendingTurn\?\.createdAt \?\? null\}/,
+  "ChatView anchors the MetaLine ticker to the pending assistant turn (CHAT-D3-06)",
+);
+assert.match(
+  styles,
+  /\.cave-chat-meta-line__elapsed\s*\{[\s\S]*?font-variant-numeric:\s*tabular-nums/,
+  "Elapsed ticker uses tabular digits so the meta line doesn't jitter (CHAT-D3-06)",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");
