@@ -27,6 +27,7 @@ import {
   MAX_FILE_MENTIONS,
 } from "@/lib/file-mention";
 import { Modal } from "@/components/ui/modal";
+import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
@@ -1160,6 +1161,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
   const [input, setInput] = useState("");
+  // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const [inputHistoryIdx, setInputHistoryIdx] = useState<number>(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1195,9 +1199,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // read the live value without re-subscribing.
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
+  const [newTurnsCount, setNewTurnsCount] = useState(0);
   const updateFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
     setFollowing(next);
+    if (next) {
+      // Reset count when returning to the bottom
+      setNewTurnsCount(0);
+    }
   }, []);
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1754,16 +1763,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     resizeComposer();
   }, [input]);
 
+  // CHAT-D10-03: Track new turns arriving while not following
+  const appendTurn = (newTurn: Turn | Turn[]) => {
+    if (!followingRef.current) {
+      setNewTurnsCount((c) => c + (Array.isArray(newTurn) ? newTurn.length : 1));
+    }
+  };
+
   const appendSystem = (text: string) => {
-    setTurns((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        role: "system",
-        text,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    const newTurn = {
+      id: crypto.randomUUID(),
+      role: "system" as const,
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    appendTurn(newTurn);
+    setTurns((prev) => [...prev, newTurn]);
   };
 
   const runCovenExec = async (subcommand: "doctor" | "daemon") => {
@@ -1906,6 +1921,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { id: "connect", label: "Connecting to chat bridge", status: "running", createdAt: now },
       ],
     };
+    appendTurn([userTurn, assistantTurn]);
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
 
     const controller = new AbortController();
@@ -2062,6 +2078,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const outgoingMentions = mentionedFiles
       .filter((p) => text.includes(`@${p}`))
       .slice(0, MAX_FILE_MENTIONS);
+    // CHAT-D11-04: Add to input history
+    setInputHistory((prev) => [...prev, text]);
+    setInputHistoryIdx(-1);
     setInput("");
     setAttachments([]);
     setMentionedFiles([]);
@@ -2342,6 +2361,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
+    // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
+    if (e.key === "ArrowUp" && input === "" && inputHistory.length > 0) {
+      e.preventDefault();
+      const idx = inputHistoryIdx < inputHistory.length - 1 ? inputHistoryIdx + 1 : inputHistoryIdx;
+      setInputHistoryIdx(idx);
+      setInput(inputHistory[inputHistory.length - 1 - idx] ?? "");
+      return;
+    }
+    if (e.key === "ArrowDown" && inputHistoryIdx > 0) {
+      e.preventDefault();
+      const idx = inputHistoryIdx - 1;
+      setInputHistoryIdx(idx);
+      setInput(inputHistory[inputHistory.length - 1 - idx] ?? "");
+      return;
+    }
+    if (e.key === "ArrowDown" && inputHistoryIdx === 0) {
+      e.preventDefault();
+      setInputHistoryIdx(-1);
+      setInput("");
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -2559,8 +2599,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         <div
           className="cave-chat-thread"
           role="log"
-          aria-live="polite"
-          aria-relevant="additions"
           aria-label="Conversation"
         >
           {turns.length === 0 ? (
@@ -2685,7 +2723,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           <div ref={tailRef} />
         </div>
 
-        {/* Scroll-to-bottom FAB */}
+        {/* Scroll-to-bottom FAB (CHAT-D10-03: shows count of new messages) */}
         {!following && (
           <button
             type="button"
@@ -2701,10 +2739,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 window.matchMedia("(prefers-reduced-motion: reduce)").matches;
               el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
             }}
-            aria-label="Scroll to bottom"
+            aria-label={`Scroll to bottom${newTurnsCount ? ` (${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""})` : ""}`}
             className="sticky bottom-4 float-right z-20 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
+            title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
             <Icon name="ph:caret-down-bold" width={12} />
+            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[10px] font-semibold text-white">{newTurnsCount}</span>}
           </button>
         )}
       </div>
@@ -2995,42 +3035,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
 });
 
-// ── ThinkingIndicator ───────────────────────────────────────────────────────────
-// Shown when a familiar is pending but has emitted no text yet.
-// Renders three animated dots + elapsed wall-clock seconds.
-
-function ThinkingIndicator({ since }: { since: string }) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const start = new Date(since).getTime();
-    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [since]);
-
-  return (
-    <div className="flex items-center gap-2 py-2 text-[13px] text-[var(--text-muted)]">
-      {/* Animated dots */}
-      <span className="flex items-center gap-0.5">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="inline-block h-1.5 w-1.5 rounded-full animate-bounce bg-current"
-            style={{
-              animationDelay: `${i * 150}ms`,
-              animationDuration: "900ms",
-            }}
-          />
-        ))}
-      </span>
-      <span className="text-[11px] tabular-nums opacity-60">
-        {elapsed}s
-      </span>
-    </div>
-  );
-}
-
 // ── TurnRow ────────────────────────────────────────────────────────────────────
 
 function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" }) {
@@ -3163,7 +3167,7 @@ function TurnRow({
 
           <div className="cave-linear-turn-body">
             {indicatorVisible ? (
-              <ThinkingIndicator since={turn.createdAt} />
+              <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : (
               <MessageBubble
                 role="assistant"

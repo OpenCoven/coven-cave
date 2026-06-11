@@ -35,7 +35,7 @@ export function ThinkingIndicator({ label = "Thinking", startedAt, className }: 
         <span className="ui-thinking-dot" />
       </span>
       <span>{label}</span>
-      {startedAt ? <span className="ui-thinking-timer">{formatElapsed(elapsed)}</span> : null}
+      {startedAt ? <span className="ui-thinking-timer" aria-live="off">{formatElapsed(elapsed)}</span> : null}
     </div>
   );
 }
