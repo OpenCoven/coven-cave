@@ -446,3 +446,246 @@ assert.match(
   /\.cave-chat-linear \{\s*\n\s*position: relative;/,
   "The chat section must anchor the absolutely-positioned drop overlay",
 );
+
+// — CHAT-D1-04: @-mention repo files in the composer —
+
+// Behavioral: mention token parsing + fuzzy ranking (src/lib/file-mention.ts)
+const { fileMentionToken, filterFileMentions, MAX_FILE_MENTIONS, FILE_MENTION_RESULT_LIMIT } =
+  await import("../lib/file-mention.ts");
+
+assert.deepEqual(
+  fileMentionToken("@", 1),
+  { start: 0, query: "" },
+  "A bare `@` at the start of the composer opens an empty-query mention token",
+);
+assert.deepEqual(
+  fileMentionToken("look at @src/ch", 15),
+  { start: 8, query: "src/ch" },
+  "`@` after whitespace yields the text between the @ and the caret (slashes allowed)",
+);
+assert.equal(
+  fileMentionToken("mail me a@b.com", 15),
+  null,
+  "Mid-word `@` (emails) must not open the picker — the @ must start the text or follow whitespace",
+);
+assert.equal(
+  fileMentionToken("@src foo", 8),
+  null,
+  "Whitespace between the @ and the caret closes the token",
+);
+assert.equal(
+  fileMentionToken("@a@b", 4),
+  null,
+  "A second `@` inside the query invalidates the token",
+);
+assert.deepEqual(
+  fileMentionToken("@src/ch trailing", 7),
+  { start: 0, query: "src/ch" },
+  "Only text up to the caret counts as the query",
+);
+assert.equal(
+  fileMentionToken("/help", 5),
+  null,
+  "A `/` first token is never a mention — slash menu and mention menu stay disjoint",
+);
+
+const mentionIndexFixture = [
+  "src/components/chat-view.tsx",
+  "src/lib/chat-attachments.ts",
+  "src/lib/file-mention.ts",
+  "docs/changelog.md",
+  "chat.ts",
+];
+assert.deepEqual(
+  filterFileMentions(mentionIndexFixture, "chat")[0],
+  "chat.ts",
+  "Basename-prefix matches rank above basename/path substring matches",
+);
+assert.ok(
+  filterFileMentions(mentionIndexFixture, "chat").includes("src/components/chat-view.tsx"),
+  "Basename substring matches are included after prefix matches",
+);
+assert.deepEqual(
+  filterFileMentions(mentionIndexFixture, "scmvt"),
+  ["src/components/chat-view.tsx"],
+  "Subsequence matching catches scattered-character queries",
+);
+assert.deepEqual(
+  filterFileMentions(mentionIndexFixture, "zzz"),
+  [],
+  "Non-matching queries return no rows",
+);
+assert.equal(
+  filterFileMentions(mentionIndexFixture, "", 2).length,
+  2,
+  "The result limit caps the list (empty query returns the head of the index)",
+);
+assert.equal(MAX_FILE_MENTIONS, 10, "Mentions are capped at 10 per send");
+assert.ok(FILE_MENTION_RESULT_LIMIT <= 15, "The picker shows a short list (~12), not the whole index");
+
+// Pins: file-index route mirrors the /api/changes security posture
+const filesRouteSource = readFileSync(
+  new URL("../app/api/project/files/route.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  filesRouteSource,
+  /execFileAsync\("git", args, \{/,
+  "/api/project/files must run git through execFile with an argument array (no shell)",
+);
+assert.doesNotMatch(
+  filesRouteSource,
+  /\bexec\(|shell:\s*true|spawnSync\(/,
+  "/api/project/files must never interpolate the root into a shell command",
+);
+assert.match(
+  filesRouteSource,
+  /if \(!path\.isAbsolute\(root\)\)/,
+  "/api/project/files must reject relative roots",
+);
+assert.match(
+  filesRouteSource,
+  /fs\.realpathSync\(path\.resolve\(root\)\)/,
+  "/api/project/files must realpath the root before use (mirror /api/changes)",
+);
+assert.match(
+  filesRouteSource,
+  /\{ ok: true, repo: false, error: resolved\.error \}/,
+  "Not-a-repo must be a distinct non-error state, not a 4xx/5xx",
+);
+assert.match(
+  filesRouteSource,
+  /"ls-files",\s*\n\s*"-z",\s*\n\s*"--cached",\s*\n\s*"--others",\s*\n\s*"--exclude-standard",/,
+  "The index must list tracked plus untracked-but-not-ignored files, NUL-separated",
+);
+assert.match(
+  filesRouteSource,
+  /const MAX_FILES = 5000;/,
+  "The index must cap at ~5000 paths",
+);
+assert.match(
+  filesRouteSource,
+  /truncated = all\.length > MAX_FILES/,
+  "An over-cap index must set the truncated flag",
+);
+assert.match(
+  filesRouteSource,
+  /const CACHE_TTL_MS = 10_000;[\s\S]*Date\.now\(\) - cached\.at < CACHE_TTL_MS/,
+  "The route must keep a ~10s module-level cache keyed by root",
+);
+
+// Pins: composer mention picker (chat-view.tsx)
+const mentionSource = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+assert.match(
+  mentionSource,
+  /const mentionRoot = \(session\?\.project_root\?\.trim\(\) \|\| cwdDraft\.trim\(\) \|\| projectRoot \|\| ""\)\.trim\(\);/,
+  "The mention root must come from the same sources the send body uses: session root, CWD draft, projectRoot prop",
+);
+assert.match(
+  mentionSource,
+  /\/api\/project\/files\?root=\$\{encodeURIComponent\(mentionRoot\)\}/,
+  "The picker must fetch the file index for the chat's project root",
+);
+assert.match(
+  mentionSource,
+  /id=\{mentionListboxId\} role="listbox" aria-label="Workspace files"/,
+  "The mention popover must be a listbox (ARIA parity with the slash menu, #423)",
+);
+assert.match(
+  mentionSource,
+  /role="option"\s*\n\s*id=\{`\$\{mentionListboxId\}-opt-\$\{i\}`\}\s*\n\s*aria-selected=\{active\}/,
+  "Mention rows must be aria-selected options with stable ids for aria-activedescendant",
+);
+assert.match(
+  mentionSource,
+  /const mentionAriaOverrides: React\.AriaAttributes = mentionOpen\s*\n\s*\? \{\s*\n\s*"aria-expanded": true,\s*\n\s*"aria-controls": mentionListboxId,\s*\n\s*"aria-activedescendant": `\$\{mentionListboxId\}-opt-\$\{mentionIdx\}`,/,
+  "While the mention picker is open it must override the combobox ARIA (expanded/controls/activedescendant) — the menus are disjoint, so the closed slash wiring yields",
+);
+assert.match(
+  mentionSource,
+  /\{\.\.\.mentionAriaOverrides\}/,
+  "The composer textarea must apply the mention ARIA overrides after the slash wiring (later JSX attributes win)",
+);
+
+// Esc precedence (#402): mention dismiss → slash dismiss → busy cancel.
+const mentionComposerKey = mentionSource.match(/const onComposerKey = [\s\S]*?\n  \};/)?.[0] ?? "";
+assert.match(
+  mentionComposerKey,
+  /if \(mentionOpen\) \{[\s\S]*?setMentionDismissed\(true\)/,
+  "Esc with the mention picker open must dismiss the picker",
+);
+assert.ok(
+  mentionComposerKey.indexOf("if (mentionOpen) {") <
+    mentionComposerKey.indexOf("if (slashSuggestions.length > 0) {"),
+  "The mention branch must run before the slash branch in onComposerKey",
+);
+assert.ok(
+  mentionComposerKey.indexOf("setMentionDismissed(true)") <
+    mentionComposerKey.indexOf("setSlashDismissed(true)") &&
+    mentionComposerKey.indexOf("setSlashDismissed(true)") <
+      mentionComposerKey.indexOf("cancelSend()"),
+  "Esc precedence: mention dismiss before slash dismiss before busy-cancel",
+);
+assert.match(
+  mentionComposerKey,
+  /if \(e\.key === "Tab" \|\| \(e\.key === "Enter" && !e\.shiftKey\)\) \{[\s\S]*?selectMention\(file\)/,
+  "Enter/Tab must insert the highlighted file, never send the draft, while the picker is open",
+);
+assert.match(
+  mentionSource,
+  /setMentionIdx\(0\);\s*\n\s*setMentionDismissed\(false\);/,
+  "Editing the input must re-arm a dismissed mention picker",
+);
+
+// Selection semantics: inline `@path` token + mentionedFiles in the send body.
+assert.match(
+  mentionSource,
+  /const insert = `@\$\{relPath\} `;[\s\S]*?input\.slice\(0, mentionToken\.start\) \+ insert \+ input\.slice\(composerCaret\)/,
+  "Selecting a file must replace the `@query` token with the relative path inline (Claude Code convention)",
+);
+assert.match(
+  mentionSource,
+  /\.\.\.\(outgoingMentions\.length && mentionRoot\s*\n\s*\? \{\s*\n\s*mentionedFiles: outgoingMentions\.slice\(0, MAX_FILE_MENTIONS\),\s*\n\s*mentionedFilesRoot: mentionRoot,/,
+  "The send body must carry mentionedFiles plus the root they are relative to",
+);
+assert.match(
+  mentionSource,
+  /mentionedFiles\s*\n?\s*\.filter\(\(p\) => text\.includes\(`@\$\{p\}`\)\)/,
+  "Only mentions whose @path token survived editing may ride the send",
+);
+assert.match(
+  mentionSource,
+  /setInput\(""\);\s*\n\s*setAttachments\(\[\]\);\s*\n\s*setMentionedFiles\(\[\]\);/,
+  "Sending must clear staged mentions with the composer",
+);
+
+// Pins: send route validates mentions and appends the prompt block.
+const mentionSendSource = readFileSync(
+  new URL("../app/api/chat/send/route.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  mentionSendSource,
+  /async function resolveMentionedFiles\([\s\S]*?relPaths\.slice\(0, MAX_MENTIONED_FILES\)[\s\S]*?\.includes\("\.\."\)[\s\S]*?candidate\.startsWith\(realRoot \+ path\.sep\)/,
+  "/chat/send must validate each mention: cap, repo-relative only, no `..`, prefix containment under the realpathed root",
+);
+assert.match(
+  mentionSendSource,
+  /const real = await realpath\(candidate\);[\s\S]*?real\.startsWith\(realRoot \+ path\.sep\)/,
+  "/chat/send must re-check containment on the realpathed file so in-repo symlinks cannot smuggle outside paths",
+);
+assert.match(
+  mentionSendSource,
+  /"Referenced files \(open with the Read tool\):",\s*\n\s*\.\.\.absPaths\.map\(\(p\) => `- \$\{p\}`\)/,
+  "Validated mentions must render as the compact Referenced-files prompt block of absolute paths",
+);
+assert.match(
+  mentionSendSource,
+  /appendMentionedFilesBlock\(\s*\n\s*buildPromptWithAttachments\(/,
+  "The mention block must join the prompt at the attachment prompt-build site",
+);
+assert.match(
+  mentionSendSource,
+  /const mentionedFiles = imagesSupported\s*\n\s*\? await resolveMentionedFiles\(\s*\n\s*body\.mentionedFiles,\s*\n\s*body\.mentionedFilesRoot \?\? body\.projectRoot,/,
+  "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the client-supplied root",
+);
