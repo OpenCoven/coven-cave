@@ -33,6 +33,10 @@ import {
 } from "@/lib/task-chat-context";
 import { extractLinks } from "@/lib/link-extractor";
 import { routeLinkHandler } from "@/app/api/library/route-link/route";
+import {
+  buildSshSpawnArgs,
+  isSshRuntime,
+} from "@/lib/familiar-runtime";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -538,16 +542,7 @@ export async function POST(req: Request) {
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
-  const cwd = await resolveCwd(body.projectRoot);
-  // Resolve familiar workspace for identity context. When a project root is
-  // explicitly set, the harness boots there (and should have the familiar's
-  // AGENTS.md injected separately). When there's no project root, boot in the
-  // familiar's own workspace so the selected harness picks up AGENTS.md /
-  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
-  // generic CLI identity.
-  const familiarWorkspace = !body.projectRoot
-    ? await resolveFamiliarWorkspace(body.familiarId)
-    : undefined;
+  const sshRuntime = isSshRuntime(binding.runtime) ? binding.runtime : null;
 
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
@@ -572,7 +567,7 @@ export async function POST(req: Request) {
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
-  if (binding.harness === "openclaw") {
+  if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
       req,
       body,
@@ -582,11 +577,32 @@ export async function POST(req: Request) {
     });
   }
 
+  const cwd = sshRuntime ? homedir() : await resolveCwd(body.projectRoot);
+  // Resolve familiar workspace for identity context. When a project root is
+  // explicitly set, the harness boots there (and should have the familiar's
+  // AGENTS.md injected separately). When there's no project root, boot in the
+  // familiar's own workspace so the selected harness picks up AGENTS.md /
+  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
+  // generic CLI identity. SSH runtimes own their remote cwd, so never stat the
+  // local filesystem for a remote familiar.
+  const familiarWorkspace = !sshRuntime && !body.projectRoot
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
+
   // Build coven run argv.
   // Important: pass every flag BEFORE the prompt and add a `--` separator,
   // because `<PROMPT>...` is a variadic positional in coven's clap definition
   // and otherwise swallows trailing flags like `--stream-json` as raw text.
   const buildArgs = (resumeSessionId: string | null): string[] => {
+    if (sshRuntime) {
+      return buildSshSpawnArgs({
+        runtime: sshRuntime,
+        harness: binding.harness,
+        familiarId: body.familiarId,
+        prompt: harnessPrompt,
+        sessionId: resumeSessionId,
+      });
+    }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     // Inject identity preamble. coven-cli renders this through the best
@@ -769,17 +785,32 @@ export async function POST(req: Request) {
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
           const attemptStartedAt = Date.now();
-          pushProgress("harness-start", `Starting ${binding.harness}`, "running", familiarWorkspace ?? cwd);
-          const child = spawn(covenBin(), spawnArgs, {
-            // Spawn IN the familiar's workspace when no project root was
-            // supplied, so coven's project-root resolver picks that dir as
-            // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-            // from the familiar's home. When a project root IS supplied,
-            // honor that instead.
-            cwd: familiarWorkspace ?? cwd,
-            stdio: ["ignore", "pipe", "pipe"],
-            env: covenSpawnEnv(),
-          });
+          pushProgress(
+            "harness-start",
+            `Starting ${binding.harness}`,
+            "running",
+            sshRuntime
+              ? `${sshRuntime.host}:${sshRuntime.cwd}`
+              : familiarWorkspace ?? cwd,
+          );
+          const child = sshRuntime
+            ? (() => {
+                const sshArgs = spawnArgs;
+                return spawn("ssh", sshArgs, {
+                  stdio: ["ignore", "pipe", "pipe"],
+                  env: covenSpawnEnv(),
+                });
+              })()
+            : spawn(covenBin(), spawnArgs, {
+                // Spawn IN the familiar's workspace when no project root was
+                // supplied, so coven's project-root resolver picks that dir as
+                // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                // from the familiar's home. When a project root IS supplied,
+                // honor that instead.
+                cwd: familiarWorkspace ?? cwd,
+                stdio: ["ignore", "pipe", "pipe"],
+                env: covenSpawnEnv(),
+              });
 
           const onAbort = () => {
             try {
@@ -824,7 +855,9 @@ export async function POST(req: Request) {
                 kind: "error",
                 code: "ENOENT",
                 message:
-                  "coven CLI not found on PATH. Open Setup to install it, then try again.",
+                  sshRuntime
+                    ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
+                    : "coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
               push({ kind: "error", message: err.message });

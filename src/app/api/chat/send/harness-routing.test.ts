@@ -37,8 +37,20 @@ assert.doesNotMatch(
 
 assert.match(
   chatRoute,
-  /if \(binding\.harness === "openclaw"\)/,
+  /if \(binding\.harness === "openclaw" && !sshRuntime\)/,
   "OpenClaw native chat should use its agent CLI bridge instead of coven run",
+);
+
+assert.match(
+  chatRoute,
+  /const sshRuntime = isSshRuntime\(binding\.runtime\) \? binding\.runtime : null;[\s\S]*buildSshSpawnArgs/,
+  "SSH runtime familiars should build SSH argv before local process spawning",
+);
+
+assert.match(
+  chatRoute,
+  /spawn\("ssh", sshArgs/,
+  "SSH runtime chat should spawn the local ssh binary with prebuilt argv instead of shell-concatenating locally",
 );
 
 assert.match(
