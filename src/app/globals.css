@@ -3234,13 +3234,13 @@ select {
 }
 
 /* ────────────────────────────────────────────────
-   Top bar — quiet command-first frame: centered ⌘K search,
-   right cluster for handoff · bell · account. Sidebar carries
-   brand/identity/nav (no breadcrumb, no Home button).
+   Mobile top bar — drawer controls plus compact search/account actions.
+   Desktop keeps the app chrome headerless; sidebar carries navigation and
+   keyboard shortcuts keep search available.
    ──────────────────────────────────────────────── */
 
 .top-bar {
-  display: grid;
+  display: none;
   grid-template-columns: 1fr minmax(auto, 560px) 1fr;
   align-items: center;
   gap: 12px;
@@ -3950,6 +3950,7 @@ select {
    top edge. */
 @media (max-width: 1023px) {
   .top-bar {
+    display: grid;
     grid-template-columns: 1fr auto 1fr;
     padding: 0 calc(8px + var(--sai-right)) 0 calc(8px + var(--sai-left));
     padding-top: var(--sai-top);
