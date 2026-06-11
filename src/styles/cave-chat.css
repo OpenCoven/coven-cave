@@ -1114,6 +1114,89 @@ details[open] > .cave-tool-summary::before {
   50%      { opacity: 1; }
 }
 
+/* ── In-transcript find bar (CHAT-D9-04) ────────────────────────────────── */
+/* Expanded state extends the meta line: a hairline pill housing the query
+   input, the `n / m` matching-turn count, and prev/next/close controls. */
+.cave-chat-find {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-base) 60%, transparent);
+  padding: 1px 6px;
+}
+
+.cave-chat-find:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-strong));
+}
+
+.cave-chat-find__input {
+  width: 10rem;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 20px;
+}
+
+.cave-chat-find__input::placeholder {
+  color: var(--text-muted);
+}
+
+.cave-chat-find__count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cave-chat-find__nav {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--text-muted);
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-find__nav:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.cave-chat-find__nav:disabled {
+  opacity: 0.4;
+}
+
+/* Temporary flash on the turn a find jump landed on. One-shot 1.5s fade —
+   the global reduced-motion kill switch (globals.css) clamps the keyframe's
+   duration, and the explicit block below swaps the flash for a static tint
+   so the landing turn stays findable without motion. */
+.cave-turn-found {
+  animation: cave-turn-found-fade 1.5s ease-out 1;
+}
+
+@keyframes cave-turn-found-fade {
+  0%   { background: color-mix(in oklch, var(--accent-presence) 18%, transparent); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-turn-found {
+    animation: none;
+    background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  }
+}
+
 /* Linked context row (chips for task / GitHub items) */
 .cave-chat-linked-context {
   display: flex;
