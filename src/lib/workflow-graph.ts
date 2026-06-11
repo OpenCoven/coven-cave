@@ -13,7 +13,7 @@ export type WorkflowGraphNodeData = {
 
 export type WorkflowGraphNode = {
   id: string;
-  type: "workflow";
+  type: "workflowStep";
   position: {
     x: number;
     y: number;
@@ -61,7 +61,7 @@ export function workflowToGraph(workflow: WorkflowSummary, dryRun?: WorkflowDryR
   const nodes = steps.map((step, index): WorkflowGraphNode => {
     return {
       id: step.id,
-      type: "workflow",
+      type: "workflowStep",
       position: {
         x: 80 + index * 220,
         y: 90 + (index % 2) * 130,

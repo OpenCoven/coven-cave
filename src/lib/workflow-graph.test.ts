@@ -23,6 +23,7 @@ const graph = workflowToGraph(workflow);
 assert.equal(graph.nodes.length, 4, "each workflow step becomes a graph node");
 assert.equal(graph.edges.length, 3, "sequential workflows connect adjacent steps");
 assert.equal(graph.nodes[0].id, "gate", "node IDs use stable step IDs");
+assert.equal(graph.nodes[0].type, "workflowStep", "graph nodes use the workflow step renderer type");
 assert.equal(graph.nodes[0].data.kind, "human-gate", "node data preserves step kind");
 assert.equal(graph.nodes[0].data.tone, "gate", "human gates use gate tone");
 assert.equal(graph.nodes[1].position.x > graph.nodes[0].position.x, true, "nodes are laid out left to right");
