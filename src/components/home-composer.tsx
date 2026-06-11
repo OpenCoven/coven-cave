@@ -167,7 +167,8 @@ export function HomeComposer({
           return;
         }
       }
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      // plain Enter sends; Shift+Enter inserts newline
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         void handleSubmit();
         return;

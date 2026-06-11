@@ -114,7 +114,7 @@ export function DockChat({ onSubmit }: DockChatProps) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
           }}
         />
         <button
