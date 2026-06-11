@@ -123,11 +123,13 @@ export function InspectorPane({
     orientation: "horizontal",
   });
 
-  useEffect(() => {
-    const next = INSPECTOR_TABS[activeIndex];
-    if (next && next !== tab) setTab(next);
-  }, [activeIndex, tab]);
-
+  // `tab` is the single source of truth. The roving tab stop follows it
+  // one-way; selection follows focus (onFocus on each tab button, per the
+  // ARIA APG tabs pattern) so arrow-key roving still switches tabs. The
+  // previous BIDIRECTIONAL effect pair (activeIndex → setTab as well)
+  // oscillated forever whenever tab !== memory: each effect saw the other's
+  // stale half and flipped it back every commit, flickering the pane
+  // between Memory and the selected tab.
   useEffect(() => {
     const tabIndex = INSPECTOR_TABS.indexOf(tab);
     if (tabIndex >= 0 && tabIndex !== activeIndex) setActiveIndex(tabIndex);
@@ -174,6 +176,7 @@ export function InspectorPane({
                 aria-selected={isActive}
                 aria-controls={`inspector-panel-${t}`}
                 onClick={() => setTab(t)}
+                onFocus={() => setTab(t)}
                 className={[
                   "relative flex-1 px-3 py-2.5 font-medium tracking-normal transition-colors outline-none",
                   "after:absolute after:bottom-0 after:left-3 after:right-3 after:h-[2px] after:rounded-full after:transition-colors",

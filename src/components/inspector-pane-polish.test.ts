@@ -64,3 +64,21 @@ test("inspector empty helper imports IconName for type-safe icon prop", () => {
   assert.match(src, /import \{ Icon, type IconName \} from "@\/lib\/icon"/, "IconName imported");
   assert.match(src, /icon: IconName;/, "InspectorEmpty.icon typed as IconName");
 });
+
+// ── Tab flicker regression ────────────────────────────────────────────────
+// The roving-tabindex sync must be ONE-WAY (tab → activeIndex). The old
+// bidirectional pair oscillated forever on any non-memory tab: activeIndex
+// dragged tab back to memory while tab pushed activeIndex forward, every
+// commit, flickering the pane.
+assert.doesNotMatch(  src,
+  /INSPECTOR_TABS\[activeIndex\][\s\S]{0,120}setTab/,
+  "activeIndex must never drive setTab — that effect pair oscillates on non-memory tabs",
+);
+assert.match(  src,
+  /const tabIndex = INSPECTOR_TABS\.indexOf\(tab\);\s*if \(tabIndex >= 0 && tabIndex !== activeIndex\) setActiveIndex\(tabIndex\)/,
+  "roving tab stop follows the selected tab one-way",
+);
+assert.match(  src,
+  /onFocus=\{\(\) => setTab\(t\)\}/,
+  "selection follows focus so arrow-key roving still switches tabs (ARIA APG)",
+);
