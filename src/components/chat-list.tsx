@@ -252,7 +252,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         {/* Brand accent bar */}
         <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-[var(--accent-presence)]/50 to-transparent" />
 
-        {/* Identity row */}
+        {/* Identity row — only in all-familiars mode. With a familiar
+            already selected, the sidebar carries its identity; repeating
+            the name here is duplicate chrome. */}
+        {!familiar && (
         <div className="px-4 pb-0 pt-4">
           <div className="flex min-w-0 items-start gap-3">
             {/* Avatar — larger + glyph-forward */}
@@ -302,9 +305,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             </button>
           </div>
         </div>
+        )}
 
         {/* Stats row */}
-        <div className="mt-3 grid grid-cols-3 gap-1.5 px-4">
+        <div className={`${familiar ? "pt-4" : "mt-3"} grid grid-cols-3 gap-1.5 px-4`}>
           <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
             <div className="flex items-center gap-1.5">
               <Icon name="ph:chats" width={11} className="text-[var(--text-muted)]" />
@@ -367,6 +371,19 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               : <Icon name="ph:circle" width={12} />}
             Unreads
           </button>
+
+          {/* With the identity row hidden, the + Chat CTA lives here */}
+          {familiar && (
+            <button
+              type="button"
+              onClick={() => onNewChat(undefined, fallbackFamiliarId)}
+              disabled={!fallbackFamiliarId}
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+            >
+              <Icon name="ph:plus-bold" width={11} />
+              Chat
+            </button>
+          )}
         </div>
       </header>
 

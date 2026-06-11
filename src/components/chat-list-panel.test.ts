@@ -57,3 +57,15 @@ assert.doesNotMatch(
   /flex h-full flex-col items-center justify-center gap-4 px-8 text-center/,
   "ChatList should not keep the sparse centered empty-state layout from the screenshot",
 );
+
+assert.match(
+  source,
+  /\{!familiar && \(\s*<div className="px-4 pb-0 pt-4">/,
+  "Dossier identity row (avatar + name + role) renders only in all-familiars mode — the sidebar already names the selected familiar",
+);
+
+assert.match(
+  source,
+  /\{familiar && \(\s*<button[\s\S]*?onNewChat\(undefined, fallbackFamiliarId\)/,
+  "With the identity row hidden, the + Chat CTA moves into the search/filter row",
+);
