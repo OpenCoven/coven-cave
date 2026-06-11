@@ -284,6 +284,26 @@ assert.match(
   "Assistant turn meta row appends the muted usage/cost readout after the timestamp (CHAT-D12-02)",
 );
 
+// ── CHAT-D9-04: find highlight timer cleanup ──
+
+assert.match(
+  source,
+  /const clearFoundHighlightTimer = useCallback\(\(\) => \{[\s\S]*?window\.clearTimeout\(foundClearTimerRef\.current\);[\s\S]*?foundClearTimerRef\.current = null;/,
+  "Find highlight timer cleanup should clear and null the pending timeout",
+);
+
+assert.match(
+  source,
+  /const closeFind = useCallback\(\(\) => \{[\s\S]*?clearFoundHighlightTimer\(\);[\s\S]*?setFoundTurnId\(null\);/,
+  "Closing find should clear the pending highlight timer before resetting foundTurnId",
+);
+
+assert.match(
+  source,
+  /useEffect\(\(\) => \{[\s\S]*?setFindOpen\(false\);[\s\S]*?clearFoundHighlightTimer\(\);[\s\S]*?setFoundTurnId\(null\);[\s\S]*?\}, \[clearFoundHighlightTimer, sessionId\]\);/,
+  "Switching sessions should clear the pending find highlight timer",
+);
+
 // MetaLine complete state extends the existing one-liner format:
 // "… · 7s · 12.4k tok · $0.08" — and stays silent when there is no usage.
 assert.match(

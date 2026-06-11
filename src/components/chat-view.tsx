@@ -1165,6 +1165,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const foundClearTimerRef = useRef<number | null>(null);
   const lastJumpedQueryRef = useRef("");
 
+  const clearFoundHighlightTimer = useCallback(() => {
+    if (foundClearTimerRef.current !== null) {
+      window.clearTimeout(foundClearTimerRef.current);
+      foundClearTimerRef.current = null;
+    }
+  }, []);
+
   // Debounce the query ~150ms so matching doesn't churn per keystroke.
   useEffect(() => {
     if (!findOpen) return;
@@ -1209,17 +1216,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       el?.scrollIntoView({ block: "center", behavior: "auto" });
       // Restart the 1.5s highlight fade even when re-landing on the same
       // turn: clear, then re-set on the next frame so the class re-applies.
-      if (foundClearTimerRef.current !== null) window.clearTimeout(foundClearTimerRef.current);
+      clearFoundHighlightTimer();
       setFoundTurnId(null);
       requestAnimationFrame(() => setFoundTurnId(id));
-      foundClearTimerRef.current = window.setTimeout(() => setFoundTurnId(null), 1500);
+      foundClearTimerRef.current = window.setTimeout(() => {
+        setFoundTurnId(null);
+        foundClearTimerRef.current = null;
+      }, 1500);
     },
-    [updateFollowing],
+    [clearFoundHighlightTimer, updateFollowing],
   );
 
-  useEffect(() => () => {
-    if (foundClearTimerRef.current !== null) window.clearTimeout(foundClearTimerRef.current);
-  }, []);
+  useEffect(() => () => clearFoundHighlightTimer(), [clearFoundHighlightTimer]);
 
   // A fresh (debounced) query jumps to its first matching turn. Guarded by
   // ref so turns-driven recomputes (e.g. streaming) never re-trigger a jump.
@@ -1252,10 +1260,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindDebouncedQuery("");
     lastJumpedQueryRef.current = "";
     setFindActiveIdx(0);
+    clearFoundHighlightTimer();
     setFoundTurnId(null);
     // Esc hands focus back to the composer.
     inputRef.current?.focus();
-  }, []);
+  }, [clearFoundHighlightTimer]);
 
   // Reset find when switching sessions — match indices are per-transcript.
   useEffect(() => {
@@ -1264,8 +1273,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setFindDebouncedQuery("");
     lastJumpedQueryRef.current = "";
     setFindActiveIdx(0);
+    clearFoundHighlightTimer();
     setFoundTurnId(null);
-  }, [sessionId]);
+  }, [clearFoundHighlightTimer, sessionId]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F
