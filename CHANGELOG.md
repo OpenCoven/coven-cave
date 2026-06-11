@@ -7,6 +7,21 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.65] — 2026-06-10
+
+### Added
+- **Library PDF papers** — Library reading items can point at local PDF files, with an inline PDF viewer and a guarded `/api/library/pdf` route for files in `~/.coven/library/papers`.
+- **Understand-Anything graph loading** — Library graph now prefers `.understand-anything/knowledge-graph.json` output, preserving typed node/edge metadata while falling back to the older Graphify output path when needed.
+
+### Changed
+- **Library storage root** — Library data now lives under `~/.coven/library` alongside other Cave state, with `CAVE_LIBRARY_DIR` still available as an override.
+- **Desktop chrome** — desktop Cave runs without the global top header while keeping the mobile/tablet top bar available for drawer controls. (#360)
+
+### Fixed
+- **Browser toolbar visibility** — the desktop browser pane now keeps its back/forward/address toolbar in flow and aligns the native Tauri child webview bounds with the visible pane.
+- **First-message chat continuity** — new chats keep their optimistic in-flight transcript visible while the daemon session id is promoted, instead of briefly replacing it with an unavailable-history state. (#361)
+- **Desktop window scroll** — the desktop shell regression now asserts the hidden top bar does not reintroduce window-level vertical scrolling. (#360)
+
 ## [0.0.64] — 2026-06-10
 
 ### Changed
