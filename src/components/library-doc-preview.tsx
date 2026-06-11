@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { sanitizeHtml } from "@/lib/html-sanitize";
@@ -25,7 +25,9 @@ export type SelectedItem =
   | { kind: "skill"; skill: Skill }
   | null;
 
-type Props = { selected: SelectedItem; loading: boolean; activeSection?: LibrarySectionKind };
+export type DocNav = { index: number; total: number; onPrev: () => void; onNext: () => void };
+
+type Props = { selected: SelectedItem; loading: boolean; activeSection?: LibrarySectionKind; docNav?: DocNav };
 
 const EMPTY_TEXT: Record<LibrarySectionKind, string> = {
   all: "Select an item to preview",
@@ -452,8 +454,45 @@ function GitHubDetail({ item }: { item: LibraryGitHubItem }) {
   );
 }
 
-function DocDetail({ doc }: { doc: LibraryDocBody }) {
+/** Strip a leading markdown H1 that repeats the document title — the
+ *  preview/reader headers already display it, so rendering the body's H1
+ *  shows the title twice before any content. */
+function stripLeadingTitleHeading(body: string, title: string): string {
+  const normalize = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const lines = body.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  const m = lines[i]?.match(/^#\s+(.+?)\s*$/);
+  if (!m || normalize(m[1]) !== normalize(title)) return body;
+  i++;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  return lines.slice(i).join("\n");
+}
+
+const READER_FONT_KEY = "cave:library:reader-font";
+const READER_FONT_SIZES = [15, 17, 19, 21];
+
+function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
   const [readerOpen, setReaderOpen] = useState(false);
+
+  const renderBody = stripLeadingTitleHeading(doc.body, doc.title);
+
+  // Reader font size — persisted, stepped through READER_FONT_SIZES.
+  const [readerFont, setReaderFont] = useState(17);
+  useEffect(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(READER_FONT_KEY));
+      if (READER_FONT_SIZES.includes(stored)) setReaderFont(stored);
+    } catch { /* private mode */ }
+  }, []);
+  const stepReaderFont = (dir: 1 | -1) => {
+    setReaderFont((current) => {
+      const idx = READER_FONT_SIZES.indexOf(current);
+      const next = READER_FONT_SIZES[Math.max(0, Math.min(READER_FONT_SIZES.length - 1, idx + dir))];
+      try { window.localStorage.setItem(READER_FONT_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   // Reading time estimate
   const wordCount = doc.body.split(/\s+/).filter(Boolean).length;
@@ -539,6 +578,24 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
       const text = el.textContent ?? "";
       const id = "reader-toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       el.id = id;
+      // Hover copy-link anchor: copies <path>#<slug>. DOM-appended (same
+      // idiom as the id/aria-current mutations above) so RenderedMarkdown
+      // stays markdown-agnostic.
+      if (!el.querySelector(".library-heading-anchor")) {
+        const slug = id.replace(/^reader-toc-/, "");
+        const anchor = document.createElement("button");
+        anchor.type = "button";
+        anchor.className = "library-heading-anchor";
+        anchor.title = "Copy link to section";
+        anchor.setAttribute("aria-label", `Copy link to section ${text}`);
+        anchor.textContent = "⌗";
+        anchor.addEventListener("click", () => {
+          void navigator.clipboard.writeText(`${doc.absolutePath ?? doc.id}#${slug}`);
+          anchor.textContent = "✓";
+          window.setTimeout(() => { anchor.textContent = "⌗"; }, 1200);
+        });
+        el.appendChild(anchor);
+      }
       return { id, text, level: parseInt(el.tagName[1]) };
     });
     setReaderTocItems(items);
@@ -616,12 +673,18 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
       } else if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
         jumpToHeading(-1);
+      } else if (e.key === "ArrowLeft" && docNav && docNav.index > 0) {
+        e.preventDefault();
+        docNav.onPrev();
+      } else if (e.key === "ArrowRight" && docNav && docNav.index < docNav.total - 1) {
+        e.preventDefault();
+        docNav.onNext();
       }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readerOpen, readerTocItems, activeReaderTocId]);
+  }, [readerOpen, readerTocItems, activeReaderTocId, docNav]);
 
   const hasToc = tocItems.length >= 3;
   const hasReaderToc = readerTocItems.length >= 3;
@@ -682,29 +745,6 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
     </div>
   );
 
-  const actionBar = (inReader = false) => (
-    <div className="library-preview-actions library-preview-actions--bar">
-      <button
-        type="button"
-        className="library-preview-action-btn"
-        title="Open in VS Code"
-        onClick={() => { if (doc.absolutePath) void openUrl(`vscode://file${doc.absolutePath}`, "vscode-file"); }}
-      >
-        <Icon name="ph:code" width={13} />
-        <span>Open in editor</span>
-      </button>
-      <CopyButton text={`~/.openclaw/workspace/sage/${doc.id}`} label="Copy path" />
-      <button
-        type="button"
-        className="library-preview-action-btn library-reader-btn"
-        title={inReader ? "Exit reader mode" : "Reader mode"}
-        onClick={() => setReaderOpen((v) => !v)}
-      >
-        <Icon name={inReader ? "ph:arrows-in-simple" : "ph:book-open"} width={13} />
-        <span>{inReader ? "Exit reader" : "Reader mode"}</span>
-      </button>
-    </div>
-  );
 
   return (
     <>
@@ -719,7 +759,7 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
           onScroll={handleScroll}
           className={hasToc ? "library-preview-body library-preview-body--with-toc" : "library-preview-body"}
         >
-          <RenderedMarkdown text={doc.body} containerRef={mdRef} />
+          <RenderedMarkdown text={renderBody} containerRef={mdRef} />
           {hasToc && (
             <TocPanel items={tocItems} activeId={activeTocId} mdRef={mdRef} />
           )}
@@ -736,7 +776,7 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
           aria-label={`Reader: ${doc.title}`}
           tabIndex={-1}
         >
-          <div className="library-reader-modal">
+          <div className="library-reader-modal" style={{ "--reader-font-size": `${readerFont}px` } as CSSProperties}>
             {/* Reader scroll progress bar */}
             <div className="library-scroll-progress">
               <div className="library-scroll-progress-fill" style={{ width: `${readerScrollPct}%` }} />
@@ -756,14 +796,75 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
                   </>
                 )}
               </div>
-              <button
-                type="button"
-                className="library-reader-close"
-                onClick={() => setReaderOpen(false)}
-                title="Close reader (Esc)"
-              >
-                <Icon name="ph:x" width={15} />
-              </button>
+              <div className="library-reader-actions">
+                {docNav && docNav.total > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="library-reader-iconbtn"
+                      onClick={docNav.onPrev}
+                      disabled={docNav.index <= 0}
+                      title="Previous document (←)"
+                      aria-label="Previous document"
+                    >
+                      <Icon name="ph:caret-left" width={13} />
+                    </button>
+                    <span className="library-reader-navpos" aria-live="polite">
+                      {docNav.index + 1}/{docNav.total}
+                    </span>
+                    <button
+                      type="button"
+                      className="library-reader-iconbtn"
+                      onClick={docNav.onNext}
+                      disabled={docNav.index >= docNav.total - 1}
+                      title="Next document (→)"
+                      aria-label="Next document"
+                    >
+                      <Icon name="ph:caret-right" width={13} />
+                    </button>
+                    <span className="library-reader-actions-sep" aria-hidden />
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="library-reader-iconbtn"
+                  onClick={() => stepReaderFont(-1)}
+                  disabled={readerFont <= READER_FONT_SIZES[0]}
+                  title="Smaller text"
+                  aria-label="Decrease text size"
+                >
+                  <span className="text-[11px] font-semibold">A−</span>
+                </button>
+                <button
+                  type="button"
+                  className="library-reader-iconbtn"
+                  onClick={() => stepReaderFont(1)}
+                  disabled={readerFont >= READER_FONT_SIZES[READER_FONT_SIZES.length - 1]}
+                  title="Larger text"
+                  aria-label="Increase text size"
+                >
+                  <span className="text-[13px] font-semibold">A+</span>
+                </button>
+                <span className="library-reader-actions-sep" aria-hidden />
+                <button
+                  type="button"
+                  className="library-reader-iconbtn"
+                  onClick={() => { if (doc.absolutePath) void openUrl(`vscode://file${doc.absolutePath}`, "vscode-file"); }}
+                  title="Open in editor"
+                  aria-label="Open in editor"
+                >
+                  <Icon name="ph:code" width={13} />
+                </button>
+                <button
+                  type="button"
+                  className="library-reader-close"
+                  onClick={() => setReaderOpen(false)}
+                  title="Close reader (Esc)"
+                  aria-label="Close reader"
+                >
+                  <Icon name="ph:x" width={15} />
+                </button>
+              </div>
             </div>
             {/* Reader body */}
             <div
@@ -771,14 +872,10 @@ function DocDetail({ doc }: { doc: LibraryDocBody }) {
               onScroll={handleReaderScroll}
               className={hasReaderToc ? "library-reader-body library-reader-body--with-toc" : "library-reader-body"}
             >
-              <RenderedMarkdown text={doc.body} containerRef={readerMdRef} />
+              <RenderedMarkdown text={renderBody} containerRef={readerMdRef} />
               {hasReaderToc && (
                 <TocPanel items={readerTocItems} activeId={activeReaderTocId} mdRef={readerMdRef} readerMode />
               )}
-            </div>
-            {/* Reader footer actions */}
-            <div className="library-reader-footer">
-              {actionBar(true)}
             </div>
           </div>
         </div>,
@@ -889,8 +986,12 @@ function SkillDetail({ skill }: { skill: Skill }) {
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────
-export function LibraryDocPreview({ selected, loading, activeSection }: Props) {
-  if (loading) {
+export function LibraryDocPreview({ selected, loading, activeSection, docNav }: Props) {
+  // Stale-while-loading: when something is already selected, keep it
+  // mounted during the next fetch instead of swapping to a loading shell.
+  // Unmounting here would tear down DocDetail mid-navigation and close an
+  // open reader (prev/next doc would otherwise exit reader mode).
+  if (loading && !selected) {
     return (
       <div className="library-preview library-preview--empty">
         <span className="library-preview-empty-text">Loading…</span>
@@ -907,7 +1008,7 @@ export function LibraryDocPreview({ selected, loading, activeSection }: Props) {
       </div>
     );
   }
-  if (selected.kind === "doc")      return <DocDetail doc={selected.doc} />;
+  if (selected.kind === "doc")      return <DocDetail doc={selected.doc} docNav={docNav} />;
   if (selected.kind === "bookmark") return <BookmarkDetail item={selected.item} />;
   if (selected.kind === "reading")  return <ReadingDetail item={selected.item} />;
   if (selected.kind === "github")   return <GitHubDetail item={selected.item} />;

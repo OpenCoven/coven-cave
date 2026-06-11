@@ -120,6 +120,16 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
 
   const docCounts: Record<string, number> = { [activeCollection]: docs.length };
   const selectedDocId =  selectedItem?.kind === "doc"      ? selectedItem.doc.id  : null;
+  // Reader prev/next: position of the open doc within the current list.
+  const selectedDocIndex = selectedDocId ? docs.findIndex((d) => d.id === selectedDocId) : -1;
+  const docNav = selectedDocIndex >= 0
+    ? {
+        index: selectedDocIndex,
+        total: docs.length,
+        onPrev: () => { const prev = docs[selectedDocIndex - 1]; if (prev) void handleSelectDoc(prev); },
+        onNext: () => { const next = docs[selectedDocIndex + 1]; if (next) void handleSelectDoc(next); },
+      }
+    : undefined;
   const selectedBmId =   selectedItem?.kind === "bookmark" ? selectedItem.item.id : null;
   const selectedReadId = selectedItem?.kind === "reading"  ? selectedItem.item.id : null;
   const selectedGhId =   selectedItem?.kind === "github"   ? selectedItem.item.id : null;
@@ -146,7 +156,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           <LibraryGraphView />
         </div>
       ) : (
-        <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} />
+        <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} docNav={docNav} />
       )}
 
       {/* Collapsible list panel — hidden when graph or skills are active (these sections own the full canvas) */}
