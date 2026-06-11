@@ -503,8 +503,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <button
             type="button"
             onClick={() => setUnreadsOnly((v) => !v)}
+            title={unreadsOnly ? "Show all chats" : "Show unreads only"}
+            aria-label={unreadsOnly ? "Show all chats" : "Show unreads only"}
             className={[
-              "focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
+              "focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
               unreadsOnly
                 ? "border-[color-mix(in_oklch,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
@@ -513,7 +515,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             {unreadsOnly
               ? <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
               : <Icon name="ph:circle" width={12} />}
-            Unreads
           </button>
 
           <button
@@ -523,14 +524,13 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             aria-label={showArchived ? "Hide archived chats" : "Show archived chats"}
             title={showArchived ? "Hide archived chats" : "Show archived chats"}
             className={[
-              "focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
+              "focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
               showArchived
                 ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
             ].join(" ")}
           >
             <Icon name="ph:archive" width={12} aria-hidden />
-            Archived
           </button>
 
           {/* With the identity row hidden, the + Chat CTA lives here */}
