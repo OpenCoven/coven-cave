@@ -350,8 +350,13 @@ assert.match(
 );
 assert.match(
   source,
-  /updateFollowing\(true\);[\s\S]{0,600}prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduceMotion \? "auto" : "smooth"[\s\S]{0,400}aria-label="Scroll to bottom"/,
-  "Scroll FAB must re-engage following and gate its smooth scroll on prefers-reduced-motion",
+  /updateFollowing\(true\);[\s\S]{0,600}prefers-reduced-motion: reduce[\s\S]{0,200}behavior: reduceMotion \? "auto" : "smooth"[\s\S]{0,400}aria-label=/,
+  "Scroll FAB must re-engage following and gate its smooth scroll on prefers-reduced-motion (CHAT-D10-03: aria-label now includes new message count)",
+);
+assert.match(
+  source,
+  /aria-label=\{`Scroll to bottom\$\{newTurnsCount \? ` \(\$\{newTurnsCount\} new message\$\{newTurnsCount !== 1 \? "s" : ""\}\)` : ""\}`\}/,
+  "Scroll FAB aria-label must include the pluralized message noun for screen readers",
 );
 assert.match(
   source,
