@@ -212,6 +212,7 @@ const handle = app.getRequestHandler();
 const wss = new WebSocketServer({ noServer: true });
 
 await app.prepare();
+const nextUpgradeHandler = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
   const parsedUrl = parse(req.url ?? "/", true);
@@ -221,7 +222,10 @@ const server = createServer((req, res) => {
 server.on("upgrade", (req, socket, head) => {
   const { pathname, query } = parse(req.url ?? "/", true);
   if (pathname !== "/api/pty-ws") {
-    socket.destroy();
+    void nextUpgradeHandler(req, socket, head).catch((err) => {
+      console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);
+      socket.destroy();
+    });
     return;
   }
 

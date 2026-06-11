@@ -7,6 +7,7 @@ import { ScreenMagnificationController } from "@/components/screen-magnification
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { PwaRegister } from "@/components/pwa-register";
+import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -66,9 +67,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${fredoka.variable} h-full antialiased`}
     >
       <body className="h-full flex flex-col">
+        <DevCacheResetScript />
+        <SidecarAuthBridge />
         <ShellBannersProvider>
           <LiveRegionProvider>
-            <SidecarAuthBridge />
             <SidecarAuthMonitor />
             <ScreenMagnificationController />
             <PwaRegister />
