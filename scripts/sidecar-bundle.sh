@@ -27,6 +27,25 @@ STATIC="$ROOT/.next/static"
 PUBLIC="$ROOT/public"
 NPM_STAGE="$ROOT/.next/sidecar-npm-stage"
 
+fix_node_pty_spawn_helpers() {
+  local base="$1"
+  local prebuilds="$base/node-pty/prebuilds"
+  local fixed=0
+
+  if [ ! -d "$prebuilds" ]; then
+    return 0
+  fi
+
+  while IFS= read -r -d '' helper; do
+    chmod 755 "$helper"
+    fixed=$((fixed + 1))
+  done < <(find "$prebuilds" -path "*/darwin-*/spawn-helper" -type f -print0)
+
+  if [ "$fixed" -gt 0 ]; then
+    echo "==> fixed node-pty spawn-helper mode in $base ($fixed)"
+  fi
+}
+
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
 
@@ -66,6 +85,7 @@ cp "$STANDALONE/package.json" "$NPM_STAGE/package.json"
   cd "$NPM_STAGE" && npm install --omit=dev --no-audit --no-fund \
     --no-package-lock --ignore-scripts
 ) >&2
+fix_node_pty_spawn_helpers "$NPM_STAGE/node_modules"
 
 echo "==> copying standalone tree → $DEST"
 rm -rf "$DEST"
@@ -78,6 +98,7 @@ printf "generated at release build time\n" > "$DEST/placeholder.txt"
 
 echo "==> grafting fresh node_modules → $DEST/node_modules"
 cp -a "$NPM_STAGE/node_modules" "$DEST/node_modules"
+fix_node_pty_spawn_helpers "$DEST/node_modules"
 
 # But Next.js's compiled server.js requires the standalone's own internal
 # next package layout. Merge any package the standalone shipped that npm

@@ -29,6 +29,81 @@ require_value() {
   local label="${2:-required value}"
   [ -n "$value" ] || { echo "Missing required value: $label" >&2; exit 1; }
 }
+print_notary_log() {
+  local submission_id="$1"
+
+  if [ -z "$submission_id" ]; then
+    echo "==> Notary submission id unavailable; cannot fetch Apple rejection log" >&2
+    return 0
+  fi
+
+  echo "==> Fetching Apple notary log for submission $submission_id"
+  set +e
+  if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
+    xcrun notarytool log "$submission_id" \
+      --apple-id "$NOTARY_APPLE_ID" \
+      --password "$NOTARY_APPLE_PASSWORD" \
+      --team-id "$NOTARY_TEAM_ID"
+  else
+    xcrun notarytool log "$submission_id" \
+      --key "$NOTARY_KEY_FILE" \
+      --key-id "$NOTARY_KEY_ID" \
+      --issuer "$NOTARY_ISSUER"
+  fi
+  local log_status=$?
+  set -e
+
+  if [ "$log_status" -ne 0 ]; then
+    echo "==> Could not fetch Apple notary log (exit $log_status)" >&2
+  fi
+}
+run_notary_submit() {
+  local output
+  local submit_status
+  local submission_id
+
+  output=$(mktemp)
+  set +e
+  if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
+    xcrun notarytool submit "$DMG_PATH" \
+      --apple-id "$NOTARY_APPLE_ID" \
+      --password "$NOTARY_APPLE_PASSWORD" \
+      --team-id "$NOTARY_TEAM_ID" \
+      --no-s3-acceleration \
+      --verbose \
+      --wait 2>&1 | tee "$output"
+    submit_status=${PIPESTATUS[0]}
+  else
+    xcrun notarytool submit "$DMG_PATH" \
+      --key "$NOTARY_KEY_FILE" \
+      --key-id "$NOTARY_KEY_ID" \
+      --issuer "$NOTARY_ISSUER" \
+      --no-s3-acceleration \
+      --verbose \
+      --wait 2>&1 | tee "$output"
+    submit_status=${PIPESTATUS[0]}
+  fi
+  set -e
+
+  submission_id=$(awk '/^[[:space:]]*id:/ { print $2; exit }' "$output")
+  if [ "$submit_status" -ne 0 ]; then
+    print_notary_log "$submission_id"
+    rm -f "$output"
+    exit "$submit_status"
+  fi
+  if grep -Eq "Submission in terminal status: Invalid|Current status: Invalid|^[[:space:]]*status:[[:space:]]*Invalid" "$output"; then
+    print_notary_log "$submission_id"
+    rm -f "$output"
+    exit 1
+  fi
+  if ! grep -Eq "Submission in terminal status: Accepted|Received new status: Accepted|^[[:space:]]*status:[[:space:]]*Accepted" "$output"; then
+    echo "Notary submission did not report Accepted; refusing to staple." >&2
+    print_notary_log "$submission_id"
+    rm -f "$output"
+    exit 1
+  fi
+  rm -f "$output"
+}
 
 require_tool pnpm
 require_tool codesign
@@ -95,12 +170,12 @@ echo "    found: $APP_PATH"
 echo "==> Signing every native binary inside the bundle"
 # Apple deprecated --deep; sign inner native binaries explicitly so each one
 # gets a hardened runtime + secure timestamp before we seal the envelope.
-# Find: shared libs (.dylib), Node native modules (.node), and any nested
-# executable files that aren't already symlinks, including the bundled Node
-# runtime staged for the sidecar.
+# Find: shared libs (.dylib), Node native modules (.node), node-pty's
+# spawn-helper Mach-O files, and any nested executable files that aren't
+# already symlinks, including the bundled Node runtime staged for the sidecar.
 NATIVE_FILES_TMP=$(mktemp)
 find "$APP_PATH" \
-  \( -name "*.dylib" -o -name "*.so" -o -name "*.node" -o -perm +111 \) \
+  \( -name "*.dylib" -o -name "*.so" -o -name "*.node" -o -name "spawn-helper" -o -perm +111 \) \
   -type f -print > "$NATIVE_FILES_TMP"
 NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"
@@ -143,23 +218,7 @@ codesign --force --timestamp \
   --sign "$SIGNING_IDENTITY" "$DMG_PATH"
 
 echo "==> Submitting DMG for notarization"
-if [ "$NOTARY_AUTH_MODE" = "apple-id" ]; then
-  xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$NOTARY_APPLE_ID" \
-    --password "$NOTARY_APPLE_PASSWORD" \
-    --team-id "$NOTARY_TEAM_ID" \
-    --no-s3-acceleration \
-    --verbose \
-    --wait
-else
-  xcrun notarytool submit "$DMG_PATH" \
-    --key "$NOTARY_KEY_FILE" \
-    --key-id "$NOTARY_KEY_ID" \
-    --issuer "$NOTARY_ISSUER" \
-    --no-s3-acceleration \
-    --verbose \
-    --wait
-fi
+run_notary_submit
 
 echo "==> Stapling notarization ticket"
 xcrun stapler staple "$DMG_PATH"
