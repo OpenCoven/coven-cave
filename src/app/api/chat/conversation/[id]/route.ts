@@ -9,6 +9,7 @@ import {
 import { linkedContextForSession } from "@/lib/chat-linked-context";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar } from "@/lib/cave-config";
+import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,10 +73,10 @@ function normalizeTurns(body: ConversationWriteBody): ChatTurn[] | null {
   return turns as ChatTurn[];
 }
 
-function conversationTitle(body: ConversationWriteBody, existing: ConversationFile | null, turns: ChatTurn[]): string {
+function conversationTitle(id: string, body: ConversationWriteBody, existing: ConversationFile | null): string {
   if (typeof body.title === "string") return body.title;
   if (existing?.title) return existing.title;
-  return turns.find((turn) => turn.role === "user")?.text.slice(0, 60) || "Chat";
+  return defaultChatTitleForSession(id);
 }
 
 function buildConversation(args: {
@@ -98,7 +99,7 @@ function buildConversation(args: {
     sessionId: args.id,
     familiarId,
     harness,
-    title: conversationTitle(args.body, args.existing, args.turns),
+    title: conversationTitle(args.id, args.body, args.existing),
     createdAt:
       typeof args.body.createdAt === "string" && args.body.createdAt.trim()
         ? args.body.createdAt

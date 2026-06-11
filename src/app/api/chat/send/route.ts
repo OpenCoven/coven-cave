@@ -6,8 +6,11 @@ import { stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
   loadConfig,
+  loadState,
   recordSessionFamiliar,
+  setSessionTitle,
 } from "@/lib/cave-config";
+import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
 import {
   buildPromptWithAttachments,
   normalizeChatAttachments,
@@ -144,6 +147,12 @@ function scheduleLinkRoute(args: {
       }
     })();
   }
+}
+
+async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
+  const state = await loadState();
+  if (state.sessionTitles[sessionId]) return;
+  await setSessionTitle(sessionId, title);
 }
 
 function sse(event: StreamEvent): Uint8Array {
@@ -427,11 +436,8 @@ function openClawChatResponse(args: {
           const now = new Date().toISOString();
           const userTurnId = crypto.randomUUID();
           const assistantTurnId = crypto.randomUUID();
-          const chatTitle = (
-            args.promptText ||
-            args.attachments[0]?.name ||
-            "Attached files"
-          ).slice(0, 60);
+          const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
+          if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
           const conv = existing ?? {
             sessionId,
             familiarId: args.body.familiarId,
@@ -895,11 +901,8 @@ export async function POST(req: Request) {
         const now = new Date().toISOString();
         const userTurnId = crypto.randomUUID();
         const assistantTurnId = crypto.randomUUID();
-        const chatTitle = (
-          promptText ||
-          attachments[0]?.name ||
-          "Attached files"
-        ).slice(0, 60);
+        const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
+        if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
         const userTurn: ChatTurn = {
           id: userTurnId,
           role: "user",
