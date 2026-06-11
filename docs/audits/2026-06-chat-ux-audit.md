@@ -30,7 +30,7 @@ The chat experience has an unusually strong **status/lifecycle spine** (explicit
 ## 2. Method
 
 - **Code audit:** four parallel read-only passes over `src/components/chat-view.tsx` (2,477 lines), `message-bubble.tsx`, `chat-surface.tsx`, `chat-list.tsx`, `chat-router.tsx`, `home-composer.tsx`, `shell.tsx`, `workspace.tsx`, `src/lib/slash-commands.ts`, `chat-attachments.ts`, `src/styles/cave-chat.css`, `src/app/globals.css`, and `src/app/api/chat/send/route.ts`. Intent-encoding tests (`chat-view-polish.test.ts`, `chat-view-lifecycle.test.ts`, `message-bubble-markdown.test.ts`, `message-bubble-code-header.test.ts`) were read so deliberately pinned behavior is labeled "deliberate, revisit" rather than flagged as accidental.
-- **Live inspection:** a throwaway Playwright spec (never merged) ran 14 desktop + 2 mobile (pixel-5) scenarios against `next dev` with all `/api/*` routes mocked and `/api/chat/send` served by an in-page fetch patch emitting the real SSE frame protocol with controlled pacing (30–120 ms/chunk) and honored AbortSignal. Quantitative observations (CLS, DOM counts, frame cadence, axe-core violations) appear in the Appendix.
+- **Live inspection:** a throwaway Playwright spec (never merged) ran 14 desktop + 2 mobile (Pixel 5) scenarios against `next dev` with all `/api/*` routes mocked and `/api/chat/send` served by an in-page fetch patch emitting the real SSE frame protocol with controlled pacing (30–120 ms/chunk) and honored AbortSignal. Quantitative observations (CLS, DOM counts, frame cadence, axe-core violations) appear in the Appendix.
 - Severity: **P0** broken promise/bug in core flow · **P1** table-stakes benchmark feature absent, hit daily · **P2** ergonomic lag vs ≥1 benchmark · **P3** polish/consistency. Effort: S/M/L.
 
 ## 3. What already meets the bar
@@ -529,7 +529,7 @@ Suggested sequencing: ranks 1-4 are one small PR each (or one combined "broken p
 
 ## 6. Mobile notes (ungraded)
 
-- ✓ Visual-viewport keyboard offset, action strip (Retry/Stop/Summarize/Attach/Voice) with proper disabled states, iOS 16px no-zoom floor, `enterKeyHint="send"` (chat-view.tsx:971-981, 866-910; globals.css:320-324). Live pixel-5 pass rendered correctly (`m2-mid-stream.png`).
+- ✓ Visual-viewport keyboard offset, action strip (Retry/Stop/Summarize/Attach/Voice) with proper disabled states, iOS 16px no-zoom floor, `enterKeyHint="send"` (chat-view.tsx:971-981, 866-910; globals.css:320-324). Live Pixel 5 pass rendered correctly (`m2-mid-stream.png`).
 - [mobile] CHAT-MOB-01 · Mobile context menu (`<details>`) has no outside-tap or Esc dismiss — floats over the transcript until re-tapped (chat-view.tsx:800-803). Effort S.
 - [mobile] CHAT-MOB-02 · No newline path on soft keyboards — Enter always sends (chat-view.tsx:1631-1635 + `enterKeyHint`); multi-paragraph prompts impossible on phones. ChatGPT/Claude mobile let Enter newline and rely on the send button. Effort S.
 
@@ -547,7 +547,7 @@ Suggested sequencing: ranks 1-4 are one small PR each (or one combined "broken p
 | `10-after-enter.png` | After Enter on `/he`: composer cleared, no feedback, nothing ran | D2-01 |
 | `11-hover-actions.png` | Hover Copy on user bubble (note right-edge clipping); code chrome; table; thinking block | D6-04, D7 credits |
 | `12-long-session.png` | 200-turn fixture session fully rendered | D10-02 |
-| `m2-mid-stream.png` | Pixel-5 linear layout mid-stream | Mobile notes |
+| `m2-mid-stream.png` | Pixel 5 linear layout mid-stream | Mobile notes |
 
 ### Live measurements
 
