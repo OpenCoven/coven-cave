@@ -938,9 +938,10 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
                   type="button"
                   className="board-drawer-chat-cta"
                   disabled={chatLinking}
+                  title="Start chat"
                   onClick={() => void onOpenTaskChat?.(card.id)}
                 >
-                  {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start chat"}
+                  {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start"}
                   <Icon name="ph:arrow-right-bold" width={11} />
                 </button>
               </div>
