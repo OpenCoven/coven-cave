@@ -150,17 +150,26 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         }}
       />
       <div className="library-divider" />
-      {/* Preview pane — dominant left content area; graph section owns the full canvas */}
+      {/* Preview pane — dominant left content area; graph and projects own the full canvas */}
       {activeSection === "graph" ? (
         <div className="library-preview" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           <LibraryGraphView />
+        </div>
+      ) : activeSection === "projects" ? (
+        <div className="library-preview" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          <ComuxView
+            view="projects"
+            sessions={sessions ?? []}
+            onOpenSession={onOpenSession ?? (() => undefined)}
+            onNewChat={onNewProjectChat ?? (() => undefined)}
+          />
         </div>
       ) : (
         <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} docNav={docNav} />
       )}
 
-      {/* Collapsible list panel — hidden when graph or skills are active (these sections own the full canvas) */}
-      {activeSection !== "graph" && activeSection !== "skills" && <div
+      {/* Collapsible list panel — hidden when graph, skills, or projects are active (these sections own the full canvas) */}
+      {activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" && <div
         className={[
           "library-list-panel",
           "transition-[width] duration-200 ease-out",
@@ -248,14 +257,6 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
                 setSelectedItem({ kind: "github", item });
               }}
               onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
-            />
-          )}
-          {activeSection === "projects" && (
-            <ComuxView
-              view="projects"
-              sessions={sessions ?? []}
-              onOpenSession={onOpenSession ?? (() => undefined)}
-              onNewChat={onNewProjectChat ?? (() => undefined)}
             />
           )}
         </div>

@@ -17,6 +17,19 @@ export function projectName(root: string): string {
   return parts[parts.length - 1] ?? root;
 }
 
+/** Strip trailing slashes so `/x/app` and `/x/app/` bucket as one project. */
+function normalizeRoot(root: string): string {
+  const stripped = root.replace(/\\/g, "/").replace(/\/+$/, "");
+  return stripped || "/";
+}
+
+/** `parent/name` for disambiguating projects that share a basename. */
+function projectNameWithParent(root: string): string {
+  const parts = root.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length < 2) return projectName(root);
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
 export function deriveComuxProjects(
   sessions: SessionRow[],
   fallbackRoot?: string,
@@ -30,8 +43,9 @@ export function deriveComuxProjects(
   >();
 
   for (const session of sessions) {
-    const root = session.project_root?.trim();
-    if (!root) continue;
+    const raw = session.project_root?.trim();
+    if (!raw) continue;
+    const root = normalizeRoot(raw);
     const bucket = byRoot.get(root) ?? { sessions: [], familiarIds: new Set<string>() };
     bucket.sessions.push(session);
     if (session.familiarId) bucket.familiarIds.add(session.familiarId);
@@ -54,6 +68,18 @@ export function deriveComuxProjects(
     };
   });
 
+  // Distinct roots can share a basename (e.g. two `server` checkouts).
+  // Label collisions as `parent/name` so the rail stays unambiguous.
+  const nameCounts = new Map<string, number>();
+  for (const project of projects) {
+    nameCounts.set(project.name, (nameCounts.get(project.name) ?? 0) + 1);
+  }
+  for (const project of projects) {
+    if ((nameCounts.get(project.name) ?? 0) > 1) {
+      project.name = projectNameWithParent(project.root);
+    }
+  }
+
   projects.sort((a, b) => {
     if (a.updatedAt && b.updatedAt) return b.updatedAt.localeCompare(a.updatedAt);
     if (a.updatedAt) return -1;
@@ -65,7 +91,7 @@ export function deriveComuxProjects(
     return [
       {
         name: projectName(fallbackRoot),
-        root: fallbackRoot,
+        root: normalizeRoot(fallbackRoot),
         sessionCount: 0,
         runningCount: 0,
         familiarCount: 0,
