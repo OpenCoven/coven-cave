@@ -7,6 +7,7 @@ import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -70,54 +71,65 @@ function RightPanel({
   onOpenInboxItem: (item: InboxItem) => void;
   onInboxItemChanged: () => void | Promise<void>;
 }) {
+  const primaryPanel: Exclude<RightPanelKind, "changes"> = panel === "debug" ? "debug" : "inspector";
+
   return (
     // CHAT-D13-05: this panel renders inside the shell's <main>, where a
     // complementary landmark is invalid (axe landmark-complementary-is-top-level)
     // — expose it as a named region instead.
     <aside role="region" aria-label="Session panels" className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--border-hairline)]">
-      <div className="right-panel-tabs">
-        <button
-          type="button"
-          className={`right-panel-tab${panel === "inspector" ? " right-panel-tab--active" : ""}`}
-          onClick={() => onSetPanel("inspector")}
-        >
-          <Icon name="ph:brain-bold" width={13} />
-          Inspector
-        </button>
-        <button
-          type="button"
-          className={`right-panel-tab${panel === "changes" ? " right-panel-tab--active" : ""}`}
-          onClick={() => onSetPanel("changes")}
-        >
-          <Icon name="ph:git-diff" width={13} />
-          Changes
-        </button>
-        <button
-          type="button"
-          className={`right-panel-tab${panel === "debug" ? " right-panel-tab--active" : ""}`}
-          onClick={() => onSetPanel("debug")}
-        >
-          <Icon name="ph:bug-bold" width={13} />
-          Debug
-        </button>
-        <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
-          <Icon name="ph:x-bold" width={11} />
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-        {panel === "inspector" && (
-          <InspectorPane
-            familiar={activeFamiliar}
-            inboxItems={inboxItems}
-            onOpenInbox={onOpenInbox}
-            onCreateReminder={onCreateReminder}
-            onOpenInboxItem={onOpenInboxItem}
-            onInboxItemChanged={onInboxItemChanged}
-          />
-        )}
-        {panel === "changes" && <SessionChangesPanel />}
-        {panel === "debug" && <DebugPane />}
-      </div>
+      <Group className="right-panel-split" orientation="vertical">
+        <Panel id="right-panel-primary" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
+          <div className="right-panel-tabs">
+            <button
+              type="button"
+              className={`right-panel-tab${primaryPanel === "inspector" ? " right-panel-tab--active" : ""}`}
+              onClick={() => onSetPanel("inspector")}
+            >
+              <Icon name="ph:brain-bold" width={13} />
+              Inspector
+            </button>
+            <button
+              type="button"
+              className={`right-panel-tab${primaryPanel === "debug" ? " right-panel-tab--active" : ""}`}
+              onClick={() => onSetPanel("debug")}
+            >
+              <Icon name="ph:bug-bold" width={13} />
+              Debug
+            </button>
+            <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
+              <Icon name="ph:x-bold" width={11} />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+            {primaryPanel === "inspector" && (
+              <InspectorPane
+                familiar={activeFamiliar}
+                inboxItems={inboxItems}
+                onOpenInbox={onOpenInbox}
+                onCreateReminder={onCreateReminder}
+                onOpenInboxItem={onOpenInboxItem}
+                onInboxItemChanged={onInboxItemChanged}
+              />
+            )}
+            {primaryPanel === "debug" && <DebugPane />}
+          </div>
+        </Panel>
+        <Separator className="shell-separator-h right-panel-splitter">
+          <SeparatorHandle orientation="row" />
+        </Separator>
+        <Panel id="right-panel-changes" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
+          <div className="right-panel-changes-header">
+            <span className="right-panel-changes-title">
+              <Icon name="ph:git-diff" width={13} />
+              Changes
+            </span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <SessionChangesPanel />
+          </div>
+        </Panel>
+      </Group>
     </aside>
   );
 }

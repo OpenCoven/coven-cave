@@ -2462,6 +2462,48 @@ select {
 }
 .right-panel-close:hover { color: var(--text-primary); background: var(--bg-hover); }
 
+.right-panel-split {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.right-panel-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.right-panel-splitter {
+  flex-shrink: 0;
+}
+
+.right-panel-changes-header {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  flex-shrink: 0;
+  min-width: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  padding: 0 10px;
+}
+
+.right-panel-changes-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 /* ============================================================
    Theme palettes — 7 non-default themes (Coven default lives in :root).
    Each theme ships a DARK and a LIGHT palette. Hue is held constant
