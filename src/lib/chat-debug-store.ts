@@ -23,7 +23,9 @@ const EMPTY: ChatDebugSnapshot = Object.freeze({
   sessionId: null,
   session: null,
   familiar: null,
-  turns: [],
+  // Frozen at runtime so accidental mutation of the sentinel throws;
+  // typed mutable to keep consumers (bundle export) simple.
+  turns: Object.freeze([]) as unknown as DebugTurn[],
 });
 
 let state: ChatDebugSnapshot = EMPTY;
