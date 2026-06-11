@@ -5,6 +5,8 @@
  * /h, /cls, /q, etc. and get the same behavior as the canonical command.
  */
 
+import { SHORTCUT_GROUPS, neutralizeKeys } from "./keyboard-shortcuts";
+
 export type SlashCommand = {
   name: string;
   aliases?: string[];
@@ -21,6 +23,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/clear", aliases: ["/cls"], hint: "clear transcript", description: "Clear the local view (daemon session is untouched).", section: "chat" },
   { name: "/quit", aliases: ["/exit", "/q"], hint: "back to chats", description: "Close this chat and return to the chat list.", section: "chat" },
   { name: "/palette", hint: "open ⌘K", description: "Open the command palette.", section: "chat" },
+  { name: "/shortcuts", aliases: ["/keys"], hint: "open ⌘/ sheet", description: "Open the keyboard shortcuts sheet.", section: "chat" },
   { name: "/new", hint: "new chat", description: "Start a fresh chat with the active familiar.", section: "chat" },
 
   // Familiar
@@ -103,5 +106,17 @@ export function formatHelp(): string {
     }
     lines.push("");
   }
+  // Keyboard shortcuts — sourced from the same catalog as the ⌘/ sheet
+  // (src/lib/keyboard-shortcuts.ts). /help is rendered as plain transcript
+  // text with no platform detection, so use neutral Cmd/Ctrl labels.
+  lines.push("Keyboard");
+  for (const group of SHORTCUT_GROUPS) {
+    lines.push(`  ${group.label}`);
+    for (const entry of group.entries) {
+      lines.push(`    ${neutralizeKeys(entry.keys)} — ${entry.description}`);
+    }
+  }
+  lines.push("");
+  lines.push("Press Cmd/Ctrl+/ (or ? outside an input) to open the keyboard shortcuts sheet.");
   return lines.join("\n").trim();
 }

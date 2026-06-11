@@ -43,6 +43,7 @@ import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
+import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -78,6 +79,7 @@ export function Workspace() {
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -457,14 +459,33 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      const tag = target.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    };
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
-      if (!meta) return;
-      const k = e.key.toLowerCase();
-      if (k === "k") {
-        e.preventDefault();
-        setPaletteOpen(true);
+      if (meta) {
+        const k = e.key.toLowerCase();
+        if (k === "k") {
+          e.preventDefault();
+          setPaletteOpen(true);
+          return;
+        }
+        // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
+        if (e.key === "/") {
+          e.preventDefault();
+          setShortcutsOpen((open) => !open);
+        }
         return;
+      }
+      // Bare `?` also opens the sheet, but only when focus is not in an
+      // input/textarea/contentEditable — typing "?" must stay typing.
+      if (e.key === "?" && !isEditableTarget(e.target)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -781,6 +802,9 @@ export function Workspace() {
       }
       case "/palette":
         setPaletteOpen(true);
+        return true;
+      case "/shortcuts":
+        setShortcutsOpen(true);
         return true;
       case "/terminal":
         setMode("terminal");
@@ -1206,6 +1230,8 @@ export function Workspace() {
         activeFamiliarId={activeId}
         onIntent={onPaletteIntent}
       />
+
+      <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <OnboardingOverlay open={onboardingOpen} onDismiss={closeOnboarding} />
 
