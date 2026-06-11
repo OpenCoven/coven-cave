@@ -561,18 +561,15 @@ export type MessageBubbleProps = {
 };
 
 export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label }: MessageBubbleProps) {
-  const [hovered, setHovered] = useState(false);
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
-    setHovered(true);
     if (!showTimestamp) {
       hoverTimer.current = setTimeout(() => setTsVisible(true), 600);
     }
   };
   const handleMouseLeave = () => {
-    setHovered(false);
     setTsVisible(false);
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
   };
@@ -610,7 +607,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
       >
         <div className="relative cave-bubble-user">
           <MarkdownContent text={content} pending={pending} />
-          {hovered && !pending && <CopyBubble text={content} />}
+          {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
+              button is reachable by keyboard (Tab), screen readers, and touch. */}
+          {!pending && <CopyBubble text={content} />}
         </div>
         <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
           {fmtBubbleTime(timestamp)}
@@ -629,7 +628,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
       <div className={isError ? "text-[var(--color-warning)]" : ""}>
         <MarkdownContent text={content} pending={pending} />
       </div>
-      {hovered && !pending && content ? (
+      {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
+          actions are reachable by keyboard (Tab), screen readers, and touch. */}
+      {!pending && content ? (
         <div className="cave-bubble-actions">
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />
