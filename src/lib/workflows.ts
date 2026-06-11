@@ -8,6 +8,19 @@ export type WorkflowPattern =
   | "sequential"
   | "custom";
 
+export type WorkflowStepKind = "agent" | "skill" | "tool" | "human-gate" | "workflow" | string;
+
+export type WorkflowStepSummary = {
+  id: string;
+  kind: WorkflowStepKind;
+  name?: string;
+  uses?: string;
+  summary?: string;
+  requires?: string[];
+  permissions?: string[];
+  on_error?: string;
+};
+
 export type WorkflowSummary = {
   id: string;
   version: string;
@@ -15,6 +28,14 @@ export type WorkflowSummary = {
   summary?: string;
   familiar?: string;
   pattern?: WorkflowPattern | string;
+  steps?: WorkflowStepSummary[];
+  tags?: string[];
+  limits?: {
+    max_agents?: number;
+    timeout_s?: number;
+    cost_ceiling_usd?: number;
+  };
+  permissions?: string[];
   path?: string;
   validation_state?: "valid" | "warning" | "invalid" | "unknown";
   visibility?: {
