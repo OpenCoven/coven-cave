@@ -20,6 +20,7 @@ type Props = {
   daemonRunning?: boolean;
   onOpen: (sessionId: string, familiarId?: string | null) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
+  onSessionsChanged?: () => void;
 };
 
 function age(iso: string): string {
@@ -59,9 +60,13 @@ function statusStyle(s: string) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged }: Props) {
   const [busyTuiId, setBusyTuiId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Two-step delete: first trash click arms the row (inline Cancel/Delete
+  // confirm replaces the row actions); only the explicit Delete commits.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [unreadsOnly, setUnreadsOnly] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -139,6 +144,29 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       setError(err instanceof Error ? err.message : "launch failed");
     } finally {
       setBusyTuiId(null);
+    }
+  };
+
+  // ── Delete (two-step confirm) ────────────────────────────────────────────
+
+  const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    setDeletingId(sessionId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!json.ok) {
+        setError(json.error ?? "delete failed");
+        return;
+      }
+      setConfirmDeleteId(null);
+      setActiveId((current) => (current === sessionId ? null : current));
+      onSessionsChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "delete failed");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -449,15 +477,57 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
                           </span>
 
-                          {/* TUI button — revealed on hover */}
-                          <button
-                            onClick={(e) => openInTui(e, s.id)}
-                            disabled={busyTuiId === s.id}
-                            title="Open in Coven Code TUI"
-                            className="touch-always-visible self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-all hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
-                          >
-                            {busyTuiId === s.id ? "…" : "tui →"}
-                          </button>
+                          {confirmDeleteId === s.id ? (
+                            /* Inline delete confirmation — replaces row actions until resolved */
+                            <span
+                              className="flex shrink-0 items-center gap-1.5 self-center"
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              role="group"
+                              aria-label="Confirm chat deletion"
+                            >
+                              <span className="text-[11px] font-medium text-[var(--color-danger)]">Delete chat?</span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => void deleteSession(e, s.id)}
+                                disabled={deletingId === s.id}
+                                aria-label="Confirm delete chat"
+                                className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_18%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-danger)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] disabled:opacity-40"
+                              >
+                                <Icon name="ph:trash" width={10} aria-hidden />
+                                {deletingId === s.id ? "…" : "Delete"}
+                              </button>
+                            </span>
+                          ) : (
+                            <>
+                              {/* TUI button — revealed on hover */}
+                              <button
+                                onClick={(e) => openInTui(e, s.id)}
+                                disabled={busyTuiId === s.id}
+                                title="Open in Coven Code TUI"
+                                className="touch-always-visible self-center shrink-0 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] opacity-0 transition-all hover:bg-[var(--bg-raised)] group-hover:opacity-100 disabled:opacity-40"
+                              >
+                                {busyTuiId === s.id ? "…" : "tui →"}
+                              </button>
+                              {/* Delete — revealed on hover; arms inline confirmation */}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
+                                title="Delete chat"
+                                aria-label={`Delete chat ${s.title || s.id}`}
+                                className="touch-always-visible self-center shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] opacity-0 transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] group-hover:opacity-100"
+                              >
+                                <Icon name="ph:trash" width={12} aria-hidden />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </li>
                     );

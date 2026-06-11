@@ -171,6 +171,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         familiars={familiars}
         sessions={sessions}
         daemonRunning={daemonRunning}
+        onSessionsChanged={onSessionsChanged}
         onOpen={(sessionId, familiarId) => {
           const next = selectFamiliarForChat(familiarId);
           setView({ kind: "chat", sessionId, familiarId: next?.id ?? familiarId ?? null });
