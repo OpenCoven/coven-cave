@@ -4,6 +4,21 @@
  */
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DARK-CHROME FIXED INKS (CHAT-D13-01)
+   Code blocks and system turns keep a deliberate dark-terminal surface in
+   BOTH theme modes (the Shiki theme is mood-c-dark either way). Their
+   foregrounds therefore must NOT follow --text-* — in light mode those
+   tokens flip to dark ink, which is unreadable on the still-dark chrome.
+   Values mirror the globals.css DARK palette so dark mode is unchanged.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+:root {
+  --code-chrome-ink: oklch(0.985 0 0);                /* dark-mode --text-primary */
+  --code-chrome-ink-muted: oklch(0.66 0.018 293);     /* dark-mode --text-secondary */
+  --code-chrome-ink-faint: oklch(0.985 0 0 / 40%);    /* dark-mode --text-muted */
+  --code-chrome-accent: #9a8ecd;                      /* dark-mode --accent-presence */
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    BASE PROSE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md {
@@ -195,10 +210,12 @@
   position: relative;
   border-radius: 9px;
   border: 1px solid var(--border-hairline);
-  background: oklch(0.1 0.01 280 / 60%);
+  /* Near-opaque fixed dark: a 60%-alpha wash went muddy over a light
+     --bg-base (CHAT-D13-01). */
+  background: oklch(0.12 0.012 280 / 92%);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
+    inset 0 1px 0 oklch(0.985 0 0 / 4%);
   overflow: hidden;
   font-size: 12px;
   margin: 0.6em 0;
@@ -212,7 +229,7 @@
   align-items: center;
   gap: 0.5em;
   padding: 0.35em 0.75em;
-  background: oklch(0.14 0.015 280 / 70%);
+  background: oklch(0.16 0.015 280 / 92%);
   border-bottom: 1px solid var(--border-hairline);
   min-height: 28px;
   backdrop-filter: blur(4px);
@@ -227,7 +244,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: color-mix(in oklch, var(--accent-presence) 40%, oklch(0.4 0 0));
+  background: color-mix(in oklch, var(--code-chrome-accent) 40%, oklch(0.4 0 0));
   box-shadow:
     16px 0 0 color-mix(in oklch, oklch(0.75 0.18 60) 40%, oklch(0.4 0 0)),
     32px 0 0 color-mix(in oklch, oklch(0.65 0.18 170) 40%, oklch(0.4 0 0));
@@ -242,7 +259,7 @@
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: color-mix(in oklch, var(--accent-presence) 80%, var(--text-muted));
+  color: color-mix(in oklch, var(--code-chrome-accent) 80%, var(--code-chrome-ink-faint));
   flex-shrink: 0;
   opacity: 0.85;
 }
@@ -251,7 +268,7 @@
   order: 2;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--code-chrome-ink-faint);
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -308,7 +325,7 @@
   flex-shrink: 0;
   width: 2.6em;
   padding-right: 0.8em;
-  color: color-mix(in oklch, var(--accent-presence) 28%, oklch(0.5 0 0 / 50%));
+  color: color-mix(in oklch, var(--code-chrome-accent) 28%, oklch(0.5 0 0 / 50%));
   font-size: 10px;
   text-align: right;
   user-select: none;
@@ -328,6 +345,14 @@
   border-left: 2px solid oklch(0.55 0.2 15 / 55%);
   padding-left: calc(1em - 2px);
 }
+/* CHAT-D8-03: @@ hunk headers read as muted metadata, not content. Shiki
+   tokens carry inline colors, so the ink override needs !important. */
+.cave-diff-meta {
+  opacity: 0.65;
+}
+.cave-diff-meta span {
+  color: var(--text-muted) !important;
+}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    COPY BUTTON
@@ -340,8 +365,8 @@
   padding: 0.2em 0.6em;
   border-radius: 5px;
   border: 1px solid var(--border-strong);
-  background: oklch(0.18 0.01 280 / 60%);
-  color: var(--text-muted);
+  background: oklch(0.2 0.012 280 / 92%);
+  color: var(--code-chrome-ink-faint);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s, color 0.1s, background 0.1s;
@@ -364,8 +389,8 @@
 }
 
 .cave-copy-btn:hover {
-  color: var(--text-primary);
-  background: oklch(0.22 0.015 280 / 70%);
+  color: var(--code-chrome-ink);
+  background: oklch(0.25 0.015 280 / 92%);
 }
 .cave-copy-btn:focus-visible { opacity: 1; }
 
@@ -1066,8 +1091,13 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-linear .cave-chat-thread {
   gap: 0;
   width: 100%;
-  max-width: 100%;
-  margin: 0;
+  /* CHAT-D10-04 — cap the reading measure on wide panes (Claude.ai ~48rem,
+     ChatGPT ~768px; we match the workbench's 920px .cave-turn-content cap)
+     and center the column. Collapses to 100% on narrow panes, so the
+     ≤767px mobile rules are unaffected. */
+  max-width: min(100%, 920px);
+  margin-block: 0;
+  margin-inline: auto;
 }
 
 /* ── Turn rows ──────────────────────────────────────────────────────────── */
@@ -1203,7 +1233,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear .cave-composer-shell {
-  max-width: none;
+  /* Share the thread's 920px measure (CHAT-D10-04) so the composer lines up
+     with the capped conversation column; base rule centers via margin auto. */
+  max-width: 920px;
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -1536,10 +1568,11 @@ details[open] > .cave-tool-summary::before {
 .cave-bubble-system {
   border-radius: 9px;
   border: 1px solid var(--border-hairline);
-  background: oklch(0.1 0.01 280 / 60%);
+  /* Fixed near-opaque dark terminal surface — see DARK-CHROME FIXED INKS. */
+  background: oklch(0.12 0.012 280 / 92%);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent);
+    inset 0 1px 0 oklch(0.985 0 0 / 4%);
   overflow: hidden;
 }
 
@@ -1548,7 +1581,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 0.5em;
   padding: 0.3em 0.75em;
-  background: oklch(0.14 0.015 280 / 70%);
+  background: oklch(0.16 0.015 280 / 92%);
   border-bottom: 1px solid var(--border-hairline);
   min-height: 26px;
   backdrop-filter: blur(4px);
@@ -1557,7 +1590,7 @@ details[open] > .cave-tool-summary::before {
 .cave-bubble-system-sigil {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 11px;
-  color: color-mix(in oklch, var(--accent-presence) 70%, var(--text-muted));
+  color: color-mix(in oklch, var(--code-chrome-accent) 70%, var(--code-chrome-ink-faint));
   flex-shrink: 0;
 }
 
@@ -1565,14 +1598,14 @@ details[open] > .cave-tool-summary::before {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10px;
   letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  color: var(--code-chrome-ink-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cave-bubble-system-label--dim {
-  color: var(--text-muted);
+  color: var(--code-chrome-ink-faint);
   opacity: 0.6;
 }
 
@@ -1582,7 +1615,7 @@ details[open] > .cave-tool-summary::before {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--code-chrome-ink-muted);
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;

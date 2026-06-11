@@ -349,8 +349,8 @@ export function HomeComposer({
           onKeyDown={handleKeyDown}
           disabled={sending}
           aria-label="Ask anything"
-          role="combobox"
           aria-autocomplete="list"
+          aria-haspopup="listbox"
           aria-expanded={slashSuggestions.length > 0}
           aria-controls={slashSuggestions.length > 0 ? slashListboxId : undefined}
           aria-activedescendant={

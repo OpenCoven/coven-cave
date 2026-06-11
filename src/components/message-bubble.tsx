@@ -136,10 +136,18 @@ async function renderCodeBlock(
         // Remove trailing empty line Shiki adds
         if (rawLines[rawLines.length - 1] === "") rawLines.pop();
         const wrappedLines = rawLines.map((line: string, i: number) => {
+          // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
+          // additions/deletions — exclude them from the +/- gutter strips and
+          // mute `@@` hunk headers instead of leaving them content-colored.
+          const plainLine = line.replace(/<[^>]+>/g, "");
           const gutterClass = isDiff
-            ? line.includes('<span class="shiki-diff add"') || /^\+/.test(line.replace(/<[^>]+>/g, ""))
+            ? /^@@/.test(plainLine)
+              ? " cave-diff-meta"
+              : /^(\+\+\+ |--- )/.test(plainLine)
+              ? ""
+              : line.includes('<span class="shiki-diff add"') || /^\+/.test(plainLine)
               ? " cave-diff-add"
-              : /^-/.test(line.replace(/<[^>]+>/g, ""))
+              : /^-/.test(plainLine)
               ? " cave-diff-del"
               : ""
             : "";

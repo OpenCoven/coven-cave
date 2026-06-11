@@ -89,6 +89,33 @@ function statusStyle(s: string) {
   return STATUS_STYLES[s] ?? STATUS_STYLES.completed;
 }
 
+// ── Content search (CHAT-D9-02) ───────────────────────────────────────────────
+// Title filtering stays instant/local; conversation bodies are searched
+// server-side (debounced) and surface as a secondary "In conversations"
+// section beneath the title-filtered rows.
+
+type ContentSearchHit = {
+  sessionId: string;
+  title?: string;
+  snippet: string;
+  matchCount: number;
+};
+
+/** Wrap the first case-insensitive occurrence of `query` in a <mark>. */
+function HighlightedSnippet({ snippet, query }: { snippet: string; query: string }) {
+  const idx = query ? snippet.toLowerCase().indexOf(query.toLowerCase()) : -1;
+  if (idx < 0) return <>{snippet}</>;
+  return (
+    <>
+      {snippet.slice(0, idx)}
+      <mark className="rounded-[2px] bg-[color-mix(in_oklch,var(--accent-presence)_28%,transparent)] px-0.5 text-[var(--text-primary)]">
+        {snippet.slice(idx, idx + query.length)}
+      </mark>
+      {snippet.slice(idx + query.length)}
+    </>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true }: Props) {
@@ -109,6 +136,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
+  // Content search (CHAT-D9-02) — hits from /api/chat/search for the current
+  // query; cleared the moment the query drops below the 2-char threshold.
+  const [contentHits, setContentHits] = useState<ContentSearchHit[]>([]);
+  const [contentLoading, setContentLoading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
@@ -190,6 +221,38 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     return () => { cancelled = true; };
   }, [showArchived, archiveNonce]);
 
+  // Content search fires only for queries of length ≥2, debounced ~300ms so
+  // each keystroke doesn't hit disk; a retype aborts the in-flight fetch.
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) {
+      setContentHits([]);
+      setContentLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setContentLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/chat/search?q=${encodeURIComponent(q)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (controller.signal.aborted) return;
+        setContentHits(json.ok && Array.isArray(json.hits) ? json.hits : []);
+        setContentLoading(false);
+      } catch {
+        // aborted retype or network hiccup — a newer effect owns the state
+        if (!controller.signal.aborted) setContentLoading(false);
+      }
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [search]);
+
   // ── Data: filter ──────────────────────────────────────────────────────────
 
   const mine = useMemo(() => {
@@ -249,6 +312,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
   );
+  // Content hits resolve against the familiar-scoped rows and drop any
+  // session the title filter already shows — title matches stay primary.
+  const contentMatches = useMemo(() => {
+    if (search.trim().length < 2 || contentHits.length === 0) return [];
+    const shown = new Set<string>();
+    for (const group of scopedGroups) for (const s of group.sessions) shown.add(s.id);
+    const byId = new Map(mine.map((s) => [s.id, s]));
+    const out: Array<{ hit: ContentSearchHit; row: SessionRow }> = [];
+    for (const hit of contentHits) {
+      if (shown.has(hit.sessionId)) continue;
+      const row = byId.get(hit.sessionId);
+      if (!row) continue;
+      out.push({ hit, row });
+    }
+    return out;
+  }, [contentHits, scopedGroups, mine, search]);
+  const showContentSection =
+    search.trim().length >= 2 && (contentLoading || contentMatches.length > 0);
   // ── Delete (two-step confirm) ────────────────────────────────────────────
 
   const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
@@ -564,7 +645,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               to jump back to chat search after this list has history.
             </div>
           </div>
-        ) : visibleRows === 0 ? (
+        ) : visibleRows === 0 && !showContentSection ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Icon name="ph:magnifying-glass" width={20} className="text-[var(--text-muted)]" />
             <p className="text-sm text-[var(--text-muted)]">
@@ -579,6 +660,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             </button>
           </div>
         ) : (
+          <>
+          {visibleRows > 0 && (
           <ul className="divide-y divide-[var(--border-hairline)]">
             {displayGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
               <li key={projectRoot ?? "__none__"}>
@@ -777,6 +860,60 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               </li>
             ))}
           </ul>
+          )}
+
+          {/* ── In conversations (CHAT-D9-02) — body matches for the query.
+                 Title-filtered rows above stay primary; sessions already
+                 visible there are deduped out of this section. ── */}
+          {showContentSection && (
+            <section aria-label="Matches in conversation content">
+              <div className="flex items-center gap-1.5 border-y border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-4 py-1.5">
+                <Icon name="ph:chats" width={12} className="shrink-0 text-[var(--text-muted)]" />
+                <span className="truncate text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                  In conversations
+                </span>
+              </div>
+              {contentLoading && contentMatches.length === 0 ? (
+                <div aria-hidden className="space-y-px px-4 py-2">
+                  {[0, 1].map((i) => (
+                    <div key={i} className="animate-pulse flex flex-col gap-1.5 py-2.5">
+                      <span className="h-3 w-1/2 rounded bg-[var(--bg-hover)]" />
+                      <span className="h-2.5 w-3/4 rounded bg-[var(--bg-hover)] opacity-60" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ul className="divide-y divide-[var(--border-hairline)]">
+                  {contentMatches.map(({ hit, row }) => (
+                    <li key={hit.sessionId}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => { setActiveId(hit.sessionId); onOpen(hit.sessionId, row.familiarId); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { setActiveId(hit.sessionId); onOpen(hit.sessionId, row.familiarId); }
+                        }}
+                        className="focus-ring-inset group flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-[var(--bg-raised)]/50"
+                      >
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="min-w-0 truncate text-[13px] font-semibold text-[var(--text-primary)]">
+                            {stripLeadingTrailingEmoji(row.title || hit.title || "(untitled chat)")}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                            {hit.matchCount === 1 ? "1 match" : `${hit.matchCount} matches`}
+                          </span>
+                        </span>
+                        <span className="truncate text-[12px] text-[var(--text-muted)]">
+                          <HighlightedSnippet snippet={hit.snippet} query={search.trim()} />
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+          </>
         )}
       </div>
 

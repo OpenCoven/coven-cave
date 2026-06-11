@@ -28,6 +28,8 @@ import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
+import { toolArgSummary } from "@/lib/tool-arg-summary";
+import { toolInputAsDiff } from "@/lib/tool-input-diff";
 
 type ToolEvent = {
   id: string;
@@ -1726,6 +1728,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       : x,
                   )
                 : [...tools, incoming];
+            // Post-tool events carry no input, so summarize from the merged
+            // record (which preserves the input captured at pre-tool time).
+            const argSummary = toolArgSummary(
+              incoming.name,
+              existingIdx >= 0 ? nextTools[existingIdx]?.input : incoming.input,
+            );
             return {
               ...t,
               tools: nextTools,
@@ -1733,7 +1741,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               progress: upsertProgressEvent(t.progress, {
                 id: "tools",
                 label: incoming.status === "running" ? "Tool call running" : "Tool call finished",
-                detail: incoming.name,
+                detail: argSummary ? `${incoming.name}(${argSummary})` : incoming.name,
                 status: incoming.status === "error" ? "error" : incoming.status === "ok" ? "done" : "running",
                 durationMs: incoming.durationMs,
               }),
@@ -2345,8 +2353,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               enterKeyHint="send"
               className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
               aria-label="Message"
-              role="combobox"
               aria-autocomplete="list"
+              aria-haspopup="listbox"
               aria-expanded={slashSuggestions.length > 0}
               aria-controls={slashSuggestions.length > 0 ? slashListboxId : undefined}
               aria-activedescendant={
@@ -2680,11 +2688,19 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 }
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
+  const argSummary = toolArgSummary(tool.name, tool.input);
+  // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
+  // structured before/after diff instead of the raw JSON payload; null for
+  // every other tool (or unparseable input) falls back to the plain block.
+  const inputDiff = toolInputAsDiff(tool.name, tool.input);
   return (
     <details className="cave-tool-block" data-default-collapsed="true">
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
         <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
+        {argSummary ? (
+          <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
+        ) : null}
         <span className={[
           "rounded px-1.5 py-0.5 font-mono text-[10px]",
           tool.status === "error"
@@ -2700,7 +2716,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       {tool.input ? (
         <div className="mt-2">
           <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Input</div>
-          <SyntaxBlock text={tool.input} />
+          {inputDiff ? <SyntaxBlock text={inputDiff} lang="diff" /> : <SyntaxBlock text={tool.input} />}
         </div>
       ) : null}
       {tool.output ? (
