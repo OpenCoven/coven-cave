@@ -1,6 +1,6 @@
 {
   "name": "coven-cave",
-  "version": "0.0.70",
+  "version": "0.0.71",
   "private": true,
   "scripts": {
     "dev": "node --experimental-strip-types server.ts",
