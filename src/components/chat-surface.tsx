@@ -314,6 +314,7 @@ export function ChatSurface({
                   onOpenOnboarding={onOpenOnboarding}
                   pendingProjectRoot={pendingProjectRoot}
                   onOpenTask={onOpenTask}
+                  syncUrlHash
                 />
               </div>
             </Panel>

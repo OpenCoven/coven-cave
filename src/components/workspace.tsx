@@ -61,6 +61,25 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
+// Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
+// thread, same in-app hash idiom as `#card-<id>` and `library:projects`.
+// ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
+const CHAT_HASH_PREFIX = "#chat-";
+
+function readChatHash(): string | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash;
+  return hash.startsWith(CHAT_HASH_PREFIX)
+    ? decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length))
+    : null;
+}
+
+function clearChatHash() {
+  if (typeof window === "undefined") return;
+  if (!window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
+  window.history.replaceState(null, "", window.location.pathname + window.location.search);
+}
+
 export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
@@ -109,6 +128,15 @@ export function Workspace() {
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
+  // Deep-link target captured at mount, held until the async sessions fetch
+  // settles (loadSessions → sessionsLoaded) so the restore can resolve it.
+  const pendingChatDeepLinkRef = useRef<string | null>(readChatHash());
+  // Refs for the popstate listener — sessions repoll every 4s and mode flips
+  // often; the listener should not resubscribe on either.
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
@@ -655,6 +683,50 @@ export function Workspace() {
     setPendingChatAction({ kind: "list", nonce: Date.now() });
     setMode("chat");
   }, []);
+
+  // Mount-time deep-link restore: sessions load async (/api/sessions/list),
+  // so hold the `#chat-<sessionId>` target until the first fetch settles,
+  // then open the session — same lookup as the `/attach` slash command.
+  // Unknown/stale ids fall back to the chat list with the hash cleared.
+  useEffect(() => {
+    if (!sessionsLoaded) return;
+    const sid = pendingChatDeepLinkRef.current;
+    if (!sid) return;
+    pendingChatDeepLinkRef.current = null;
+    const target = sessions.find((s) => s.id === sid);
+    if (target) {
+      openAgentSession(sid, target.familiarId);
+    } else {
+      clearChatHash();
+      showAgentChatList();
+    }
+  }, [sessionsLoaded, sessions, openAgentSession, showAgentChatList]);
+
+  // Browser Back/Forward between list ↔ chat (and chat ↔ chat). Only acts on
+  // chat hashes — board `#card-` and library hashes keep their own listeners.
+  useEffect(() => {
+    const onPopState = () => {
+      const sid = readChatHash();
+      if (sid) {
+        const target = sessionsRef.current.find((s) => s.id === sid);
+        openAgentSession(sid, target?.familiarId);
+        return;
+      }
+      // Popped back out of a chat entry → show the list, but only while the
+      // chat surface is active; other surfaces own their own hash traffic.
+      if (modeRef.current === "chat") showAgentChatList();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [openAgentSession, showAgentChatList]);
+
+  // Leaving the chat surface invalidates a chat hash — clear it in place
+  // (replace, not push) so a reload restores the surface the user actually
+  // sees. Skip while the mount-time deep link is still awaiting sessions.
+  useEffect(() => {
+    if (mode === "chat" || pendingChatDeepLinkRef.current) return;
+    clearChatHash();
+  }, [mode]);
 
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
