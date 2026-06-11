@@ -575,13 +575,18 @@ export function Workspace() {
     setMode("inbox");
   }, [openAgentSession]);
 
-  const startAgentChat = useCallback((familiarId?: string | null, projectRoot?: string | null) => {
+  const startAgentChat = useCallback((
+    familiarId?: string | null,
+    projectRoot?: string | null,
+    initialPrompt?: string | null,
+  ) => {
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
     setPendingChatAction({
       kind: "new",
       familiarId,
       projectRoot,
+      initialPrompt,
       nonce: Date.now(),
     });
     setMode("chat");
@@ -1066,7 +1071,7 @@ export function Workspace() {
         familiars={familiars}
         activeFamiliarId={activeId}
         sessions={sessions}
-        onNavigateToChat={(sessionId, fid) => openAgentSession(sessionId, fid)}
+        onStartChat={(prompt, fid) => startAgentChat(fid, null, prompt)}
         onNavigateToBoard={() => setMode("board")}
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}

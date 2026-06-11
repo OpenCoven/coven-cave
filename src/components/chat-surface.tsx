@@ -205,7 +205,10 @@ export function ChatSurface({
       if (pendingChatAction.familiarId) onSetActiveFamiliar(pendingChatAction.familiarId);
       setScope("conversation");
       window.setTimeout(
-        () => routerRef.current?.newChat(pendingChatAction.projectRoot ?? undefined),
+        () => routerRef.current?.newChat(
+          pendingChatAction.projectRoot ?? undefined,
+          pendingChatAction.initialPrompt ?? undefined,
+        ),
         0,
       );
       onPendingChatActionHandled();

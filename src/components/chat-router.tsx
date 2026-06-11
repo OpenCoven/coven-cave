@@ -8,7 +8,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; projectRoot?: string };
+  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string };
 
 type Props = {
   familiar: Familiar | null;
@@ -25,7 +25,7 @@ type Props = {
 
 export type ChatRouterHandle = {
   goToList: () => void;
-  newChat: (projectRoot?: string) => void;
+  newChat: (projectRoot?: string, initialPrompt?: string) => void;
   openSession: (sessionId: string) => void;
   currentSessionId: () => string | null;
   clearTranscript: () => void;
@@ -78,7 +78,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ref,
     () => ({
       goToList: () => setView({ kind: "list" }),
-      newChat: (projectRoot?: string) => setView({ kind: "chat", sessionId: null, projectRoot }),
+      newChat: (projectRoot?: string, initialPrompt?: string) =>
+        setView({ kind: "chat", sessionId: null, projectRoot, initialPrompt }),
       openSession: (sessionId: string) => setView({ kind: "chat", sessionId }),
       currentSessionId: () => (view.kind === "chat" ? view.sessionId : null),
       clearTranscript: () => viewHandle.current?.clearTranscript(),
@@ -141,6 +142,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       sessionId={view.sessionId}
       session={activeSession}
       projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
+      initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
       daemonRunning={daemonRunning}
       onSessionsChanged={onSessionsChanged}
       onBack={() => setView({ kind: "list" })}

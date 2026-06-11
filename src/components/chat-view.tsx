@@ -72,6 +72,9 @@ type Props = {
   sessionId: string | null;
   session?: SessionRow | null;
   projectRoot?: string;
+  /** Prompt handed off from the home composer. Auto-sent once on mount so the
+   *  send runs through this view's streaming path instead of a detached fetch. */
+  initialPrompt?: string;
   daemonRunning?: boolean;
   onSessionStarted?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
@@ -843,7 +846,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask },
+  { familiar, sessionId, session, projectRoot, initialPrompt, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -868,6 +871,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const initialPromptSentRef = useRef(false);
   const keys = useKeySymbols();
 
   // Track the iOS visual viewport so the composer dock can translate up
@@ -1319,6 +1323,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setAttachments([]);
     await sendRaw(text, outgoingAttachments);
   };
+
+  // Auto-send a prompt handed off from the home composer. Ref-guarded so it
+  // fires exactly once per handoff (including strict-mode double effects).
+  // The router drops initialPrompt from its view state when the session id is
+  // promoted, which clears the prop and re-arms the guard for the next handoff.
+  useEffect(() => {
+    if (!initialPrompt) {
+      initialPromptSentRef.current = false;
+      return;
+    }
+    if (initialPromptSentRef.current || sessionId) return;
+    initialPromptSentRef.current = true;
+    void sendRaw(initialPrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrompt, sessionId]);
 
   const attachFiles = async (files: FileList | null) => {
     // Check for CSV files before normal attachment handling

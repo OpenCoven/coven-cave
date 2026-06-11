@@ -41,7 +41,10 @@ type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
   sessions: SessionRow[];
-  onNavigateToChat: (sessionId: string, familiarId: string) => void;
+  /** Open a new chat that sends `prompt` through ChatView's streaming path.
+   *  Home never talks to the chat API itself — a fire-and-cancel send here
+   *  aborts the request, which kills the harness before the transcript saves. */
+  onStartChat: (prompt: string, familiarId: string) => void;
   onNavigateToBoard: () => void;
   onNavigateToInbox: () => void;
   onToast: (msg: string) => void;
@@ -62,7 +65,7 @@ export function HomeComposer({
   familiars,
   activeFamiliarId,
   sessions,
-  onNavigateToChat,
+  onStartChat,
   onNavigateToBoard,
   onNavigateToInbox,
   onToast,
@@ -226,43 +229,12 @@ export function HomeComposer({
         case "chat": {
           const fid = activeFamiliarId ?? familiars[0]?.id;
           if (!fid) { onToast("No familiar selected — add one in Settings."); break; }
-          const res = await fetch("/api/chat/send", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ familiarId: fid, prompt }),
-          });
-          if (!res.ok) {
-            const err = (await res.json().catch(() => ({ error: "send failed" }))) as { error?: string };
-            onToast(err.error ?? "Chat send failed.");
-            break;
-          }
-          let sessionId: string | null = null;
-          if (res.body) {
-            const reader = res.body.getReader();
-            const dec = new TextDecoder();
-            let buf = "";
-            outer: while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              buf += dec.decode(value, { stream: true });
-              const lines = buf.split("\n");
-              buf = lines.pop() ?? "";
-              for (const line of lines) {
-                if (line.startsWith("data: ")) {
-                  try {
-                    const evt = JSON.parse(line.slice(6)) as { kind: string; sessionId?: string };
-                    if (evt.kind === "session" && evt.sessionId) {
-                      sessionId = evt.sessionId;
-                      reader.cancel().catch(() => undefined);
-                      break outer;
-                    }
-                  } catch { /* malformed SSE */ }
-                }
-              }
-            }
-          }
-          if (sessionId) { setText(""); onNavigateToChat(sessionId, fid); }
-          else { onToast("Chat started but session ID not received — check Chats."); setText(""); }
+          // Hand the prompt to ChatView, which owns the streaming send. Doing
+          // the send here and canceling on the session event aborts the
+          // request server-side — the harness is killed mid-run and the
+          // transcript never saves, so the opened chat 404s.
+          setText("");
+          onStartChat(prompt, fid);
           break;
         }
         case "board": {
@@ -292,7 +264,7 @@ export function HomeComposer({
       setSending(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, destination, activeFamiliarId, familiars, sending, onSlash]);
+  }, [text, destination, activeFamiliarId, familiars, sending, onSlash, onStartChat]);
 
   return (
     <div className="home-composer-root">
