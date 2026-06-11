@@ -22,6 +22,12 @@ import {
   type ChatAttachment,
 } from "@/lib/chat-attachments";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
+import {
+  flattenToolResultContent,
+  formatToolInputValue,
+  formatToolPayload,
+  ToolCallTracker,
+} from "@/lib/chat-tool-events";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -755,18 +761,11 @@ export async function POST(req: Request) {
       let assistantText = "";
       let jsonBuf = "";
       let result: { duration_ms?: number; is_error?: boolean } = {};
-      // Per-tool start times so post_tool_use can compute durationMs and
-      // associate output with the matching pre_tool_use event.
-      let toolStartTimes = new Map<string, { startedAt: number; id: string }>();
-      let toolSeq = 0;
-      const toolIdFor = (name: string): string => {
-        const existing = toolStartTimes.get(name);
-        if (existing) return existing.id;
-        toolSeq += 1;
-        const id = `tool-${toolSeq}-${name}`;
-        toolStartTimes.set(name, { startedAt: Date.now(), id });
-        return id;
-      };
+      // Tracks open tool calls from both hook lines and stream-json
+      // envelopes: per-name FIFO queues give concurrent same-name calls
+      // distinct ids, and hook/envelope events describing the same call are
+      // deduped onto one id (hook events win — they carry real durations).
+      let toolTracker = new ToolCallTracker();
       // Keep stderr off the assistant stream — surface it only on failure
       // or empty-success so users don't see raw 401 traces mid-bubble.
       const stderrTail: string[] = [];
@@ -796,7 +795,18 @@ export async function POST(req: Request) {
               duration_ms?: number;
               is_error?: boolean;
               message?: {
-                content?: Array<{ type?: string; text?: string }>;
+                content?: Array<{
+                  type?: string;
+                  text?: string;
+                  // tool_use blocks
+                  id?: string;
+                  name?: string;
+                  input?: unknown;
+                  // tool_result blocks
+                  tool_use_id?: string;
+                  content?: unknown;
+                  is_error?: boolean;
+                }>;
               };
             };
             if (ev.session_id && !sessionId) {
@@ -813,14 +823,41 @@ export async function POST(req: Request) {
             }
             if (ev.type === "result") {
               result = { duration_ms: ev.duration_ms, is_error: ev.is_error };
-            } else if (ev.type === "assistant" && ev.message?.content) {
+            } else if (
+              ev.type === "assistant" &&
+              Array.isArray(ev.message?.content)
+            ) {
               // Claude stream-json wraps assistant text inside a message envelope.
               // Extract every text chunk and surface it as an assistant_chunk so
-              // the chat bubble renders.
+              // the chat bubble renders. tool_use blocks become structured
+              // tool events so harnesses WITHOUT pre/post_tool_use hooks still
+              // show tool activity; the tracker dedups against hook-derived
+              // events when both sources describe the same call.
               for (const block of ev.message.content) {
                 if (block.type === "text" && block.text) {
                   assistantText += block.text;
                   push({ kind: "assistant_chunk", text: block.text });
+                } else if (block.type === "tool_use" && block.id && block.name) {
+                  const toolEv = toolTracker.envelopeToolUse(
+                    block.id,
+                    block.name,
+                    formatToolInputValue(block.input),
+                  );
+                  if (toolEv) push({ kind: "tool_use", ...toolEv });
+                }
+              }
+            } else if (ev.type === "user" && Array.isArray(ev.message?.content)) {
+              // Tool outputs come back as tool_result blocks on the follow-up
+              // user envelope. Settle the matching tool event unless a post
+              // hook already did (hook output + duration win).
+              for (const block of ev.message.content) {
+                if (block.type === "tool_result" && block.tool_use_id) {
+                  const toolEv = toolTracker.envelopeToolResult(
+                    block.tool_use_id,
+                    flattenToolResultContent(block.content),
+                    block.is_error === true,
+                  );
+                  if (toolEv) push({ kind: "tool_use", ...toolEv });
                 }
               }
             }
@@ -844,38 +881,14 @@ export async function POST(req: Request) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
-          const id = toolIdFor(name);
-          // Try to pretty-print JSON payloads; fall back to raw string.
-          const fmtPayload = (raw: string): string | undefined => {
-            if (!raw) return undefined;
-            try {
-              return JSON.stringify(JSON.parse(raw), null, 2);
-            } catch {
-              return raw;
-            }
-          };
-          if (isPost) {
-            const meta = toolStartTimes.get(name);
-            const durationMs = meta ? Date.now() - meta.startedAt : undefined;
-            const isError = /error|fail|denied|exit\s*[1-9]/i.test(rest);
-            push({
-              kind: "tool_use",
-              id,
-              name,
-              output: fmtPayload(rest),
-              status: isError ? "error" : "ok",
-              durationMs,
-            });
-            toolStartTimes.delete(name);
-          } else {
-            push({
-              kind: "tool_use",
-              id,
-              name,
-              input: fmtPayload(rest),
-              status: "running",
-            });
-          }
+          const toolEv = isPost
+            ? toolTracker.hookEnd(
+                name,
+                formatToolPayload(rest),
+                /error|fail|denied|exit\s*[1-9]/i.test(rest),
+              )
+            : toolTracker.hookStart(name, formatToolPayload(rest));
+          push({ kind: "tool_use", ...toolEv });
         }
         const filtered = assistantFilter.push(cleaned + "\n");
         if (filtered) {
@@ -1001,8 +1014,7 @@ export async function POST(req: Request) {
         assistantText = "";
         jsonBuf = "";
         result = {};
-        toolStartTimes = new Map();
-        toolSeq = 0;
+        toolTracker = new ToolCallTracker();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;

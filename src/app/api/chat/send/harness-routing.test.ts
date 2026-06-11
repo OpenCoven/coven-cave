@@ -7,6 +7,12 @@ import {
   MAX_ATTACHMENT_IMAGE_BYTES,
   normalizeChatAttachments,
 } from "../../../../lib/chat-attachments.ts";
+import {
+  flattenToolResultContent,
+  formatToolInputValue,
+  formatToolPayload,
+  ToolCallTracker,
+} from "../../../../lib/chat-tool-events.ts";
 
 const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
@@ -270,3 +276,191 @@ const smallPng = `data:image/png;base64,${Buffer.from("png-payload-bytes").toStr
   );
   assert.doesNotMatch(undelivered, /\(content unavailable\)/);
 }
+
+// ── Tool-event fidelity (CHAT-D4-03 + CHAT-D4-04) ──────────────────────────
+// Source pins: the route must route BOTH tool-event sources through the
+// shared ToolCallTracker — hook lines and stream-json envelope blocks — and
+// must no longer key open calls by bare tool name.
+
+assert.match(
+  chatRoute,
+  /let toolTracker = new ToolCallTracker\(\);/,
+  "Native chat should track open tool calls with the shared ToolCallTracker",
+);
+
+assert.doesNotMatch(
+  chatRoute,
+  /toolStartTimes/,
+  "The name-keyed toolStartTimes map merged concurrent same-name calls (CHAT-D4-03) and must stay gone",
+);
+
+assert.match(
+  chatRoute,
+  /toolTracker\.hookEnd\([\s\S]*?toolTracker\.hookStart\(/,
+  "Hook lines should feed the tracker so posts pair FIFO with the oldest open pre",
+);
+
+assert.match(
+  chatRoute,
+  /block\.type === "tool_use" && block\.id && block\.name[\s\S]*?toolTracker\.envelopeToolUse\(/,
+  "Assistant envelope tool_use blocks should surface as running tool events (CHAT-D4-04)",
+);
+
+assert.match(
+  chatRoute,
+  /ev\.type === "user" && Array\.isArray\(ev\.message\?\.content\)[\s\S]*?block\.type === "tool_result" && block\.tool_use_id[\s\S]*?toolTracker\.envelopeToolResult\(/,
+  "User envelope tool_result blocks should settle the matching tool event (CHAT-D4-04)",
+);
+
+assert.match(
+  chatRoute,
+  /toolTracker = new ToolCallTracker\(\);/,
+  "The resume retry should reset the tool tracker alongside the other per-attempt state",
+);
+
+// Behavioral: per-name FIFO queue gives overlapping same-name calls distinct
+// ids and pairs each post with the oldest open pre (correct durations).
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+
+  const first = tracker.hookStart("Bash", '{"command":"sleep 5"}');
+  t = 100;
+  const second = tracker.hookStart("Bash", '{"command":"ls"}');
+  assert.notEqual(
+    first.id,
+    second.id,
+    "two overlapping Bash calls must get distinct ids",
+  );
+  assert.equal(first.status, "running");
+  assert.equal(second.status, "running");
+
+  t = 250;
+  const firstDone = tracker.hookEnd("Bash", '{"exitCode":0}', false);
+  assert.equal(firstDone.id, first.id, "first post pairs with the FIRST open pre (FIFO)");
+  assert.equal(firstDone.status, "ok");
+  assert.equal(firstDone.durationMs, 250, "duration measured from the first call's own start");
+
+  t = 400;
+  const secondDone = tracker.hookEnd("Bash", '{"exitCode":1}', true);
+  assert.equal(secondDone.id, second.id, "second post pairs with the remaining open call");
+  assert.equal(secondDone.status, "error");
+  assert.equal(secondDone.durationMs, 300, "duration measured from the second call's own start");
+}
+
+// Behavioral: a post with no open call still surfaces, under a fresh id.
+{
+  const tracker = new ToolCallTracker(() => 0);
+  const orphan = tracker.hookEnd("Edit", "done", false);
+  assert.ok(orphan.id, "orphan post still gets an id");
+  assert.equal(orphan.status, "ok");
+  assert.equal(orphan.durationMs, undefined, "no start time means no fabricated duration");
+}
+
+// Behavioral: envelope-only harnesses (no pre/post_tool_use hooks) get a full
+// running → settled lifecycle from the stream-json blocks alone.
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const running = tracker.envelopeToolUse(
+    "toolu_01",
+    "Bash",
+    formatToolInputValue({ command: "ls" }),
+  );
+  assert.ok(running, "envelope tool_use must surface as a tool event");
+  assert.equal(running.id, "toolu_01", "envelope events keep the native tool_use id");
+  assert.equal(running.status, "running");
+  assert.match(running.input ?? "", /"command": "ls"/, "envelope input is pretty-printed");
+
+  assert.equal(
+    tracker.envelopeToolUse("toolu_01", "Bash"),
+    null,
+    "a repeated tool_use block for the same native id is deduped",
+  );
+
+  t = 1200;
+  const settled = tracker.envelopeToolResult(
+    "toolu_01",
+    flattenToolResultContent([{ type: "text", text: "file-a\nfile-b" }]),
+    false,
+  );
+  assert.ok(settled, "envelope tool_result must settle the call");
+  assert.equal(settled.id, "toolu_01");
+  assert.equal(settled.status, "ok");
+  assert.equal(settled.output, "file-a\nfile-b");
+  assert.equal(settled.durationMs, 1200);
+
+  const errored = tracker.envelopeToolUse("toolu_02", "Bash");
+  assert.ok(errored);
+  const erroredDone = tracker.envelopeToolResult("toolu_02", "boom", true);
+  assert.equal(erroredDone?.status, "error", "is_error tool_result blocks settle as errors");
+}
+
+// Behavioral: hook events win when hooks AND envelopes describe the same
+// call — envelope blocks are linked onto the hook's id (UI merges on id) or
+// suppressed once the hook has settled the call.
+{
+  // Envelope first (assistant message flushes before the tool executes).
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  const announced = tracker.envelopeToolUse("toolu_a", "Bash", '{"command":"pwd"}');
+  assert.ok(announced);
+
+  t = 50;
+  const hookRunning = tracker.hookStart("Bash", '{"command":"pwd"}');
+  assert.equal(
+    hookRunning.id,
+    "toolu_a",
+    "the hook pre claims the envelope-announced call's id so the UI merges them",
+  );
+
+  t = 350;
+  const hookDone = tracker.hookEnd("Bash", '{"exitCode":0}', false);
+  assert.equal(hookDone.id, "toolu_a");
+  assert.equal(hookDone.durationMs, 300, "duration baselined at the hook pre, not envelope parse");
+
+  assert.equal(
+    tracker.envelopeToolResult("toolu_a", "pwd output", false),
+    null,
+    "the envelope tool_result is suppressed once the post hook settled the call",
+  );
+}
+
+{
+  // Hook first (interleaving can deliver the hook line before the envelope).
+  const tracker = new ToolCallTracker(() => 0);
+  const hookRunning = tracker.hookStart("Read", '{"file_path":"/tmp/x"}');
+  assert.equal(
+    tracker.envelopeToolUse("toolu_b", "Read", '{"file_path":"/tmp/x"}'),
+    null,
+    "the envelope tool_use links to the already-announced hook call instead of duplicating",
+  );
+  const hookDone = tracker.hookEnd("Read", "contents", false);
+  assert.equal(hookDone.id, hookRunning.id);
+  assert.equal(
+    tracker.envelopeToolResult("toolu_b", "contents", false),
+    null,
+    "the linked native id dedups the tool_result after the hook settled the call",
+  );
+}
+
+// Behavioral: payload formatters used by both event sources.
+{
+  assert.equal(formatToolPayload(""), undefined);
+  assert.equal(formatToolPayload("not json"), "not json");
+  assert.equal(formatToolPayload('{"a":1}'), '{\n  "a": 1\n}');
+  assert.equal(formatToolInputValue(undefined), undefined);
+  assert.equal(formatToolInputValue({}), undefined, "empty input objects stay blank");
+  assert.equal(formatToolInputValue({ a: 1 }), '{\n  "a": 1\n}');
+  assert.equal(flattenToolResultContent("plain"), "plain");
+  assert.equal(
+    flattenToolResultContent([
+      { type: "text", text: "one" },
+      { type: "text", text: "two" },
+    ]),
+    "one\ntwo",
+  );
+  assert.equal(flattenToolResultContent(null), undefined);
+}
+
+console.log("harness-routing tests passed");
