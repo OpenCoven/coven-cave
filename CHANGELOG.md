@@ -12,7 +12,7 @@ breaking config changes; patch releases stay additive.
 ### Added
 - **Chat attachments** — paste or drag-drop files straight into the composer (#412); image attachments reach the harness via temp files instead of being dropped (#407).
 - **Edit and resend** — edit-and-resend user turns and regenerate assistant turns (#409).
-- **Workflow manifest surface** — Cave workflows gain a manifest view.
+- **Workflow manifest surface** — Cave workflows gain a manifest view (#399).
 
 ### Changed
 - **Kanban board** — kanban always uses status columns; the group toggle is hidden there (#393).
