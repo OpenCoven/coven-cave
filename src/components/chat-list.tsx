@@ -481,21 +481,21 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
             <div className="flex items-center gap-1.5">
               <Icon name="ph:chats" width={11} className="text-[var(--text-muted)]" />
-              <p className="text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Chats</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Chats</p>
             </div>
             <p className="mt-1 font-mono text-[15px] font-semibold text-[var(--text-primary)]">{mine.length}</p>
           </div>
           <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
             <div className="flex items-center gap-1.5">
               <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${runningCount > 0 ? "animate-pulse bg-[var(--color-success)]" : "bg-[var(--text-muted)]"}`} />
-              <p className="text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Live</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Live</p>
             </div>
             <p className={`mt-1 font-mono text-[15px] font-semibold ${runningCount > 0 ? "text-[var(--color-success)]" : "text-[var(--text-primary)]"}`}>{runningCount}</p>
           </div>
           <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
             <div className="flex items-center gap-1.5">
               <Icon name="ph:folder" width={11} className="text-[var(--text-muted)]" />
-              <p className="text-[9px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Projects</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Projects</p>
             </div>
             <p className="mt-1 font-mono text-[15px] font-semibold text-[var(--text-primary)]">{projectCount}</p>
           </div>
@@ -627,11 +627,11 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               </div>
               <div className="mt-4 divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
                 <div className="flex items-center justify-between gap-3 py-2">
-                  <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Harness</p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Harness</p>
                   <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{panelRuntime}</p>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2">
-                  <p className="text-[9px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</p>
                   <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar?.model ?? "default"}</p>
                 </div>
               </div>

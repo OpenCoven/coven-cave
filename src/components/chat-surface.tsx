@@ -71,7 +71,10 @@ function RightPanel({
   onInboxItemChanged: () => void | Promise<void>;
 }) {
   return (
-    <aside className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--border-hairline)]">
+    // CHAT-D13-05: this panel renders inside the shell's <main>, where a
+    // complementary landmark is invalid (axe landmark-complementary-is-top-level)
+    // — expose it as a named region instead.
+    <aside role="region" aria-label="Session panels" className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--border-hairline)]">
       <div className="right-panel-tabs">
         <button
           type="button"

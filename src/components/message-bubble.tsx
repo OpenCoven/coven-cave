@@ -497,7 +497,9 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
     let tableMatch: RegExpExecArray | null;
     while ((tableMatch = tableRe.exec(html)) !== null) {
       tableHtml += html.slice(tableLastIdx, tableMatch.index);
-      tableHtml += tableReplacements[tableIdx] ?? tableMatch[0];
+      // CHAT-D7-08: wide tables scroll horizontally inside this wrapper
+      // instead of word-shattering under .cave-md's overflow-wrap: anywhere.
+      tableHtml += `<div class="cave-table-scroll">${tableReplacements[tableIdx] ?? tableMatch[0]}</div>`;
       tableLastIdx = tableRe.lastIndex;
       tableIdx += 1;
     }

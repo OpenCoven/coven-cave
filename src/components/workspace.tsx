@@ -62,6 +62,25 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
+// CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
+// title, so the detail pane carries a visually-hidden h1 naming the active
+// surface. Labels mirror the sidebar's vocabulary.
+const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
+  agents: "Familiars",
+  home: "Home",
+  chat: "Chat",
+  board: "Board",
+  calendar: "Calendar",
+  inbox: "Inbox",
+  library: "Library",
+  browser: "Browser",
+  terminal: "Terminal",
+  github: "GitHub",
+  roles: "Roles",
+  workflows: "Workflows",
+  capabilities: "Capabilities",
+};
+
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>` and `library:projects`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
@@ -1061,6 +1080,7 @@ export function Workspace() {
 
   const detail = (
     <div key={mode} className="cave-mode-fade h-full flex flex-col">
+      <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
       {mode === "agents" ? (
       <AgentsView
         familiars={familiars}

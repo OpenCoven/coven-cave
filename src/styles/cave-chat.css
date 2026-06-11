@@ -153,6 +153,21 @@
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    TABLES
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* CHAT-D7-08: mdToHtml wraps every rendered table in .cave-table-scroll so
+   wide tables get a horizontal scrollbar instead of dominating layout. */
+.cave-md .cave-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+}
+.cave-md .cave-table-scroll::-webkit-scrollbar { height: 4px; }
+.cave-md .cave-table-scroll::-webkit-scrollbar-track { background: transparent; }
+.cave-md .cave-table-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  border-radius: 2px;
+}
+
 .cave-md table {
   width: 100%;
   border-collapse: collapse;
@@ -168,6 +183,11 @@
   border-right: 1px solid var(--border-hairline);
   text-align: left;
   vertical-align: top;
+  /* CHAT-D7-08: undo .cave-md's break-anywhere inside cells — auto table
+     layout then grows the table past 100% when a token can't wrap, and the
+     .cave-table-scroll wrapper scrolls it instead of shattering words. */
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .cave-md th:last-child,
 .cave-md td:last-child { border-right: none; }
@@ -951,6 +971,15 @@ details[open] > .cave-tool-summary::before {
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-base) 58%, transparent);
   padding: 9px;
+}
+
+/* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
+   prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits
+   between that and the system bubble's 320px. SyntaxBlock renders through
+   .cave-code-wrap, which already owns overflow-y: auto; only the cap changes.
+   :not() leaves the "Show more" toggle able to lift the clamp. */
+.cave-tool-block .cave-code-wrap:not(.cave-code-wrap--expanded) {
+  max-height: min(48vh, 360px);
 }
 
 .cave-composer-dock {

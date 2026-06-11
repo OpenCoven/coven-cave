@@ -245,6 +245,22 @@ assert.match(
   "The expanded state must lift the height clamp",
 );
 
+// CHAT-D4-07 — tool I/O is secondary context: inside .cave-tool-block the
+// wrap clamps tighter (min(48vh, 360px) vs prose's 520px). The :not() guard
+// keeps the Show-more toggle able to lift the clamp, and the rule reuses the
+// wrap's own overflow-y: auto — no second scroll container.
+const toolWrapBlock = ruleBlock(".cave-tool-block .cave-code-wrap:not(.cave-code-wrap--expanded)");
+assert.match(
+  toolWrapBlock,
+  /max-height:\s*min\(48vh,\s*360px\)/,
+  "Tool-block code wraps must clamp tighter than prose code blocks (CHAT-D4-07)",
+);
+assert.doesNotMatch(
+  toolWrapBlock,
+  /overflow/,
+  "The tool clamp must not introduce a second scroll container — the wrap already scrolls",
+);
+
 const renderCodeBlockFn = /async function renderCodeBlock\([\s\S]*?\n\}/.exec(source)?.[0] ?? "";
 assert.match(
   renderCodeBlockFn,

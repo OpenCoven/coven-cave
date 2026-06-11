@@ -39,6 +39,17 @@ assert.match(
   "Rendered tables substitute positionally for the renderer's own <table> output",
 );
 
+// ── CHAT-D7-08: wide tables scroll, they don't word-shatter ───────────────
+// Every substituted table is wrapped in a horizontal scroll container; cells
+// undo .cave-md's overflow-wrap: anywhere so unbreakable tokens grow the
+// table past 100% (auto table layout) into the wrapper's scrollbar instead
+// of shattering mid-word.
+assert.match(
+  source,
+  /<div class="cave-table-scroll">\$\{tableReplacements\[tableIdx\] \?\? tableMatch\[0\]\}<\/div>/,
+  "mdToHtml wraps each rendered table (including the positional fallback) in .cave-table-scroll",
+);
+
 // ── CHAT-D6-04: per-message actions must be keyboard/touch reachable ──────
 // The Copy/Expand bubble actions must be mounted unconditionally (when not
 // pending) and revealed by CSS — never mount-gated on a JS `hovered` state,
@@ -160,6 +171,19 @@ assert.match(
   css,
   /@media \(pointer: coarse\) \{\s*\.cave-copy-btn-bubble \{\s*opacity: 1;/,
   "Coarse pointers have no hover — bubble actions must be always visible there",
+);
+
+// CHAT-D7-08 CSS half: the wrapper owns horizontal overflow; cells restore
+// normal word wrapping so the table can exceed its container when needed.
+assert.match(
+  css,
+  /\.cave-md \.cave-table-scroll \{\s*max-width: 100%;\s*overflow-x: auto;/,
+  ".cave-table-scroll is the horizontal scroll container for rendered tables",
+);
+assert.match(
+  css,
+  /\.cave-md th,\s*\.cave-md td \{[\s\S]*?word-break: normal;\s*overflow-wrap: normal;/,
+  "Table cells undo .cave-md's break-anywhere so wide content scrolls instead of word-shattering",
 );
 
 console.log("message-bubble-markdown.test.ts: ok");

@@ -214,4 +214,36 @@ assert.match(
   "Clicking a content hit opens the session via the existing onOpen path",
 );
 
+// ── CHAT-D13-02: micro-type legibility ─────────────────────────────────────
+// 9px uppercase stat/meta labels sat under AA contrast at the old 40%-alpha
+// muted ink. Labels are lifted to 10px (hierarchy preserved via uppercase +
+// tracking) and the token itself is raised: 55% mix in dark, 62% in light.
+assert.doesNotMatch(
+  source,
+  /text-\[9px\]/,
+  "ChatList must not render 9px micro-type (CHAT-D13-02 — lifted to 10px)",
+);
+assert.match(
+  source,
+  /text-\[10px\] font-medium uppercase tracking-\[0\.1em\] text-\[var\(--text-muted\)\]/,
+  "Stat labels keep the uppercase/tracking hierarchy at the lifted 10px size",
+);
+
+const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+assert.match(
+  globals,
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 55%, transparent\);/,
+  "Dark-mode --text-muted mixes at 55% (≥4.5:1 over the panel ladder, CHAT-D13-02)",
+);
+assert.match(
+  globals,
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 62%, transparent\);/,
+  "Light-mode --text-muted overrides to 62% (dark ink needs a higher mix for the same contrast)",
+);
+assert.doesNotMatch(
+  globals,
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 40%, transparent\);/,
+  "The old 40% muted-ink mix (~3:1 on dark, ~2.5:1 on light) must not return",
+);
+
 console.log("chat-list-delete.test.ts: ok");

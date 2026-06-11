@@ -71,7 +71,11 @@
   --fg-muted: var(--text-secondary);
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
-  --text-muted: color-mix(in oklch, var(--foreground) 40%, transparent);
+  /* CHAT-D13-02: 40% alpha composited ~3:1 on the dark panel ladder — under
+     AA for the 9-11px labels that consume this token. 55% lands ~6:1 over
+     --card/--bg-elevated while still reading as muted next to
+     --text-secondary. Light mode needs its own ratio (override below). */
+  --text-muted: color-mix(in oklch, var(--foreground) 55%, transparent);
 
   /* ---- Radii ---- */
   --radius: 0.625rem;
@@ -240,8 +244,12 @@
 
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
-  /* --border, --border-strong, --input, --text-muted are derived from --foreground;
+  /* --border, --border-strong, --input are derived from --foreground;
      they auto-invert. No override needed. */
+  /* CHAT-D13-02: dark ink over near-white needs a higher mix than light ink
+     over near-black for the same contrast — 55% composites ~4.1:1 here; 62%
+     lands ~5:1 against --background/--card. */
+  --text-muted: color-mix(in oklch, var(--foreground) 62%, transparent);
 
   --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
   --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);

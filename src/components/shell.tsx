@@ -383,7 +383,9 @@ function ShellInner({
           setNavOpen((size.asPercentage ?? 0) > 0);
         }}
       >
-        <aside className="shell-nav">{nav}</aside>
+        {/* CHAT-D13-05: every complementary landmark carries a distinct
+            accessible name (axe landmark-unique). */}
+        <aside className="shell-nav" aria-label="Sidebar">{nav}</aside>
       </Panel>
       <Separator className="shell-separator" />
       {!twoPane && (
@@ -398,7 +400,7 @@ function ShellInner({
             collapsedSize={0}
             panelRef={listRef}
           >
-            <aside className="shell-list">{list}</aside>
+            <aside className="shell-list" aria-label="List pane">{list}</aside>
           </Panel>
           <Separator className="shell-separator" />
         </>
@@ -425,7 +427,7 @@ function ShellInner({
               setAgentOpen((size.asPercentage ?? 0) > 0);
             }}
           >
-            <aside className="shell-agent">{agentOpen ? agent : null}</aside>
+            <aside className="shell-agent" aria-label="Companion">{agentOpen ? agent : null}</aside>
           </Panel>
         </>
       )}

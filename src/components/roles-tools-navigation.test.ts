@@ -120,3 +120,37 @@ assert.match(
   /keyboard shortcuts sheet/,
   "/help footer should mention the shortcuts sheet so it stays discoverable",
 );
+
+// ── CHAT-D13-05: landmark hygiene (live axe findings) ───────────────────────
+// page-has-heading-one: the shell renders no visible page title, so the
+// workspace detail pane carries a visually-hidden h1 naming the active
+// surface. landmark-unique: the shell's complementary panels need distinct
+// accessible names.
+const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
+
+assert.match(
+  workspace,
+  /<h1 className="sr-only">\{WORKSPACE_MODE_TITLES\[mode\] \?\? "Coven Cave"\}<\/h1>/,
+  "Workspace detail must render a visually-hidden h1 naming the active surface (axe page-has-heading-one)",
+);
+assert.match(
+  workspace,
+  /const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = \{/,
+  "The h1 title map must cover every WorkspaceMode (Record enforces exhaustiveness)",
+);
+
+assert.match(
+  shell,
+  /<aside className="shell-nav" aria-label="Sidebar">/,
+  "Shell nav panel must carry a distinct accessible name (axe landmark-unique)",
+);
+assert.match(
+  shell,
+  /<aside className="shell-list" aria-label="List pane">/,
+  "Shell list panel must carry a distinct accessible name (axe landmark-unique)",
+);
+assert.match(
+  shell,
+  /<aside className="shell-agent" aria-label="Companion">/,
+  "Shell agent panel must carry a distinct accessible name (axe landmark-unique)",
+);

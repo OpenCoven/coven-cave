@@ -158,8 +158,8 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /<aside className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-\[var\(--border-hairline\)\]">/,
-  "ChatSurface right side panel should be height-bounded so its body can scroll vertically",
+  /<aside role="region" aria-label="Session panels" className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-\[var\(--border-hairline\)\]">/,
+  "ChatSurface right side panel should be height-bounded so its body can scroll vertically (and read as a named region, not a nested complementary landmark — CHAT-D13-05)",
 );
 
 assert.match(
