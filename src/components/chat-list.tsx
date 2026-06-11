@@ -12,10 +12,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
-  normalizeChatProjectRoot,
-  projectIdForRoot,
 } from "@/lib/chat-projects";
-import { useProjects } from "@/lib/use-projects";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import {
   applyProjectScope,
@@ -45,9 +42,6 @@ type Props = {
    *  "no chats yet" empty state. Defaults true for callers that load
    *  sessions before mounting. */
   sessionsLoaded?: boolean;
-  /** Compact mode for the narrow companion sidepanel (AgentPanel). Hides the
-   *  project sidebar entirely so the limited width goes to the chat list. */
-  compact?: boolean;
 };
 
 function age(iso: string): string {
@@ -124,7 +118,7 @@ function HighlightedSnippet({ snippet, query }: { snippet: string; query: string
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true }: Props) {
   const [error, setError] = useState<string | null>(null);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
@@ -165,7 +159,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const panelTitle = familiar?.display_name ?? "Familiars";
   const panelRole = familiar?.role ?? "All project conversations";
   const panelRuntime = familiar ? (familiar.harness ?? "codex") : "mixed";
-  const { projects } = useProjects();
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -280,43 +273,29 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (unreadsOnly) rows = rows.filter((s) => s.status === "running");
     if (search.trim()) {
       const q = search.toLowerCase();
-      rows = rows.filter((s) => {
-        if ((s.title ?? "").toLowerCase().includes(q)) return true;
-        if ((s.project_root ?? "").toLowerCase().includes(q)) return true;
-        const pid = projectIdForRoot(s.project_root, projects);
-        if (pid) {
-          const projectName = projects.find((p) => p.id === pid)?.name ?? "";
-          if (projectName.toLowerCase().includes(q)) return true;
-        }
-        return false;
-      });
+      rows = rows.filter(
+        (s) =>
+          (s.title ?? "").toLowerCase().includes(q) ||
+          (s.project_root ?? "").toLowerCase().includes(q)
+      );
     }
     return rows;
-  }, [mine, projects, search, unreadsOnly]);
+  }, [mine, search, unreadsOnly]);
 
   const hasAny = mine.length > 0;
-  const runningCount = mine.filter((s) => s.status === "running").length;
-  const projectCount = new Set(
-    mine
-      .map((s) =>
-        projectIdForRoot(s.project_root, projects) ??
-        (s.project_root?.trim() ? normalizeChatProjectRoot(s.project_root) : null),
-      )
-      .filter(Boolean),
-  ).size;
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const grouped = useMemo(() => {
-    return deriveChatProjectGroups(filtered, projects);
-  }, [filtered, projects]);
+    return deriveChatProjectGroups(filtered);
+  }, [filtered]);
 
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The persisted selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a persisted project selection must not scope the
   // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine, projects), [mine, projects]);
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine), [mine]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
@@ -411,7 +390,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
@@ -434,7 +412,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           onNewChat(root ?? undefined, group?.defaultFamiliarId ?? fallbackFamiliarId);
         }}
       />
-      )}
       <section className="chat-list-surface flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
       {/* ── Agent dossier + command strip ── */}
