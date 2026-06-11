@@ -72,7 +72,7 @@ const contracts: RouteContract[] = [
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/project-file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project-tree", methods: ["GET"], kind: "json", pathGuard: true },
-  { route: "/project/files", methods: ["GET"], kind: "json" },
+  { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },

@@ -1382,6 +1382,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return filterFileMentions(mentionIndex.files, mentionToken.query, FILE_MENTION_RESULT_LIMIT);
   }, [mentionToken, mentionDismissed, mentionIndex, mentionRoot]);
   const mentionOpen = mentionMatches.length > 0;
+  const mentionActiveIdx = mentionOpen ? Math.min(mentionIdx, mentionMatches.length - 1) : 0;
   // The mention picker shares the composer combobox with the slash menu but
   // the two can never open together (`@` is mid-token, `/` first-token-only),
   // so while the picker IS open these override the closed slash menu's ARIA
@@ -1391,7 +1392,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     ? {
         "aria-expanded": true,
         "aria-controls": mentionListboxId,
-        "aria-activedescendant": `${mentionListboxId}-opt-${mentionIdx}`,
+        "aria-activedescendant": `${mentionListboxId}-opt-${mentionActiveIdx}`,
       }
     : {};
 
@@ -1476,8 +1477,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     if (mentionMatches.length === 0) return;
+    setMentionIdx((i) => (mentionMatches.length === 0 ? 0 : Math.min(i, mentionMatches.length - 1)));
+  }, [mentionMatches.length]);
+
+  useEffect(() => {
+    if (mentionMatches.length === 0) return;
     activeMentionOptionRef.current?.scrollIntoView({ block: "nearest" });
-  }, [mentionIdx, mentionMatches.length]);
+  }, [mentionActiveIdx, mentionMatches.length]);
 
   useEffect(() => {
     turnsRef.current = turns;
@@ -2246,7 +2252,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
-        const file = mentionMatches[Math.min(mentionIdx, mentionMatches.length - 1)];
+        const file = mentionMatches[mentionActiveIdx];
         if (file) selectMention(file);
         return;
       }
@@ -2688,7 +2694,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={mentionListboxId} role="listbox" aria-label="Workspace files">
                 {mentionMatches.map((file, i) => {
-                  const active = i === mentionIdx;
+                  const active = i === mentionActiveIdx;
                   const base = file.split("/").pop() ?? file;
                   return (
                     <li

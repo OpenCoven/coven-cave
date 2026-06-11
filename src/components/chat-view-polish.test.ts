@@ -545,8 +545,18 @@ assert.match(
 );
 assert.match(
   filesRouteSource,
-  /fs\.realpathSync\(path\.resolve\(root\)\)/,
-  "/api/project/files must realpath the root before use (mirror /api/changes)",
+  /import \{ resolveAllowedProjectPath \} from "@\/lib\/server\/project-paths"/,
+  "/api/project/files must reuse the standard allowed-root guard",
+);
+assert.match(
+  filesRouteSource,
+  /const allowedRoot = resolveAllowedProjectPath\(root\);[\s\S]*?if \(!allowedRoot\)[\s\S]*?path not allowed[\s\S]*?status: 403/,
+  "/api/project/files must reject roots outside allowed workspaces",
+);
+assert.match(
+  filesRouteSource,
+  /try \{[\s\S]*?fs\.realpathSync\(allowedRoot\);[\s\S]*?fs\.statSync\(real\);[\s\S]*?\} catch/,
+  "/api/project/files must realpath and stat the allowed root inside a guarded block",
 );
 assert.match(
   filesRouteSource,
@@ -598,13 +608,28 @@ assert.match(
 );
 assert.match(
   mentionSource,
-  /const mentionAriaOverrides: React\.AriaAttributes = mentionOpen\s*\n\s*\? \{\s*\n\s*"aria-expanded": true,\s*\n\s*"aria-controls": mentionListboxId,\s*\n\s*"aria-activedescendant": `\$\{mentionListboxId\}-opt-\$\{mentionIdx\}`,/,
-  "While the mention picker is open it must override the combobox ARIA (expanded/controls/activedescendant) — the menus are disjoint, so the closed slash wiring yields",
+  /const mentionActiveIdx = mentionOpen \? Math\.min\(mentionIdx, mentionMatches\.length - 1\) : 0;/,
+  "Mention active index must clamp to the current match count",
+);
+assert.match(
+  mentionSource,
+  /setMentionIdx\(\(i\) => \(mentionMatches\.length === 0 \? 0 : Math\.min\(i, mentionMatches\.length - 1\)\)\);/,
+  "Mention index should be brought back in range when the match list shrinks",
+);
+assert.match(
+  mentionSource,
+  /const mentionAriaOverrides: React\.AriaAttributes = mentionOpen\s*\n\s*\? \{\s*\n\s*"aria-expanded": true,\s*\n\s*"aria-controls": mentionListboxId,\s*\n\s*"aria-activedescendant": `\$\{mentionListboxId\}-opt-\$\{mentionActiveIdx\}`,/,
+  "While the mention picker is open it must override the combobox ARIA with the clamped active option",
 );
 assert.match(
   mentionSource,
   /\{\.\.\.mentionAriaOverrides\}/,
   "The composer textarea must apply the mention ARIA overrides after the slash wiring (later JSX attributes win)",
+);
+assert.match(
+  mentionSource,
+  /const active = i === mentionActiveIdx;/,
+  "Mention row highlight should use the same clamped active index as aria-activedescendant",
 );
 
 // Esc precedence (#402): mention dismiss → slash dismiss → busy cancel.

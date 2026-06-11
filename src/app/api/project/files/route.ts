@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -68,13 +69,19 @@ async function resolveIndexRoot(root: string): Promise<RootResolution> {
   if (!path.isAbsolute(root)) {
     return { ok: false, status: 400, error: "root must be an absolute path" };
   }
+  const allowedRoot = resolveAllowedProjectPath(root);
+  if (!allowedRoot) {
+    return { ok: false, error: "path not allowed", status: 403 };
+  }
   let real: string;
+  let stat: fs.Stats;
   try {
-    real = fs.realpathSync(path.resolve(root));
+    real = fs.realpathSync(allowedRoot);
+    stat = fs.statSync(real);
   } catch {
     return { ok: false, status: 404, error: "root does not exist" };
   }
-  if (!fs.statSync(real).isDirectory()) {
+  if (!stat.isDirectory()) {
     return { ok: false, status: 400, error: "root is not a directory" };
   }
   try {
