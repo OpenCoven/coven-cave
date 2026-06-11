@@ -123,7 +123,7 @@ function retrieveTopK(chunks: DocChunk[], query: string, k: number): DocChunk[] 
 
 function quickReply(message: string): string | null {
   const lower = message.toLowerCase();
-  if (lower.match(/\bqueen\b|\bcourt\b|\bsovereign\b|\bnova\b|\bvalentina\b|\bval\b/)) {
+  if (lower.match(/\bqueen\b|\bcourt\b|\bsovereign\b/)) {
     return [
       "Court protocol, since apparently some familiars require remedial monarchy:",
       "",
