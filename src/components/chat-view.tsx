@@ -18,6 +18,9 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import { Modal } from "@/components/ui/modal";
+import { DebugPane } from "@/components/debug-pane";
+import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallButton } from "./voice-call-button";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
@@ -718,6 +721,7 @@ function MobileChatContextMenu({
   daemonRunning,
   projectRoot,
   onOpenTask,
+  onOpenDebug,
 }: {
   familiar: Familiar;
   session: SessionRow | null;
@@ -726,6 +730,7 @@ function MobileChatContextMenu({
   daemonRunning?: boolean;
   projectRoot?: string;
   onOpenTask?: (cardId: string) => void;
+  onOpenDebug?: () => void;
 }) {
   const task = linkedContext?.task ?? null;
   const github = linkedContext?.github ?? [];
@@ -757,6 +762,12 @@ function MobileChatContextMenu({
             {session?.status ?? historyState}
           </span>
         </div>
+        {onOpenDebug ? (
+          <button type="button" className="cave-mobile-context-link" onClick={onOpenDebug}>
+            <Icon name="ph:bug-bold" width={13} aria-hidden />
+            <span className="min-w-0 flex-1 truncate">Debug session</span>
+          </button>
+        ) : null}
         {task ? (
           onOpenTask ? (
             <button
@@ -851,6 +862,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
+  const [debugModalOpen, setDebugModalOpen] = useState(false);
+
+  // Publish live chat state for the session debug pane (right panel / modal).
+  useEffect(() => {
+    publishChatDebugState({ sessionId, session: session ?? null, familiar, turns });
+  }, [sessionId, session, familiar, turns]);
+  useEffect(() => () => clearChatDebugState(), []);
+
+  const openDebug = useCallback(() => {
+    // lg+ has the right panel; below that, fall back to a modal.
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      window.dispatchEvent(new CustomEvent("cave:debug-open"));
+    } else {
+      setDebugModalOpen(true);
+    }
+  }, []);
+
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
@@ -1598,6 +1626,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             historyState={historyState}
             projectRoot={projectRoot}
             onOpenTask={onOpenTask}
+            onOpenDebug={sessionId ? () => setDebugModalOpen(true) : undefined}
           />
         </div>
         <MetaLine
@@ -1616,11 +1645,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
         >
           {sessionId && (
-            <VoiceCallButton
-              familiar={familiar}
-              callActive={voiceCallOpen}
-              onOpen={() => setVoiceCallOpen(true)}
-            />
+            <>
+              <VoiceCallButton
+                familiar={familiar}
+                callActive={voiceCallOpen}
+                onOpen={() => setVoiceCallOpen(true)}
+              />
+              <button
+                type="button"
+                className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                title="Debug session"
+                aria-label="Debug session"
+                onClick={openDebug}
+              >
+                <Icon name="ph:bug-bold" width={12} aria-hidden />
+              </button>
+            </>
           )}
         </MetaLine>
         <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
@@ -1944,6 +1984,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onClose={() => setVoiceCallOpen(false)}
         />
       )}
+      <Modal
+        open={debugModalOpen}
+        onClose={() => setDebugModalOpen(false)}
+        breadcrumb={["Chat", "Debug"]}
+        ariaLabel="Session debug info"
+      >
+        <div className="h-[60vh] min-h-0">
+          <DebugPane />
+        </div>
+      </Modal>
     </section>
   );
 });
