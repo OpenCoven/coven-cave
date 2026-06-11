@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { workflowToGraph, type WorkflowGraphNode } from "@/lib/workflow-graph";
+import { workflowToGraph } from "@/lib/workflow-graph";
 import {
   dryRunWorkflow,
   listWorkflows,
@@ -22,7 +22,7 @@ export function WorkflowsView() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [action, setAction] = useState<WorkflowStudioActionState | null>(null);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<WorkflowGraphNode | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const load = useCallback(async (refresh = false) => {
     setRefreshing(refresh);
@@ -50,14 +50,17 @@ export function WorkflowsView() {
   }, [load]);
 
   useEffect(() => {
-    setSelectedWorkflowId((currentId) => {
-      if (workflows.length === 0) return null;
-      if (currentId && workflows.some((workflow) => workflow.id === currentId)) {
-        return currentId;
-      }
-      return workflows[0]?.id ?? null;
-    });
-  }, [workflows]);
+    if (workflows.length === 0) {
+      setSelectedWorkflowId(null);
+      setSelectedNodeId(null);
+      return;
+    }
+    if (selectedWorkflowId && workflows.some((workflow) => workflow.id === selectedWorkflowId)) {
+      return;
+    }
+    setSelectedWorkflowId(workflows[0]?.id ?? null);
+    setSelectedNodeId(null);
+  }, [selectedWorkflowId, workflows]);
 
   const selectedWorkflow = useMemo(
     () => workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null,
@@ -76,12 +79,17 @@ export function WorkflowsView() {
     return workflowToGraph(selectedWorkflow, selectedDryRun);
   }, [selectedDryRun, selectedWorkflow]);
 
+  const selectedNode = useMemo(
+    () => selectedGraph?.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [selectedGraph, selectedNodeId],
+  );
+
   useEffect(() => {
-    if (!selectedNode) return;
-    if (!selectedGraph?.nodes.some((node) => node.id === selectedNode.id)) {
-      setSelectedNode(null);
+    if (!selectedNodeId) return;
+    if (!selectedGraph?.nodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(null);
     }
-  }, [selectedGraph, selectedNode]);
+  }, [selectedGraph, selectedNodeId]);
 
   const runValidate = async (workflow: WorkflowSummary) => {
     setBusyId(`${workflow.id}:validate`);
@@ -105,7 +113,7 @@ export function WorkflowsView() {
 
   const selectWorkflow = (workflow: WorkflowSummary) => {
     setSelectedWorkflowId(workflow.id);
-    setSelectedNode(null);
+    setSelectedNodeId(null);
   };
 
   return (
@@ -120,8 +128,8 @@ export function WorkflowsView() {
       error={error}
       onRefresh={() => void load(true)}
       onSelectWorkflow={selectWorkflow}
-      onSelectNode={setSelectedNode}
-      onClearNode={() => setSelectedNode(null)}
+      onSelectNode={(node) => setSelectedNodeId(node.id)}
+      onClearNode={() => setSelectedNodeId(null)}
       onValidate={(workflow) => void runValidate(workflow)}
       onDryRun={(workflow) => void runDryRun(workflow)}
     />
