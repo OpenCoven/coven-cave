@@ -387,6 +387,13 @@ select {
   flex-direction: column;
 }
 
+/* Home composer spans the viewport width when one or both side panels are
+ * open; it needs overflow: visible on the detail panel to paint outside its
+ * bounds when translateX shifts the composer. */
+.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) {
+  overflow: visible !important;
+}
+
 /* Inner panel border — subtle dividing line on the right edge of side panels */
 .shell-nav-panel { border-right: 1px solid var(--border-hairline); }
 .shell-agent-panel { border-left: 1px solid var(--border-hairline); }

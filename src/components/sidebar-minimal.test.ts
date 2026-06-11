@@ -182,4 +182,27 @@ assert.match(
 // + button, so the New Chat ActionRow is the sole new-chat affordance now —
 // no wrapper, no responsive hide.
 
+// Dia-style panel toggle: when onToggleSidebar is provided, a button at the
+// top of the sidebar collapses it (the left-edge rail handles reopening).
+assert.match(
+  source,
+  /onToggleSidebar\?: \(\) => void;/,
+  "SidebarMinimal accepts an onToggleSidebar collapse handler",
+);
+assert.match(
+  source,
+  /className="sidebar-toggle"[\s\S]{0,160}onClick=\{onToggleSidebar\}/,
+  "the sidebar toggle button is wired to onToggleSidebar",
+);
+assert.match(
+  source,
+  /className="sidebar-toggle"[\s\S]{0,200}ph:sidebar-simple/,
+  "the sidebar toggle uses the panel (sidebar-simple) icon",
+);
+assert.match(
+  styles,
+  /\.sidebar-toggle \{/,
+  "the sidebar toggle button has dedicated styling",
+);
+
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

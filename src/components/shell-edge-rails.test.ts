@@ -1,7 +1,8 @@
 // @ts-nocheck
 // Closed side panels must stay discoverable and read as pressable:
-//   - the nav has a persistent left-edge collapse/expand tab mirroring the
-//     right-edge agent trigger rail
+//   - when the nav is collapsed, a left-edge rail (mirroring the right-edge
+//     agent trigger rail) is the floating reopen affordance; while the nav is
+//     open the in-panel top toggle owns collapsing, so the rail stays hidden
 //   - edge-rail toggles render a visible button chip instead of an
 //     invisible-until-hover icon
 import assert from "node:assert/strict";
@@ -19,13 +20,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /!isMobile \? \([\s\S]*?agent-trigger-rail--left/,
-  "left edge rail appears persistently on desktop",
-);
-assert.doesNotMatch(
-  shell,
-  /!isMobile && !navOpen[\s\S]*?agent-trigger-rail--left/,
-  "left edge rail must not disappear while navigation is open",
+  /!isMobile && !navOpen \? \([\s\S]*?agent-trigger-rail--left/,
+  "left edge rail appears on desktop once the nav is collapsed",
 );
 assert.match(
   shell,
@@ -97,8 +93,13 @@ assert.match(
 );
 assert.match(
   css,
-  /\.agent-trigger-rail--stacked \{[^}]*justify-content: flex-start;/,
-  "right edge tab opener stacks controls at the top",
+  /\.agent-trigger-rail--stacked \{[^}]*justify-content: stretch;/,
+  "right edge stacked tabs stretch to fill the rail height",
+);
+assert.match(
+  css,
+  /\.agent-trigger-rail--stacked \.agent-trigger-rail__toggle \{[^}]*flex: 1 1 0;/,
+  "stacked rail toggles each fill half the rail (50/50 split)",
 );
 assert.match(
   projectSidebar,
