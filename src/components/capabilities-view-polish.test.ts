@@ -41,7 +41,7 @@ assert.match(
 // Keyboard hint footer.
 assert.match(
   source,
-  /⌘R refresh · click a harness to expand · read-only/,
+  /⌘R refresh · search narrows the operator map · read-only/,
   "renders the keyboard hint footer below the scrolling content",
 );
 
