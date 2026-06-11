@@ -349,8 +349,8 @@ export function ChatSurface({
                 <Panel
                   id="right-sidebar"
                   className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="32%"
-                  minSize="24%"
+                  defaultSize="33%"
+                  minSize="33%"
                   maxSize="46%"
                   collapsible
                   collapsedSize={0}

@@ -7,8 +7,8 @@ const globals = await readFile(new URL("../app/globals.css", import.meta.url), "
 
 assert.match(
   chatSurface,
-  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="32%"/,
-  "ChatSurface right sidebar should use a resizable panel with a wider default fit",
+  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="33%"[\s\S]*minSize="33%"[\s\S]*maxSize="46%"/,
+  "ChatSurface right sidebar should open at the requested 33% width",
 );
 
 assert.match(

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./library-github-list.tsx", import.meta.url), "utf8");
+const libraryView = await readFile(new URL("./library-view.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("../styles/library.css", import.meta.url), "utf8");
 
 assert.match(
@@ -49,6 +50,12 @@ assert.match(
 
 assert.match(
   source,
-  /onLaunched=\{\(familiarId, sessionId\) => \{[\s\S]*if \(sessionId\) onOpenSession\?\.\(sessionId, familiarId\);[\s\S]*setHandoffItem\(null\);[\s\S]*\}\}/,
+  /onLaunched=\{\(familiarId, sessionId\) => \{[\s\S]*setHandoffItem\(null\);[\s\S]*if \(sessionId\) onOpenSession\?\.\(sessionId, familiarId\);[\s\S]*\}\}/,
   "Successful handoffs should close the modal and open the created chat session",
+);
+
+assert.match(
+  libraryView,
+  /<LibraryGitHubList[\s\S]*onOpenSession=\{onOpenSession\}/,
+  "LibraryView should pass the workspace chat opener into the GitHub list",
 );

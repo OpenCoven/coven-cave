@@ -101,36 +101,33 @@ assert.match(
 );
 assert.match(
   shell,
-  /const homeCenterAsymmetry = homeCenteringActive\s*\?\s*Math\.abs\(detailGaps\.left - detailGaps\.right\)\s*:\s*0/,
-  "Home asymmetry narrowing is zero for one-sided panel layouts",
-);
-assert.match(
-  shell,
   /"--shell-home-center-shift-px": `\$\{homeCenterShift\}px`/,
   "Shell exposes --shell-home-center-shift-px on .shell-frame",
 );
-assert.match(
+
+// The viewport-centering shift is an IDEAL the CSS hard-bounds to the detail
+// panel's own slack. The asymmetry-narrowing plumbing is gone: it squeezed the
+// composer to a clipped sliver and shifted it under an open side panel (notably
+// the native browser webview on the right edge).
+assert.doesNotMatch(
   shell,
-  /"--shell-home-asymmetry-px": `\$\{homeCenterAsymmetry\}px`/,
-  "Shell exposes --shell-home-asymmetry-px on .shell-frame",
+  /homeCenterAsymmetry|--shell-home-asymmetry-px/,
+  "old asymmetry-narrowing plumbing removed from Shell",
+);
+assert.doesNotMatch(
+  css,
+  /--hc-asymmetry/,
+  "old --hc-asymmetry narrowing removed from CSS",
 );
 
-// --hc-asymmetry is the active shell-provided narrowing amount. It is zero
-// for one-sided layouts so the composer centers in the detail panel; when both
-// side panels are open it narrows by abs(left - right) so viewport centering
-// can still avoid side-panel overflow.
+// --hc-max-shift is bounded to the slack around the 1200px content cap only, so
+// the composer can never overflow the detail panel into an open side panel.
+// When a side panel is wide enough that the detail panel is under 1200px, the
+// slack is zero and the composer centers in the detail panel at full width.
 assert.match(
   css,
-  /--hc-asymmetry:\s*var\(--shell-home-asymmetry-px, 0px\)/,
-  "--hc-asymmetry uses the shell-provided active asymmetry",
-);
-
-// --hc-max-shift includes the asymmetry/2 term so the clamp upper bound
-// grows with the asymmetry once the cards have been narrowed.
-assert.match(
-  css,
-  /--hc-max-shift:\s*max\([\s\S]*?calc\(var\(--hc-asymmetry\) \/ 2\)[\s\S]*?\)/,
-  "--hc-max-shift includes asymmetry/2",
+  /--hc-max-shift:\s*max\(0px,\s*calc\(\(100% - 1200px\) \/ 2\)\)/,
+  "--hc-max-shift is bounded to the 1200px-cap slack only (no panel overflow)",
 );
 
 // --hc-ideal-shift is zero in one-sided layouts and (right - left) / 2 when
@@ -162,17 +159,18 @@ assert.match(
   "centering transition enabled only under .shell-frame[data-settled]",
 );
 
-// Composer card wrap + suggestions use the widened 1200px max-width minus
-// --hc-asymmetry so they don't overflow when the layout is asymmetric.
+// Composer card wrap + suggestions cap at 1200px but otherwise fill the detail
+// panel's available width, so a wide side panel yields a full-width centered
+// composer rather than a narrowed sliver.
 assert.match(
   css,
-  /\.home-composer-card-wrap\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*calc\(100% - var\(--hc-asymmetry, 0px\)\)\)/,
-  ".home-composer-card-wrap uses 1200px asymmetry-aware max-width",
+  /\.home-composer-card-wrap\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*100%\)/,
+  ".home-composer-card-wrap caps at 1200px and fills available width",
 );
 assert.match(
   css,
-  /\.home-composer-suggestions\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*calc\(100% - var\(--hc-asymmetry, 0px\)\)\)/,
-  ".home-composer-suggestions uses 1200px asymmetry-aware max-width",
+  /\.home-composer-suggestions\s*\{[\s\S]*?max-width:\s*min\(1200px,\s*100%\)/,
+  ".home-composer-suggestions caps at 1200px and fills available width",
 );
 
 // The card itself inherits the constraint from its wrap — must NOT subtract

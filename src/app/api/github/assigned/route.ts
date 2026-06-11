@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { GitHubItem } from "@/lib/github-tasks";
+import { resolveSecret } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,8 +33,16 @@ type SearchResult = {
   items: RawGitHubItem[];
 };
 
+function resolveGitHubToken(): string | undefined {
+  return (
+    resolveSecret("GITHUB_PAT") ??
+    process.env.GITHUB_TOKEN?.trim() ??
+    process.env.COVEN_GITHUB_TOKEN?.trim()
+  );
+}
+
 export async function GET() {
-  const token = process.env.GITHUB_TOKEN ?? process.env.COVEN_GITHUB_TOKEN;
+  const token = resolveGitHubToken();
 
   if (!token) {
     return NextResponse.json({ ok: true, items: [], configured: false });

@@ -28,4 +28,10 @@ assert.match(
   "AgentsMemoryView should separately count runtime memory files",
 );
 
+assert.doesNotMatch(
+  source,
+  /fileEntries\s*\n\s*\.filter\(\(entry\) => entry\.familiarId === familiarFilter\)/,
+  "Memory files list should include files across all harnesses and runtimes, not only the selected familiar",
+);
+
 console.log("agents-memory-view-sources.test.ts: ok");

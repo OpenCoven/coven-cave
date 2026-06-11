@@ -199,6 +199,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
             setSelectedItem({ kind: "github", item });
           }}
           onDelete={(id) => { if (selectedGhId === id) setSelectedItem(null); }}
+          onOpenSession={onOpenSession}
         />
       );
     }

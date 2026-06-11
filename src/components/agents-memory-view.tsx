@@ -150,10 +150,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const visibleFiles = useMemo(
     () =>
       fileEntries
-        .filter((entry) => entry.familiarId === familiarFilter)
         .filter((entry) => memoryMatches(entry, q))
         .sort((a, b) => (a.modified < b.modified ? 1 : -1)),
-    [familiarFilter, fileEntries, q],
+    [fileEntries, q],
   );
 
   const familiarsWithMemory = useMemo(() => {

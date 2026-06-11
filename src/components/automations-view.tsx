@@ -180,10 +180,15 @@ function FieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
+const automationFieldBaseClass =
+  "w-full rounded-md border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
+const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
+const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
+const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
+const automationMonoTextareaClass = `${automationTextareaClass} font-mono text-[11px]`;
+
 const fieldStyle = {
-  background: "var(--bg-base)",
   borderColor: "var(--border-hairline)",
-  color: "var(--text-primary)",
 } as const;
 
 // ── Status icon ──────────────────────────────────────────────────────────────
@@ -526,7 +531,7 @@ function CodexDetailPanel({
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+            className={automationInputClass}
             style={fieldStyle}
           />
         </div>
@@ -537,7 +542,7 @@ function CodexDetailPanel({
             value={goals}
             onChange={(event) => setGoals(event.target.value)}
             rows={6}
-            className="w-full resize-y rounded-md border px-2 py-2 text-[12px] leading-relaxed outline-none focus:border-white/30"
+            className={automationTextareaClass}
             style={fieldStyle}
           />
         </div>
@@ -548,7 +553,7 @@ function CodexDetailPanel({
             value={deliverables}
             onChange={(event) => setDeliverables(event.target.value)}
             rows={5}
-            className="w-full resize-y rounded-md border px-2 py-2 text-[12px] leading-relaxed outline-none focus:border-white/30"
+            className={automationTextareaClass}
             style={fieldStyle}
           />
         </div>
@@ -578,7 +583,7 @@ function CodexDetailPanel({
               value={rawRrule}
               onChange={(event) => setRawRrule(event.target.value)}
               rows={3}
-              className="w-full resize-y rounded-md border px-2 py-2 font-mono text-[11px] leading-relaxed outline-none focus:border-white/30"
+              className={automationMonoTextareaClass}
               style={fieldStyle}
             />
           ) : (
@@ -609,7 +614,7 @@ function CodexDetailPanel({
                 type="time"
                 value={scheduleTime}
                 onChange={(event) => setScheduleTime(event.target.value)}
-                className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+                className={automationInputClass}
                 style={fieldStyle}
               />
             </div>
@@ -631,7 +636,7 @@ function CodexDetailPanel({
             <input
               value={model}
               onChange={(event) => setModel(event.target.value)}
-              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              className={automationInputClass}
               style={fieldStyle}
             />
           </div>
@@ -640,7 +645,7 @@ function CodexDetailPanel({
             <select
               value={reasoningEffort}
               onChange={(event) => setReasoningEffort(event.target.value)}
-              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              className={automationSelectClass}
               style={fieldStyle}
             >
               {!["low", "medium", "high"].includes(reasoningEffort) && (
@@ -656,7 +661,7 @@ function CodexDetailPanel({
             <select
               value={executionEnvironment}
               onChange={(event) => setExecutionEnvironment(event.target.value)}
-              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              className={automationSelectClass}
               style={fieldStyle}
             >
               {!["worktree", "repo"].includes(executionEnvironment) && (
@@ -672,7 +677,7 @@ function CodexDetailPanel({
               value={cwdsText}
               onChange={(event) => setCwdsText(event.target.value)}
               rows={3}
-              className="w-full resize-y rounded-md border px-2 py-2 font-mono text-[11px] leading-relaxed outline-none focus:border-white/30"
+              className={automationMonoTextareaClass}
               style={fieldStyle}
             />
           </div>
@@ -681,7 +686,7 @@ function CodexDetailPanel({
             <input
               value={tagsText}
               onChange={(event) => setTagsText(event.target.value)}
-              className="h-8 w-full rounded-md border px-2 text-[12px] outline-none focus:border-white/30"
+              className={automationInputClass}
               style={fieldStyle}
             />
           </div>
