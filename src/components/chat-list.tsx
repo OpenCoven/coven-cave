@@ -552,7 +552,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       {error && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-1.5 text-xs text-[var(--color-warning)]"
+          className="flex items-center justify-between gap-2 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-1.5 text-xs text-[var(--color-warning)]"
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
