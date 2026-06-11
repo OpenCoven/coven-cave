@@ -39,7 +39,7 @@ import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
 import { HomeComposer } from "@/components/home-composer";
-import { ChatSurface } from "@/components/chat-surface";
+import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { nativeNotify } from "@/lib/native-notify";
@@ -77,7 +77,7 @@ export function Workspace() {
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [rightPanel, setRightPanel] = useState<"inspector" | "chat" | null>(null);
+  const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   const [railTab, setRailTab] = useState<CompanionTab>(() => {
     if (typeof window === "undefined") return "chat";
     return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";

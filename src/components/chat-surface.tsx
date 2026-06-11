@@ -5,6 +5,7 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { AgentPanel } from "@/components/agent-panel";
+import { DebugPane } from "@/components/debug-pane";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -13,6 +14,8 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type AgentsScope = "conversation" | "memory";
+
+export type RightPanelKind = "inspector" | "chat" | "debug";
 
 type Props = {
   familiars: Familiar[];
@@ -23,11 +26,11 @@ type Props = {
   routerRef: RefObject<ChatRouterHandle | null>;
   inboxItems: InboxItem[];
   inspectorOpen: boolean;
-  rightPanel?: "inspector" | "chat" | null;
+  rightPanel?: RightPanelKind | null;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
   onSetInspectorOpen: (open: boolean) => void;
-  onSetRightPanel?: (panel: "inspector" | "chat" | null) => void;
+  onSetRightPanel?: (panel: RightPanelKind | null) => void;
   onSetActiveFamiliar: (id: string) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
@@ -61,12 +64,12 @@ function RightPanel({
   onOpenInboxItem,
   onInboxItemChanged,
 }: {
-  panel: "inspector" | "chat";
+  panel: RightPanelKind;
   activeFamiliar: Familiar | null;
   sessions: SessionRow[];
   daemonRunning: boolean;
   inboxItems: InboxItem[];
-  onSetPanel: (p: "inspector" | "chat" | null) => void;
+  onSetPanel: (p: RightPanelKind | null) => void;
   onSessionStarted: () => void;
   onSlashFromChat: (cmd: string, args: string) => boolean;
   onOpenOnboarding: () => void;
@@ -94,6 +97,14 @@ function RightPanel({
           <Icon name="ph:brain-bold" width={13} />
           Inspector
         </button>
+        <button
+          type="button"
+          className={`right-panel-tab${panel === "debug" ? " right-panel-tab--active" : ""}`}
+          onClick={() => onSetPanel("debug")}
+        >
+          <Icon name="ph:bug-bold" width={13} />
+          Debug
+        </button>
         <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
           <Icon name="ph:x-bold" width={11} />
         </button>
@@ -120,6 +131,7 @@ function RightPanel({
             onOpenOnboarding={onOpenOnboarding}
           />
         )}
+        {panel === "debug" && <DebugPane />}
       </div>
     </aside>
   );
@@ -158,10 +170,10 @@ export function ChatSurface({
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
-  const rightPanel: "inspector" | "chat" | null =
+  const rightPanel: RightPanelKind | null =
     rightPanelProp !== undefined ? (rightPanelProp ?? null) : inspectorOpen ? "inspector" : null;
 
-  function setRightPanel(next: "inspector" | "chat" | null) {
+  function setRightPanel(next: RightPanelKind | null) {
     if (onSetRightPanel) { onSetRightPanel(next); return; }
     onSetInspectorOpen(next === "inspector");
   }
@@ -196,6 +208,15 @@ export function ChatSurface({
       window.removeEventListener("cave:agents-list", onShowList);
     };
   }, [onSetActiveFamiliar, routerRef]);
+
+  // ChatView's MetaLine bug button opens the Debug tab from a different
+  // subtree — same window-event bridge as the cave:agents-* events above.
+  useEffect(() => {
+    if (!onSetRightPanel) return;
+    const onDebugOpen = () => onSetRightPanel("debug");
+    window.addEventListener("cave:debug-open", onDebugOpen);
+    return () => window.removeEventListener("cave:debug-open", onDebugOpen);
+  }, [onSetRightPanel]);
 
   useEffect(() => {
     if (!pendingChatAction) return;
