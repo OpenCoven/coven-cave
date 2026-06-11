@@ -227,3 +227,14 @@ assert.match(
   /↵ to send · shift↵ for newline/,
   "Empty-state hint matches actual composer key behavior",
 );
+
+assert.match(
+  source,
+  /aria-label="Rename chat"[\s\S]{0,200}setEditing\(true\)/,
+  "Chat title has an explicit, labeled rename button — click-to-rename alone is not discoverable",
+);
+assert.match(
+  source,
+  /ph:pencil-simple/,
+  "Rename affordance uses the pencil icon",
+);

@@ -539,17 +539,33 @@ function ChatTitleEditable({
   }
 
   return (
-    <button
-      type="button"
-      className={buttonClassName}
-      title={`${display} — click to rename`}
-      onClick={(e) => {
-        e.stopPropagation();
-        setEditing(true);
-      }}
-    >
-      {display}
-    </button>
+    <span className={headline ? "flex w-full min-w-0 items-center gap-1.5" : "flex min-w-0 flex-1 items-center gap-1"}>
+      <button
+        type="button"
+        className={buttonClassName}
+        title={`${display} — click to rename`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        {display}
+      </button>
+      {/* Explicit rename affordance — the click-to-rename title alone is
+          invisible; the pencil makes renaming discoverable. */}
+      <button
+        type="button"
+        title="Rename chat"
+        aria-label="Rename chat"
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
+      >
+        <Icon name="ph:pencil-simple" width={11} aria-hidden />
+      </button>
+    </span>
   );
 }
 
