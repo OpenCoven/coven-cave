@@ -434,9 +434,15 @@ function ShellInner({
     </Group>
   );
 
+  const homeCenteringActive = navOpen && agentOpen;
+  const homeCenterShift = homeCenteringActive
+    ? Math.round((detailGaps.right - detailGaps.left) / 2)
+    : 0;
+
   const shellFrameStyle: CSSProperties & {
     "--shell-left-gap-px": string;
     "--shell-right-gap-px": string;
+    "--shell-home-center-shift-px": string;
   } = {
     // The detail panel's real left/right viewport gaps (side panels +
     // separators + edge rails). Surfaces can read these to reason about the
@@ -444,12 +450,14 @@ function ShellInner({
     // rather than translating toward the viewport center.
     "--shell-left-gap-px": `${detailGaps.left}px`,
     "--shell-right-gap-px": `${detailGaps.right}px`,
+    "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
 
-  // Persistent nav toggle — the left-edge mirror of the agent trigger rail, so
-  // the sidebar can be collapsed and reopened from the same stable affordance.
+  // Floating reopen affordance — once the sidebar is collapsed (via its own
+  // top toggle, ⌘B, or a drag), this left-edge rail is how it comes back. It
+  // stays hidden while the nav is open so the in-panel toggle owns collapsing.
   const navRail =
-    !isMobile ? (
+    !isMobile && !navOpen ? (
       <aside className="agent-trigger-rail agent-trigger-rail--left" aria-label="Navigation toggle">
         <button
           type="button"

@@ -1058,6 +1058,7 @@ export function Workspace() {
       onNewChat={() => {
         startAgentChat(activeId);
       }}
+      onToggleSidebar={() => shellRef.current?.toggleNav()}
       onOpenSettings={() => nextRouter.push("/settings")}
       onModeChange={(m) => {
         if (m === "browser") {

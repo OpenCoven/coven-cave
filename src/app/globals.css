@@ -372,18 +372,6 @@ select {
   display: flex;
 }
 
-/* Home composer can translate when Shell activates viewport centering for
- * two-sided panel layouts. Allow the detail panel to overflow visible only
- * while it contains a Home composer; react-resizable-panels sets `overflow:
- * auto` inline, so the override needs `!important`. The composer's own
- * .home-composer-root keeps its own vertical scroll. */
-.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) {
-  overflow: visible !important;
-}
-.shell-detail-panel:has(> .shell-detail > .cave-mode-fade > .home-composer-root) > .shell-detail {
-  overflow: visible;
-}
-
 /* Browser pane must never scroll — the native Tauri child webview is
  * positioned via absolute viewport coords (getBoundingClientRect) and
  * would lose sync if the shell-detail scroll container drifts.

@@ -46,6 +46,9 @@ export type SidebarMinimalProps = {
   onNewChat: () => void;
   onOpenSettings: () => void;
   onModeChange: (mode: string) => void;
+  /* Collapse the sidebar. When provided, a Dia-style toggle button renders at
+   * the top of the panel; the left-edge rail reopens it once collapsed. */
+  onToggleSidebar?: () => void;
   onOpenSession: (id: string) => void;
   addons?: AddonsConfig;
   /* Notifications — when omitted, the bell is hidden. */
@@ -200,6 +203,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onNewChat,
     onOpenSettings,
     onModeChange,
+    onToggleSidebar,
     addons,
     familiars,
     activeFamiliarId,
@@ -218,6 +222,22 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   return (
     <nav className="sidebar-minimal">
+      {/* Dia-style panel toggle pinned to the top of the sidebar. Collapsing
+          hands off to the left-edge rail, which reopens the panel. */}
+      {onToggleSidebar ? (
+        <div className="sidebar-header">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={onToggleSidebar}
+            aria-label="Hide sidebar (⌘B)"
+            title="Hide sidebar (⌘B)"
+          >
+            <Icon name="ph:sidebar-simple-fill" width={16} />
+          </button>
+        </div>
+      ) : null}
+
       {/* Header actions: familiar scope + New chat */}
       <div className="sidebar-actions sidebar-action-stack">
         <FamiliarScopeSelect

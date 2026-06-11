@@ -27,6 +27,24 @@
    * viewport center always pushed content toward the wider side panel, and when
    * that panel holds the native browser webview (which paints on top of web
    * content) the overflow got covered and the composer read as clipped. */
+  transition: none;
+}
+
+.shell-frame[data-settled] .home-composer-root {
+  transition: transform 120ms ease-out;
+}
+
+/* ── Viewport centering ──────────────────────────────────────────────────── */
+.home-composer-root {
+  --hc-max-shift: max(0px, calc((100% - 1200px) / 2));
+  --hc-ideal-shift: var(--shell-home-center-shift-px, 0px);
+  transform: translateX(
+    clamp(
+      calc(-1 * var(--hc-max-shift)),
+      var(--hc-ideal-shift),
+      var(--hc-max-shift)
+    )
+  );
 }
 
 @media (max-width: 520px) {
@@ -64,6 +82,8 @@
 .home-composer-card-wrap {
   position: relative;
   width: 100%;
+  max-width: min(1200px, 100%);
+  margin-inline: auto;
 }
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
@@ -274,7 +294,9 @@
   flex-wrap: wrap;
   gap: 6px;
   width: 100%;
+  max-width: min(1200px, 100%);
   justify-content: center;
+  margin-inline: auto;
 }
 
 .hc-suggestion {
