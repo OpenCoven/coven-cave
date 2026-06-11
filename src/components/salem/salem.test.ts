@@ -66,8 +66,9 @@ const shell = await readFile(path.join(root, "src/components/shell.tsx"), "utf8"
 const companionRail = await readFile(path.join(root, "src/components/companion-rail.tsx"), "utf8");
 assert.match(shell, /agentRail\?:\s*ReactNode/, "Shell must declare an agentRail slot mirroring familiarRail");
 assert.match(workspace, /agentRail=\{/, "workspace must pass an agentRail to Shell");
-assert.match(workspace, /className="agent-trigger-rail"/, "agentRail must use the agent-trigger-rail class");
-assert.match(workspace, /shellRef\.current\?\.toggleAgent\(\)/, "agentRail toggle must invoke shellRef.toggleAgent");
+assert.match(workspace, /agent-trigger-rail--stacked/, "agentRail must use the stacked right tab opener");
+assert.match(workspace, /const openCompanionTab = useCallback/, "agentRail tabs must use the shared companion tab opener");
+assert.match(workspace, /shellRef\.current\?\.openAgent\(\)/, "agentRail tab opener must expand the right panel");
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
 assert.match(workspace, /shellRef\.current\?\.openAgent\(\)/, "Salem launcher must expand the right panel");
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");

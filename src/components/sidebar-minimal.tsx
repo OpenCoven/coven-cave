@@ -6,7 +6,7 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
- *      Work  (Home / Chat / Board / Calendar / Inbox)
+ *      Work  (Home / Chat / Board / Calendar / Automations)
  *      Knowledge (Library)
  *      Tools (Browser / Terminal / Roles / Workflows / Capabilities / GitHub)
  *   3. Footer: Settings
@@ -73,7 +73,7 @@ const FOLDER_MODES: Array<{
   { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2" },
   { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4" },
-  { id: "inbox", label: "Inbox", iconName: "ph:tray", group: "work", kbd: "⌘5" },
+  { id: "inbox", label: "Automations", iconName: "ph:tray", group: "work", kbd: "⌘5" },
   // Knowledge
   { id: "library", label: "Library", iconName: "ph:books", group: "knowledge", kbd: "⌘6" },
   // Tools

@@ -574,6 +574,7 @@ type Props = {
   selectedId: string | null;
   onSelect: (item: LibraryGitHubItem) => void;
   onDelete?: (id: string) => void;
+  onOpenSession?: (sessionId: string, familiarId?: string | null) => void;
 };
 
 const COLS: { key: SortKey; label: string; width?: string }[] = [
@@ -583,7 +584,7 @@ const COLS: { key: SortKey; label: string; width?: string }[] = [
 ];
 const GITHUB_TABLE_COLUMN_COUNT = COLS.length + 4;
 
-export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
+export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSession }: Props) {
   const [items, setItems] = useState<LibraryGitHubItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("savedAt");
@@ -832,7 +833,10 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete }: Props) {
         <HandoffModal
           item={handoffItem}
           onClose={() => setHandoffItem(null)}
-          onLaunched={() => { /* could open chat pane here */ }}
+          onLaunched={(familiarId, sessionId) => {
+            setHandoffItem(null);
+            if (sessionId) onOpenSession?.(sessionId, familiarId);
+          }}
         />
       )}
           {undoPending && (

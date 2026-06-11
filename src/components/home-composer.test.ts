@@ -25,8 +25,8 @@ assert.match(
 
 assert.doesNotMatch(
   destinations,
-  /id: "inbox"[\s\S]*label: "Inbox"/,
-  "HomeComposer should not offer Inbox as an original chat launch destination",
+  /id: "inbox"[\s\S]*label: "Automations"/,
+  "HomeComposer should not offer Automations as an original chat launch destination",
 );
 
 assert.doesNotMatch(

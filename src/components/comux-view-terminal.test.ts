@@ -133,6 +133,11 @@ assert.match(
 );
 assert.match(
   source,
+  /data-terminal-resize-handle=\{paneIdx\}/,
+  "terminal resize separators expose stable QA hooks",
+);
+assert.match(
+  source,
   /onSplitTerminal\("horizontal"\)[\s\S]*?Split right/,
   "toolbar exposes a split-right command",
 );
@@ -140,6 +145,25 @@ assert.match(
   source,
   /onSplitTerminal\("vertical"\)[\s\S]*?Split down/,
   "toolbar exposes a split-down command",
+);
+
+// Projects view: the file/navigation side and preview side should share the
+// project detail area evenly, and the preview should start at the top rather
+// than sitting below a full-width project header.
+assert.match(
+  source,
+  /className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-2"/,
+  "Projects detail should split file controls and preview 50/50 on desktop",
+);
+assert.match(
+  source,
+  /className="flex min-h-0 min-w-0 flex-col border-b border-\[var\(--border-hairline\)\] xl:border-b-0 xl:border-r"[\s\S]*?selectedProject\.name[\s\S]*?ProjectTree/,
+  "Projects left half should own the project header and file tree",
+);
+assert.match(
+  source,
+  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">[\s\S]*?previewPath/,
+  "Projects preview pane should be the right full-height half of the split",
 );
 
 console.log("comux-view-terminal.test.ts OK");

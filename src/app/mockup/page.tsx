@@ -46,7 +46,7 @@ const TEMPLATES = [
 ];
 
 const SIDEBAR_NAV = [
-  { id: "inbox", label: "Inbox", icon: "ph:tray" },
+  { id: "inbox", label: "Automations", icon: "ph:tray" },
   { id: "issues", label: "My Issues", icon: "ph:ticket" },
 ];
 

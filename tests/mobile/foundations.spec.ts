@@ -64,7 +64,7 @@ test.describe("mobile foundations", () => {
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    const surfaces = ["Home", "Chat", "Board", "Inbox", "Library", "Browser", "Terminal"];
+    const surfaces = ["Home", "Chat", "Board", "Automations", "Library", "Browser", "Terminal"];
     const sidebar = page.locator(".sidebar-nav-scroll");
 
     for (const surface of surfaces) {

@@ -2023,6 +2023,7 @@ select {
   min-width: 0;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .comux-terminal-drop-zone {
@@ -3041,6 +3042,12 @@ select {
   user-select: none;
 }
 
+.agent-trigger-rail--stacked {
+  justify-content: flex-start;
+  gap: 4px;
+  padding-top: 8px;
+}
+
 .agent-trigger-rail::before {
   content: "";
   position: absolute;
@@ -3079,6 +3086,11 @@ select {
   color: color-mix(in oklch, var(--text-secondary) 86%, var(--text-primary));
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
+}
+
+.agent-trigger-rail--stacked .agent-trigger-rail__toggle {
+  flex: 0 0 auto;
+  min-height: 52px;
 }
 
 .agent-trigger-rail__toggle:hover {
@@ -3211,6 +3223,10 @@ button:active > .edge-rail-chip {
   gap: 4px;
   cursor: pointer;
   text-align: left;
+}
+
+.companion-rail__name--static {
+  cursor: default;
 }
 
 .companion-rail__status {

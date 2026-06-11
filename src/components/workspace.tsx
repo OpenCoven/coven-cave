@@ -71,7 +71,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Chat",
   board: "Board",
   calendar: "Calendar",
-  inbox: "Inbox",
+  inbox: "Automations",
   library: "Library",
   browser: "Browser",
   terminal: "Terminal",
@@ -129,6 +129,7 @@ export function Workspace() {
     if (typeof window === "undefined") return "chat";
     return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";
   });
+  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -1032,7 +1033,17 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
-  const showCompanionRail = railTab === "salem" || (mode !== "browser" && mode !== "agents");
+  const showCompanionRail =
+    railTab === "browser" || railTab === "salem" || (mode !== "browser" && mode !== "agents");
+
+  const openCompanionTab = useCallback((tab: CompanionTab) => {
+    setRailTab(tab);
+    if (agentPanelOpen && railTab === tab) {
+      shellRef.current?.closeAgent();
+      return;
+    }
+    requestAnimationFrame(() => shellRef.current?.openAgent());
+  }, [agentPanelOpen, railTab]);
 
   const openProjectChat = useCallback((projectRoot: string) => {
     startAgentChat(activeId, projectRoot);
@@ -1257,6 +1268,7 @@ export function Workspace() {
         ref={shellRef}
         mobileTabs={mobileTabs}
         onAgentOpenChange={(open) => {
+          setAgentPanelOpen(open);
           if (activeId) setRailOpen(activeId, open);
         }}
         topBar={
@@ -1279,24 +1291,31 @@ export function Workspace() {
             onToggleAgent={
               showCompanionRail
                 ? () => {
-                    setRailTab("salem");
-                    shellRef.current?.toggleAgent();
+                    openCompanionTab("salem");
                   }
                 : undefined
             }
           />
         }
         agentRail={showCompanionRail ? (
-          <aside className="agent-trigger-rail" aria-label="Salem toggle">
+          <aside className="agent-trigger-rail agent-trigger-rail--stacked" aria-label="Right panel tabs">
+            <button
+              type="button"
+              className="agent-trigger-rail__toggle"
+              aria-label="Open browser panel"
+              title="Browser"
+              onClick={() => openCompanionTab("browser")}
+            >
+              <span className="edge-rail-chip">
+                <Icon name="ph:globe" width={14} />
+              </span>
+            </button>
             <button
               type="button"
               className="agent-trigger-rail__toggle"
               aria-label="Toggle Salem"
               title="Toggle Salem (⌘J)"
-              onClick={() => {
-                setRailTab("salem");
-                shellRef.current?.toggleAgent();
-              }}
+              onClick={() => openCompanionTab("salem")}
             >
               <span className="edge-rail-chip">
                 <Icon name="ph:cat" width={14} />
@@ -1339,6 +1358,9 @@ export function Workspace() {
                   familiars={familiars}
                   onOpenFullView={() => setMode("agents")}
                 />
+              }
+              browserSlot={
+                <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />
               }
               salemSlot={<SalemChatPanel />}
             />

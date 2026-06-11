@@ -122,7 +122,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   source,
   /\{ id: "schedules"/,
-  "Schedules row removed — folded into Inbox as a tab",
+  "Schedules row removed — folded into Automations as a tab",
 );
 
 assert.doesNotMatch(

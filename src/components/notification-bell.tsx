@@ -161,7 +161,7 @@ export function NotificationBell({
                 }}
                 className="focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
               >
-                Open inbox →
+                Open Automations →
               </button>
             </div>
           </div>

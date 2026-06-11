@@ -42,8 +42,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const showCompanionRail = railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
-  "Companion rail is hidden on Familiars and Browser unless Salem is selected",
+  /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
+  "Companion rail is hidden on Familiars and Browser unless a floating rail tab is selected",
 );
 
 assert.match(

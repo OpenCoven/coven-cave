@@ -3,7 +3,7 @@
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
  * viewports. Surfaces the five most-used destinations (Home, Chat, Board,
- * Inbox, Library) as a tablist with icon + label and an active highlight.
+ * Automations, Library) as a tablist with icon + label and an active highlight.
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
  * responsible for that conditional render — this component itself doesn't
@@ -24,7 +24,7 @@ const TABS: TabDef[] = [
   { id: "home", label: "Home", iconName: "ph:house-bold" },
   { id: "chat", label: "Chat", iconName: "ph:chats" },
   { id: "board", label: "Board", iconName: "ph:kanban" },
-  { id: "inbox", label: "Inbox", iconName: "ph:tray" },
+  { id: "inbox", label: "Automations", iconName: "ph:tray" },
   { id: "library", label: "Library", iconName: "ph:books" },
 ];
 

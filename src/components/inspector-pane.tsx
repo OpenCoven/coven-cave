@@ -54,7 +54,7 @@ type Props = {
 const TAB_LABEL: Record<Tab, string> = {
   memory: "Memory",
   familiar: "Familiar",
-  inbox: "Inbox",
+  inbox: "Automations",
   vault: "Vault",
 };
 
@@ -295,7 +295,7 @@ function InboxTab({
     <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
       <div className="min-w-0">
         <div className="truncate text-[11px] font-medium text-[var(--text-primary)]">
-          {familiar.display_name} Inbox
+          {familiar.display_name} Automations
         </div>
         <div className="text-[10px] text-[var(--text-muted)]">
           {items.length} active item{items.length === 1 ? "" : "s"}

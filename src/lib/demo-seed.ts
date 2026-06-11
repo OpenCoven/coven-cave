@@ -169,7 +169,7 @@ export const DEMO_ESCALATIONS: Escalation[] = [
 export const DEMO_BOARD_CARDS: Card[] = [
   {
     id: "demo-card-1",
-    title: "Inbox — humans-only escalation surface (#16)",
+    title: "Automations — humans-only escalation surface (#16)",
     notes: "Full spec implemented. On main.",
     status: "review",
     priority: "high",
@@ -249,7 +249,7 @@ export const DEMO_BOARD_CARDS: Card[] = [
   },
   {
     id: "demo-card-5",
-    title: "Inbox keyboard shortcuts follow-up (#16.1)",
+    title: "Automations keyboard shortcuts follow-up (#16.1)",
     notes: "j/k/e/r/s/x/o + g-i global jump. Filed as follow-up to #16.",
     status: "inbox",
     priority: "medium",

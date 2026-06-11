@@ -246,8 +246,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /↵ to send · shift↵ for newline/,
-  "Empty-state hint matches actual composer key behavior",
+  /Ready for the next thread\./,
+  "Empty-state hint uses the redesigned launch-screen ready copy",
 );
 
 assert.match(

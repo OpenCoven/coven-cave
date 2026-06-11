@@ -40,3 +40,15 @@ assert.match(
   /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
   "GitHub row actions should divide the full row width evenly",
 );
+
+assert.match(
+  source,
+  /onOpenSession\?: \(sessionId: string, familiarId\?: string \| null\) => void;/,
+  "GitHub list should accept the workspace chat opener",
+);
+
+assert.match(
+  source,
+  /onLaunched=\{\(familiarId, sessionId\) => \{[\s\S]*if \(sessionId\) onOpenSession\?\.\(sessionId, familiarId\);[\s\S]*setHandoffItem\(null\);[\s\S]*\}\}/,
+  "Successful handoffs should close the modal and open the created chat session",
+);

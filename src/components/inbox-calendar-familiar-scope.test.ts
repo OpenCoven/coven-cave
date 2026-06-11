@@ -6,33 +6,25 @@ const inbox = await readFile(new URL("./inbox-escalations-view.tsx", import.meta
 const calendar = await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
-// ───────── Inbox ─────────
+// ───────── Automations wrapper ─────────
 
 assert.match(
   inbox,
   /activeFamiliarId\?:\s*string \| null/,
-  "InboxEscalationsView must accept an optional activeFamiliarId prop",
+  "InboxEscalationsView keeps the old inbox prop contract for callers",
 );
 
 assert.match(
   inbox,
-  /it\.fromFamiliar === activeFamiliarId[\s\S]*it\.aboutFamiliar === activeFamiliarId/,
-  "Inbox scoping must match escalations whose fromFamiliar or aboutFamiliar equals the active familiar",
+  /<AutomationsView[\s\S]*familiars=\{familiars \?\? \[\]\}[\s\S]*onNewReminder=\{onNewReminder \?\? \(\(\) => \{\}\)\}[\s\S]*onOpenSession=\{onOpenSession\}/,
+  "InboxEscalationsView should render only the Automations schedule surface",
 );
 
-assert.match(
+assert.doesNotMatch(
   inbox,
-  /const scopedItems = useMemo[\s\S]*?\[items, activeFamiliarId\]/,
-  "Inbox must derive a scopedItems memo with dependency on items + activeFamiliarId",
+  />Escalations<|inbox-view__tabs|setTab\(/,
+  "Hidden inbox/escalations UI should not render inside the Automations surface",
 );
-
-for (const counter of ["newCount", "criticalCount", "resolvedCount"]) {
-  assert.match(
-    inbox,
-    new RegExp(`const ${counter} = scopedItems\\.filter`),
-    `Inbox ${counter} must derive from scopedItems so counters reflect the hard-scope`,
-  );
-}
 
 // ───────── Calendar ─────────
 

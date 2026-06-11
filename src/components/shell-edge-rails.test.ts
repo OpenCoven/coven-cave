@@ -91,6 +91,16 @@ assert.match(
   "right agent rail toggle renders its icon inside the pressable chip",
 );
 assert.match(
+  workspace,
+  /edge-rail-chip[\s\S]{0,80}ph:globe/,
+  "right agent rail exposes a browser tab inside the pressable chip",
+);
+assert.match(
+  css,
+  /\.agent-trigger-rail--stacked \{[^}]*justify-content: flex-start;/,
+  "right edge tab opener stacks controls at the top",
+);
+assert.match(
   projectSidebar,
   /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
   "collapsed projects sidebar reopen tab uses the pressable chip",

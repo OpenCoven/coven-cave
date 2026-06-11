@@ -7,7 +7,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { Familiar } from "@/lib/types";
 
-export type CompanionTab = "chat" | "inspector" | "memory" | "salem";
+export type CompanionTab = "chat" | "inspector" | "memory" | "browser" | "salem";
 
 type Props = {
   familiar: Familiar | null;
@@ -16,6 +16,7 @@ type Props = {
   chatSlot: ReactNode;
   inspectorSlot: ReactNode;
   memorySlot: ReactNode;
+  browserSlot?: ReactNode;
   salemSlot?: ReactNode;
   onOpenSwitcher?: () => void;
   onCreateFamiliar?: () => void;
@@ -38,6 +39,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       chatSlot,
       inspectorSlot,
       memorySlot,
+      browserSlot,
       salemSlot,
       onOpenSwitcher,
       onCreateFamiliar,
@@ -50,14 +52,19 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     const resolvedFamiliar = resolvedFamiliars[0];
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
     const requestedTab = activeTab ?? tab;
-    const fallbackTab: CompanionTab = salemSlot ? "salem" : "inspector";
-    const selectedTab = hideChatTab && requestedTab === "chat" ? fallbackTab : requestedTab;
+    const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "inspector";
+    const selectedTab =
+      (hideChatTab && requestedTab === "chat")
+        || (requestedTab === "browser" && !browserSlot)
+        || (requestedTab === "salem" && !salemSlot)
+        ? fallbackTab
+        : requestedTab;
 
     useEffect(() => {
       if (activeTab) setTab(activeTab);
     }, [activeTab]);
 
-    if (!familiar) {
+    if (!familiar && selectedTab !== "browser") {
       // Skip rendering anything when the main panel already prompts for a
       // familiar — two side-by-side "pick a familiar" CTAs is just noise.
       if (suppressEmpty) return null;
@@ -93,24 +100,34 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
           <span className="companion-rail__glyph">
             {resolvedFamiliar ? (
               <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
-            ) : null}
+            ) : (
+              <Icon name="ph:globe" width={16} />
+            )}
           </span>
-          <button
-            type="button"
-            className="companion-rail__name"
-            onClick={onOpenSwitcher}
-            aria-label="Switch familiar"
-          >
-            <span>{familiar.display_name}</span>
-          </button>
-          <span
-            className={`companion-rail__status${daemonRunning ? "" : " companion-rail__status--off"}`}
-            title={daemonRunning ? "Live" : "Daemon offline"}
-            aria-hidden
-          />
+          {familiar ? (
+            <>
+              <button
+                type="button"
+                className="companion-rail__name"
+                onClick={onOpenSwitcher}
+                aria-label="Switch familiar"
+              >
+                <span>{familiar.display_name}</span>
+              </button>
+              <span
+                className={`companion-rail__status${daemonRunning ? "" : " companion-rail__status--off"}`}
+                title={daemonRunning ? "Live" : "Daemon offline"}
+                aria-hidden
+              />
+            </>
+          ) : (
+            <span className="companion-rail__name companion-rail__name--static">
+              <span>Browser</span>
+            </span>
+          )}
         </header>
         <nav className="companion-rail__tabs" aria-label="Companion sections">
-          {hideChatTab ? null : (
+          {!familiar || hideChatTab ? null : (
             <button
               type="button"
               className={`companion-rail__tab${selectedTab === "chat" ? " companion-rail__tab--active" : ""}`}
@@ -121,24 +138,39 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
               <Icon name="ph:chats" width={14} />
             </button>
           )}
-          <button
-            type="button"
-            className={`companion-rail__tab${selectedTab === "inspector" ? " companion-rail__tab--active" : ""}`}
-            onClick={() => switchTab("inspector")}
-            aria-current={selectedTab === "inspector"}
-            title="Inspector"
-          >
-            <Icon name="ph:magnifying-glass" width={14} />
-          </button>
-          <button
-            type="button"
-            className={`companion-rail__tab${selectedTab === "memory" ? " companion-rail__tab--active" : ""}`}
-            onClick={() => switchTab("memory")}
-            aria-current={selectedTab === "memory"}
-            title="Memory"
-          >
-            <Icon name="ph:brain" width={14} />
-          </button>
+          {familiar ? (
+            <>
+              <button
+                type="button"
+                className={`companion-rail__tab${selectedTab === "inspector" ? " companion-rail__tab--active" : ""}`}
+                onClick={() => switchTab("inspector")}
+                aria-current={selectedTab === "inspector"}
+                title="Inspector"
+              >
+                <Icon name="ph:magnifying-glass" width={14} />
+              </button>
+              <button
+                type="button"
+                className={`companion-rail__tab${selectedTab === "memory" ? " companion-rail__tab--active" : ""}`}
+                onClick={() => switchTab("memory")}
+                aria-current={selectedTab === "memory"}
+                title="Memory"
+              >
+                <Icon name="ph:brain" width={14} />
+              </button>
+            </>
+          ) : null}
+          {browserSlot ? (
+            <button
+              type="button"
+              className={`companion-rail__tab${selectedTab === "browser" ? " companion-rail__tab--active" : ""}`}
+              onClick={() => switchTab("browser")}
+              aria-current={selectedTab === "browser"}
+              title="Browser"
+            >
+              <Icon name="ph:globe" width={14} />
+            </button>
+          ) : null}
           {salemSlot ? (
             <button
               type="button"
@@ -152,17 +184,26 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
           ) : null}
         </nav>
         <div className="companion-rail__body">
-          {hideChatTab ? null : (
+          {!familiar || hideChatTab ? null : (
             <div hidden={selectedTab !== "chat"} className="companion-rail__pane">
               {chatSlot}
             </div>
           )}
-          <div hidden={selectedTab !== "inspector"} className="companion-rail__pane">
-            {inspectorSlot}
-          </div>
-          <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
-            {memorySlot}
-          </div>
+          {familiar ? (
+            <>
+              <div hidden={selectedTab !== "inspector"} className="companion-rail__pane">
+                {inspectorSlot}
+              </div>
+              <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
+                {memorySlot}
+              </div>
+            </>
+          ) : null}
+          {browserSlot ? (
+            <div hidden={selectedTab !== "browser"} className="companion-rail__pane companion-rail__pane--browser">
+              {selectedTab === "browser" ? browserSlot : null}
+            </div>
+          ) : null}
           {salemSlot ? (
             <div hidden={selectedTab !== "salem"} className="companion-rail__pane">
               {selectedTab === "salem" ? salemSlot : null}
