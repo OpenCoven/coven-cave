@@ -39,8 +39,8 @@ assert.match(
 
 assert.match(
   chatList,
-  /deriveChatProjectGroups\(filtered\)/,
-  "ChatList should use project grouping derived from working directory roots",
+  /deriveChatProjectGroups\(filtered, projects\)/,
+  "ChatList should use project grouping derived from the live project registry",
 );
 
 assert.match(

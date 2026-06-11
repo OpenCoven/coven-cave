@@ -1,7 +1,8 @@
 import type { ChatProjectGroup } from "@/lib/chat-projects";
 
-/** "all" = no scope, "none" = the null-projectRoot group, otherwise a projectRoot path.
- *  Roots are absolute paths, so the sentinels can't collide with real values. */
+/** "all" = all projects, "none" = the null-project group, otherwise a project id.
+ *  Unknown non-null roots fall back to a root-scoped key so they remain
+ *  selectable without colliding with the "none" bucket. */
 export type ProjectSelection = "all" | "none" | string;
 
 export const PROJECT_SIDEBAR_KEYS = {
@@ -10,8 +11,10 @@ export const PROJECT_SIDEBAR_KEYS = {
   selected: "cave:chat:project-selected",
 } as const;
 
-export function selectionKey(projectRoot: string | null): string {
-  return projectRoot === null ? "none" : projectRoot;
+export function selectionKey(projectId: string | null, projectRoot?: string | null): string {
+  if (projectId) return projectId;
+  if (projectRoot) return `root:${projectRoot}`;
+  return "none";
 }
 
 /** "all" → groups unchanged (same reference, lets memoized consumers bail);
@@ -21,7 +24,7 @@ export function applyProjectScope(
   selection: ProjectSelection,
 ): ChatProjectGroup[] {
   if (selection === "all") return groups;
-  const match = groups.find((g) => selectionKey(g.projectRoot) === selection);
+  const match = groups.find((g) => selectionKey(g.projectId, g.projectRoot) === selection);
   return match ? [match] : [];
 }
 
@@ -32,7 +35,7 @@ export function normalizeSelection(
   groups: ChatProjectGroup[],
 ): ProjectSelection {
   if (selection === "all") return "all";
-  return groups.some((g) => selectionKey(g.projectRoot) === selection) ? selection : "all";
+  return groups.some((g) => selectionKey(g.projectId, g.projectRoot) === selection) ? selection : "all";
 }
 
 /** localStorage JSON read that survives SSR (no window) and corrupt values. */

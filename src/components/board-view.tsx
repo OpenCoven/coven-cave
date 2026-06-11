@@ -14,12 +14,9 @@ import { BoardTable, type GroupBy } from "@/components/board-table";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
-import {
-  CHAT_PROJECTS,
-  DEFAULT_CHAT_PROJECT,
-  DEFAULT_CHAT_PROJECT_ID,
-  chatProjectById,
-} from "@/lib/chat-projects";
+import { chatProjectById } from "@/lib/chat-projects";
+import type { CaveProject } from "@/lib/cave-projects";
+import { useProjects } from "@/lib/use-projects";
 
 type ViewMode = "kanban" | "table";
 
@@ -54,6 +51,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [cwdPromptCardId, setCwdPromptCardId] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+  const { projects } = useProjects();
 
   const load = useCallback(async () => {
     try {
@@ -441,6 +439,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       {cwdPromptCardId && (
         <TaskChatCwdPrompt
           cardTitle={cards.find((c) => c.id === cwdPromptCardId)?.title ?? ""}
+          projects={projects}
           onCancel={() => setCwdPromptCardId(null)}
           onStart={(projectRoot) => {
             const id = cwdPromptCardId;
@@ -459,15 +458,22 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
 function TaskChatCwdPrompt({
   cardTitle,
+  projects,
   onCancel,
   onStart,
 }: {
   cardTitle: string;
+  projects: CaveProject[];
   onCancel: () => void;
   onStart: (projectRoot?: string) => void;
 }) {
-  const [projectId, setProjectId] = useState(DEFAULT_CHAT_PROJECT_ID);
-  const selectedProject = chatProjectById(projectId) ?? DEFAULT_CHAT_PROJECT;
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const firstProject = projects[0] ?? null;
+  const selectedProject = projectId ? chatProjectById(projectId, projects) ?? firstProject : firstProject;
+
+  useEffect(() => {
+    setProjectId((current) => current ?? firstProject?.id ?? null);
+  }, [firstProject?.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
@@ -476,7 +482,7 @@ function TaskChatCwdPrompt({
   }, [onCancel]);
 
   const submit = () => {
-    onStart(selectedProject.root);
+    if (selectedProject) onStart(selectedProject.root);
   };
 
   return (
@@ -505,13 +511,13 @@ function TaskChatCwdPrompt({
           <span className="shrink-0 font-mono text-[10px] font-semibold uppercase text-[var(--text-muted)]">Project</span>
           <select
             autoFocus
-            value={projectId}
+            value={selectedProject?.id ?? ""}
             onChange={(e) => setProjectId(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
             aria-label="Project for this task chat"
             className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-[var(--text-primary)] outline-none"
           >
-            {CHAT_PROJECTS.map((project) => (
+            {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
               </option>
@@ -519,7 +525,7 @@ function TaskChatCwdPrompt({
           </select>
         </label>
         <div className="mb-4 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 px-2.5 py-1.5 font-mono text-[11px] text-[var(--text-muted)]">
-          {selectedProject.root}
+          {selectedProject?.root ?? "No projects available"}
         </div>
         <div className="flex justify-end gap-2">
           <button
@@ -532,6 +538,7 @@ function TaskChatCwdPrompt({
           <button
             type="button"
             onClick={submit}
+            disabled={!selectedProject}
             className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
           >
             Start chat

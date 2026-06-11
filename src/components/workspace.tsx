@@ -39,6 +39,7 @@ import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
 import { WorkflowsView } from "@/components/workflows-view";
+import { ProjectsView } from "@/components/projects-view";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
@@ -79,6 +80,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   roles: "Roles",
   workflows: "Workflows",
   capabilities: "Capabilities",
+  projects: "Projects",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -674,15 +676,15 @@ export function Workspace() {
 
   useEffect(() => {
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",
+      "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal", "projects",
     ];
 
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
       const alt = e.altKey;
 
-      // ⌘1..⌘8 → sidebar surface
-      if (meta && !alt && /^[1-8]$/.test(e.key)) {
+      // ⌘1..⌘9 -> sidebar surface
+      if (meta && !alt && /^[1-9]$/.test(e.key)) {
         const idx = parseInt(e.key, 10) - 1;
         const target = SURFACE_ORDER[idx];
         if (target) {
@@ -916,8 +918,7 @@ export function Workspace() {
         setMode("terminal");
         return true;
       case "/projects":
-        setMode("library");
-        window.location.hash = "library:projects";
+        setMode("projects");
         return true;
       case "/library":
         setMode("library");
@@ -1217,6 +1218,13 @@ export function Workspace() {
       />
     ) : mode === "workflows" ? (
       <WorkflowsView />
+    ) : mode === "projects" ? (
+      <ProjectsView
+        sessions={sessions}
+        onNewChat={(projectRoot) => {
+          startAgentChat(activeId, projectRoot);
+        }}
+      />
     ) : mode === "capabilities" ? (
       <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (

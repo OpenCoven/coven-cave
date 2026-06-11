@@ -73,6 +73,9 @@ const contracts: RouteContract[] = [
   { route: "/project-file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project-tree", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/projects/seed", methods: ["POST"], kind: "json" },
+  { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/sessions/[id]/events", methods: ["GET"], kind: "json" },
@@ -204,6 +207,23 @@ for (const contract of contracts) {
     sendSource,
     /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
     "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
+  );
+}
+
+{
+  const sessionsListSource = readFileSync(
+    path.join(apiRoot, "sessions", "list", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    sessionsListSource,
+    /import \{ loadProjects, projectForRoot \} from "@\/lib\/cave-projects"/,
+    "/sessions/list: session validation should consult the project registry",
+  );
+  assert.match(
+    sessionsListSource,
+    /function isKnownProjectOrValidDir\(projectRoot: string\): boolean \{[\s\S]*?projectForRoot\(projectRoot, projects\)[\s\S]*?isTrueProjectCwd\(projectRoot\)/,
+    "/sessions/list: registered projects should pass validation before falling back to disk",
   );
 }
 

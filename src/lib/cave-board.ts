@@ -16,6 +16,7 @@ import {
   normalizeTaskGitHubLinks,
   taskGitHubLinkFromUrl,
 } from "@/lib/task-github";
+import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -78,12 +79,12 @@ function normalizeCwd(value: string | null | undefined): string | null {
 
 type LegacyCard = Omit<
   Card,
-  "cwd" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
+  "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
+      "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
     >
   >;
 
@@ -95,6 +96,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     ...c,
     status: statusForLifecycle(lifecycle, c.status),
     cwd: normalizeCwd(c.cwd),
+    projectId: c.projectId ?? null,
     links,
     github,
     labels: normalizeList(c.labels),
@@ -104,6 +106,12 @@ function backfillCard(c: Card | LegacyCard): Card {
     maxRetries: c.maxRetries ?? DEFAULT_MAX_RETRIES,
     steps: c.steps ?? [],
   } as Card;
+}
+
+function migrateProjectId(card: Card, projects: Awaited<ReturnType<typeof loadProjects>>): Card {
+  if (card.projectId || !card.cwd) return card;
+  const project = projectForRoot(card.cwd, projects);
+  return project ? { ...card, projectId: project.id } : card;
 }
 
 type BoardFile = {
@@ -122,9 +130,10 @@ export async function loadBoard(): Promise<BoardFile> {
     const raw = await readFile(BOARD_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<BoardFile>;
     const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+    const projects = await loadProjects();
     return {
       version: parsed.version ?? 1,
-      cards: rawCards.map((c) => backfillCard(c as Card)),
+      cards: rawCards.map((c) => migrateProjectId(backfillCard(c as Card), projects)),
     };
   } catch {
     return EMPTY;
@@ -144,6 +153,7 @@ export type NewCardInput = {
   familiarId?: string | null;
   sessionId?: string | null;
   cwd?: string | null;
+  projectId?: string | null;
   links?: string[];
   github?: CardGitHubLink[];
   labels?: string[];
@@ -164,6 +174,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     familiarId: input.familiarId ?? null,
     sessionId: input.sessionId ?? null,
     cwd: normalizeCwd(input.cwd),
+    projectId: input.projectId ?? null,
     links: mergeLinksWithGitHub(normalizeLinks(input.links), github),
     github,
     labels: normalizeList(input.labels),
@@ -210,6 +221,7 @@ export async function updateCard(
       ),
     ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
+    projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
     steps: patch.steps ?? current.steps,
   };

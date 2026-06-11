@@ -26,6 +26,7 @@ export async function PATCH(
     familiarId: string | null;
     sessionId: string | null;
     cwd: string | null;
+    projectId: string | null;
     links: string[];
     github: CardGitHubLink[];
     labels: string[];

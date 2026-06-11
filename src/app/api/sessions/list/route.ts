@@ -7,6 +7,7 @@ import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "@/lib/session-list-merge";
+import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +37,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
 
-  const [res, state] = await Promise.all([
+  const [res, state, projects] = await Promise.all([
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
     loadState(),
+    loadProjects(),
   ]);
   const localConversations = await listConversations();
   if (!res.ok || !res.data) {
@@ -57,12 +59,17 @@ export async function GET(req: Request) {
     );
   }
 
+  function isKnownProjectOrValidDir(projectRoot: string): boolean {
+    if (projectForRoot(projectRoot, projects)) return true;
+    return isTrueProjectCwd(projectRoot);
+  }
+
   const sessions = mergeSessionRows({
     daemonSessions: res.data,
     localConversations,
     state,
     includeArchived,
-    isValidDaemonProjectRoot: isTrueProjectCwd,
+    isValidDaemonProjectRoot: isKnownProjectOrValidDir,
   });
 
   return NextResponse.json({ ok: true, sessions });
