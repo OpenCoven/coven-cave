@@ -26,7 +26,7 @@ function fmtMs(ms: number | undefined): string {
 
 function statusColor(status: string | undefined): string {
   if (status === "running") return "var(--accent-presence)";
-  if (status === "failed") return "oklch(0.65 0.18 25)";
+  if (status === "failed") return "var(--color-danger)";
   return "var(--text-muted)";
 }
 
@@ -41,10 +41,16 @@ function CopyButton({ getText, label }: { getText: () => string; label?: string 
       title={label ?? "Copy"}
       aria-label={label ?? "Copy"}
       onClick={() => {
-        void navigator.clipboard.writeText(getText()).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        });
+        navigator.clipboard
+          .writeText(getText())
+          .then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          })
+          .catch(() => {
+            // Clipboard unavailable (insecure context / permission denied) —
+            // skip the "Copied" feedback rather than crash the pane.
+          });
       }}
     >
       <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
@@ -173,13 +179,14 @@ function EventRow({ event }: { event: CovenEvent }) {
 
 function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const { sessionId, session, familiar, turns } = snapshot;
+  const status = session?.status ?? null;
   const [events, setEvents] = useState<CovenEvent[]>([]);
   const [eventsError, setEventsError] = useState<string | null>(null);
-  const [follow, setFollow] = useState(true);
+  // Tail-follow only makes sense while events are streaming in; opening a
+  // finished session shouldn't jump past the Session section.
+  const [follow, setFollow] = useState(status === "running");
   const cursorRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  const status = session?.status ?? null;
 
   const fetchEvents = useCallback(async () => {
     if (!sessionId) return;
@@ -190,11 +197,9 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
       );
       const json = (await res.json()) as { ok?: boolean; events?: CovenEvent[]; error?: string };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
-      setEvents((prev) => {
-        const next = appendEvents(prev, json.events ?? []);
-        cursorRef.current = nextAfterSeq(next);
-        return next;
-      });
+      const incoming = json.events ?? [];
+      setEvents((prev) => appendEvents(prev, incoming));
+      cursorRef.current = Math.max(cursorRef.current, nextAfterSeq(incoming));
       setEventsError(null);
     } catch (err) {
       setEventsError(err instanceof Error ? err.message : String(err));
@@ -215,6 +220,14 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
       }
     }, POLL_MS);
     return () => window.clearInterval(id);
+  }, [fetchEvents, status]);
+
+  // One-shot catch-up when the session leaves "running", so events emitted in
+  // the final poll window aren't dropped.
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (prevStatusRef.current === "running" && status !== "running") void fetchEvents();
+    prevStatusRef.current = status;
   }, [fetchEvents, status]);
 
   // Auto-follow: stick to the bottom while new events stream in; scrolling
@@ -249,7 +262,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
     a.href = url;
     a.download = debugFileName(sessionId);
     a.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }, [bundleJson, sessionId]);
 
   return (
