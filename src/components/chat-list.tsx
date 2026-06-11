@@ -423,8 +423,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             already selected, the sidebar carries its identity; repeating
             the name here is duplicate chrome. */}
         {!familiar && (
-        <div className="px-4 pb-0 pt-4">
-          <div className="flex min-w-0 items-start gap-3">
+        <div className="px-4 pb-0 pt-2">
+          <div className="flex min-w-0 items-start gap-2">
             {/* Avatar — larger + glyph-forward */}
             <div className="relative shrink-0">
               <div className="grid h-11 w-11 place-items-center rounded-xl border border-[var(--accent-presence)]/30 bg-[color-mix(in_oklch,var(--accent-presence)_12%,var(--bg-raised))] shadow-[0_0_12px_color-mix(in_oklch,var(--accent-presence)_18%,transparent)]">
@@ -448,7 +448,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                   {panelTitle}
                 </h2>
               </div>
-              <p className="mt-0.5 truncate text-[11px] leading-snug text-[var(--text-muted)]">
+              <p className="mt-0 truncate text-[11px] leading-snug text-[var(--text-muted)]">
                 {panelRole ? (
                   <>
                     <span className="text-[var(--text-secondary)]">{panelRole}</span>
