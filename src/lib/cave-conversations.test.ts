@@ -79,6 +79,59 @@ assert.equal(cancelledTurn?.isError, false, "a user cancel is not an error");
 assert.equal(cancelledTurn?.text, "Roses are red, violets", "partial streamed text must survive the save");
 assert.equal(await deleteConversation("cancelled-turn"), true);
 
+// CHAT-D12-02: per-turn token usage and cost round-trip through the store —
+// optional fields that mirror how durationMs flows, absent when the harness
+// emitted none (e.g. the OpenClaw bridge).
+await saveConversation({
+  sessionId: "usage-turn",
+  familiarId: "charm",
+  harness: "claude",
+  title: "Usage and cost",
+  createdAt: "2026-06-11T00:00:00.000Z",
+  updatedAt: "2026-06-11T00:00:00.000Z",
+  turns: [
+    {
+      id: "turn-user",
+      role: "user",
+      text: "how big was that?",
+      createdAt: "2026-06-11T00:00:00.000Z",
+    },
+    {
+      id: "turn-assistant",
+      role: "assistant",
+      text: "Pretty big.",
+      createdAt: "2026-06-11T00:00:01.000Z",
+      durationMs: 7000,
+      isError: false,
+      usage: {
+        inputTokens: 10200,
+        outputTokens: 2150,
+        cacheReadTokens: 5000,
+        cacheCreationTokens: 1200,
+      },
+      costUsd: 0.0812,
+    },
+    {
+      id: "turn-assistant-no-usage",
+      role: "assistant",
+      text: "No billing metadata here.",
+      createdAt: "2026-06-11T00:00:02.000Z",
+    },
+  ],
+});
+const usageConv = await loadConversation("usage-turn");
+const usageTurn = usageConv?.turns.find((turn) => turn.id === "turn-assistant");
+assert.deepEqual(
+  usageTurn?.usage,
+  { inputTokens: 10200, outputTokens: 2150, cacheReadTokens: 5000, cacheCreationTokens: 1200 },
+  "token usage must round-trip through the store",
+);
+assert.equal(usageTurn?.costUsd, 0.0812, "cost must round-trip through the store");
+const noUsageTurn = usageConv?.turns.find((turn) => turn.id === "turn-assistant-no-usage");
+assert.equal(noUsageTurn?.usage, undefined, "turns without usage stay absent — never fabricated");
+assert.equal(noUsageTurn?.costUsd, undefined, "turns without cost stay absent — never fabricated");
+assert.equal(await deleteConversation("usage-turn"), true);
+
 if (previousHome === undefined) {
   delete process.env.HOME;
 } else {

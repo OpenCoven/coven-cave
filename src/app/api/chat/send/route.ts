@@ -48,6 +48,11 @@ import {
   buildSshSpawnArgs,
   isSshRuntime,
 } from "@/lib/familiar-runtime";
+import {
+  parseCostUsd,
+  parseStreamJsonUsage,
+  type TurnUsage,
+} from "@/lib/usage-format";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -74,7 +79,14 @@ type StreamEvent =
       status?: "running" | "ok" | "error";
       durationMs?: number;
     }
-  | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string }
+  | {
+      kind: "done";
+      durationMs?: number;
+      isError?: boolean;
+      sessionId?: string;
+      usage?: TurnUsage;
+      costUsd?: number;
+    }
   | { kind: "error"; message: string; code?: string };
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
@@ -760,7 +772,12 @@ export async function POST(req: Request) {
       let assistantFilter = new AssistantFilter();
       let assistantText = "";
       let jsonBuf = "";
-      let result: { duration_ms?: number; is_error?: boolean } = {};
+      let result: {
+        duration_ms?: number;
+        is_error?: boolean;
+        usage?: TurnUsage;
+        costUsd?: number;
+      } = {};
       // Tracks open tool calls from both hook lines and stream-json
       // envelopes: per-name FIFO queues give concurrent same-name calls
       // distinct ids, and hook/envelope events describing the same call are
@@ -794,6 +811,8 @@ export async function POST(req: Request) {
               session_id?: string;
               duration_ms?: number;
               is_error?: boolean;
+              total_cost_usd?: number;
+              usage?: unknown;
               message?: {
                 content?: Array<{
                   type?: string;
@@ -822,7 +841,15 @@ export async function POST(req: Request) {
               ).catch(() => undefined);
             }
             if (ev.type === "result") {
-              result = { duration_ms: ev.duration_ms, is_error: ev.is_error };
+              // The result event also carries token usage and total cost
+              // (CHAT-D12-02). Both are optional and defensively validated —
+              // harnesses without billing metadata simply omit them.
+              result = {
+                duration_ms: ev.duration_ms,
+                is_error: ev.is_error,
+                usage: parseStreamJsonUsage(ev.usage),
+                costUsd: parseCostUsd(ev.total_cost_usd),
+              };
             } else if (
               ev.type === "assistant" &&
               Array.isArray(ev.message?.content)
@@ -1080,6 +1107,8 @@ export async function POST(req: Request) {
           durationMs: result.duration_ms,
           isError: result.is_error,
           ...(cancelledByUser ? { cancelled: true } : {}),
+          ...(result.usage ? { usage: result.usage } : {}),
+          ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
         };
         const conv = existing ?? {
           sessionId: finalSessionId,
@@ -1118,6 +1147,8 @@ export async function POST(req: Request) {
         durationMs: result.duration_ms,
         isError: result.is_error,
         sessionId: finalSessionId ?? undefined,
+        ...(result.usage ? { usage: result.usage } : {}),
+        ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
       });
       // Best-effort temp cleanup: the harness child process has already
       // exited (including any resume retry), so nothing can still be reading

@@ -248,4 +248,60 @@ assert.match(
   "Retry pill has always-visible styling — no hover-reveal gating (CHAT-D12-03)",
 );
 
+// ── CHAT-D12-02: per-turn token usage + cost ──
+
+assert.match(
+  source,
+  /kind: "done"; durationMs\?: number; isError\?: boolean; sessionId\?: string; usage\?: TurnUsage; costUsd\?: number/,
+  "The done StreamEvent must carry optional usage and cost fields (CHAT-D12-02)",
+);
+
+assert.match(
+  source,
+  /case "done":[\s\S]*?durationMs: ev\.durationMs,\s*\n\s*usage: ev\.usage,\s*\n\s*costUsd: ev\.costUsd,/,
+  "The done handler must store usage and cost on the settled turn alongside duration (CHAT-D12-02)",
+);
+
+assert.match(
+  source,
+  /durationMs: t\.durationMs,\s*\n\s*usage: t\.usage,\s*\n\s*costUsd: t\.costUsd,/,
+  "History load must map persisted usage and cost back onto turns (CHAT-D12-02)",
+);
+
+assert.match(
+  source,
+  /function UsageText\(\{ usage, costUsd \}[\s\S]*?const summary = usageSummary\(usage, costUsd\);[\s\S]*?if \(!summary\) return null;[\s\S]*?title=\{usageBreakdown\(usage, costUsd\) \?\? undefined\}/,
+  "UsageText renders the compact summary with the full breakdown as tooltip, and nothing when the harness emitted no usage (CHAT-D12-02)",
+);
+
+// The readout lives in the assistant turn's meta row, after the timestamp.
+const usageTurnRow =
+  source.match(/function TurnRow[\s\S]*?\n}\n\nfunction AttachmentLightbox/)?.[0] ?? "";
+assert.ok(usageTurnRow, "TurnRow body should be extractable (CHAT-D12-02)");
+assert.match(
+  usageTurnRow,
+  /fmtTime\(turn\.createdAt\)[\s\S]{0,120}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
+  "Assistant turn meta row appends the muted usage/cost readout after the timestamp (CHAT-D12-02)",
+);
+
+// MetaLine complete state extends the existing one-liner format:
+// "… · 7s · 12.4k tok · $0.08" — and stays silent when there is no usage.
+assert.match(
+  source,
+  /const dur = fmtDuration\(args\.durationMs\);\s*\n\s*if \(dur\) parts\.push\(dur\);[\s\S]{0,300}?const usage = usageSummary\(args\.usage, args\.costUsd\);\s*\n\s*if \(usage\) parts\.push\(usage\);/,
+  "MetaLine's complete state appends the usage summary after the duration in the same dot-separated format (CHAT-D12-02)",
+);
+
+assert.match(
+  source,
+  /const lastSettledAssistantTurn = useMemo\([\s\S]*?t\.role === "assistant" &&\s*\n\s*!t\.pending/,
+  "The MetaLine readout derives from the latest settled assistant turn (CHAT-D12-02)",
+);
+
+assert.match(
+  source,
+  /durationMs=\{lastSettledAssistantTurn\?\.durationMs\}\s*\n\s*usage=\{lastSettledAssistantTurn\?\.usage\}\s*\n\s*costUsd=\{lastSettledAssistantTurn\?\.costUsd\}/,
+  "ChatView passes the settled turn's duration, usage, and cost into MetaLine together (CHAT-D12-02)",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");

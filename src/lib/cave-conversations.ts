@@ -23,6 +23,11 @@ export type ChatTurn = {
   isError?: boolean;
   /** True when the user stopped this response mid-stream (Esc/Stop). */
   cancelled?: boolean;
+  /** Token usage from the harness result event (CHAT-D12-02). Absent when
+   *  the harness emitted none (e.g. the OpenClaw bridge). */
+  usage?: import("./usage-format").TurnUsage;
+  /** Total cost in USD from the harness result event (CHAT-D12-02). */
+  costUsd?: number;
   origin?: "chat" | "voice";
   voiceCallId?: string;
 };

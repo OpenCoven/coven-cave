@@ -11,6 +11,7 @@ import { linkedContextForSession } from "@/lib/chat-linked-context";
 import { loadConversationFromJsonl } from "@/lib/openclaw-conversation";
 import { loadState, recordSessionFamiliar, sacrificeSessionLocal } from "@/lib/cave-config";
 import { defaultChatTitleForSession } from "@/lib/cave-chat-titles";
+import { normalizeTurnUsage, parseCostUsd } from "@/lib/usage-format";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,6 +47,8 @@ function normalizeTurn(input: unknown): ChatTurn | null {
   }
   if (typeof value.text !== "string") return null;
   const now = new Date().toISOString();
+  const usage = normalizeTurnUsage(value.usage);
+  const costUsd = parseCostUsd(value.costUsd);
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : crypto.randomUUID(),
     role: value.role,
@@ -60,6 +63,8 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(typeof value.durationMs === "number" ? { durationMs: value.durationMs } : {}),
     ...(typeof value.isError === "boolean" ? { isError: value.isError } : {}),
     ...(typeof value.cancelled === "boolean" ? { cancelled: value.cancelled } : {}),
+    ...(usage ? { usage } : {}),
+    ...(costUsd !== undefined ? { costUsd } : {}),
   };
 }
 

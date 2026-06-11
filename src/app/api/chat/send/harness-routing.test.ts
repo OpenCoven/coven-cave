@@ -463,4 +463,151 @@ assert.match(
   assert.equal(flattenToolResultContent(null), undefined);
 }
 
+// ── Token usage + cost capture (CHAT-D12-02) ───────────────────────────────
+// Source pins: the stream-json `result` parse must capture `total_cost_usd`
+// and `usage` through the shared defensive validators, forward both on the
+// `done` SSE event, and persist them on the saved assistant turn.
+
+import {
+  formatCost,
+  formatTokens,
+  normalizeTurnUsage,
+  parseCostUsd,
+  parseStreamJsonUsage,
+  usageBreakdown,
+  usageSummary,
+} from "../../../../lib/usage-format.ts";
+
+assert.match(
+  chatRoute,
+  /if \(ev\.type === "result"\) \{[\s\S]*?usage: parseStreamJsonUsage\(ev\.usage\),[\s\S]*?costUsd: parseCostUsd\(ev\.total_cost_usd\),/,
+  "The result-event parse must capture usage and total_cost_usd through the defensive validators (CHAT-D12-02)",
+);
+
+assert.match(
+  chatRoute,
+  /kind: "done";[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
+  "The done StreamEvent must carry optional usage and costUsd fields (CHAT-D12-02)",
+);
+
+assert.match(
+  chatRoute,
+  /kind: "done",\s*\n\s*durationMs: result\.duration_ms,\s*\n\s*isError: result\.is_error,\s*\n\s*sessionId: finalSessionId \?\? undefined,\s*\n\s*\.\.\.\(result\.usage \? \{ usage: result\.usage \} : \{\}\),\s*\n\s*\.\.\.\(result\.costUsd !== undefined \? \{ costUsd: result\.costUsd \} : \{\}\),/,
+  "The final done event must forward captured usage and cost, omitting them when the harness emitted none (CHAT-D12-02)",
+);
+
+assert.match(
+  chatRoute,
+  /durationMs: result\.duration_ms,\s*\n\s*isError: result\.is_error,\s*\n\s*\.\.\.\(cancelledByUser \? \{ cancelled: true \} : \{\}\),\s*\n\s*\.\.\.\(result\.usage \? \{ usage: result\.usage \} : \{\}\),\s*\n\s*\.\.\.\(result\.costUsd !== undefined \? \{ costUsd: result\.costUsd \} : \{\}\),/,
+  "The persisted assistant turn must carry usage and cost alongside durationMs (CHAT-D12-02)",
+);
+
+// Behavioral: stream-json usage parse is defensive — optional fields,
+// validated numbers, undefined when nothing usable was emitted.
+{
+  assert.deepEqual(
+    parseStreamJsonUsage({
+      input_tokens: 10200,
+      output_tokens: 2150,
+      cache_read_input_tokens: 5000,
+      cache_creation_input_tokens: 1200,
+    }),
+    {
+      inputTokens: 10200,
+      outputTokens: 2150,
+      cacheReadTokens: 5000,
+      cacheCreationTokens: 1200,
+    },
+    "a full usage block maps snake_case counters onto the turn shape",
+  );
+  assert.deepEqual(
+    parseStreamJsonUsage({ input_tokens: 12, output_tokens: 34 }),
+    { inputTokens: 12, outputTokens: 34 },
+    "cache counters are optional and omitted when absent",
+  );
+  assert.equal(parseStreamJsonUsage(undefined), undefined, "missing usage stays absent");
+  assert.equal(parseStreamJsonUsage(null), undefined);
+  assert.equal(parseStreamJsonUsage("12k"), undefined, "non-object usage is rejected");
+  assert.equal(parseStreamJsonUsage({}), undefined, "empty usage objects stay absent");
+  assert.equal(
+    parseStreamJsonUsage({ input_tokens: "12", output_tokens: NaN }),
+    undefined,
+    "non-numeric and NaN counters are rejected",
+  );
+  assert.deepEqual(
+    parseStreamJsonUsage({ input_tokens: 7, output_tokens: -3, cache_read_input_tokens: -1 }),
+    { inputTokens: 7, outputTokens: 0 },
+    "negative counters drop; partial blocks keep the valid fields",
+  );
+}
+
+// Behavioral: cost validation.
+{
+  assert.equal(parseCostUsd(0.0812), 0.0812);
+  assert.equal(parseCostUsd(0), 0, "zero cost is captured (display layer hides it)");
+  assert.equal(parseCostUsd(-1), undefined);
+  assert.equal(parseCostUsd(NaN), undefined);
+  assert.equal(parseCostUsd("0.08"), undefined);
+  assert.equal(parseCostUsd(undefined), undefined);
+}
+
+// Behavioral: persisted camelCase round-trip validator (conversation POST/PUT).
+{
+  assert.deepEqual(
+    normalizeTurnUsage({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 2 }),
+    { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2 },
+  );
+  assert.equal(normalizeTurnUsage({}), undefined);
+  assert.equal(normalizeTurnUsage({ inputTokens: "10" }), undefined);
+}
+
+// Behavioral: formatting thresholds, sub-cent floor, absent states.
+{
+  assert.equal(formatTokens(980), "980");
+  assert.equal(formatTokens(999), "999");
+  assert.equal(formatTokens(1000), "1k", "trailing .0 is trimmed");
+  assert.equal(formatTokens(1234), "1.2k");
+  assert.equal(formatTokens(12350), "12.4k", "12350 tokens read as 12.4k");
+  assert.equal(formatTokens(2_500_000), "2.5M");
+  assert.equal(formatTokens(0), "0");
+  assert.equal(formatTokens(-5), null);
+  assert.equal(formatTokens(NaN), null);
+
+  assert.equal(formatCost(0.08), "$0.08");
+  assert.equal(formatCost(1.5), "$1.50");
+  assert.equal(formatCost(0.004), "<$0.01", "sub-cent costs floor at <$0.01");
+  assert.equal(formatCost(0), null, "zero cost renders nothing");
+  assert.equal(formatCost(undefined), null);
+  assert.equal(formatCost(-0.5), null);
+
+  assert.equal(
+    usageSummary({ inputTokens: 10200, outputTokens: 2150 }, 0.0812),
+    "12.4k tok · $0.08",
+    "the compact form sums input+output and appends the cost",
+  );
+  assert.equal(
+    usageSummary({ inputTokens: 500, outputTokens: 480 }, undefined),
+    "980 tok",
+    "cost-less usage shows tokens alone",
+  );
+  assert.equal(usageSummary(undefined, 0.05), "$0.05", "cost without usage still shows");
+  assert.equal(usageSummary(undefined, undefined), null, "no usage, no cost → nothing renders");
+  assert.equal(usageSummary({ inputTokens: 0, outputTokens: 0 }, 0), null, "all-zero usage renders nothing");
+
+  assert.equal(
+    usageBreakdown(
+      { inputTokens: 10200, outputTokens: 2150, cacheReadTokens: 5000, cacheCreationTokens: 1200 },
+      0.0812,
+    ),
+    "input 10200 · output 2150 · cache read 5000 · cache write 1200 · $0.08",
+    "the tooltip breakdown lists every captured counter",
+  );
+  assert.equal(
+    usageBreakdown({ inputTokens: 1, outputTokens: 2 }, 0.004),
+    "input 1 · output 2 · $0.0040",
+    "sub-cent tooltip costs keep precision instead of flooring",
+  );
+  assert.equal(usageBreakdown(undefined, undefined), null);
+}
+
 console.log("harness-routing tests passed");
