@@ -455,24 +455,29 @@ function ShellInner({
     "--shell-home-asymmetry-px": `${homeCenterAsymmetry}px`,
   };
 
-  // Closed-state reopen tab for the nav panel — the left-edge mirror of the
-  // agent trigger rail, so a collapsed sidebar stays discoverable.
+  // Persistent nav toggle — the left-edge mirror of the agent trigger rail, so
+  // the sidebar can be collapsed and reopened from the same stable affordance.
   const navRail =
-    !isMobile && !navOpen ? (
+    !isMobile ? (
       <aside className="agent-trigger-rail agent-trigger-rail--left" aria-label="Navigation toggle">
         <button
           type="button"
           className="agent-trigger-rail__toggle"
-          aria-label="Show navigation"
-          aria-expanded={false}
-          title="Show navigation (⌘B)"
+          aria-label={navOpen ? "Hide navigation" : "Show navigation"}
+          aria-expanded={navOpen}
+          title={navOpen ? "Hide navigation (⌘B)" : "Show navigation (⌘B)"}
           onClick={() => {
-            navRef.current?.expand();
-            setNavOpen(true);
+            if (navOpen) {
+              navRef.current?.collapse();
+              setNavOpen(false);
+            } else {
+              navRef.current?.expand();
+              setNavOpen(true);
+            }
           }}
         >
           <span className="edge-rail-chip">
-            <Icon name="ph:sidebar-simple" width={14} />
+            <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} />
           </span>
         </button>
       </aside>
