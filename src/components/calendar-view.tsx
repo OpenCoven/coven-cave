@@ -91,16 +91,6 @@ function defaultEntryFireAt(day: Date): string {
   return fallback.toISOString();
 }
 
-function defaultWeekEntryFireAt(anchor: Date): string {
-  const weekStart = startOfWeek(anchor);
-  const today = startOfDay(new Date());
-  const day =
-    Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)).find(
-      (candidate) => startOfDay(candidate).getTime() >= today.getTime(),
-    ) ?? weekStart;
-  return defaultEntryFireAt(day);
-}
-
 function itemDate(item: InboxItem): Date | null {
   const iso = item.fireAt ?? item.firedAt ?? item.createdAt;
   if (!iso) return null;
@@ -522,7 +512,6 @@ function DayView({
     items: timedItems,
   }], [anchor, timedItems]);
 
-  const isEmpty = timedItems.length === 0 && allDayItems.length === 0;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -542,15 +531,6 @@ function DayView({
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} />
-        {isEmpty && onAddEntry ? (
-          <button
-            type="button"
-            onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            className="focus-ring absolute top-3 right-3 z-10 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/80 px-2.5 py-1 text-[11px] text-[var(--text-secondary)] backdrop-blur transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            + Add event
-          </button>
-        ) : null}
       </div>
     </div>
   );
@@ -595,9 +575,6 @@ function WeekView({
     }));
   }, [items, days]);
 
-  const isWeekEmpty =
-    columns.every((col) => col.items.length === 0) &&
-    allDayColumns.every((col) => col.items.length === 0);
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -633,15 +610,6 @@ function WeekView({
       )}
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} />
-        {isWeekEmpty && onAddEntry ? (
-          <button
-            type="button"
-            onClick={() => onAddEntry({ fireAt: defaultWeekEntryFireAt(anchor) })}
-            className="focus-ring absolute top-3 right-3 z-10 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/80 px-2.5 py-1 text-[11px] text-[var(--text-secondary)] backdrop-blur transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            + Add event
-          </button>
-        ) : null}
       </div>
     </div>
   );
@@ -1063,7 +1031,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
           </button>
           <button
             onClick={() => setAnchor(new Date())}
-            className="focus-ring rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="focus-ring inline-flex h-7 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
           >
             Today
           </button>
@@ -1108,7 +1076,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             <button
               key={id}
               onClick={() => setViewMode(id)}
-              className={`focus-ring-inset px-2.5 py-1 text-[11px] transition-colors sm:px-3 ${
+              className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[11px] transition-colors sm:px-3 ${
                 viewMode === id
                   ? "bg-[var(--accent-presence)] text-white"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -1123,11 +1091,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
           <button
             type="button"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            aria-label="New event"
+            aria-label="Add event"
             className="focus-ring inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:plus-bold" width={10} />
-            New event
+            Add event
           </button>
         ) : null}
       </div>

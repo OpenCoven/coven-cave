@@ -34,17 +34,16 @@ assert.match(
   /function DayView\([\s\S]*?return \(\s*<div className="flex flex-col flex-1 overflow-hidden">[\s\S]*?<TimeGrid columns=\{columns\}/,
   "DayView must always render TimeGrid (no conditional EmptyScheduleState swap)",
 );
-assert.match(
-  source,
-  /function DayView\([\s\S]*?\+ Add event/,
-  "DayView must render a floating '+ Add event' affordance when empty",
-);
+// (2026-06-11) The floating empty-state Add-event overlays were removed on
+// Val's instruction — the toolbar button is the single entry point. The old
+// assertion requiring the DayView affordance is inverted below in the
+// "Single Add-event affordance" block.
 
 // ───────── Task 3: Week view always renders TimeGrid ─────────
 assert.match(
   source,
-  /function WeekView\([\s\S]*?<TimeGrid columns=\{columns\} onOpenItem=\{onOpenItem\} \/>\s*\{isWeekEmpty && onAddEntry/,
-  "WeekView must always render TimeGrid then conditionally render the empty add-CTA",
+  /function WeekView\([\s\S]*?<TimeGrid columns=\{columns\} onOpenItem=\{onOpenItem\} \/>/,
+  "WeekView must always render TimeGrid",
 );
 
 // ───────── Task 4: Today indicator ─────────
@@ -66,11 +65,11 @@ assert.match(
   "CalendarView must render the keyboard-hints footer string",
 );
 
-// ───────── Task 6: + New event toolbar button ─────────
+// ───────── Task 6: + Add event toolbar button ─────────
 assert.match(
   source,
-  /aria-label="New event"|>\s*New event\s*</,
-  "CalendarView header must include a 'New event' button",
+  /aria-label="Add event"|>\s*Add event\s*</,
+  "CalendarView header must include a 'Add event' button",
 );
 assert.match(
   source,
@@ -118,3 +117,32 @@ assert.match(
 );
 
 console.log("calendar-view-polish.test.ts: ok");
+
+// ── Single Add-event affordance, uniform toolbar height ──────────────────
+// Day/Week previously floated absolute "+ Add event" overlays over the time
+// grid; the toolbar button is now the only entry point.
+assert.doesNotMatch(
+  source,
+  /absolute top-3 right-3[\s\S]{0,400}Add event/,
+  "No floating Add-event overlays over the time grids",
+);
+assert.equal(
+  (source.match(/Add event/g) ?? []).length,
+  2, // aria-label + button label of the single toolbar button
+  "Exactly one Add event button (toolbar), counted via its label + aria-label",
+);
+assert.match(
+  source,
+  /inline-flex h-7 items-center px-2\.5 text-\[11px\][\s\S]{0,200}viewMode === id/,
+  "View-mode tabs are h-7 — same height as the toolbar controls",
+);
+assert.match(
+  source,
+  /inline-flex h-7 items-center rounded-md border[\s\S]{0,200}Today/,
+  "Today button matches the h-7 toolbar height",
+);
+assert.match(
+  source,
+  /aria-label="Add event"/,
+  "Toolbar Add event button is labeled",
+);
