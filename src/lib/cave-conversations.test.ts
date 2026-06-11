@@ -79,6 +79,87 @@ assert.equal(cancelledTurn?.isError, false, "a user cancel is not an error");
 assert.equal(cancelledTurn?.text, "Roses are red, violets", "partial streamed text must survive the save");
 assert.equal(await deleteConversation("cancelled-turn"), true);
 
+// ── CHAT-D9-02: conversation content search ──────────────────────────────────
+// Appended section — searchConversations over fixture transcripts written
+// directly into CONV_DIR (still pointing at the temp HOME from above).
+{
+  const { searchConversations, CONV_DIR } = await import("./cave-conversations.ts");
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+
+  const fixture = (sessionId, updatedAt, texts) =>
+    JSON.stringify({
+      sessionId,
+      familiarId: "charm",
+      harness: "codex",
+      title: `Title ${sessionId}`,
+      createdAt: updatedAt,
+      updatedAt,
+      turns: texts.map((text, i) => ({
+        id: `t${i}`,
+        role: i % 2 ? "assistant" : "user",
+        text,
+        createdAt: updatedAt,
+      })),
+    });
+
+  await writeFile(
+    path.join(CONV_DIR, "search-hit.json"),
+    fixture("search-hit", "2026-06-11T01:00:00.000Z", [
+      "let's plan the trip",
+      "We should book the Kyoto ryokan in autumn.\nKyoto is busy then.",
+    ]),
+    "utf8",
+  );
+  await writeFile(
+    path.join(CONV_DIR, "search-miss.json"),
+    fixture("search-miss", "2026-06-11T02:00:00.000Z", ["nothing relevant here"]),
+    "utf8",
+  );
+  await writeFile(path.join(CONV_DIR, "search-corrupt.json"), "{ not json", "utf8");
+
+  // Body match → one hit per conversation, with snippet + match count;
+  // the corrupt file alongside must be skipped, not thrown on.
+  const hits = await searchConversations("kyoto");
+  assert.equal(hits.length, 1, "one conversation matches 'kyoto'");
+  assert.equal(hits[0].sessionId, "search-hit");
+  assert.equal(hits[0].matchCount, 2, "matchCount counts every occurrence across turns");
+  assert.match(hits[0].snippet, /Kyoto ryokan/, "snippet centers on the first match");
+  assert.doesNotMatch(hits[0].snippet, /\n/, "snippet is single-line");
+  assert.ok(hits[0].snippet.length <= 100, "snippet stays excerpt-sized");
+
+  // No match → empty; never an error.
+  assert.deepEqual(await searchConversations("zanzibar"), []);
+
+  // Min query length 2 (whitespace doesn't count).
+  assert.deepEqual(await searchConversations("k"), []);
+  assert.deepEqual(await searchConversations("  k  "), []);
+  assert.deepEqual(await searchConversations(""), []);
+
+  // Result cap — most recently updated conversations win.
+  for (let i = 0; i < 5; i++) {
+    await writeFile(
+      path.join(CONV_DIR, `cap-${i}.json`),
+      fixture(`cap-${i}`, `2026-06-12T0${i}:00:00.000Z`, ["the otters convene at dawn"]),
+      "utf8",
+    );
+  }
+  const capped = await searchConversations("otters", { limit: 3 });
+  assert.equal(capped.length, 3, "limit caps the hit list");
+  assert.deepEqual(
+    capped.map((h) => h.sessionId),
+    ["cap-4", "cap-3", "cap-2"],
+    "most recently updated conversations rank first",
+  );
+
+  // Oversized transcripts are skipped gracefully, not scanned.
+  assert.deepEqual(
+    await searchConversations("kyoto", { maxFileBytes: 10 }),
+    [],
+    "files above the byte cap are skipped",
+  );
+}
+
 if (previousHome === undefined) {
   delete process.env.HOME;
 } else {

@@ -25,6 +25,7 @@ const contracts: RouteContract[] = [
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/chat/search", methods: ["GET"], kind: "json" },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations", methods: ["GET"], kind: "json" },
