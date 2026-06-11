@@ -23,6 +23,26 @@ assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
 assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
+assert.match(
+  src,
+  /HOSTNAME \?\? \(dev \? "127\.0\.0\.1" : "0\.0\.0\.0"\)/,
+  "dev server binds loopback by default; LAN exposure is opt-in via HOSTNAME",
+);
+assert.match(
+  src,
+  /if \(!isAllowedUpgradeOrigin\(req\)\)[\s\S]*?403 Forbidden/,
+  "PTY upgrade rejects cross-site browser origins before spawning a shell",
+);
+assert.match(
+  src,
+  /isAllowedUpgradeOrigin[\s\S]*?if \(!origin\) return true;/,
+  "origin gate permits non-browser clients that send no Origin header",
+);
+assert.match(
+  src,
+  /pathname !== "\/api\/pty-ws"[\s\S]*isAllowedUpgradeOrigin\(req\)[\s\S]*wss\.handleUpgrade/,
+  "origin gate runs on the PTY upgrade path before the websocket is accepted",
+);
 assert.match(packageJson.scripts.postinstall ?? "", /fix-node-pty-spawn-helper\.mjs/, "postinstall repairs node-pty spawn-helper mode");
 assert.equal(
   existsSync(new URL("../scripts/fix-node-pty-spawn-helper.mjs", import.meta.url)),
