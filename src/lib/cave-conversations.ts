@@ -21,6 +21,8 @@ export type ChatTurn = {
   createdAt: string;
   durationMs?: number;
   isError?: boolean;
+  /** True when the user stopped this response mid-stream (Esc/Stop). */
+  cancelled?: boolean;
   origin?: "chat" | "voice";
   voiceCallId?: string;
 };

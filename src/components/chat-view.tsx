@@ -1101,6 +1101,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   tools?: ToolEvent[];
                   durationMs?: number;
                   isError?: boolean;
+                  cancelled?: boolean;
                   createdAt?: string;
                   origin?: "chat" | "voice";
                   voiceCallId?: string;
@@ -1115,6 +1116,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   tools: t.tools,
                   durationMs: t.durationMs,
                   error: t.isError,
+                  lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
                   createdAt: t.createdAt ?? new Date().toISOString(),
                   origin: t.origin,
                   voiceCallId: t.voiceCallId,

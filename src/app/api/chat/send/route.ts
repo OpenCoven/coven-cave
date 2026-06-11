@@ -463,6 +463,12 @@ function openClawChatResponse(args: {
           durationMs,
         );
 
+        // User cancel (CHAT-D5-02): a stopped response SIGTERMs the bridge,
+        // so stdout is usually empty or truncated JSON. Persist an honest
+        // cancelled marker — never raw truncated output or the fabricated
+        // "returned no text" error diagnostic.
+        const cancelledByUser = args.req.signal.aborted;
+
         if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
@@ -470,11 +476,14 @@ function openClawChatResponse(args: {
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
-            assistantText = stdout.trim();
+            if (!cancelledByUser) assistantText = stdout.trim();
           }
         }
 
-        if (!assistantText.trim()) {
+        if (cancelledByUser) {
+          if (!assistantText.trim()) assistantText = "(cancelled)";
+          isError = false;
+        } else if (!assistantText.trim()) {
           const tail = stderr
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -523,6 +532,7 @@ function openClawChatResponse(args: {
               createdAt: new Date().toISOString(),
               durationMs,
               isError,
+              ...(cancelledByUser ? { cancelled: true } : {}),
             },
           );
           await saveConversation(conv);
@@ -996,10 +1006,23 @@ export async function POST(req: Request) {
         pushProgress("resume-retry", "Fresh chat started", "done");
       }
 
-      // Empty-response diagnostic: when the harness reports done but never
-      // produced assistant text, the user otherwise sees a silent empty
-      // bubble. Synthesize a short explanation so they know what to do.
-      if (!assistantText.trim()) {
+      // User cancel (CHAT-D5-02): when the client stops the response
+      // (Esc/Stop), req.signal aborts and the harness child gets SIGTERM —
+      // usually before any "result" event. Without this guard the
+      // empty-response diagnostic below fabricates an auth-hint error and
+      // saves it, so reloading the chat rewrote the user's cancel into a
+      // harness error. Persist the honest record instead: the partial text
+      // streamed so far (or a minimal "(cancelled)" marker), never an error,
+      // and skip the diagnostic SSE chunk — the client already rendered its
+      // own cancelled state and is gone.
+      const cancelledByUser = req.signal.aborted;
+      if (cancelledByUser) {
+        if (!assistantText.trim()) assistantText = "(cancelled)";
+        result.is_error = false;
+      } else if (!assistantText.trim()) {
+        // Empty-response diagnostic: when the harness reports done but never
+        // produced assistant text, the user otherwise sees a silent empty
+        // bubble. Synthesize a short explanation so they know what to do.
         const harness = binding.harness;
         const durMs = result.duration_ms;
         const durSuffix = durMs != null ? ` in ${durMs}ms` : "";
@@ -1040,6 +1063,7 @@ export async function POST(req: Request) {
           createdAt: new Date().toISOString(),
           durationMs: result.duration_ms,
           isError: result.is_error,
+          ...(cancelledByUser ? { cancelled: true } : {}),
         };
         const conv = existing ?? {
           sessionId: finalSessionId,
