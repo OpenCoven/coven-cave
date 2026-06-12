@@ -38,17 +38,34 @@ function titleFromPath(url: URL): string {
   return last ? slugToTitle(last) : domainFrom(url);
 }
 
+function isValidGitHubOwnerOrRepoSegment(value: string): boolean {
+  if (!value) return false;
+  if (value === "." || value === "..") return false;
+  // Conservative allowlist for a single path segment.
+  return /^[A-Za-z0-9._-]+$/.test(value);
+}
+
+function isValidGitHubIssueOrPullNumber(value: string | undefined): value is string {
+  return typeof value === "string" && /^\d+$/.test(value);
+}
+
 // ── GitHub API ───────────────────────────────────────────────────────────────
 
 async function enrichGitHub(url: URL): Promise<EnrichedMeta | null> {
   const parts = url.pathname.replace(/^\//, "").split("/");
   if (parts.length < 2) return null;
   const [owner, repo, section, num] = parts;
+  if (!isValidGitHubOwnerOrRepoSegment(owner) || !isValidGitHubOwnerOrRepoSegment(repo)) return null;
+
+  const safeOwner = encodeURIComponent(owner);
+  const safeRepo = encodeURIComponent(repo);
 
   try {
     if (section === "issues" || section === "pull") {
+      if (!isValidGitHubIssueOrPullNumber(num)) return null;
       const kind = section === "issues" ? "issues" : "pulls";
-      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/${kind}/${num}`, {
+      const safeNum = encodeURIComponent(num);
+      const res = await fetch(`https://api.github.com/repos/${safeOwner}/${safeRepo}/${kind}/${safeNum}`, {
         headers: { Accept: "application/vnd.github+json", "User-Agent": "coven-cave/1.0" },
         signal: AbortSignal.timeout(4000),
       });
@@ -60,7 +77,7 @@ async function enrichGitHub(url: URL): Promise<EnrichedMeta | null> {
         };
       }
     } else {
-      const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      const res = await fetch(`https://api.github.com/repos/${safeOwner}/${safeRepo}`, {
         headers: { Accept: "application/vnd.github+json", "User-Agent": "coven-cave/1.0" },
         signal: AbortSignal.timeout(4000),
       });
