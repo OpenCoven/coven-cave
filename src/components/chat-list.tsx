@@ -45,6 +45,9 @@ type Props = {
    *  "no chats yet" empty state. Defaults true for callers that load
    *  sessions before mounting. */
   sessionsLoaded?: boolean;
+  /** Compact mode for the narrow companion sidepanel (AgentPanel). Hides the
+   *  project sidebar entirely so the limited width goes to the chat list. */
+  compact?: boolean;
 };
 
 function age(iso: string): string {
@@ -121,7 +124,7 @@ function HighlightedSnippet({ snippet, query }: { snippet: string; query: string
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
   const [error, setError] = useState<string | null>(null);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
@@ -408,6 +411,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   return (
     <div className="flex h-full min-w-0">
+      {!compact && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
@@ -430,6 +434,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           onNewChat(root ?? undefined, group?.defaultFamiliarId ?? fallbackFamiliarId);
         }}
       />
+      )}
       <section className="chat-list-surface flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
       {/* ── Agent dossier + command strip ── */}

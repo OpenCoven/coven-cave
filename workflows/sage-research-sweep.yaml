@@ -1,0 +1,54 @@
+# Cave Workflow manifest — local source for the Workflow Studio.
+# Scanned by src/lib/workflow-source.ts when the daemon has no workflow engine.
+id: sage-research-sweep
+version: 0.2.0
+name: Research Sweep
+summary: Fan out parallel source gathering, verify each finding adversarially, then synthesize a cited brief.
+familiar: sage
+pattern: fan-out-and-synthesize
+tags:
+  - research
+  - synthesis
+limits:
+  max_agents: 8
+  timeout_s: 2400
+  cost_ceiling_usd: 12
+permissions:
+  - web.read
+visibility:
+  coven_cave: true
+steps:
+  - id: plan
+    kind: agent
+    name: Scope the question
+    uses: sage
+    summary: Decompose the research question into independent search angles.
+  - id: gather-web
+    kind: agent
+    name: Web sweep
+    uses: sage
+    summary: Search the open web for primary sources.
+    requires:
+      - plan
+  - id: gather-library
+    kind: agent
+    name: Library sweep
+    uses: sage
+    summary: Search the local library and prior research for relevant material.
+    requires:
+      - plan
+  - id: verify
+    kind: agent
+    name: Adversarial verify
+    uses: echo
+    summary: Try to refute each gathered claim; drop the unsupported ones.
+    requires:
+      - gather-web
+      - gather-library
+  - id: synthesize
+    kind: tool
+    name: Cited brief
+    uses: cave.output
+    summary: Synthesize the surviving findings into a cited brief.
+    requires:
+      - verify

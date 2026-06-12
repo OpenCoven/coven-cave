@@ -50,6 +50,7 @@ export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPane
             onSessionStarted={onSessionStarted}
             onSlashFromChat={onSlashFromChat}
             onOpenOnboarding={onOpenOnboarding}
+            compact
           />
         </div>
       )}

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { sanitizeHtml } from "@/lib/html-sanitize";
+import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
 import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
 import type {
   LibraryDocBody,
@@ -469,6 +470,65 @@ function stripLeadingTitleHeading(body: string, title: string): string {
   return lines.slice(i).join("\n");
 }
 
+// ── Leading metadata block ───────────────────────────────────────
+// Research notes from Sage open with a metadata paragraph — a run of
+// `**Date:** … **Source:** … **Stars:** …` bold-label pairs written as the
+// first body paragraph. `parseLeadingMetadata` (see lib/library-metadata)
+// lifts it out of the markdown so we can render it as a collapsible
+// key/value grid instead of an inline wrapped blob.
+const META_OPEN_KEY = "cave:library:meta-open";
+
+function MetadataBlock({ entries }: { entries: MetaEntry[] }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    try { setOpen(window.localStorage.getItem(META_OPEN_KEY) === "true"); } catch { /* private mode */ }
+  }, []);
+
+  // Render each value's inline markdown (links, bold, etc.), stripping the
+  // wrapping <p> the block renderer adds.
+  const [vals, setVals] = useState<string[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const fn = await getMdFn();
+      const rendered = await Promise.all(entries.map((e) => fn(e.value)));
+      if (cancelled) return;
+      setVals(rendered.map((r) => sanitizeHtml(r).replace(/^\s*<p>/, "").replace(/<\/p>\s*$/, "").trim()));
+    })();
+    return () => { cancelled = true; };
+  }, [entries]);
+
+  const toggle = () => setOpen((o) => {
+    const next = !o;
+    try { window.localStorage.setItem(META_OPEN_KEY, String(next)); } catch { /* private mode */ }
+    return next;
+  });
+
+  return (
+    <details className="library-meta" open={open}>
+      <summary
+        className="library-meta-summary"
+        onClick={(e) => { e.preventDefault(); toggle(); }}
+      >
+        <Icon name="ph:caret-right" width={12} className="library-meta-caret" />
+        <span className="library-meta-title">Metadata</span>
+        <span className="library-meta-count">{entries.length} fields</span>
+      </summary>
+      <dl className="library-meta-grid">
+        {entries.map((e, idx) => (
+          <div key={e.key} className="library-meta-row">
+            <dt className="library-meta-key">{e.key}</dt>
+            <dd
+              className="library-meta-val"
+              dangerouslySetInnerHTML={{ __html: vals?.[idx] ?? sanitizeHtml(e.value) }}
+            />
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 const READER_FONT_KEY = "cave:library:reader-font";
 const READER_WIDE_KEY = "cave:library:reader-wide";
 const READER_FONT_SIZES = [15, 17, 19, 21];
@@ -476,7 +536,13 @@ const READER_FONT_SIZES = [15, 17, 19, 21];
 function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
   const [readerOpen, setReaderOpen] = useState(false);
 
-  const renderBody = stripLeadingTitleHeading(doc.body, doc.title);
+  // Memoized so DocDetail's frequent re-renders (scroll-progress state) don't
+  // hand MetadataBlock a fresh entries array each tick and re-run its markdown.
+  const { leadingMeta, renderBody } = useMemo(() => {
+    const bodyWithoutTitle = stripLeadingTitleHeading(doc.body, doc.title);
+    const meta = parseLeadingMetadata(bodyWithoutTitle);
+    return { leadingMeta: meta, renderBody: meta ? meta.rest : bodyWithoutTitle };
+  }, [doc.body, doc.title]);
 
   // Reader width — narrow (~68ch measure) or wide (fills the modal).
   const [readerWide, setReaderWide] = useState(false);
@@ -766,6 +832,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
           onScroll={handleScroll}
           className={hasToc ? "library-preview-body library-preview-body--with-toc" : "library-preview-body"}
         >
+          {leadingMeta && <MetadataBlock entries={leadingMeta.entries} />}
           <RenderedMarkdown text={renderBody} containerRef={mdRef} />
           {hasToc && (
             <TocPanel items={tocItems} activeId={activeTocId} mdRef={mdRef} />
@@ -880,6 +947,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
               onScroll={handleReaderScroll}
               className={hasReaderToc ? "library-reader-body library-reader-body--with-toc" : "library-reader-body"}
             >
+              {leadingMeta && <MetadataBlock entries={leadingMeta.entries} />}
               <RenderedMarkdown text={renderBody} containerRef={readerMdRef} />
               {hasReaderToc && (
                 <TocPanel items={readerTocItems} activeId={activeReaderTocId} mdRef={readerMdRef} readerMode />

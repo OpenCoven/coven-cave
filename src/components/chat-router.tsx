@@ -41,6 +41,9 @@ type Props = {
    *  main chat surface opts in — the companion-rail ChatRouter must not fight
    *  it for the hash. Workspace owns mount-time restore + popstate handling. */
   syncUrlHash?: boolean;
+  /** Compact mode for the narrow companion sidepanel (AgentPanel). Hides the
+   *  project sidebar in both list and chat views to reclaim the limited width. */
+  compact?: boolean;
 };
 
 export type ChatRouterHandle = {
@@ -73,6 +76,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     pendingProjectRoot,
     onOpenTask,
     syncUrlHash,
+    compact = false,
   },
   ref,
 ) {
@@ -267,6 +271,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessions={sessions}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
+        compact={compact}
         onSessionsChanged={onSessionsChanged}
         onOpen={(sessionId, familiarId) => {
           const next = selectFamiliarForChat(familiarId);
@@ -297,6 +302,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   return (
     <div className="flex h-full min-w-0">
+      {!compact && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
@@ -326,6 +332,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           });
         }}
       />
+      )}
       <div className="min-h-0 min-w-0 flex-1">
         <ChatView
           ref={viewHandle}
