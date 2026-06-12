@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
-import { dryRunLocalWorkflow } from "@/lib/workflow-source";
+import { dryRunLocalWorkflow, dryRunLocalWorkflowManifest } from "@/lib/workflow-source";
 import type { WorkflowDryRunPlan } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +11,13 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     body = {};
+  }
+
+  // Inline manifests (unsaved studio drafts) plan locally — the daemon only
+  // knows about persisted workflows.
+  const manifest = (body as Record<string, unknown> | null)?.manifest;
+  if (manifest !== undefined) {
+    return NextResponse.json(dryRunLocalWorkflowManifest(manifest));
   }
 
   const res = await callDaemon<WorkflowDryRunPlan>({

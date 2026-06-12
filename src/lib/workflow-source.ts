@@ -1,6 +1,6 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   WorkflowDryRunPlan,
   WorkflowListResponse,
@@ -358,6 +358,92 @@ export async function dryRunLocalWorkflow(body: {
     };
   }
   return planDryRun(found);
+}
+
+/** Dry-run an inline manifest (studio drafts) without touching disk. */
+export function dryRunLocalWorkflowManifest(manifest: unknown): WorkflowDryRunPlan {
+  return planDryRun(coerceManifest(manifest));
+}
+
+/**
+ * Manifest filename for a workflow id. Returns null for anything that is not
+ * a plain slug so saves can never escape {@link workflowsDir}.
+ */
+export function workflowFileName(id: string): string | null {
+  if (!/^[a-z0-9][a-z0-9_-]{0,80}$/i.test(id)) return null;
+  return `${id}.yaml`;
+}
+
+// Writes are serialized through a promise chain (same pattern as cave-inbox)
+// so concurrent saves cannot interleave partial file states.
+let workflowWriteChain: Promise<unknown> = Promise.resolve();
+function withWorkflowWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = workflowWriteChain.then(fn, fn);
+  workflowWriteChain = next.catch(() => undefined);
+  return next;
+}
+
+/**
+ * Persist a manifest as `<id>.yaml` under {@link workflowsDir}. The manifest
+ * is validated and the verdict returned alongside; invalid-but-parseable
+ * manifests still save (the studio renders their health), but unsafe ids and
+ * unserializable payloads never touch disk.
+ */
+export async function saveLocalWorkflow(body: {
+  manifest: unknown;
+}): Promise<{ ok: boolean; workflow?: WorkflowSummary; validation?: WorkflowValidationResult; error?: string }> {
+  const summary = coerceManifest(body.manifest);
+  const file = workflowFileName(summary.id);
+  if (!file) {
+    return { ok: false, error: `Workflow id \`${summary.id}\` is not a safe filename slug.` };
+  }
+  const validation = validateManifest(body.manifest);
+  let text: string;
+  try {
+    text = stringifyYaml(body.manifest, { lineWidth: 0 });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "YAML serialization failed", validation };
+  }
+  try {
+    await withWorkflowWriteLock(async () => {
+      const dir = workflowsDir();
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, file), text, "utf8");
+    });
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "workflow write failed", validation };
+  }
+  const source = file.replace(/\.ya?ml$/i, "");
+  return { ok: true, workflow: coerceManifest(body.manifest, source), validation };
+}
+
+/** Remove a workflow manifest by id or source path. */
+export async function deleteLocalWorkflow(body: {
+  id?: string;
+  path?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const found = await findLocalWorkflow(body);
+  if (!found?.path) {
+    return { ok: false, error: `No local workflow matched ${body.id ?? body.path ?? "request"}.` };
+  }
+  if (!workflowFileName(found.path)) {
+    return { ok: false, error: `Refusing to delete unsafe path \`${found.path}\`.` };
+  }
+  try {
+    const dir = workflowsDir();
+    // Resolve the on-disk name from the directory listing (.yaml or .yml).
+    const entries = await readdir(dir);
+    const file = entries.find(
+      (name) => /\.ya?ml$/i.test(name) && name.replace(/\.ya?ml$/i, "") === found.path,
+    );
+    if (!file) {
+      return { ok: false, error: `Manifest file for \`${found.path}\` not found.` };
+    }
+    await withWorkflowWriteLock(() => unlink(path.join(dir, file)));
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "workflow delete failed" };
+  }
+  return { ok: true };
 }
 
 /** Round-trip a coerced summary back to a manifest-shaped object for re-validation. */
