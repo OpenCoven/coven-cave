@@ -458,12 +458,23 @@ function layoutFileName(id: string): string | null {
   return file ? file.replace(/\.yaml$/, ".cave.json") : null;
 }
 
-/** Saved node positions for a workflow, or null when none exist. */
-export async function loadWorkflowLayout(id: string): Promise<WorkflowLayout | null> {
+/** Absolute path for a layout sidecar, constrained to workflowsDir(). */
+function layoutFilePath(id: string): string | null {
   const file = layoutFileName(id);
   if (!file) return null;
+  const root = path.resolve(workflowsDir());
+  const target = path.resolve(root, file);
+  const rel = path.relative(root, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  return target;
+}
+
+/** Saved node positions for a workflow, or null when none exist. */
+export async function loadWorkflowLayout(id: string): Promise<WorkflowLayout | null> {
+  const filePath = layoutFilePath(id);
+  if (!filePath) return null;
   try {
-    const text = await readFile(path.join(workflowsDir(), file), "utf8");
+    const text = await readFile(filePath, "utf8");
     const parsed = JSON.parse(text) as { positions?: WorkflowLayout };
     if (!parsed.positions || typeof parsed.positions !== "object") return null;
     const positions: WorkflowLayout = {};
@@ -483,8 +494,8 @@ export async function saveWorkflowLayout(
   id: string,
   positions: WorkflowLayout,
 ): Promise<{ ok: boolean; error?: string }> {
-  const file = layoutFileName(id);
-  if (!file) {
+  const filePath = layoutFilePath(id);
+  if (!filePath) {
     return { ok: false, error: `Workflow id \`${id}\` is not a safe filename slug.` };
   }
   try {
@@ -492,7 +503,7 @@ export async function saveWorkflowLayout(
       const dir = workflowsDir();
       await mkdir(dir, { recursive: true });
       await writeFile(
-        path.join(dir, file),
+        filePath,
         JSON.stringify({ version: 1, positions }, null, 2),
         "utf8",
       );
