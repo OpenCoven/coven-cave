@@ -78,15 +78,20 @@ type InstallJobView = {
   error?: string;
 };
 
-/** Mirrors the server's npm-kind mutual exclusion (route returns 409). */
-const NPM_INSTALL_TARGETS: InstallTarget[] = [
-  "coven-cli",
-  "codex",
-  "claude",
-  "openclaw",
-];
-
-const ALL_INSTALL_TARGETS: InstallTarget[] = [...NPM_INSTALL_TARGETS, "hermes"];
+/** Mirrors the server's per-target install mechanism (route.ts INSTALL_TARGETS).
+ *  npm-kind installs are mutually exclusive — the route 409s — so they share
+ *  one client-side busy lock. */
+const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
+  "coven-cli": "npm",
+  codex: "npm",
+  claude: "npm",
+  openclaw: "npm",
+  hermes: "script",
+};
+const ALL_INSTALL_TARGETS = Object.keys(INSTALL_TARGET_KIND) as InstallTarget[];
+const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
+  (target) => INSTALL_TARGET_KIND[target] === "npm",
+);
 
 type SshCheckState =
   | { state: "idle" }
@@ -539,6 +544,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       const json = (await res.json().catch(() => ({}))) as {
         started?: boolean;
         status?: string;
+        elapsedMs?: number;
+        tail?: string;
         npmMissing?: boolean;
         hint?: string;
         error?: string;
@@ -569,10 +576,19 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         return;
       }
       // 202 started (or idempotent 200 for an already-running job): hand off
-      // to the polling effect.
+      // to the polling effect. Seed with the body's real elapsed/tail when
+      // present (idempotent re-POST returns the live view) so the UI doesn't
+      // flash back to zero on a re-POST.
       setInstallJobs((prev) => ({
         ...prev,
-        [target]: { status: "running", elapsedMs: 0, tail: "" },
+        [target]:
+          json.status === "running" && typeof json.elapsedMs === "number"
+            ? {
+                status: "running",
+                elapsedMs: json.elapsedMs,
+                tail: json.tail ?? "",
+              }
+            : { status: "running", elapsedMs: 0, tail: "" },
       }));
     } catch (err) {
       setInstallResults((prev) => ({
@@ -655,9 +671,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runningInstallKey]);
 
-  // Re-attach to server-side jobs after a page refresh: one probe per target
-  // on mount; only still-running jobs are adopted.
+  // Re-attach to server-side jobs the first time the overlay opens. The
+  // overlay is always mounted (open=false hides it but doesn't unmount), so
+  // firing on [] would probe 5 targets on every workspace load for users who
+  // are fully onboarded. A once-ref ensures the probe runs exactly once, on
+  // the first render where open is true.
+  const reAttachFiredRef = useRef(false);
   useEffect(() => {
+    if (!open || reAttachFiredRef.current) return;
+    reAttachFiredRef.current = true;
+    let cancelled = false;
     void (async () => {
       const entries = await Promise.all(
         ALL_INSTALL_TARGETS.map(async (target) => {
@@ -665,7 +688,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             const res = await fetch(
               `/api/onboarding/install?target=${encodeURIComponent(target)}`,
             );
-            if (!res.ok) return null;
+            if (!res.ok || cancelled) return null;
             const json = (await res.json()) as { status: string };
             return json.status === "running"
               ? ([target, json as InstallJobView] as const)
@@ -675,6 +698,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           }
         }),
       );
+      if (cancelled) return;
       const running = Object.fromEntries(
         entries.filter((entry): entry is NonNullable<typeof entry> => !!entry),
       );
@@ -682,8 +706,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         setInstallJobs((prev) => ({ ...running, ...prev }));
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const testSsh = async () => {
     const host = sshHost.trim();
@@ -1394,6 +1420,43 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
 // ── Step bodies ───────────────────────────────────────────────────────────────
 
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+/** Last N non-empty lines of installer output (\r-heavy progress bars are
+ *  normalized to line breaks first). */
+function lastLines(text: string, count: number): string {
+  return text
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-count)
+    .join("\n");
+}
+
+function InstallLiveTail({ tail }: { tail: string }) {
+  const visible = lastLines(tail, 3);
+  if (!visible) return null;
+  return (
+    <pre className="overflow-hidden whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+      {visible}
+    </pre>
+  );
+}
+
+function anyNpmInstallRunning(
+  jobs: Partial<Record<InstallTarget, InstallJobView>>,
+): boolean {
+  return NPM_INSTALL_TARGETS.some(
+    (target) => jobs[target]?.status === "running",
+  );
+}
+
 function CommandRow({
   command,
   onCopy,
@@ -1488,9 +1551,9 @@ function StepCovenCli({
   onInstall: () => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
-  const npmJobRunning = NPM_INSTALL_TARGETS.some(
-    (target) => installJobs[target]?.status === "running",
-  );
+  const npmJobRunning = anyNpmInstallRunning(installJobs);
+  const job = installJobs["coven-cli"];
+  const busy = job?.status === "running";
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1500,12 +1563,18 @@ function StepCovenCli({
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={onInstall}
-          disabled={npmJobRunning}
+          disabled={busy || npmJobRunning}
           className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
         >
-          <Icon name="ph:arrow-down-bold" />
-          {installJobs["coven-cli"]?.status === "running"
-            ? "Installing… (can take a minute)"
+          {busy ? (
+            <span className="inline-flex animate-spin">
+              <Icon name="ph:circle-notch-bold" />
+            </span>
+          ) : (
+            <Icon name="ph:arrow-down-bold" />
+          )}
+          {busy && job
+            ? `Installing… ${formatElapsed(job.elapsedMs)}`
             : "Install coven CLI"}
         </button>
         <span className="text-[11px] text-[var(--text-muted)]">
@@ -1513,6 +1582,7 @@ function StepCovenCli({
         </span>
       </div>
       <CommandRow command={platformCopy.installCommand} onCopy={onCopy} />
+      {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
       <InstallResultNote result={installResult} />
       {nodeHint ? (
         <NodeSetupNotice hint={nodeHint} nodeSetup={platformCopy.nodeSetup} />
@@ -1548,9 +1618,7 @@ function StepRuntimes({
   onCopy: (text: string) => Promise<boolean>;
   onRefresh: () => void;
 }) {
-  const npmJobRunning = NPM_INSTALL_TARGETS.some(
-    (target) => installJobs[target]?.status === "running",
-  );
+  const npmJobRunning = anyNpmInstallRunning(installJobs);
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -1572,6 +1640,8 @@ function StepRuntimes({
         {chatHarnesses.map((adapter) => {
           const oneClick = HARNESS_ONE_CLICK[adapter.id];
           const result = oneClick ? installResults[oneClick.target] : undefined;
+          const job = oneClick ? installJobs[oneClick.target] : undefined;
+          const busy = job?.status === "running";
           return (
             <div
               key={adapter.id}
@@ -1608,9 +1678,15 @@ function StepRuntimes({
                         }
                         className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                       >
-                        <Icon name="ph:arrow-down-bold" />
-                        {installJobs[oneClick.target]?.status === "running"
-                          ? "Installing…"
+                        {busy ? (
+                          <span className="inline-flex animate-spin">
+                            <Icon name="ph:circle-notch-bold" />
+                          </span>
+                        ) : (
+                          <Icon name="ph:arrow-down-bold" />
+                        )}
+                        {busy && job
+                          ? `Installing… ${formatElapsed(job.elapsedMs)}`
                           : `Install ${adapter.label}`}
                       </button>
                       <CommandRow
@@ -1621,6 +1697,7 @@ function StepRuntimes({
                         }
                         onCopy={onCopy}
                       />
+                      {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
                       <p className="text-[11px] leading-4 text-[var(--text-muted)]">
                         After install: {oneClick.afterInstall}.
                       </p>

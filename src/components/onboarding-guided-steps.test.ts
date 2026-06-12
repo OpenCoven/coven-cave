@@ -216,4 +216,28 @@ assert.match(
   "npm-kind targets share a busy lock (mirrors the server's 409)",
 );
 
+assert.match(
+  source,
+  /Installing… \$\{formatElapsed\(/,
+  "busy install buttons show elapsed time, not a frozen label",
+);
+
+assert.match(
+  source,
+  /ph:circle-notch-bold/,
+  "busy install buttons show a spinner",
+);
+
+assert.match(
+  source,
+  /InstallLiveTail/,
+  "live installer output renders while a job runs",
+);
+
+assert.match(
+  source,
+  /installJobs\[oneClick\.target\]\?\.status === "running"/,
+  "the disable rule is per-target, pinned positively",
+);
+
 console.log("onboarding-guided-steps.test.ts: ok");
