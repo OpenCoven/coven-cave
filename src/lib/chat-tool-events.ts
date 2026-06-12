@@ -29,6 +29,11 @@ export type ToolStreamEvent = {
   durationMs?: number;
 };
 
+/** A tool event as recorded for persistence — ToolStreamEvent plus the
+ *  position in the accumulated assistant text where the call started
+ *  (mirrors the chat UI's textOffset for chronological interleaving). */
+export type RecordedToolEvent = ToolStreamEvent & { textOffset?: number };
+
 /** Pretty-print a raw JSON payload string; fall back to the raw text. */
 export function formatToolPayload(raw: string): string | undefined {
   if (!raw) return undefined;
@@ -97,6 +102,9 @@ export class ToolCallTracker {
   private byEnvelopeId = new Map<string, OpenCall>();
   /** Envelope ids whose calls were already settled (dedup tool_result). */
   private settledEnvelopeIds = new Set<string>();
+  /** Final state of every call this tracker has emitted, by stream id —
+   *  insertion-ordered, so snapshot() preserves call order for persistence. */
+  private recorded = new Map<string, RecordedToolEvent>();
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -124,8 +132,36 @@ export class ToolCallTracker {
     }
   }
 
+  private record(ev: ToolStreamEvent, textOffset?: number): void {
+    const prev = this.recorded.get(ev.id);
+    if (!prev) {
+      this.recorded.set(ev.id, {
+        ...ev,
+        ...(textOffset !== undefined ? { textOffset } : {}),
+      });
+      return;
+    }
+    // End events merge into the start record; the first textOffset and the
+    // original input win (mirrors the chat UI's upsert-by-id semantics).
+    this.recorded.set(ev.id, {
+      ...prev,
+      ...ev,
+      input: prev.input ?? ev.input,
+      ...(prev.textOffset !== undefined
+        ? { textOffset: prev.textOffset }
+        : textOffset !== undefined
+          ? { textOffset }
+          : {}),
+    });
+  }
+
+  /** Final ordered tool list for persistence into the saved turn. */
+  snapshot(): RecordedToolEvent[] {
+    return Array.from(this.recorded.values());
+  }
+
   /** pre_tool_use (or bare tool_use) hook line: a call is starting. */
-  hookStart(name: string, input?: string): ToolStreamEvent {
+  hookStart(name: string, input?: string, textOffset?: number): ToolStreamEvent {
     const queue = this.queueFor(name);
     // The envelope may have announced this call first (assistant message
     // flushes before the tool executes). Claim the oldest unclaimed
@@ -136,7 +172,9 @@ export class ToolCallTracker {
       // The hook marks actual execution start — a tighter duration baseline
       // than when the envelope was parsed.
       claim.startedAt = this.now();
-      return { id: claim.id, name, input, status: "running" };
+      const ev: ToolStreamEvent = { id: claim.id, name, input, status: "running" };
+      this.record(ev, textOffset);
+      return ev;
     }
     this.seq += 1;
     const call: OpenCall = {
@@ -147,7 +185,9 @@ export class ToolCallTracker {
       hookStarted: true,
     };
     queue.push(call);
-    return { id: call.id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id: call.id, name, input, status: "running" };
+    this.record(ev, textOffset);
+    return ev;
   }
 
   /** post_tool_use hook line: the OLDEST open hook-started call completed. */
@@ -160,11 +200,15 @@ export class ToolCallTracker {
     if (!call) {
       // Post without any open call: surface it anyway under a fresh id.
       this.seq += 1;
-      return { id: `tool-${this.seq}-${name}`, name, output, status };
+      const ev: ToolStreamEvent = { id: `tool-${this.seq}-${name}`, name, output, status };
+      this.record(ev);
+      return ev;
     }
     const durationMs = this.now() - call.startedAt;
     this.settle(call);
-    return { id: call.id, name, output, status, durationMs };
+    const ev: ToolStreamEvent = { id: call.id, name, output, status, durationMs };
+    this.record(ev);
+    return ev;
   }
 
   /**
@@ -172,7 +216,7 @@ export class ToolCallTracker {
    * new; returns null when a hook already announced it (the native id is
    * linked to the hook's id instead, so later tool_result blocks dedup).
    */
-  envelopeToolUse(id: string, name: string, input?: string): ToolStreamEvent | null {
+  envelopeToolUse(id: string, name: string, input?: string, textOffset?: number): ToolStreamEvent | null {
     if (this.byEnvelopeId.has(id) || this.settledEnvelopeIds.has(id)) return null;
     const queue = this.queueFor(name);
     // A hook pre may have surfaced this call already under a minted id. Link
@@ -182,6 +226,10 @@ export class ToolCallTracker {
     if (hookCall) {
       hookCall.envelopeId = id;
       this.byEnvelopeId.set(id, hookCall);
+      const prev = this.recorded.get(hookCall.id);
+      if (prev && prev.input === undefined && input !== undefined) {
+        this.recorded.set(hookCall.id, { ...prev, input });
+      }
       return null;
     }
     const call: OpenCall = {
@@ -194,7 +242,9 @@ export class ToolCallTracker {
     };
     queue.push(call);
     this.byEnvelopeId.set(id, call);
-    return { id, name, input, status: "running" };
+    const ev: ToolStreamEvent = { id, name, input, status: "running" };
+    this.record(ev, textOffset);
+    return ev;
   }
 
   /**
@@ -212,12 +262,54 @@ export class ToolCallTracker {
     if (!call) return null;
     const durationMs = this.now() - call.startedAt;
     this.settle(call);
-    return {
+    const ev: ToolStreamEvent = {
       id: call.id,
       name: call.name,
       output,
       status: isError ? "error" : "ok",
       durationMs,
     };
+    this.record(ev);
+    return ev;
   }
+}
+
+/** Caps for persisted tool payloads — chips are tiny; expandable payloads are
+ *  what can grow a conversation file. Output keeps the tail (the end of a log
+ *  is where errors live); input keeps the head (commands lead with intent). */
+export const PERSIST_INPUT_CAP = 2_000;
+export const PERSIST_OUTPUT_CAP = 4_000;
+
+/**
+ * Shape a tracker snapshot for the saved ChatTurn.
+ *
+ * - `leadingTrim`: the saved turn text is `assistantText.trim()`, so offsets
+ *   stamped against the untrimmed stream shift left by the leading-whitespace
+ *   length (clamped at 0).
+ * - Still-running calls coerce to error — a persisted "running" badge would
+ *   spin forever after reload.
+ * - Returns undefined when there is nothing to persist (no `tools: []` noise).
+ */
+export function toPersistedTools(
+  events: RecordedToolEvent[],
+  leadingTrim: number,
+): RecordedToolEvent[] | undefined {
+  if (events.length === 0) return undefined;
+  return events.map((ev) => {
+    const stillRunning = ev.status === "running";
+    const output = stillRunning
+      ? `${ev.output ? `${ev.output}\n` : ""}[tool did not settle before the turn ended]`
+      : ev.output;
+    return {
+      id: ev.id,
+      name: ev.name,
+      status: stillRunning ? "error" : ev.status,
+      ...(ev.input !== undefined ? { input: ev.input.slice(0, PERSIST_INPUT_CAP) } : {}),
+      ...(output !== undefined ? { output: output.slice(-PERSIST_OUTPUT_CAP) } : {}),
+      ...(ev.durationMs !== undefined ? { durationMs: ev.durationMs } : {}),
+      ...(ev.textOffset !== undefined
+        ? { textOffset: Math.max(0, ev.textOffset - leadingTrim) }
+        : {}),
+    };
+  });
 }
