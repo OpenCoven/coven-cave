@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { SLASH_COMMANDS } from "@/lib/slash-commands";
+import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
+import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -266,22 +267,77 @@ export function CommandPalette({
           .slice(0, RESULT_LIMITS.fsMemory)
           .map((e) => ({ id: `fm:${e.fullPath}`, kind: "fs-memory", entry: e }));
 
+    // Slash queries carry arguments ("/save <url>", "/remind in 30m …").
+    // Command rows previously matched the whole query against the command
+    // name, so any args made every command disappear and the query fell
+    // through to create-task. Match on the first token and thread the rest
+    // through the intent so commands run with their arguments.
+    const slashMatch = rest.trim().match(/^(\/\S+)(?:\s+(\S[\s\S]*))?$/);
+    const slashToken = slashMatch?.[1].toLowerCase() ?? null;
+    const slashArgs = slashMatch?.[2]?.trim() ?? "";
+    const slashCanonical = slashToken ? canonicalize(slashToken) : null;
+
+    // `/save <url>` gets one row per destination so the user chooses the
+    // link type (or lets the classifier decide). Tags typed after the URL
+    // ride along on every choice.
+    const saveRows: Row[] = [];
+    if (!scoped && (slashCanonical === "/save" || slashToken === "/save") && slashArgs) {
+      const parsed = slashSaveParse(slashArgs);
+      if (!("error" in parsed)) {
+        const host = (() => {
+          try {
+            return new URL(parsed.url).hostname;
+          } catch {
+            return parsed.url;
+          }
+        })();
+        const tagSuffix = parsed.tags.map((tag) => ` #${tag}`).join("");
+        const dest = (
+          label: string,
+          listHint?: "bookmarks" | "reading" | "github",
+        ) =>
+          saveRows.push({
+            id: `save:${listHint ?? "auto"}`,
+            kind: "command",
+            name: label,
+            hint: listHint ? `${host} → ${listHint}` : `${host} → auto-classify`,
+            intent: {
+              kind: "slash",
+              command: "/save",
+              args: `${parsed.url}${listHint ? ` ${listHint}` : ""}${tagSuffix}`,
+            },
+          });
+        dest("Save link");
+        dest("Save → Bookmarks", "bookmarks");
+        dest("Save → Reading", "reading");
+        dest("Save → GitHub", "github");
+      }
+    }
+
     const cmdRows: Row[] = scoped
       ? []
-      : SLASH_COMMANDS.filter(
-          (c) =>
-            !q ||
-            c.name.includes(q) ||
-            (c.aliases ?? []).some((a) => a.includes(q)) ||
-            c.description.toLowerCase().includes(q),
+      : SLASH_COMMANDS.filter((c) =>
+          slashToken
+            ? c.name.startsWith(slashToken) ||
+              (c.aliases ?? []).some((a) => a.startsWith(slashToken))
+            : !q ||
+              c.name.includes(q) ||
+              (c.aliases ?? []).some((a) => a.includes(q)) ||
+              c.description.toLowerCase().includes(q),
         )
+          // /save renders its dedicated per-destination rows above instead.
+          .filter((c) => !(saveRows.length > 0 && c.name === "/save"))
           .slice(0, RESULT_LIMITS.command)
           .map((c) => ({
             id: `c:${c.name}`,
             kind: "command",
             name: c.name,
             hint: c.hint,
-            intent: { kind: "slash", command: c.name },
+            intent: {
+              kind: "slash",
+              command: c.name,
+              ...(slashArgs ? { args: slashArgs } : {}),
+            },
           }));
 
     const shortcutRows: Row[] = [];
@@ -308,7 +364,9 @@ export function CommandPalette({
     // Strip a leading "/task" so the slash command never leaks into the
     // created card's title (e.g. "/task fix login" → "fix login").
     const trimmedTitle = query.trim().replace(/^\/task(\s+|$)/i, "").trim();
-    const createRows: Row[] = trimmedTitle
+    // A query that names a real slash command is a command invocation, not a
+    // task title — "Create task: /save https://…" was a dead end.
+    const createRows: Row[] = trimmedTitle && !slashCanonical
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
@@ -318,6 +376,7 @@ export function CommandPalette({
       ...cardRows,
       ...covenMemoryRows,
       ...fsMemoryRows,
+      ...saveRows,
       ...cmdRows,
       ...shortcutRows,
       ...createRows,

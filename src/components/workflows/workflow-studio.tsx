@@ -17,6 +17,7 @@ import type {
   WorkflowValidationResult,
 } from "@/lib/workflows";
 import { WorkflowAttachments } from "./workflow-attachments";
+import type { WorkflowFamiliarOption } from "./workflow-attachments";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { WorkflowCreateDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
 import { WorkflowInspector } from "./workflow-inspector";
@@ -46,6 +47,7 @@ export type WorkflowStudioProps = {
   canRedo: boolean;
   runs: WorkflowRunRecord[];
   runsLoading: boolean;
+  familiarOptions: WorkflowFamiliarOption[];
   roles: WorkflowRoleSummary[];
   engineUnavailable: boolean;
   notice: string | null;
@@ -178,6 +180,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           />
           <WorkflowAttachments
             workflow={selectedWorkflow}
+            familiarOptions={props.familiarOptions}
             roles={props.roles}
             onAttachRole={props.onAttachRole}
             onUpdateMeta={props.onUpdateMeta}

@@ -4,8 +4,14 @@ import { useState, type ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { WorkflowRoleSummary, WorkflowSummary } from "@/lib/workflows";
 
+export type WorkflowFamiliarOption = {
+  id: string;
+  label: string;
+};
+
 type WorkflowAttachmentsProps = {
   workflow: WorkflowSummary | null;
+  familiarOptions: WorkflowFamiliarOption[];
   roles: WorkflowRoleSummary[];
   onAttachRole: (role: WorkflowRoleSummary, attach: boolean) => void;
   onUpdateMeta: (patch: Partial<WorkflowSummary>) => void;
@@ -59,6 +65,7 @@ function AttachmentSection({
  */
 export function WorkflowAttachments({
   workflow,
+  familiarOptions,
   roles,
   onAttachRole,
   onUpdateMeta,
@@ -92,21 +99,21 @@ export function WorkflowAttachments({
           {workflow ? (
             <label className="workflow-field workflow-field-inline">
               <span className="sr-only">Familiar binding</span>
-              <input
-                type="text"
-                key={workflow.familiar ?? ""}
-                defaultValue={workflow.familiar ?? ""}
-                placeholder="Unassigned — saved into the manifest"
-                onBlur={(event) => {
-                  const next = event.target.value.trim();
-                  if (next !== (workflow.familiar ?? "")) {
-                    onUpdateMeta({ familiar: next || undefined });
-                  }
+              <select
+                value={workflow.familiar ?? ""}
+                aria-label="Familiar binding"
+                onChange={(event) => {
+                  const next = event.target.value;
+                  onUpdateMeta({ familiar: next || undefined });
                 }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") (event.target as HTMLInputElement).blur();
-                }}
-              />
+              >
+                <option value="">Unassigned — saved into the manifest</option>
+                {familiarOptions.map((familiar) => (
+                  <option key={familiar.id} value={familiar.id}>
+                    {familiar.label}
+                  </option>
+                ))}
+              </select>
             </label>
           ) : (
             <p>Select a workflow</p>

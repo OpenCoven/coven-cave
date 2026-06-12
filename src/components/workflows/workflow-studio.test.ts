@@ -86,6 +86,13 @@ assert.match(studio, /leftPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-si
 assert.match(studio, /rightPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Right workflow panel toggle should use the sidebar tab icon");
 assert.match(studio, /is-left-collapsed[\s\S]{0,160}is-right-collapsed/, "Studio should put collapsed panel state on the shell");
 assert.match(css, /\.workflow-panel-tab/, "Workflow CSS should style sidebar-like side-panel tab toggles");
+assert.match(css, /--workflow-top-control-height:\s*34px/, "Workflow top controls should share a standardized height");
+assert.match(css, /--workflow-top-control-offset:\s*8px/, "Workflow top controls should share a standardized y offset (8px matches the palette's vertical padding)");
+assert.match(css, /\.workflow-panel-tab[\s\S]{0,260}width:\s*100%[\s\S]{0,120}height:\s*var\(--workflow-top-control-height\)[\s\S]{0,120}margin-top:\s*var\(--workflow-top-control-offset\)[\s\S]{0,80}margin-bottom:\s*6px/, "Workflow panel tabs should span the full panel width, use the shared height/y offset, and leave padding below");
+assert.match(css, /\.workflow-studio-library-panel,[\s\S]{0,140}flex-direction:\s*column/, "Workflow panel content should sit below the full-width trigger row");
+assert.match(css, /\.workflow-palette-item[\s\S]{0,160}min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
+assert.match(css, /is-left-collapsed[\s\S]{0,120}grid-template-columns:\s*36px/, "Collapsed left workflow panel should keep a visible toggle rail");
+assert.match(css, /is-right-collapsed[\s\S]{0,160}36px;/, "Collapsed right workflow panel should keep a visible toggle rail");
 assert.match(css, /\.workflow-panel-tab-left[\s\S]{0,120}justify-content:\s*flex-end/, "Left workflow panel tab should sit at the top right");
 assert.match(css, /\.workflow-panel-tab-right[\s\S]{0,120}justify-content:\s*flex-start/, "Right workflow panel tab should sit at the top left");
 assert.match(css, /\.workflow-studio-shell\.is-left-collapsed/, "Workflow CSS should collapse the left workflow panel");
@@ -132,6 +139,11 @@ assert.match(runsPanel, /dry-run snapshots and daemon executions/i, "Runs panel 
 assert.match(attachments, /onAttachRole/, "Attachments should persist role bindings");
 assert.match(attachments, /onUpdateMeta/, "Attachments should bind familiars into the manifest");
 assert.match(attachments, /onScheduleRequest/, "Attachments should open scheduling");
+assert.match(attachments, /WorkflowFamiliarOption/, "Attachments should accept normalized familiar dropdown options");
+assert.match(attachments, /<select[\s\S]{0,220}aria-label="Familiar binding"/, "Familiar attachment binding should render as a selection dropdown");
+assert.doesNotMatch(attachments, /placeholder="Unassigned — saved into the manifest"[\s\S]{0,120}<input/, "Familiar attachment binding should no longer be free-text input");
+assert.match(attachments, /<option value="">Unassigned — saved into the manifest<\/option>/, "Familiar dropdown should keep an unassigned choice");
+assert.match(attachments, /familiarOptions\.map/, "Familiar dropdown should render discovered familiar options");
 assert.match(attachments, /aria-expanded=\{open\}/, "Attachment sections are collapsible");
 assert.match(attachments, /AttachmentSection/, "Attachments compose collapsible sections");
 assert.match(css, /\.workflow-attachment-body > \* \{\n  width: 100%;/, "Attachment bodies span the full row width");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Familiar } from "@/lib/types";
 import { workflowToGraph } from "@/lib/workflow-graph";
 import {
   createWorkflowFromTemplate,
@@ -52,6 +53,7 @@ export function WorkflowsView() {
   const [draftState, setDraftState] = useState<WorkflowDraftState | null>(null);
   const [runs, setRuns] = useState<WorkflowRunRecord[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [roles, setRoles] = useState<WorkflowRoleSummary[]>([]);
   const [engineUnavailable, setEngineUnavailable] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }> | null>(null);
@@ -123,10 +125,21 @@ export function WorkflowsView() {
     }
   }, []);
 
+  const loadFamiliars = useCallback(async () => {
+    try {
+      const response = await fetch("/api/familiars", { cache: "no-store" });
+      const result = await response.json() as { ok: boolean; familiars?: Familiar[] };
+      if (result.ok) setFamiliars(result.familiars ?? []);
+    } catch {
+      // familiar choices are an enhancement; existing manifest bindings remain selectable
+    }
+  }, []);
+
   useEffect(() => {
     void load(false);
+    void loadFamiliars();
     void loadRoles();
-  }, [load, loadRoles]);
+  }, [load, loadFamiliars, loadRoles]);
 
   // Keep a valid selection as the library changes; seed the draft for it.
   useEffect(() => {
@@ -160,6 +173,26 @@ export function WorkflowsView() {
     () => selectedGraph?.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [selectedGraph, selectedNodeId],
   );
+
+  const familiarOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    const add = (id: string | undefined | null, label?: string) => {
+      const trimmed = id?.trim();
+      if (!trimmed) return;
+      options.set(trimmed, label?.trim() || trimmed);
+    };
+    for (const familiar of familiars) {
+      add(familiar.id, familiar.display_name && familiar.display_name !== familiar.id
+        ? `${familiar.display_name} (${familiar.id})`
+        : familiar.id);
+    }
+    for (const workflow of workflows) add(workflow.familiar);
+    for (const role of roles) add(role.familiar);
+    add(draft?.familiar);
+    return [...options.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [draft?.familiar, familiars, roles, workflows]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -401,6 +434,7 @@ export function WorkflowsView() {
       canRedo={(draftState?.future.length ?? 0) > 0}
       runs={runs}
       runsLoading={runsLoading}
+      familiarOptions={familiarOptions}
       roles={roles}
       engineUnavailable={engineUnavailable}
       notice={notice}
