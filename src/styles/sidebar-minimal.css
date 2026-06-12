@@ -25,16 +25,16 @@
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 7px;
+  padding: 0;
   flex-shrink: 0;
 }
 
 .sidebar-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
+  justify-content: flex-end;
+  width: 100%;
+  padding: 0 7px;
   height: 28px;
   border-radius: 8px;
   border: 1px solid transparent;
