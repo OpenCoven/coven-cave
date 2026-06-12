@@ -431,20 +431,58 @@
 }
 
 .workflow-attachment-row {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 9px;
+}
+
+.workflow-attachment-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 9px;
 }
 
-.workflow-attachment-row h3 {
+.workflow-attachment-toggle {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   gap: 6px;
-  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary, inherit);
+  cursor: pointer;
+  text-align: left;
+}
+
+.workflow-attachment-caret {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.workflow-attachment-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Bodies span the panel's full width — lists and inputs stretch edge to edge. */
+.workflow-attachment-body {
+  width: 100%;
+  margin-top: 7px;
+}
+
+.workflow-attachment-body > * {
+  width: 100%;
 }
 
 .workflow-attachment-row p {
@@ -667,8 +705,8 @@
 .workflow-issue-preflight { color: var(--color-info, #6aa6ff); }
 
 .workflow-role-list {
-  margin: 4px 0 0;
-  padding: 0 8px 0 0;
+  margin: 0;
+  padding: 0 4px 0 0;
   list-style: none;
   display: grid;
   gap: 2px;
