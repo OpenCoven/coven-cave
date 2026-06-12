@@ -1421,7 +1421,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 // ── Step bodies ───────────────────────────────────────────────────────────────
 
 function formatElapsed(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
@@ -1443,7 +1443,7 @@ function InstallLiveTail({ tail }: { tail: string }) {
   const visible = lastLines(tail, 3);
   if (!visible) return null;
   return (
-    <pre className="overflow-hidden whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+    <pre className="max-h-16 overflow-hidden whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
       {visible}
     </pre>
   );
@@ -1454,6 +1454,17 @@ function anyNpmInstallRunning(
 ): boolean {
   return NPM_INSTALL_TARGETS.some(
     (target) => jobs[target]?.status === "running",
+  );
+}
+
+function HermesSetupNext({ onCopy }: { onCopy: (text: string) => Promise<boolean> }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-[11px] font-medium text-[var(--text-secondary)]">
+        Next step — finish setup in a terminal:
+      </p>
+      <CommandRow command="hermes setup" onCopy={onCopy} />
+    </div>
   );
 }
 
@@ -1564,12 +1575,11 @@ function StepCovenCli({
         <button
           onClick={onInstall}
           disabled={busy || npmJobRunning}
+          aria-busy={busy}
           className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
         >
           {busy ? (
-            <span className="inline-flex animate-spin">
-              <Icon name="ph:circle-notch-bold" />
-            </span>
+            <Icon name="ph:circle-notch-bold" className="animate-spin" />
           ) : (
             <Icon name="ph:arrow-down-bold" />
           )}
@@ -1666,22 +1676,23 @@ function StepRuntimes({
                   ? (adapter.path ?? adapter.binary)
                   : adapter.binary}
               </div>
+              {adapter.installed && adapter.id === "hermes" && installResults["hermes"]?.ok ? (
+                <div className="mt-2">
+                  <HermesSetupNext onCopy={onCopy} />
+                </div>
+              ) : null}
               {!adapter.installed ? (
                 <div className="mt-2 flex flex-col gap-2">
                   {oneClick ? (
                     <>
                       <button
                         onClick={() => onInstall(oneClick.target)}
-                        disabled={
-                          installJobs[oneClick.target]?.status === "running" ||
-                          (NPM_INSTALL_TARGETS.includes(oneClick.target) && npmJobRunning)
-                        }
+                        disabled={busy || (NPM_INSTALL_TARGETS.includes(oneClick.target) && npmJobRunning)}
+                        aria-busy={busy}
                         className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                       >
                         {busy ? (
-                          <span className="inline-flex animate-spin">
-                            <Icon name="ph:circle-notch-bold" />
-                          </span>
+                          <Icon name="ph:circle-notch-bold" className="animate-spin" />
                         ) : (
                           <Icon name="ph:arrow-down-bold" />
                         )}
@@ -1708,6 +1719,19 @@ function StepRuntimes({
                     </p>
                   )}
                   <InstallResultNote result={result} />
+                  {adapter.id === "hermes" && result?.ok ? (
+                    <HermesSetupNext onCopy={onCopy} />
+                  ) : null}
+                  {result && !result.ok && job?.status === "done" && job.tail ? (
+                    <details>
+                      <summary className="cursor-pointer text-[11px] text-[var(--text-muted)]">
+                        Show full output
+                      </summary>
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+                        {job.tail}
+                      </pre>
+                    </details>
+                  ) : null}
                 </div>
               ) : null}
             </div>

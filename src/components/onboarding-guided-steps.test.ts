@@ -230,14 +230,26 @@ assert.match(
 
 assert.match(
   source,
-  /InstallLiveTail/,
+  /\{busy && job \? <InstallLiveTail/,
   "live installer output renders while a job runs",
 );
 
 assert.match(
   source,
-  /installJobs\[oneClick\.target\]\?\.status === "running"/,
-  "the disable rule is per-target, pinned positively",
+  /disabled=\{busy \|\|/,
+  "the disable rule is per-target (own busy state), not a global lock",
+);
+
+assert.match(
+  source,
+  /CommandRow command="hermes setup"/,
+  "a successful Hermes install surfaces `hermes setup` as a copyable next step",
+);
+
+assert.match(
+  source,
+  /Show full output/,
+  "failed installs expose the full installer output tail",
 );
 
 console.log("onboarding-guided-steps.test.ts: ok");
