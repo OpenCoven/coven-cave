@@ -11,6 +11,7 @@ import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
+import { slashSaveParse } from "@/lib/slash-save-parser";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
@@ -968,6 +969,56 @@ export function Workspace() {
             body: JSON.stringify({ mode: "attach", sessionId: sid }),
           });
         }
+        return true;
+      }
+      case "/save":
+      case "/bookmark":
+      case "/read": {
+        // Same contract as the chat composer's /save: route the URL into the
+        // library. Palette/home invocations have no transcript to append to,
+        // so outcomes surface as toasts instead.
+        const parsed = slashSaveParse(args);
+        if ("error" in parsed) {
+          pushToast("Usage: /save <url> [bookmarks|reading|github] [#tag]");
+          return true;
+        }
+        void (async () => {
+          try {
+            const res = await fetch("/api/library/route-link", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                url: parsed.url,
+                source: { kind: "slash", originSessionId: null },
+                familiar: activeId ?? "",
+                tags: parsed.tags,
+                listHint: parsed.listHint,
+              }),
+            });
+            const json = (await res.json()) as {
+              ok: boolean;
+              deduped?: boolean;
+              classify?: { rule: string };
+            };
+            if (!json.ok) {
+              pushToast("Save failed.");
+            } else if (json.deduped) {
+              pushToast("Already in library.");
+            } else {
+              const list =
+                json.classify?.rule === "github"
+                  ? "GitHub"
+                  : json.classify?.rule === "article-host" ||
+                      json.classify?.rule === "paper-host" ||
+                      json.classify?.rule === "video-host"
+                    ? "Reading"
+                    : "Bookmarks";
+              pushToast(`Saved to ${list}.`);
+            }
+          } catch {
+            pushToast("Save failed.");
+          }
+        })();
         return true;
       }
       case "/clear":
