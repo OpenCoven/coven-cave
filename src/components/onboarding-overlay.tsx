@@ -1676,7 +1676,9 @@ function StepRuntimes({
                   ? (adapter.path ?? adapter.binary)
                   : adapter.binary}
               </div>
-              {adapter.installed && adapter.id === "hermes" && installResults["hermes"]?.ok ? (
+              {/* A successful in-session install flips installed=true on the harness
+                  refresh, unmounting the not-installed branch's hint — keep it visible. */}
+              {adapter.installed && adapter.id === "hermes" && result?.ok ? (
                 <div className="mt-2">
                   <HermesSetupNext onCopy={onCopy} />
                 </div>

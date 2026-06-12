@@ -242,8 +242,8 @@ assert.match(
 
 assert.match(
   source,
-  /CommandRow command="hermes setup"/,
-  "a successful Hermes install surfaces `hermes setup` as a copyable next step",
+  /<HermesSetupNext onCopy/,
+  "a successful Hermes install surfaces the setup next-step at a render site",
 );
 
 assert.match(
