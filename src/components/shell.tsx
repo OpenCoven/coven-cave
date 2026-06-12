@@ -372,7 +372,7 @@ function ShellInner({
     >
       <Panel
         id="nav"
-        className="shell-nav-panel"
+        className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
         defaultSize="18%"
         minSize="14%"
         maxSize="25%"

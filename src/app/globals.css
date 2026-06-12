@@ -1983,22 +1983,49 @@ select {
   flex-direction: column;
   overflow: hidden;
   background: oklch(0.11 0.022 293);
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
 }
 
+/* Active pane: accent ring + faint top hairline of accent. Inactive panes
+   recede so the focused terminal reads at a glance in a multi-pane split. */
 .comux-terminal-pane[data-active="true"] {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 45%, transparent),
+    inset 0 1.5px 0 0 color-mix(in oklch, var(--accent-presence) 55%, transparent);
 }
 
 .comux-terminal-pane-bar {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 26px;
+  min-height: 28px;
   border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
   background: color-mix(in oklch, var(--bg-raised) 50%, transparent);
   padding: 0 8px;
   color: var(--text-muted);
   font-size: 10px;
+  letter-spacing: 0.01em;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+
+/* Inactive pane headers dim back; the active one lifts with an accent wash. */
+.comux-terminal-pane:not([data-active="true"]) .comux-terminal-pane-bar {
+  opacity: 0.66;
+}
+
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-bar {
+  background: color-mix(in oklch, var(--accent-presence) 15%, var(--bg-raised));
+  border-bottom-color: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  color: var(--text-secondary);
+}
+
+/* Type icon (first svg) tints to the brand lavender on the focused pane. */
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-bar > svg:first-child {
+  color: var(--accent-presence);
 }
 
 .comux-terminal-pane-action {
@@ -2008,6 +2035,19 @@ select {
   height: 18px;
   border-radius: 5px;
   color: var(--text-muted);
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+/* Close affordance stays out of the way until you mouse into the pane or
+   the pane is focused — keeps idle splits clean. */
+.comux-terminal-pane:hover .comux-terminal-pane-action,
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-action,
+.comux-terminal-pane-action:focus-visible {
+  opacity: 1;
 }
 
 .comux-terminal-pane-action:hover {
@@ -2064,6 +2104,40 @@ select {
   inset: 0;
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Resize divider grip — a centered pill that surfaces on hover/drag so the
+   1px seam between panes is actually discoverable and grabbable. */
+.comux-terminal-resize {
+  position: relative;
+}
+
+.comux-terminal-resize::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.comux-terminal-resize[data-orientation="col"]::after {
+  width: 3px;
+  height: 26px;
+}
+
+.comux-terminal-resize[data-orientation="row"]::after {
+  width: 26px;
+  height: 3px;
+}
+
+.comux-terminal-resize:hover::after {
+  opacity: 1;
 }
 
 /* ---- ThinkingIndicator ------------------------------------- */

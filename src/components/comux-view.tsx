@@ -482,35 +482,37 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 </div>
               ))}
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => onSplitTerminal("horizontal")}
-                disabled={sessions.length === 0}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-40"
-                title="Split right"
-              >
-                <Icon name="ph:columns" width={12} aria-hidden />
-                <span>Split right</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onSplitTerminal("vertical")}
-                disabled={sessions.length === 0}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-40"
-                title="Split down"
-              >
-                <Icon name="ph:rows" width={12} aria-hidden />
-                <span>Split down</span>
-              </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex items-center gap-0.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => onSplitTerminal("horizontal")}
+                  disabled={sessions.length === 0}
+                  className="inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
+                  title="Split right"
+                >
+                  <Icon name="ph:columns" width={12} aria-hidden />
+                  <span>Split right</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSplitTerminal("vertical")}
+                  disabled={sessions.length === 0}
+                  className="inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
+                  title="Split down"
+                >
+                  <Icon name="ph:rows" width={12} aria-hidden />
+                  <span>Split down</span>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => addSession()}
                 aria-label="New terminal"
                 title="New terminal (⌘N)"
-                className="rounded px-1.5 py-0.5 text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                className="inline-grid h-[22px] w-[22px] place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
               >
-                +
+                <Icon name="ph:plus" width={12} aria-hidden />
               </button>
             </div>
           </div>
@@ -595,6 +597,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           <Separator
                             className="comux-terminal-resize shrink-0"
                             data-terminal-resize-handle={paneIdx}
+                            data-orientation={splitDirection === "horizontal" ? "col" : "row"}
                           >
                             <SeparatorHandle orientation={splitDirection === "horizontal" ? "col" : "row"} />
                           </Separator>
