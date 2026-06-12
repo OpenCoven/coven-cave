@@ -585,18 +585,26 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
-  // Poll running install jobs every 2s. The interval is recreated whenever a
-  // poll updates state — net effect is still one poll per running job per ~2s.
+  // Poll cadence is keyed on WHICH targets are running, not on the job map
+  // itself — every poll stores a fresh view object, and keying on the map
+  // would tear down and immediately re-fire the interval (hot loop).
+  const runningInstallKey = (
+    Object.entries(installJobs) as [InstallTarget, InstallJobView][]
+  )
+    .filter(([, job]) => job.status === "running")
+    .map(([target]) => target)
+    .sort()
+    .join(",");
+
+  // Poll running install jobs every 2s. The interval is keyed on the sorted
+  // running-target signature so storing poll results does not tear it down;
+  // it only re-runs when a target starts or stops running.
   useEffect(() => {
-    const running = (
-      Object.entries(installJobs) as [InstallTarget, InstallJobView][]
-    )
-      .filter(([, job]) => job.status === "running")
-      .map(([target]) => target);
-    if (running.length === 0) return;
+    if (!runningInstallKey) return;
+    const targets = runningInstallKey.split(",") as InstallTarget[];
     let cancelled = false;
     const tick = async () => {
-      for (const target of running) {
+      for (const target of targets) {
         try {
           const res = await fetch(
             `/api/onboarding/install?target=${encodeURIComponent(target)}`,
@@ -645,7 +653,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       clearInterval(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [installJobs]);
+  }, [runningInstallKey]);
 
   // Re-attach to server-side jobs after a page refresh: one probe per target
   // on mount; only still-running jobs are adopted.
