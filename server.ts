@@ -32,10 +32,35 @@ const ACCESS_COOKIE = "coven_access_token";
 
 type PtySession = {
   pty: import("node-pty").IPty;
-  ws: WebSocket;
+  /** Currently-attached socket; null while detached (client dropped). */
+  ws: WebSocket | null;
+  /** Bounded ring of recent output, replayed on (re)attach so a returning
+   *  client repaints the screen instead of staring at a blank pane. */
+  scrollback: Buffer[];
+  scrollbackBytes: number;
+  /** Pending kill while detached — cleared when a client reattaches. */
+  detachTimer: NodeJS.Timeout | null;
 };
 
 const sessions = new Map<string, PtySession>();
+
+/** Cap on replayed output per session (~enough to repaint a busy screen). */
+const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
+/** How long a PTY survives with no client before it is killed. Covers tab
+ *  switches, page reloads, and brief network drops (laptop sleep is longer —
+ *  the client reconnects as soon as it wakes, which lands well inside this
+ *  window after resume). Killing on the FIRST close was the old behavior,
+ *  and it destroyed the shell on every remount. */
+const DETACH_GRACE_MS = 60_000;
+
+function appendScrollback(session: PtySession, data: Buffer): void {
+  session.scrollback.push(data);
+  session.scrollbackBytes += data.length;
+  while (session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES && session.scrollback.length > 1) {
+    const dropped = session.scrollback.shift();
+    if (dropped) session.scrollbackBytes -= dropped.length;
+  }
+}
 
 function getTokenFromCookie(header: string | undefined): string {
   if (!header) return "";
@@ -205,16 +230,31 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
     },
   });
 
-  sessions.set(threadId, { pty: shell, ws });
+  const session: PtySession = {
+    pty: shell,
+    ws,
+    scrollback: [],
+    scrollbackBytes: 0,
+    detachTimer: null,
+  };
+  sessions.set(threadId, session);
 
-  shell.onData((data) => sendPtyData(ws, data));
+  shell.onData((data) => {
+    appendScrollback(session, Buffer.from(data, "utf8"));
+    // Output keeps flowing into the ring while detached, so the client that
+    // reattaches sees what happened while it was away.
+    if (session.ws) sendPtyData(session.ws, data);
+  });
   shell.onExit(({ exitCode }) => {
     const current = sessions.get(threadId);
     if (current?.pty === shell) {
+      if (current.detachTimer) clearTimeout(current.detachTimer);
       sessions.delete(threadId);
     }
-    sendPtyExit(ws, exitCode ?? 0);
-    ws.close(1000, "pty exit");
+    if (session.ws) {
+      sendPtyExit(session.ws, exitCode ?? 0);
+      session.ws.close(1000, "pty exit");
+    }
   });
 }
 
@@ -241,19 +281,37 @@ function onWsMessage(threadId: string, data: RawData): void {
   }
 }
 
-function closeExistingSession(threadId: string): void {
-  const existing = sessions.get(threadId);
-  if (!existing) return;
-  sessions.delete(threadId);
-  try {
-    existing.pty.kill();
-  } catch {
-    // Already gone.
+/** Attach a (re)connecting client to an already-running PTY: the previous
+ *  socket (if any) is told it was replaced, the pending detach-kill is
+ *  cancelled, and the scrollback ring is replayed so the client repaints. */
+function adoptSession(
+  session: PtySession,
+  ws: WebSocket,
+  cols: number,
+  rows: number,
+): void {
+  if (session.detachTimer) {
+    clearTimeout(session.detachTimer);
+    session.detachTimer = null;
   }
-  try {
-    existing.ws.close(1000, "replaced");
-  } catch {
-    // Already closed.
+  const previous = session.ws;
+  session.ws = ws;
+  if (previous && previous !== ws) {
+    try {
+      previous.close(1000, "replaced");
+    } catch {
+      // Already closed.
+    }
+  }
+  if (cols > 0 && rows > 0) {
+    try {
+      session.pty.resize(cols, rows);
+    } catch {
+      // Exited between adopt and resize; onExit handles the rest.
+    }
+  }
+  if (session.scrollbackBytes > 0) {
+    sendPtyData(ws, Buffer.concat(session.scrollback).toString("utf8"));
   }
 }
 
@@ -264,19 +322,36 @@ function handlePtyConnection(
   rows: number,
   cwd?: string,
 ): void {
-  closeExistingSession(threadId);
-  spawnPty(threadId, ws, cols, rows, cwd);
+  // Same threadId while the shell is alive (tab switch, page reload, network
+  // blip, second window) → adopt the running PTY instead of killing it.
+  // Killing here was the old behavior, and it cost the user their shell on
+  // every reconnect.
+  const existing = sessions.get(threadId);
+  if (existing) {
+    adoptSession(existing, ws, cols, rows);
+  } else {
+    spawnPty(threadId, ws, cols, rows, cwd);
+  }
 
   ws.on("message", (data) => onWsMessage(threadId, data));
   ws.on("close", () => {
     const session = sessions.get(threadId);
     if (session?.ws !== ws) return;
-    sessions.delete(threadId);
-    try {
-      session.pty.kill();
-    } catch {
-      // Already gone.
-    }
+    // Detach, don't kill: give the client a grace window to come back
+    // (remounts, reloads, sleep/wake). The ring keeps collecting output;
+    // the timer reaps truly-abandoned shells.
+    session.ws = null;
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    session.detachTimer = setTimeout(() => {
+      const current = sessions.get(threadId);
+      if (current !== session || current.ws) return;
+      sessions.delete(threadId);
+      try {
+        session.pty.kill();
+      } catch {
+        // Already gone.
+      }
+    }, DETACH_GRACE_MS);
   });
 }
 

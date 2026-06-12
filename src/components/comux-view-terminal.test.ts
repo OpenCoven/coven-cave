@@ -190,3 +190,18 @@ assert.match(
 );
 
 console.log("comux-view-terminal.test.ts OK");
+
+// ── Shell-owned chords + explicit close semantics ─────────────────────────────
+// Ctrl+W is readline delete-word and Ctrl+N is next-history; hijacking them
+// for tab management closed/spawned terminals mid-keystroke.
+assert.match(
+  source,
+  /if \(e\.ctrlKey && !e\.metaKey && target\?\.closest\?\.\("\.xterm"\)\) return;/,
+  "ctrl-chords typed inside the terminal go to the shell, not tab management",
+);
+assert.match(
+  source,
+  /removeSession[\s\S]{0,900}pty_stop/,
+  "closing a tab is the one place the desktop PTY is killed",
+);
+console.log("comux terminal chord/close assertions: ok");

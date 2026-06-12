@@ -33,7 +33,14 @@ struct PtySession {
     #[allow(dead_code)]
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// Bounded ring of recent output. Terminal views remount on tab switches
+    /// (the PTY deliberately outlives them); replaying this on reattach
+    /// restores the screen instead of presenting a blank-but-alive shell.
+    scrollback: Arc<Mutex<Vec<u8>>>,
 }
+
+/// Cap on replayed output per session (~enough to repaint a busy screen).
+const SCROLLBACK_LIMIT_BYTES: usize = 256 * 1024;
 
 static SESSIONS: Lazy<Mutex<HashMap<String, PtySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -186,6 +193,7 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
+    let scrollback = Arc::new(Mutex::new(Vec::new()));
     {
         let mut guard = SESSIONS.lock();
         guard.insert(
@@ -193,6 +201,7 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
             PtySession {
                 master: pair.master,
                 writer: Arc::new(Mutex::new(writer)),
+                scrollback: scrollback.clone(),
             },
         );
     }
@@ -202,6 +211,7 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
     // Reader thread — forwards bytes to the webview as pty:data events.
     let tid_read = thread_id.clone();
     let app_read = app.clone();
+    let ring = scrollback;
     thread::spawn(move || {
         info!("pty_start[{}]: reader thread started", tid_read);
         let mut buf = [0u8; 8192];
@@ -218,6 +228,14 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
                 }
                 Ok(n) => {
                     total = total.saturating_add(n);
+                    {
+                        let mut buffer = ring.lock();
+                        buffer.extend_from_slice(&buf[..n]);
+                        let len = buffer.len();
+                        if len > SCROLLBACK_LIMIT_BYTES {
+                            buffer.drain(0..len - SCROLLBACK_LIMIT_BYTES);
+                        }
+                    }
                     debug!("pty_start[{}]: emit pty:data {} bytes (total {})", tid_read, n, total);
                     let _ = app_read.emit(
                         "pty:data",
@@ -298,6 +316,18 @@ pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
 pub fn pty_list(webview: Webview) -> Result<Vec<String>, String> {
     ensure_trusted_pty_caller(&webview)?;
     Ok(SESSIONS.lock().keys().cloned().collect())
+}
+
+/// Recent output for a running session, replayed by a terminal view that
+/// reattaches after a remount. Empty when the session is unknown.
+#[tauri::command]
+pub fn pty_snapshot(webview: Webview, thread_id: String) -> Result<Vec<u8>, String> {
+    ensure_trusted_pty_caller(&webview)?;
+    let sessions = SESSIONS.lock();
+    Ok(sessions
+        .get(&thread_id)
+        .map(|session| session.scrollback.lock().clone())
+        .unwrap_or_default())
 }
 
 /// Diagnostic: spawn a one-shot known-good PTY (`/bin/echo hello && exit`),

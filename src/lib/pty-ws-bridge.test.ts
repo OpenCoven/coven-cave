@@ -16,3 +16,19 @@ assert.match(src, /setUint16\(3,\s*rows,\s*true\)/, "resize encodes rows little-
 assert.match(src, /dispose\(\)/, "bridge exposes dispose");
 
 console.log("pty-ws-bridge.test.ts OK");
+
+// ── Disconnect resilience ─────────────────────────────────────────────────────
+// A dropped socket used to be silent: write() no-ops when not OPEN and the
+// close handler only nulled the field, so the terminal froze and ate
+// keystrokes. The bridge now surfaces established-socket closes and can
+// re-dial with its remembered parameters.
+assert.match(src, /onClose\(cb: CloseHandler\)/, "bridge surfaces post-open closes");
+assert.match(src, /reconnect\(\): Promise<void>/, "bridge can re-dial the same session");
+assert.match(src, /private lastConnect/, "reconnect reuses the original connect parameters");
+assert.match(src, /get isOpen\(\)/, "callers can check liveness before writing");
+assert.match(
+  src,
+  /const wasCurrent = this\.ws === ws;[\s\S]{0,700}if \(wasCurrent\) \{\s*\n\s*for \(const cb of this\.closeHandlers\) cb\(event\.code, event\.reason \?\? ""\);/,
+  "close handlers fire only for the bridge's current socket — dispose() nulls ws first so intentional teardown stays silent",
+);
+console.log("pty-ws-bridge reconnect assertions: ok");

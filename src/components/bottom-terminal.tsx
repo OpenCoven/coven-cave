@@ -195,6 +195,29 @@ export function BottomTerminal({
       log("xterm opened", { cols: term.cols, rows: term.rows });
 
       let stopped = false;
+      // Attach-to-running comes first: tab switches remount this component
+      // (the keepalive container is a different React parent), and the PTY
+      // deliberately survives unmounts. Replaying the Rust-side scrollback
+      // ring BEFORE registering the live listener restores the screen instead
+      // of presenting a blank-but-alive shell. A byte that lands in the gap
+      // between snapshot and listen is lost from the view (not the shell) —
+      // acceptable for an idle tab switch.
+      const running = await bridge.invoke<string[]>("pty_list").catch((err) => {
+        log("pty_list FAILED", err);
+        return [] as string[];
+      });
+      log("pty_list →", running);
+      const attachToRunning = running.includes(threadId);
+      if (attachToRunning) {
+        const snapshot = await bridge
+          .invoke<number[]>("pty_snapshot", { threadId: threadId })
+          .catch(() => [] as number[]);
+        if (snapshot.length > 0) {
+          const bytes = new Uint8Array(snapshot);
+          term.write(bytes);
+          pushToMirror(bytes);
+        }
+      }
       const unlistenData = await bridge.listen<{
         thread_id: string;
         bytes: number[];
@@ -229,12 +252,7 @@ export function BottomTerminal({
         }).catch((err) => log("pty_write FAILED", err));
       });
 
-      const running = await bridge.invoke<string[]>("pty_list").catch((err) => {
-        log("pty_list FAILED", err);
-        return [] as string[];
-      });
-      log("pty_list →", running);
-      if (!running.includes(threadId)) {
+      if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
         try {
           await bridge.invoke("pty_start", {
@@ -295,7 +313,12 @@ export function BottomTerminal({
         pendingMirrorRef.current = "";
         termRef.current = null;
         term.dispose();
-        void bridge.invoke("pty_stop", { threadId: threadId });
+        // Deliberately NO pty_stop here. Unmount is usually a tab switch
+        // (keepalive reparenting), and the fire-and-forget stop raced the
+        // next mount's pty_list — losing the race attached the new terminal
+        // to a shell that was about to be SIGHUPed, a dead pane that ate
+        // keystrokes. The shell is killed exactly once, when the user closes
+        // the tab (ComuxView.removeSession).
       };
 
       if (disposed) cleanup();
@@ -351,14 +374,72 @@ export function BottomTerminal({
       const bridge = new PtyWsBridge();
       wsBridgeRef.current = bridge;
 
+      const announce = (msg: string) => {
+        term.write(msg);
+        pushToMirror(new TextEncoder().encode(msg));
+      };
+
       bridge.onData((bytes) => {
         term.write(bytes);
         pushToMirror(bytes);
       });
       bridge.onExit((code) => {
-        const exitMsg = `\r\n\x1b[2m[exit ${code}]\x1b[0m\r\n`;
-        term.write(exitMsg);
-        pushToMirror(new TextEncoder().encode(exitMsg));
+        announce(
+          `\r\n\x1b[2m[exit ${code} — press any key to start a new shell]\x1b[0m\r\n`,
+        );
+      });
+
+      // Reconnection: a dropped socket (laptop sleep, server restart, network
+      // change) used to leave a frozen pane that silently swallowed
+      // keystrokes — write() no-ops on a dead socket. Now the pane says so,
+      // retries with a short backoff, and any keypress retries again. The
+      // server keeps the PTY alive for a detach grace window and replays
+      // recent output on reattach, so a quick drop loses nothing.
+      const RECONNECT_DELAYS_MS = [0, 1000, 3000];
+      let reconnecting = false;
+      const attemptReconnect = async () => {
+        if (reconnecting || disposed) return;
+        reconnecting = true;
+        try {
+          for (const delay of RECONNECT_DELAYS_MS) {
+            if (delay > 0) {
+              await new Promise((r) => setTimeout(r, delay));
+            }
+            if (disposed) return;
+            try {
+              // The server replays its scrollback ring on reattach; reset
+              // first so the replay paints a clean screen instead of
+              // appending a duplicate of what's already visible.
+              term.reset();
+              await bridge.reconnect();
+              bridge.resize(term.cols, term.rows);
+              return;
+            } catch {
+              /* next delay */
+            }
+          }
+          announce(
+            "\r\n\x1b[2m[terminal reconnect failed — press any key to retry]\x1b[0m\r\n",
+          );
+        } finally {
+          reconnecting = false;
+        }
+      };
+
+      bridge.onClose((_code, reason) => {
+        if (disposed) return;
+        if (reason === "replaced") {
+          announce(
+            "\r\n\x1b[2m[this terminal was opened in another window — view detached]\x1b[0m\r\n",
+          );
+          return;
+        }
+        if (reason === "pty exit") {
+          // onExit already announced; a keypress starts a fresh shell.
+          return;
+        }
+        announce("\r\n\x1b[2m[terminal disconnected — reconnecting…]\x1b[0m\r\n");
+        void attemptReconnect();
       });
 
       try {
@@ -377,6 +458,12 @@ export function BottomTerminal({
       }
 
       const onDataDispose = term.onData((data) => {
+        if (!bridge.isOpen) {
+          // Dead socket (or exited shell): typing revives the terminal
+          // instead of vanishing into a no-op write.
+          void attemptReconnect();
+          return;
+        }
         bridge.write(new TextEncoder().encode(data));
       });
 

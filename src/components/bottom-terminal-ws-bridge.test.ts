@@ -15,3 +15,35 @@ assert.match(src, /bridge\.resize\(term\.cols,\s*term\.rows\)/, "terminal resize
 assert.match(src, /bridge\.dispose\(\)/, "WS bridge is disposed on cleanup");
 
 console.log("bottom-terminal-ws-bridge.test.ts OK");
+
+// ── Disconnect recovery (the "terminal stopped accepting input" class) ───────
+assert.match(src, /bridge\.onClose\(/, "terminal reacts to a dropped socket instead of freezing");
+assert.match(src, /terminal disconnected — reconnecting/, "drop is announced in the pane");
+assert.match(src, /const RECONNECT_DELAYS_MS = \[0, 1000, 3000\]/, "reconnect retries with capped backoff");
+assert.match(
+  src,
+  /if \(!bridge\.isOpen\) \{[\s\S]{0,260}attemptReconnect\(\);[\s\S]{0,80}return;[\s\S]{0,120}bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/,
+  "typing on a dead socket revives the terminal instead of vanishing into a no-op write",
+);
+assert.match(src, /term\.reset\(\);[\s\S]{0,120}await bridge\.reconnect\(\)/, "screen resets before reattach so the server replay paints clean");
+assert.match(src, /reason === "replaced"/, "a take-over by another window is announced, not fought with reconnects");
+
+// ── PTY lifetime is decoupled from view lifetime ──────────────────────────────
+// Unmount is usually a keepalive tab-switch remount; killing the PTY there
+// raced the next mount's pty_list and left a dead pane that ate keystrokes.
+assert.doesNotMatch(
+  src,
+  /invoke\("pty_stop"/,
+  "desktop cleanup must NOT stop the PTY — only closing the tab (ComuxView.removeSession) kills the shell",
+);
+assert.match(
+  src,
+  /pty_snapshot/,
+  "attaching to a running PTY replays the Rust scrollback ring",
+);
+assert.match(
+  src,
+  /const attachToRunning = running\.includes\(threadId\);[\s\S]{0,900}unlistenData/,
+  "snapshot replay happens before the live data listener registers",
+);
+console.log("bottom-terminal disconnect-recovery assertions: ok");

@@ -838,6 +838,7 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_stop,
             pty::pty_list,
+            pty::pty_snapshot,
             pty::pty_diagnose,
             webview_probe_report,
             browser::browser_navigate,

@@ -269,6 +269,20 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         const next = prev.filter((_, i) => i !== idx);
         if (removedId) {
           setPaneSessionIds((panes) => panes.filter((id) => id !== removedId));
+          // Closing a tab is the ONLY place a desktop PTY is killed. The
+          // terminal component deliberately does not stop the shell on
+          // unmount — tab switches remount terminals through the keepalive
+          // container, and killing there raced the next mount's liveness
+          // check, leaving a dead pane that ate keystrokes.
+          const internals = (window as unknown as Record<string, unknown>)
+            .__TAURI_INTERNALS__;
+          if (internals) {
+            void import("@tauri-apps/api/core")
+              .then(({ invoke }) =>
+                invoke("pty_stop", { threadId: `cave.comux.${removedId}` }),
+              )
+              .catch(() => {});
+          }
         }
         setCurrentIdx((ci) => {
           if (next.length === 0) return 0;
@@ -360,6 +374,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       if (!mod) return;
       const target = e.target as HTMLElement | null;
       if (target?.isContentEditable) return;
+      // Ctrl-chords typed inside the terminal belong to the SHELL, not to
+      // tab management: Ctrl+W is readline delete-word and Ctrl+N is
+      // next-history. Hijacking them closed/spawned tabs mid-keystroke,
+      // which read as the terminal randomly "losing the ability to type".
+      // ⌘-chords still manage tabs (macOS terminals reserve ⌘, never Ctrl).
+      if (e.ctrlKey && !e.metaKey && target?.closest?.(".xterm")) return;
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         addSession();

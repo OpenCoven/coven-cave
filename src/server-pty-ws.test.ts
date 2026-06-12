@@ -126,3 +126,19 @@ assert.match(
 );
 
 console.log("server-pty-ws.test.ts OK");
+
+// ── Detach grace + adopt (PTY survives reconnects) ────────────────────────────
+// Killing the shell on every socket close/replace destroyed terminal state on
+// remounts, reloads, and sleep/wake — and a frozen client then ate keystrokes.
+assert.match(src, /const DETACH_GRACE_MS = 60_000/, "detached PTYs survive for a grace window");
+assert.match(src, /function adoptSession\(/, "a reconnect with the same threadId adopts the running PTY");
+assert.match(src, /previous\.close\(1000, "replaced"\)/, "the replaced socket is told why it closed");
+assert.match(src, /const SCROLLBACK_LIMIT_BYTES = 256 \* 1024/, "replay ring is bounded");
+assert.match(src, /session\.ws = null;[\s\S]{0,500}DETACH_GRACE_MS/, "socket close detaches instead of killing");
+assert.doesNotMatch(
+  src,
+  /ws\.on\("close", \(\) => \{[\s\S]{0,200}session\.pty\.kill\(\)/,
+  "close handler must not kill the PTY inline — the grace timer reaps abandoned shells",
+);
+assert.match(src, /if \(session\.ws\) sendPtyData\(session\.ws, data\)/, "output keeps flowing into the ring while detached");
+console.log("server pty detach/adopt assertions: ok");
