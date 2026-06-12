@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       {
         ok: false,
         error:
-          "Host must be an SSH alias or hostname (letters, digits, dots, dashes, colons).",
+          "Host must be an SSH alias or hostname (letters, digits, dots, underscores, dashes, colons).",
       },
       { status: 400 },
     );

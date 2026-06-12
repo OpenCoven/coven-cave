@@ -822,7 +822,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   onChange={(e) =>
                     setShownPlatform(e.target.value as PlatformId)
                   }
-                  className="bg-transparent outline-none"
+                  className="focus-ring bg-transparent"
                 >
                   <option value="mac">macOS</option>
                   <option value="windows">Windows</option>
@@ -1058,7 +1058,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               setFamiliarName(adapter.label);
                               setFamiliarRole("Code Familiar");
                               setFamiliarDescription(
-                                `Local ${adapter.label} adapter on this machine.`,
+                                sshEnabled && sshHost.trim()
+                                  ? `Remote ${adapter.label} adapter over SSH (${sshHost.trim()}).`
+                                  : `Local ${adapter.label} adapter on this machine.`,
                               );
                             }}
                             onSelectAgent={(agent) => {
