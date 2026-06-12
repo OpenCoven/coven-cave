@@ -371,6 +371,30 @@ assert.match(
   "The resume retry should reset the tool tracker alongside the other per-attempt state",
 );
 
+assert.match(
+  chatRoute,
+  /toolTracker\.hookStart\(name, formatToolPayload\(rest\), assistantText\.length\)/,
+  "hook tool starts are stamped with the current assistant-text offset",
+);
+
+assert.match(
+  chatRoute,
+  /formatToolInputValue\(block\.input\),\s*assistantText\.length,/,
+  "envelope tool starts are stamped with the current assistant-text offset",
+);
+
+assert.match(
+  chatRoute,
+  /toPersistedTools\(toolTracker\.snapshot\(\)/,
+  "the saved assistant turn captures the tracker's final tool state",
+);
+
+assert.match(
+  chatRoute,
+  /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
+  "tools persist on the assistant turn alongside usage and cost",
+);
+
 // Behavioral: per-name FIFO queue gives overlapping same-name calls distinct
 // ids and pairs each post with the oldest open pre (correct durations).
 {
@@ -728,10 +752,13 @@ assert.match(
 
   const longOut = new ToolCallTracker(() => 0);
   longOut.hookStart("Bash", undefined, 0);
-  longOut.hookEnd("Bash", "y".repeat(9000), false);
+  longOut.hookEnd("Bash", "HEAD" + "y".repeat(9000), false);
   const capped = toPersistedTools(longOut.snapshot(), 0);
   assert.equal(capped?.[0].output?.length, 4000, "output tail-capped at 4000");
-  assert.equal(capped?.[0].output?.[0], "y");
+  assert.ok(
+    !capped?.[0].output?.includes("HEAD"),
+    "output keeps the tail, not the head",
+  );
 
   assert.equal(
     toPersistedTools(new ToolCallTracker().snapshot(), 0),
