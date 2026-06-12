@@ -46,7 +46,8 @@
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .workflow-studio-shell.is-left-collapsed > .workflow-studio-library-panel {
