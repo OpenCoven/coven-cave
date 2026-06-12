@@ -107,4 +107,29 @@ assert.match(
 assert.match(src, /library-heading-anchor/, "Reader headings grow a hover copy-link anchor");
 assert.match(css, /h2:hover \.library-heading-anchor/, "Anchor reveals on heading hover");
 
+// ── Translation handoff ──
+assert.match(src, /function TranslateButton/, "Reader exposes a shared Translate action helper");
+assert.match(src, /translate\.google\.com\/translate/, "URL-backed articles and papers open through Google Translate");
+assert.match(src, /navigator\.clipboard\.writeText\(buildTranslationPrompt/, "Local docs and files copy a translation prompt");
+assert.match(
+  src,
+  /<TranslateButton[\s\S]{0,240}source=\{\{ kind: "text", title: doc\.title, text: renderBody \}\}/,
+  "Markdown docs include a translate action in the preview header",
+);
+assert.match(
+  src,
+  /className="library-reader-actions"[\s\S]{0,500}<TranslateButton[\s\S]{0,220}readerIcon/,
+  "Reader mode includes an icon-only translate action in the consolidated header cluster",
+);
+assert.match(
+  src,
+  /<TranslateButton[\s\S]{0,220}source=\{\{ kind: "url", title, url \}\}/,
+  "URL-backed article/paper previews include a translate action",
+);
+assert.match(
+  src,
+  /<TranslateButton[\s\S]{0,220}source=\{\{ kind: "file", title, path: localPath \}\}/,
+  "Local PDF previews include a translate action prompt",
+);
+
 console.log("library-reader-polish.test.ts: ok");
