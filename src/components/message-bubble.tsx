@@ -150,7 +150,7 @@ async function renderCodeBlock(
           // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
           // additions/deletions — exclude them from the +/- gutter strips and
           // mute `@@` hunk headers instead of leaving them content-colored.
-          const plainLine = line.replace(/<[^>]+>/g, "");
+          const plainLine = sanitizeHtml(line, { allowedTags: [], allowedAttributes: {} });
           const gutterClass = isDiff
             ? /^@@/.test(plainLine)
               ? " cave-diff-meta"
