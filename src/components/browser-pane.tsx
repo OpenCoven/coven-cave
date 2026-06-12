@@ -235,6 +235,16 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   // palette is up so users can verify the active tab visually.
   const railExpanded = railPinned || railHover || quickOpen;
 
+  // Collapsible toolbar. The native page webview is an OS-level overlay that
+  // always renders above the DOM, so the toolbar and the page can never
+  // coexist in the same space. Default collapsed: the page gets the whole
+  // pane. When the toolbar is opened (rail button / Cmd+L) we hide the webview
+  // so the toolbar shows cleanly, then restore the full-pane page on close.
+  const [toolbarOpen, setToolbarOpen] = useState(false);
+  const toolbarOpenRef = useRef(false);
+  toolbarOpenRef.current = toolbarOpen;
+  const addressInputRef = useRef<HTMLInputElement | null>(null);
+
   // History per-tab
   const historyRef = useRef<Record<string, { stack: string[]; idx: number }>>({});
 
@@ -338,8 +348,10 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
 
     const tick = () => {
       const rect = surface.getBoundingClientRect();
-      if (rect.width <= 1 || rect.height <= 1) {
-        // Panel collapsed — hide all tab webviews (once).
+      // Hide every webview when the panel is collapsed OR the toolbar is open.
+      // The toolbar is DOM and the webview is an OS-level overlay that would
+      // cover it, so the page yields the pane while the toolbar is showing.
+      if (toolbarOpenRef.current || rect.width <= 1 || rect.height <= 1) {
         if (!hidden) {
           hidden = true;
           hideAll();
@@ -445,7 +457,20 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       historyRef.current[id] ??= { stack: [tab.url], idx: 0 };
     }
     setLoading(false);
+    setToolbarOpen(false);
   }, [tabs]);
+
+  // Clicking the pane's empty chrome — anything that isn't an interactive
+  // control — toggles the rail pinned-open, giving the pin button a large,
+  // forgiving hit target. The page is a native overlay that never delivers
+  // clicks to the DOM, so in practice this fires on the rail, the footer, and
+  // the toolbar background (when open) — never the page itself.
+  const handleChromeClick = useCallback((e: React.MouseEvent) => {
+    if (quickOpen) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, select, form, [role="button"]')) return;
+    setRailPinned((v) => !v);
+  }, [quickOpen]);
 
   const pinCurrentPage = () => {
     const newId = `pin-${Date.now()}`;
@@ -493,6 +518,8 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     if (updatedActiveTab?.kind === "pinned") {
       savePinnedTabs(nextTabs.filter((t) => t.kind === "pinned"));
     }
+    // Reveal the page again now that the user has committed a destination.
+    setToolbarOpen(false);
   };
 
   useImperativeHandle(ref, () => ({ navigateTo }), [navigateTo]);
@@ -549,8 +576,34 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
+  // Cmd/Ctrl+L → open the toolbar & focus the address bar; Escape → close it.
+  // (While the page webview holds focus the main window can't see these keys —
+  // the rail's address button is the always-available trigger.)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const inPane = !!paneRef.current?.contains(e.target as Node);
+      if ((e.metaKey || e.ctrlKey) && (e.key === "l" || e.key === "L")) {
+        if (!inPane) return;
+        e.preventDefault();
+        setToolbarOpen(true);
+      } else if (e.key === "Escape" && toolbarOpenRef.current && inPane) {
+        e.preventDefault();
+        setToolbarOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
+  // Focus the address bar when the toolbar opens (after the slide-down).
+  useEffect(() => {
+    if (!toolbarOpen) return;
+    const t = setTimeout(() => addressInputRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [toolbarOpen]);
+
   return (
-    <div ref={paneRef} className="browser-pane flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
+    <div ref={paneRef} onClick={handleChromeClick} className="browser-pane flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
       {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
       {/* Collapsed by default to a 6px edge handle so the page gets the
          full viewport width; expands to 48px on hover or keyboard focus.
@@ -592,6 +645,22 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             ].join(" ")}
           >
             <Icon name={railPinned ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={13} />
+          </button>
+          {/* Address bar / toolbar toggle. Lives in the rail because the page
+              webview covers the rest of the pane; this strip never is. */}
+          <button
+            type="button"
+            onClick={() => setToolbarOpen((v) => !v)}
+            title="Address bar (⌘L)"
+            aria-label="Toggle address bar"
+            className={[
+              "focus-ring mb-1 grid h-7 w-7 shrink-0 place-items-center rounded transition-colors",
+              toolbarOpen
+                ? "text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]",
+            ].join(" ")}
+          >
+            <Icon name="ph:magnifying-glass" width={13} />
           </button>
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -660,90 +729,107 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
 
       {/* ── Main area (toolbar + viewport) ──────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-      {/* ── Toolbar ───────────────────────────────────────────────── */}
-      <header className="relative z-10 flex min-h-10 shrink-0 items-center gap-1 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5">
-        {/* Back */}
-        <button type="button" onClick={goBack} disabled={!canBack}
-          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
-          title="Back" aria-label="Back">
-          <Icon name="ph:arrow-left-bold" width={13} />
-        </button>
-        {/* Forward */}
-        <button type="button" onClick={goForward} disabled={!canForward}
-          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
-          title="Forward" aria-label="Forward">
-          <Icon name="ph:arrow-right-bold" width={13} />
-        </button>
-        {/* Reload */}
-        <button type="button"
-          onClick={() => {
-            if (bridge) void bridge.invoke("browser_reload", { label: tabLabel(activeTabId) });
-            else navigateTo(activeUrl);
-          }}
-          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
-          title={loading ? "Stop" : "Reload"} aria-label={loading ? "Stop" : "Reload"}>
-          {loading
-            ? <Icon name="ph:x-bold" width={12} />
-            : <Icon name="ph:arrows-clockwise-bold" width={12} />}
-        </button>
-        {/* Address bar */}
-        <form
-          onSubmit={(e) => { e.preventDefault(); navigateTo(addressBar); }}
-          className="flex flex-1 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 focus-within:border-[var(--accent-presence)]"
-        >
-          {activeUrl.startsWith("https://") && (
-            <Icon name="ph:lock-simple-bold" width={11} className="shrink-0 text-[var(--fg-muted)]" />
-          )}
-          <input
-            type="text"
-            value={addressBar}
-            onChange={(e) => setAddressBar(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-            placeholder="Search or enter address"
-            className="focus-ring-inset flex-1 rounded bg-transparent text-[12px] text-[var(--fg-base)]"
-          />
-        </form>
-        {/* Home */}
-        <button type="button" onClick={() => navigateTo(HOME_URL)}
-          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
-          title="Home" aria-label="Home">
-          <Icon name="ph:house-bold" width={13} />
-        </button>
-        {/* Save to library */}
-        <SaveToLibraryButton
-          url={activeTab?.url ?? null}
-          title={tabTitles[activeTabId] ?? activeTab?.title ?? ""}
-          activeFamiliar={activeFamiliarId}
-        />
-        {/* Open in system browser */}
-        <button type="button"
-          onClick={() => {
-            if (bridge) {
-              void bridge.invoke("shell_open", { url: activeUrl }).catch(() => {
-                window.open(activeUrl, "_blank", "noopener");
-              });
-            } else {
-              window.open(activeUrl, "_blank", "noopener");
-            }
-          }}
-          className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
-          title="Open in system browser" aria-label="Open in system browser">
-          <Icon name="ph:arrow-square-out" width={13} />
-        </button>
-      </header>
-
-      {/* ── Loading bar ───────────────────────────────────────────── */}
-      {loading && (
-        <div className="h-0.5 w-full shrink-0 overflow-hidden bg-[var(--bg-raised)]">
-          <div
-            className="h-full animate-[browser-progress_1.4s_ease-in-out_infinite] bg-[var(--accent-presence)]"
-            style={{ width: "60%" }}
-          />
-        </div>
-      )}
-
-      {/* ── Viewport (webview overlay target) ─────────────────────── */}
+      {/* ── Viewport (full-pane webview target) + collapsible toolbar ── */}
       <div className="relative min-h-0 flex-1 overflow-hidden" style={{ background: "var(--bg-base)" }}>
+        {/* Toolbar — absolute overlay that slides down when open. The page
+            webview is hidden while it's open (see the bounds sync), so the
+            DOM toolbar and the native overlay never fight for the same space. */}
+        <header
+          className={[
+            "absolute inset-x-0 top-0 z-30 flex min-h-10 items-center gap-1",
+            "border-b border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1.5",
+            "transition-transform duration-150 ease-out",
+            toolbarOpen ? "translate-y-0" : "pointer-events-none -translate-y-full",
+          ].join(" ")}
+          aria-hidden={!toolbarOpen}
+        >
+          {/* Back */}
+          <button type="button" onClick={goBack} disabled={!canBack}
+            className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+            title="Back" aria-label="Back">
+            <Icon name="ph:arrow-left-bold" width={13} />
+          </button>
+          {/* Forward */}
+          <button type="button" onClick={goForward} disabled={!canForward}
+            className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+            title="Forward" aria-label="Forward">
+            <Icon name="ph:arrow-right-bold" width={13} />
+          </button>
+          {/* Reload */}
+          <button type="button"
+            onClick={() => {
+              if (bridge) void bridge.invoke("browser_reload", { label: tabLabel(activeTabId) });
+              else navigateTo(activeUrl);
+            }}
+            className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            title={loading ? "Stop" : "Reload"} aria-label={loading ? "Stop" : "Reload"}>
+            {loading
+              ? <Icon name="ph:x-bold" width={12} />
+              : <Icon name="ph:arrows-clockwise-bold" width={12} />}
+          </button>
+          {/* Address bar */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); navigateTo(addressBar); }}
+            className="flex flex-1 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 focus-within:border-[var(--accent-presence)]"
+          >
+            {activeUrl.startsWith("https://") && (
+              <Icon name="ph:lock-simple-bold" width={11} className="shrink-0 text-[var(--fg-muted)]" />
+            )}
+            <input
+              ref={addressInputRef}
+              type="text"
+              value={addressBar}
+              onChange={(e) => setAddressBar(e.target.value)}
+              onFocus={(e) => e.currentTarget.select()}
+              placeholder="Search or enter address"
+              className="focus-ring-inset flex-1 rounded bg-transparent text-[12px] text-[var(--fg-base)]"
+            />
+          </form>
+          {/* Home */}
+          <button type="button" onClick={() => navigateTo(HOME_URL)}
+            className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            title="Home" aria-label="Home">
+            <Icon name="ph:house-bold" width={13} />
+          </button>
+          {/* Save to library */}
+          <SaveToLibraryButton
+            url={activeTab?.url ?? null}
+            title={tabTitles[activeTabId] ?? activeTab?.title ?? ""}
+            activeFamiliar={activeFamiliarId}
+          />
+          {/* Open in system browser */}
+          <button type="button"
+            onClick={() => {
+              if (bridge) {
+                void bridge.invoke("shell_open", { url: activeUrl }).catch(() => {
+                  window.open(activeUrl, "_blank", "noopener");
+                });
+              } else {
+                window.open(activeUrl, "_blank", "noopener");
+              }
+            }}
+            className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            title="Open in system browser" aria-label="Open in system browser">
+            <Icon name="ph:arrow-square-out" width={13} />
+          </button>
+          {/* Close toolbar — restores the full-pane page */}
+          <button type="button" onClick={() => setToolbarOpen(false)}
+            className="focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            title="Close (Esc)" aria-label="Close address bar">
+            <Icon name="ph:x-bold" width={12} />
+          </button>
+        </header>
+
+        {/* Loading bar — sits just under the toolbar while it's open */}
+        {loading && toolbarOpen && (
+          <div className="absolute inset-x-0 top-10 z-30 h-0.5 overflow-hidden bg-[var(--bg-raised)]">
+            <div
+              className="h-full animate-[browser-progress_1.4s_ease-in-out_infinite] bg-[var(--accent-presence)]"
+              style={{ width: "60%" }}
+            />
+          </div>
+        )}
+
         {quickOpen && (
           <BrowserQuickOpen
             tabs={tabs}
@@ -766,7 +852,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       <footer
         className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]"
       >
-        ⌘K tabs · ⌘[ back · ⌘] forward · ⌘R reload · [ pin rail
+        ⌘L address · ⌘K tabs · ⌘[ back · ⌘] forward · ⌘R reload · [ pin rail
       </footer>
       </div>{/* end main area */}
     </div>
