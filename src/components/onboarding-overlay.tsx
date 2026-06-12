@@ -426,16 +426,40 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
   const hasExistingOpenClawAgents = openclawAgents.length > 0;
 
-  const copyText = async (text: string) => {
+  const copyText = async (text: string): Promise<boolean> => {
     try {
       await navigator.clipboard.writeText(text);
+      return true;
     } catch {
       /* clipboard may be blocked */
+      return false;
+    }
+  };
+
+  // Header-button feedback: both actions were silent, so clicks felt dead.
+  // Re-check spins its icon while the status fetch is in flight (held for a
+  // beat so fast responses still read as activity); Copy diagnostics flashes
+  // copied/failed for 2s.
+  const [rechecking, setRechecking] = useState(false);
+  const [diagCopy, setDiagCopy] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+
+  const recheckNow = async () => {
+    if (rechecking) return;
+    setRechecking(true);
+    try {
+      await Promise.all([
+        refresh(),
+        new Promise((resolve) => setTimeout(resolve, 600)),
+      ]);
+    } finally {
+      setRechecking(false);
     }
   };
 
   const copyDiagnostics = async () => {
-    await copyText(
+    const ok = await copyText(
       JSON.stringify(
         {
           capturedAt: new Date().toISOString(),
@@ -473,6 +497,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         2,
       ),
     );
+    setDiagCopy(ok ? "copied" : "failed");
+    setTimeout(() => setDiagCopy("idle"), 2000);
   };
 
   const runInstall = async (target: InstallTarget) => {
@@ -859,18 +885,42 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => void refresh()}
-              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+              onClick={() => void recheckNow()}
+              disabled={rechecking}
+              aria-busy={rechecking}
+              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-70"
             >
-              <Icon name="ph:arrows-clockwise-bold" />
-              Re-check
+              <Icon
+                name="ph:arrows-clockwise-bold"
+                className={rechecking ? "animate-spin" : undefined}
+              />
+              {rechecking ? "Checking…" : "Re-check"}
             </button>
             <button
               onClick={() => void copyDiagnostics()}
-              className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+              aria-live="polite"
+              className={`focus-ring inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[12px] hover:border-[var(--border-strong)] ${
+                diagCopy === "copied"
+                  ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_12%,transparent)] text-[var(--color-success)]"
+                  : diagCopy === "failed"
+                    ? "border-[color-mix(in_oklch,var(--color-danger)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]"
+                    : "border-[var(--border-hairline)] bg-[var(--bg-raised)] text-[var(--text-primary)]"
+              }`}
             >
-              <Icon name="ph:clipboard-text" />
-              Copy diagnostics
+              <Icon
+                name={
+                  diagCopy === "copied"
+                    ? "ph:check-bold"
+                    : diagCopy === "failed"
+                      ? "ph:warning-fill"
+                      : "ph:clipboard-text"
+                }
+              />
+              {diagCopy === "copied"
+                ? "Copied"
+                : diagCopy === "failed"
+                  ? "Copy failed"
+                  : "Copy diagnostics"}
             </button>
             <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
               {ready}/{total} ready
@@ -991,7 +1041,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installResult={installResults["coven-cli"]}
                             nodeHint={nodeHint}
                             onInstall={() => void runInstall("coven-cli")}
-                            onCopy={(text) => void copyText(text)}
+                            onCopy={copyText}
                           />
                         ) : step.key === "covenHome" ? (
                           <div className="flex flex-col gap-3">
@@ -1021,7 +1071,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installResults={installResults}
                             nodeHint={nodeHint}
                             onInstall={(target) => void runInstall(target)}
-                            onCopy={(text) => void copyText(text)}
+                            onCopy={copyText}
                             onRefresh={() => void loadHarnesses()}
                           />
                         ) : step.key === "binding" ? (
@@ -1231,18 +1281,30 @@ function CommandRow({
   onCopy,
 }: {
   command: string;
-  onCopy: (text: string) => void;
+  onCopy: (text: string) => Promise<boolean>;
 }) {
+  // Same dead-click fix as the header: flash "Copied" so the action lands.
+  const [copied, setCopied] = useState(false);
   return (
     <div className="flex items-center gap-2">
       <code className="min-w-0 flex-1 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
         {command}
       </code>
       <button
-        onClick={() => onCopy(command)}
-        className="focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        onClick={async () => {
+          if (await onCopy(command)) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }
+        }}
+        aria-live="polite"
+        className={`focus-ring shrink-0 rounded border px-2 py-1 text-[11px] ${
+          copied
+            ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] text-[var(--color-success)]"
+            : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        }`}
       >
-        Copy
+        {copied ? "Copied" : "Copy"}
       </button>
     </div>
   );
@@ -1306,7 +1368,7 @@ function StepCovenCli({
   installResult?: InstallResult;
   nodeHint: string | null;
   onInstall: () => void;
-  onCopy: (text: string) => void;
+  onCopy: (text: string) => Promise<boolean>;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -1362,7 +1424,7 @@ function StepRuntimes({
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
   onInstall: (target: InstallTarget) => void;
-  onCopy: (text: string) => void;
+  onCopy: (text: string) => Promise<boolean>;
   onRefresh: () => void;
 }) {
   return (
