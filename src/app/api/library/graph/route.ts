@@ -9,6 +9,17 @@ import { resolveSecret } from "@/lib/vault";
 
 const execFileAsync = promisify(execFile);
 
+const GRAPH_ROOT_DIR = homedir();
+
+function resolveAndValidateTargetPath(inputPath: string): string | null {
+  const resolved = path.resolve(GRAPH_ROOT_DIR, inputPath);
+  const rel = path.relative(GRAPH_ROOT_DIR, resolved);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    return null;
+  }
+  return resolved;
+}
+
 const GRAPHIFY_LLM_ENV_KEYS = [
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
@@ -268,7 +279,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "targetPath required" }, { status: 400 });
   }
 
-  const targetPath = body.targetPath;
+  const targetPath = resolveAndValidateTargetPath(body.targetPath);
+  if (!targetPath) {
+    return NextResponse.json({ ok: false, error: "targetPath is outside allowed root" }, { status: 400 });
+  }
 
   // Verify path exists
   try {
