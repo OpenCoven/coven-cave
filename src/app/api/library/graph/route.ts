@@ -104,13 +104,21 @@ async function readGraphById(id: string): Promise<GraphifyResult | null> {
   }
 
   const graphsRoot = path.resolve(GRAPHS_DIR);
-  const candidatePath = path.resolve(graphsRoot, `${id}.json`);
-  if (!(candidatePath === graphsRoot || candidatePath.startsWith(`${graphsRoot}${path.sep}`))) {
-    return null;
-  }
+  const expectedFile = `${id}.json`;
 
   try {
-    const raw = await fs.readFile(candidatePath, "utf-8");
+    const files = await fs.readdir(graphsRoot);
+    const matchedFile = files.find((file) => file === expectedFile);
+    if (!matchedFile) {
+      return null;
+    }
+
+    const safePath = path.resolve(graphsRoot, matchedFile);
+    if (!(safePath === graphsRoot || safePath.startsWith(`${graphsRoot}${path.sep}`))) {
+      return null;
+    }
+
+    const raw = await fs.readFile(safePath, "utf-8");
     return withGraphRunSnapshots(JSON.parse(raw) as GraphifyResult);
   } catch {
     return null;
