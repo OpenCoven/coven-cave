@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import path from "node:path";
-import { covenHome } from "./coven-paths.ts";
 
 /**
  * Local run-history store for the Workflow Studio. The daemon has no workflow
@@ -20,10 +20,12 @@ import type { WorkflowRunRecord } from "./workflows.ts";
 
 type RunsFile = { version: 1; runs: WorkflowRunRecord[] };
 
+// Same shape as cave-inbox's INBOX_PATH: a statically-scoped home path keeps
+// Next's file tracing from sweeping the whole project into the bundle.
 function runsPath(): string {
   const override = process.env.COVEN_WORKFLOW_RUNS_PATH?.trim();
   if (override) return override;
-  return path.join(covenHome(), "workflow-runs.json");
+  return path.join(homedir(), ".coven", "workflow-runs.json");
 }
 
 async function loadRunsFile(): Promise<RunsFile> {
