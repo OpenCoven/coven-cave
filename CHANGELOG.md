@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.74] - 2026-06-12
+
+The terminal works again in the packaged app.
+
+### Fixed
+- **Terminal in the desktop app** — v0.0.72's mobile-access token gated the terminal websocket and locked out the app's own webview ("Terminal connection failed: [object Event]"). Credential-less loopback upgrades are the local app and connect again; supplied credentials are still verified, remote tailnet hosts still require the token, and cross-site origins stay rejected. Connection failures now report the websocket close code and a recovery hint instead of `[object Event]`.
+
+### Added
+- **Guided onboarding** — step-by-step setup with one-click installs and SSH (#474).
+
+### Changed
+- **Workflow attachments** — Familiars/Roles/Boards/Projects sections collapse independently with count badges; section bodies span the panel's full width; side-panel collapse tabs align.
+- **Dark scrollbars** comprehensively across dark mode (#475).
+
 ## [0.0.73] - 2026-06-12
 
 Chats that persist and a workflow canvas you can rearrange by hand.
