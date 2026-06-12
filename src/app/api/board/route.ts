@@ -23,6 +23,7 @@ export async function POST(req: Request) {
     familiarId?: string | null;
     sessionId?: string | null;
     cwd?: string | null;
+    projectId?: string | null;
     links?: string[];
     github?: CardGitHubLink[];
     labels?: string[];
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
     familiarId: body.familiarId,
     sessionId: body.sessionId,
     cwd: body.cwd,
+    projectId: body.projectId,
     links: body.links,
     github: body.github,
     labels: body.labels,

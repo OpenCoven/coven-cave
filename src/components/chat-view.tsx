@@ -42,12 +42,11 @@ import {
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
 import {
-  CHAT_PROJECTS,
-  DEFAULT_CHAT_PROJECT,
-  DEFAULT_CHAT_PROJECT_ID,
   chatProjectById,
   projectIdForRoot,
 } from "@/lib/chat-projects";
+import type { CaveProject } from "@/lib/cave-projects";
+import { useProjects } from "@/lib/use-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolInputAsDiff } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
@@ -417,18 +416,20 @@ function ChatEmptyState({
   onPrompt,
   projectId,
   onProjectChange,
+  projects,
   fileMentions = false,
 }: {
   familiar: Familiar;
   onPrompt?: (text: string) => void;
   /** Selected predetermined project for the chat runtime root. */
-  projectId?: string;
+  projectId?: string | null;
   /** Updates the project used for the next send. */
   onProjectChange?: (value: string) => void;
+  projects: CaveProject[];
   /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
   fileMentions?: boolean;
 }) {
-  const project = chatProjectById(projectId) ?? DEFAULT_CHAT_PROJECT;
+  const project = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
 
   return (
     <div className="cave-chat-empty select-none">
@@ -448,7 +449,7 @@ function ChatEmptyState({
           </div>
         </div>
 
-        {onProjectChange && (
+        {onProjectChange && project && (
           <label className="cave-chat-empty-project">
             <Icon name="ph:folder-open" width={14} aria-hidden />
             <span className="cave-chat-empty-project-label">Project</span>
@@ -458,7 +459,7 @@ function ChatEmptyState({
               aria-label="Project for this chat"
               className="cave-chat-empty-project-select"
             >
-              {CHAT_PROJECTS.map((project) => (
+              {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
                 </option>
@@ -497,11 +498,14 @@ function ChatEmptyState({
 function InlineProjectField({
   projectId,
   onProjectChange,
+  projects,
 }: {
-  projectId: string;
+  projectId: string | null;
   onProjectChange: (value: string) => void;
+  projects: CaveProject[];
 }) {
-  const project = chatProjectById(projectId) ?? DEFAULT_CHAT_PROJECT;
+  const project = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+  if (!project) return null;
   return (
     <div className="cave-chat-cwd-pair" title={project.root}>
       <label className="cave-chat-cwd-inline focus-within:border-[var(--border-strong)]">
@@ -512,7 +516,7 @@ function InlineProjectField({
           aria-label="Project for this chat"
           className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-[var(--text-secondary)] outline-none"
         >
-          {CHAT_PROJECTS.map((entry) => (
+          {projects.map((entry) => (
             <option key={entry.id} value={entry.id}>
               {entry.name}
             </option>
@@ -1236,9 +1240,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // the inline Cancel/Delete confirm; only the explicit Delete commits.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [projectIdDraft, setProjectIdDraft] = useState(() => projectIdForRoot(session?.project_root ?? projectRoot) ?? DEFAULT_CHAT_PROJECT_ID);
-  const selectedProject = chatProjectById(projectIdDraft) ?? DEFAULT_CHAT_PROJECT;
-  const activeProjectRoot = selectedProject.root;
+  const { projects } = useProjects();
+  const firstProject = projects[0] ?? null;
+  const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
+  const selectedProject = projectIdDraft
+    ? chatProjectById(projectIdDraft, projects) ?? firstProject
+    : firstProject;
+  const activeProjectRoot = selectedProject?.root ?? session?.project_root ?? projectRoot ?? "";
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
@@ -2458,11 +2466,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Disarm a pending delete confirmation and sync the selected project when
   // switching sessions. Drop staged file mentions because they are scoped to
   // the previous session/root.
+  // Sync draft when the session/root changes. Also initialise the draft the
+  // first time projects load (when it is still null). Do NOT overwrite a
+  // user-set draft just because the projects list was re-fetched (e.g. after a
+  // rename or create), which would discard an in-session selection.
   useEffect(() => {
     setConfirmDelete(false);
-    setProjectIdDraft(projectIdForRoot(session?.project_root ?? projectRoot) ?? DEFAULT_CHAT_PROJECT_ID);
+    setProjectIdDraft((prev) => {
+      const resolved =
+        projectIdForRoot(session?.project_root ?? projectRoot, projects) ??
+        firstProject?.id ??
+        null;
+      // Initialise when unset, or always resync on session switch.
+      return prev === null ? resolved : resolved ?? prev;
+    });
     setMentionedFiles([]);
-  }, [sessionId, session?.project_root, projectRoot]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, session?.project_root, projectRoot, firstProject?.id]);
 
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
@@ -2613,6 +2633,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <InlineProjectField
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
+                projects={projects}
               />
               <VoiceCallButton
                 familiar={familiar}
@@ -2695,6 +2716,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }}
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
+                projects={projects}
                 fileMentions={Boolean(mentionRoot)}
               />
             )

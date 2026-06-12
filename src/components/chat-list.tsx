@@ -12,7 +12,10 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
+  normalizeChatProjectRoot,
+  projectIdForRoot,
 } from "@/lib/chat-projects";
+import { useProjects } from "@/lib/use-projects";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import {
   applyProjectScope,
@@ -159,6 +162,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const panelTitle = familiar?.display_name ?? "Familiars";
   const panelRole = familiar?.role ?? "All project conversations";
   const panelRuntime = familiar ? (familiar.harness ?? "codex") : "mixed";
+  const { projects } = useProjects();
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -273,29 +277,43 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (unreadsOnly) rows = rows.filter((s) => s.status === "running");
     if (search.trim()) {
       const q = search.toLowerCase();
-      rows = rows.filter(
-        (s) =>
-          (s.title ?? "").toLowerCase().includes(q) ||
-          (s.project_root ?? "").toLowerCase().includes(q)
-      );
+      rows = rows.filter((s) => {
+        if ((s.title ?? "").toLowerCase().includes(q)) return true;
+        if ((s.project_root ?? "").toLowerCase().includes(q)) return true;
+        const pid = projectIdForRoot(s.project_root, projects);
+        if (pid) {
+          const projectName = projects.find((p) => p.id === pid)?.name ?? "";
+          if (projectName.toLowerCase().includes(q)) return true;
+        }
+        return false;
+      });
     }
     return rows;
-  }, [mine, search, unreadsOnly]);
+  }, [mine, projects, search, unreadsOnly]);
 
   const hasAny = mine.length > 0;
+  const runningCount = mine.filter((s) => s.status === "running").length;
+  const projectCount = new Set(
+    mine
+      .map((s) =>
+        projectIdForRoot(s.project_root, projects) ??
+        (s.project_root?.trim() ? normalizeChatProjectRoot(s.project_root) : null),
+      )
+      .filter(Boolean),
+  ).size;
 
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const grouped = useMemo(() => {
-    return deriveChatProjectGroups(filtered);
-  }, [filtered]);
+    return deriveChatProjectGroups(filtered, projects);
+  }, [filtered, projects]);
 
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The persisted selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a persisted project selection must not scope the
   // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine), [mine]);
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine, projects), [mine, projects]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
@@ -423,8 +441,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             already selected, the sidebar carries its identity; repeating
             the name here is duplicate chrome. */}
         {!familiar && (
-        <div className="px-4 pb-0 pt-2">
-          <div className="flex min-w-0 items-start gap-2">
+        <div className="px-4 pb-0 pt-4">
+          <div className="flex min-w-0 items-start gap-3">
             {/* Avatar — larger + glyph-forward */}
             <div className="relative shrink-0">
               <div className="grid h-11 w-11 place-items-center rounded-xl border border-[var(--accent-presence)]/30 bg-[color-mix(in_oklch,var(--accent-presence)_12%,var(--bg-raised))] shadow-[0_0_12px_color-mix(in_oklch,var(--accent-presence)_18%,transparent)]">
@@ -448,7 +466,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                   {panelTitle}
                 </h2>
               </div>
-              <p className="mt-0 truncate text-[11px] leading-snug text-[var(--text-muted)]">
+              <p className="mt-0.5 truncate text-[11px] leading-snug text-[var(--text-muted)]">
                 {panelRole ? (
                   <>
                     <span className="text-[var(--text-secondary)]">{panelRole}</span>
@@ -474,7 +492,30 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         </div>
         )}
 
-        {/* Stats removed for sidepanel optimization */}
+        {/* Stats row */}
+        <div className={`${familiar ? "pt-4" : "mt-3"} grid grid-cols-3 gap-1.5 px-4`}>
+          <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
+            <div className="flex items-center gap-1.5">
+              <Icon name="ph:chats" width={11} className="text-[var(--text-muted)]" />
+              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Chats</p>
+            </div>
+            <p className="mt-1 font-mono text-[15px] font-semibold text-[var(--text-primary)]">{mine.length}</p>
+          </div>
+          <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
+            <div className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${runningCount > 0 ? "animate-pulse bg-[var(--color-success)]" : "bg-[var(--text-muted)]"}`} />
+              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Live</p>
+            </div>
+            <p className={`mt-1 font-mono text-[15px] font-semibold ${runningCount > 0 ? "text-[var(--color-success)]" : "text-[var(--text-primary)]"}`}>{runningCount}</p>
+          </div>
+          <div className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-2.5 py-2 transition-colors hover:border-[var(--accent-presence)]/25 hover:bg-[var(--bg-raised)]/60">
+            <div className="flex items-center gap-1.5">
+              <Icon name="ph:folder" width={11} className="text-[var(--text-muted)]" />
+              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[var(--text-muted)]">Projects</p>
+            </div>
+            <p className="mt-1 font-mono text-[15px] font-semibold text-[var(--text-primary)]">{projectCount}</p>
+          </div>
+        </div>
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
@@ -503,10 +544,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <button
             type="button"
             onClick={() => setUnreadsOnly((v) => !v)}
-            title={unreadsOnly ? "Show all chats" : "Show unreads only"}
-            aria-label={unreadsOnly ? "Show all chats" : "Show unreads only"}
             className={[
-              "focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
+              "focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
               unreadsOnly
                 ? "border-[color-mix(in_oklch,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
@@ -515,6 +554,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             {unreadsOnly
               ? <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
               : <Icon name="ph:circle" width={12} />}
+            Unreads
           </button>
 
           <button
@@ -524,13 +564,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             aria-label={showArchived ? "Hide archived chats" : "Show archived chats"}
             title={showArchived ? "Hide archived chats" : "Show archived chats"}
             className={[
-              "focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
+              "focus-ring flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[11px] font-medium transition-colors",
               showArchived
                 ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
             ].join(" ")}
           >
             <Icon name="ph:archive" width={12} aria-hidden />
+            Archived
           </button>
 
           {/* With the identity row hidden, the + Chat CTA lives here */}
@@ -552,7 +593,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       {error && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-2 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-1.5 text-xs text-[var(--color-warning)]"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-1.5 text-xs text-[var(--color-warning)]"
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />

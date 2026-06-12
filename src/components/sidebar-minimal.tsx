@@ -31,6 +31,7 @@ export type FolderMode =
   | "github"
   | "roles"
   | "workflows"
+  | "projects"
   | "library"
   | "capabilities";
 
@@ -84,6 +85,7 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools" },
+  { id: "projects", label: "Projects", iconName: "ph:folders-bold", group: "tools", kbd: "⌘9" },
   { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons" },

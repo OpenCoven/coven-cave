@@ -15,6 +15,7 @@ const card = {
   familiarId: "cody",
   sessionId: "session-1",
   cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  projectId: "coven-cave",
   links: ["https://github.com/OpenCoven/coven-cave/pull/153"],
   github: [{
     id: "github:pr:opencoven/coven-cave:153",
@@ -58,16 +59,19 @@ assert.equal(cardMatchesBoardSearch(card, "priority:urgent", familiarsById), fal
 
 const boardTypes = await readFile(new URL("./cave-board-types.ts", import.meta.url), "utf8");
 assert.match(boardTypes, /cwd: string \| null/, "Task cards should persist cwd");
+assert.match(boardTypes, /projectId\?: string \| null/, "Task cards should persist projectId");
 assert.match(boardTypes, /links: string\[\]/, "Task cards should persist links");
 assert.match(boardTypes, /github: CardGitHubLink\[\]/, "Task cards should persist GitHub connections");
 
 const boardStore = await readFile(new URL("./cave-board.ts", import.meta.url), "utf8");
 assert.match(boardStore, /mergeLinksWithGitHub\(normalizeLinks/, "Task persistence should normalize links");
 assert.match(boardStore, /cwd: normalizeCwd/, "Task persistence should normalize cwd");
+assert.match(boardStore, /projectId: "projectId" in patch/, "Task persistence should patch projectId");
 
 const boardApi = await readFile(new URL("../app/api/board/route.ts", import.meta.url), "utf8");
 assert.match(boardApi, /links\?: string\[\]/, "Create API should accept task links");
 assert.match(boardApi, /cwd\?: string \| null/, "Create API should accept task cwd");
+assert.match(boardApi, /projectId\?: string \| null/, "Create API should accept task projectId");
 
 const boardView = await readFile(new URL("../components/board-view.tsx", import.meta.url), "utf8");
 assert.match(boardView, /board-search-input/, "Tasks header should expose one search input");

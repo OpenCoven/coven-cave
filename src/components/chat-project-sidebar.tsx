@@ -1,7 +1,7 @@
 "use client";
 
 import type { SessionRow } from "@/lib/types";
-import { chatProjectName, type ChatProjectGroup } from "@/lib/chat-projects";
+import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
@@ -101,10 +101,11 @@ export function ChatProjectSidebar({
         </button>
 
         {groups.map((group) => {
-          const key = selectionKey(group.projectRoot);
+          const key = selectionKey(group.projectId, group.projectRoot);
           const expanded = expandedKeys.includes(key);
           const isSelected = selection === key;
-          const label = chatProjectName(group.projectRoot);
+          const label = group.projectName
+            ?? (group.projectRoot?.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? "No project");
           return (
             <div key={key}>
               <div

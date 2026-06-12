@@ -1,7 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
-  CHAT_PROJECTS,
   chatProjectName,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
@@ -38,6 +37,11 @@ const sessions = [
   session("scratch", "", "2026-06-05T00:00:00.000Z", "charm"),
 ];
 
+const projects = [
+  { id: "alpha", name: "Alpha", root: "/work/alpha", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z" },
+  { id: "known-empty", name: "Known Empty", root: "/work/empty", createdAt: "2026-06-01T00:00:00.000Z", updatedAt: "2026-06-01T00:00:00.000Z" },
+];
+
 assert.deepEqual(
   filterVisibleChatSessions(sessions, null).map((s) => s.id),
   ["scratch", "new-alpha", "beta", "old-alpha"],
@@ -50,7 +54,7 @@ assert.deepEqual(
   "specific familiar scope should still show only that familiar's chats",
 );
 
-const groups = deriveChatProjectGroups(filterVisibleChatSessions(sessions, null));
+const groups = deriveChatProjectGroups(filterVisibleChatSessions(sessions, null), projects);
 
 assert.deepEqual(
   groups.filter((group) => group.sessions.length > 0).map((group) => ({
@@ -66,21 +70,22 @@ assert.deepEqual(
   "project groups should be ordered by recency and expose the latest familiar for project-scoped launch",
 );
 
-assert.equal(chatProjectName("/Users/x/repos/coven-cave"), "coven-cave");
-assert.equal(chatProjectName("C:\\repos\\open-meow"), "open-meow");
-assert.equal(chatProjectName("/trailing/slash/"), "slash");
-assert.equal(chatProjectName(null), "No project");
-assert.equal(chatProjectName(""), "No project");
+assert.equal(chatProjectName("/work/alpha", projects), "Alpha");
+assert.equal(chatProjectName("/Users/x/repos/coven-cave", projects), "coven-cave");
+assert.equal(chatProjectName("C:\\repos\\open-meow", projects), "open-meow");
+assert.equal(chatProjectName("/trailing/slash/", projects), "slash");
+assert.equal(chatProjectName(null, projects), "No project");
+assert.equal(chatProjectName("", projects), "No project");
 
-const knownOnlyGroups = deriveChatProjectGroups([]);
+const knownOnlyGroups = deriveChatProjectGroups([], projects);
 assert.deepEqual(
   knownOnlyGroups.map((group) => ({
     id: group.projectId,
     root: group.projectRoot,
-    label: chatProjectName(group.projectRoot),
+    label: chatProjectName(group.projectRoot, projects),
     sessionCount: group.sessions.length,
   })),
-  CHAT_PROJECTS.map((project) => ({
+  projects.map((project) => ({
     id: project.id,
     root: project.root,
     label: project.name,

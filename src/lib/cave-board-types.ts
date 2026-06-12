@@ -42,6 +42,8 @@ export type Card = {
   familiarId: string | null;
   sessionId: string | null;
   cwd: string | null;
+  /** Stable project ID from cave-projects.json. Preferred over cwd. */
+  projectId?: string | null;
   links: string[];
   github: CardGitHubLink[];
   labels: string[];

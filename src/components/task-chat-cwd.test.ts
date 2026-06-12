@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Chats pick a predetermined project, and that project owns the runtime root.
+// Chats pick a persisted project, and that project owns the runtime root.
 // Task chats still honor the task's stored cwd for existing board cards.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,17 +15,17 @@ const taskChatRoute = readFileSync(
 
 assert.match(
   chatView,
-  /const \[projectIdDraft, setProjectIdDraft\] = useState\(\(\) => projectIdForRoot\(session\?\.project_root \?\? projectRoot\) \?\? DEFAULT_CHAT_PROJECT_ID\)/,
+  /setProjectIdDraft\(\s*\(prev\)/,
   "ChatView seeds the selected project from the opened session or pending project root",
 );
 assert.match(
   chatView,
-  /const selectedProject = chatProjectById\(projectIdDraft\) \?\? DEFAULT_CHAT_PROJECT/,
-  "ChatView resolves the selected project through the predetermined project registry",
+  /const selectedProject = projectIdDraft\s*\?\s*chatProjectById\(projectIdDraft, projects\) \?\? firstProject\s*:\s*firstProject/,
+  "ChatView resolves the selected project through the persisted project registry",
 );
 assert.match(
   chatView,
-  /const activeProjectRoot = selectedProject\.root/,
+  /const activeProjectRoot = selectedProject\?\.root \?\? session\?\.project_root \?\? projectRoot \?\? ""/,
   "ChatView sends the selected project's configured root",
 );
 assert.match(
@@ -47,6 +47,11 @@ assert.match(
   chatView,
   /sessionId && \(\s*<>\s*<InlineProjectField[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
   "The active-chat project selector shares the same draft used by send",
+);
+assert.match(
+  chatView,
+  /projects\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>[\s\S]*?\{project\.name\}/,
+  "Empty state renders the live project list",
 );
 assert.match(
   chatView,
@@ -78,12 +83,12 @@ assert.match(
 );
 assert.match(
   boardView,
-  /CHAT_PROJECTS\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>/,
-  "The task chat prompt should render the predetermined project registry, not a free-form path input",
+  /projects\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>/,
+  "The task chat prompt should render the persisted project registry, not a free-form path input",
 );
 assert.match(
   boardView,
-  /const selectedProject = chatProjectById\(projectId\) \?\? DEFAULT_CHAT_PROJECT/,
+  /const selectedProject = projectId \? chatProjectById\(projectId, projects\) \?\? firstProject : firstProject/,
   "The selected task-chat project should resolve through the shared project registry",
 );
 assert.match(

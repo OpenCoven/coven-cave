@@ -9,6 +9,7 @@ import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
+import { useProjects } from "@/lib/use-projects";
 import {
   normalizeSelection,
   readPersisted,
@@ -95,12 +96,16 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     : null;
   const chatFamiliar = familiar ?? selectedViewFamiliar ?? sessionFamiliar ?? null;
   const fallbackFamiliarId = familiar?.id ?? familiars[0]?.id ?? null;
+  const { projects } = useProjects();
 
   const sidebarSessions = useMemo(
     () => filterVisibleChatSessions(sessions, familiar?.id ?? null),
     [familiar?.id, sessions],
   );
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(sidebarSessions), [sidebarSessions]);
+  const sidebarGroups = useMemo(
+    () => deriveChatProjectGroups(sidebarSessions, projects),
+    [sidebarSessions, projects],
+  );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
