@@ -9,6 +9,7 @@ import type {
   WorkflowValidationIssue,
   WorkflowValidationResult,
 } from "./workflows.ts";
+import { listRoleWorkflowIds } from "./role-source.ts";
 
 /**
  * Local workflow source for the Cave Workflow Studio.
@@ -299,6 +300,21 @@ async function readManifestFiles(): Promise<Array<{ source: string; raw: unknown
 export async function loadLocalWorkflowList(): Promise<WorkflowListResponse> {
   const manifests = await readManifestFiles();
   const workflows = manifests.map(({ source, raw }) => coerceManifest(raw, source));
+  const known = new Set(workflows.map((workflow) => workflow.id));
+  for (const id of await listRoleWorkflowIds()) {
+    if (known.has(id)) continue;
+    workflows.push({
+      id,
+      version: "0.0.0",
+      name: id,
+      summary: "Declared by a role, but no workflow manifest exists yet.",
+      steps: [],
+      tags: ["role-declared"],
+      validation_state: "unknown",
+    });
+    known.add(id);
+  }
+  workflows.sort((a, b) => a.id.localeCompare(b.id));
   return { ok: true, workflows };
 }
 

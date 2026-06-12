@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -14,6 +14,7 @@ import {
   validateManifest,
   workflowFileName,
 } from "./workflow-source.ts";
+import { discoverRoleFiles } from "./role-source.ts";
 
 // A well-formed manifest validates clean and coerces to a valid summary.
 {
@@ -192,6 +193,103 @@ await (async () => {
     if (prev === undefined) delete process.env.COVEN_WORKFLOWS_DIR;
     else process.env.COVEN_WORKFLOWS_DIR = prev;
     await rm(dir, { recursive: true, force: true });
+  }
+})();
+
+// Role-declared workflows without manifests still appear in the workflow list.
+await (async () => {
+  const workflowsDir = await mkdtemp(path.join(tmpdir(), "cave-workflows-"));
+  const covenHome = await mkdtemp(path.join(tmpdir(), "cave-home-"));
+  const prevWorkflowsDir = process.env.COVEN_WORKFLOWS_DIR;
+  const prevCovenHome = process.env.COVEN_HOME;
+  process.env.COVEN_WORKFLOWS_DIR = workflowsDir;
+  process.env.COVEN_HOME = covenHome;
+  try {
+    await writeFile(
+      path.join(workflowsDir, "saved-flow.yaml"),
+      [
+        "id: saved-flow",
+        "version: 0.1.0",
+        "name: Saved Flow",
+        "steps:",
+        "  - id: plan",
+        "    kind: agent",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const roleDir = path.join(covenHome, "roles", "familiars", "sage", "researcher");
+    await mkdir(roleDir, { recursive: true });
+    await writeFile(
+      path.join(roleDir, "ROLE.md"),
+      [
+        "---",
+        'name: "Researcher"',
+        "familiar: sage",
+        "---",
+        "",
+        "workflows:",
+        "- research-brief",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const list = await loadLocalWorkflowList();
+    const ids = list.workflows.map((workflow) => workflow.id);
+    assert.deepEqual(ids, ["research-brief", "saved-flow"], "role-declared workflow ids are merged with manifests");
+    const roleOnly = list.workflows.find((workflow) => workflow.id === "research-brief");
+    assert.equal(roleOnly?.validation_state, "unknown", "role-only workflows render as placeholders");
+  } finally {
+    if (prevWorkflowsDir === undefined) delete process.env.COVEN_WORKFLOWS_DIR;
+    else process.env.COVEN_WORKFLOWS_DIR = prevWorkflowsDir;
+    if (prevCovenHome === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = prevCovenHome;
+    await rm(workflowsDir, { recursive: true, force: true });
+    await rm(covenHome, { recursive: true, force: true });
+  }
+})();
+
+// Exported role copies do not duplicate workspace roles in role-backed views.
+await (async () => {
+  const covenHome = await mkdtemp(path.join(tmpdir(), "cave-home-"));
+  const workspace = await mkdtemp(path.join(tmpdir(), "cave-workspace-"));
+  const prevCovenHome = process.env.COVEN_HOME;
+  process.env.COVEN_HOME = covenHome;
+  try {
+    await writeFile(
+      path.join(covenHome, "familiars.toml"),
+      [`[[familiar]]`, `id = "sage"`, `workspace = "${workspace}"`, ""].join("\n"),
+      "utf8",
+    );
+    const workspaceRoleDir = path.join(workspace, "roles", "researcher");
+    const exportedRoleDir = path.join(covenHome, "roles", "familiars", "sage", "researcher");
+    await mkdir(workspaceRoleDir, { recursive: true });
+    await mkdir(exportedRoleDir, { recursive: true });
+    const roleMd = [
+      "---",
+      'name: "Researcher"',
+      "familiar: sage",
+      "---",
+      "",
+      "workflows:",
+      "- research-brief",
+      "",
+    ].join("\n");
+    await writeFile(path.join(workspaceRoleDir, "ROLE.md"), roleMd, "utf8");
+    await writeFile(path.join(exportedRoleDir, "ROLE.md"), roleMd, "utf8");
+
+    const roles = await discoverRoleFiles();
+    assert.equal(
+      roles.filter((role) => role.familiar === "sage" && role.id === "researcher").length,
+      1,
+      "exported role copies do not duplicate workspace roles",
+    );
+  } finally {
+    if (prevCovenHome === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = prevCovenHome;
+    await rm(covenHome, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true });
   }
 })();
 

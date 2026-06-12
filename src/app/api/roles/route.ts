@@ -1,27 +1,10 @@
 import { NextResponse } from "next/server";
-import { readdir, readFile, stat } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { loadConfig, upsertRoleConfig } from "@/lib/cave-config";
-import { covenHome, familiarIds, familiarWorkspace } from "@/lib/coven-paths";
+import { parseRoleListField } from "@/lib/role-manifest";
+import { discoverRoleFiles, parseRoleFrontmatter } from "@/lib/role-source";
 
 export const dynamic = "force-dynamic";
-
-function parseFrontmatter(text: string): Record<string, string> {
-  const fm: Record<string, string> = {};
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return fm;
-  for (const line of match[1].split("\n")) {
-    const m = line.match(/^(\w[\w-]*):\s+"?([^"]*)"?\s*$/);
-    if (m) fm[m[1]] = m[2];
-  }
-  return fm;
-}
-
-function parseListField(text: string, field: string): string[] {
-  const match = text.match(new RegExp(`\\n${field}:\\s*\\n((?:\\s*-[^\\n]*\\n?)*)`));
-  if (!match) return [];
-  return match[1].match(/- (.+)/g)?.map(m => m.slice(2).trim()) ?? [];
-}
 
 export type RoleEntry = {
   id: string;
@@ -47,68 +30,25 @@ export async function GET() {
   const cfg = await loadConfig();
   const roleConfigMap = new Map(cfg.roles.map(r => [`${r.familiar}:${r.id}`, r]));
 
-  for (const familiar of await familiarIds()) {
-    const workspace = await familiarWorkspace(familiar);
-    const rolesDir = path.join(workspace, "roles");
-    let roleDirs: string[] = [];
+  for (const roleFile of await discoverRoleFiles()) {
     try {
-      const entries = await readdir(rolesDir, { withFileTypes: true });
-      roleDirs = entries.filter(e => e.isDirectory()).map(e => e.name);
-    } catch { continue; }
-
-    for (const roleName of roleDirs) {
-      const roleMdPath = path.join(rolesDir, roleName, "ROLE.md");
-      try {
-        await stat(roleMdPath);
-        const text = await readFile(roleMdPath, "utf8");
-        const fm = parseFrontmatter(text);
-        const configEntry = roleConfigMap.get(`${familiar}:${roleName}`);
-        roles.push({
-          id: roleName,
-          name: fm.name ?? roleName,
-          description: fm.description,
-          version: fm.version,
-          emoji: fm.emoji,
-          familiar: fm.familiar ?? familiar,
-          skills: parseListField(text, "skills"),
-          tools: parseListField(text, "tools"),
-          plugins: parseListField(text, "plugins"),
-          workflows: parseListField(text, "workflows"),
-          path: roleMdPath,
-          active: configEntry?.active ?? false,
-          activatedAt: configEntry?.activatedAt,
-        });
-      } catch { continue; }
-    }
-  }
-
-  const globalRolesDir = path.join(covenHome(), "roles");
-  let globalRoleDirs: string[] = [];
-  try {
-    const entries = await readdir(globalRolesDir, { withFileTypes: true });
-    globalRoleDirs = entries.filter(e => e.isDirectory()).map(e => e.name);
-  } catch { /* no global roles */ }
-
-  for (const roleName of globalRoleDirs) {
-    const roleMdPath = path.join(globalRolesDir, roleName, "ROLE.md");
-    try {
-      await stat(roleMdPath);
-      const text = await readFile(roleMdPath, "utf8");
-      const fm = parseFrontmatter(text);
-      const familiar = fm.familiar ?? "global";
-      const configEntry = roleConfigMap.get(`${familiar}:${roleName}`);
+      const text = await readFile(roleFile.path, "utf8");
+      const fm = parseRoleFrontmatter(text);
+      const familiar = fm.familiar ?? roleFile.familiar;
+      const id = fm.id ?? roleFile.id;
+      const configEntry = roleConfigMap.get(`${familiar}:${id}`);
       roles.push({
-        id: roleName,
-        name: fm.name ?? roleName,
+        id,
+        name: fm.name ?? id,
         description: fm.description,
         version: fm.version,
         emoji: fm.emoji,
         familiar,
-        skills: parseListField(text, "skills"),
-        tools: parseListField(text, "tools"),
-        plugins: parseListField(text, "plugins"),
-        workflows: parseListField(text, "workflows"),
-        path: roleMdPath,
+        skills: parseRoleListField(text, "skills"),
+        tools: parseRoleListField(text, "tools"),
+        plugins: parseRoleListField(text, "plugins"),
+        workflows: parseRoleListField(text, "workflows"),
+        path: roleFile.path,
         active: configEntry?.active ?? false,
         activatedAt: configEntry?.activatedAt,
       });

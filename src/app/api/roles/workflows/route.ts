@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { readFile, stat, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
 import { parseRoleListField, setRoleListField } from "@/lib/role-manifest";
-import { covenHome, familiarWorkspace } from "@/lib/coven-paths";
+import { discoverRoleFiles } from "@/lib/role-source";
 
 export const dynamic = "force-dynamic";
 
@@ -11,24 +10,8 @@ function safeSegment(value: string): boolean {
 }
 
 async function resolveRoleMd(roleId: string, familiar: string): Promise<string | null> {
-  const roots = [
-    path.resolve(await familiarWorkspace(familiar), "roles"),
-    path.resolve(covenHome(), "roles"),
-  ];
-  for (const root of roots) {
-    const candidate = path.resolve(root, roleId, "ROLE.md");
-    const rel = path.relative(root, candidate);
-    if (rel.startsWith("..") || path.isAbsolute(rel)) {
-      continue;
-    }
-    try {
-      await stat(candidate);
-      return candidate;
-    } catch {
-      // try next location
-    }
-  }
-  return null;
+  const role = (await discoverRoleFiles()).find((entry) => entry.id === roleId && entry.familiar === familiar);
+  return role?.path ?? null;
 }
 
 /**
