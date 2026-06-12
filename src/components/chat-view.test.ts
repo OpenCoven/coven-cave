@@ -25,8 +25,13 @@ assert.doesNotMatch(
 
 assert.match(
   assistantContentRule,
-  /width\s*:\s*min\(100%,\s*920px\)/,
-  "Assistant responses should use a wide readable content column",
+  /width\s*:\s*100%/,
+  "Assistant responses should span the full pane (full-width chat, 2026-06-12)",
+);
+assert.doesNotMatch(
+  assistantContentRule,
+  /(?:width|max-width):\s*(?:min\(100%,\s*)?920px/,
+  "The old 920px content cap must stay gone — chat is full width",
 );
 
 assert.match(

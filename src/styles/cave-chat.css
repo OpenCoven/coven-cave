@@ -240,7 +240,7 @@
   /* CHAT-D7-03: the wrap is the block's vertical scroll container — huge
      blocks clamp instead of dominating the transcript (cf. the system
      bubble's 320px cap; benchmark: Claude Code truncates long blocks).
-     520px reads as ~24 code lines against the 920px thread measure.
+     520px reads as ~24 code lines.
      overflow-x stays hidden: the inner <pre> owns horizontal scrolling,
      and the wrap must keep clipping its rounded corners. */
   max-height: min(60vh, 520px);
@@ -594,8 +594,9 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  width: min(100%, 1180px);
-  margin: 0 auto;
+  /* Full-width chat (2026-06-12): the thread spans the pane; the old
+     1180px centered column is gone. */
+  width: 100%;
 }
 
 .cave-chat-empty {
@@ -983,8 +984,8 @@
 
 .cave-turn-content {
   min-width: 0;
-  width: min(100%, 920px);
-  max-width: 920px;
+  /* Full-width chat (2026-06-12): responses span the pane (was 920px). */
+  width: 100%;
 }
 
 .cave-turn-card {
@@ -1573,12 +1574,10 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear .cave-chat-thread {
   gap: 0;
+  /* Full-width chat (2026-06-12): supersedes CHAT-D10-04's 920px reading
+     measure — the thread now spans the pane on every width. */
   width: 100%;
-  /* CHAT-D10-04 — cap the reading measure on wide panes (Claude.ai ~48rem,
-     ChatGPT ~768px; we match the workbench's 920px .cave-turn-content cap)
-     and center the column. Collapses to 100% on narrow panes, so the
-     ≤767px mobile rules are unaffected. */
-  max-width: min(100%, 920px);
+  max-width: 100%;
   margin-block: 0;
   margin-inline: auto;
 }
@@ -1710,15 +1709,17 @@ details[open] > .cave-tool-summary::before {
 
 .cave-composer-shell {
   position: relative;
+  /* Full-width chat (2026-06-12): the composer shares the thread's
+     full-pane measure so the input lines up with the conversation. */
   width: 100%;
-  max-width: 1180px;
+  max-width: 100%;
   margin: 0 auto;
 }
 
 .cave-chat-linear .cave-composer-shell {
-  /* Share the thread's 920px measure (CHAT-D10-04) so the composer lines up
-     with the capped conversation column; base rule centers via margin auto. */
-  max-width: 920px;
+  /* Shares the thread's full-width measure so the input lines up with the
+     conversation column; base rule centers via margin auto. */
+  max-width: 100%;
 }
 
 .cave-chat-linear .cave-composer-panel {

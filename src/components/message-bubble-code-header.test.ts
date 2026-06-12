@@ -86,30 +86,29 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// CHAT-D10-04 — the shipped linear layout must cap its reading measure.
-// Without a cap, assistant prose runs 150+ chars/line on wide panes
-// (benchmarks: Claude.ai ~48rem, ChatGPT ~768px; we match the workbench's
-// 920px content cap). The composer shell shares the same measure so the
-// input lines up with the conversation column.
+// Full-width chat (2026-06-12) — supersedes CHAT-D10-04's 920px reading
+// measure by product decision: the thread and composer span the pane on
+// every width. The composer still shares the thread's measure so the input
+// lines up with the conversation column.
 // ---------------------------------------------------------------------------
 
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,
-  /max-width:\s*min\(100%,\s*920px\)/,
-  "Linear thread must cap its measure at 920px on wide panes",
+  /max-width:\s*100%/,
+  "Linear thread must span the full pane (full-width chat)",
 );
-assert.match(
+assert.doesNotMatch(
   linearThread,
-  /margin-inline:\s*auto/,
-  "Linear thread column must center inside wide panes",
+  /max-width:\s*(?:min\(100%,\s*)?920px/,
+  "The old 920px reading-measure cap must stay gone — chat is full width",
 );
 
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearComposerShell,
-  /max-width:\s*920px/,
-  "Linear composer shell must share the thread's 920px measure so the input aligns with the column",
+  /max-width:\s*100%/,
+  "Linear composer shell must share the thread's full-width measure so the input aligns with the column",
 );
 
 // ---------------------------------------------------------------------------
