@@ -813,13 +813,16 @@ export async function POST(req: Request) {
   const imageFilePaths = imagesSupported
     ? await writeImageAttachmentsToTemp(attachments)
     : new Map<number, string>();
+  const resolvedFamiliarWorkspace = !sshRuntime
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
   // SSH runtimes never get a block of unreachable absolute paths.
   const mentionedFiles = imagesSupported
     ? await resolveMentionedFiles(
         body.mentionedFiles,
-        familiarWorkspace(body.familiarId),
+        resolvedFamiliarWorkspace,
       )
     : [];
 
@@ -873,8 +876,8 @@ export async function POST(req: Request) {
   // generic CLI identity. A resumed conversation keeps its recorded cwd over
   // the workspace for the same reason. SSH runtimes own their remote cwd, so
   // never stat the local filesystem for a remote familiar.
-  const familiarWorkspace = !sshRuntime && !body.projectRoot && !resumeCwd
-    ? await resolveFamiliarWorkspace(body.familiarId)
+  const familiarCwd = !sshRuntime && !body.projectRoot && !resumeCwd
+    ? resolvedFamiliarWorkspace
     : undefined;
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
@@ -882,7 +885,7 @@ export async function POST(req: Request) {
     model: binding.model,
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
-      : `local:${familiarWorkspace ?? cwd}`,
+      : `local:${familiarCwd ?? cwd}`,
   };
 
   // Build coven run argv.
@@ -1129,7 +1132,7 @@ export async function POST(req: Request) {
             "running",
             sshRuntime
               ? `${sshRuntime.host}:${sshRuntime.cwd}`
-              : familiarWorkspace ?? cwd,
+              : familiarCwd ?? cwd,
           );
           const child = sshRuntime
             ? (() => {
@@ -1145,7 +1148,7 @@ export async function POST(req: Request) {
                 // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
                 // from the familiar's home. When a project root IS supplied,
                 // honor that instead.
-                cwd: familiarWorkspace ?? cwd,
+                cwd: familiarCwd ?? cwd,
                 stdio: ["ignore", "pipe", "pipe"],
                 env: covenSpawnEnv(),
               });
