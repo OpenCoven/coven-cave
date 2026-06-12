@@ -56,7 +56,14 @@ export async function GET(req: NextRequest) {
       { status: 400 },
     );
   }
-  const allowedRoot = resolveAllowedProjectPath(root);
+  if (path.isAbsolute(root)) {
+    return NextResponse.json(
+      { ok: false, error: "absolute paths are not allowed" },
+      { status: 400 },
+    );
+  }
+  const requestedRoot = path.resolve(process.cwd(), root);
+  const allowedRoot = resolveAllowedProjectPath(requestedRoot);
   if (!allowedRoot) {
     return NextResponse.json(
       { ok: false, error: "path not allowed" },
