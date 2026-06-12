@@ -15,26 +15,8 @@ import { covenHome } from "./coven-paths.ts";
 
 export const RUNS_HISTORY_CAP = 200;
 
-export type WorkflowRunStatus = "plan" | "queued" | "running" | "succeeded" | "failed" | "blocked";
-
-export type WorkflowRunStepRecord = {
-  id: string;
-  kind: string;
-  status: "ready" | "blocked" | "succeeded" | "failed" | "skipped";
-};
-
-export type WorkflowRunRecord = {
-  id: string;
-  workflowId: string;
-  version?: string;
-  kind: "dry-run" | "execution";
-  status: WorkflowRunStatus;
-  startedAt: string;
-  finishedAt?: string;
-  steps: WorkflowRunStepRecord[];
-  summary?: string;
-  source: "cave" | "daemon";
-};
+export type { WorkflowRunRecord, WorkflowRunStatus, WorkflowRunStepRecord } from "./workflows.ts";
+import type { WorkflowRunRecord } from "./workflows.ts";
 
 type RunsFile = { version: 1; runs: WorkflowRunRecord[] };
 
