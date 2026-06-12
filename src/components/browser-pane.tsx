@@ -460,6 +460,18 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     setToolbarOpen(false);
   }, [tabs]);
 
+  // Clicking the pane's empty chrome — anything that isn't an interactive
+  // control — toggles the rail pinned-open, giving the pin button a large,
+  // forgiving hit target. The page is a native overlay that never delivers
+  // clicks to the DOM, so in practice this fires on the rail, the footer, and
+  // the toolbar background (when open) — never the page itself.
+  const handleChromeClick = useCallback((e: React.MouseEvent) => {
+    if (quickOpen) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, select, form, [role="button"]')) return;
+    setRailPinned((v) => !v);
+  }, [quickOpen]);
+
   const pinCurrentPage = () => {
     const newId = `pin-${Date.now()}`;
     const newTab: BrowserTab = {
@@ -591,7 +603,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   }, [toolbarOpen]);
 
   return (
-    <div ref={paneRef} className="browser-pane flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
+    <div ref={paneRef} onClick={handleChromeClick} className="browser-pane flex h-full flex-row" style={{ background: "var(--bg-base)" }}>
       {/* ── Vertical tab rail (auto-hide) ─────────────────────── */}
       {/* Collapsed by default to a 6px edge handle so the page gets the
          full viewport width; expands to 48px on hover or keyboard focus.
