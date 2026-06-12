@@ -3151,6 +3151,14 @@ function TurnRow({
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
   onRegenerate?: () => void;
 }) {
+  // CHAT-D13-01: tool activity stays visible while a turn streams (watching
+  // tools run IS the live feedback), then hides once the response has fully
+  // generated and sent — a "N tools" chip in the meta row toggles it back.
+  // Only an explicit click records an override; the pending→settled flip
+  // collapses tools on its own because the settled default is hidden.
+  const [showToolsOverride, setShowToolsOverride] = useState<boolean | null>(null);
+  const showTools = turn.pending ? true : (showToolsOverride ?? false);
+
   if (turn.role === "system" || turn.role === "user") {
     return (
       <div
@@ -3253,6 +3261,22 @@ function TurnRow({
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
             <ResponseMetadataText metadata={turn.responseMetadata} />
             <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+            {/* CHAT-D13-01: settled turns hide tool activity by default —
+                this chip is the only way back to it, so it must not be
+                hover-gated. Hidden while streaming (tools are inline then). */}
+            {!turn.pending && (turn.tools?.length ?? 0) > 0 ? (
+              <button
+                type="button"
+                className={`cave-turn-tools-toggle${showTools ? " is-active" : ""}`}
+                aria-pressed={showTools}
+                aria-label={showTools ? "Hide tool activity" : "Show tool activity"}
+                title={showTools ? "Hide tool activity" : "Show tool activity"}
+                onClick={() => setShowToolsOverride(!showTools)}
+              >
+                <Icon name="ph:wrench" width={11} aria-hidden />
+                {turn.tools!.length} tool{turn.tools!.length === 1 ? "" : "s"}
+              </button>
+            ) : null}
           </div>
 
           <div className="cave-linear-turn-body">
@@ -3268,7 +3292,10 @@ function TurnRow({
                 isError={turn.error}
                 label={familiar.display_name}
                 onRegenerate={onRegenerate}
-                segments={bubbleSegments}
+                // CHAT-D13-01: with tools hidden, fall back to plain content —
+                // the text segments concatenate to `visible` anyway, so prose
+                // renders identically with the tool blocks omitted.
+                segments={showTools ? bubbleSegments : undefined}
               />
             )}
             {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
@@ -3286,8 +3313,9 @@ function TurnRow({
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
             {/* Legacy trailing rollup — ONLY for turns whose tools predate
-                textOffset; segmented turns render their tools inline. */}
-            {!segments && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+                textOffset; segmented turns render their tools inline.
+                CHAT-D13-01: same default-hidden contract as inline tools. */}
+            {showTools && !segments && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
           </div>
         </div>
       </div>

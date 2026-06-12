@@ -88,6 +88,32 @@ assert.doesNotMatch(
   "Thinking and tool-use disclosures must not default open",
 );
 
+// --- CHAT-D13-01: tool activity hidden by default on settled turns ---
+
+assert.match(
+  turnRow,
+  /const showTools = turn\.pending \? true : \(showToolsOverride \?\? false\)/,
+  "Tool activity should stay visible while streaming and default hidden once the response has fully generated",
+);
+
+assert.match(
+  turnRow,
+  /cave-turn-tools-toggle[\s\S]{0,300}aria-pressed=\{showTools\}/,
+  "Settled turns with tools should expose an always-visible toggle chip with pressed state",
+);
+
+assert.match(
+  turnRow,
+  /segments=\{showTools \? bubbleSegments : undefined\}/,
+  "Hiding tools should fall back to plain prose rendering instead of segment interleaving",
+);
+
+assert.match(
+  turnRow,
+  /showTools && !segments && turn\.tools\?\.length \? <ToolGroup/,
+  "The legacy trailing ToolGroup should honor the same hidden-by-default contract",
+);
+
 assert.match(
   turnRow,
   /const \{ visible, reasoning: inlineReasoning \} = splitReasoning\(turn\.text\)/,
