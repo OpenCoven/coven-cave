@@ -33,8 +33,12 @@ function isWithinRoot(candidate: string, root: string): boolean {
 }
 
 export function resolveAllowedProjectPath(value: string): string | null {
-  const candidate = realpathOrResolve(value);
-  return ALLOWED_ROOTS.some((root) => isWithinRoot(candidate, root))
-    ? candidate
-    : null;
+  for (const root of ALLOWED_ROOTS) {
+    const canonicalRoot = realpathOrResolve(root);
+    const candidate = realpathOrResolve(path.resolve(canonicalRoot, value));
+    if (isWithinRoot(candidate, canonicalRoot)) {
+      return candidate;
+    }
+  }
+  return null;
 }
