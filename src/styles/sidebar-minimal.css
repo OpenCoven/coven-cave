@@ -55,39 +55,6 @@
   outline-offset: 1px;
 }
 
-/* ── Panel toggle (Dia-style) ────────────────────────────────────────────── */
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  padding: 0 7px;
-  flex-shrink: 0;
-}
-
-.sidebar-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.sidebar-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: var(--border-hairline);
-}
-
-.sidebar-toggle:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 1px;
-}
-
 /* ── Header CTA ──────────────────────────────────────────────────────────── */
 .sidebar-actions {
   padding: 0 7px 6px;
