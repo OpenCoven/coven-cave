@@ -83,10 +83,62 @@ assert.match(
   "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
 );
 
+// Session persistence contract (regression: chats forked into new sessions
+// every time OpenClaw rotated its internal session id):
+// 1. every turn pins the conversation to a cave-owned session KEY — keys are
+//    OpenClaw's durable identity; session ids rotate on reset/compaction;
+// 2. the gateway's session id is never adopted as the conversation key.
 assert.match(
   chatRoute,
-  /"--session-id"[\s\S]*body\.sessionId/,
-  "OpenClaw native chat should pass the current session id when resuming",
+  /"--session-key",\s*\n?\s*openClawSessionKey\(conversationId\)/,
+  "OpenClaw native chat must pin a per-conversation session key",
+);
+assert.match(
+  chatRoute,
+  /const conversationId = args\.body\.sessionId \?\? crypto\.randomUUID\(\)/,
+  "Continuing chats reuse the cave conversation id; new chats mint one",
+);
+assert.match(
+  chatRoute,
+  /const sessionId: string = conversationId/,
+  "Conversation identity stays cave-owned across turns",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /sessionId = extractOpenClawSessionId/,
+  "The gateway's rotating session id must never become the conversation key",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /"--session-id"/,
+  "OpenClaw bridge no longer passes raw session ids — keys are the resume contract",
+);
+
+// Native (coven) path: same stable-identity contract.
+assert.match(
+  chatRoute,
+  /const resumeTarget = body\.sessionId\s*\n?\s*\? existingConversation\?\.harnessSessionId \?\? body\.sessionId/,
+  "Resume targets the harness's latest session id, not the stable conversation id",
+);
+assert.match(
+  chatRoute,
+  /const finalSessionId = body\.sessionId \?\? sessionId/,
+  "Transcripts persist under the stable conversation id across resumed turns",
+);
+assert.match(
+  chatRoute,
+  /const announcedId = body\.sessionId \?\? sessionId/,
+  "The client is always told the stable conversation id, never the rotated harness id",
+);
+assert.match(
+  chatRoute,
+  /conv\.harnessSessionId = harnessSessionId/,
+  "The harness's rotating id is tracked on the conversation for the next resume",
+);
+assert.match(
+  chatRoute,
+  /existingConversation\?\.runtime\?\.startsWith\("local:"\)/,
+  "Resumed turns reuse the conversation's recorded cwd — harness stores are cwd-scoped",
 );
 
 assert.match(

@@ -41,7 +41,14 @@ export type ChatTurn = {
 };
 
 export type ConversationFile = {
+  /** Cave-owned conversation identity — stable for the life of the chat. */
   sessionId: string;
+  /**
+   * Latest harness-internal session id. Harnesses mint a new id on every
+   * resume (claude) or reset (openclaw), so this rotates per turn; the next
+   * `--continue` targets it. Never used as the conversation's identity.
+   */
+  harnessSessionId?: string;
   familiarId: string;
   harness: string;
   model?: string;

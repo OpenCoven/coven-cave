@@ -133,6 +133,31 @@ async function resolveCwd(requested?: string): Promise<string> {
   return homedir();
 }
 
+/**
+ * Cwd recorded on the conversation's first turn (`runtime: "local:<cwd>"`).
+ *
+ * Continued turns don't carry `projectRoot` in the body, but harness session
+ * stores are scoped per working directory — resuming `--continue <id>` from
+ * homedir instead of the original project either fails resume or silently
+ * continues an unrelated homedir session. Both presented as "a new session
+ * spun up mid-chat" with the project context gone. Deriving the cwd from the
+ * saved conversation keeps resume directory-stable for every turn.
+ */
+async function conversationCwd(sessionId?: string): Promise<string | undefined> {
+  if (!sessionId) return undefined;
+  try {
+    const conv = await loadConversation(sessionId);
+    const runtime = conv?.runtime;
+    if (runtime?.startsWith("local:")) {
+      const cwd = runtime.slice("local:".length).trim();
+      return cwd || undefined;
+    }
+  } catch {
+    /* fall back to the caller's default */
+  }
+  return undefined;
+}
+
 /** Resolve the familiar's Coven workspace dir.
  *  Uses ~/.coven/familiars.toml workspace when present, otherwise
  *  ~/.coven/familiars/<id>. Falls back to undefined if the dir doesn't exist
@@ -423,21 +448,35 @@ function extractOpenClawSessionId(
   );
 }
 
+/**
+ * Conversation identity for the OpenClaw bridge is CAVE-owned. OpenClaw
+ * sessions are persisted per session *key* (`agent:<id>:<key>`); the
+ * `sessionId` inside an entry rotates on daily resets, `/new`, and
+ * compaction. Pinning each Cave chat to its own `--session-key` keeps one
+ * durable gateway session per conversation. Without a key, every turn lands
+ * in the shared `agent:<id>:main` session — id rotation then forked each
+ * Cave chat into a brand-new conversation, and concurrent chats with the
+ * same familiar interleaved context.
+ */
+function openClawSessionKey(conversationId: string): string {
+  return `cave-${conversationId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
+}
+
 function openClawAgentArgs(
-  body: SendBody,
   harnessPrompt: string,
   agentId: string,
+  conversationId: string,
 ): string[] {
-  const args = [
+  return [
     "agent",
     "--agent",
     agentId,
     "--message",
     harnessPrompt,
     "--json",
+    "--session-key",
+    openClawSessionKey(conversationId),
   ];
-  if (body.sessionId) args.push("--session-id", body.sessionId);
-  return args;
 }
 
 function openClawChatResponse(args: {
@@ -480,11 +519,17 @@ function openClawChatResponse(args: {
       push({ kind: "user", text: args.promptText });
 
       const startedAt = Date.now();
+      // New chats mint their identity here; continuing chats reuse the one
+      // the client got back on the first turn. The gateway session is keyed
+      // off this id, so it survives OpenClaw's internal session-id rotation.
+      const conversationId = args.body.sessionId ?? crypto.randomUUID();
       pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
       const agentId = await resolveOpenClawAgentId(args.body.familiarId);
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", agentId);
-      const argv = openClawAgentArgs(args.body, args.harnessPrompt, agentId);
-      const cwd = await resolveCwd(args.body.projectRoot);
+      const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
+      const cwd = await resolveCwd(
+        args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
+      );
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
@@ -536,7 +581,11 @@ function openClawChatResponse(args: {
       child.on("close", async (code) => {
         args.req.signal.removeEventListener("abort", onAbort);
         const durationMs = Date.now() - startedAt;
-        let sessionId: string | null = args.body.sessionId ?? null;
+        // Identity stays cave-owned: the gateway's internal session id is
+        // surfaced as diagnostics only, never adopted as the conversation
+        // key (adopting it forked the chat whenever the id rotated).
+        const sessionId: string = conversationId;
+        let gatewaySessionId: string | null = null;
         let assistantText = "";
         let isError = code !== 0;
 
@@ -557,12 +606,20 @@ function openClawChatResponse(args: {
         if (stdout.trim()) {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
-            sessionId = extractOpenClawSessionId(parsed, args.body.sessionId);
+            gatewaySessionId = extractOpenClawSessionId(parsed);
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {
             if (!cancelledByUser) assistantText = stdout.trim();
           }
+        }
+        if (gatewaySessionId) {
+          pushProgress(
+            "openclaw-session",
+            "Gateway session",
+            "done",
+            `key ${openClawSessionKey(conversationId)} · id ${gatewaySessionId}`,
+          );
         }
 
         if (cancelledByUser) {
@@ -773,15 +830,31 @@ export async function POST(req: Request) {
     });
   }
 
-  const cwd = sshRuntime ? homedir() : await resolveCwd(body.projectRoot);
+  // The saved conversation carries everything resume needs: the cwd it
+  // started in (harness session stores are cwd-scoped) and the harness's
+  // CURRENT session id (harnesses mint a new id on every resume, so the
+  // client-held conversation id quickly stops matching any harness session).
+  const existingConversation = body.sessionId
+    ? await loadConversation(body.sessionId).catch(() => null)
+    : null;
+  // Continued turns don't carry projectRoot — resume must run in the
+  // directory the conversation started in, not homedir or the familiar
+  // workspace, or `--continue <id>` misses (and the transparent retry forks
+  // the chat into a fresh session).
+  const resumeCwd =
+    !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
+      ? existingConversation.runtime.slice("local:".length).trim() || undefined
+      : undefined;
+  const cwd = sshRuntime ? homedir() : await resolveCwd(body.projectRoot ?? resumeCwd);
   // Resolve familiar workspace for identity context. When a project root is
   // explicitly set, the harness boots there (and should have the familiar's
   // AGENTS.md injected separately). When there's no project root, boot in the
   // familiar's own workspace so the selected harness picks up AGENTS.md /
   // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
-  // generic CLI identity. SSH runtimes own their remote cwd, so never stat the
-  // local filesystem for a remote familiar.
-  const familiarWorkspace = !sshRuntime && !body.projectRoot
+  // generic CLI identity. A resumed conversation keeps its recorded cwd over
+  // the workspace for the same reason. SSH runtimes own their remote cwd, so
+  // never stat the local filesystem for a remote familiar.
+  const familiarWorkspace = !sshRuntime && !body.projectRoot && !resumeCwd
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
   const responseMetadata: ChatResponseMetadata = {
@@ -818,7 +891,12 @@ export async function POST(req: Request) {
     a.push("--", harnessPrompt);
     return a;
   };
-  const args = buildArgs(body.sessionId ?? null);
+  // Resume the harness's latest session id, not the stable conversation id —
+  // after the first resume those diverge permanently.
+  const resumeTarget = body.sessionId
+    ? existingConversation?.harnessSessionId ?? body.sessionId
+    : null;
+  const args = buildArgs(resumeTarget);
 
   // Resume failures from common harnesses. Codex emits
   // "thread/resume failed: no rollout found ... (code -32600)" when the
@@ -924,14 +1002,19 @@ export async function POST(req: Request) {
             };
             if (ev.session_id && !sessionId) {
               sessionId = ev.session_id;
-              push({ kind: "session", sessionId });
+              // The client tracks the STABLE conversation id — on resumed
+              // turns the harness mints a fresh internal id, which must not
+              // leak out as a "new session" (it fragmented every continued
+              // chat into one sidebar entry per turn).
+              const announcedId = body.sessionId ?? sessionId;
+              push({ kind: "session", sessionId: announcedId });
               // Title the session from the user's prompt as soon as the id
               // exists. The daemon's own title derives from the harness
               // prompt — i.e. the identity-canon preamble — and is what the
               // UI would otherwise show until the transcript save runs.
               void setDefaultSessionTitleIfMissing(
-                sessionId,
-                chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(sessionId),
+                announcedId,
+                chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
               ).catch(() => undefined);
             }
             if (ev.type === "result") {
@@ -1176,7 +1259,12 @@ export async function POST(req: Request) {
         push({ kind: "assistant_chunk", text: diagnostic });
       }
 
-      const finalSessionId = sessionId;
+      // Persist under the STABLE conversation id. The harness's per-turn id
+      // is tracked on the file for the next resume but never becomes the
+      // conversation's identity — keying off it created a new conversation
+      // file (and sidebar entry) for every resumed turn.
+      const harnessSessionId = sessionId;
+      const finalSessionId = body.sessionId ?? sessionId;
       if (finalSessionId) {
         pushProgress("save-transcript", "Saving transcript", "running");
         await recordSessionFamiliar(finalSessionId, body.familiarId);
@@ -1218,6 +1306,7 @@ export async function POST(req: Request) {
         };
         conv.model = responseMetadata.model;
         conv.runtime = responseMetadata.runtime;
+        if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
         await saveConversation(conv);
         pushProgress("save-transcript", "Transcript saved", "done");
