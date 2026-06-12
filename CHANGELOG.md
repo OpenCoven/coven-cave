@@ -7,6 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.75] - 2026-06-12
+
+Cave gets safer library/workflow file handling, live onboarding jobs, and clearer session provenance.
+
+### Added
+- **Background onboarding install jobs** — setup actions now run as resumable jobs with live progress, reducing stuck setup states and making install status visible (#484, #486).
+- **Session initiator provenance** — chat sessions and Coven Floor traces now show who started a session, such as `Started by Valentina / Telegram`, `Started by Kitty`, or automation like cron/heartbeat, without exposing raw IDs or paths (#478).
+- **Palette link saves** — `/save <url>` now offers a destination choice for saved links (#480).
+- **Security policy** — the repository now includes `SECURITY.md`.
+
+### Changed
+- **Workflow Studio polish** — compact engine-consistent selects and tighter panel trigger alignment make workflow editing denser and steadier (#476, #485).
+- **Onboarding copy** — familiar creation confirmation drops the extra OpenClaw wording and setup buttons provide clearer live feedback (#479, #483).
+
+### Fixed
+- **Terminal stability** — shell-owned keyboard chords, PTY survival, and reconnect handling stop terminal input from being lost (#481).
+- **Workflow canvas arrows** — edge arrows render correctly under screen magnification (#482).
+- **Onboarding retry behavior** — harness fetch retries while empty so runtime setup does not strand (#477).
+- **Library and workflow path hardening** — CodeQL path alerts are fixed by constraining saved graph IDs and role/workflow path segments before file reads/writes (#487, #488).
+
 ## [0.0.74] - 2026-06-12
 
 The terminal works again in the packaged app.
