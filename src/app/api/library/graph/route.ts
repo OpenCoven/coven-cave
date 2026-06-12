@@ -241,21 +241,25 @@ export async function GET(req: NextRequest) {
   // ?path= loads an existing UA knowledge-graph.json directly (no pipeline run)
   const rawPath = req.nextUrl.searchParams.get("path");
   if (rawPath) {
+    const validatedPath = resolveAndValidateTargetPath(rawPath);
+    if (!validatedPath) {
+      return NextResponse.json({ ok: false, error: "invalid path" }, { status: 400 });
+    }
     try {
-      const uaPath = path.join(rawPath, ".understand-anything", "knowledge-graph.json");
+      const uaPath = path.join(validatedPath, ".understand-anything", "knowledge-graph.json");
       const raw = await fs.readFile(uaPath, "utf-8");
       const graphJson = normalizeUAGraph(JSON.parse(raw));
-      const label = path.basename(rawPath);
-      const id = `ua_${Buffer.from(rawPath).toString("base64url").slice(0, 16)}`;
+      const label = path.basename(validatedPath);
+      const id = `ua_${Buffer.from(validatedPath).toString("base64url").slice(0, 16)}`;
       const result: GraphifyResult = {
         id,
         label,
-        targetPath: rawPath,
+        targetPath: validatedPath,
         generatedAt: new Date().toISOString(),
         snapshots: [
           makeGraphRunSnapshot({
             id: `${id}_loaded`,
-            targetPath: rawPath,
+            targetPath: validatedPath,
             label,
             status: "completed",
             graphJson,
