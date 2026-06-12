@@ -132,6 +132,66 @@ async function spawnPlanFor(
   };
 }
 
+type InstallJob = {
+  status: "running" | "done";
+  kind: "npm" | "script";
+  startedAt: number;
+  finishedAt?: number;
+  /** Raw interleaved stdout+stderr, capped to OUTPUT_CAP. */
+  output: string;
+  ok?: boolean;
+  code?: number | null;
+  binaryPath?: string | null;
+  error?: string;
+};
+
+/** Last ~8 KB of installer output is plenty for a progress tail and keeps
+ *  long installs (Hermes bootstraps a Python toolchain) from growing
+ *  unbounded in memory. */
+const OUTPUT_CAP = 8_192;
+
+// Next dev re-evaluates this module on HMR; a plain module-level Map would
+// orphan running jobs. globalThis survives re-evaluation.
+const globalScope = globalThis as unknown as {
+  __covenInstallJobs?: Map<InstallTarget, InstallJob>;
+};
+const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
+  new Map());
+
+function appendOutput(job: InstallJob, chunk: string) {
+  job.output = (job.output + chunk).slice(-OUTPUT_CAP);
+}
+
+function jobView(job: InstallJob) {
+  const tail = stripAnsi(job.output).slice(-2000);
+  const elapsedMs = (job.finishedAt ?? Date.now()) - job.startedAt;
+  if (job.status === "running") {
+    return { status: "running" as const, elapsedMs, tail };
+  }
+  return {
+    status: "done" as const,
+    elapsedMs,
+    tail,
+    ok: job.ok ?? false,
+    code: job.code ?? null,
+    binaryPath: job.binaryPath ?? null,
+    ...(job.error ? { error: job.error } : {}),
+  };
+}
+
+export async function GET(req: Request) {
+  const target = new URL(req.url).searchParams.get("target");
+  if (!isInstallTarget(target)) {
+    return NextResponse.json(
+      { ok: false, error: "unknown install target" },
+      { status: 400 },
+    );
+  }
+  const job = jobs.get(target);
+  if (!job) return NextResponse.json({ status: "idle" });
+  return NextResponse.json(jobView(job));
+}
+
 export async function POST(req: Request) {
   let body: { target?: unknown };
   try {
@@ -149,7 +209,30 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const target = INSTALL_TARGETS[body.target];
+  const targetName = body.target;
+  const target = INSTALL_TARGETS[targetName];
+
+  // Idempotent re-POST: same body shape as GET, no duplicate spawn.
+  const existing = jobs.get(targetName);
+  if (existing?.status === "running") {
+    return NextResponse.json(jobView(existing));
+  }
+
+  // Concurrent `npm install -g` calls race the global tree; script installers
+  // (Hermes) are independent and may run alongside anything.
+  if (target.kind === "npm") {
+    for (const [otherName, other] of jobs) {
+      if (other.status === "running" && other.kind === "npm") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `wait for ${INSTALL_TARGETS[otherName].label} to finish`,
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
 
   const plan = await spawnPlanFor(target);
   if (plan && "npmMissing" in plan) {
@@ -170,64 +253,53 @@ export async function POST(req: Request) {
     );
   }
 
-  return new Promise<Response>((resolve) => {
-    const child = spawn(plan.command, plan.args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
-      shell: plan.shell,
-    });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d) => (out += d.toString()));
-    child.stderr.on("data", (d) => (err += d.toString()));
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-      resolve(
-        NextResponse.json(
-          {
-            ok: false,
-            error: `install timed out after ${target.timeoutMs / 1000}s`,
-            stdout: stripAnsi(out),
-            stderr: stripAnsi(err),
-          },
-          { status: 504 },
-        ),
-      );
-    }, target.timeoutMs);
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      resolve(
-        NextResponse.json({ ok: false, error: e.message }, { status: 500 }),
-      );
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      void (async () => {
-        const installedPath = await commandPath(target.binary);
-        const ok = code === 0 && !!installedPath;
-        resolve(
-          NextResponse.json(
-            {
-              ok,
-              target: body.target,
-              label: target.label,
-              code,
-              binaryPath: installedPath,
-              stdout: stripAnsi(out).slice(-4000),
-              stderr: stripAnsi(err).slice(-4000),
-              ...(ok
-                ? {}
-                : {
-                    error:
-                      code === 0
-                        ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-                        : `installer exited with code ${code}`,
-                  }),
-            },
-            { status: ok ? 200 : 502 },
-          ),
-        );
-      })();
-    });
+  const job: InstallJob = {
+    status: "running",
+    kind: target.kind,
+    startedAt: Date.now(),
+    output: "",
+  };
+  jobs.set(targetName, job);
+
+  const child = spawn(plan.command, plan.args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: covenSpawnEnv(),
+    shell: plan.shell,
   });
+  child.stdout.on("data", (d) => appendOutput(job, d.toString()));
+  child.stderr.on("data", (d) => appendOutput(job, d.toString()));
+  const timer = setTimeout(() => {
+    job.error = `install timed out after ${target.timeoutMs / 1000}s`;
+    child.kill("SIGTERM");
+  }, target.timeoutMs);
+  child.on("error", (e) => {
+    clearTimeout(timer);
+    job.status = "done";
+    job.finishedAt = Date.now();
+    job.ok = false;
+    job.error = e.message;
+  });
+  child.on("close", (code) => {
+    clearTimeout(timer);
+    void (async () => {
+      const installedPath = await commandPath(target.binary);
+      const ok = code === 0 && !!installedPath && !job.error;
+      job.status = "done";
+      job.finishedAt = Date.now();
+      job.ok = ok;
+      job.code = code;
+      job.binaryPath = installedPath;
+      if (!ok && !job.error) {
+        job.error =
+          code === 0
+            ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
+            : `installer exited with code ${code}`;
+      }
+    })();
+  });
+
+  return NextResponse.json(
+    { started: true, target: targetName },
+    { status: 202 },
+  );
 }
