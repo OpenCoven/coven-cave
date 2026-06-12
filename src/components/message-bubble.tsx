@@ -112,6 +112,11 @@ function parseFenceInfo(info: string): { lang: string; filename?: string } {
  */
 const CODE_EXPAND_MIN_LINES = 24;
 
+function plainTextFromHtmlLine(line: string): string {
+  const doc = new DOMParser().parseFromString(line, "text/html");
+  return doc.body.textContent ?? "";
+}
+
 async function renderCodeBlock(
   code: string,
   info: string,
@@ -150,7 +155,7 @@ async function renderCodeBlock(
           // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
           // additions/deletions — exclude them from the +/- gutter strips and
           // mute `@@` hunk headers instead of leaving them content-colored.
-          const plainLine = sanitizeHtml(line, { allowedTags: [], allowedAttributes: {} });
+          const plainLine = plainTextFromHtmlLine(line);
           const gutterClass = isDiff
             ? /^@@/.test(plainLine)
               ? " cave-diff-meta"
