@@ -183,6 +183,11 @@
   /* Foundations PR — disabled state */
   --opacity-disabled: 0.4;
 
+  /* Dark is the base mode. color-scheme makes native scrollbars and form
+     controls render in their dark variant everywhere (overridden to `light`
+     under [data-mode="light"] below). */
+  color-scheme: dark;
+
   /* Foundations PR — scrollbar tokens (consumed by all themed scrollbars) */
   --scrollbar-thumb: color-mix(in oklch, var(--accent-presence) 30%, transparent);
   --scrollbar-track: transparent;
@@ -219,6 +224,7 @@
    structural tokens (radii, spacing, motion) are inherited.
    ============================================================ */
 :root[data-mode="light"] {
+  color-scheme: light;
   --background: oklch(0.975 0.012 293);
   --foreground: oklch(0.18 0.020 293);
   --card: oklch(0.95 0.014 293);
@@ -308,6 +314,47 @@ body {
      overflow. */
   height: 100%;
   overflow: hidden;
+}
+
+/* ── Global scrollbars ───────────────────────────────────────────────────────
+ * Dark, thin scrollbars on every scroll surface in dark mode (and a matching
+ * light treatment under [data-mode="light"], via color-scheme + the tokens).
+ *
+ * Three layers of coverage so nothing slips through:
+ *   1. color-scheme (set on :root) — native scrollbars + form controls.
+ *   2. scrollbar-color/-width — Firefox and the standards path. These are
+ *      INHERITED, so declaring them on html cascades to every element; a
+ *      surface with its own scrollbar-color (cave-chat, library, sidebar, …)
+ *      still overrides via the normal cascade.
+ *   3. ::-webkit-scrollbar — Chromium/WebKit (the Tauri desktop webview). A
+ *      bare pseudo-element matches every scrollbar; per-component
+ *      `.foo::-webkit-scrollbar` rules are more specific and still win. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 8px;
+  /* Transparent border + padding-box clip insets the thumb so it reads as a
+     slim pill with breathing room rather than a full-width bar. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--accent-presence) 50%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -4283,13 +4330,13 @@ button:active > .edge-rail-chip {
   }
 }
 
-/* Mobile top-bar — reveal drawer toggles, compress the search box to its
-   icon so the header fits a 360px viewport, and respect the notch on the
-   top edge. */
+/* Mobile top-bar — reveal drawer toggles, let the search bar span the
+   middle column (kbd hint hidden; label ellipsizes on 360px viewports),
+   and respect the notch on the top edge. */
 @media (max-width: 1023px) {
   .top-bar {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 0 calc(8px + var(--sai-right)) 0 calc(8px + var(--sai-left));
     padding-top: var(--sai-top);
     height: calc(40px + var(--sai-top));
@@ -4320,9 +4367,14 @@ button:active > .edge-rail-chip {
   }
   .top-bar__search {
     min-width: 0;
-    width: auto;
+    width: 100%;
   }
-  .top-bar__search span,
+  .top-bar__search span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .top-bar__search kbd {
     display: none;
   }
