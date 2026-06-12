@@ -747,6 +747,11 @@ assert.match(
 );
 assert.match(
   mentionSendSource,
-  /const mentionedFiles = imagesSupported\s*\n\s*\? await resolveMentionedFiles\(\s*\n\s*body\.mentionedFiles,\s*\n\s*body\.mentionedFilesRoot \?\? body\.projectRoot,/,
-  "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the client-supplied root",
+  /const resolvedFamiliarWorkspace = !sshRuntime\s*\n\s*\? await resolveFamiliarWorkspace\(body\.familiarId\)\s*\n\s*: undefined;/,
+  "Mention roots must come from the validated familiar workspace, not a client-supplied path",
+);
+assert.match(
+  mentionSendSource,
+  /const mentionedFiles = imagesSupported\s*\n\s*\? await resolveMentionedFiles\(\s*\n\s*body\.mentionedFiles,\s*\n\s*resolvedFamiliarWorkspace,/,
+  "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the validated familiar workspace",
 );
