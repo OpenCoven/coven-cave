@@ -424,7 +424,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
   const selectedHarness =
     chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
-  const hasExistingOpenClawAgents = openclawAgents.length > 0;
 
   const copyText = async (text: string): Promise<boolean> => {
     try {
@@ -1083,7 +1082,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             selectedAgentId={selectedAgentId}
                             agentsLoading={agentsLoading}
                             agentsError={agentsError}
-                            hasExistingOpenClawAgents={hasExistingOpenClawAgents}
                             familiarName={familiarName}
                             familiarRole={familiarRole}
                             familiarGlyph={familiarGlyph}
@@ -1527,7 +1525,6 @@ function StepFamiliar(props: {
   selectedAgentId: string | null;
   agentsLoading: boolean;
   agentsError: string | null;
-  hasExistingOpenClawAgents: boolean;
   familiarName: string;
   familiarRole: string;
   familiarGlyph: string;
@@ -1564,7 +1561,6 @@ function StepFamiliar(props: {
     selectedAgentId,
     agentsLoading,
     agentsError,
-    hasExistingOpenClawAgents,
     familiarName,
     familiarRole,
     familiarGlyph,
@@ -1862,9 +1858,6 @@ function StepFamiliar(props: {
               </span>{" "}harness
             </>
           ) : null}
-          {hasExistingOpenClawAgents
-            ? ", not a connection to one of the existing OpenClaw agents listed alongside"
-            : ""}
           .
         </span>
       </label>
