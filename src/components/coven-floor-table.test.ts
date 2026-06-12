@@ -34,6 +34,18 @@ assert.match(
   "Session traceability rows should keep the same table columns as familiar rows",
 );
 
+assert.match(
+  floor,
+  /SessionInitiatorChip/,
+  "Session traceability rows should label the sanitized session initiator",
+);
+
+assert.match(
+  floor,
+  /session\.initiator/,
+  "CovenFloor should render initiator provenance from each session summary",
+);
+
 assert.doesNotMatch(
   floor,
   /colSpan=\{6\}/,

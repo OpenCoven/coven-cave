@@ -16,10 +16,11 @@ const localConversation = {
   sessionId: "local-1",
   familiarId: "nova",
   harness: "codex",
-  title: "Saved title",
-  createdAt: "2026-06-08T20:00:00.000Z",
-  updatedAt: "2026-06-08T20:05:00.000Z",
-};
+    title: "Saved title",
+    createdAt: "2026-06-08T20:00:00.000Z",
+    updatedAt: "2026-06-08T20:05:00.000Z",
+    initiator: { kind: "human", label: "Cave user", channel: "cave" },
+  };
 
 const recovered = localConversationSessionRows([localConversation], state, false);
 
@@ -38,6 +39,7 @@ assert.deepEqual(
     updated_at: "2026-06-08T20:05:00.000Z",
     familiarId: "charm",
     origin: "chat",
+    initiator: { kind: "human", label: "Cave user", channel: "cave" },
   },
   "saved Cave conversations should become complete session rows when the daemon loses them",
 );
@@ -54,6 +56,7 @@ const merged = mergeSessionRows({
       archived_at: null,
       created_at: "2026-06-08T19:00:00.000Z",
       updated_at: "2026-06-08T19:05:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
     },
   ],
   localConversations: [localConversation],
@@ -65,6 +68,12 @@ assert.deepEqual(
   merged.map((s) => s.id),
   ["local-1", "daemon-1"],
   "session list should include local-only saved chats alongside daemon sessions",
+);
+
+assert.deepEqual(
+  merged.find((s) => s.id === "daemon-1")?.initiator,
+  { kind: "familiar", label: "Cody", agentId: "cody" },
+  "daemon sessions should preserve sanitized initiator provenance when present",
 );
 
 const cwdFiltered = mergeSessionRows({

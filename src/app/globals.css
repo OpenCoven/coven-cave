@@ -1015,6 +1015,40 @@ select {
   color: var(--text-muted);
 }
 
+/* ---- Initiator chip (who started a session) ---------------- */
+.ui-initiator-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  max-width: 150px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.ui-initiator-chip[data-initiator="human"] {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
+}
+
+.ui-initiator-chip[data-initiator="familiar"] {
+  color: var(--accent);
+  border-color: color-mix(in oklch, var(--accent) 24%, var(--border-hairline));
+}
+
+.ui-initiator-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---- Lifecycle badge (card state machine) ------------------ */
 .ui-lifecycle-badge {
   display: inline-flex;

@@ -50,6 +50,7 @@ export type SessionRow = {
   updated_at: string;
   familiarId?: string | null;
   origin?: SessionOrigin;
+  initiator?: SessionInitiator;
 };
 
 export type SessionOrigin =
@@ -59,3 +60,11 @@ export type SessionOrigin =
   | "cron"
   | "heartbeat"
   | "call";
+
+export type SessionInitiator = {
+  kind: "human" | "familiar" | "system" | "unknown";
+  label: string;
+  channel?: string;
+  username?: string;
+  agentId?: string;
+};

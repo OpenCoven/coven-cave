@@ -3,8 +3,9 @@ import {
   defaultChatTitleForSession,
   sanitizeSessionTitle,
 } from "./cave-chat-titles.ts";
+import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
-import type { SessionRow } from "./types.ts";
+import type { SessionInitiator, SessionRow } from "./types.ts";
 
 export type DaemonSessionRow = Omit<SessionRow, "familiarId" | "origin">;
 
@@ -17,6 +18,7 @@ export type LocalConversationSummary = {
   title?: string;
   createdAt?: string;
   updatedAt: string;
+  initiator?: SessionInitiator;
 };
 
 type MergeOptions = {
@@ -48,6 +50,7 @@ function localConversationToSession(
     updated_at: conv.updatedAt,
     familiarId,
     origin: "chat",
+    initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
   };
 }
 
@@ -97,6 +100,9 @@ export function mergeSessionRows({
       archived_at,
       familiarId: state.sessionFamiliar[session.id] ?? null,
       origin: inferOrigin(session),
+      initiator:
+        session.initiator ??
+        initiatorFromSessionKey("", state.sessionFamiliar[session.id] ?? session.harness),
     };
     if (visibleSession(row, state, includeArchived)) rows.push(row);
   }

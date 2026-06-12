@@ -1,3 +1,5 @@
+import type { SessionInitiator } from "./types.ts";
+
 // Pure types for Coven Floor — the familiar status board.
 // Split from server code so client components can import without pulling
 // in node:fs. Same pattern as coven-calls-types.ts.
@@ -32,6 +34,8 @@ export type SessionSummary = {
   channel?: string;
   /** Harness/runner the session is attached to (e.g. "telegram", "cron", "direct"). */
   harness?: string;
+  /** Sanitized actor that started the session: a human, familiar, or automation. */
+  initiator?: SessionInitiator;
 };
 
 export type FamiliarCard = {
