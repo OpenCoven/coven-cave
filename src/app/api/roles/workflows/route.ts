@@ -11,11 +11,16 @@ function safeSegment(value: string): boolean {
 }
 
 async function resolveRoleMd(roleId: string, familiar: string): Promise<string | null> {
-  const candidates = [
-    path.join(await familiarWorkspace(familiar), "roles", roleId, "ROLE.md"),
-    path.join(covenHome(), "roles", roleId, "ROLE.md"),
+  const roots = [
+    path.resolve(await familiarWorkspace(familiar), "roles"),
+    path.resolve(covenHome(), "roles"),
   ];
-  for (const candidate of candidates) {
+  for (const root of roots) {
+    const candidate = path.resolve(root, roleId, "ROLE.md");
+    const rel = path.relative(root, candidate);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      continue;
+    }
     try {
       await stat(candidate);
       return candidate;
@@ -44,8 +49,8 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  if (!safeSegment(roleId) || !safeSegment(workflowId)) {
-    return NextResponse.json({ ok: false, error: "unsafe roleId or workflowId" }, { status: 400 });
+  if (!safeSegment(roleId) || !safeSegment(familiar) || !safeSegment(workflowId)) {
+    return NextResponse.json({ ok: false, error: "unsafe roleId, familiar, or workflowId" }, { status: 400 });
   }
 
   const roleMdPath = await resolveRoleMd(roleId, familiar);
