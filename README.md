@@ -52,7 +52,7 @@ OpenClaw is not required to use Cave. A fresh machine can start with any install
 3. Install and authenticate at least one runtime:
    - Codex: `npm install -g @openai/codex`, then `codex login`
    - Claude Code: `npm install -g @anthropic-ai/claude-code`, then `claude doctor`
-   - Hermes: install Hermes, then make sure `hermes --version` works
+   - Hermes: run the official installer — `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (PowerShell: `iex (irm https://hermes-agent.nousresearch.com/install.ps1)`) — then `hermes setup`
    - OpenClaw: keep using an existing agent under `~/.openclaw/agents`
 4. Open CovenCave and choose the runtime source that is healthy on your machine.
 5. Name the familiar, complete setup, start the daemon, then open Cave.

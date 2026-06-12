@@ -172,4 +172,16 @@ assert.match(
   "every one-click action keeps the manual command alongside",
 );
 
+assert.match(
+  source,
+  /hermes-agent\.nousresearch\.com\/install\.sh/,
+  "Hermes one-click uses the official NousResearch installer",
+);
+
+assert.match(
+  source,
+  /windowsCommand: "iex \(irm https:\/\/hermes-agent\.nousresearch\.com\/install\.ps1\)"/,
+  "Hermes shows the PowerShell installer on Windows",
+);
+
 console.log("onboarding-guided-steps.test.ts: ok");

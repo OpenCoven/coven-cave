@@ -13,38 +13,57 @@ const execFileAsync = promisify(execFile);
  * One-click dependency installs for onboarding.
  *
  * Hard allowlist: the request names a TARGET, never a command. Every target
- * maps to a fixed `npm install -g <package>` so nothing user-controlled ever
- * reaches a shell. Targets cover the dependencies onboarding can self-serve;
- * harnesses without an npm one-liner (Hermes) keep their manual instructions
- * in the overlay instead of appearing here.
+ * maps to a fixed install mechanism so nothing user-controlled ever reaches
+ * a shell:
+ *
+ *   - kind "npm":    `npm install -g <pinned package>`
+ *   - kind "script": the harness's official installer at a pinned HTTPS URL,
+ *                    run byte-for-byte as its docs instruct users to run it
+ *                    (bash on POSIX, PowerShell on Windows).
  */
 const INSTALL_TARGETS = {
   "coven-cli": {
+    kind: "npm",
     label: "coven CLI",
     packageName: "@opencoven/cli@latest",
     binary: "coven",
+    timeoutMs: 240_000,
   },
   codex: {
+    kind: "npm",
     label: "Codex",
     packageName: "@openai/codex",
     binary: "codex",
+    timeoutMs: 240_000,
   },
   claude: {
+    kind: "npm",
     label: "Claude Code",
     packageName: "@anthropic-ai/claude-code",
     binary: "claude",
+    timeoutMs: 240_000,
   },
   openclaw: {
+    kind: "npm",
     label: "OpenClaw",
     packageName: "openclaw@latest",
     binary: "openclaw",
+    timeoutMs: 240_000,
+  },
+  hermes: {
+    kind: "script",
+    label: "Hermes",
+    // Official installer (github.com/NousResearch/hermes-agent#quick-install).
+    // It provisions its own dependencies (uv, Python, …), so no npm precheck.
+    posix: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+    windows: "iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
+    binary: "hermes",
+    // Heavier than an npm install — it bootstraps a Python toolchain.
+    timeoutMs: 600_000,
   },
 } as const;
 
 type InstallTarget = keyof typeof INSTALL_TARGETS;
-
-/** Global npm installs can compile native deps; give them real time. */
-const INSTALL_TIMEOUT_MS = 240_000;
 
 function nodeInstallHint(): string {
   if (process.platform === "darwin") {
@@ -73,6 +92,46 @@ function isInstallTarget(value: unknown): value is InstallTarget {
   return typeof value === "string" && value in INSTALL_TARGETS;
 }
 
+type SpawnPlan = {
+  command: string;
+  args: string[];
+  shell: boolean;
+};
+
+/** Resolve the fixed spawn plan for a target. Returns null when a
+ *  prerequisite is missing (npm targets need npm on PATH). */
+async function spawnPlanFor(
+  target: (typeof INSTALL_TARGETS)[InstallTarget],
+): Promise<SpawnPlan | { npmMissing: true } | null> {
+  if (target.kind === "npm") {
+    const npm = await commandPath("npm");
+    if (!npm) return { npmMissing: true };
+    return {
+      command: npm,
+      args: ["install", "-g", target.packageName],
+      // Windows resolves npm to npm.cmd, which Node refuses to spawn without
+      // a shell. The argv is fully fixed (allowlisted package, no user
+      // input), so shell interpolation has nothing to grab.
+      shell: process.platform === "win32",
+    };
+  }
+  // kind === "script" — run the harness's official installer exactly as its
+  // docs instruct. The command string is a pinned constant from the
+  // allowlist above; the request never contributes to it.
+  if (process.platform === "win32") {
+    return {
+      command: "powershell",
+      args: ["-NoProfile", "-Command", target.windows],
+      shell: false,
+    };
+  }
+  return {
+    command: "bash",
+    args: ["-lc", target.posix],
+    shell: false,
+  };
+}
+
 export async function POST(req: Request) {
   let body: { target?: unknown };
   try {
@@ -92,8 +151,8 @@ export async function POST(req: Request) {
   }
   const target = INSTALL_TARGETS[body.target];
 
-  const npm = await commandPath("npm");
-  if (!npm) {
+  const plan = await spawnPlanFor(target);
+  if (plan && "npmMissing" in plan) {
     return NextResponse.json(
       {
         ok: false,
@@ -104,17 +163,18 @@ export async function POST(req: Request) {
       { status: 422 },
     );
   }
-
-  const args = ["install", "-g", target.packageName];
+  if (!plan) {
+    return NextResponse.json(
+      { ok: false, error: "no install plan for this platform" },
+      { status: 500 },
+    );
+  }
 
   return new Promise<Response>((resolve) => {
-    // Windows resolves npm to npm.cmd, which Node refuses to spawn without a
-    // shell. The argv is fully fixed (allowlisted package, no user input), so
-    // shell interpolation has nothing to grab.
-    const child = spawn(npm, args, {
+    const child = spawn(plan.command, plan.args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: covenSpawnEnv(),
-      shell: process.platform === "win32",
+      shell: plan.shell,
     });
     let out = "";
     let err = "";
@@ -126,14 +186,14 @@ export async function POST(req: Request) {
         NextResponse.json(
           {
             ok: false,
-            error: `npm install timed out after ${INSTALL_TIMEOUT_MS / 1000}s`,
+            error: `install timed out after ${target.timeoutMs / 1000}s`,
             stdout: stripAnsi(out),
             stderr: stripAnsi(err),
           },
           { status: 504 },
         ),
       );
-    }, INSTALL_TIMEOUT_MS);
+    }, target.timeoutMs);
     child.on("error", (e) => {
       clearTimeout(timer);
       resolve(
@@ -161,7 +221,7 @@ export async function POST(req: Request) {
                     error:
                       code === 0
                         ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-                        : `npm install exited with code ${code}`,
+                        : `installer exited with code ${code}`,
                   }),
             },
             { status: ok ? 200 : 502 },

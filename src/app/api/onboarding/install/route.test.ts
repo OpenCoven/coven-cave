@@ -1,6 +1,8 @@
 // @ts-nocheck
 // One-click installs must stay a hard allowlist: the request names a target,
-// never a command or package, so nothing user-controlled reaches a shell.
+// never a command, package, or URL — so nothing user-controlled reaches a
+// shell. Two fixed mechanisms exist: pinned npm packages and pinned official
+// install scripts.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
@@ -25,6 +27,18 @@ for (const pkg of [
   );
 }
 
+// Hermes installs via its official script — both platform commands pinned.
+assert.match(
+  source,
+  /posix: "curl -fsSL https:\/\/hermes-agent\.nousresearch\.com\/install\.sh \| bash"/,
+  "hermes POSIX installer URL is pinned to the official script",
+);
+assert.match(
+  source,
+  /windows: "iex \(irm https:\/\/hermes-agent\.nousresearch\.com\/install\.ps1\)"/,
+  "hermes Windows installer URL is pinned to the official script",
+);
+
 assert.match(
   source,
   /if \(!isInstallTarget\(body\.target\)\)/,
@@ -33,15 +47,27 @@ assert.match(
 
 assert.match(
   source,
-  /const args = \["install", "-g", target\.packageName\]/,
+  /args: \["install", "-g", target\.packageName\]/,
   "npm argv is fully fixed — only the allowlisted package name varies",
 );
 
-// The request body must never reach the spawn argv.
+// The request body must never reach the spawn call.
 assert.doesNotMatch(
   source,
   /spawn\([^)]*body\./,
   "no request-body value may appear in the spawn call",
+);
+
+// Script targets run only pinned constants from the allowlist.
+assert.match(
+  source,
+  /args: \["-lc", target\.posix\]/,
+  "POSIX script spawn uses the pinned allowlist command only",
+);
+assert.match(
+  source,
+  /args: \["-NoProfile", "-Command", target\.windows\]/,
+  "Windows script spawn uses the pinned allowlist command only",
 );
 
 assert.match(
@@ -67,7 +93,7 @@ for (const platform of ["darwin", "win32"]) {
 assert.match(
   source,
   /shell: process\.platform === "win32"/,
-  "Windows spawns through a shell because npm resolves to npm.cmd",
+  "Windows spawns npm through a shell because it resolves to npm.cmd",
 );
 
 assert.match(

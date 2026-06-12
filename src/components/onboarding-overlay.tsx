@@ -62,7 +62,7 @@ type CaveFamiliar = {
   role?: string;
 };
 
-type InstallTarget = "coven-cli" | "codex" | "claude" | "openclaw";
+type InstallTarget = "coven-cli" | "codex" | "claude" | "openclaw" | "hermes";
 
 type InstallResult = {
   ok: boolean;
@@ -77,9 +77,19 @@ type SshCheckState =
 
 const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
 
-/** Harnesses Cave can install itself; others keep manual instructions. */
+/** Every chat harness Cave can install itself. `command` is the manual
+ *  equivalent shown beside the button; `windowsCommand` overrides it on
+ *  Windows when the official installer differs (Hermes). */
 const HARNESS_ONE_CLICK: Partial<
-  Record<string, { target: InstallTarget; command: string; afterInstall: string }>
+  Record<
+    string,
+    {
+      target: InstallTarget;
+      command: string;
+      windowsCommand?: string;
+      afterInstall: string;
+    }
+  >
 > = {
   codex: {
     target: "codex",
@@ -96,6 +106,14 @@ const HARNESS_ONE_CLICK: Partial<
     command: "npm i -g openclaw@latest",
     afterInstall:
       "then connect or create an agent under ~/.openclaw/agents (Option B in the familiar step)",
+  },
+  hermes: {
+    target: "hermes",
+    command:
+      "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
+    windowsCommand: "iex (irm https://hermes-agent.nousresearch.com/install.ps1)",
+    afterInstall:
+      "then run `hermes setup` in a terminal (installer can take several minutes — it bootstraps its own toolchain)",
   },
 };
 
@@ -987,6 +1005,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
                             chatHarnesses={chatHarnesses}
+                            platform={activePlatform}
                             installBusy={installBusy}
                             installResults={installResults}
                             nodeHint={nodeHint}
@@ -1316,6 +1335,7 @@ function StepCovenCli({
 
 function StepRuntimes({
   chatHarnesses,
+  platform,
   installBusy,
   installResults,
   nodeHint,
@@ -1324,6 +1344,7 @@ function StepRuntimes({
   onRefresh,
 }: {
   chatHarnesses: HarnessReport[];
+  platform: PlatformId;
   installBusy: InstallTarget | null;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
@@ -1338,8 +1359,8 @@ function StepRuntimes({
           A runtime (harness) is the agent CLI your familiar speaks through.
           You only need{" "}
           <span className="font-medium text-[var(--text-primary)]">one</span> —
-          pick whichever you already use, or one-click install Codex or Claude
-          Code below.
+          pick whichever you already use, or one-click install any of them
+          below.
         </p>
         <button
           onClick={onRefresh}
@@ -1390,7 +1411,14 @@ function StepRuntimes({
                           ? "Installing…"
                           : `Install ${adapter.label}`}
                       </button>
-                      <CommandRow command={oneClick.command} onCopy={onCopy} />
+                      <CommandRow
+                        command={
+                          platform === "windows" && oneClick.windowsCommand
+                            ? oneClick.windowsCommand
+                            : oneClick.command
+                        }
+                        onCopy={onCopy}
+                      />
                       <p className="text-[11px] leading-4 text-[var(--text-muted)]">
                         After install: {oneClick.afterInstall}.
                       </p>
@@ -1409,7 +1437,7 @@ function StepRuntimes({
       </div>
       {nodeHint ? (
         <p className="text-[11px] leading-4 text-[var(--color-warning)]">
-          One-click installs need Node.js — see step 1 for the setup notice.
+          npm-based one-click installs need Node.js — see step 1 for the setup notice. (Hermes brings its own toolchain.)
         </p>
       ) : null}
     </div>

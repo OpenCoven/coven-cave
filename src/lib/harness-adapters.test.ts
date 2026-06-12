@@ -160,7 +160,7 @@ assert.deepEqual(JSON.parse(hermesManifest?.contents ?? "{}"), {
         "-q",
       ],
       install_hint:
-        "Install Hermes, make sure `hermes` is on PATH, and complete Hermes setup before using this adapter.",
+        "Install Hermes with the official script (github.com/NousResearch/hermes-agent#quick-install), run `hermes setup`, and make sure `hermes` is on PATH before using this adapter.",
       system_prompt_flag: null,
     },
   ],

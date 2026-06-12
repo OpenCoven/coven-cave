@@ -74,7 +74,7 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     chatSupported: true,
     versionArgs: ["--version"],
     installHint:
-      "Install Hermes, make sure `hermes` is on PATH, then let Cave create its Coven adapter manifest.",
+      "Install Hermes with the official script from github.com/NousResearch/hermes-agent, then run `hermes setup`. Cave creates its Coven adapter manifest.",
     source: "bundled",
   },
   {
@@ -230,7 +230,7 @@ export function adapterManifestScaffoldForHarness(
               "-q",
             ],
             install_hint:
-              "Install Hermes, make sure `hermes` is on PATH, and complete Hermes setup before using this adapter.",
+              "Install Hermes with the official script (github.com/NousResearch/hermes-agent#quick-install), run `hermes setup`, and make sure `hermes` is on PATH before using this adapter.",
             system_prompt_flag: null,
           },
         ],
