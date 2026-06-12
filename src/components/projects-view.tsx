@@ -3,8 +3,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 
 import { Icon } from "@/lib/icon";
-import type { CaveProject } from "@/lib/cave-projects";
-import { normalizeProjectRoot } from "@/lib/cave-projects";
+import type { CaveProject } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { useProjects } from "@/lib/use-projects";
 
 type ProjectsViewProps = {

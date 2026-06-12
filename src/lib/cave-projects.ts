@@ -1,16 +1,12 @@
+import "server-only";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-export type CaveProject = {
-  id: string;
-  name: string;
-  root: string;
-  color?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+export type { CaveProject } from "./cave-projects-types.ts";
+export { normalizeProjectRoot } from "./cave-projects-types.ts";
+import type { CaveProject } from "./cave-projects-types.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -26,10 +22,6 @@ function projectsFilePath(): string {
 
 function normalizeRoot(root: string): string {
   return root.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
-}
-
-export function normalizeProjectRoot(root: string | null | undefined): string {
-  return root?.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 }
 
 function nanoid(len = 10): string {
