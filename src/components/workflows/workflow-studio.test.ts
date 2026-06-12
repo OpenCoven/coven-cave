@@ -68,6 +68,11 @@ assert.match(
 );
 assert.match(css, /\.workflow-studio-shell/, "workflow CSS should style the studio shell");
 assert.match(css, /@media \(max-width: 860px\)/, "workflow CSS should include mobile studio layout");
+assert.match(
+  css,
+  /\.workflow-canvas \.react-flow \{[\s\S]{0,300}zoom:\s*calc\(1 \/ var\(--cave-screen-scale\)\)[\s\S]{0,160}width:\s*calc\(100% \* var\(--cave-screen-scale\)\)[\s\S]{0,80}height:\s*calc\(100% \* var\(--cave-screen-scale\)\)/,
+  "Workflow canvas must cancel the app-wide screen-scale zoom inside React Flow — its handle measurement ignores ancestor CSS zoom, so at 110/125/150% edge arrows detach from their handles",
+);
 
 // --- Studio v2: visual builder, runs, assignments ---
 

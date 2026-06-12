@@ -965,6 +965,18 @@
 
 /* ---- Studio final touch: legible edges + dark React Flow chrome ---- */
 
+/* React Flow anchors edges by dividing getBoundingClientRect() deltas by its
+   own viewport transform only — the app-wide screen-scale `zoom` (globals.css
+   body rule) is not in that divisor, so at 110/125/150% every edge anchor
+   lands past its handle and arrows float mid-gap. Cancel the zoom inside the
+   flow so it measures at 1:1, and re-grow the box so it still fills the
+   canvas after its own zoom shrinks it. */
+.workflow-canvas .react-flow {
+  zoom: calc(1 / var(--cave-screen-scale));
+  width: calc(100% * var(--cave-screen-scale));
+  height: calc(100% * var(--cave-screen-scale));
+}
+
 .workflow-canvas .react-flow__edge-path {
   stroke: color-mix(in oklch, var(--accent-presence) 65%, transparent);
   stroke-width: 1.6;
