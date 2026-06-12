@@ -86,6 +86,13 @@ assert.match(studio, /leftPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-si
 assert.match(studio, /rightPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Right workflow panel toggle should use the sidebar tab icon");
 assert.match(studio, /is-left-collapsed[\s\S]{0,160}is-right-collapsed/, "Studio should put collapsed panel state on the shell");
 assert.match(css, /\.workflow-panel-tab/, "Workflow CSS should style sidebar-like side-panel tab toggles");
+assert.match(css, /--workflow-top-control-height:\s*34px/, "Workflow top controls should share a standardized height");
+assert.match(css, /--workflow-top-control-offset:\s*14px/, "Workflow top controls should share a standardized y offset");
+assert.match(css, /\.workflow-panel-tab[\s\S]{0,260}width:\s*100%[\s\S]{0,120}height:\s*var\(--workflow-top-control-height\)[\s\S]{0,120}margin-top:\s*var\(--workflow-top-control-offset\)[\s\S]{0,80}margin-bottom:\s*6px/, "Workflow panel tabs should span the full panel width, use the shared height/y offset, and leave padding below");
+assert.match(css, /\.workflow-studio-library-panel,[\s\S]{0,140}flex-direction:\s*column/, "Workflow panel content should sit below the full-width trigger row");
+assert.match(css, /\.workflow-palette-item[\s\S]{0,160}min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
+assert.match(css, /is-left-collapsed[\s\S]{0,120}grid-template-columns:\s*36px/, "Collapsed left workflow panel should keep a visible toggle rail");
+assert.match(css, /is-right-collapsed[\s\S]{0,160}36px;/, "Collapsed right workflow panel should keep a visible toggle rail");
 assert.match(css, /\.workflow-panel-tab-left[\s\S]{0,120}justify-content:\s*flex-end/, "Left workflow panel tab should sit at the top right");
 assert.match(css, /\.workflow-panel-tab-right[\s\S]{0,120}justify-content:\s*flex-start/, "Right workflow panel tab should sit at the top left");
 assert.match(css, /\.workflow-studio-shell\.is-left-collapsed/, "Workflow CSS should collapse the left workflow panel");
