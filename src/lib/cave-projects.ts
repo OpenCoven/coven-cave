@@ -3,14 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-export type CaveProject = {
-  id: string;
-  name: string;
-  root: string;
-  color?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+// CaveProject and normalizeProjectRoot live in the client-safe types module so
+// "use client" components can import them without dragging node:fs/promises
+// into the browser bundle. Re-exported here for existing server-side importers.
+import type { CaveProject } from "./cave-projects-types";
+export type { CaveProject };
+export { normalizeProjectRoot } from "./cave-projects-types";
 
 type ProjectsFile = {
   version: 1;
@@ -26,10 +24,6 @@ function projectsFilePath(): string {
 
 function normalizeRoot(root: string): string {
   return root.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
-}
-
-export function normalizeProjectRoot(root: string | null | undefined): string {
-  return root?.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 }
 
 function nanoid(len = 10): string {
