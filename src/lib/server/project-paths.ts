@@ -12,6 +12,14 @@ function realpathOrResolve(value: string): string {
   }
 }
 
+function normalizeRelativeProjectPath(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || path.isAbsolute(trimmed)) {
+    return null;
+  }
+  return trimmed.replace(/^[\\/]+/, "");
+}
+
 const ALLOWED_ROOTS = Array.from(
   new Set(
     [
@@ -33,8 +41,17 @@ function isWithinRoot(candidate: string, root: string): boolean {
 }
 
 export function resolveAllowedProjectPath(value: string): string | null {
-  const candidate = realpathOrResolve(value);
-  return ALLOWED_ROOTS.some((root) => isWithinRoot(candidate, root))
-    ? candidate
-    : null;
+  const relativePath = normalizeRelativeProjectPath(value);
+  if (!relativePath) {
+    return null;
+  }
+
+  for (const root of ALLOWED_ROOTS) {
+    const candidate = realpathOrResolve(path.join(root, relativePath));
+    if (isWithinRoot(candidate, root)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
