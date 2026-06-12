@@ -103,9 +103,25 @@ export type BrowserTab = {
 function normalizeUrl(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return HOME_URL;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (/^localhost(:\d+)?(\/.*)?$/.test(trimmed)) return `http://${trimmed}`;
-  if (/^[a-z0-9-]+\.[a-z]{2,}/i.test(trimmed)) return `https://${trimmed}`;
+
+  // Preserve existing convenience behavior first.
+  let candidate = trimmed;
+  if (/^localhost(:\d+)?(\/.*)?$/i.test(trimmed)) {
+    candidate = `http://${trimmed}`;
+  } else if (/^[a-z0-9-]+\.[a-z]{2,}/i.test(trimmed) && !/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+    candidate = `https://${trimmed}`;
+  }
+
+  // Only allow http(s) URLs to reach the iframe src.
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch {
+    // fall through to safe search
+  }
+
   return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 }
 
