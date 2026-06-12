@@ -5,6 +5,13 @@ import { Icon } from "@/lib/icon";
 import { setDemoModeEnabled } from "@/lib/demo-mode";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+
+// Guided onboarding: one numbered path from "nothing installed" to "chatting
+// with a familiar". Every step carries its own instructions, a one-click
+// action where Cave can do the work itself, the exact manual command for
+// users who prefer a terminal, and a troubleshooting block — so nobody is
+// ever stuck staring at a red card with no next move.
 
 type PruneState =
   | { idle: true }
@@ -49,15 +56,52 @@ type OpenClawAgent = {
   workspacePath: string | null;
 };
 
+type CaveFamiliar = {
+  id: string;
+  display_name?: string;
+  role?: string;
+};
+
+type InstallTarget = "coven-cli" | "codex" | "claude";
+
+type InstallResult = {
+  ok: boolean;
+  detail: string;
+};
+
+type SshCheckState =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "ok"; detail: string }
+  | { state: "fail"; detail: string };
+
 const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
+
+/** Harnesses Cave can install itself; others keep manual instructions. */
+const HARNESS_ONE_CLICK: Partial<
+  Record<string, { target: InstallTarget; command: string; afterInstall: string }>
+> = {
+  codex: {
+    target: "codex",
+    command: "npm install -g @openai/codex",
+    afterInstall: "then run `codex login` in a terminal to sign in",
+  },
+  claude: {
+    target: "claude",
+    command: "npm install -g @anthropic-ai/claude-code",
+    afterInstall: "then run `claude doctor` in a terminal to finish setup",
+  },
+};
 
 const PLATFORM_COPY: Record<
   PlatformId,
   {
     label: string;
     installCommand: string;
+    nodeSetup: string[];
     caveInstall: string[];
     cliInstall: string[];
+    sshSetup: string[];
     warning?: string;
   }
 > = {
@@ -66,6 +110,11 @@ const PLATFORM_COPY: Record<
     installCommand: COVEN_CLI_INSTALL_COMMAND,
     warning:
       "For now, turn off Smart App Control before downloading or opening the Windows build.",
+    nodeSetup: [
+      "Install Node.js LTS from https://nodejs.org, or run winget install OpenJS.NodeJS.LTS.",
+      "Restart Cave afterwards so the new PATH applies.",
+      "Click the Install button again — Cave re-finds npm automatically.",
+    ],
     caveInstall: [
       "Download the MSI from the official GitHub Release.",
       "Before downloading/opening, go to Settings > Privacy & security > Windows Security > App & browser control > Smart App Control, then turn Smart App Control off for now.",
@@ -76,10 +125,20 @@ const PLATFORM_COPY: Record<
       "Make sure coven.exe is on PATH after the global npm install.",
       "Click Re-check after Windows can run coven from a new terminal.",
     ],
+    sshSetup: [
+      "Enable the OpenSSH client: Settings > Apps > Optional features > OpenSSH Client.",
+      'Create a key with ssh-keygen, then copy it to the remote with: type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh <host> "cat >> ~/.ssh/authorized_keys".',
+      "Run ssh <host> once in a terminal to accept the host key before testing here.",
+    ],
   },
   linux: {
     label: "Linux",
     installCommand: COVEN_CLI_INSTALL_COMMAND,
+    nodeSetup: [
+      "Install Node.js LTS from https://nodejs.org or your package manager (e.g. sudo apt install nodejs npm).",
+      "Open a new terminal so PATH updates apply.",
+      "Click the Install button again — Cave re-finds npm automatically.",
+    ],
     caveInstall: [
       "Download the AppImage from the official GitHub Release.",
       "Run chmod +x CovenCave_*.AppImage.",
@@ -90,10 +149,20 @@ const PLATFORM_COPY: Record<
       "Make sure coven is on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the CLI.",
     ],
+    sshSetup: [
+      "Create a key with ssh-keygen -t ed25519 if you don't have one.",
+      "Copy it to the remote with ssh-copy-id <host>.",
+      "Run ssh <host> once to accept the host key before testing here.",
+    ],
   },
   mac: {
     label: "macOS",
     installCommand: COVEN_CLI_INSTALL_COMMAND,
+    nodeSetup: [
+      "Install Node.js LTS from https://nodejs.org, or run brew install node.",
+      "Open a new terminal so PATH updates apply.",
+      "Click the Install button again — Cave re-finds npm automatically.",
+    ],
     caveInstall: [
       "Download the DMG from the official GitHub Release.",
       "Open the DMG and drag CovenCave to Applications.",
@@ -104,10 +173,20 @@ const PLATFORM_COPY: Record<
       "Make sure a terminal can run coven after the global npm install.",
       "Click Re-check here after install.",
     ],
+    sshSetup: [
+      "Create a key with ssh-keygen -t ed25519 if you don't have one.",
+      "Copy it to the remote with ssh-copy-id <host>.",
+      "Run ssh <host> once to accept the host key before testing here.",
+    ],
   },
   unknown: {
     label: "Your platform",
     installCommand: COVEN_CLI_INSTALL_COMMAND,
+    nodeSetup: [
+      "Install Node.js LTS from https://nodejs.org.",
+      "Open a new terminal so PATH updates apply.",
+      "Click the Install button again — Cave re-finds npm automatically.",
+    ],
     caveInstall: [
       "Download the matching asset from the official GitHub Release.",
       "Install or launch the app for your OS.",
@@ -117,6 +196,10 @@ const PLATFORM_COPY: Record<
       "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven is on PATH.",
       "Click Re-check here after install.",
+    ],
+    sshSetup: [
+      "Create an SSH key and copy it to the remote host (ssh-copy-id <host>).",
+      "Run ssh <host> once to accept the host key before testing here.",
     ],
   },
 };
@@ -139,18 +222,19 @@ function detectPlatform(): PlatformId {
   return "unknown";
 }
 
-function stepCount(status: OnboardingStatus | null): number {
-  return Object.values(status?.steps ?? {}).filter((s) => s.ok).length;
-}
-
-const BENTO_CARD =
-  "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4";
-const BENTO_CARD_SOFT =
-  "rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4";
+type GuidedStep = {
+  key: string;
+  title: string;
+  ok: boolean;
+  optional?: boolean;
+  detail: string;
+  icon: IconName;
+};
 
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [platform, setPlatform] = useState<PlatformId>("unknown");
+  const [shownPlatform, setShownPlatform] = useState<PlatformId | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
@@ -170,8 +254,26 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [prune, setPrune] = useState<PruneState>({ idle: true });
   const [statusFailures, setStatusFailures] = useState(0);
+  // Guided-step navigation: which step the user manually expanded. `null`
+  // follows the first incomplete required step automatically.
+  const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  // One-click installs (/api/onboarding/install)
+  const [installBusy, setInstallBusy] = useState<InstallTarget | null>(null);
+  const [installResults, setInstallResults] = useState<
+    Partial<Record<InstallTarget, InstallResult>>
+  >({});
+  const [nodeHint, setNodeHint] = useState<string | null>(null);
+  // Remote (SSH) runtime for the new familiar (/api/onboarding/ssh-check)
+  const [sshEnabled, setSshEnabled] = useState(false);
+  const [sshHost, setSshHost] = useState("");
+  const [sshCwd, setSshCwd] = useState("");
+  const [sshCommand, setSshCommand] = useState("");
+  const [sshCheck, setSshCheck] = useState<SshCheckState>({ state: "idle" });
+  // Created familiars (final step lists them with Edit affordances)
+  const [familiarsList, setFamiliarsList] = useState<CaveFamiliar[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const { openFamiliarStudio } = useFamiliarStudio();
 
   useFocusTrap(open, dialogRef, { onEscape: onDismiss });
 
@@ -244,7 +346,21 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         return null;
       });
     } catch {
-      /* harness availability is advisory; status cards carry setup hints */
+      /* harness availability is advisory; step cards carry setup hints */
+    }
+  }, []);
+
+  const loadFamiliars = useCallback(async () => {
+    try {
+      const res = await fetch("/api/familiars", { cache: "no-store" });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        familiars?: CaveFamiliar[];
+      };
+      if (!res.ok || json.ok === false) return;
+      setFamiliarsList(json.familiars ?? []);
+    } catch {
+      /* advisory — the daemon step covers reachability */
     }
   }, []);
 
@@ -253,14 +369,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     void refresh();
     void loadHarnesses();
     void loadOpenClawAgents();
+    void loadFamiliars();
     pollRef.current = setInterval(refresh, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, refresh, loadHarnesses, loadOpenClawAgents]);
+  }, [open, refresh, loadHarnesses, loadOpenClawAgents, loadFamiliars]);
 
-  const platformCopy = PLATFORM_COPY[platform];
+  // Refresh the familiar list when the familiars step flips healthy so the
+  // final step can list them for editing.
+  const familiarsOk = !!status?.steps.familiars.ok;
+  useEffect(() => {
+    if (familiarsOk) void loadFamiliars();
+  }, [familiarsOk, loadFamiliars]);
+
+  const activePlatform = shownPlatform ?? platform;
+  const platformCopy = PLATFORM_COPY[activePlatform];
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
   const selectedHarness =
     chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
@@ -289,6 +414,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           statusFailures,
           setupError,
           agentsError,
+          installResults,
+          nodeHint,
+          sshCheck,
           harnesses: harnesses.map((adapter) => ({
             id: adapter.id,
             label: adapter.label,
@@ -312,6 +440,115 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     );
   };
 
+  const runInstall = async (target: InstallTarget) => {
+    setInstallBusy(target);
+    setSetupError(null);
+    setNodeHint(null);
+    try {
+      const res = await fetch("/api/onboarding/install", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ target }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        npmMissing?: boolean;
+        hint?: string;
+        error?: string;
+        binaryPath?: string | null;
+        stderr?: string;
+      };
+      if (json.npmMissing) {
+        setNodeHint(
+          json.hint ??
+            "Install Node.js LTS from https://nodejs.org, then try again.",
+        );
+        setInstallResults((prev) => ({
+          ...prev,
+          [target]: {
+            ok: false,
+            detail: "npm not found — Node.js setup needed first.",
+          },
+        }));
+        return;
+      }
+      if (!res.ok || json.ok === false) {
+        setInstallResults((prev) => ({
+          ...prev,
+          [target]: {
+            ok: false,
+            detail: json.error ?? json.stderr?.slice(-300) ?? "install failed",
+          },
+        }));
+        return;
+      }
+      setInstallResults((prev) => ({
+        ...prev,
+        [target]: {
+          ok: true,
+          detail: json.binaryPath
+            ? `installed at ${json.binaryPath}`
+            : "installed",
+        },
+      }));
+      await refresh();
+      await loadHarnesses();
+    } catch (err) {
+      setInstallResults((prev) => ({
+        ...prev,
+        [target]: {
+          ok: false,
+          detail: err instanceof Error ? err.message : "install failed",
+        },
+      }));
+    } finally {
+      setInstallBusy(null);
+    }
+  };
+
+  const testSsh = async () => {
+    const host = sshHost.trim();
+    if (!host) {
+      setSshCheck({ state: "fail", detail: "Enter a host first." });
+      return;
+    }
+    setSshCheck({ state: "checking" });
+    try {
+      const res = await fetch("/api/onboarding/ssh-check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        reachable?: boolean;
+        covenPath?: string | null;
+        hint?: string;
+        error?: string;
+      };
+      if (json.ok && json.reachable) {
+        setSshCheck({
+          state: "ok",
+          detail: json.covenPath
+            ? `Connected — coven found at ${json.covenPath}.`
+            : `Connected. ${json.hint ?? ""}`.trim(),
+        });
+      } else {
+        setSshCheck({
+          state: "fail",
+          detail:
+            [json.error, json.hint].filter(Boolean).join(" — ") ||
+            "SSH check failed.",
+        });
+      }
+    } catch (err) {
+      setSshCheck({
+        state: "fail",
+        detail: err instanceof Error ? err.message : "SSH check failed.",
+      });
+    }
+  };
+
   const scaffoldOnly = async () => {
     setPicking("scaffold");
     setSetupError(null);
@@ -333,7 +570,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
     if (!selectedAgent) {
       setSetupError(
-        "Pick an existing OpenClaw agent first. Use Available harnesses only when you want to create a new Coven familiar.",
+        "Pick an existing OpenClaw agent first, or create a new familiar from an installed runtime instead.",
       );
       return;
     }
@@ -358,6 +595,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (!res.ok || json.ok === false)
         throw new Error(json.error ?? "setup failed");
       await refresh();
+      await loadFamiliars();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "setup failed");
     } finally {
@@ -392,6 +630,12 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       );
       return;
     }
+    if (sshEnabled && (!sshHost.trim() || !sshCwd.trim())) {
+      setSetupError(
+        "Remote runtime needs a host and a remote working directory — or untick \"Runs on a remote machine\".",
+      );
+      return;
+    }
     setPicking("local");
     setSetupError(null);
     try {
@@ -405,10 +649,22 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             role: familiarRole.trim() || "Code Familiar",
             description:
               familiarDescription.trim() ||
-              `Local ${selectedHarness.label} adapter on this machine.`,
+              (sshEnabled
+                ? `Remote ${selectedHarness.label} adapter over SSH (${sshHost.trim()}).`
+                : `Local ${selectedHarness.label} adapter on this machine.`),
             glyph: familiarGlyph,
             harness: selectedHarness.id,
             model: `${selectedHarness.id}-local`,
+            ...(sshEnabled
+              ? {
+                  runtime: {
+                    kind: "ssh",
+                    host: sshHost.trim(),
+                    cwd: sshCwd.trim(),
+                    command: sshCommand.trim(),
+                  },
+                }
+              : {}),
           },
         }),
       });
@@ -416,6 +672,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (!res.ok || json.ok === false)
         throw new Error(json.error ?? "setup failed");
       await refresh();
+      await loadFamiliars();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "setup failed");
     } finally {
@@ -439,26 +696,61 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
-  const steps = useMemo(() => {
+  const editFamiliar = (id: string) => {
+    // The studio renders under this overlay, so close the overlay first.
+    onDismiss();
+    openFamiliarStudio(id);
+  };
+
+  const steps = useMemo<GuidedStep[]>(() => {
     const s = status?.steps;
     return [
       {
         key: "covenCli",
-        title: "Install coven CLI",
+        title: "Install the coven CLI",
         ok: !!s?.covenCli.ok,
         detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking...",
         icon: "ph:gear-six",
       },
       {
         key: "covenHome",
-        title: "Create Coven home",
+        title: "Create your Coven home",
         ok: !!s?.covenHome.ok,
         detail: s?.covenHome.detail ?? s?.covenHome.hint ?? "checking...",
         icon: "ph:folder",
       },
       {
+        key: "adapters",
+        title: "Install a runtime",
+        ok: !!s?.adapters.ok,
+        detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking...",
+        icon: "ph:terminal-window",
+      },
+      {
+        key: "binding",
+        title: "Create your familiar",
+        ok: !!s?.binding.ok,
+        detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
+        icon: "ph:sparkle",
+      },
+      {
+        key: "daemon",
+        title: "Start the daemon",
+        ok: !!s?.daemon.ok,
+        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking...",
+        icon: "ph:plug",
+      },
+      {
+        key: "familiars",
+        title: "Meet your familiars",
+        ok: !!s?.familiars.ok,
+        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking...",
+        icon: "ph:user",
+      },
+      {
         key: "git",
         title: "Find Git (recommended)",
+        optional: true,
         // Advisory: absence never blocks setup; treat "not reported" as fine.
         ok: s?.git ? s.git.ok : true,
         detail:
@@ -467,44 +759,22 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           "Powers the changes panel, project files, and checkpoints.",
         icon: "ph:git-branch-bold",
       },
-      {
-        key: "adapters",
-        title: "Find runtime source",
-        ok: !!s?.adapters.ok,
-        detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking...",
-        icon: "ph:terminal-window",
-      },
-      {
-        key: "binding",
-        title: "Create familiar",
-        ok: !!s?.binding.ok,
-        detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
-        icon: "ph:sparkle",
-      },
-      {
-        key: "daemon",
-        title: "Start daemon",
-        ok: !!s?.daemon.ok,
-        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking...",
-        icon: "ph:plug",
-      },
-      {
-        key: "familiars",
-        title: "Load familiars",
-        ok: !!s?.familiars.ok,
-        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking...",
-        icon: "ph:user",
-      },
-    ] satisfies Array<{
-      key: string;
-      title: string;
-      ok: boolean;
-      detail: string;
-      icon: IconName;
-    }>;
+    ];
   }, [status]);
 
+  // The step the guide spotlights: the first required step that isn't done.
+  const activeStepKey = useMemo(() => {
+    const firstIncomplete = steps.find((s) => !s.optional && !s.ok);
+    return firstIncomplete?.key ?? null;
+  }, [steps]);
+
+  const openStepKey = expandedStep ?? activeStepKey ?? "familiars";
+
   if (!open) return null;
+
+  const requiredSteps = steps.filter((s) => !s.optional);
+  const ready = requiredSteps.filter((s) => s.ok).length;
+  const total = requiredSteps.length;
 
   return (
     <div
@@ -515,14 +785,27 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       tabIndex={-1}
       className="fixed inset-0 z-50 overflow-y-auto bg-[var(--bg-base)]/96 backdrop-blur-sm"
     >
-      <div className="mx-auto flex min-h-full w-full max-w-[min(1680px,100vw)] flex-col px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider text-[var(--accent-presence)]">
               <span>Welcome</span>
-              <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 normal-case tracking-normal text-[var(--text-secondary)]">
-                {platformCopy.label}
-              </span>
+              <label className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 normal-case tracking-normal text-[var(--text-secondary)]">
+                <span className="sr-only">Platform</span>
+                <select
+                  aria-label="Show instructions for platform"
+                  value={activePlatform}
+                  onChange={(e) =>
+                    setShownPlatform(e.target.value as PlatformId)
+                  }
+                  className="bg-transparent outline-none"
+                >
+                  <option value="mac">macOS</option>
+                  <option value="windows">Windows</option>
+                  <option value="linux">Linux</option>
+                  <option value="unknown">Other</option>
+                </select>
+              </label>
               {process.env.NEXT_PUBLIC_DEMO === "true" ? (
                 <span className="rounded-full border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2 py-0.5 normal-case tracking-normal text-[var(--color-warning)]">
                   Demo mode
@@ -530,13 +813,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               ) : null}
             </div>
             <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
-              Set up CovenCave on this machine.
+              Set up CovenCave, step by step.
             </h1>
             <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--text-secondary)]">
-              Cave checks Codex, Claude Code, Hermes, and OpenClaw as equal ways
-              to create your first functional familiar. It creates only your
-              Coven files and shows exactly what still needs setup on this
-              machine.
+              Follow the numbered steps. Each one carries its own instructions,
+              a one-click action where Cave can do the work for you, and the
+              exact command if you&rsquo;d rather use a terminal. Finished
+              steps tick themselves — status re-checks every 2 seconds.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -555,7 +838,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               Copy diagnostics
             </button>
             <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-              {stepCount(status)}/6 ready
+              {ready}/{total} ready
             </div>
           </div>
         </header>
@@ -584,7 +867,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <div>
               <div className="font-semibold">Setup status is unreachable.</div>
               <p className="mt-1 leading-6 text-[var(--text-secondary)]">
-                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The coven CLI may not be installed, or the local sidecar may be blocked. The cards below will stay on &ldquo;checking…&rdquo; until this clears.
+                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
               </p>
             </div>
             <button
@@ -603,424 +886,272 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </section>
         ) : null}
 
-        <main className="grid flex-1 auto-rows-[minmax(0,auto)] gap-4 py-5 lg:grid-cols-12">
-          <section className={`${BENTO_CARD} lg:col-span-12`}>
-            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                  Setup progress
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Bring whichever runtime you already use. Cave keeps checking
-                  and turns the first healthy source into a working familiar.
-                </p>
-              </div>
-              <span className="font-mono text-[11px] text-[var(--text-muted)]">
-                {stepCount(status)}/6 ready
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              {steps.map((s, i) => (
-                <div
-                  key={s.key}
-                  className={`rounded-lg border p-3 ${
-                    s.ok
-                      ? "border-[color-mix(in_oklch,var(--color-success)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)]"
-                      : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/30"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`grid h-7 w-7 place-items-center rounded-full border ${
-                        s.ok
-                          ? "border-[color-mix(in_oklch,var(--color-success)_60%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
-                          : "border-[var(--border-strong)] text-[var(--text-secondary)]"
-                      }`}
-                    >
-                      {s.ok ? (
-                        <Icon name="ph:check-bold" />
-                      ) : (
-                        <Icon name={s.icon} />
-                      )}
-                    </span>
-                    <span className="font-mono text-[11px] text-[var(--text-muted)]">
-                      {i + 1}
-                    </span>
-                  </div>
-                  <div className="mt-3 text-[12px] font-medium text-[var(--text-primary)]">
-                    {s.title}
-                  </div>
-                  <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
-                    {s.detail}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                  Install path
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Follow the path for {platformCopy.label}, then re-check once
-                  the CLI is available.
-                </p>
-              </div>
-              <button
-                onClick={() => void copyText(platformCopy.installCommand)}
-                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              >
-                Copy
-              </button>
-            </div>
-            <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
-              {platformCopy.installCommand}
-            </div>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <InstructionList
-                title="Install CovenCave"
-                items={platformCopy.caveInstall}
-              />
-              <InstructionList
-                title="Install coven CLI"
-                items={platformCopy.cliInstall}
-              />
-            </div>
-          </section>
-
-          <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                  Available harnesses
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Choose Codex, Claude Code, Hermes, or another installed Coven
-                  adapter only when you want to create a new familiar bound to
-                  that runtime.
-                </p>
-              </div>
-              <button
-                onClick={() => void loadHarnesses()}
-                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              {chatHarnesses.map((adapter) => {
-                const active = selectedHarnessId === adapter.id;
-                return (
-                  <button
-                    key={adapter.id}
-                    onClick={() => {
-                      if (!adapter.installed) return;
-                      setSelectedHarnessId(adapter.id);
-                      setSelectedAgentId(null);
-                      setConfirmCreateNewFamiliar(false);
-                      setFamiliarName(adapter.label);
-                      setFamiliarRole("Code Familiar");
-                      setFamiliarDescription(
-                        `Local ${adapter.label} adapter on this machine.`,
-                      );
-                    }}
-                    disabled={!adapter.installed}
-                    className={`rounded-lg border p-3 text-left ${
-                      active
-                        ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
-                        : adapter.installed
-                          ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
-                    }`}
+        <main className="flex flex-1 flex-col gap-3 py-5">
+          <ol className="flex flex-col gap-3" aria-label="Setup steps">
+            {steps.map((step, index) => {
+              const expanded = openStepKey === step.key;
+              const isActive = activeStepKey === step.key;
+              return (
+                <li key={step.key}>
+                  <section
+                    aria-label={step.title}
+                    className={`rounded-lg border ${
+                      step.ok
+                        ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)]"
+                        : isActive
+                          ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)]"
+                          : "border-[var(--border-hairline)]"
+                    } bg-[var(--bg-raised)]/35`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[13px] font-medium">
-                        {adapter.label}
-                      </span>
-                      {active ? (
-                        <Icon
-                          name="ph:check-bold"
-                          className="text-[var(--accent-presence)]"
-                        />
-                      ) : null}
-                    </div>
-                    <div className="mt-1 truncate font-mono text-[11px]">
-                      {adapter.binary}
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
-                      {adapter.installed
-                        ? (adapter.path ?? "installed")
-                        : adapter.installHint}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <label className="mt-3 flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
-              <input
-                type="checkbox"
-                checked={confirmCreateNewFamiliar}
-                onChange={(e) =>
-                  setConfirmCreateNewFamiliar(e.currentTarget.checked)
-                }
-                disabled={!selectedHarnessId || picking !== null}
-                className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
-              />
-              <span>
-                I understand this creates a new Coven familiar
-                {selectedHarness ? (
-                  <>
-                    {" "}bound to the{" "}
-                    <span className="font-medium text-[var(--text-primary)]">
-                      {selectedHarness.label}
-                    </span>{" "}harness
-                  </>
-                ) : null}
-                {hasExistingOpenClawAgents
-                  ? ", not a connection to one of the existing OpenClaw agents listed alongside"
-                  : ""}
-                .
-              </span>
-            </label>
-            <button
-              onClick={createLocalFamiliar}
-              disabled={
-                picking !== null ||
-                !selectedHarnessId ||
-                !confirmCreateNewFamiliar ||
-                (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-              }
-              className="focus-ring mt-3 inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-            >
-              <Icon name="ph:terminal-window" />
-              {picking === "local"
-                ? "Creating..."
-                : "Create new Coven familiar"}
-            </button>
-          </section>
-
-          <section className={`${BENTO_CARD} lg:col-span-6 xl:col-span-4`}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                  Existing OpenClaw agents
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Choose an agent that already exists under ~/.openclaw. This
-                  connects the agent as a familiar without creating a new
-                  OpenClaw agent.
-                </p>
-              </div>
-              <button
-                onClick={() => void loadOpenClawAgents()}
-                disabled={agentsLoading}
-                className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
-              >
-                {agentsLoading ? "Loading..." : "Refresh"}
-              </button>
-            </div>
-            {agentsError ? (
-              <div className="rounded border border-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-3 py-2 text-[12px] text-[var(--color-danger)]">
-                {agentsError}
-              </div>
-            ) : openclawAgents.length === 0 ? (
-              <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-5 text-center text-[12px] text-[var(--text-muted)]">
-                No OpenClaw agents found under ~/.openclaw/agents yet.
-              </div>
-            ) : (
-              <div className="grid max-h-[19rem] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-1">
-                {openclawAgents.map((agent) => {
-                  const active = selectedAgentId === agent.id;
-                  return (
                     <button
-                      key={agent.id}
-                      onClick={() => {
-                        setSelectedAgentId(agent.id);
-                        setSelectedHarnessId(null);
-                        setConfirmCreateNewFamiliar(false);
-                        setFamiliarName(agent.displayName);
-                        setFamiliarRole(agent.role);
-                        setFamiliarDescription(
-                          `Connected to OpenClaw agent "${agent.id}".`,
-                        );
-                      }}
-                      className={`rounded-lg border p-3 text-left ${
-                        active
-                          ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
-                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                      }`}
+                      type="button"
+                      onClick={() =>
+                        setExpandedStep(
+                          expanded ? (isActive ? null : activeStepKey) : step.key,
+                        )
+                      }
+                      aria-expanded={expanded}
+                      className="focus-ring flex w-full items-center gap-3 p-3 text-left"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-[13px] font-medium">
-                          {agent.displayName}
-                        </span>
-                        {active ? (
+                      <span
+                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border font-mono text-[12px] ${
+                          step.ok
+                            ? "border-[color-mix(in_oklch,var(--color-success)_60%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
+                            : isActive
+                              ? "border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] text-[var(--accent-presence)]"
+                              : "border-[var(--border-strong)] text-[var(--text-secondary)]"
+                        }`}
+                      >
+                        {step.ok ? <Icon name="ph:check-bold" /> : index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2 text-[13px] font-semibold text-[var(--text-primary)]">
                           <Icon
-                            name="ph:check-bold"
-                            className="text-[var(--accent-presence)]"
+                            name={step.icon}
+                            className="text-[var(--text-muted)]"
                           />
+                          {step.title}
+                          {step.optional ? (
+                            <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] font-normal text-[var(--text-muted)]">
+                              optional
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] text-[var(--text-muted)]">
+                          {step.detail}
+                        </span>
+                      </span>
+                      <Icon
+                        name={expanded ? "ph:caret-up" : "ph:caret-down"}
+                        className="shrink-0 text-[var(--text-muted)]"
+                      />
+                    </button>
+
+                    {expanded ? (
+                      <div className="border-t border-[var(--border-hairline)] p-4">
+                        {step.key === "covenCli" ? (
+                          <StepCovenCli
+                            platformCopy={platformCopy}
+                            installBusy={installBusy}
+                            installResult={installResults["coven-cli"]}
+                            nodeHint={nodeHint}
+                            onInstall={() => void runInstall("coven-cli")}
+                            onCopy={(text) => void copyText(text)}
+                          />
+                        ) : step.key === "covenHome" ? (
+                          <div className="flex flex-col gap-3">
+                            <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                              Cave keeps everything it creates under{" "}
+                              <code className="font-mono">~/.coven</code> —
+                              familiars, adapters, conversations, and memory.
+                              One click creates the folders; nothing outside
+                              them is touched.
+                            </p>
+                            <button
+                              onClick={scaffoldOnly}
+                              disabled={picking !== null}
+                              className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                            >
+                              <Icon name="ph:folder-open-bold" />
+                              {picking === "scaffold"
+                                ? "Creating..."
+                                : "Create Coven home"}
+                            </button>
+                          </div>
+                        ) : step.key === "adapters" ? (
+                          <StepRuntimes
+                            chatHarnesses={chatHarnesses}
+                            installBusy={installBusy}
+                            installResults={installResults}
+                            nodeHint={nodeHint}
+                            onInstall={(target) => void runInstall(target)}
+                            onCopy={(text) => void copyText(text)}
+                            onRefresh={() => void loadHarnesses()}
+                          />
+                        ) : step.key === "binding" ? (
+                          <StepFamiliar
+                            chatHarnesses={chatHarnesses}
+                            selectedHarnessId={selectedHarnessId}
+                            selectedHarness={selectedHarness}
+                            openclawAgents={openclawAgents}
+                            selectedAgentId={selectedAgentId}
+                            agentsLoading={agentsLoading}
+                            agentsError={agentsError}
+                            hasExistingOpenClawAgents={hasExistingOpenClawAgents}
+                            familiarName={familiarName}
+                            familiarRole={familiarRole}
+                            familiarGlyph={familiarGlyph}
+                            familiarDescription={familiarDescription}
+                            confirmCreateNewFamiliar={confirmCreateNewFamiliar}
+                            picking={picking}
+                            sshEnabled={sshEnabled}
+                            sshHost={sshHost}
+                            sshCwd={sshCwd}
+                            sshCommand={sshCommand}
+                            sshCheck={sshCheck}
+                            sshSetup={platformCopy.sshSetup}
+                            setFamiliarName={setFamiliarName}
+                            setFamiliarRole={setFamiliarRole}
+                            setFamiliarGlyph={setFamiliarGlyph}
+                            setFamiliarDescription={setFamiliarDescription}
+                            setConfirmCreateNewFamiliar={
+                              setConfirmCreateNewFamiliar
+                            }
+                            setSshEnabled={setSshEnabled}
+                            setSshHost={(v) => {
+                              setSshHost(v);
+                              setSshCheck({ state: "idle" });
+                            }}
+                            setSshCwd={setSshCwd}
+                            setSshCommand={setSshCommand}
+                            onTestSsh={() => void testSsh()}
+                            onSelectHarness={(adapter) => {
+                              if (!adapter.installed) return;
+                              setSelectedHarnessId(adapter.id);
+                              setSelectedAgentId(null);
+                              setConfirmCreateNewFamiliar(false);
+                              setFamiliarName(adapter.label);
+                              setFamiliarRole("Code Familiar");
+                              setFamiliarDescription(
+                                `Local ${adapter.label} adapter on this machine.`,
+                              );
+                            }}
+                            onSelectAgent={(agent) => {
+                              setSelectedAgentId(agent.id);
+                              setSelectedHarnessId(null);
+                              setConfirmCreateNewFamiliar(false);
+                              setFamiliarName(agent.displayName);
+                              setFamiliarRole(agent.role);
+                              setFamiliarDescription(
+                                `Connected to OpenClaw agent "${agent.id}".`,
+                              );
+                            }}
+                            onRefreshAgents={() => void loadOpenClawAgents()}
+                            onCreateLocal={() => void createLocalFamiliar()}
+                            onConnectAgent={() => void createFamiliar()}
+                          />
+                        ) : step.key === "daemon" ? (
+                          <div className="flex flex-col gap-3">
+                            <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                              The coven daemon runs your familiars in the
+                              background. Cave starts it for you — or run{" "}
+                              <code className="font-mono">
+                                coven daemon start
+                              </code>{" "}
+                              in any terminal.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={startDaemon}
+                                disabled={
+                                  startingDaemon || !status?.steps.covenCli.ok
+                                }
+                                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                                title={
+                                  !status?.steps.covenCli.ok
+                                    ? "Install coven CLI first (step 1)"
+                                    : "coven daemon start"
+                                }
+                              >
+                                <Icon name="ph:rocket-launch-bold" />
+                                {startingDaemon ? "Starting..." : "Start daemon"}
+                              </button>
+                              {!status?.steps.covenCli.ok ? (
+                                <span className="text-[11px] text-[var(--text-muted)]">
+                                  Needs step 1 first — the daemon ships with the
+                                  coven CLI.
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : step.key === "familiars" ? (
+                          <StepMeetFamiliars
+                            familiars={familiarsList}
+                            statusOk={step.ok}
+                            complete={!!status?.complete}
+                            onEdit={editFamiliar}
+                            onOpenCave={onDismiss}
+                          />
+                        ) : step.key === "git" ? (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                              Chat works without Git, but the changes panel,
+                              project file tree, and checkpoints all use it.
+                            </p>
+                            <p className="text-[12px] leading-5 text-[var(--text-muted)]">
+                              {status?.steps.git?.hint ??
+                                status?.steps.git?.detail ??
+                                "Install Git from https://git-scm.com, then re-check."}
+                            </p>
+                          </div>
                         ) : null}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[11px]">
-                        {agent.id}
-                      </div>
-                      <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">
-                        {agent.role}
-                      </div>
-                    </button>
-                  );
-                })}
+                    ) : null}
+                  </section>
+                </li>
+              );
+            })}
+          </ol>
+
+          <details className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
+            <summary className="cursor-pointer text-[12px] font-semibold text-[var(--text-secondary)]">
+              Installing the CovenCave app itself ({platformCopy.label})
+            </summary>
+            <div className="mt-3">
+              <InstructionList title="" items={platformCopy.caveInstall} />
+            </div>
+          </details>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                    Tester demo mode
+                  </h2>
+                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+                    Explore Cave with sample data — no installs needed. Demo
+                    data is opt-in for testers and never appears in normal
+                    installs.
+                  </p>
+                </div>
+                <Icon
+                  name="ph:toggle-right-bold"
+                  className="text-[var(--text-muted)]"
+                />
               </div>
-            )}
-          </section>
-
-          <section className={`${BENTO_CARD} lg:col-span-8 xl:col-span-8`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">
-                  Familiar details
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Name the familiar and describe the job after choosing either
-                  an existing OpenClaw agent or a new local harness familiar.
-                  Cave will only create a new familiar after the explicit
-                  confirmation above.
-                </p>
-              </div>
-              <button
-                onClick={scaffoldOnly}
-                disabled={picking !== null}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
-              >
-                {picking === "scaffold" ? "Creating..." : "Create folder only"}
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Name
-                </span>
-                <input
-                  value={familiarName}
-                  onChange={(e) => setFamiliarName(e.target.value)}
-                  placeholder="Example: Riley"
-                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Role
-                </span>
-                <input
-                  value={familiarRole}
-                  onChange={(e) => setFamiliarRole(e.target.value)}
-                  placeholder="Research, Code, Ops..."
-                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Glyph
-                </span>
-                <input
-                  value={familiarGlyph}
-                  onChange={(e) => setFamiliarGlyph(e.target.value)}
-                  placeholder="ph:sparkle-fill"
-                  aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
-                  className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
-                    familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")
-                      ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
-                      : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
-                  }`}
-                />
-                {familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:") ? (
-                  <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
-                    Must start with <code className="font-mono">ph:</code> — see <a href="https://phosphoricons.com" target="_blank" rel="noreferrer" className="underline">phosphoricons.com</a>.
-                  </span>
-                ) : null}
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Description
-                </span>
-                <input
-                  value={familiarDescription}
-                  onChange={(e) => setFamiliarDescription(e.target.value)}
-                  placeholder="What should this familiar help with?"
-                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                />
-              </label>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <button
-                onClick={createFamiliar}
-                disabled={
-                  picking !== null ||
-                  !selectedAgentId ||
-                  familiarName.trim().length === 0 ||
-                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-                }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-              >
-                <Icon name="ph:sparkle" />
-                {picking === "familiar"
-                  ? "Connecting..."
-                  : "Connect selected existing agent"}
-              </button>
-              <button
-                onClick={startDaemon}
-                disabled={startingDaemon || !status?.steps.covenCli.ok}
-                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
-                title={
-                  !status?.steps.covenCli.ok
-                    ? "Install coven CLI first"
-                    : "coven daemon start"
-                }
-              >
-                <Icon name="ph:rocket-launch-bold" />
-                {startingDaemon ? "Starting..." : "Start daemon"}
-              </button>
-            </div>
-          </section>
-
-          <section className={`${BENTO_CARD_SOFT} lg:col-span-4 xl:col-span-2`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                  Tester demo mode
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  Demo data is opt-in for testers and never appears in normal
-                  installs.
-                </p>
-              </div>
-              <Icon
-                name="ph:toggle-right-bold"
-                className="text-[var(--text-muted)]"
-              />
-            </div>
-            <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
               <button
                 type="button"
                 onClick={enableDemoMode}
-                className="focus-ring inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-2 font-sans text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
+                className="focus-ring mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-2 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
               >
                 <Icon name="ph:sparkle" />
                 Open demo Cave
               </button>
-            </div>
-          </section>
+            </section>
 
-          <MaintenancePanel
-            prune={prune}
-            setPrune={setPrune}
-            className="lg:col-span-4 xl:col-span-2"
-          />
+            <MaintenancePanel prune={prune} setPrune={setPrune} />
+          </div>
         </main>
 
         <footer className="flex items-center justify-between border-t border-[var(--border-hairline)] py-4">
@@ -1055,12 +1186,681 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   );
 }
 
+// ── Step bodies ───────────────────────────────────────────────────────────────
+
+function CommandRow({
+  command,
+  onCopy,
+}: {
+  command: string;
+  onCopy: (text: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <code className="min-w-0 flex-1 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)]">
+        {command}
+      </code>
+      <button
+        onClick={() => onCopy(command)}
+        className="focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+      >
+        Copy
+      </button>
+    </div>
+  );
+}
+
+function NodeSetupNotice({
+  hint,
+  nodeSetup,
+}: {
+  hint: string;
+  nodeSetup: string[];
+}) {
+  return (
+    <div className="rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] p-3">
+      <div className="text-[12px] font-semibold text-[var(--color-warning)]">
+        Node.js is needed first
+      </div>
+      <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
+        {hint}
+      </p>
+      <ol className="mt-2 space-y-1">
+        {nodeSetup.map((item, index) => (
+          <li
+            key={item}
+            className="flex gap-2 text-[12px] leading-5 text-[var(--text-secondary)]"
+          >
+            <span className="font-mono text-[11px] text-[var(--text-muted)]">
+              {index + 1}.
+            </span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function InstallResultNote({ result }: { result?: InstallResult }) {
+  if (!result) return null;
+  return (
+    <p
+      className={`text-[11px] leading-4 ${
+        result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+      }`}
+    >
+      {result.detail}
+    </p>
+  );
+}
+
+function StepCovenCli({
+  platformCopy,
+  installBusy,
+  installResult,
+  nodeHint,
+  onInstall,
+  onCopy,
+}: {
+  platformCopy: (typeof PLATFORM_COPY)[PlatformId];
+  installBusy: InstallTarget | null;
+  installResult?: InstallResult;
+  nodeHint: string | null;
+  onInstall: () => void;
+  onCopy: (text: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+        The coven CLI powers everything Cave does. Cave can install it for you
+        — or copy the command and run it in any terminal.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={onInstall}
+          disabled={installBusy !== null}
+          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+        >
+          <Icon name="ph:arrow-down-bold" />
+          {installBusy === "coven-cli"
+            ? "Installing… (can take a minute)"
+            : "Install coven CLI"}
+        </button>
+        <span className="text-[11px] text-[var(--text-muted)]">
+          or run it yourself:
+        </span>
+      </div>
+      <CommandRow command={platformCopy.installCommand} onCopy={onCopy} />
+      <InstallResultNote result={installResult} />
+      {nodeHint ? (
+        <NodeSetupNotice hint={nodeHint} nodeSetup={platformCopy.nodeSetup} />
+      ) : null}
+      <details>
+        <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
+          Still not found after installing?
+        </summary>
+        <div className="mt-2">
+          <InstructionList title="" items={platformCopy.cliInstall} />
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function StepRuntimes({
+  chatHarnesses,
+  installBusy,
+  installResults,
+  nodeHint,
+  onInstall,
+  onCopy,
+  onRefresh,
+}: {
+  chatHarnesses: HarnessReport[];
+  installBusy: InstallTarget | null;
+  installResults: Partial<Record<InstallTarget, InstallResult>>;
+  nodeHint: string | null;
+  onInstall: (target: InstallTarget) => void;
+  onCopy: (text: string) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+          A runtime (harness) is the agent CLI your familiar speaks through.
+          You only need{" "}
+          <span className="font-medium text-[var(--text-primary)]">one</span> —
+          pick whichever you already use, or one-click install Codex or Claude
+          Code below.
+        </p>
+        <button
+          onClick={onRefresh}
+          className="focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        >
+          Refresh
+        </button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {chatHarnesses.map((adapter) => {
+          const oneClick = HARNESS_ONE_CLICK[adapter.id];
+          const result = oneClick ? installResults[oneClick.target] : undefined;
+          return (
+            <div
+              key={adapter.id}
+              className={`rounded-lg border p-3 ${
+                adapter.installed
+                  ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_8%,transparent)]"
+                  : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                  {adapter.label}
+                </span>
+                {adapter.installed ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-success)]">
+                    <Icon name="ph:check-bold" /> installed
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 truncate font-mono text-[11px] text-[var(--text-muted)]">
+                {adapter.installed
+                  ? (adapter.path ?? adapter.binary)
+                  : adapter.binary}
+              </div>
+              {!adapter.installed ? (
+                <div className="mt-2 flex flex-col gap-2">
+                  {oneClick ? (
+                    <>
+                      <button
+                        onClick={() => onInstall(oneClick.target)}
+                        disabled={installBusy !== null}
+                        className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                      >
+                        <Icon name="ph:arrow-down-bold" />
+                        {installBusy === oneClick.target
+                          ? "Installing…"
+                          : `Install ${adapter.label}`}
+                      </button>
+                      <CommandRow command={oneClick.command} onCopy={onCopy} />
+                      <p className="text-[11px] leading-4 text-[var(--text-muted)]">
+                        After install: {oneClick.afterInstall}.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] leading-4 text-[var(--text-muted)]">
+                      {adapter.installHint}
+                    </p>
+                  )}
+                  <InstallResultNote result={result} />
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {nodeHint ? (
+        <p className="text-[11px] leading-4 text-[var(--color-warning)]">
+          One-click installs need Node.js — see step 1 for the setup notice.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function StepFamiliar(props: {
+  chatHarnesses: HarnessReport[];
+  selectedHarnessId: string | null;
+  selectedHarness: HarnessReport | null;
+  openclawAgents: OpenClawAgent[];
+  selectedAgentId: string | null;
+  agentsLoading: boolean;
+  agentsError: string | null;
+  hasExistingOpenClawAgents: boolean;
+  familiarName: string;
+  familiarRole: string;
+  familiarGlyph: string;
+  familiarDescription: string;
+  confirmCreateNewFamiliar: boolean;
+  picking: string | null;
+  sshEnabled: boolean;
+  sshHost: string;
+  sshCwd: string;
+  sshCommand: string;
+  sshCheck: SshCheckState;
+  sshSetup: string[];
+  setFamiliarName: (v: string) => void;
+  setFamiliarRole: (v: string) => void;
+  setFamiliarGlyph: (v: string) => void;
+  setFamiliarDescription: (v: string) => void;
+  setConfirmCreateNewFamiliar: (v: boolean) => void;
+  setSshEnabled: (v: boolean) => void;
+  setSshHost: (v: string) => void;
+  setSshCwd: (v: string) => void;
+  setSshCommand: (v: string) => void;
+  onTestSsh: () => void;
+  onSelectHarness: (adapter: HarnessReport) => void;
+  onSelectAgent: (agent: OpenClawAgent) => void;
+  onRefreshAgents: () => void;
+  onCreateLocal: () => void;
+  onConnectAgent: () => void;
+}) {
+  const {
+    chatHarnesses,
+    selectedHarnessId,
+    selectedHarness,
+    openclawAgents,
+    selectedAgentId,
+    agentsLoading,
+    agentsError,
+    hasExistingOpenClawAgents,
+    familiarName,
+    familiarRole,
+    familiarGlyph,
+    familiarDescription,
+    confirmCreateNewFamiliar,
+    picking,
+    sshEnabled,
+    sshHost,
+    sshCwd,
+    sshCommand,
+    sshCheck,
+    sshSetup,
+  } = props;
+  const glyphInvalid =
+    familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:");
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+        A familiar is your named agent — pick what powers it, name it, and
+        everything stays editable later in the Familiar Studio (Agents &rarr;
+        pick a familiar &rarr; Edit).
+      </p>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div>
+          <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
+            Option A — new familiar from an installed runtime
+          </h3>
+          <div className="mt-2 grid gap-2">
+            {chatHarnesses.map((adapter) => {
+              const active = selectedHarnessId === adapter.id;
+              return (
+                <button
+                  key={adapter.id}
+                  onClick={() => props.onSelectHarness(adapter)}
+                  disabled={!adapter.installed}
+                  className={`rounded-lg border p-2.5 text-left ${
+                    active
+                      ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
+                      : adapter.installed
+                        ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                        : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
+                  }`}
+                  title={
+                    adapter.installed
+                      ? undefined
+                      : `Not installed yet — see step 3. ${adapter.installHint}`
+                  }
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[12px] font-medium">
+                      {adapter.label}
+                    </span>
+                    {active ? (
+                      <Icon
+                        name="ph:check-bold"
+                        className="text-[var(--accent-presence)]"
+                      />
+                    ) : !adapter.installed ? (
+                      <span className="text-[10px]">not installed</span>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
+              Option B — connect an existing OpenClaw agent
+            </h3>
+            <button
+              onClick={props.onRefreshAgents}
+              disabled={agentsLoading}
+              className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+            >
+              {agentsLoading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+          {agentsError ? (
+            <div className="mt-2 rounded border border-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-3 py-2 text-[12px] text-[var(--color-danger)]">
+              {agentsError}
+            </div>
+          ) : openclawAgents.length === 0 ? (
+            <div className="mt-2 rounded border border-dashed border-[var(--border-hairline)] px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">
+              No OpenClaw agents found under ~/.openclaw/agents — Option A is
+              your path.
+            </div>
+          ) : (
+            <div className="mt-2 grid max-h-[12rem] gap-2 overflow-y-auto pr-1">
+              {openclawAgents.map((agent) => {
+                const active = selectedAgentId === agent.id;
+                return (
+                  <button
+                    key={agent.id}
+                    onClick={() => props.onSelectAgent(agent)}
+                    className={`rounded-lg border p-2.5 text-left ${
+                      active
+                        ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
+                        : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[12px] font-medium">
+                        {agent.displayName}
+                      </span>
+                      {active ? (
+                        <Icon
+                          name="ph:check-bold"
+                          className="text-[var(--accent-presence)]"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]">
+                      {agent.id}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="block">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Name
+          </span>
+          <input
+            value={familiarName}
+            onChange={(e) => props.setFamiliarName(e.target.value)}
+            placeholder="Example: Riley"
+            className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Role
+          </span>
+          <input
+            value={familiarRole}
+            onChange={(e) => props.setFamiliarRole(e.target.value)}
+            placeholder="Research, Code, Ops..."
+            className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Glyph
+          </span>
+          <input
+            value={familiarGlyph}
+            onChange={(e) => props.setFamiliarGlyph(e.target.value)}
+            placeholder="ph:sparkle-fill"
+            aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
+            className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
+              glyphInvalid
+                ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
+                : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
+            }`}
+          />
+          {glyphInvalid ? (
+            <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
+              Must start with <code className="font-mono">ph:</code> — see{" "}
+              <a
+                href="https://phosphoricons.com"
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                phosphoricons.com
+              </a>
+              .
+            </span>
+          ) : null}
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            Description
+          </span>
+          <input
+            value={familiarDescription}
+            onChange={(e) => props.setFamiliarDescription(e.target.value)}
+            placeholder="What should this familiar help with?"
+            className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+          />
+        </label>
+      </div>
+
+      <section className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={sshEnabled}
+            onChange={(e) => props.setSshEnabled(e.currentTarget.checked)}
+            className="mt-1 h-4 w-4 accent-[var(--accent-presence)]"
+          />
+          <span className="text-[12px] leading-5 text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--text-primary)]">
+              Runs on a remote machine (SSH)
+            </span>{" "}
+            — the familiar&rsquo;s harness runs over SSH on another box (a
+            build server, a homelab, a VM). Cave connects non-interactively
+            with your SSH keys and never stores passwords or key material.
+          </span>
+        </label>
+        {sshEnabled ? (
+          <div className="mt-3 flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                  Host
+                </span>
+                <input
+                  value={sshHost}
+                  onChange={(e) => props.setSshHost(e.target.value)}
+                  placeholder="ssh-alias or hostname"
+                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                  Remote directory
+                </span>
+                <input
+                  value={sshCwd}
+                  onChange={(e) => props.setSshCwd(e.target.value)}
+                  placeholder="/home/me/projects"
+                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                  Remote coven command
+                </span>
+                <input
+                  value={sshCommand}
+                  onChange={(e) => props.setSshCommand(e.target.value)}
+                  placeholder="coven (default)"
+                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={props.onTestSsh}
+                disabled={sshCheck.state === "checking" || !sshHost.trim()}
+                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
+              >
+                <Icon name="ph:plug-bold" />
+                {sshCheck.state === "checking" ? "Testing…" : "Test connection"}
+              </button>
+              {sshCheck.state === "ok" ? (
+                <span className="text-[11px] text-[var(--color-success)]">
+                  {sshCheck.detail}
+                </span>
+              ) : sshCheck.state === "fail" ? (
+                <span className="text-[11px] text-[var(--color-danger)]">
+                  {sshCheck.detail}
+                </span>
+              ) : null}
+            </div>
+            <details>
+              <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
+                SSH key setup (one-time)
+              </summary>
+              <div className="mt-2">
+                <InstructionList title="" items={sshSetup} />
+              </div>
+            </details>
+          </div>
+        ) : null}
+      </section>
+
+      <label className="flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
+        <input
+          type="checkbox"
+          checked={confirmCreateNewFamiliar}
+          onChange={(e) =>
+            props.setConfirmCreateNewFamiliar(e.currentTarget.checked)
+          }
+          disabled={!selectedHarnessId || picking !== null}
+          className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
+        />
+        <span>
+          I understand this creates a new Coven familiar
+          {selectedHarness ? (
+            <>
+              {" "}bound to the{" "}
+              <span className="font-medium text-[var(--text-primary)]">
+                {selectedHarness.label}
+              </span>{" "}harness
+            </>
+          ) : null}
+          {hasExistingOpenClawAgents
+            ? ", not a connection to one of the existing OpenClaw agents listed alongside"
+            : ""}
+          .
+        </span>
+      </label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={props.onCreateLocal}
+          disabled={
+            picking !== null ||
+            !selectedHarnessId ||
+            !confirmCreateNewFamiliar ||
+            (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
+          }
+          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+        >
+          <Icon name="ph:terminal-window" />
+          {picking === "local" ? "Creating..." : "Create new Coven familiar"}
+        </button>
+        <button
+          onClick={props.onConnectAgent}
+          disabled={
+            picking !== null ||
+            !selectedAgentId ||
+            familiarName.trim().length === 0 ||
+            (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
+          }
+          className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
+        >
+          <Icon name="ph:sparkle" />
+          {picking === "familiar"
+            ? "Connecting..."
+            : "Connect selected existing agent"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StepMeetFamiliars({
+  familiars,
+  statusOk,
+  complete,
+  onEdit,
+  onOpenCave,
+}: {
+  familiars: CaveFamiliar[];
+  statusOk: boolean;
+  complete: boolean;
+  onEdit: (id: string) => void;
+  onOpenCave: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+        {statusOk
+          ? "Your familiars are loaded. Everything about them stays editable — name, look, brain, harness — in the Familiar Studio, any time."
+          : "Once the daemon is running and a familiar exists, they appear here."}
+      </p>
+      {familiars.length > 0 ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {familiars.map((familiar) => (
+            <div
+              key={familiar.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                  {familiar.display_name ?? familiar.id}
+                </div>
+                <div className="truncate text-[11px] text-[var(--text-muted)]">
+                  {familiar.role ?? familiar.id}
+                </div>
+              </div>
+              <button
+                onClick={() => onEdit(familiar.id)}
+                className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)]"
+              >
+                <Icon name="ph:pencil-simple" />
+                Edit
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {complete ? (
+        <button
+          onClick={onOpenCave}
+          className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_90%,transparent)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--color-success)_85%,#000)]"
+        >
+          <Icon name="ph:rocket-launch-bold" />
+          Open Cave
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function InstructionList({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-        {title}
-      </h3>
+      {title ? (
+        <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
+          {title}
+        </h3>
+      ) : null}
       <ol className="mt-2 space-y-2">
         {items.map((item, index) => (
           <li
@@ -1088,7 +1888,9 @@ function MaintenancePanel({
   className?: string;
 }) {
   return (
-    <div className={`${BENTO_CARD_SOFT} ${className}`}>
+    <div
+      className={`rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4 ${className}`}
+    >
       <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
         Maintenance
       </div>

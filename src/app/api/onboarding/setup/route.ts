@@ -113,7 +113,14 @@ export async function POST(req: Request) {
     familiars: draft
       ? {
           ...(existing.familiars ?? {}),
-          [draft.id]: { harness: draft.harness, model: draft.model },
+          [draft.id]: {
+            harness: draft.harness,
+            model: draft.model,
+            // Remote familiars carry their SSH runtime in the binding —
+            // chat's send route reads it via bindingFor(); familiars.toml
+            // stays runtime-free.
+            ...(draft.runtime ? { runtime: draft.runtime } : {}),
+          },
         }
       : (existing.familiars ?? {}),
   };

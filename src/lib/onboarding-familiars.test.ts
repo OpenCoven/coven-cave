@@ -24,6 +24,7 @@ assert.deepEqual(draft, {
   harness: "openclaw",
   model: "riley",
   openclawAgentId: "riley",
+  runtime: undefined,
 });
 
 const toml = buildFamiliarsToml(draft);
@@ -54,6 +55,7 @@ assert.deepEqual(localDraft, {
   harness: "codex",
   model: "local-codex",
   openclawAgentId: undefined,
+  runtime: undefined,
 });
 
 assert.equal(normalizeFamiliarDraft({ displayName: "Solo" }).harness, "codex");
@@ -74,6 +76,7 @@ assert.deepEqual(hermesDraft, {
   harness: "hermes",
   model: "hermes-local",
   openclawAgentId: undefined,
+  runtime: undefined,
 });
 
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
@@ -88,3 +91,52 @@ assert.throws(
     }),
   /Unsupported harness: attacker-adapter\./,
 );
+
+// ── SSH runtime on the draft ─────────────────────────────────────────────────
+
+const sshDraft = normalizeFamiliarDraft({
+  displayName: "Remote Codex",
+  harness: "codex",
+  model: "codex-remote",
+  runtime: { kind: "ssh", host: "build-box", cwd: "/srv/work", command: "" },
+});
+assert.deepEqual(sshDraft.runtime, {
+  kind: "ssh",
+  host: "build-box",
+  cwd: "/srv/work",
+  command: "coven",
+});
+
+// familiars.toml stays runtime-free — the binding (cave-config.json) owns it.
+assert.doesNotMatch(buildFamiliarsToml(sshDraft), /runtime|ssh|build-box/);
+
+// Partial SSH input fails loudly instead of silently creating a local familiar.
+assert.throws(
+  () =>
+    normalizeFamiliarDraft({
+      displayName: "Half Remote",
+      runtime: { kind: "ssh", host: "build-box", cwd: "" },
+    }),
+  /SSH runtime needs a host/,
+);
+
+// Hosts that fail familiar-runtime's pattern are rejected, not normalized away.
+assert.throws(
+  () =>
+    normalizeFamiliarDraft({
+      displayName: "Bad Host",
+      runtime: { kind: "ssh", host: "host name!", cwd: "/srv" },
+    }),
+  /SSH runtime needs a host/,
+);
+
+// Non-ssh runtime input is ignored entirely.
+assert.equal(
+  normalizeFamiliarDraft({
+    displayName: "Local",
+    runtime: { kind: "local" },
+  }).runtime,
+  undefined,
+);
+
+console.log("onboarding-familiars ssh runtime: ok");

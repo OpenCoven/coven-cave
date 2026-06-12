@@ -1,4 +1,10 @@
 import { isTrustedOnboardingHarness } from "./harness-adapters.ts";
+import {
+  isSshRuntime,
+  normalizeFamiliarRuntime,
+  type SshFamiliarRuntime,
+} from "./familiar-runtime.ts";
+
 export type OnboardingFamiliarDraft = {
   id: string;
   displayName: string;
@@ -8,6 +14,9 @@ export type OnboardingFamiliarDraft = {
   harness: string;
   model: string;
   openclawAgentId?: string;
+  /** Optional remote runtime. Persisted to cave-config.json (the binding
+   *  source chat reads), never to familiars.toml. */
+  runtime?: SshFamiliarRuntime;
 };
 
 export type OnboardingFamiliarInput = {
@@ -19,6 +28,12 @@ export type OnboardingFamiliarInput = {
   harness?: string | null;
   model?: string | null;
   openclawAgentId?: string | null;
+  runtime?: {
+    kind?: string | null;
+    host?: string | null;
+    cwd?: string | null;
+    command?: string | null;
+  } | null;
 };
 
 function cleanText(value: string | null | undefined): string {
@@ -51,6 +66,25 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   }
   const model = cleanText(input.model) || openclawAgentId || id;
 
+  // A runtime request is all-or-nothing: a partial/invalid SSH config must
+  // fail loudly here instead of silently degrading to a local familiar the
+  // user believes is remote.
+  let runtime: SshFamiliarRuntime | undefined;
+  if (input.runtime && cleanText(input.runtime.kind) === "ssh") {
+    const normalized = normalizeFamiliarRuntime({
+      kind: "ssh",
+      host: input.runtime.host ?? "",
+      cwd: input.runtime.cwd ?? "",
+      command: input.runtime.command ?? "",
+    });
+    if (!isSshRuntime(normalized)) {
+      throw new Error(
+        "SSH runtime needs a host (letters, digits, dots, dashes) and a remote working directory.",
+      );
+    }
+    runtime = normalized;
+  }
+
   return {
     id,
     displayName,
@@ -60,6 +94,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     harness,
     model,
     openclawAgentId: openclawAgentId || undefined,
+    runtime,
   };
 }
 
