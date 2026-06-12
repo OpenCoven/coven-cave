@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,12 @@ export async function POST() {
     child.on("error", (err) => {
       clearTimeout(timer);
       resolve(
-        NextResponse.json({ ok: false, error: err.message }, { status: 500 }),
+        NextResponse.json(
+          isMissingExecutableError(err)
+            ? covenCliMissingError()
+            : { ok: false, error: err.message },
+          { status: 500 },
+        ),
       );
     });
 
