@@ -14,6 +14,7 @@ import {
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
+import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
   normalizeSelection,
@@ -42,6 +43,9 @@ type Props = {
    *  "no chats yet" empty state. Defaults true for callers that load
    *  sessions before mounting. */
   sessionsLoaded?: boolean;
+  /** When true, hides the project sidebar rail so the list fits in a narrow
+   *  companion panel (e.g. the Browser right-rail). */
+  compact?: boolean;
 };
 
 function age(iso: string): string {
@@ -118,7 +122,8 @@ function HighlightedSnippet({ snippet, query }: { snippet: string; query: string
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
+  const { projects } = useProjects();
   const [error, setError] = useState<string | null>(null);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
@@ -287,15 +292,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const grouped = useMemo(() => {
-    return deriveChatProjectGroups(filtered);
-  }, [filtered]);
+    return deriveChatProjectGroups(filtered, projects);
+  }, [filtered, projects]);
 
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The persisted selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a persisted project selection must not scope the
   // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine), [mine]);
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine, projects), [mine, projects]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
@@ -390,6 +395,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   return (
     <div className="flex h-full min-w-0">
+      {!compact && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
@@ -412,6 +418,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           onNewChat(root ?? undefined, group?.defaultFamiliarId ?? fallbackFamiliarId);
         }}
       />
+      )}
       <section className="chat-list-surface flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
       {/* ── Agent dossier + command strip ── */}
