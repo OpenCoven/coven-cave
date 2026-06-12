@@ -1,6 +1,7 @@
 .workflow-studio-shell {
   --workflow-top-control-height: 34px;
-  --workflow-top-control-offset: 14px;
+  /* Matches the palette's vertical padding so panel triggers and palette items share a top line. */
+  --workflow-top-control-offset: 8px;
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(260px, 340px);
   gap: 12px;
@@ -538,9 +539,11 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in oklch, var(--card) 72%, transparent);
+  overflow-x: auto;
 }
 
 .workflow-palette-label {
+  flex-shrink: 0;
   white-space: nowrap;
   font-size: 11px;
   text-transform: uppercase;
@@ -552,7 +555,9 @@
 .workflow-palette-item {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 5px;
+  white-space: nowrap;
   min-height: var(--workflow-top-control-height);
   font-size: 12px;
   padding: 4px 9px;
@@ -1016,7 +1021,8 @@
 .workflow-studio-side,
 .workflow-library,
 .workflow-runs-panel,
-.workflow-manifest-yaml {
+.workflow-manifest-yaml,
+.workflow-palette {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
@@ -1025,7 +1031,8 @@
 .workflow-library::-webkit-scrollbar,
 .workflow-runs-panel::-webkit-scrollbar,
 .workflow-manifest-yaml::-webkit-scrollbar,
-.workflow-role-list::-webkit-scrollbar {
+.workflow-role-list::-webkit-scrollbar,
+.workflow-palette::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
@@ -1034,7 +1041,8 @@
 .workflow-library::-webkit-scrollbar-track,
 .workflow-runs-panel::-webkit-scrollbar-track,
 .workflow-manifest-yaml::-webkit-scrollbar-track,
-.workflow-role-list::-webkit-scrollbar-track {
+.workflow-role-list::-webkit-scrollbar-track,
+.workflow-palette::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -1042,7 +1050,8 @@
 .workflow-library::-webkit-scrollbar-thumb,
 .workflow-runs-panel::-webkit-scrollbar-thumb,
 .workflow-manifest-yaml::-webkit-scrollbar-thumb,
-.workflow-role-list::-webkit-scrollbar-thumb {
+.workflow-role-list::-webkit-scrollbar-thumb,
+.workflow-palette::-webkit-scrollbar-thumb {
   background: color-mix(in oklch, var(--border-strong) 80%, transparent);
   border-radius: 999px;
 }
