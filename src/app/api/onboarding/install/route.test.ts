@@ -16,6 +16,7 @@ for (const pkg of [
   "@opencoven\\/cli@latest",
   "@openai\\/codex",
   "@anthropic-ai\\/claude-code",
+  "openclaw@latest",
 ]) {
   assert.match(
     source,

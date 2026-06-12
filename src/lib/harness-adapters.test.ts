@@ -25,7 +25,7 @@ assert.deepEqual(openClawAdapterReport(2), {
   installed: true,
   path: null,
   version: "2 agents",
-  installHint: "Connect or create an OpenClaw agent under ~/.openclaw/agents.",
+  installHint: "Install OpenClaw with `npm install -g openclaw@latest`, then connect or create an agent under ~/.openclaw/agents.",
   source: "openclaw",
   manifestPath: null,
 });

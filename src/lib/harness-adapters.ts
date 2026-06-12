@@ -82,7 +82,7 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     label: "OpenClaw",
     binary: "openclaw",
     chatSupported: true,
-    installHint: "Connect or create an OpenClaw agent under ~/.openclaw/agents.",
+    installHint: "Install OpenClaw with `npm install -g openclaw@latest`, then connect or create an agent under ~/.openclaw/agents.",
     source: "bundled",
   },
 ];
@@ -116,7 +116,7 @@ export function openClawAdapterReport(openclawAgentCount: number): AdapterReport
     version: openclawAgentCount > 0
       ? `${openclawAgentCount} agent${openclawAgentCount === 1 ? "" : "s"}`
       : null,
-    installHint: "Connect or create an OpenClaw agent under ~/.openclaw/agents.",
+    installHint: "Install OpenClaw with `npm install -g openclaw@latest`, then connect or create an agent under ~/.openclaw/agents.",
     source: "openclaw",
     manifestPath: null,
   };

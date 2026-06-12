@@ -62,7 +62,7 @@ type CaveFamiliar = {
   role?: string;
 };
 
-type InstallTarget = "coven-cli" | "codex" | "claude";
+type InstallTarget = "coven-cli" | "codex" | "claude" | "openclaw";
 
 type InstallResult = {
   ok: boolean;
@@ -90,6 +90,12 @@ const HARNESS_ONE_CLICK: Partial<
     target: "claude",
     command: "npm install -g @anthropic-ai/claude-code",
     afterInstall: "then run `claude doctor` in a terminal to finish setup",
+  },
+  openclaw: {
+    target: "openclaw",
+    command: "npm i -g openclaw@latest",
+    afterInstall:
+      "then connect or create an agent under ~/.openclaw/agents (Option B in the familiar step)",
   },
 };
 

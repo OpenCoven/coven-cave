@@ -15,8 +15,8 @@ const execFileAsync = promisify(execFile);
  * Hard allowlist: the request names a TARGET, never a command. Every target
  * maps to a fixed `npm install -g <package>` so nothing user-controlled ever
  * reaches a shell. Targets cover the dependencies onboarding can self-serve;
- * harnesses without an npm one-liner (Hermes, OpenClaw) keep their manual
- * instructions in the overlay instead of appearing here.
+ * harnesses without an npm one-liner (Hermes) keep their manual instructions
+ * in the overlay instead of appearing here.
  */
 const INSTALL_TARGETS = {
   "coven-cli": {
@@ -33,6 +33,11 @@ const INSTALL_TARGETS = {
     label: "Claude Code",
     packageName: "@anthropic-ai/claude-code",
     binary: "claude",
+  },
+  openclaw: {
+    label: "OpenClaw",
+    packageName: "openclaw@latest",
+    binary: "openclaw",
   },
 } as const;
 
