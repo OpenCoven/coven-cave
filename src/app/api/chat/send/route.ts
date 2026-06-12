@@ -819,7 +819,7 @@ export async function POST(req: Request) {
   const mentionedFiles = imagesSupported
     ? await resolveMentionedFiles(
         body.mentionedFiles,
-        body.mentionedFilesRoot ?? body.projectRoot,
+        familiarWorkspace(body.familiarId),
       )
     : [];
 
