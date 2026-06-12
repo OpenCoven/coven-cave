@@ -170,10 +170,17 @@ async function resolveFamiliarWorkspace(
   if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
   const candidate = await familiarWorkspace(familiarId);
   try {
-    const s = await stat(candidate);
-    if (s.isDirectory()) return candidate;
+    const safeRoot = await realpath(path.join(covenHome(), "familiars"));
+    const resolvedCandidate = await realpath(candidate);
+    const rootPrefix = safeRoot.endsWith(path.sep) ? safeRoot : `${safeRoot}${path.sep}`;
+    if (resolvedCandidate !== safeRoot && !resolvedCandidate.startsWith(rootPrefix)) {
+      return undefined;
+    }
+
+    const s = await stat(resolvedCandidate);
+    if (s.isDirectory()) return resolvedCandidate;
   } catch {
-    /* not found */
+    /* not found or outside allowed root */
   }
   return undefined;
 }
