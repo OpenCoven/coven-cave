@@ -268,9 +268,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "targetPath required" }, { status: 400 });
   }
 
-  const targetPath = body.targetPath;
+  // Constrain user-provided paths to a safe root directory.
+  // Use HOME as the allowed workspace root for graph operations.
+  const safeRoot = await fs.realpath(homedir());
+  const resolvedTargetPath = path.resolve(safeRoot, body.targetPath);
 
-  // Verify path exists
+  let targetPath: string;
+  try {
+    targetPath = await fs.realpath(resolvedTargetPath);
+  } catch {
+    return NextResponse.json({ ok: false, error: "targetPath does not exist" }, { status: 400 });
+  }
+
+  const safeRootWithSep = safeRoot.endsWith(path.sep) ? safeRoot : `${safeRoot}${path.sep}`;
+  if (targetPath !== safeRoot && !targetPath.startsWith(safeRootWithSep)) {
+    return NextResponse.json({ ok: false, error: "targetPath is outside allowed root" }, { status: 403 });
+  }
+
+  // Verify path exists and is a directory
   try {
     const stat = await fs.stat(targetPath);
     if (!stat.isDirectory()) {
