@@ -69,6 +69,25 @@ type InstallResult = {
   detail: string;
 };
 
+type InstallJobView = {
+  status: "running" | "done";
+  elapsedMs: number;
+  tail: string;
+  ok?: boolean;
+  binaryPath?: string | null;
+  error?: string;
+};
+
+/** Mirrors the server's npm-kind mutual exclusion (route returns 409). */
+const NPM_INSTALL_TARGETS: InstallTarget[] = [
+  "coven-cli",
+  "codex",
+  "claude",
+  "openclaw",
+];
+
+const ALL_INSTALL_TARGETS: InstallTarget[] = [...NPM_INSTALL_TARGETS, "hermes"];
+
 type SshCheckState =
   | { state: "idle" }
   | { state: "checking" }
@@ -282,7 +301,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // follows the first incomplete required step automatically.
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   // One-click installs (/api/onboarding/install)
-  const [installBusy, setInstallBusy] = useState<InstallTarget | null>(null);
+  const [installJobs, setInstallJobs] = useState<
+    Partial<Record<InstallTarget, InstallJobView>>
+  >({});
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
@@ -502,9 +523,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   };
 
   const runInstall = async (target: InstallTarget) => {
-    setInstallBusy(target);
     setSetupError(null);
     setNodeHint(null);
+    setInstallResults((prev) => {
+      const next = { ...prev };
+      delete next[target];
+      return next;
+    });
     try {
       const res = await fetch("/api/onboarding/install", {
         method: "POST",
@@ -512,12 +537,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         body: JSON.stringify({ target }),
       });
       const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
+        started?: boolean;
+        status?: string;
         npmMissing?: boolean;
         hint?: string;
         error?: string;
-        binaryPath?: string | null;
-        stderr?: string;
       };
       if (json.npmMissing) {
         setNodeHint(
@@ -533,27 +557,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         }));
         return;
       }
-      if (!res.ok || json.ok === false) {
+      if (!res.ok) {
+        // 409 (another npm install running) and hard start failures land here.
         setInstallResults((prev) => ({
           ...prev,
           [target]: {
             ok: false,
-            detail: json.error ?? json.stderr?.slice(-300) ?? "install failed",
+            detail: json.error ?? "install failed to start",
           },
         }));
         return;
       }
-      setInstallResults((prev) => ({
+      // 202 started (or idempotent 200 for an already-running job): hand off
+      // to the polling effect.
+      setInstallJobs((prev) => ({
         ...prev,
-        [target]: {
-          ok: true,
-          detail: json.binaryPath
-            ? `installed at ${json.binaryPath}`
-            : "installed",
-        },
+        [target]: { status: "running", elapsedMs: 0, tail: "" },
       }));
-      await refresh();
-      await loadHarnesses();
     } catch (err) {
       setInstallResults((prev) => ({
         ...prev,
@@ -562,10 +582,100 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           detail: err instanceof Error ? err.message : "install failed",
         },
       }));
-    } finally {
-      setInstallBusy(null);
     }
   };
+
+  // Poll running install jobs every 2s. The interval is recreated whenever a
+  // poll updates state — net effect is still one poll per running job per ~2s.
+  useEffect(() => {
+    const running = (
+      Object.entries(installJobs) as [InstallTarget, InstallJobView][]
+    )
+      .filter(([, job]) => job.status === "running")
+      .map(([target]) => target);
+    if (running.length === 0) return;
+    let cancelled = false;
+    const tick = async () => {
+      for (const target of running) {
+        try {
+          const res = await fetch(
+            `/api/onboarding/install?target=${encodeURIComponent(target)}`,
+          );
+          if (!res.ok || cancelled) continue;
+          const json = (await res.json()) as
+            | { status: "idle" }
+            | InstallJobView;
+          if (cancelled) return;
+          if (json.status === "idle") {
+            // Server restarted mid-install: the job is gone; let the harness
+            // refresh tell the truth about whether the binary landed.
+            setInstallJobs((prev) => {
+              const next = { ...prev };
+              delete next[target];
+              return next;
+            });
+            void refresh();
+            continue;
+          }
+          setInstallJobs((prev) => ({ ...prev, [target]: json }));
+          if (json.status === "done") {
+            setInstallResults((prev) => ({
+              ...prev,
+              [target]: json.ok
+                ? {
+                    ok: true,
+                    detail: json.binaryPath
+                      ? `installed at ${json.binaryPath}`
+                      : "installed",
+                  }
+                : { ok: false, detail: json.error ?? "install failed" },
+            }));
+            await refresh();
+            await loadHarnesses();
+          }
+        } catch {
+          // Transient poll failure — next tick retries.
+        }
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installJobs]);
+
+  // Re-attach to server-side jobs after a page refresh: one probe per target
+  // on mount; only still-running jobs are adopted.
+  useEffect(() => {
+    void (async () => {
+      const entries = await Promise.all(
+        ALL_INSTALL_TARGETS.map(async (target) => {
+          try {
+            const res = await fetch(
+              `/api/onboarding/install?target=${encodeURIComponent(target)}`,
+            );
+            if (!res.ok) return null;
+            const json = (await res.json()) as { status: string };
+            return json.status === "running"
+              ? ([target, json as InstallJobView] as const)
+              : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const running = Object.fromEntries(
+        entries.filter((entry): entry is NonNullable<typeof entry> => !!entry),
+      );
+      if (Object.keys(running).length > 0) {
+        setInstallJobs((prev) => ({ ...running, ...prev }));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const testSsh = async () => {
     const host = sshHost.trim();
@@ -1037,7 +1147,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                         {step.key === "covenCli" ? (
                           <StepCovenCli
                             platformCopy={platformCopy}
-                            installBusy={installBusy}
+                            installJobs={installJobs}
                             installResult={installResults["coven-cli"]}
                             nodeHint={nodeHint}
                             onInstall={() => void runInstall("coven-cli")}
@@ -1067,7 +1177,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           <StepRuntimes
                             chatHarnesses={chatHarnesses}
                             platform={activePlatform}
-                            installBusy={installBusy}
+                            installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
                             onInstall={(target) => void runInstall(target)}
@@ -1357,19 +1467,22 @@ function InstallResultNote({ result }: { result?: InstallResult }) {
 
 function StepCovenCli({
   platformCopy,
-  installBusy,
+  installJobs,
   installResult,
   nodeHint,
   onInstall,
   onCopy,
 }: {
   platformCopy: (typeof PLATFORM_COPY)[PlatformId];
-  installBusy: InstallTarget | null;
+  installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResult?: InstallResult;
   nodeHint: string | null;
   onInstall: () => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
+  const npmJobRunning = NPM_INSTALL_TARGETS.some(
+    (target) => installJobs[target]?.status === "running",
+  );
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1379,11 +1492,11 @@ function StepCovenCli({
       <div className="flex flex-wrap items-center gap-2">
         <button
           onClick={onInstall}
-          disabled={installBusy !== null}
+          disabled={npmJobRunning}
           className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
         >
           <Icon name="ph:arrow-down-bold" />
-          {installBusy === "coven-cli"
+          {installJobs["coven-cli"]?.status === "running"
             ? "Installing… (can take a minute)"
             : "Install coven CLI"}
         </button>
@@ -1411,7 +1524,7 @@ function StepCovenCli({
 function StepRuntimes({
   chatHarnesses,
   platform,
-  installBusy,
+  installJobs,
   installResults,
   nodeHint,
   onInstall,
@@ -1420,13 +1533,16 @@ function StepRuntimes({
 }: {
   chatHarnesses: HarnessReport[];
   platform: PlatformId;
-  installBusy: InstallTarget | null;
+  installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
   onInstall: (target: InstallTarget) => void;
   onCopy: (text: string) => Promise<boolean>;
   onRefresh: () => void;
 }) {
+  const npmJobRunning = NPM_INSTALL_TARGETS.some(
+    (target) => installJobs[target]?.status === "running",
+  );
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -1478,11 +1594,14 @@ function StepRuntimes({
                     <>
                       <button
                         onClick={() => onInstall(oneClick.target)}
-                        disabled={installBusy !== null}
+                        disabled={
+                          installJobs[oneClick.target]?.status === "running" ||
+                          (NPM_INSTALL_TARGETS.includes(oneClick.target) && npmJobRunning)
+                        }
                         className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                       >
                         <Icon name="ph:arrow-down-bold" />
-                        {installBusy === oneClick.target
+                        {installJobs[oneClick.target]?.status === "running"
                           ? "Installing…"
                           : `Install ${adapter.label}`}
                       </button>

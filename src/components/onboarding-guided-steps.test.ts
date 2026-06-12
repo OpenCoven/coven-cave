@@ -190,4 +190,30 @@ assert.match(
   "harness list retries while empty so a slow first fetch cannot strand the runtime step",
 );
 
+// ── Background install jobs (client) ────────────────────────────────────────
+
+assert.match(
+  source,
+  /installJobs/,
+  "per-target install jobs replace the single global busy flag",
+);
+
+assert.doesNotMatch(
+  source,
+  /disabled=\{installBusy !== null\}/,
+  "one running install must not disable every other install button",
+);
+
+assert.match(
+  source,
+  /api\/onboarding\/install\?target=/,
+  "the client polls the job status endpoint",
+);
+
+assert.match(
+  source,
+  /NPM_INSTALL_TARGETS/,
+  "npm-kind targets share a busy lock (mirrors the server's 409)",
+);
+
 console.log("onboarding-guided-steps.test.ts: ok");
