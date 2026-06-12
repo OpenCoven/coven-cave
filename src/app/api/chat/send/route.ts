@@ -123,9 +123,16 @@ function normalizePath(p: string): string {
 async function resolveCwd(requested?: string): Promise<string> {
   if (requested) {
     try {
+      const safeRoot = await realpath(homedir());
       const normalized = normalizePath(requested);
-      const s = await stat(normalized);
-      if (s.isDirectory()) return normalized;
+      const candidateResolved = path.resolve(normalized);
+      const candidateReal = await realpath(candidateResolved);
+      const withinSafeRoot =
+        candidateReal === safeRoot ||
+        candidateReal.startsWith(safeRoot.endsWith(path.sep) ? safeRoot : safeRoot + path.sep);
+      if (!withinSafeRoot) return homedir();
+      const s = await stat(candidateReal);
+      if (s.isDirectory()) return candidateReal;
     } catch {
       /* fall through to homedir */
     }
