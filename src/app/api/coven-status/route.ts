@@ -17,6 +17,10 @@ import {
 } from "@/lib/coven-status-types";
 import { DEMO_FAMILIARS, DEMO_MODE } from "@/lib/demo-seed";
 import { isDemoModeRequest } from "@/lib/demo-mode";
+import {
+  initiatorFromOpenClawMessages,
+  openClawMessagesFromJsonlLines,
+} from "@/lib/session-initiator";
 
 export const dynamic = "force-dynamic";
 
@@ -213,6 +217,11 @@ async function scanAgentSessions(agentId: string, now: number): Promise<SessionS
         parentId,
         model,
         channel,
+        initiator: initiatorFromOpenClawMessages(
+          openClawMessagesFromJsonlLines(lines),
+          agentId,
+          sessionKey,
+        ),
       });
     } catch {
       // skip unreadable files

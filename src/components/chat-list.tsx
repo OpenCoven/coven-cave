@@ -7,6 +7,7 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
+import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import {
@@ -719,6 +720,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                   {project || rowFamiliarName}
                                 </span>
                                 {s.origin ? <OriginChip origin={s.origin} /> : null}
+                                <SessionInitiatorChip initiator={s.initiator} />
                               </span>
                               <span className="flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
                                 <span>{chatDate(s.updated_at)}</span>

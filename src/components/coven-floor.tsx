@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
+import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 
 const MAX_VISIBLE_SESSIONS = 12;
 
@@ -129,6 +130,7 @@ function SessionTableCells({ session }: { session: SessionSummary }) {
       <td>
         <div className="floor-session-meta">
           <span>{sessionSource(session)}</span>
+          <SessionInitiatorChip initiator={session.initiator} />
           {session.model ? <span className="floor-model-pill">{session.model.replace(/^(?:gpt-|claude-)/i, "").slice(0, 14)}</span> : null}
           {runtime ? <span>{runtime}</span> : null}
         </div>

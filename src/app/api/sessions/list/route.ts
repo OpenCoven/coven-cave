@@ -8,6 +8,7 @@ import {
   mergeSessionRows,
 } from "@/lib/session-list-merge";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+import type { SessionInitiator } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ type DaemonSession = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  initiator?: SessionInitiator;
 };
 
 function isTrueProjectCwd(projectRoot: string): boolean {
