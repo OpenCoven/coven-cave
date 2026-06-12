@@ -31,7 +31,7 @@ import {
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { covenHome, familiarWorkspace } from "@/lib/coven-paths";
+import { covenHome, readFamiliarWorkspaces } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import {
   type ChatTurn,
@@ -187,10 +187,35 @@ async function resolveFamiliarWorkspace(
 ): Promise<string | undefined> {
   // Guard against path traversal: familiar IDs should be simple slugs.
   if (!/^[a-z0-9_-]+$/i.test(familiarId)) return undefined;
-  const candidate = await familiarWorkspace(familiarId);
+  const declared = await readFamiliarWorkspaces();
+  const declaredWorkspace = declared.get(familiarId);
+  if (declaredWorkspace) {
+    try {
+      const resolvedDeclared = await realpath(declaredWorkspace);
+      const s = await stat(resolvedDeclared);
+      if (s.isDirectory()) return resolvedDeclared;
+    } catch {
+      /* fall through to default familiar workspace */
+    }
+  }
+  const familiarsRoot = path.join(covenHome(), "familiars");
+  const candidate = path.resolve(familiarsRoot, familiarId);
+  const relative = path.relative(familiarsRoot, candidate);
+  if (
+    relative.startsWith("..") ||
+    path.isAbsolute(relative) ||
+    relative.split(path.sep).includes("..")
+  ) {
+    return undefined;
+  }
   try {
-    const s = await stat(candidate);
-    if (s.isDirectory()) return candidate;
+    const root = await realpath(familiarsRoot);
+    const resolvedCandidate = await realpath(candidate);
+    if (resolvedCandidate !== root && !resolvedCandidate.startsWith(root + path.sep)) {
+      return undefined;
+    }
+    const s = await stat(resolvedCandidate);
+    if (s.isDirectory()) return resolvedCandidate;
   } catch {
     /* not found */
   }
