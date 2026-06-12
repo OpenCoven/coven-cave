@@ -54,6 +54,7 @@ import {
   type TurnUsage,
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -123,22 +124,12 @@ function normalizePath(p: string): string {
 async function resolveCwd(requested?: string): Promise<string> {
   if (requested) {
     try {
-      const safeRoot = await realpath(homedir());
       const normalized = normalizePath(requested);
-      const candidateResolved = path.resolve(safeRoot, normalized);
-      const withinSafeRootResolved =
-        candidateResolved === safeRoot ||
-        candidateResolved.startsWith(
-          safeRoot.endsWith(path.sep) ? safeRoot : safeRoot + path.sep,
-        );
-      if (!withinSafeRootResolved) return homedir();
-      const candidateReal = await realpath(candidateResolved);
-      const withinSafeRoot =
-        candidateReal === safeRoot ||
-        candidateReal.startsWith(safeRoot.endsWith(path.sep) ? safeRoot : safeRoot + path.sep);
-      if (!withinSafeRoot) return homedir();
-      const s = await stat(candidateReal);
-      if (s.isDirectory()) return candidateReal;
+      const allowed = resolveAllowedProjectPath(normalized);
+      if (allowed !== null) {
+        const s = await stat(allowed);
+        if (s.isDirectory()) return allowed;
+      }
     } catch {
       /* fall through to homedir */
     }
