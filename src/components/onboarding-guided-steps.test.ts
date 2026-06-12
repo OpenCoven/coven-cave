@@ -184,4 +184,10 @@ assert.match(
   "Hermes shows the PowerShell installer on Windows",
 );
 
+assert.match(
+  source,
+  /if \(!open \|\| harnesses\.length > 0\) return;[\s\S]{0,120}setInterval\(\(\) => void loadHarnesses\(\), 2000\)/,
+  "harness list retries while empty so a slow first fetch cannot strand the runtime step",
+);
+
 console.log("onboarding-guided-steps.test.ts: ok");

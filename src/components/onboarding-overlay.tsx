@@ -401,6 +401,17 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     };
   }, [open, refresh, loadHarnesses, loadOpenClawAgents, loadFamiliars]);
 
+  // The harness probe races first paint: it loads once at open, so a slow or
+  // failed first fetch left the runtime step's grid empty until a manual
+  // Refresh. Retry on the status cadence while the list is empty — a
+  // successful response always carries the bundled adapters, so the loop
+  // stops after the first real load and never spins on a healthy state.
+  useEffect(() => {
+    if (!open || harnesses.length > 0) return;
+    const retry = setInterval(() => void loadHarnesses(), 2000);
+    return () => clearInterval(retry);
+  }, [open, harnesses.length, loadHarnesses]);
+
   // Refresh the familiar list when the familiars step flips healthy so the
   // final step can list them for editing.
   const familiarsOk = !!status?.steps.familiars.ok;
