@@ -97,40 +97,34 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
 
   return (
     <section className={shellClassName} aria-label="Workflow Studio">
-      <WorkflowLibrary
-        workflows={workflows}
-        selectedWorkflow={selectedWorkflow}
-        loaded={loaded}
-        refreshing={refreshing}
-        error={error}
-        dirty={props.dirty}
-        onRefresh={props.onRefresh}
-        onSelectWorkflow={props.onSelectWorkflow}
-        onCreateRequest={() => setCreateOpen(true)}
-        onDuplicate={props.onDuplicate}
-        onDelete={props.onDelete}
-      />
-      <main className="workflow-studio-main">
+      <aside className="workflow-studio-library-panel" aria-label="Workflow library">
         <button
           type="button"
-          className="workflow-panel-toggle workflow-panel-toggle-left"
+          className="workflow-panel-tab workflow-panel-tab-left"
           aria-label={leftPanelOpen ? "Hide workflow library" : "Show workflow library"}
           aria-expanded={leftPanelOpen}
           title={leftPanelOpen ? "Hide workflow library" : "Show workflow library"}
           onClick={() => setLeftPanelOpen((open) => !open)}
         >
-          <Icon name={leftPanelOpen ? "ph:caret-left" : "ph:caret-right"} width={14} />
+          <Icon name={leftPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} />
         </button>
-        <button
-          type="button"
-          className="workflow-panel-toggle workflow-panel-toggle-right"
-          aria-label={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
-          aria-expanded={rightPanelOpen}
-          title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
-          onClick={() => setRightPanelOpen((open) => !open)}
-        >
-          <Icon name={rightPanelOpen ? "ph:caret-right" : "ph:caret-left"} width={14} />
-        </button>
+        <div className="workflow-studio-library-content">
+          <WorkflowLibrary
+            workflows={workflows}
+            selectedWorkflow={selectedWorkflow}
+            loaded={loaded}
+            refreshing={refreshing}
+            error={error}
+            dirty={props.dirty}
+            onRefresh={props.onRefresh}
+            onSelectWorkflow={props.onSelectWorkflow}
+            onCreateRequest={() => setCreateOpen(true)}
+            onDuplicate={props.onDuplicate}
+            onDelete={props.onDelete}
+          />
+        </div>
+      </aside>
+      <main className="workflow-studio-main">
         <WorkflowPalette workflow={selectedWorkflow} onAddStep={props.onAddStep} />
         <WorkflowCanvas
           workflow={selectedWorkflow}
@@ -163,22 +157,34 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
         <WorkflowRunsPanel runs={props.runs} loading={props.runsLoading} workflow={selectedWorkflow} />
       </main>
       <aside className="workflow-studio-side" aria-label="Workflow details">
-        <WorkflowInspector
-          workflow={selectedWorkflow}
-          selectedNode={selectedNode}
-          action={action}
-          onUpdateStep={props.onUpdateStep}
-          onUpdateMeta={props.onUpdateMeta}
-          onRemoveStep={props.onRemoveStep}
-        />
-        <WorkflowAttachments
-          workflow={selectedWorkflow}
-          roles={props.roles}
-          onAttachRole={props.onAttachRole}
-          onUpdateMeta={props.onUpdateMeta}
-          onScheduleRequest={() => setScheduleOpen(true)}
-        />
-        <WorkflowManifestPreview workflow={selectedWorkflow} dirty={props.dirty} />
+        <button
+          type="button"
+          className="workflow-panel-tab workflow-panel-tab-right"
+          aria-label={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
+          aria-expanded={rightPanelOpen}
+          title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
+          onClick={() => setRightPanelOpen((open) => !open)}
+        >
+          <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} />
+        </button>
+        <div className="workflow-studio-side-content">
+          <WorkflowInspector
+            workflow={selectedWorkflow}
+            selectedNode={selectedNode}
+            action={action}
+            onUpdateStep={props.onUpdateStep}
+            onUpdateMeta={props.onUpdateMeta}
+            onRemoveStep={props.onRemoveStep}
+          />
+          <WorkflowAttachments
+            workflow={selectedWorkflow}
+            roles={props.roles}
+            onAttachRole={props.onAttachRole}
+            onUpdateMeta={props.onUpdateMeta}
+            onScheduleRequest={() => setScheduleOpen(true)}
+          />
+          <WorkflowManifestPreview workflow={selectedWorkflow} dirty={props.dirty} />
+        </div>
       </aside>
       {createOpen && (
         <WorkflowCreateDialog

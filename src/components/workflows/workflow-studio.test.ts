@@ -80,8 +80,14 @@ assert.match(studio, /leftPanelOpen,\s*setLeftPanelOpen[\s\S]{0,80}useState\(tru
 assert.match(studio, /rightPanelOpen,\s*setRightPanelOpen[\s\S]{0,80}useState\(true\)/, "Studio should keep the workflow details panel open by default");
 assert.match(studio, /aria-label=\{leftPanelOpen \? "Hide workflow library" : "Show workflow library"\}/, "Studio should expose an accessible left-panel toggle");
 assert.match(studio, /aria-label=\{rightPanelOpen \? "Hide workflow details" : "Show workflow details"\}/, "Studio should expose an accessible right-panel toggle");
+assert.match(studio, /workflow-studio-library-panel[\s\S]{0,500}workflow-panel-tab workflow-panel-tab-left[\s\S]{0,700}<WorkflowLibrary/, "Left workflow panel toggle should live at the panel top edge");
+assert.match(studio, /workflow-studio-side[\s\S]{0,500}workflow-panel-tab workflow-panel-tab-right[\s\S]{0,700}<WorkflowInspector/, "Right workflow panel toggle should live at the panel top edge");
+assert.match(studio, /leftPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Left workflow panel toggle should use the sidebar tab icon");
+assert.match(studio, /rightPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Right workflow panel toggle should use the sidebar tab icon");
 assert.match(studio, /is-left-collapsed[\s\S]{0,160}is-right-collapsed/, "Studio should put collapsed panel state on the shell");
-assert.match(css, /\.workflow-panel-toggle/, "Workflow CSS should style side-panel collapse toggles");
+assert.match(css, /\.workflow-panel-tab/, "Workflow CSS should style sidebar-like side-panel tab toggles");
+assert.match(css, /\.workflow-panel-tab-left[\s\S]{0,120}justify-content:\s*flex-end/, "Left workflow panel tab should sit at the top right");
+assert.match(css, /\.workflow-panel-tab-right[\s\S]{0,120}justify-content:\s*flex-start/, "Right workflow panel tab should sit at the top left");
 assert.match(css, /\.workflow-studio-shell\.is-left-collapsed/, "Workflow CSS should collapse the left workflow panel");
 assert.match(css, /\.workflow-studio-shell\.is-right-collapsed/, "Workflow CSS should collapse the right workflow panel");
 
