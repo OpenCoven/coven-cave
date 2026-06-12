@@ -67,7 +67,7 @@ const contracts: RouteContract[] = [
   { route: "/memory/file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/memory/inspector", methods: ["GET"], kind: "json" },
   { route: "/memory", methods: ["GET"], kind: "json" },
-  { route: "/onboarding/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/onboarding/install", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/onboarding/ssh-check", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/status", methods: ["GET"], kind: "json" },

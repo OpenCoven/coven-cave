@@ -143,14 +143,20 @@ assert.match(
 
 assert.match(
   source,
-  /stripAnsi\(job\.output\)/,
-  "the polled tail is ANSI-stripped",
+  /appendOutput\(job, stripAnsi\(/,
+  "installer output is ANSI-stripped at append time, so the cap counts visible bytes",
 );
 
 assert.match(
   source,
   /slice\(-OUTPUT_CAP\)/,
   "job output is capped, not unbounded",
+);
+
+assert.match(
+  source,
+  /status: "running" as const, elapsedMs, tail/,
+  "the polled running view exposes status/elapsedMs/tail — the UI contract",
 );
 
 console.log("onboarding install route.test.ts: ok");

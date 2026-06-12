@@ -163,7 +163,7 @@ function appendOutput(job: InstallJob, chunk: string) {
 }
 
 function jobView(job: InstallJob) {
-  const tail = stripAnsi(job.output).slice(-2000);
+  const tail = job.output.slice(-2000);
   const elapsedMs = (job.finishedAt ?? Date.now()) - job.startedAt;
   if (job.status === "running") {
     return { status: "running" as const, elapsedMs, tail };
@@ -253,6 +253,13 @@ export async function POST(req: Request) {
     );
   }
 
+  // Re-check after the await above: two near-simultaneous POSTs for the same
+  // target could otherwise both pass the running-check and double-spawn.
+  const recheck = jobs.get(targetName);
+  if (recheck?.status === "running") {
+    return NextResponse.json(jobView(recheck));
+  }
+
   const job: InstallJob = {
     status: "running",
     kind: target.kind,
@@ -266,21 +273,26 @@ export async function POST(req: Request) {
     env: covenSpawnEnv(),
     shell: plan.shell,
   });
-  child.stdout.on("data", (d) => appendOutput(job, d.toString()));
-  child.stderr.on("data", (d) => appendOutput(job, d.toString()));
+  child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+  child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+  let killTimer: NodeJS.Timeout | undefined;
   const timer = setTimeout(() => {
+    // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
     job.error = `install timed out after ${target.timeoutMs / 1000}s`;
     child.kill("SIGTERM");
+    killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
   }, target.timeoutMs);
   child.on("error", (e) => {
     clearTimeout(timer);
+    if (killTimer) clearTimeout(killTimer);
     job.status = "done";
     job.finishedAt = Date.now();
     job.ok = false;
     job.error = e.message;
   });
-  child.on("close", (code) => {
+  child.on("close", (code, signal) => {
     clearTimeout(timer);
+    if (killTimer) clearTimeout(killTimer);
     void (async () => {
       const installedPath = await commandPath(target.binary);
       const ok = code === 0 && !!installedPath && !job.error;
@@ -293,7 +305,7 @@ export async function POST(req: Request) {
         job.error =
           code === 0
             ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-            : `installer exited with code ${code}`;
+            : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`;
       }
     })();
   });
