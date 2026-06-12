@@ -41,11 +41,14 @@ function cleanText(value: string | null | undefined): string {
 }
 
 function slugify(value: string): string {
-  return value
+  const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
+    .replace(/^-+/, "");
+  // Trim trailing dashes without a regex anchored to $ (avoids ReDoS on long dash runs)
+  let end = slug.length;
+  while (end > 0 && slug[end - 1] === "-") end--;
+  return slug.slice(0, Math.min(end, 48));
 }
 
 function tomlString(value: string): string {

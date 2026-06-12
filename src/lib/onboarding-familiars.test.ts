@@ -139,4 +139,14 @@ assert.equal(
   undefined,
 );
 
+// ReDoS guard: slugify must not hang on a long string of dashes (polynomial-redos fix).
+// This would time out in <1s if the old /^-+|-+$/g alternation were used on a 100k-dash string.
+{
+  const manyDashes = "-".repeat(100_000);
+  const start = Date.now();
+  normalizeFamiliarDraft({ displayName: manyDashes + "x" });
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 500, `slugify ReDoS guard: took ${elapsed}ms on long dash string (expected <500ms)`);
+}
+
 console.log("onboarding-familiars ssh runtime: ok");
