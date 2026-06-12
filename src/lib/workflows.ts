@@ -92,6 +92,52 @@ export type WorkflowListResponse = {
   error?: string;
 };
 
+// Run-history types live here (client-safe) so components never import the
+// fs-backed store module; src/lib/workflow-runs.ts type-imports these.
+export type WorkflowRunStatus = "plan" | "queued" | "running" | "succeeded" | "failed" | "blocked";
+
+export type WorkflowRunStepRecord = {
+  id: string;
+  kind: string;
+  status: "ready" | "blocked" | "succeeded" | "failed" | "skipped";
+};
+
+export type WorkflowRunRecord = {
+  id: string;
+  workflowId: string;
+  version?: string;
+  kind: "dry-run" | "execution";
+  status: WorkflowRunStatus;
+  startedAt: string;
+  finishedAt?: string;
+  steps: WorkflowRunStepRecord[];
+  summary?: string;
+  source: "cave" | "daemon";
+};
+
+export type SaveWorkflowResponse = {
+  ok: boolean;
+  workflow?: WorkflowSummary;
+  validation?: WorkflowValidationResult;
+  error?: string;
+};
+
+export type RunWorkflowResponse = {
+  ok: boolean;
+  unavailable?: boolean;
+  error?: string;
+  run?: WorkflowRunRecord;
+};
+
+/** Minimal role shape the studio needs for attach toggles. */
+export type WorkflowRoleSummary = {
+  id: string;
+  name: string;
+  familiar: string;
+  emoji?: string;
+  workflows: string[];
+};
+
 type FetchLike = (input: string, init?: RequestInit) => Promise<{ json: () => Promise<unknown> }>;
 
 export function workflowDetailPath(id: string): string {
@@ -121,10 +167,126 @@ export async function validateWorkflow(
 }
 
 export async function dryRunWorkflow(
-  body: { id?: string; path?: string; inputs?: Record<string, unknown> },
+  body: { id?: string; path?: string; manifest?: unknown; inputs?: Record<string, unknown> },
   fetchImpl: FetchLike = fetch,
 ): Promise<WorkflowDryRunPlan> {
   return postJson<WorkflowDryRunPlan>("/api/workflows/dry-run", body, fetchImpl);
+}
+
+/** Persist a manifest through the Cave save route. */
+export async function saveWorkflow(
+  manifest: Record<string, unknown>,
+  fetchImpl: FetchLike = fetch,
+): Promise<SaveWorkflowResponse> {
+  return postJson<SaveWorkflowResponse>("/api/workflows/save", { manifest }, fetchImpl);
+}
+
+/** Delete a locally-authored manifest by id or source path. */
+export async function deleteWorkflow(
+  body: { id?: string; path?: string },
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; error?: string }> {
+  return postJson<{ ok: boolean; error?: string }>("/api/workflows/delete", body, fetchImpl);
+}
+
+/** Execute through the daemon engine; `unavailable: true` keeps Play guarded. */
+export async function runWorkflow(
+  body: { id?: string; path?: string; inputs?: Record<string, unknown> },
+  fetchImpl: FetchLike = fetch,
+): Promise<RunWorkflowResponse> {
+  return postJson<RunWorkflowResponse>("/api/workflows/run", body, fetchImpl);
+}
+
+/** Newest-first run history, optionally scoped to one workflow. */
+export async function listWorkflowRuns(
+  workflowId?: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; runs: WorkflowRunRecord[]; error?: string }> {
+  const query = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : "";
+  const res = await fetchImpl(`/api/workflows/runs${query}`, { cache: "no-store" });
+  return res.json() as Promise<{ ok: boolean; runs: WorkflowRunRecord[]; error?: string }>;
+}
+
+/** Record a run (the studio snapshots dry-run plans into history). */
+export async function recordWorkflowRun(
+  input: Omit<WorkflowRunRecord, "id">,
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; run?: WorkflowRunRecord; error?: string }> {
+  return postJson<{ ok: boolean; run?: WorkflowRunRecord; error?: string }>(
+    "/api/workflows/runs",
+    input,
+    fetchImpl,
+  );
+}
+
+/** Roles flattened to what the attachments panel needs. */
+export async function listWorkflowRoles(
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; roles: WorkflowRoleSummary[]; error?: string }> {
+  const res = await fetchImpl("/api/roles", { cache: "no-store" });
+  const data = (await res.json()) as {
+    ok: boolean;
+    roles?: Array<WorkflowRoleSummary & Record<string, unknown>>;
+    error?: string;
+  };
+  return {
+    ok: data.ok,
+    error: data.error,
+    roles: (data.roles ?? []).map((role) => ({
+      id: role.id,
+      name: role.name,
+      familiar: role.familiar,
+      emoji: role.emoji,
+      workflows: Array.isArray(role.workflows) ? role.workflows : [],
+    })),
+  };
+}
+
+/** Attach or detach a workflow on a role (rewrites ROLE.md). */
+export async function attachWorkflowToRole(
+  body: { roleId: string; familiar: string; workflowId: string; attach: boolean },
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; workflows?: string[]; error?: string }> {
+  return postJson<{ ok: boolean; workflows?: string[]; error?: string }>(
+    "/api/roles/workflows",
+    body,
+    fetchImpl,
+  );
+}
+
+export type WorkflowScheduleRecurrence =
+  | { type: "none" }
+  | { type: "interval"; everyMs: number }
+  | { type: "daily"; hour: number; minute: number }
+  | { type: "weekly"; days: number[]; hour: number; minute: number };
+
+/**
+ * Schedule a workflow as a real inbox reminder (shows up on the Automations
+ * surface). This intentionally creates a reminder, not an execution: the
+ * daemon has no workflow engine yet, and Cave never pretends one ran.
+ */
+export async function scheduleWorkflow(
+  body: {
+    workflow: WorkflowSummary;
+    fireAt: string;
+    recurrence?: WorkflowScheduleRecurrence;
+  },
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; error?: string }> {
+  return postJson<{ ok: boolean; error?: string }>(
+    "/api/inbox",
+    {
+      kind: "reminder",
+      title: `Run workflow: ${body.workflow.name ?? body.workflow.id}`,
+      body: body.workflow.summary,
+      fireAt: body.fireAt,
+      recurrence: body.recurrence,
+      source: "user",
+      familiarId: body.workflow.familiar ?? null,
+      link: { kind: "url", ref: `cave://workflows/${encodeURIComponent(body.workflow.id)}` },
+    },
+    fetchImpl,
+  );
 }
 
 export function workflowIssueSummary(issues: WorkflowValidationIssue[]): string {

@@ -7,6 +7,7 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  type Connection,
   type Edge,
   type Node,
   type NodeMouseHandler,
@@ -26,6 +27,9 @@ type WorkflowCanvasProps = {
   selectedNode: WorkflowGraphNode | null;
   onSelectNode: (node: WorkflowGraphNode) => void;
   onClearNode: () => void;
+  onConnect: (source: string, target: string) => void;
+  onDisconnect: (source: string, target: string) => void;
+  onRemoveStep: (id: string) => void;
 };
 
 export function WorkflowStepNode({ data, selected }: NodeProps<WorkflowFlowNode>) {
@@ -60,6 +64,9 @@ export function WorkflowCanvas({
   selectedNode,
   onSelectNode,
   onClearNode,
+  onConnect,
+  onDisconnect,
+  onRemoveStep,
 }: WorkflowCanvasProps) {
   const graph = useMemo(() => {
     if (!workflow) return { nodes: [] as WorkflowGraphNode[], edges: [] as Edge[] };
@@ -76,6 +83,25 @@ export function WorkflowCanvas({
       position: node.position,
       data: node.data,
     });
+  };
+
+  // Drawing source→target on the canvas means "target requires source".
+  const handleConnect = (connection: Connection) => {
+    if (connection.source && connection.target) {
+      onConnect(connection.source, connection.target);
+    }
+  };
+
+  const handleEdgesDelete = (deleted: Edge[]) => {
+    for (const edge of deleted) {
+      onDisconnect(edge.source, edge.target);
+    }
+  };
+
+  const handleNodesDelete = (deleted: WorkflowFlowNode[]) => {
+    for (const node of deleted) {
+      onRemoveStep(node.id);
+    }
   };
 
   if (!workflow) {
@@ -95,6 +121,10 @@ export function WorkflowCanvas({
         fitView
         onNodeClick={handleNodeClick}
         onPaneClick={onClearNode}
+        onConnect={handleConnect}
+        onEdgesDelete={handleEdgesDelete}
+        onNodesDelete={handleNodesDelete}
+        deleteKeyCode={["Backspace", "Delete"]}
         proOptions={{ hideAttribution: true }}
       >
         <Background />
