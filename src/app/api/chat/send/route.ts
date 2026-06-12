@@ -125,7 +125,13 @@ async function resolveCwd(requested?: string): Promise<string> {
     try {
       const safeRoot = await realpath(homedir());
       const normalized = normalizePath(requested);
-      const candidateResolved = path.resolve(normalized);
+      const candidateResolved = path.resolve(safeRoot, normalized);
+      const withinSafeRootResolved =
+        candidateResolved === safeRoot ||
+        candidateResolved.startsWith(
+          safeRoot.endsWith(path.sep) ? safeRoot : safeRoot + path.sep,
+        );
+      if (!withinSafeRootResolved) return homedir();
       const candidateReal = await realpath(candidateResolved);
       const withinSafeRoot =
         candidateReal === safeRoot ||
