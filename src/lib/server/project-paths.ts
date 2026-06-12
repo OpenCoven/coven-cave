@@ -12,14 +12,6 @@ function realpathOrResolve(value: string): string {
   }
 }
 
-function normalizeRelativeProjectPath(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed || path.isAbsolute(trimmed)) {
-    return null;
-  }
-  return trimmed.replace(/^[\\/]+/, "");
-}
-
 const ALLOWED_ROOTS = Array.from(
   new Set(
     [
@@ -40,18 +32,33 @@ function isWithinRoot(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);
 }
 
-export function resolveAllowedProjectPath(value: string): string | null {
-  const relativePath = normalizeRelativeProjectPath(value);
-  if (!relativePath) {
+function relativeWithinRoot(candidate: string, root: string): string | null {
+  const relativePath = path.relative(root, candidate);
+  if (
+    relativePath.startsWith("..") ||
+    path.isAbsolute(relativePath) ||
+    relativePath.split(path.sep).includes("..")
+  ) {
     return null;
   }
+  return relativePath;
+}
 
+export function resolveAllowedProjectSubpath(value: string): { root: string; relativePath: string } | null {
+  const candidate = realpathOrResolve(value);
   for (const root of ALLOWED_ROOTS) {
-    const candidate = realpathOrResolve(path.join(root, relativePath));
     if (isWithinRoot(candidate, root)) {
-      return candidate;
+      const relativePath = relativeWithinRoot(candidate, root);
+      if (relativePath !== null) {
+        return { root, relativePath };
+      }
     }
   }
 
   return null;
+}
+
+export function resolveAllowedProjectPath(value: string): string | null {
+  const subpath = resolveAllowedProjectSubpath(value);
+  return subpath ? path.join(subpath.root, subpath.relativePath) : null;
 }

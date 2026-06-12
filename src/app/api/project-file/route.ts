@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 
 const MAX_TEXT_SIZE = 512 * 1024; // 512KB
 const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB
@@ -73,10 +73,11 @@ export function projectFileResult(filePath: string | null): ProjectFileResult {
     return { body: { ok: false, error: "missing path param" }, status: 400 };
   }
 
-  const resolved = resolveAllowedProjectPath(filePath);
-  if (!resolved) {
+  const allowed = resolveAllowedProjectSubpath(filePath);
+  if (!allowed) {
     return { body: { ok: false, error: "path not allowed" }, status: 403 };
   }
+  const resolved = path.join(allowed.root, allowed.relativePath);
 
   const ext = path.extname(resolved).toLowerCase();
   const imageMimeType = IMAGE_EXTENSIONS.get(ext);

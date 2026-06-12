@@ -240,6 +240,30 @@ for (const contract of contracts) {
     path.join(apiRoot, "project-file", "route.ts"),
     "utf8",
   );
+  const projectPathsSource = readFileSync(
+    path.join(root, "src", "lib", "server", "project-paths.ts"),
+    "utf8",
+  );
+  assert.match(
+    projectPathsSource,
+    /export function resolveAllowedProjectSubpath\(value: string\): \{ root: string; relativePath: string \} \| null \{[\s\S]*?relativeWithinRoot\(candidate, root\)[\s\S]*?return \{ root, relativePath \}/,
+    "shared project path validation must expose safe root + relativePath parts for file reads",
+  );
+  assert.match(
+    projectPathsSource,
+    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(subpath\.root, subpath\.relativePath\)/,
+    "shared project path validation must keep the existing absolute-path API contract",
+  );
+  assert.match(
+    projectFileSource,
+    /import \{ resolveAllowedProjectSubpath \} from "@\/lib\/server\/project-paths"/,
+    "/project-file must use root + relativePath validation for file reads",
+  );
+  assert.match(
+    projectFileSource,
+    /const allowed = resolveAllowedProjectSubpath\(filePath\);[\s\S]*?if \(!allowed\)[\s\S]*?path not allowed[\s\S]*?const resolved = path\.join\(allowed\.root, allowed\.relativePath\);/,
+    "/project-file must rebuild the read path from validated root + relativePath parts",
+  );
   assert.match(
     projectFileSource,
     /const IMAGE_EXTENSIONS = new Map\(\[[\s\S]*?\["\.png", "image\/png"\][\s\S]*?\["\.webp", "image\/webp"\][\s\S]*?\["\.svg", "image\/svg\+xml"\]/,
