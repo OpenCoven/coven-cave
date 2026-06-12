@@ -139,6 +139,11 @@ assert.match(runsPanel, /dry-run snapshots and daemon executions/i, "Runs panel 
 assert.match(attachments, /onAttachRole/, "Attachments should persist role bindings");
 assert.match(attachments, /onUpdateMeta/, "Attachments should bind familiars into the manifest");
 assert.match(attachments, /onScheduleRequest/, "Attachments should open scheduling");
+assert.match(attachments, /WorkflowFamiliarOption/, "Attachments should accept normalized familiar dropdown options");
+assert.match(attachments, /<select[\s\S]{0,220}aria-label="Familiar binding"/, "Familiar attachment binding should render as a selection dropdown");
+assert.doesNotMatch(attachments, /placeholder="Unassigned — saved into the manifest"[\s\S]{0,120}<input/, "Familiar attachment binding should no longer be free-text input");
+assert.match(attachments, /<option value="">Unassigned — saved into the manifest<\/option>/, "Familiar dropdown should keep an unassigned choice");
+assert.match(attachments, /familiarOptions\.map/, "Familiar dropdown should render discovered familiar options");
 assert.match(attachments, /aria-expanded=\{open\}/, "Attachment sections are collapsible");
 assert.match(attachments, /AttachmentSection/, "Attachments compose collapsible sections");
 assert.match(css, /\.workflow-attachment-body > \* \{\n  width: 100%;/, "Attachment bodies span the full row width");

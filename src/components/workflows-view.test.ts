@@ -39,6 +39,12 @@ assert.match(source, /recordWorkflowRun/, "Workflows view should snapshot dry-ru
 assert.match(source, /attachWorkflowToRole/, "Workflows view should persist role assignments");
 assert.match(source, /scheduleWorkflow/, "Workflows view should schedule reminders");
 assert.match(source, /confirmDiscard|Discard unsaved/, "Workflows view should guard unsaved drafts");
+assert.match(source, /fetch\("\/api\/familiars", \{ cache: "no-store" \}\)/, "Workflows view should load actual familiar choices for workflow attachments");
+assert.match(source, /const familiarOptions = useMemo/, "Workflows view should derive normalized familiar dropdown options");
+assert.match(source, /for \(const workflow of workflows\) add\(workflow\.familiar\)/, "Familiar dropdown options should preserve manifest-only familiar bindings");
+assert.match(source, /for \(const role of roles\) add\(role\.familiar\)/, "Familiar dropdown options should include role-owned familiar IDs");
+assert.match(source, /add\(draft\?\.familiar\)/, "Familiar dropdown options should keep the current draft value selectable");
+assert.match(source, /familiarOptions=\{familiarOptions\}/, "Workflows view should pass familiar options into the studio");
 assert.match(client, /\/api\/workflows\/save/, "Workflow client should call the save route");
 assert.match(client, /\/api\/workflows\/runs/, "Workflow client should call the runs route");
 assert.match(source, /loadWorkflowLayout/, "Workflows view loads saved canvas layout per selection");
