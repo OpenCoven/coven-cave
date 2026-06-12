@@ -17,6 +17,7 @@ import {
   readScreenScale,
   type ScreenScale,
 } from "@/lib/screen-magnification";
+import { ThemeColorEditor } from "@/components/theme-color-editor";
 import {
   DEMO_MODE_EVENT,
   clearDemoModeData,
@@ -654,6 +655,8 @@ function AppearanceSection() {
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // colorEditorBase: the preset that seeds the color editor; null = editor hidden.
+  const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
 
   // Read persisted theme + mode on mount
   useEffect(() => {
@@ -686,6 +689,8 @@ function AppearanceSection() {
     setActiveTheme(id);
     setCustomData(null);
     applyPreset(id);
+    // Open the color editor seeded with this preset.
+    setColorEditorBase(id);
   };
 
   const handleSetMode = (next: Mode) => {
@@ -706,6 +711,7 @@ function AppearanceSection() {
     clearCustomTheme();
     setActiveTheme("coven");
     setCustomData(null);
+    setColorEditorBase(null);
   };
 
   function normalizeTweakcnUrl(raw: string): string | null {
@@ -842,11 +848,32 @@ function AppearanceSection() {
               key={preset.id}
               preset={preset}
               mode={mode}
-              active={activeTheme === preset.id}
+              active={activeTheme === preset.id || colorEditorBase === preset.id}
               onSelect={handleSelectPreset}
             />
           ))}
         </div>
+
+        {/* ── Color editor: shown when a preset is selected ── */}
+        {colorEditorBase && (
+          <div className="border-t border-[var(--border-hairline)] p-4">
+            <ThemeColorEditor
+              basePreset={colorEditorBase}
+              mode={mode}
+              onSave={() => {
+                setActiveTheme("custom");
+                try {
+                  const raw = localStorage.getItem("coven-custom-theme");
+                  if (raw) setCustomData(JSON.parse(raw) as CustomThemeData);
+                } catch { /* ignore */ }
+              }}
+              onReset={() => {
+                setActiveTheme(colorEditorBase);
+                setCustomData(null);
+              }}
+            />
+          </div>
+        )}
       </SettingsGroup>
 
       {/* ── tweakcn import ── */}
