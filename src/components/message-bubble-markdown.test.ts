@@ -62,8 +62,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /\{!pending && <CopyBubble/,
-  "User-bubble Copy action renders whenever the message is not pending",
+  /\{!pending \? \(\s*<div className="cave-bubble-actions">/,
+  "User-bubble action row renders (below the bubble) whenever the message is not pending",
 );
 assert.match(
   source,
@@ -169,8 +169,8 @@ assert.match(
 );
 assert.match(
   css,
-  /@media \(pointer: coarse\) \{\s*\.cave-copy-btn-bubble \{\s*opacity: 1;/,
-  "Coarse pointers have no hover — bubble actions must be always visible there",
+  /@media \(pointer: coarse\) \{\s*\.cave-bubble-actions,\s*\.cave-copy-btn-bubble \{\s*opacity: 1;/,
+  "Coarse pointers have no hover — bubble action rows must be always visible there",
 );
 
 // CHAT-D7-08 CSS half: the wrapper owns horizontal overflow; cells restore
