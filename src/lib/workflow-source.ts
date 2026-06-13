@@ -567,14 +567,18 @@ async function storageForWorkflowId(id: string): Promise<WorkflowStorageScope> {
 }
 
 /** Absolute path for a layout sidecar, constrained to its workflow storage dir. */
-async function layoutFilePath(id: string): Promise<string | null> {
-  const file = layoutFileName(id);
-  if (!file) return null;
-  const root = path.resolve(workflowDirForStorage(await storageForWorkflowId(id)));
+function resolveLayoutFilePath(rootDir: string, file: string): string | null {
+  const root = path.resolve(rootDir);
   const target = path.resolve(root, file);
   const rel = path.relative(root, target);
   if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   return target;
+}
+
+async function layoutFilePath(id: string): Promise<string | null> {
+  const file = layoutFileName(id);
+  if (!file) return null;
+  return resolveLayoutFilePath(workflowDirForStorage(await storageForWorkflowId(id)), file);
 }
 
 /** Saved node positions for a workflow, or null when none exist. */
@@ -610,10 +614,8 @@ export async function saveWorkflowLayout(
     await withWorkflowWriteLock(async () => {
       const storage = await storageForWorkflowId(id);
       const dir = await ensureWorkflowDir(storage);
-      const root = path.resolve(dir);
-      const filePath = path.resolve(root, file);
-      const rel = path.relative(root, filePath);
-      if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      const filePath = resolveLayoutFilePath(dir, file);
+      if (!filePath) {
         throw new Error("resolved layout path escapes workflow storage directory");
       }
       await writeFile(
