@@ -183,6 +183,7 @@ export const ICON_NAMES = [
   "ph:tag-bold",
   "ph:dots-three-vertical",
   "ph:eyedropper",
+  "ph:dots-six-vertical",
   "ph:archive",
   "ph:flame",
   "ph:arrow-counter-clockwise",
