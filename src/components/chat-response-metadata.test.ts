@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { formatRuntime } from "../lib/chat-response-metadata.ts";
 
 const chatRoute = await readFile(new URL("../app/api/chat/send/route.ts", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
@@ -70,8 +71,13 @@ assert.match(
 
 assert.match(
   chatView,
-  /modelLabel\(args\.model\)[\s\S]*runtimeLabel\(args\.runtime\)/,
-  "Chat session metadata should label model and runtime clearly in the header",
+  /formatRuntime\(args\.runtime\)/,
+  "Chat header should render the runtime honestly as a working directory (no dishonest 'model:'/'runtime:' labels)",
+);
+assert.doesNotMatch(
+  chatView,
+  /modelLabel|runtimeLabel/,
+  "The misleading 'model:'/'runtime:' label helpers should be gone — openclaw-local is not a model and the runtime is a cwd",
 );
 
 assert.match(
@@ -103,5 +109,27 @@ assert.match(
   /model\?: string \| null;[\s\S]*runtime\?: string \| null;/,
   "Session rows should carry optional model/runtime metadata",
 );
+
+// formatRuntime turns the opaque `runtime` value into an honest working
+// directory: scheme stripped, home collapsed to ~, long paths left-truncated
+// so the repo folder survives. The full path stays in the tooltip title.
+{
+  const local = formatRuntime("local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave");
+  assert.equal(local?.label, "~/…/coven-cave", "local cwd shows home-relative, repo-name-preserving");
+  assert.equal(local?.title, "~/Documents/GitHub/OpenCoven/coven-cave", "tooltip keeps the full cwd");
+
+  assert.equal(formatRuntime("local:/home/val/proj")?.label, "~/proj", "linux home collapses too");
+  assert.equal(formatRuntime("local:/Users/buns")?.label, "~", "bare home is ~");
+  assert.equal(formatRuntime("local:/opt/work/repo")?.label, "/opt/…/repo", "non-home absolute path keeps its root slash");
+
+  const ssh = formatRuntime("ssh:beacon:/home/val/srv");
+  assert.equal(ssh?.label, "beacon:~/srv", "ssh shows host:cwd");
+  assert.match(ssh?.title ?? "", /ssh/, "ssh tooltip notes the transport");
+
+  assert.equal(formatRuntime(""), null, "empty runtime renders nothing");
+  assert.equal(formatRuntime(null), null, "missing runtime renders nothing");
+  // No dishonest "model:" / "runtime:" prefixes anywhere in the label.
+  assert.doesNotMatch(local?.label ?? "", /model:|runtime:/, "label carries no dishonest prefix");
+}
 
 console.log("chat-response-metadata.test.ts: ok");

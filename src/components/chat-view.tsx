@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
@@ -37,8 +37,7 @@ import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
-  modelLabel,
-  runtimeLabel,
+  formatRuntime,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
 import {
@@ -696,15 +695,22 @@ function ChatTitleEditable({
 }
 
 function ResponseMetadataText({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const model = modelLabel(metadata?.model);
-  const runtime = runtimeLabel(metadata?.runtime);
-  if (!model && !runtime) return null;
+  const model = metadata?.model?.trim() || null;
+  const dir = formatRuntime(metadata?.runtime);
+  if (!model && !dir) return null;
   return (
     <span
-      className="font-mono text-[10px] text-[var(--text-muted)]"
-      title={[metadata?.harness, model, runtime].filter(Boolean).join(" · ") || undefined}
+      className="font-mono text-[10px] text-[var(--text-muted)] inline-flex items-center gap-1"
+      title={[metadata?.harness, model, dir?.title].filter(Boolean).join(" · ") || undefined}
     >
-      {[model, runtime].filter(Boolean).join(" · ")}
+      {model}
+      {model && dir ? " · " : null}
+      {dir ? (
+        <span className="inline-flex items-center gap-1">
+          <Icon name="ph:folder" width={10} aria-hidden />
+          {dir.label}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -723,7 +729,11 @@ function metaLineState(args: {
   return "complete";
 }
 
-function metaLineString(args: {
+/** A directory segment renders with a folder icon (the runtime IS the working
+ *  directory — see formatRuntime); plain strings render as text. */
+type MetaSegment = string | { dir: { label: string; title: string } };
+
+function metaLineSegments(args: {
   state: MetaLineState;
   lifecycle: ChatTurnLifecycle | null;
   harness?: string;
@@ -733,41 +743,38 @@ function metaLineString(args: {
   durationMs?: number;
   usage?: TurnUsage;
   costUsd?: number;
-}): string {
-  const parts: string[] = [];
+}): MetaSegment[] {
+  const segs: MetaSegment[] = [];
+  // The runtime is the cwd; fall back to the project root so a directory shows
+  // even before the first turn records runtime metadata. No dishonest "model:"
+  // / "runtime:" labels — the harness and agent profile read bare, the cwd
+  // reads as a folder.
+  const runtime = formatRuntime(args.runtime) ?? formatRuntime(args.projectRoot ? `local:${args.projectRoot}` : null);
   if (args.state === "offline") {
-    parts.push("daemon offline · check Coven");
+    segs.push("daemon offline · check Coven");
   } else if (args.state === "failed") {
-    const model = modelLabel(args.model);
-    if (model) parts.push(model);
-    const runtime = runtimeLabel(args.runtime);
-    if (runtime) parts.push(runtime);
-    parts.push("failed");
+    if (args.model) segs.push(args.model);
+    if (runtime) segs.push({ dir: runtime });
+    segs.push("failed");
   } else if (args.state === "streaming") {
-    const model = modelLabel(args.model);
-    if (model) parts.push(model);
-    const runtime = runtimeLabel(args.runtime);
-    if (runtime) parts.push(runtime);
-    parts.push(args.lifecycle === "tooling" ? "using tools…" : args.lifecycle === "connecting" || args.lifecycle === "queued" ? "connecting…" : "writing…");
+    if (args.model) segs.push(args.model);
+    if (runtime) segs.push({ dir: runtime });
+    segs.push(args.lifecycle === "tooling" ? "using tools…" : args.lifecycle === "connecting" || args.lifecycle === "queued" ? "connecting…" : "writing…");
     // CHAT-D3-06: the "· 14s" ticker + esc hint tail is rendered by MetaLine
     // itself so the ticking elapsed can live in an aria-hidden span — keeping
     // the per-second rewrite out of the role="status" live region.
   } else {
-    if (args.harness) parts.push(args.harness);
-    const model = modelLabel(args.model);
-    if (model) parts.push(model);
-    const runtime = runtimeLabel(args.runtime);
-    if (runtime) parts.push(runtime);
-    const repo = repoName(args.projectRoot);
-    if (repo) parts.push(repo);
+    if (args.harness) segs.push(args.harness);
+    if (args.model) segs.push(args.model);
+    if (runtime) segs.push({ dir: runtime });
     const dur = fmtDuration(args.durationMs);
-    if (dur) parts.push(dur);
+    if (dur) segs.push(dur);
     // CHAT-D12-02: "… · 7s · 12.4k tok · $0.08" — absent when the harness
     // emitted no usage (e.g. the OpenClaw bridge).
     const usage = usageSummary(args.usage, args.costUsd);
-    if (usage) parts.push(usage);
+    if (usage) segs.push(usage);
   }
-  return parts.join(" · ");
+  return segs;
 }
 
 /** In-transcript find bar (CHAT-D9-04). Collapsed: a search icon button in
@@ -959,7 +966,7 @@ function MetaLine({
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
-  const meta = metaLineString({
+  const segments = metaLineSegments({
     state,
     lifecycle,
     harness: familiar.harness ?? undefined,
@@ -989,7 +996,19 @@ function MetaLine({
         />
       ) : null}
       <span className="cave-chat-meta-line__meta">
-        {meta}
+        {segments.map((seg, i) => (
+          <Fragment key={i}>
+            {i > 0 ? " · " : null}
+            {typeof seg === "string" ? (
+              seg
+            ) : (
+              <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
+                <Icon name="ph:folder" width={11} aria-hidden />
+                {seg.dir.label}
+              </span>
+            )}
+          </Fragment>
+        ))}
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
         {state === "streaming" ? " · esc to cancel" : null}
       </span>
