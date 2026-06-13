@@ -19,6 +19,7 @@ fi
 STATE_ROOT="${COVEN_CAVE_MOBILE_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/coven-cave}"
 STATE_DIR="${COVEN_CAVE_MOBILE_STATE_DIR:-$STATE_ROOT/mobile-tailscale-${PORT}}"
 TOKEN_FILE="$STATE_DIR/access-token"
+SIDECAR_TOKEN_FILE="$STATE_DIR/sidecar-auth-token"
 PID_FILE="$STATE_DIR/next.pid"
 INVITE_FILE="$STATE_DIR/invite.url"
 EXPIRES_FILE="$STATE_DIR/invite.expires"
@@ -125,6 +126,20 @@ load_or_create_token() {
   export ACCESS_TOKEN
 }
 
+# Per-launch sidecar auth token for the native iOS app. Distinct from the mobile
+# ACCESS token above: this one populates COVEN_CAVE_AUTH_TOKEN, which gates /api/
+# (proxy.ts) and which the in-app SidecarAuthBridge expects via ?covenCaveToken=.
+# Stored in its own file so the access-token reuse guards stay independent.
+load_or_create_sidecar_token() {
+  ensure_state_dir
+  if [ ! -s "$SIDECAR_TOKEN_FILE" ]; then
+    node -e "console.log(require(\"node:crypto\").randomBytes(32).toString(\"base64url\"))" >"$SIDECAR_TOKEN_FILE"
+  fi
+  chmod 600 "$SIDECAR_TOKEN_FILE"
+  SIDECAR_AUTH_TOKEN="$(cat "$SIDECAR_TOKEN_FILE")"
+  export SIDECAR_AUTH_TOKEN
+}
+
 ensure_tailscale() {
   need node
   need tailscale
@@ -151,9 +166,14 @@ start_with_tmux() {
   fi
 
   if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
-    # Explicitly unset token env vars so an inherited shell env can't re-enable token gating.
+    # Native iOS app: keep the mobile ACCESS gate open (Tailscale Serve proxies to
+    # loopback, so the host gate already passes) but DO set the per-launch sidecar
+    # auth token from our file so /api/ is authenticated and the in-app
+    # SidecarAuthMonitor is satisfied. The matching token reaches the webview via
+    # ?covenCaveToken= in CAVE_MOBILE_DEV_URL. Read from the file (ignoring any
+    # inherited COVEN_CAVE_AUTH_TOKEN) so the env can't smuggle a mismatched value.
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN; exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
+      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN; export COVEN_CAVE_AUTH_TOKEN=\"\$(cat \"$SIDECAR_TOKEN_FILE\")\"; exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
   else
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
       "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
@@ -163,8 +183,9 @@ start_with_tmux() {
 
 start_with_nohup() {
   if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
-    # Explicitly unset token env vars so an inherited shell env can't re-enable token gating.
-    nohup env -u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
+    # Native iOS app: ACCESS gate stays open (loopback host), but set the sidecar
+    # auth token so /api/ is authenticated. See start_with_tmux for the rationale.
+    nohup env -u COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN="$SIDECAR_AUTH_TOKEN" pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
   else
     nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
   fi
@@ -183,6 +204,9 @@ start_next_server() {
         echo "Error: port ${PORT} is already in use by a token-gated server. Run 'pnpm mobile:tailscale:stop' first." >&2
         exit 1
       fi
+      # Reuse only works if the running server holds this sidecar token; load it
+      # so native_command can hand the matching value to the webview.
+      load_or_create_sidecar_token
       echo "CovenCave native mobile server is already listening on ${HOST}:${PORT}."
       return 0
     fi
@@ -198,7 +222,7 @@ start_next_server() {
   if [ "${CAVE_MOBILE_NATIVE:-0}" != "1" ]; then
     load_or_create_token
   else
-    ensure_state_dir
+    load_or_create_sidecar_token
   fi
   : >"$LOG_FILE"
   echo "Starting Next server on ${HOST}:${PORT}"
@@ -399,6 +423,19 @@ native_command() {
     echo "Unable to resolve Tailscale Serve URL for ${TAILSCALE_BACKEND}." >&2
     exit 1
   fi
+
+  # Hand the per-launch sidecar auth token to the webview via the query string.
+  # SidecarAuthBridge stores it (sessionStorage), strips it from the visible URL,
+  # and attaches it to every /api/ request (x-coven-cave-token header / EventSource
+  # covenCaveToken param) so the gated proxy authenticates them.
+  CAVE_MOBILE_DEV_URL="$(
+    node - "$CAVE_MOBILE_DEV_URL" "$SIDECAR_AUTH_TOKEN" <<'NODE'
+const [base, token] = process.argv.slice(2);
+const url = new URL(base);
+url.searchParams.set("covenCaveToken", token);
+console.log(url.toString());
+NODE
+  )"
   export CAVE_MOBILE_DEV_URL
   tauri_config="$(
     node - "$CAVE_MOBILE_DEV_URL" <<'NODE'

@@ -36,6 +36,23 @@ assert.match(mobileScript, /resolve_ios_device_name/);
 assert.match(mobileScript, /pnpm exec tauri "\$\{tauri_args\[@\]\}"/);
 assert.doesNotMatch(mobileScript, /tauri ios dev --device/);
 
+// Native mode mints a per-launch sidecar auth token (COVEN_CAVE_AUTH_TOKEN) and
+// authenticates the in-app webview, instead of running fully ungated. This is
+// what satisfies the in-app SidecarAuthMonitor and gates /api/ over Tailscale.
+assert.match(mobileScript, /SIDECAR_TOKEN_FILE=/);
+assert.match(mobileScript, /load_or_create_sidecar_token\(\)/);
+// The native server is now started WITH the sidecar auth token set (the old
+// behavior unset both token vars together).
+assert.match(mobileScript, /COVEN_CAVE_AUTH_TOKEN/);
+assert.doesNotMatch(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN/);
+assert.doesNotMatch(mobileScript, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN/);
+// The dev URL handed to the webview carries the token so SidecarAuthBridge
+// stores it and authenticates every /api/ request.
+assert.match(mobileScript, /covenCaveToken/);
+// The mobile access secret stays unset in native mode (Tailscale Serve proxies
+// to loopback, so the host gate already passes without it).
+assert.match(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN;/);
+
 assert.equal(
   packageJson.scripts["mobile:tailscale:native"],
   "bash scripts/mobile-tailscale.sh native",
