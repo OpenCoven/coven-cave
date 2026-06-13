@@ -1,4 +1,6 @@
 strictDepBuilds: false
+minimumReleaseAge: 4320
+saveExact: true
 onlyBuiltDependencies:
   - esbuild
   - node-pty
