@@ -227,18 +227,19 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Dia-style panel toggle pinned to the top of the sidebar. Collapsing
           hands off to the left-edge rail, which reopens the panel. */}
       {onToggleSidebar ? (
-        <div className="sidebar-header">
+        <button
+          type="button"
+          className="sidebar-header"
+          onClick={onToggleSidebar}
+          aria-label="Hide sidebar (⌘B)"
+          title="Hide sidebar (⌘B)"
+          aria-expanded
+        >
           <span className="sidebar-title">Coven Cave</span>
-          <button
-            type="button"
-            className="sidebar-toggle"
-            onClick={onToggleSidebar}
-            aria-label="Hide sidebar (⌘B)"
-            title="Hide sidebar (⌘B)"
-          >
+          <span className="sidebar-toggle" aria-hidden>
             <Icon name="ph:sidebar-simple-fill" width={16} />
-          </button>
-        </div>
+          </span>
+        </button>
       ) : null}
 
       {/* Header actions: familiar scope + New chat */}

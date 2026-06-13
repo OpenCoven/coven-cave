@@ -182,8 +182,8 @@ assert.match(
 // + button, so the New Chat ActionRow is the sole new-chat affordance now —
 // no wrapper, no responsive hide.
 
-// Dia-style panel toggle: when onToggleSidebar is provided, a button at the
-// top of the sidebar collapses it (the left-edge rail handles reopening).
+// Dia-style panel toggle: when onToggleSidebar is provided, the whole header
+// row is the collapse button (the left-edge rail handles reopening).
 assert.match(
   source,
   /onToggleSidebar\?: \(\) => void;/,
@@ -191,8 +191,8 @@ assert.match(
 );
 assert.match(
   source,
-  /className="sidebar-toggle"[\s\S]{0,160}onClick=\{onToggleSidebar\}/,
-  "the sidebar toggle button is wired to onToggleSidebar",
+  /className="sidebar-header"[\s\S]{0,160}onClick=\{onToggleSidebar\}/,
+  "the full header row is wired to onToggleSidebar",
 );
 assert.match(
   source,

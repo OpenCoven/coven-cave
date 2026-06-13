@@ -46,24 +46,12 @@ export function SettingsShell() {
   const router = useRouter();
   const isMobile = useIsMobile();
 
-  // Support hash-based deep-linking, e.g. /settings#familiars
-  const initialSection = (): Section => {
-    if (typeof window !== "undefined") {
-      const hash = window.location.hash.replace("#", "") as Section;
-      if (SECTIONS.some((s) => s.id === hash)) return hash;
-    }
-    return "general";
-  };
-
-  const [section, setSection] = useState<Section>(initialSection);
+  const [section, setSection] = useState<Section>("general");
   // Mobile drill-down: when true, render the section list full-screen
   // (no section content) — iOS-Settings-style. Tap a section → false,
   // render that section. Hash-deep-link (`/settings#familiars`) skips the
   // picker so the user lands directly on the target.
-  const [pickerView, setPickerView] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return !window.location.hash;
-  });
+  const [pickerView, setPickerView] = useState(false);
   const activeSection = SECTIONS.find((s) => s.id === section);
   const showPicker = isMobile && pickerView;
 
@@ -80,6 +68,18 @@ export function SettingsShell() {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
+
+  // Support hash-based deep-linking, e.g. /settings#familiars. Read it after
+  // hydration so SSR and the first client render both start on General.
+  useEffect(() => {
+    const hash = window.location.hash.replace("#", "") as Section;
+    if (SECTIONS.some((s) => s.id === hash)) {
+      setSection(hash);
+      setPickerView(false);
+      return;
+    }
+    setPickerView(true);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

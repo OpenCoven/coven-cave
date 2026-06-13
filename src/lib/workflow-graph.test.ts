@@ -34,6 +34,18 @@ assert.equal(graph.nodes[0].data.tone, "gate", "human gates use gate tone");
 assert.equal(graph.nodes[1].position.x > graph.nodes[0].position.x, true, "nodes are laid out left to right");
 assert.equal(workflowNodeTone("workflow"), "workflow", "nested workflow nodes get workflow tone");
 
+const verticalGraph = workflowToGraph(workflow, undefined, undefined, "vertical");
+assert.equal(
+  verticalGraph.nodes[1].position.y > verticalGraph.nodes[0].position.y,
+  true,
+  "vertical workflow layout stacks sequential steps top to bottom",
+);
+assert.equal(
+  verticalGraph.nodes[1].position.x,
+  verticalGraph.nodes[0].position.x,
+  "vertical workflow layout keeps sequential steps in the same column",
+);
+
 const dependencyWorkflow: WorkflowSummary = {
   id: "fanout-synthesis",
   version: "1.0.0",
@@ -73,6 +85,14 @@ assert.deepEqual(
   const research = positioned.nodes.find((node) => node.id === "research")!;
   assert.deepEqual(intake.position, { x: 500, y: 444 }, "saved positions win");
   assert.equal(research.position.x, 320, "steps without saved positions keep the layered default");
+}
+
+{
+  const verticalDependencyGraph = workflowToGraph(dependencyWorkflow, undefined, null, "vertical");
+  const pos = new Map(verticalDependencyGraph.nodes.map((node) => [node.id, node.position]));
+  assert.equal(pos.get("research")!.y, pos.get("risk")!.y, "vertical parallel steps share a dependency row");
+  assert.notEqual(pos.get("research")!.x, pos.get("risk")!.x, "vertical parallel steps fan out across columns");
+  assert.ok(pos.get("intake")!.y < pos.get("research")!.y, "vertical dependents sit below their requirements");
 }
 
 // A cyclic requires graph must not hang or throw during layout.

@@ -22,13 +22,32 @@
 }
 
 /* ── Panel toggle (Dia-style) ────────────────────────────────────────────── */
+/* The whole header row is the collapse toggle — full-width button reset. */
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 7px;
+  width: 100%;
+  padding: 2px 4px 2px 7px;
   flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.sidebar-header:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hairline);
+}
+
+.sidebar-header:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 
 .sidebar-title {
@@ -41,31 +60,20 @@
   white-space: nowrap;
 }
 
+/* Passive icon affordance; hover/colour follows the row button above. */
 .sidebar-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   width: 28px;
-  padding: 0;
   height: 28px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
   color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition: color 120ms ease;
 }
 
-.sidebar-toggle:hover {
-  background: var(--bg-hover);
+.sidebar-header:hover .sidebar-toggle {
   color: var(--text-primary);
-  border-color: var(--border-hairline);
-}
-
-.sidebar-toggle:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 1px;
 }
 
 /* ── Header CTA ──────────────────────────────────────────────────────────── */

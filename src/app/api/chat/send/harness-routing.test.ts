@@ -174,6 +174,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /No conversation found with session ID/,
+  "Transparent resume fallback should also handle Claude conversation-store misses from stale session ids",
+);
+
+assert.match(
+  chatRoute,
   /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null\)\)/,
   "Fresh-chat retry should clear stale diagnostic tails before the retry attempt",
 );

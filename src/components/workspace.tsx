@@ -170,6 +170,36 @@ export function Workspace() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
+  const refreshDaemonStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/daemon/status", { cache: "no-store" });
+      const json = (await res.json()) as { running?: boolean };
+      setDaemonRunning(json.running === true);
+    } catch {
+      setDaemonRunning(false);
+    }
+  }, []);
+
+  const startDaemon = useCallback(async () => {
+    try {
+      const res = await fetch("/api/daemon/start", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || json?.stderr || "daemon did not start");
+      }
+      dismissBanner("daemon-start-error");
+      await refreshDaemonStatus();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "daemon did not start";
+      pushBanner({
+        id: "daemon-start-error",
+        severity: "error",
+        title: `Daemon start failed — ${message}`,
+      });
+      await refreshDaemonStatus();
+    }
+  }, [dismissBanner, pushBanner, refreshDaemonStatus]);
+
   // One-shot legacy localStorage key sweep: runs once per browser profile,
   // then marks itself done so it never re-runs.
   useEffect(() => {
@@ -241,26 +271,17 @@ export function Workspace() {
 
   // Daemon status poll (previously lived on DaemonBar before chrome consolidation)
   useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const res = await fetch("/api/daemon/status", { cache: "no-store" });
-        const json = (await res.json()) as { running?: boolean };
-        if (!cancelled) setDaemonRunning(json.running === true);
-      } catch {
-        if (!cancelled) setDaemonRunning(false);
-      }
-    };
-    void tick();
-    const t = setInterval(tick, 5000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, []);
+    void refreshDaemonStatus();
+    const t = setInterval(() => { void refreshDaemonStatus(); }, 5000);
+    return () => { clearInterval(t); };
+  }, [refreshDaemonStatus]);
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat.
   useEffect(() => {
     if (daemonRunning) {
       dismissBanner("daemon-offline");
+      dismissBanner("daemon-start-error");
     } else {
       pushBanner({
         id: "daemon-offline",
@@ -269,12 +290,12 @@ export function Workspace() {
         cta: {
           label: "Start daemon",
           onClick: () => {
-            void fetch("/api/daemon/start", { method: "POST" });
+            void startDaemon();
           },
         },
       });
     }
-  }, [daemonRunning, pushBanner, dismissBanner]);
+  }, [daemonRunning, pushBanner, dismissBanner, startDaemon]);
 
   const loadFamiliars = useCallback(async () => {
     try {

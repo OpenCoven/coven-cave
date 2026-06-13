@@ -127,6 +127,15 @@ assert.match(canvas, /nodeColor=\{workflowMiniMapNodeColor\}/, "Minimap should c
 assert.match(canvas, /zoomable[\s\S]{0,120}pannable[\s\S]{0,120}position="bottom-right"/, "Minimap should be interactive and anchored inside the viewer");
 assert.match(canvas, /initialWidth:\s*WORKFLOW_NODE_WIDTH[\s\S]{0,80}initialHeight:\s*WORKFLOW_NODE_HEIGHT/, "Flow nodes should expose dimensions so the minimap can draw the actual workflow");
 assert.match(css, /\.workflow-minimap-toggle/, "Workflow CSS should style the minimap toggle");
+assert.match(studio, /layoutDirection/, "Studio should accept the active workflow canvas layout direction");
+assert.match(studio, /onResetView/, "Studio should thread reset-view actions into the canvas");
+assert.match(studio, /onSwitchLayout/, "Studio should thread layout switching into the canvas");
+assert.match(canvas, /aria-label="Reset workflow view"/, "Canvas should expose a reset-view control");
+assert.match(canvas, /aria-label=\{layoutDirection === "horizontal" \? "Switch workflow layout to vertical" : "Switch workflow layout to horizontal"\}/, "Canvas should expose an accessible layout switch control");
+assert.match(canvas, /layoutDirection === "vertical" \? Position\.Top : Position\.Left/, "Vertical layout should move target handles to the top edge");
+assert.match(canvas, /layoutDirection === "vertical" \? Position\.Bottom : Position\.Right/, "Vertical layout should move source handles to the bottom edge");
+assert.match(canvas, /key=\{flowKey\}/, "Canvas should remount React Flow when the view is reset so fitView reruns");
+assert.match(css, /\.workflow-canvas-toolbar/, "Workflow CSS should style the canvas action toolbar");
 
 // Draggable nodes: local node state + drag-stop persistence to the sidecar.
 assert.match(canvas, /nodesDraggable/, "Canvas nodes must be draggable");
