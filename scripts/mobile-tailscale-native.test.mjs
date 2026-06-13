@@ -11,6 +11,7 @@ assert.match(infoPlist, /<key>NSBonjourServices<\/key>/);
 assert.match(infoPlist, /<string>_tailscale\._tcp<\/string>/);
 assert.match(infoPlist, /<string>_tailscale\._udp<\/string>/);
 assert.match(infoPlist, /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
+assert.match(infoPlist, /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/);
 
 const sourceInfoPlist = read("src-tauri/Info.ios.plist");
 assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
