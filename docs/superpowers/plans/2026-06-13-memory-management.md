@@ -10,6 +10,18 @@
 
 ---
 
+## Amendment 2026-06-13 (ground-truth corrections, supersede where noted)
+
+Live inspection of `~/.coven` + the daemon + `src/app/api/memory/route.ts` corrected three assumptions. **These override the original Phase 2/3 text:**
+
+1. **Target entries aren't surfaced today.** The "No notable updates" dream files live at `~/.coven/workspaces/familiars/{id}/memory/dreaming/light/*.md`. The daemon's `scan_memory` only reads `~/.coven/memory/{familiar}/*.md` (currently 1 entry) and the cave scan doesn't cover the coven workspaces dir. **Decision (user-approved): surface ALL familiar workspace memory** by adding a `scanCovenFamiliarWorkspaces` to `/api/memory/route.ts` (mirrors the existing `scanFamiliarWorkspaces` for OpenClaw) + classifying those paths. The existing walk does `if (item.name.startsWith(".")) continue;`, so `dreaming/*.md` is included and `.dreams/*.json` is auto-skipped.
+
+2. **Trash is a single central dotdir, not per-root.** Per-root `.trash` under `~/.coven/memory/` is unsafe — `scan_memory` treats every subdir there as a familiar. Use **`~/.coven/.cave-trash/memory/`** (`TRASH_DIRNAME = ".cave-trash"`). The daemon never scans it (only `~/.coven/memory/`), and the cave walk skips dotdirs. Sidecars store the absolute `originalPath`; list/restore/purge scan the one dir. This replaces the per-root `.trash` design in Task 7/8.
+
+3. **Task 9 is already satisfied.** The cave walk's `startsWith(".")` skip already hides the trash dir; keep only a confirming structural test (no walk change needed).
+
+---
+
 ## Conventions (read first)
 
 - **Worktree:** all work in `/Users/buns/Documents/GitHub/OpenCoven/coven-cave/.worktrees/memory-management` on branch `feat/memory-management`. Run all commands from there.
