@@ -228,6 +228,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   const [bridge, setBridge] = useState<TauriBridge | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const platform = useTauriPlatform();
+  const nativeBrowserAvailable = platform === "desktop";
   useEffect(() => {
     // browser_* Rust commands are cfg(desktop)-gated. On Tauri-mobile
     // (iOS / Android) and in the browser, the embedded webview path
@@ -277,6 +278,12 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
 
   // ── Tauri bridge ──────────────────────────────────────────────────
   useEffect(() => {
+    if (platform === "unknown") return;
+    if (!nativeBrowserAvailable) {
+      setBridge(null);
+      setUnavailable(true);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const b = await loadTauri();
@@ -285,11 +292,11 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       else setBridge(b);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [nativeBrowserAvailable, platform]);
 
   // ── Page-load + title events ──────────────────────────────────────
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !nativeBrowserAvailable) return;
     let unlistenLoad: (() => void) | null = null;
     let unlistenTitle: (() => void) | null = null;
 
@@ -335,7 +342,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     ).then((fn) => { unlistenTitle = fn; });
 
     return () => { unlistenLoad?.(); unlistenTitle?.(); };
-  }, [bridge, label, activeTabId]);
+  }, [bridge, nativeBrowserAvailable, label, activeTabId]);
 
   // ── Sync active tab webview bounds ────────────────────────────────
   // The native Tauri child webview is an OS-level overlay rendered ABOVE
@@ -347,7 +354,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   // stale and overlapping the toolbar. Reconcile against the live rect
   // every frame instead, issuing IPC only when the rounded bounds change.
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !nativeBrowserAvailable) return;
     const surface = surfaceRef.current;
     if (!surface) return;
 
@@ -403,11 +410,11 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       hideAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, label, activeTabId, tabs.map((t) => t.id).join(",")]);
+  }, [bridge, nativeBrowserAvailable, label, activeTabId, tabs.map((t) => t.id).join(",")]);
 
   // ── Navigate active tab when URL changes ─────────────────────────
   useEffect(() => {
-    if (!bridge || !activeTab) return;
+    if (!bridge || !nativeBrowserAvailable || !activeTab) return;
     // Small delay to let panel layout fully settle before reading bounds
     const timer = setTimeout(() => {
       const surface = surfaceRef.current;
@@ -425,7 +432,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     }, 80);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, activeTab?.url, activeTab?.id]);
+  }, [bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id]);
 
   // ── Localhost probe ───────────────────────────────────────────────
   useEffect(() => {

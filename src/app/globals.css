@@ -4268,11 +4268,16 @@ button:active > .edge-rail-chip {
    driven by the `[data-mobile-drawer]` attribute on `.shell-root`. The
    ⌘B / ⌘\\ / ⌘J keyboard shortcuts and the top-bar hamburger buttons
    both flip that attribute. At this breakpoint the shell also surfaces
-   a bottom tab bar (`<MobileBottomTabs>`) for the top-five destinations,
-   which is why `.shell-detail` reserves bottom padding here. */
+   a bottom tab bar (`<MobileBottomTabs>`) for the top-five destinations.
+   Those tabs live in normal shell flow below `.shell-body`, so the detail
+   pane must not reserve their height again. */
 @media (max-width: 1023px) {
   .shell-body {
     flex-direction: column;
+  }
+
+  .shell-detail {
+    padding-bottom: 0;
   }
 
   /* Avatar rail → horizontal top strip with scrolling avatars. */
@@ -4370,12 +4375,6 @@ button:active > .edge-rail-chip {
     flex: 0 0 0 !important;
     width: 0 !important;
     min-width: 0 !important;
-  }
-  /* Reserve room at the bottom of the detail surface for the bottom tab
-     bar so the last line of scrollable content isn't obscured. The bar
-     itself adds its own safe-area inset on top of this 56px. */
-  .shell-detail {
-    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 }
 

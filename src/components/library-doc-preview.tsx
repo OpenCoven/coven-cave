@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
 import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
+import { useTauriPlatform } from "@/lib/tauri-platform";
 import type {
   LibraryDocBody,
   LibraryBookmark,
@@ -232,11 +233,19 @@ function LibraryLinkViewer({
   const [bridge, setBridge] = useState<TauriInvokeBridge | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const platform = useTauriPlatform();
+  const nativeBrowserAvailable = platform === "desktop";
   const safe = canOpenUrl(url, openKind);
   const label = safeViewerLabel(id, url);
   const nativeLabel = `cave-browser-${label}`;
 
   useEffect(() => {
+    if (platform === "unknown") return;
+    if (!nativeBrowserAvailable) {
+      setBridge(null);
+      setUnavailable(true);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const nextBridge = await loadTauriInvoke();
@@ -245,10 +254,10 @@ function LibraryLinkViewer({
       else setUnavailable(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [nativeBrowserAvailable, platform]);
 
   useEffect(() => {
-    if (!bridge || !safe) return;
+    if (!bridge || !nativeBrowserAvailable || !safe) return;
     const surface = surfaceRef.current;
     if (!surface) return;
 
@@ -292,10 +301,10 @@ function LibraryLinkViewer({
       window.removeEventListener("scroll", handleViewportChange, true);
       void bridge.invoke("browser_close", { label });
     };
-  }, [bridge, label, safe, url]);
+  }, [bridge, nativeBrowserAvailable, label, safe, url]);
 
   useEffect(() => {
-    if (!bridge || !safe) return;
+    if (!bridge || !nativeBrowserAvailable || !safe) return;
     let unlisten: (() => void) | null = null;
     void bridge.listen<{ label: string; scrollY: number }>("browser:scroll", (event) => {
       const { label: eventLabel, scrollY } = event.payload;
@@ -303,7 +312,7 @@ function LibraryLinkViewer({
       setHeaderCollapsed(scrollY > 24);
     }).then((cleanup) => { unlisten = cleanup; });
     return () => { unlisten?.(); };
-  }, [bridge, nativeLabel, safe]);
+  }, [bridge, nativeBrowserAvailable, nativeLabel, safe]);
 
   return (
     <div className={`library-preview library-link-viewer${headerCollapsed ? " library-link-viewer--header-collapsed" : ""}`}>

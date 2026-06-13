@@ -30,6 +30,24 @@ function extractFunctionBody(name: string): string {
 const navigateToBody = extractFunctionBody("navigateTo");
 const imperativeHandleCalls = source.match(/useImperativeHandle\(/g) ?? [];
 
+assert.match(
+  source,
+  /const platform = useTauriPlatform\(\);[\s\S]{0,120}const nativeBrowserAvailable = platform === "desktop";/,
+  "BrowserPane should only treat desktop Tauri as native-browser capable",
+);
+
+assert.match(
+  source,
+  /if \(platform === "unknown"\) return;[\s\S]{0,160}if \(!nativeBrowserAvailable\) \{[\s\S]{0,120}setBridge\(null\);[\s\S]{0,120}setUnavailable\(true\);[\s\S]{0,120}return;/,
+  "BrowserPane should use the iframe fallback instead of loading browser_* IPC on Tauri mobile",
+);
+
+assert.match(
+  source,
+  /if \(!bridge \|\| !nativeBrowserAvailable\) return;[\s\S]*browser_hide/,
+  "BrowserPane should guard browser_* IPC behind nativeBrowserAvailable",
+);
+
 assert.equal(
   imperativeHandleCalls.length,
   1,

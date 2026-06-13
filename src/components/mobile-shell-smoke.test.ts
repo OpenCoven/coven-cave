@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
+const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 assert.match(
   bottomTerminal,
@@ -16,6 +17,12 @@ assert.match(
   browserPane,
   /outside Tauri|fallback iframe|window\.open/,
   "Browser view should keep a browser fallback path outside the desktop webview",
+);
+
+assert.match(
+  globals,
+  /Those tabs live in normal shell flow[\s\S]{0,220}\.shell-detail\s*\{[\s\S]{0,80}padding-bottom:\s*0;/,
+  "Mobile shell detail should not reserve extra space above bottom tabs",
 );
 
 assert.match(

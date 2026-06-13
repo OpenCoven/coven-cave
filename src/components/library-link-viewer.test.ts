@@ -14,6 +14,24 @@ assert.match(
 
 assert.match(
   preview,
+  /import \{ useTauriPlatform \} from "@\/lib\/tauri-platform"/,
+  "Library link viewer should inspect the Tauri platform before using native browser IPC",
+);
+
+assert.match(
+  preview,
+  /const platform = useTauriPlatform\(\);[\s\S]{0,120}const nativeBrowserAvailable = platform === "desktop";/,
+  "Library link viewer should only treat desktop Tauri as native-browser capable",
+);
+
+assert.match(
+  preview,
+  /if \(platform === "unknown"\) return;[\s\S]{0,160}if \(!nativeBrowserAvailable\) \{[\s\S]{0,120}setBridge\(null\);[\s\S]{0,120}setUnavailable\(true\);[\s\S]{0,120}return;/,
+  "Library link viewer should fall back instead of calling browser_* commands on Tauri mobile",
+);
+
+assert.match(
+  preview,
   /browser_navigate[\s\S]*readOnlyUrl:\s*url/,
   "Embedded Library link viewer should ask the native webview to stay read-only",
 );
