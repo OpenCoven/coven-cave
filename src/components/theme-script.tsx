@@ -1,5 +1,5 @@
 /**
- * ThemeScript — flash-free theme + mode restoration.
+ * ThemeScript — flash-free theme + mode + font restoration.
  *
  * Rendered as a <script> tag inside <head> via layout.tsx.
  * Runs before the first paint so there's no theme flash.
@@ -11,6 +11,8 @@
  *  4. Always set BOTH `data-theme` and `data-mode` on <html>.
  *  5. If theme === "custom", apply `cssVars.theme` (mode-agnostic) +
  *     `cssVars[mode]` (mode-specific) from localStorage["coven-custom-theme"].
+ *  6. Read localStorage["cave:font:sans"] / localStorage["cave:font:mono"] and
+ *     apply --font-sans / --font-mono CSS vars for non-default selections.
  *
  * NOTE: The storage key strings ("coven-theme", "coven-mode",
  * "coven-custom-theme") and the legacy rename map are duplicated from
@@ -18,6 +20,11 @@
  * script body is a string literal that runs in the browser before any
  * module code resolves. Keep both in sync when adding new keys or
  * renames.
+ *
+ * NOTE: The font keys ("cave:font:sans", "cave:font:mono"), default ids
+ * ("geist", "geist-mono"), and the SANS_FALLBACK / MONO_FALLBACK strings
+ * are duplicated from src/lib/font-catalog.ts and src/lib/font-storage.ts.
+ * Keep in sync when adding new fonts or changing fallback chains.
  */
 
 const THEME_SCRIPT = `
@@ -61,6 +68,19 @@ const THEME_SCRIPT = `
       // (tweakcn imports from the dark-only era ship only cssVars.dark).
       if (!modeGroup) modeGroup = mode === "light" ? cssVars.dark : cssVars.light;
       applyGroup(modeGroup);
+    }
+    // ── Fonts ── apply saved non-default families before paint (no flash).
+    // Inlined from src/lib/font-catalog.ts (SANS_FALLBACK / MONO_FALLBACK) and
+    // src/lib/font-storage.ts (keys + stack shape) — keep in sync.
+    var SANS_FB = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    var MONO_FB = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
+    var fontSansId = localStorage.getItem("cave:font:sans");
+    if (fontSansId && fontSansId !== "geist" && /^[a-z0-9-]+$/.test(fontSansId)) {
+      try { html.style.setProperty("--font-sans", "var(--font-" + fontSansId + "), " + SANS_FB); } catch (e) {}
+    }
+    var fontMonoId = localStorage.getItem("cave:font:mono");
+    if (fontMonoId && fontMonoId !== "geist-mono" && /^[a-z0-9-]+$/.test(fontMonoId)) {
+      try { html.style.setProperty("--font-mono", "var(--font-" + fontMonoId + "), " + MONO_FB); } catch (e) {}
     }
   } catch (e) {}
 })();
