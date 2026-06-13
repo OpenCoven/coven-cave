@@ -1553,7 +1553,11 @@ tr:hover .library-row-delete,
  * ---------------------------------------------------------------- */
 .library-preview-md.cave-md {
   font-size: 15px;
-  line-height: 1.8;
+  /* Honor the reading line-spacing control (Settings → Appearance →
+     Typography); fall back to the library default when the var is unset.
+     Without the var this 2-class rule shadows .cave-md's var-based
+     line-height, so the leading control had no effect in the preview. */
+  line-height: var(--cave-reading-leading, 1.8);
 }
 
 /* More vertical breathing between block-level elements */
@@ -1699,9 +1703,12 @@ html[data-reading-dropcap="on"] .library-preview-md.cave-md p:first-of-type::fir
   color: var(--text-primary);
 }
 
-/* Max readable width with comfortable padding */
+/* Max readable width with comfortable padding. Honors the reading
+   max-width control (Settings → Appearance → Typography); falls back to
+   the library default (740px) when the var is unset, so the width control
+   takes effect in the preview instead of being shadowed by this rule. */
 .library-preview-md {
-  max-width: 740px;
+  max-width: var(--cave-reading-width, 740px);
   padding-bottom: 48px;
 }
 
