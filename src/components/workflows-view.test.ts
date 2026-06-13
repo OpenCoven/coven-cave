@@ -61,5 +61,6 @@ assert.match(source, /const forking = isPublicTemplate\(workflow\)/, "Save shoul
 assert.match(source, /uniqueId\(`\$\{slugifyWorkflowId\(workflow\.id\)\}-personal`\)/, "Forking a template should mint a new personal id (public-wins dedup hides same-id copies)");
 assert.match(source, /public: false/, "Forking should clear the public flag so the runtime routes the copy to ~/.coven");
 assert.match(source, /forking \? `Forked to a personal copy/, "Saving a template edit should report a personal fork");
+assert.match(source, /await load\(true\);\s*\n\s*setSelectedWorkflowId\(saved\.id\)/, "Save must refresh the list before re-selecting so a fork's new id exists when selected (else the selection effect falls back to the template)");
 
 console.log("workflows-view.test.ts: ok");

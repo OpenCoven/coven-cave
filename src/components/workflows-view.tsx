@@ -326,10 +326,15 @@ export function WorkflowsView() {
       if (result.validation) {
         setAction({ id: saved.id, kind: "validate", result: result.validation });
       }
-      setDraftState(initialWorkflowDraft(saved));
+      // Refresh the list BEFORE re-selecting: a fork lands under a new id, and
+      // the selection effect would otherwise run against the stale list, fail to
+      // find the new id, and fall back to workflows[0] (the template). Awaiting
+      // load first means the fork exists when we select it. (handleDuplicate
+      // uses the same ordering.)
+      await load(true);
       setSelectedWorkflowId(saved.id);
+      setDraftState(initialWorkflowDraft(saved));
       showNotice(forking ? `Forked to a personal copy: ${saved.id} — the template stays untouched.` : "Workflow saved.");
-      void load(true);
       if (forking) void loadRuns(saved.id);
     } finally {
       setBusyId(null);
