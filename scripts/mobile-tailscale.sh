@@ -126,10 +126,10 @@ load_or_create_token() {
   export ACCESS_TOKEN
 }
 
-# Per-launch sidecar auth token for the native iOS app. Distinct from the mobile
-# ACCESS token above: this one populates COVEN_CAVE_AUTH_TOKEN, which gates /api/
-# (proxy.ts) and which the in-app SidecarAuthBridge expects via ?covenCaveToken=.
-# Stored in its own file so the access-token reuse guards stay independent.
+# Sidecar auth token for the native iOS app (persisted per state dir / running server). Distinct from the mobile
+# ACCESS token above: this one populates COVEN_CAVE_AUTH_TOKEN, which gates /api/ (proxy.ts) and which the
+# in-app SidecarAuthBridge expects via ?covenCaveToken=. Stored in its own file so the access-token reuse guards
+# stay independent.
 load_or_create_sidecar_token() {
   ensure_state_dir
   if [ ! -s "$SIDECAR_TOKEN_FILE" ]; then
