@@ -384,7 +384,7 @@ export function ChatProjectSidebar({
               ].join(" ")}
             >
               <span className="truncate">{f.label}</span>
-              <span className="font-mono opacity-70">{f.count}</span>
+              {f.count > 0 ? <span className="font-mono opacity-70">{f.count}</span> : null}
             </button>
           );
         })}
