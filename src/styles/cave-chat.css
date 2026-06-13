@@ -24,10 +24,11 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md {
   font-size: 14px;
-  /* Reading line-spacing + letter-spacing knobs (Settings → Appearance →
-     Typography). Default to 1.7 / 0 when the vars are unset. */
+  /* Reading line-spacing + letter-spacing + alignment knobs (Settings →
+     Appearance → Typography). Default to 1.7 / 0 / left when vars are unset. */
   line-height: var(--cave-reading-leading, 1.7);
   letter-spacing: var(--cave-reading-tracking, 0);
+  text-align: var(--cave-reading-align, left);
   color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: anywhere;

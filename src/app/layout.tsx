@@ -6,6 +6,7 @@ import { SidecarAuthMonitor } from "@/components/security/sidecar-auth-monitor";
 import { ScreenMagnificationController } from "@/components/screen-magnification-controller";
 import { ReadingLeadingController } from "@/components/reading-leading-controller";
 import { ReadingTrackingController } from "@/components/reading-tracking-controller";
+import { ReadingAlignController } from "@/components/reading-align-controller";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { PwaRegister } from "@/components/pwa-register";
@@ -61,6 +62,7 @@ export default function RootLayout({
             <ScreenMagnificationController />
             <ReadingLeadingController />
             <ReadingTrackingController />
+            <ReadingAlignController />
             <PwaRegister />
             {children}
           </LiveRegionProvider>
