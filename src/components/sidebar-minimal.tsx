@@ -14,6 +14,7 @@
 
 import React from "react";
 import { Icon } from "@/lib/icon";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -212,6 +213,16 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onFamiliarScopeChange,
   } = props;
 
+  // Projects is no longer a top-level WorkspaceMode — reroute via the chat tab event.
+  const handleModeSelect = (id: string) => {
+    if (id === "projects") {
+      onModeChange("chat");
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
+      return;
+    }
+    onModeChange(id);
+  };
+
   // Filter out disabled add-on items. GitHub is gated; library is always shown.
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
@@ -266,7 +277,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               active={mode === fm.id}
               badge={fm.badge?.(props)}
               kbd={fm.kbd}
-              onClick={() => onModeChange(fm.id)}
+              onClick={() => handleModeSelect(fm.id)}
             />
           ))}
         </SidebarSection>
@@ -281,7 +292,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               active={mode === fm.id}
               badge={fm.badge?.(props)}
               kbd={fm.kbd}
-              onClick={() => onModeChange(fm.id)}
+              onClick={() => handleModeSelect(fm.id)}
             />
           ))}
         </SidebarSection>
@@ -296,7 +307,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               active={mode === fm.id}
               badge={fm.badge?.(props)}
               kbd={fm.kbd}
-              onClick={() => onModeChange(fm.id)}
+              onClick={() => handleModeSelect(fm.id)}
             />
           ))}
         </SidebarSection>
