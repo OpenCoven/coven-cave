@@ -2041,7 +2041,7 @@ details[open] > .cave-tool-summary::before {
     max-width: 100%;
   }
 
-  .cave-composer-dock {
+  .cave-chat-linear .cave-composer-dock {
     padding: 8px 12px 12px;
   }
 }

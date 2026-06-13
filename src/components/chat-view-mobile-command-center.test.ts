@@ -49,8 +49,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-dock\s*\{[\s\S]*bottom\s*:\s*0/,
-  "Mobile composer should dock to the chat surface; the shell already reserves bottom-tab space",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-composer-dock\s*\{[\s\S]*bottom\s*:\s*0/,
+  "Mobile composer should dock only inside the chat surface; the shell already reserves bottom-tab space",
 );
 
 assert.match(
