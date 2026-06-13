@@ -267,4 +267,22 @@ assert.match(
   "Familiar initiator attribution text should use a readable text token",
 );
 
+// ── Row chrome consistency (origin + initiator pills, action buttons) ─────────
+// Both pills must share one base rule so adjacent pills read as siblings.
+assert.match(
+  globals,
+  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*999px;[\s\S]*?\}/,
+  "Origin and initiator pills must share a single base chrome rule",
+);
+// The three row action buttons (pin/archive/delete) must be uniform squares.
+{
+  const squares = source.match(/touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md/g) ?? [];
+  assert.equal(squares.length, 3, "pin/archive/delete must be uniform h-6 w-6 square icon buttons");
+}
+assert.doesNotMatch(
+  source,
+  /touch-always-visible shrink-0 rounded border border-\[var\(--border-hairline\)\] px-1\.5 py-0\.5/,
+  "Old non-uniform px-1.5 py-0.5 action-button chrome must be gone",
+);
+
 console.log("chat-list-delete.test.ts: ok");
