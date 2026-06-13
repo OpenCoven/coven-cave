@@ -296,26 +296,41 @@ export function WorkflowsView() {
   };
 
   const runSave = async (workflow: WorkflowSummary) => {
-    // Templates are read-only: saving an edit forks a personal copy under
-    // ~/.coven (the runtime routes any non-public manifest there) and leaves the
-    // repo template untouched.
+    // Templates are read-only. Saving an edit forks a *new* personal workflow
+    // under ~/.coven and leaves the repo template untouched. The fork takes a
+    // distinct id (`<id>-personal`): the runtime's library is public-wins on id
+    // collisions, so a same-id personal copy would be shadowed and invisible.
+    // A manifest is routed to ~/.coven unless `visibility.public === true`, so
+    // the fork clears that flag.
     const forking = isPublicTemplate(workflow);
     setBusyId(`${workflow.id}:save`);
     try {
-      const result = await saveWorkflow(workflowToManifest(workflow));
+      let manifest = workflowToManifest(workflow);
+      if (forking) {
+        const forkId = uniqueId(`${slugifyWorkflowId(workflow.id)}-personal`);
+        const visibility = {
+          ...(manifest.visibility && typeof manifest.visibility === "object"
+            ? (manifest.visibility as Record<string, unknown>)
+            : {}),
+          public: false,
+          personal: true,
+        };
+        manifest = { ...manifest, id: forkId, visibility };
+      }
+      const result = await saveWorkflow(manifest);
       if (!result.ok) {
         showNotice(result.error ?? "save failed");
         return;
       }
+      const saved = result.workflow ?? workflow;
       if (result.validation) {
-        setAction({ id: workflow.id, kind: "validate", result: result.validation });
+        setAction({ id: saved.id, kind: "validate", result: result.validation });
       }
-      if (result.workflow) {
-        setDraftState(initialWorkflowDraft(result.workflow));
-        setSelectedWorkflowId(result.workflow.id);
-      }
-      showNotice(forking ? "Forked to a personal copy — the template stays untouched." : "Workflow saved.");
+      setDraftState(initialWorkflowDraft(saved));
+      setSelectedWorkflowId(saved.id);
+      showNotice(forking ? `Forked to a personal copy: ${saved.id} — the template stays untouched.` : "Workflow saved.");
       void load(true);
+      if (forking) void loadRuns(saved.id);
     } finally {
       setBusyId(null);
     }

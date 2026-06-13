@@ -58,6 +58,8 @@ assert.match(client, /export function isPersonalWorkflow/, "Workflow client shou
 assert.match(client, /export function isPublicTemplate/, "Workflow client should expose the public-template predicate");
 assert.match(source, /if \(isPublicTemplate\(workflow\)\)[\s\S]{0,160}read-only/i, "Deleting a template should be blocked as read-only");
 assert.match(source, /const forking = isPublicTemplate\(workflow\)/, "Save should detect whether it is forking a template");
-assert.match(source, /forking \? "Forked to a personal copy/, "Saving a template edit should report a personal fork");
+assert.match(source, /uniqueId\(`\$\{slugifyWorkflowId\(workflow\.id\)\}-personal`\)/, "Forking a template should mint a new personal id (public-wins dedup hides same-id copies)");
+assert.match(source, /public: false/, "Forking should clear the public flag so the runtime routes the copy to ~/.coven");
+assert.match(source, /forking \? `Forked to a personal copy/, "Saving a template edit should report a personal fork");
 
 console.log("workflows-view.test.ts: ok");
