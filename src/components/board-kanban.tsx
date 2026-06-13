@@ -255,6 +255,88 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
     [],
   );
 
+  // ── Touch / pen finger-drag (Pointer Events) ───────────────────────────────
+  // HTML5 drag is mouse-only, so touch/pen get a long-press → drag → drop path.
+  // A 350ms long-press disambiguates a drag from a list scroll; we don't capture
+  // the pointer or preventDefault until it fires, so normal scrolling is intact.
+  const [touchDragId, setTouchDragId] = useState<string | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; title: string } | null>(null);
+  const dropTargetRef = useRef<CardStatus | null>(null);
+  const setDrop = useCallback((s: CardStatus | null) => { dropTargetRef.current = s; setDropTarget(s); }, []);
+
+  const handleCardPointerDown = useCallback((e: React.PointerEvent, card: Card) => {
+    if (e.pointerType === "mouse") return;                       // mouse keeps native HTML5 DnD
+    if ((e.target as HTMLElement).closest("button")) return;     // never on the card's action buttons
+    const pointerId = e.pointerId;
+    const node = e.currentTarget as HTMLElement;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let active = false;
+    let raf = 0;
+
+    const cleanup = () => {
+      clearTimeout(longPress);
+      if (raf) cancelAnimationFrame(raf);
+      try { node.releasePointerCapture(pointerId); } catch { /* harmless */ }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      if (!active) {
+        // Movement before the long-press fires means the user is scrolling/tapping.
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 8) cleanup();
+        return;
+      }
+      ev.preventDefault();
+      const x = ev.clientX, y = ev.clientY;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setGhost((g) => (g ? { ...g, x, y } : g));
+        const el = document.elementFromPoint(x, y) as HTMLElement | null;
+        const col = (el?.closest("[data-kanban-column]") as HTMLElement | null)?.dataset?.kanbanColumn as CardStatus | undefined;
+        setDrop(col ?? null);
+        const rail = node.closest(".board-kanban-rail-wrap, .board-swimlane-rail") as HTMLElement | null;
+        if (rail) {
+          const r = rail.getBoundingClientRect();
+          if (x > r.right - 48) rail.scrollLeft += 14;
+          else if (x < r.left + 48) rail.scrollLeft -= 14;
+        }
+      });
+    };
+
+    const onUp = () => {
+      const wasActive = active;
+      const target = dropTargetRef.current;
+      cleanup();
+      if (!wasActive) return;
+      setTouchDragId(null);
+      setGhost(null);
+      if (target && card.status !== target) {
+        const col = COLUMNS.find((c) => c.id === target);
+        onMoveStatus(card.id, target);
+        announce(`Moved '${card.title}' to ${col?.label ?? target}.`);
+      } else {
+        announce("Drop cancelled.");
+      }
+      setDrop(null);
+    };
+
+    const longPress = window.setTimeout(() => {
+      active = true;
+      try { node.setPointerCapture(pointerId); } catch { /* harmless */ }
+      setTouchDragId(card.id);
+      setGhost({ x: startX, y: startY, title: card.title });
+      announce(`Picked up '${card.title}'. Drag over a column and release to drop.`);
+    }, 350);
+
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }, [announce, onMoveStatus, setDrop]);
+
   const toggleGroup = (key: string) =>
     setCollapsedGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
@@ -342,11 +424,13 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
                           )}
                           {rows.map((card) => (
                             <KanbanCard key={card.id} card={card} familiars={familiars} sessions={sessions}
-                              isDragging={draggingId === card.id} isSelected={selectedCardId === card.id}
-                              isGrabbed={grabbedCardId === card.id}
+                              isDragging={draggingId === card.id || touchDragId === card.id}
+                              isSelected={selectedCardId === card.id}
+                              isGrabbed={grabbedCardId === card.id || touchDragId === card.id}
                               onSelect={() => onSelect(card.id)}
                               onDragStart={(e) => handleDragStart(e, card.id)}
                               onDragEnd={handleDragEnd}
+                              onPointerDownTouch={(e) => handleCardPointerDown(e, card)}
                               onJumpToSession={onJumpToSession}
                               onOpenTaskChat={onOpenTaskChat}
                               chatLinking={chatLinkingId === card.id} />
@@ -361,14 +445,24 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
           </div>
         );
       })}
+      {ghost && (
+        <div
+          className="board-kanban-touch-ghost"
+          style={{ left: ghost.x, top: ghost.y }}
+          aria-hidden
+        >
+          {ghost.title}
+        </div>
+      )}
     </div>
   );
 }
 
-function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
+function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
   card: Card; familiars: Familiar[]; sessions: SessionRow[];
   isDragging: boolean; isSelected: boolean; isGrabbed: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
+  onPointerDownTouch?: (e: React.PointerEvent) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinking?: boolean;
@@ -392,6 +486,7 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
       aria-keyshortcuts="Enter Space"
       onDragStart={(e) => { draggedRef.current = true; onDragStart(e); }}
       onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); onDragEnd(); }}
+      onPointerDown={onPointerDownTouch}
       onClick={() => { if (draggedRef.current) return; onSelect(); }}
       onKeyDown={(e) => { if (e.key !== "Enter") return; e.preventDefault(); onSelect(); }}
       tabIndex={0}

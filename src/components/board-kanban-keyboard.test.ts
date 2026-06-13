@@ -55,4 +55,27 @@ assert.match(
   "card rows expose data-card-id",
 );
 
+// Touch / pen drag keeps mouse HTML5 drag intact while giving touch users a
+// long-press path with a visible ghost and the same move callback.
+assert.match(
+  source,
+  /pointerType === "mouse"/,
+  "touch drag handler must leave mouse/native HTML5 drag alone",
+);
+assert.match(
+  source,
+  /setTimeout\([\s\S]*?350\)/,
+  "touch drag should wait for a long-press before activating",
+);
+assert.match(
+  source,
+  /board-kanban-touch-ghost/,
+  "touch drag should render a floating ghost while active",
+);
+assert.match(
+  source,
+  /onMoveStatus\(card\.id, target\)/,
+  "touch drop should reuse the board status move callback",
+);
+
 console.log("board-kanban-keyboard.test.ts OK");

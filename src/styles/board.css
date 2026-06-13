@@ -171,6 +171,26 @@
 .board-kanban-card--selected { background:color-mix(in oklch,var(--accent-presence) 13%,var(--bg-base)); border-color:color-mix(in oklch,var(--accent-presence) 55%,var(--border-strong)); box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--accent-presence) 35%,transparent); }
 .board-kanban-card--dragging { opacity:.35; cursor:grabbing; }
 .board-kanban-card--grabbed { border-color:color-mix(in oklch,var(--accent-presence) 72%,var(--border-strong)); box-shadow:0 0 0 2px color-mix(in oklch,var(--accent-presence) 28%,transparent),inset 0 0 0 1px color-mix(in oklch,var(--accent-presence) 44%,transparent); }
+/* Floating clone that follows the finger during a touch/pen drag. */
+.board-kanban-touch-ghost {
+  position: fixed;
+  z-index: 1000;
+  transform: translate(-50%, -120%);
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 38%);
+  pointer-events: none;
+}
 
 .board-kanban-card::before { content:""; position:absolute; left:0; top:8px; bottom:8px; width:3px; border-radius:0 2px 2px 0; }
 .board-kanban-card--priority-urgent::before { background:var(--color-danger); box-shadow:0 0 5px color-mix(in oklch,var(--color-danger) 50%,transparent); }
