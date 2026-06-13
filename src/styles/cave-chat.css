@@ -2061,7 +2061,6 @@ details[open] > .cave-tool-summary::before {
     z-index: 60;
     gap: 7px;
     padding: 8px 12px 9px;
-    padding-top: calc(var(--sai-top) + 8px);
     background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
     backdrop-filter: blur(14px);
   }
@@ -2202,7 +2201,7 @@ details[open] > .cave-tool-summary::before {
     -webkit-tap-highlight-color: transparent;
   }
 
-  .cave-composer-dock {
+  .cave-chat-linear .cave-composer-dock {
     position: sticky;
     bottom: 0;
     z-index: 50;
