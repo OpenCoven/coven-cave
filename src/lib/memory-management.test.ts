@@ -11,4 +11,26 @@ assert.equal(parseRelativeTime("3d ago", NOW), NOW - 3 * 86_400_000, "3d ago");
 assert.equal(parseRelativeTime("just now", NOW), NOW, "just now");
 assert.equal(parseRelativeTime("garbage", NOW), 0, "unparseable -> 0");
 
+import { normalizeCovenEntry, normalizeFileEntry } from "./memory-management.ts";
+
+const coven = normalizeCovenEntry(
+  { id: "kitty-2026-06-09", familiar_id: "kitty", title: "2026-06-09", path: "/home/u/.coven/memory/kitty/2026-06-09.md", updated_at: "5m ago", excerpt: "hello" },
+  NOW,
+);
+assert.equal(coven.source, "coven");
+assert.equal(coven.familiarId, "kitty");
+assert.equal(coven.path, "/home/u/.coven/memory/kitty/2026-06-09.md");
+assert.equal(coven.updatedAt, NOW - 5 * 60_000);
+assert.equal(coven.bodyHint, "hello");
+
+const file = normalizeFileEntry({
+  fullPath: "/home/u/.coven/memory/x.md", relPath: "x.md", title: "x",
+  sourceKind: "coven-origin", sourceKindLabel: "Coven origin", rootLabel: "Coven", size: 12,
+  modified: "2001-09-09T01:46:40.000Z", familiarId: null,
+});
+assert.equal(file.source, "file");
+assert.equal(file.size, 12);
+assert.equal(file.kind, "coven-origin");
+assert.equal(file.updatedAt, Date.parse("2001-09-09T01:46:40.000Z"));
+
 console.log("memory-management.test: ok");
