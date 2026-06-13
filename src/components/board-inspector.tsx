@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
@@ -870,7 +871,16 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
     } finally { setLifecycleBusy(null); }
   };
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  // Portal to <body> so the drawer's `position: fixed` resolves against the
+  // viewport, NOT the `.cave-mode-fade` mode wrapper. That wrapper retains a
+  // transform from its `cave-mode-in … both` animation, which silently makes
+  // it the containing block for fixed descendants — so an inline drawer
+  // anchored its `right:0`/`width:480px` to the (narrower, inset) detail panel
+  // instead of the window. Symptoms: a right-edge gap on desktop and left-
+  // clipped content on narrow viewports. Mirrors the ui/Modal portal pattern.
+  return createPortal(
     <>
       <div className="board-drawer-backdrop" onClick={close} />
       <div ref={dialogRef} className={`board-drawer${closing ? " board-drawer--closing" : ""}`} role="dialog" aria-modal aria-label="Card inspector" tabIndex={-1}>
@@ -1123,7 +1133,8 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
           <button type="button" className="board-toolbar-btn" onClick={close}>Close</button>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 function safeHref(value: string): string | null {
