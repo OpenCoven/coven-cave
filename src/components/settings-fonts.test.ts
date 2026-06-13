@@ -18,4 +18,13 @@ assert.match(src, /Reset/, "exposes a reset control");
 assert.match(shell, /import \{ FontSettings \} from "\.\/settings-fonts"/, "shell imports FontSettings");
 assert.match(shell, /<FontSettings\s*\/>/, "AppearanceSection renders <FontSettings />");
 
+// The component must apply the saved fonts on mount (the boot script that would
+// otherwise do it pre-paint is not mounted), so the rendered font matches the
+// persisted selection after a reload — not just after a user change.
+assert.match(
+  src,
+  /useEffect\(\(\) => \{[\s\S]*?applyFont\("sans"[\s\S]*?applyFont\("mono"[\s\S]*?\}, \[\]\)/,
+  "mount effect applies both saved fonts",
+);
+
 console.log("settings-fonts.test.ts OK");

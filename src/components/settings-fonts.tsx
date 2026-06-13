@@ -64,8 +64,12 @@ export function FontSettings() {
   const [monoId, setMonoId] = useState<string>(DEFAULT_FONT_ID.mono);
 
   useEffect(() => {
-    setSansId(readFontPref("sans"));
-    setMonoId(readFontPref("mono"));
+    const sans = readFontPref("sans");
+    const mono = readFontPref("mono");
+    setSansId(sans);
+    setMonoId(mono);
+    applyFont("sans", sans);
+    applyFont("mono", mono);
   }, []);
 
   const select = (slot: FontSlot, id: string) => {
