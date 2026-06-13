@@ -32,14 +32,15 @@ function trashRoot(home: string): string {
 
 export async function archiveMemoryFile(fullPath: string, home = homedir()): Promise<TrashResult> {
   const resolved = path.resolve(fullPath);
-  const cls = classifyMemoryFilePath(resolved, home);
-  if (!cls) return { ok: false, error: "path not allowed" };
+  if (!classifyMemoryFilePath(resolved, home)) return { ok: false, error: "path not allowed" };
   if (isStructuralMemoryPath(resolved)) return { ok: false, error: "protected: structural memory" };
-  // Explicit containment barrier: the resolved path must stay within its
-  // classified memory root. Redundant with classify's internal isWithinRoot
-  // check, but makes the path-traversal guard legible to static analysis.
-  const safeRoot = path.resolve(cls.rootPath);
-  if (resolved !== safeRoot && !resolved.startsWith(safeRoot + path.sep)) {
+  // Inline containment barrier against `home` (an untainted base):
+  // classifyMemoryFilePath above already confines the path to the specific
+  // memory roots, but that custom check is opaque to static analysis. This
+  // redundant `path.relative` + `..` guard is the canonical form a taint
+  // tracker recognizes as a path-traversal sanitizer for `resolved`.
+  const homeRel = path.relative(path.resolve(home), resolved);
+  if (homeRel.startsWith("..") || path.isAbsolute(homeRel)) {
     return { ok: false, error: "path not allowed" };
   }
   const dir = trashRoot(home);
