@@ -980,17 +980,22 @@ select {
 }
 
 /* ---- Origin chip (provenance for a session/card) ----------- */
-.ui-origin-chip {
+/* Origin + initiator pills share one chrome so adjacent pills read as
+   siblings; only the semantic accent/tint (call/human/familiar) varies. */
+.ui-origin-chip,
+.ui-initiator-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 18px;
-  padding: 0 6px;
+  max-width: 160px;
+  padding: 0 7px;
   border-radius: 999px;
   border: 1px solid var(--border-hairline);
-  background: var(--bg-base);
+  background: color-mix(in oklch, var(--text-secondary) 6%, transparent);
   color: var(--text-secondary);
   font-size: 10px;
+  font-weight: 500;
   font-family: inherit;
   line-height: 1;
   white-space: nowrap;
@@ -1016,23 +1021,6 @@ select {
 }
 
 /* ---- Initiator chip (who started a session) ---------------- */
-.ui-initiator-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 18px;
-  max-width: 150px;
-  padding: 0 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
 .ui-initiator-chip[data-initiator="human"] {
   color: var(--accent-presence);
   border-color: color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
@@ -1041,10 +1029,10 @@ select {
 .ui-initiator-chip[data-initiator="familiar"] {
   color: var(--text-secondary);
   border-color: color-mix(in oklch, var(--text-secondary) 26%, var(--border-hairline));
-  background: color-mix(in oklch, var(--text-secondary) 7%, transparent);
 }
 
-.ui-initiator-chip-label {
+.ui-initiator-chip-label,
+.ui-origin-chip-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
