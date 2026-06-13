@@ -29,6 +29,9 @@
   line-height: var(--cave-reading-leading, 1.7);
   letter-spacing: var(--cave-reading-tracking, 0);
   text-align: var(--cave-reading-align, left);
+  /* Max reading-width cap (Settings → Appearance → Typography). `none` when
+     --cave-reading-width is unset, so prose fills its container by default. */
+  max-width: var(--cave-reading-width, none);
   color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: anywhere;

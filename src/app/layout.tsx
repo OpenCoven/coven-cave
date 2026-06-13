@@ -7,6 +7,7 @@ import { ScreenMagnificationController } from "@/components/screen-magnification
 import { ReadingLeadingController } from "@/components/reading-leading-controller";
 import { ReadingTrackingController } from "@/components/reading-tracking-controller";
 import { ReadingAlignController } from "@/components/reading-align-controller";
+import { ReadingWidthController } from "@/components/reading-width-controller";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { PwaRegister } from "@/components/pwa-register";
@@ -63,6 +64,7 @@ export default function RootLayout({
             <ReadingLeadingController />
             <ReadingTrackingController />
             <ReadingAlignController />
+            <ReadingWidthController />
             <PwaRegister />
             {children}
           </LiveRegionProvider>

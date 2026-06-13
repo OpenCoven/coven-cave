@@ -72,4 +72,15 @@ assert.match(
   "reset restores the default text alignment",
 );
 
+// Max reading width control (caps .cave-md prose measure).
+assert.match(src, /Max reading width/, "renders a Max reading width control");
+assert.match(src, /READING_WIDTH_OPTIONS/, "uses the reading-width ladder");
+assert.match(src, /applyReadingWidth/, "applies reading width via the shared helper");
+assert.match(src, /aria-pressed=\{width === option\}/, "reading-width buttons expose selected state");
+assert.match(
+  src,
+  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_WIDTH[\s\S]*?\}/,
+  "reset restores the default reading width",
+);
+
 console.log("settings-fonts.test.ts OK");

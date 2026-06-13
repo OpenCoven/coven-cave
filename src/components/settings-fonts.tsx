@@ -39,6 +39,19 @@ import {
   readReadingAlign,
   type ReadingAlign,
 } from "@/lib/reading-align";
+import {
+  DEFAULT_READING_WIDTH,
+  READING_WIDTH_OPTIONS,
+  applyReadingWidth,
+  readReadingWidth,
+  type ReadingWidth,
+} from "@/lib/reading-width";
+
+const WIDTH_LABEL: Record<ReadingWidth, string> = {
+  full: "Full",
+  medium: "Medium",
+  narrow: "Narrow",
+};
 
 const LEADING_LABEL: Record<ReadingLeading, string> = {
   compact: "Compact",
@@ -112,6 +125,7 @@ export function FontSettings() {
   const [leading, setLeading] = useState<ReadingLeading>(DEFAULT_READING_LEADING);
   const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
   const [align, setAlign] = useState<ReadingAlign>(DEFAULT_READING_ALIGN);
+  const [width, setWidth] = useState<ReadingWidth>(DEFAULT_READING_WIDTH);
 
   useEffect(() => {
     const sans = readFontPref("sans");
@@ -126,6 +140,7 @@ export function FontSettings() {
     setLeading(readReadingLeading());
     setTracking(readReadingTracking());
     setAlign(readReadingAlign());
+    setWidth(readReadingWidth());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -166,6 +181,11 @@ export function FontSettings() {
     applyReadingAlign(next);
   };
 
+  const setReadingWidth = (next: ReadingWidth) => {
+    setWidth(next);
+    applyReadingWidth(next);
+  };
+
   const reset = () => {
     select("sans", DEFAULT_FONT_ID.sans);
     select("mono", DEFAULT_FONT_ID.mono);
@@ -173,6 +193,7 @@ export function FontSettings() {
     setLineSpacing(DEFAULT_READING_LEADING);
     setLetterSpacing(DEFAULT_READING_TRACKING);
     setTextAlign(DEFAULT_READING_ALIGN);
+    setReadingWidth(DEFAULT_READING_WIDTH);
   };
 
   const isDefault =
@@ -181,7 +202,8 @@ export function FontSettings() {
     scale === DEFAULT_SCREEN_SCALE &&
     leading === DEFAULT_READING_LEADING &&
     tracking === DEFAULT_READING_TRACKING &&
-    align === DEFAULT_READING_ALIGN;
+    align === DEFAULT_READING_ALIGN &&
+    width === DEFAULT_READING_WIDTH;
 
   return (
     <section className="flex flex-col gap-4">
@@ -278,6 +300,28 @@ export function FontSettings() {
                 }`}
               >
                 {ALIGN_LABEL[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Max reading width</label>
+          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Caps line length for reading text — chat, library, and memory.</p>
+          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
+            {READING_WIDTH_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setReadingWidth(option)}
+                aria-pressed={width === option}
+                aria-label={`Max reading width ${WIDTH_LABEL[option]}`}
+                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  width === option
+                    ? "bg-[var(--accent-presence)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {WIDTH_LABEL[option]}
               </button>
             ))}
           </div>

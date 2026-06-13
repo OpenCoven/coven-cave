@@ -50,5 +50,10 @@ assert.match(
   /\.cave-md\s*\{[\s\S]*?text-align:\s*var\(--cave-reading-align,\s*left\)/,
   ".cave-md text-align must read var(--cave-reading-align, left)",
 );
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?max-width:\s*var\(--cave-reading-width,\s*none\)/,
+  ".cave-md max-width must read var(--cave-reading-width, none)",
+);
 
 console.log("font-css-vars.test.ts OK");

@@ -174,6 +174,21 @@ assert.match(
   /<ReadingAlignController \/>/,
   "Root layout should mount the reading text-alignment controller so saved alignment applies on load",
 );
+assert.match(
+  fontSettings,
+  /Max reading width/,
+  "Typography (FontSettings) should expose a Max reading width control",
+);
+assert.match(
+  fontSettings,
+  /aria-pressed=\{width === option\}/,
+  "Max reading width buttons should expose the selected level to assistive tech",
+);
+assert.match(
+  layout,
+  /<ReadingWidthController \/>/,
+  "Root layout should mount the reading-width controller so saved width applies on load",
+);
 
 assert.match(
   layout,
