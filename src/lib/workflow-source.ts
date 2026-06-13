@@ -605,7 +605,12 @@ export async function saveWorkflowLayout(
     await withWorkflowWriteLock(async () => {
       const storage = await storageForWorkflowId(id);
       const dir = await ensureWorkflowDir(storage);
-      const filePath = path.join(dir, file);
+      const root = path.resolve(dir);
+      const filePath = path.resolve(root, file);
+      const rel = path.relative(root, filePath);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) {
+        throw new Error("resolved layout path escapes workflow storage directory");
+      }
       await writeFile(
         filePath,
         JSON.stringify({ version: 1, positions }, null, 2),
