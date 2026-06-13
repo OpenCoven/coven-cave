@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.78] - 2026-06-13
+
+This patch release carries the latest tailnet/mobile dev auth hardening after v0.0.77, including Tailscale Serve host support and native iOS webview sidecar authentication.
+
+### Added
+- **Tailscale Serve host support** — mobile/dev access now recognizes Tailscale Serve hostnames alongside localhost-style development hosts.
+- **Tauri desktop check coverage** — proxy behavior coverage now verifies the desktop/webview host path stays wired while remote tailnet access remains gated.
+
+### Fixed
+- **Native iOS dev webview auth** — the Tailscale native launch path now writes and passes the sidecar mobile token so the iOS Tauri shell can authenticate against the local dev server.
+- **Host-gate test drift** — middleware ordering assertions now match the shared `requestHost` path used by the proxy host gate.
+
 ## [0.0.77] - 2026-06-13
 
 A large reading-experience release: a full suite of long-form typography controls, board touch dragging and reliability fixes, real calendar actions, memory management, and continued CodeQL security hardening.
