@@ -249,6 +249,7 @@ export const ICON_NAMES = [
   "ph:git-branch-bold",
   "ph:lightning-bold",
   "ph:floppy-disk-bold",
+  "ph:stop-fill",
   "ph:lightning-fill",
   "ph:paw-print-bold",
   "ph:code-bold",

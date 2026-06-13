@@ -150,6 +150,37 @@ assert.match(runStrip, /engineUnavailable/, "Play should stay guarded when the e
 assert.match(runsPanel, /WorkflowRunRecord/, "Runs panel should render run records");
 assert.match(runsPanel, /dry-run snapshots and daemon executions/i, "Runs panel should explain its data sources");
 
+// --- Studio v3: playback walkthrough + rich runs ---
+const playback = readFileSync(new URL("../../lib/workflow-playback.ts", import.meta.url), "utf8");
+assert.match(playback, /export function playbackFromPlan/, "Playback should seed from a dry-run plan");
+assert.match(playback, /export function playbackFromRun/, "Playback should seed from a recorded run (replay)");
+assert.match(playback, /never fabricates execution|preview/i, "Playback must stay honest about previews vs executions");
+
+assert.match(studio, /playback=\{props\.playback\}/, "Studio should thread playback into the canvas");
+assert.match(studio, /onStopPlayback=\{props\.onStopPlayback\}/, "Studio should thread the stop-playback control");
+assert.match(studio, /onReplayRun=\{props\.onReplayRun\}/, "Studio should thread replay into the runs panel");
+
+assert.match(canvas, /nodePhases/, "Canvas should overlay playback node phases");
+assert.match(canvas, /workflow-node-phase-/, "Canvas nodes should carry a playback phase class");
+assert.match(canvas, /workflow-edge-active/, "Canvas should highlight the edge feeding the active step");
+
+assert.match(runStrip, /workflow-playback-transport/, "Run strip should show a playback transport");
+assert.match(runStrip, /onStopPlayback/, "Run strip should expose a stop/clear control");
+assert.match(runStrip, /preview · not a live execution/, "Run strip must label previews honestly");
+assert.match(runStrip, /playbackSummary/, "Run strip should show playback progress");
+
+assert.match(runsPanel, /aria-expanded=\{expanded\}/, "Runs rows should be expandable");
+assert.match(runsPanel, /workflow-run-steps/, "Expanded runs should show a per-step timeline");
+assert.match(runsPanel, /onReplayRun\(run\)/, "Runs should offer replay-on-canvas");
+assert.match(runsPanel, /runDuration/, "Expanded runs should show duration");
+assert.match(runsPanel, /summarizeRuns/, "Runs heading should show summary stats");
+
+assert.match(css, /\.workflow-node-phase-active/, "CSS should style the active playback node");
+assert.match(css, /@keyframes workflow-node-pulse/, "CSS should animate the active node");
+assert.match(css, /prefers-reduced-motion/, "Playback animation should respect reduced-motion");
+assert.match(css, /\.workflow-playback-transport/, "CSS should style the playback transport");
+assert.match(css, /\.workflow-run-replay/, "CSS should style the replay action");
+
 assert.match(attachments, /onAttachRole/, "Attachments should persist role bindings");
 assert.match(attachments, /onUpdateMeta/, "Attachments should bind familiars into the manifest");
 assert.match(attachments, /onScheduleRequest/, "Attachments should open scheduling");

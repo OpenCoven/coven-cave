@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { workflowToGraph } from "@/lib/workflow-graph";
 import {
+  advancePlayback,
+  playbackFinished,
+  playbackFromPlan,
+  playbackFromRun,
+  type WorkflowPlaybackState,
+} from "@/lib/workflow-playback";
+import {
   createWorkflowFromTemplate,
   duplicateWorkflow,
   slugifyWorkflowId,
@@ -59,6 +66,11 @@ export function WorkflowsView() {
   const [engineUnavailable, setEngineUnavailable] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Playback walks the graph node-by-node from an honest source (a dry-run
+  // plan or a recorded run). The view owns the single ticking timer; the canvas
+  // and strip only read the derived state.
+  const [playback, setPlayback] = useState<WorkflowPlaybackState | null>(null);
+  const PLAYBACK_STEP_MS = 720;
 
   // The draft is the single editing surface; selection changes re-seed it.
   const draft = draftState?.draft ?? null;
@@ -213,6 +225,19 @@ export function WorkflowsView() {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
   }, []);
 
+  // Drive the playback cursor forward one node per tick until it finishes.
+  // A single timer keyed on the cursor keeps the walkthrough smooth and
+  // self-cancelling when playback is cleared or the workflow switches.
+  useEffect(() => {
+    if (!playback || playbackFinished(playback)) return;
+    const timer = setTimeout(() => {
+      setPlayback((current) => (current ? advancePlayback(current) : current));
+    }, PLAYBACK_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [playback]);
+
+  const stopPlayback = useCallback(() => setPlayback(null), []);
+
   const confirmDiscard = useCallback((): boolean => {
     if (!dirty) return true;
     return window.confirm("Discard unsaved workflow changes?");
@@ -225,6 +250,7 @@ export function WorkflowsView() {
     setSelectedNodeId(null);
     setDraftState(initialWorkflowDraft(workflow));
     setEngineUnavailable(false);
+    setPlayback(null);
     void loadRuns(workflow.id);
     void loadLayout(workflow.id);
   };
@@ -267,6 +293,9 @@ export function WorkflowsView() {
         summary: dirty ? "plan snapshot (unsaved draft)" : "plan snapshot",
         source: "cave",
       });
+      // Walk the plan across the canvas so the graph reads as a sequence, not a
+      // static verdict. Honest: it animates the dry-run plan, not an execution.
+      setPlayback(playbackFromPlan(workflow, result, "dry-run"));
       void loadRuns(workflow.id);
     } finally {
       setBusyId(null);
@@ -279,13 +308,21 @@ export function WorkflowsView() {
       const result = await runWorkflow({ id: workflow.id });
       if (result.unavailable) {
         setEngineUnavailable(true);
-        showNotice("Daemon workflow engine unavailable — Play stays guarded.");
+        // No daemon engine yet: rather than dead-end Play, compute a fresh plan
+        // and play it through the graph as an explicitly-labelled preview. Cave
+        // still never claims an execution happened.
+        const plan = await dryRunWorkflow({ id: workflow.id, inputs: {} });
+        setAction({ id: workflow.id, kind: "dry-run", result: plan });
+        setPlayback(playbackFromPlan(workflow, plan, "play"));
+        showNotice("Engine pending — playing the plan as a preview (no execution).");
         return;
       }
       if (!result.ok) {
         showNotice(result.error ?? "workflow run failed");
         return;
       }
+      // A real daemon run was accepted; replay its recorded steps on the canvas.
+      if (result.run) setPlayback(playbackFromRun(result.run));
       showNotice("Execution accepted by daemon.");
       void loadRuns(workflow.id);
     } catch (err) {
@@ -294,6 +331,14 @@ export function WorkflowsView() {
       setBusyId(null);
     }
   };
+
+  const replayRun = useCallback((run: WorkflowRunRecord) => {
+    if (run.steps.length === 0) {
+      showNotice("This run has no recorded steps to replay.");
+      return;
+    }
+    setPlayback(playbackFromRun(run));
+  }, [showNotice]);
 
   const runSave = async (workflow: WorkflowSummary) => {
     // Templates are read-only. Saving an edit forks a *new* personal workflow
@@ -468,6 +513,9 @@ export function WorkflowsView() {
       engineUnavailable={engineUnavailable}
       notice={notice}
       savedPositions={nodePositions}
+      playback={playback}
+      onStopPlayback={stopPlayback}
+      onReplayRun={replayRun}
       onRefresh={() => void load(true)}
       onSelectWorkflow={selectWorkflow}
       onSelectNode={(node) => setSelectedNodeId(node.id)}

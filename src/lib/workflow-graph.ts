@@ -10,6 +10,8 @@ export type WorkflowGraphNodeData = {
   summary?: string;
   issues: number;
   status?: "ready" | "blocked";
+  /** Live playback phase overlaid by the canvas while a run/preview walks the graph. */
+  phase?: "pending" | "active" | "done" | "blocked";
 };
 
 export type WorkflowGraphNode = {
@@ -106,6 +108,23 @@ function stepDepths(steps: WorkflowStepSummary[]): Map<string, number> {
   };
   for (const step of steps) depthOf(step.id);
   return depths;
+}
+
+/**
+ * Step ids in the order a run would activate them: by dependency depth, then
+ * manifest order within a depth (the same layering the canvas lays out). Used
+ * to drive playback so the visual walkthrough matches the graph's left→right
+ * flow. Manifests with no declared dependencies keep their authored order.
+ */
+export function workflowExecutionOrder(workflow: WorkflowSummary): string[] {
+  const steps = workflow.steps && workflow.steps.length > 0 ? workflow.steps : [fallbackStep(workflow)];
+  const hasDependencyEdges = steps.some((step) => step.requires && step.requires.length > 0);
+  if (!hasDependencyEdges) return steps.map((step) => step.id);
+  const depths = stepDepths(steps);
+  return steps
+    .map((step, index) => ({ id: step.id, depth: depths.get(step.id) ?? index, index }))
+    .sort((a, b) => a.depth - b.depth || a.index - b.index)
+    .map((entry) => entry.id);
 }
 
 export type WorkflowNodePositions = Record<string, { x: number; y: number }>;

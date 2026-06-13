@@ -1,6 +1,12 @@
 "use client";
 
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
+import {
+  activeStepId,
+  playbackFinished,
+  playbackSummary,
+  type WorkflowPlaybackState,
+} from "@/lib/workflow-playback";
 import { isPublicTemplate, workflowIssueSummary, type WorkflowValidationIssue, type WorkflowSummary } from "@/lib/workflows";
 import type { WorkflowStudioActionState } from "./workflow-studio";
 
@@ -13,18 +19,32 @@ type WorkflowRunStripProps = {
   canRedo: boolean;
   engineUnavailable: boolean;
   notice: string | null;
+  playback: WorkflowPlaybackState | null;
   onValidate: (workflow: WorkflowSummary) => void;
   onDryRun: (workflow: WorkflowSummary) => void;
   onPlay: (workflow: WorkflowSummary) => void;
   onSave: (workflow: WorkflowSummary) => void;
   onUndo: () => void;
   onRedo: () => void;
+  onStopPlayback: () => void;
 };
 
 function issuesForAction(action: WorkflowStudioActionState | null): WorkflowValidationIssue[] {
   if (!action?.result || !("issues" in action.result)) return [];
   return action.result.issues ?? [];
 }
+
+const PLAYBACK_SOURCE_LABEL: Record<WorkflowPlaybackState["source"], string> = {
+  "dry-run": "Dry-run preview",
+  play: "Plan preview",
+  replay: "Replay",
+};
+
+const PLAYBACK_SOURCE_ICON: Record<WorkflowPlaybackState["source"], IconName> = {
+  "dry-run": "ph:rocket-bold",
+  play: "ph:lightning-bold",
+  replay: "ph:arrow-counter-clockwise",
+};
 
 export function WorkflowRunStrip({
   workflow,
@@ -35,12 +55,14 @@ export function WorkflowRunStrip({
   canRedo,
   engineUnavailable,
   notice,
+  playback,
   onValidate,
   onDryRun,
   onPlay,
   onSave,
   onUndo,
   onRedo,
+  onStopPlayback,
 }: WorkflowRunStripProps) {
   const issues = issuesForAction(action);
   const validateBusy = workflow ? busyId === `${workflow.id}:validate` : false;
@@ -51,6 +73,15 @@ export function WorkflowRunStrip({
   // Templates are read-only; saving an edit forks a personal copy to ~/.coven.
   const forking = workflow ? isPublicTemplate(workflow) : false;
   const saveLabel = saveBusy ? (forking ? "Forking" : "Saving") : forking ? "Fork & Save" : "Save";
+
+  // Playback transport: when a plan/run is walking the graph, surface progress,
+  // the live step, and a stop control. Cleared by switching workflows or stop.
+  const activePlayback = playback && playback.workflowId === workflow?.id ? playback : null;
+  const playbackRunning = activePlayback ? !playbackFinished(activePlayback) : false;
+  const activeId = activePlayback ? activeStepId(activePlayback) : null;
+  const activeStepLabel = activeId
+    ? workflow?.steps?.find((step) => step.id === activeId)?.name ?? activeId
+    : null;
 
   return (
     <section className="workflow-run-strip" aria-label="Workflow actions">
@@ -102,13 +133,14 @@ export function WorkflowRunStrip({
         <button
           type="button"
           className="workflow-play-button"
-          disabled={!workflow || anyBusy || dirty || engineUnavailable}
+          aria-label="Play workflow"
+          disabled={!workflow || anyBusy || dirty}
           onClick={() => workflow && onPlay(workflow)}
           title={
-            engineUnavailable
-              ? "Run endpoint pending — daemon workflow engine unavailable"
-              : dirty
-                ? "Save before running"
+            dirty
+              ? "Save before running"
+              : engineUnavailable
+                ? "Engine pending — plays the plan as a preview, no execution"
                 : "Execute through the daemon engine"
           }
         >
@@ -116,16 +148,49 @@ export function WorkflowRunStrip({
           {playBusy ? "Running" : "Play"}
         </button>
       </div>
-      {engineUnavailable && <p className="workflow-run-hint">Run endpoint pending</p>}
-      <p className="workflow-run-feedback">
-        {notice
-          ? notice
-          : action
-            ? `${action.kind === "validate" ? "Validation" : "Dry-run"} ${action.result.ok ? "ready" : "blocked"} · ${
-                action.result.error ?? workflowIssueSummary(issues)
-              }`
-            : "Validate or dry-run a workflow to preview action feedback."}
-      </p>
+      {activePlayback ? (
+        <div
+          className={`workflow-playback-transport workflow-playback-${activePlayback.source}${playbackRunning ? " is-running" : " is-done"}`}
+          role="status"
+          aria-live="polite"
+        >
+          <Icon name={PLAYBACK_SOURCE_ICON[activePlayback.source]} width={13} />
+          <span className="workflow-playback-source">{PLAYBACK_SOURCE_LABEL[activePlayback.source]}</span>
+          <span className="workflow-playback-progress">{playbackSummary(activePlayback)}</span>
+          {playbackRunning && activeStepLabel && (
+            <span className="workflow-playback-active" title={activeStepLabel}>
+              {activeStepLabel}
+            </span>
+          )}
+          {activePlayback.source !== "replay" && (
+            <span className="workflow-playback-honesty">preview · not a live execution</span>
+          )}
+          <button
+            type="button"
+            className="workflow-playback-stop"
+            onClick={onStopPlayback}
+            title={playbackRunning ? "Stop playback" : "Clear playback"}
+          >
+            <Icon name={playbackRunning ? "ph:stop-fill" : "ph:x-bold"} width={12} />
+            {playbackRunning ? "Stop" : "Clear"}
+          </button>
+        </div>
+      ) : (
+        <>
+          {engineUnavailable && (
+            <p className="workflow-run-hint">Run endpoint pending — Play shows a plan preview</p>
+          )}
+          <p className="workflow-run-feedback">
+            {notice
+              ? notice
+              : action
+                ? `${action.kind === "validate" ? "Validation" : "Dry-run"} ${action.result.ok ? "ready" : "blocked"} · ${
+                    action.result.error ?? workflowIssueSummary(issues)
+                  }`
+                : "Validate to check the manifest · Dry-run or Play to watch the plan walk the graph."}
+          </p>
+        </>
+      )}
     </section>
   );
 }

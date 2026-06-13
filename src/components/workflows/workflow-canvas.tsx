@@ -27,6 +27,11 @@ import {
   type WorkflowGraphNodeData,
   type WorkflowNodePositions,
 } from "@/lib/workflow-graph";
+import {
+  activeStepId,
+  nodePhases,
+  type WorkflowPlaybackState,
+} from "@/lib/workflow-playback";
 import type { WorkflowDryRunPlan, WorkflowSummary } from "@/lib/workflows";
 import type { WorkflowStudioActionState } from "./workflow-studio";
 
@@ -39,6 +44,7 @@ type WorkflowCanvasProps = {
   action: WorkflowStudioActionState | null;
   selectedNode: WorkflowGraphNode | null;
   savedPositions: WorkflowNodePositions | null;
+  playback: WorkflowPlaybackState | null;
   onSelectNode: (node: WorkflowGraphNode) => void;
   onClearNode: () => void;
   onConnect: (source: string, target: string) => void;
@@ -47,9 +53,17 @@ type WorkflowCanvasProps = {
   onSavePositions: (positions: WorkflowNodePositions) => void;
 };
 
+const PHASE_LABEL: Record<NonNullable<WorkflowGraphNodeData["phase"]>, string> = {
+  pending: "queued",
+  active: "running",
+  done: "done",
+  blocked: "blocked",
+};
+
 export function WorkflowStepNode({ data, selected }: NodeProps<WorkflowFlowNode>) {
+  const phaseClass = data.phase ? ` workflow-node-phase-${data.phase}` : "";
   return (
-    <div className={`workflow-node workflow-node-${data.tone}${selected ? " is-selected" : ""}`}>
+    <div className={`workflow-node workflow-node-${data.tone}${phaseClass}${selected ? " is-selected" : ""}`}>
       {/* Connection points React Flow attaches edges to. The layered layout runs
           left→right by dependency depth, so dependencies enter on the left
           (target) and continue on the right (source). Without these handles
@@ -58,7 +72,18 @@ export function WorkflowStepNode({ data, selected }: NodeProps<WorkflowFlowNode>
       <div className="workflow-node-kind">{data.kind}</div>
       <div className="workflow-node-label">{data.label}</div>
       {data.uses && <div className="workflow-node-uses">{data.uses}</div>}
-      {data.status && <div className={`workflow-node-status workflow-node-status-${data.status}`}>{data.status}</div>}
+      {/* During playback the live phase wins the status slot; otherwise the
+          dry-run ready/blocked verdict shows. */}
+      {data.phase ? (
+        <div className={`workflow-node-status workflow-node-phase-pill workflow-node-phase-pill-${data.phase}`}>
+          {data.phase === "active" && <span className="workflow-node-phase-spinner" aria-hidden />}
+          {PHASE_LABEL[data.phase]}
+        </div>
+      ) : (
+        data.status && (
+          <div className={`workflow-node-status workflow-node-status-${data.status}`}>{data.status}</div>
+        )
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -88,6 +113,7 @@ export function WorkflowCanvas({
   action,
   selectedNode,
   savedPositions,
+  playback,
   onSelectNode,
   onClearNode,
   onConnect,
@@ -96,6 +122,10 @@ export function WorkflowCanvas({
   onSavePositions,
 }: WorkflowCanvasProps) {
   const [showMiniMap, setShowMiniMap] = useState(false);
+  // Playback overlay: the active step id + per-node phase map drive node glow
+  // and edge highlighting. Null when nothing is playing.
+  const playbackPhases = useMemo(() => (playback ? nodePhases(playback) : null), [playback]);
+  const playbackActiveId = useMemo(() => (playback ? activeStepId(playback) : null), [playback]);
   const graph = useMemo(() => {
     if (!workflow) return { nodes: [] as WorkflowGraphNode[], edges: [] };
     return workflowToGraph(workflow, dryRunFromAction(action), savedPositions);
@@ -131,19 +161,45 @@ export function WorkflowCanvas({
   }, [graph, workflow?.id]);
 
   const renderNodes = useMemo(
-    () => nodes.map((node) => ({ ...node, selected: selectedNode?.id === node.id })),
-    [nodes, selectedNode],
+    () =>
+      nodes.map((node) => {
+        const phase = playbackPhases?.[node.id];
+        return {
+          ...node,
+          selected: selectedNode?.id === node.id,
+          data: phase ? { ...node.data, phase } : node.data,
+        };
+      }),
+    [nodes, playbackPhases, selectedNode],
   );
 
   // Smoothstep + arrowheads so dependency direction reads on the dark canvas.
+  // During playback, the edge feeding the active step pulses; edges whose
+  // target has already resolved read as traversed.
   const edges = useMemo<Edge[]>(
     () =>
-      graph.edges.map((edge) => ({
-        ...edge,
-        type: "smoothstep",
-        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: "#9a8ecd" },
-      })),
-    [graph.edges],
+      graph.edges.map((edge) => {
+        const targetPhase = playbackPhases?.[edge.target];
+        const isActiveEdge = playbackActiveId !== null && edge.target === playbackActiveId;
+        const isTraversed = targetPhase === "done" || targetPhase === "blocked";
+        return {
+          ...edge,
+          type: "smoothstep",
+          animated: isActiveEdge || edge.animated,
+          className: isActiveEdge
+            ? "workflow-edge-active"
+            : isTraversed
+              ? "workflow-edge-traversed"
+              : undefined,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: isActiveEdge ? "#d8c98f" : "#9a8ecd",
+          },
+        };
+      }),
+    [graph.edges, playbackActiveId, playbackPhases],
   );
 
   const handleNodesChange = (changes: NodeChange<WorkflowFlowNode>[]) => {

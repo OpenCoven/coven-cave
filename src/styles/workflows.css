@@ -1173,3 +1173,304 @@
   background: color-mix(in oklch, var(--border-strong) 80%, transparent);
   border-radius: 999px;
 }
+
+/* ── Playback: node activation phases ─────────────────────────────────────
+   While a plan/run walks the graph, each node carries a phase. The phase
+   pill replaces the static ready/blocked verdict; the node body gets a glow
+   so the "current" step reads at a glance on the dark canvas. */
+.workflow-node-phase-pill {
+  align-items: center;
+  gap: 5px;
+}
+
+.workflow-node-phase-pill-pending {
+  background: color-mix(in oklch, var(--muted-foreground) 38%, transparent);
+}
+
+.workflow-node-phase-pill-active {
+  background: #b89020;
+  color: #fff;
+}
+
+.workflow-node-phase-pill-done {
+  background: #3f8f5b;
+}
+
+.workflow-node-phase-pill-blocked {
+  background: #b95050;
+}
+
+.workflow-node-phase-spinner {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, #fff 70%, transparent);
+  border-top-color: transparent;
+  animation: workflow-phase-spin 0.7s linear infinite;
+}
+
+.workflow-node.workflow-node-phase-active {
+  border-color: #d8c98f;
+  box-shadow:
+    0 0 0 1px #d8c98f,
+    0 0 16px color-mix(in oklch, #d8c98f 55%, transparent),
+    0 10px 30px rgba(0, 0, 0, 0.12);
+  animation: workflow-node-pulse 1.4s ease-in-out infinite;
+}
+
+.workflow-node.workflow-node-phase-pending {
+  opacity: 0.62;
+}
+
+.workflow-node.workflow-node-phase-done {
+  border-color: #3f8f5b;
+}
+
+.workflow-node.workflow-node-phase-blocked {
+  border-color: #b95050;
+}
+
+@keyframes workflow-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px #d8c98f, 0 0 12px color-mix(in oklch, #d8c98f 40%, transparent), 0 10px 30px rgba(0, 0, 0, 0.12); }
+  50% { box-shadow: 0 0 0 1px #d8c98f, 0 0 22px color-mix(in oklch, #d8c98f 70%, transparent), 0 10px 30px rgba(0, 0, 0, 0.12); }
+}
+
+@keyframes workflow-phase-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Active dependency edge: brighten the path + arrowhead feeding the live step. */
+.workflow-canvas .react-flow__edge.workflow-edge-active .react-flow__edge-path {
+  stroke: #d8c98f;
+  stroke-width: 2.4;
+}
+
+.workflow-canvas .react-flow__edge.workflow-edge-traversed .react-flow__edge-path {
+  stroke: color-mix(in oklch, #3f8f5b 70%, var(--border));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-node.workflow-node-phase-active { animation: none; }
+  .workflow-node-phase-spinner { animation: none; }
+}
+
+/* ── Playback transport (in the run strip) ───────────────────────────────── */
+.workflow-playback-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  font-size: 12px;
+}
+
+.workflow-playback-transport .iconify {
+  flex: none;
+  color: var(--accent-presence, #b89020);
+}
+
+.workflow-playback-source {
+  flex: none;
+  font-weight: 650;
+}
+
+.workflow-playback-progress {
+  flex: none;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-playback-active {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in oklch, #d8c98f 22%, transparent);
+  border: 1px solid color-mix(in oklch, #d8c98f 50%, transparent);
+}
+
+.workflow-playback-honesty {
+  flex: none;
+  font-size: 10.5px;
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+.workflow-playback-stop {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.workflow-playback-stop:hover {
+  border-color: color-mix(in oklch, var(--color-danger, #e5484d) 55%, var(--border));
+}
+
+/* ── Runs panel: expandable rows, summary, replay ────────────────────────── */
+.workflow-runs-panel {
+  max-height: 280px;
+}
+
+.workflow-run-item {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.workflow-run-item.is-expanded {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border));
+  background: color-mix(in oklch, var(--card) 70%, transparent);
+}
+
+/* The row itself is now a full-width toggle button; keep its prior look. */
+.workflow-runs-list .workflow-run-row {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.workflow-runs-list .workflow-run-row:hover {
+  background: color-mix(in oklch, var(--card) 80%, transparent);
+}
+
+.workflow-run-caret {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-expansion {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.workflow-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.workflow-run-meta div {
+  display: grid;
+  gap: 1px;
+}
+
+.workflow-run-meta dt {
+  font-size: 9.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-meta dd {
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-run-summary-line {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.workflow-run-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+
+.workflow-run-step .iconify {
+  flex: none;
+}
+
+.workflow-run-step-ready .iconify { color: var(--muted-foreground); }
+.workflow-run-step-succeeded .iconify { color: var(--color-success, #57c878); }
+.workflow-run-step-skipped .iconify { color: var(--muted-foreground); }
+.workflow-run-step-blocked .iconify,
+.workflow-run-step-failed .iconify { color: var(--color-danger, #e5484d); }
+
+.workflow-run-step-id {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.workflow-run-step-kind {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-step-status {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-actions-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.workflow-run-replay {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 50%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.workflow-run-replay:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent-presence) 24%, transparent);
+}
+
+.workflow-run-replay:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.workflow-run-no-steps {
+  font-size: 11px;
+  margin: 0;
+}

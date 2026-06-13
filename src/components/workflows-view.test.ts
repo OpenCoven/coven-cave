@@ -63,4 +63,14 @@ assert.match(source, /public: false/, "Forking should clear the public flag so t
 assert.match(source, /forking \? `Forked to a personal copy/, "Saving a template edit should report a personal fork");
 assert.match(source, /await load\(true\);\s*\n\s*setSelectedWorkflowId\(saved\.id\)/, "Save must refresh the list before re-selecting so a fork's new id exists when selected (else the selection effect falls back to the template)");
 
+// --- Playback walkthrough wiring ---
+assert.match(source, /playbackFromPlan/, "Dry-run/Play should seed playback from the plan");
+assert.match(source, /playbackFromRun/, "A real run or replay should seed playback from the recorded run");
+assert.match(source, /setPlayback\(playbackFromPlan\(workflow, result, "dry-run"\)\)/, "Dry-run should walk the plan across the canvas");
+assert.match(source, /setPlayback\(playbackFromPlan\(workflow, plan, "play"\)\)/, "Play should fall back to a labelled plan preview when the engine is unavailable");
+assert.match(source, /preview \(no execution\)/, "Play preview must stay honest about not executing");
+assert.match(source, /advancePlayback\(current\)/, "A single timer should advance the playback cursor");
+assert.match(source, /const stopPlayback = useCallback/, "View should expose a stop-playback control");
+assert.match(source, /const replayRun = useCallback/, "View should expose replay-on-canvas");
+
 console.log("workflows-view.test.ts: ok");
