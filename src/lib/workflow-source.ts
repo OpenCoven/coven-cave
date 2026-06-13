@@ -562,14 +562,19 @@ async function storageForWorkflowId(id: string): Promise<WorkflowStorageScope> {
 }
 
 /** Absolute path for a layout sidecar, constrained to its workflow storage dir. */
-async function layoutFilePath(id: string): Promise<string | null> {
+function layoutFilePathForStorage(id: string, storage: WorkflowStorageScope): string | null {
   const file = layoutFileName(id);
   if (!file) return null;
-  const root = path.resolve(workflowDirForStorage(await storageForWorkflowId(id)));
+  const root = path.resolve(workflowDirForStorage(storage));
   const target = path.resolve(root, file);
   const rel = path.relative(root, target);
   if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   return target;
+}
+
+/** Absolute path for a layout sidecar, constrained to its workflow storage dir. */
+async function layoutFilePath(id: string): Promise<string | null> {
+  return layoutFilePathForStorage(id, await storageForWorkflowId(id));
 }
 
 /** Saved node positions for a workflow, or null when none exist. */
@@ -597,13 +602,16 @@ export async function saveWorkflowLayout(
   id: string,
   positions: WorkflowLayout,
 ): Promise<{ ok: boolean; error?: string }> {
-  const filePath = await layoutFilePath(id);
-  if (!filePath) {
+  if (!layoutFileName(id)) {
     return { ok: false, error: `Workflow id \`${id}\` is not a safe filename slug.` };
   }
   try {
     await withWorkflowWriteLock(async () => {
       const storage = await storageForWorkflowId(id);
+      const filePath = layoutFilePathForStorage(id, storage);
+      if (!filePath) {
+        throw new Error(`Workflow id \`${id}\` is not a safe filename slug.`);
+      }
       await ensureWorkflowDir(storage);
       await writeFile(
         filePath,
