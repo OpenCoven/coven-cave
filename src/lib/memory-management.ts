@@ -61,6 +61,7 @@ export type RawFileEntry = {
   size: number;
   modified: string;
   familiarId?: string | null;
+  excerpt?: string;
 };
 
 export function normalizeCovenEntry(e: RawCovenEntry, now = Date.now()): ManagedMemoryEntry {
@@ -90,7 +91,7 @@ export function normalizeFileEntry(e: RawFileEntry): ManagedMemoryEntry {
     updatedAt: Number.isNaN(Date.parse(e.modified)) ? 0 : Date.parse(e.modified),
     updatedAtLabel: e.modified,
     size: e.size,
-    bodyHint: "",
+    bodyHint: e.excerpt ?? "",
     protection: classifyProtection(e.fullPath),
   };
 }

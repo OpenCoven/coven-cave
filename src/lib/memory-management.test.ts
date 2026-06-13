@@ -84,4 +84,15 @@ assert.deepEqual(filterMemories(all, "", { familiarId: "kitty" }).map((e) => e.k
 assert.deepEqual(filterMemories(all, "", { source: "file" }).map((e) => e.key), ["b", "c"], "facet source");
 assert.deepEqual(filterMemories(all, "", { staleOnly: true }).map((e) => e.key), ["a"], "stale only");
 
+const dreamFile = normalizeFileEntry({
+  fullPath: "/h/.coven/workspaces/familiars/kitty/memory/dreaming/light/2026-04-26.md",
+  relPath: "dreaming/light/2026-04-26.md", title: "2026-04-26",
+  sourceKind: "coven-origin", sourceKindLabel: "Coven origin", rootLabel: "Kitty memory",
+  size: 30, modified: "2026-04-26T00:00:00.000Z", familiarId: "kitty",
+  excerpt: "# Light Sleep\n- No notable updates.",
+});
+assert.equal(dreamFile.bodyHint, "# Light Sleep\n- No notable updates.", "excerpt maps to bodyHint");
+assert.equal(dreamFile.protection, "bulk-protected", "dream file is bulk-protected");
+assert.equal(detectStale(dreamFile).stale, true, "dream placeholder flagged stale even as a file entry");
+
 console.log("memory-management.test: ok");
