@@ -1,0 +1,140 @@
+<!doctype html>
+<!--
+  Reading typography demo — open this file directly in a browser.
+
+  WHAT: a live, interactive demo of the reading-typography controls
+  (Settings → Appearance → Typography), shipped in v0.0.77. Use the control
+  bar to change each setting and watch it apply to the two prose surfaces.
+
+  HOW IT STAYS HONEST: it <link>s the REAL stylesheets from this repo
+  (../src/styles/cave-chat.css for the shared .cave-md surface, and
+  ../src/styles/library.css for the library overrides), so it never drifts
+  from production CSS. Keep it at docs/ (the relative paths assume it sits
+  one level above src/). The :root block below only supplies the handful of
+  theme color vars that normally come from globals.css — it sets no
+  typography values, so what you see is the real cascade.
+
+  The control bar mirrors src/lib/reading-*.ts: each control writes a
+  CSS var (or the data-reading-dropcap attribute) onto <html>, exactly as
+  applyReading*() does at runtime.
+
+  SCOPE NOTES:
+    • Drop cap is library-only by design (it targets
+      .library-preview-md.cave-md p:first-of-type::first-letter).
+    • The full library reader (.library-reader-body) is a separate,
+      intentionally-independent experience (Lora serif + its own A−/A+
+      size control); it does not follow these controls and isn't shown here.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CovenCave — Reading typography demo</title>
+<link rel="stylesheet" href="../src/styles/cave-chat.css">
+<link rel="stylesheet" href="../src/styles/library.css">
+<style>
+  /* Theme color vars normally provided by globals.css. No typography here. */
+  :root {
+    --foreground: #1b1726; --muted-foreground: #5d566f;
+    --text-primary: var(--foreground); --text-secondary: var(--muted-foreground);
+    --text-muted: #8a82a0; --bg-base: #faf8ff; --background: #faf8ff;
+    --border: #e3dcf0; --border-hairline: var(--border); --accent-presence: #6F62A8;
+  }
+  html, body { margin: 0; background: var(--background); }
+  .controls {
+    position: sticky; top: 0; z-index: 9; display: flex; flex-wrap: wrap; gap: 12px;
+    padding: 12px 44px; background: #fff; border-bottom: 1px solid var(--border);
+    font: 13px/1.2 system-ui, sans-serif; color: var(--text-secondary);
+  }
+  .controls label { display: flex; gap: 5px; align-items: center; }
+  .controls select { font: inherit; padding: 2px 4px; }
+  .controls button { font: inherit; padding: 3px 10px; cursor: pointer; }
+  .stage { padding: 32px 44px 64px; }
+  .surface-label {
+    font: 600 12px/1 system-ui, sans-serif; color: var(--accent-presence);
+    margin: 0 0 8px; text-transform: uppercase; letter-spacing: .08em;
+  }
+  .surface + .surface { margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="controls" id="controls"></div>
+<div class="stage">
+
+  <section class="surface">
+    <p class="surface-label">Library reader — .library-preview-md.cave-md</p>
+    <div class="library-preview library-preview--full-canvas">
+      <article class="library-preview-md cave-md demo-prose"></article>
+    </div>
+  </section>
+
+  <section class="surface">
+    <p class="surface-label">General reading surface — .cave-md (chat / memory)</p>
+    <article class="cave-md demo-prose"></article>
+  </section>
+
+</div>
+
+<template id="prose">
+  <h1>The Cartographer's Confession</h1>
+  <p>Magnificently, and almost incomprehensibly, the old cartographer had spent
+  his entire life convinced that the territory could be flattened onto paper
+  without consequence. He believed, with an antidisestablishmentarian
+  stubbornness, that representation and reality were interchangeable — that a
+  sufficiently detailed map would eventually become indistinguishable from the
+  world it described.</p>
+  <p>But longitude is a liar and latitude keeps no promises. Each projection
+  distorts something — area, angle, distance, direction — and the cartographer,
+  who had internalized this mathematically unavoidable compromise, nonetheless
+  refused to acknowledge it aloud.</p>
+  <blockquote>All maps are arguments about what matters. The cartographer simply
+  forgot he was arguing.</blockquote>
+  <h2>What the margins recorded</h2>
+  <ul>
+    <li>Coastlines that rearranged themselves between surveys.</li>
+    <li>A peninsula that appeared only after particularly long, sleepless nights.</li>
+  </ul>
+  <p>This final paragraph should make every control plainly legible: leading,
+  tracking, alignment, weight, measure width, discretionary hyphenation of
+  <em>extraordinarily</em> long words, and — in the library reader alone — the
+  decorative drop capital that opens the very first paragraph above.</p>
+</template>
+
+<script>
+  // Fill both prose surfaces from the shared template.
+  const tpl = document.getElementById("prose").content;
+  document.querySelectorAll(".demo-prose").forEach((el) => el.append(tpl.cloneNode(true)));
+
+  // Control bar — mirrors src/lib/reading-*.ts (var name + option→value map).
+  const r = document.documentElement;
+  const CONTROLS = [
+    ["leading",  "--cave-reading-leading",  [["normal","1.7"],["compact","1.45"],["relaxed","2"]]],
+    ["tracking", "--cave-reading-tracking", [["normal","0"],["wide","0.02em"],["wider","0.04em"]]],
+    ["weight",   "--cave-reading-weight",   [["normal","400"],["light","300"],["medium","500"]]],
+    ["width",    "--cave-reading-width",    [["full","none"],["medium","680px"],["narrow","560px"]]],
+    ["align",    "--cave-reading-align",    [["left","left"],["justify","justify"]]],
+    ["hyphens",  "--cave-reading-hyphens",  [["off","manual"],["on","auto"]]],
+    ["drop cap", "data-reading-dropcap",    [["off",""],["on","on"]], true],
+  ];
+  const bar = document.getElementById("controls");
+  for (const [name, prop, opts, isAttr] of CONTROLS) {
+    const sel = document.createElement("select");
+    for (const [text, val] of opts) {
+      const o = document.createElement("option"); o.textContent = text; o.value = val; sel.append(o);
+    }
+    sel.onchange = () => {
+      if (isAttr) sel.value ? r.setAttribute(prop, sel.value) : r.removeAttribute(prop);
+      else r.style.setProperty(prop, sel.value);
+    };
+    const lab = document.createElement("label"); lab.append(name + ": ", sel); bar.append(lab);
+  }
+  const reset = document.createElement("button");
+  reset.textContent = "Reset";
+  reset.onclick = () => {
+    CONTROLS.forEach(([, prop, , isAttr]) => isAttr ? r.removeAttribute(prop) : r.style.removeProperty(prop));
+    bar.querySelectorAll("select").forEach((s) => (s.selectedIndex = 0));
+  };
+  bar.append(reset);
+</script>
+</body>
+</html>
