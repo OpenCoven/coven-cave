@@ -382,6 +382,20 @@
 .gh-familiar-stack-item:first-child { margin-left:0; }
 .gh-familiar-stack-more { margin-left:5px; color:var(--text-muted); font-size:10.5px; }
 
+/* Org/repo filter + group-by controls (right of the kind tabs) */
+.gh-select { appearance:none; -webkit-appearance:none; max-width:170px; padding:3px 22px 3px 8px; border:1px solid var(--border-hairline); border-radius:6px; background-color:var(--bg-base); color:var(--text-secondary); font-size:11px; cursor:pointer; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238a8a96'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; transition:background-color .12s,border-color .12s,color .12s; }
+.gh-select:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-primary); background-color:var(--bg-hover); }
+.gh-select:focus-visible { outline:none; border-color:var(--accent-presence); }
+.gh-select:disabled { opacity:.45; cursor:not-allowed; }
+.gh-select-sep { width:1px; height:18px; background:var(--border-hairline); }
+
+/* Group header rows in the GitHub table */
+.gh-table tbody tr.gh-group-row,
+.gh-table tbody tr.gh-group-row:hover { background:color-mix(in oklab,var(--bg-raised) 60%,var(--bg-base)); }
+.gh-group-row td { padding:5px 12px; border-top:1px solid var(--border-hairline); }
+.gh-group-label { display:inline-flex; align-items:center; gap:7px; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:11px; font-weight:600; color:var(--text-secondary); }
+.gh-group-count { display:inline-flex; align-items:center; min-width:16px; height:15px; padding:0 5px; border-radius:9999px; background:var(--bg-base); color:var(--text-muted); font-size:9.5px; font-weight:600; }
+
 .gh-actions { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }
 .gh-action-wrap { position:relative; display:inline-flex; }
 .gh-action-btn { display:inline-flex; align-items:center; gap:4px; padding:3px 7px; border:1px solid var(--border-hairline); border-radius:6px; background:var(--bg-base); color:var(--text-secondary); font-size:10.5px; cursor:pointer; transition:background .1s,color .1s,border-color .1s; }

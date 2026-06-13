@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -28,6 +28,14 @@ type Filter = "all" | "pr" | "review_request" | "issue";
 
 type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
 type SortDir = "asc" | "desc";
+
+type GroupBy = "none" | "org" | "repo";
+
+/** `item.repo` is "owner/name" — the organization is the slash prefix. */
+function orgOf(repo: string): string {
+  const i = repo.indexOf("/");
+  return i === -1 ? repo : repo.slice(0, i);
+}
 
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
@@ -537,6 +545,9 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [orgFilter, setOrgFilter] = useState<string>("all");
+  const [repoFilter, setRepoFilter] = useState<string>("all");
+  const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [showPatModal, setShowPatModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -616,16 +627,46 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const items = activity?.items ?? [];
   const filtered = filter === "all" ? items : items.filter((i) => i.kind === filter);
 
+  // Organization options come from the kind-filtered set; repository options
+  // narrow to the chosen org so the two selects cascade (org → repo).
+  const orgOptions = useMemo(
+    () => Array.from(new Set(filtered.map((i) => orgOf(i.repo)))).sort((a, b) => a.localeCompare(b)),
+    [filtered],
+  );
+  const repoOptions = useMemo(() => {
+    const base = orgFilter === "all" ? filtered : filtered.filter((i) => orgOf(i.repo) === orgFilter);
+    return Array.from(new Set(base.map((i) => i.repo))).sort((a, b) => a.localeCompare(b));
+  }, [filtered, orgFilter]);
+
+  // Drop a stale org/repo selection when the underlying options change (e.g.
+  // the kind filter or org filter removed the previously-selected value).
+  useEffect(() => {
+    if (orgFilter !== "all" && !orgOptions.includes(orgFilter)) setOrgFilter("all");
+  }, [orgOptions, orgFilter]);
+  useEffect(() => {
+    if (repoFilter !== "all" && !repoOptions.includes(repoFilter)) setRepoFilter("all");
+  }, [repoOptions, repoFilter]);
+
+  const scoped = useMemo(
+    () =>
+      filtered.filter(
+        (i) =>
+          (orgFilter === "all" || orgOf(i.repo) === orgFilter) &&
+          (repoFilter === "all" || i.repo === repoFilter),
+      ),
+    [filtered, orgFilter, repoFilter],
+  );
+
   const linkedMap = useMemo(() => {
     const m = new Map<string, Card[]>();
-    for (const item of filtered) {
+    for (const item of scoped) {
       m.set(item.id, linkedCardsForItem(cards, item));
     }
     return m;
-  }, [filtered, cards]);
+  }, [scoped, cards]);
 
   const sorted = useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...scoped];
     arr.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
@@ -654,7 +695,21 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [filtered, sortKey, sortDir, linkedMap]);
+  }, [scoped, sortKey, sortDir, linkedMap]);
+
+  // When grouping is on, bucket the already-sorted rows by org or full repo.
+  // Map insertion order follows the sort, so groups appear in sorted order too.
+  const grouped = useMemo(() => {
+    if (groupBy === "none") return null;
+    const m = new Map<string, GitHubItem[]>();
+    for (const item of sorted) {
+      const key = groupBy === "org" ? orgOf(item.repo) : item.repo;
+      const bucket = m.get(key);
+      if (bucket) bucket.push(item);
+      else m.set(key, [item]);
+    }
+    return Array.from(m.entries());
+  }, [sorted, groupBy]);
 
   const counts: Record<Filter, number> = {
     all: items.length,
@@ -763,6 +818,47 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             </button>
           );
         })}
+
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            className="gh-select"
+            value={orgFilter}
+            onChange={(e) => setOrgFilter(e.target.value)}
+            title="Filter by organization"
+            aria-label="Filter by organization"
+            disabled={orgOptions.length === 0}
+          >
+            <option value="all">All orgs</option>
+            {orgOptions.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+          <select
+            className="gh-select"
+            value={repoFilter}
+            onChange={(e) => setRepoFilter(e.target.value)}
+            title="Filter by repository"
+            aria-label="Filter by repository"
+            disabled={repoOptions.length === 0}
+          >
+            <option value="all">All repos</option>
+            {repoOptions.map((r) => (
+              <option key={r} value={r}>{orgFilter === "all" ? r : (r.split("/")[1] ?? r)}</option>
+            ))}
+          </select>
+          <span className="gh-select-sep" aria-hidden />
+          <select
+            className="gh-select"
+            value={groupBy}
+            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+            title="Group rows"
+            aria-label="Group rows"
+          >
+            <option value="none">No grouping</option>
+            <option value="org">Group by org</option>
+            <option value="repo">Group by repo</option>
+          </select>
+        </div>
       </div>
 
       {/* ── Body ── */}
@@ -842,7 +938,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((item) => {
+                {(() => {
+                  const renderRow = (item: GitHubItem) => {
                   const linked = linkedMap.get(item.id) ?? [];
                   const familiarsForRow = Array.from(
                     new Set(
@@ -966,7 +1063,25 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       </td>
                     </tr>
                   );
-                })}
+                  };
+                  return grouped
+                    ? grouped.flatMap(([key, rows]) => [
+                        <tr key={`grp:${key}`} className="gh-group-row">
+                          <td colSpan={COLS.length}>
+                            <span className="gh-group-label">
+                              <Icon
+                                name={groupBy === "org" ? "ph:folders-bold" : "ph:git-branch-bold"}
+                                width={11}
+                              />
+                              <span className="gh-group-name">{key}</span>
+                              <span className="gh-group-count">{rows.length}</span>
+                            </span>
+                          </td>
+                        </tr>,
+                        ...rows.map(renderRow),
+                      ])
+                    : sorted.map(renderRow);
+                })()}
               </tbody>
             </table>
           </div>
