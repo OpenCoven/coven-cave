@@ -18,6 +18,10 @@ const globals = await readFile(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const fontSettings = await readFile(
+  new URL("./settings-fonts.tsx", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   settings,
@@ -97,22 +101,30 @@ assert.doesNotMatch(
   "About settings must not hardcode an app version literal",
 );
 
-assert.match(
+// The screen-scale control was reframed as "Text size" and moved into the
+// Typography block (<FontSettings />); it no longer lives in settings-shell.
+assert.doesNotMatch(
   settings,
   /Screen magnification/,
-  "Appearance settings should expose a screen magnification control",
+  "settings-shell should no longer render the old Screen magnification control",
 );
 
 assert.match(
-  settings,
+  fontSettings,
+  /Text size/,
+  "Typography (FontSettings) should expose a Text size control",
+);
+
+assert.match(
+  fontSettings,
   /SCREEN_SCALE_OPTIONS\.map/,
-  "Screen magnification should render the shared scale options",
+  "Text size should render the shared scale options",
 );
 
 assert.match(
-  settings,
-  /aria-pressed=\{screenScale === option\}/,
-  "Screen magnification buttons should expose the selected scale to assistive tech",
+  fontSettings,
+  /aria-pressed=\{scale === option\}/,
+  "Text size buttons should expose the selected scale to assistive tech",
 );
 
 assert.match(

@@ -10,13 +10,6 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { APP_VERSION } from "@/lib/app-version";
 import { useIsMobile } from "@/lib/use-viewport";
-import {
-  SCREEN_SCALE_EVENT,
-  SCREEN_SCALE_OPTIONS,
-  applyScreenScale,
-  readScreenScale,
-  type ScreenScale,
-} from "@/lib/screen-magnification";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { FontSettings } from "./settings-fonts";
 import {
@@ -651,7 +644,6 @@ function ThemePresetCard({
 function AppearanceSection() {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<Mode>("dark");
-  const [screenScale, setScreenScale] = useState<ScreenScale>(100);
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -663,7 +655,6 @@ function AppearanceSection() {
   useEffect(() => {
     setActiveTheme(readPersistedTheme());
     setMode(readPersistedMode());
-    setScreenScale(readScreenScale());
     const saved = localStorage.getItem(COVEN_THEME_KEY);
     if (saved === "custom") {
       const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
@@ -675,15 +666,6 @@ function AppearanceSection() {
         }
       }
     }
-  }, []);
-
-  useEffect(() => {
-    const onScaleChange = (event: Event) => {
-      const scale = (event as CustomEvent<{ scale?: ScreenScale }>).detail?.scale;
-      if (scale) setScreenScale(scale);
-    };
-    window.addEventListener(SCREEN_SCALE_EVENT, onScaleChange);
-    return () => window.removeEventListener(SCREEN_SCALE_EVENT, onScaleChange);
   }, []);
 
   const handleSelectPreset = (id: PresetTheme) => {
@@ -701,11 +683,6 @@ function AppearanceSection() {
     if (activeTheme === "custom" && customData) {
       applyCustomVars(customData.cssVars, next);
     }
-  };
-
-  const handleSetScreenScale = (next: ScreenScale) => {
-    setScreenScale(next);
-    applyScreenScale(next);
   };
 
   const handleResetCustom = () => {
@@ -794,30 +771,7 @@ function AppearanceSection() {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup label="Accessibility">
-        <SettingsRow
-          label="Screen magnification"
-          description="Scale the whole Cave UI."
-        >
-          <div className="flex shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {SCREEN_SCALE_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => handleSetScreenScale(option)}
-                aria-pressed={screenScale === option}
-                className={`focus-ring min-w-12 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  screenScale === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {option}%
-              </button>
-            ))}
-          </div>
-        </SettingsRow>
-      </SettingsGroup>
+      {/* Text size lives in the Typography block (<FontSettings />) below. */}
 
       {/* ── Preset themes ── */}
       <SettingsGroup label="Theme">
