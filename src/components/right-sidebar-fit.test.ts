@@ -4,23 +4,27 @@ import { readFile } from "node:fs/promises";
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const projectSidebar = await readFile(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 
 assert.match(
   chatSurface,
-  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="33%"[\s\S]*minSize="33%"[\s\S]*maxSize="46%"/,
-  "ChatSurface right sidebar should open at the requested 33% width",
+  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="230px"[\s\S]*minSize="230px"[\s\S]*maxSize="230px"/,
+  "ChatSurface right sidebar should be a fixed 230px mirror of the internal left rail (min===max===default)",
 );
 
-assert.match(
-  chatSurface,
-  /Separator\s+className="[^"]*shell-separator[^"]*"/,
-  "ChatSurface right sidebar should render a resize separator before the panel",
-);
-
+// Fixed-width mirror: the outer resize separator is gone — the panel's own
+// border-l is the divider, matching the left rail's border-r. The INNER
+// vertical-split separator (shell-separator-h) is unaffected (asserted below).
 assert.doesNotMatch(
   chatSurface,
-  /w-\[320px\]\s+shrink-0/,
-  "ChatSurface right sidebar should not be a fixed 320px non-resizable aside",
+  /Separator className="shell-separator hidden lg:block"/,
+  "The right sidebar is fixed-width now — no outer drag-to-resize separator before it",
+);
+
+assert.match(
+  projectSidebar,
+  /chat-thread-rail[\s\S]*w-\[230px\]/,
+  "The internal left rail is 230px — the width the right sidebar mirrors",
 );
 
 assert.match(

@@ -355,15 +355,15 @@ export function ChatSurface({
             </Panel>
             {rightPanel !== null && (
               <>
-                <Separator className="shell-separator hidden lg:block" />
+                {/* Fixed-width mirror of the internal left rail (chat-thread-rail
+                    is w-[230px]). No resize handle — the panel's own border-l is
+                    the divider, matching the left rail's border-r. */}
                 <Panel
                   id="right-sidebar"
                   className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="33%"
-                  minSize="33%"
-                  maxSize="46%"
-                  collapsible
-                  collapsedSize={0}
+                  defaultSize="230px"
+                  minSize="230px"
+                  maxSize="230px"
                 >
                   <RightPanel
                     panel={rightPanel}
