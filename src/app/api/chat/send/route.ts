@@ -32,7 +32,11 @@ import {
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { covenHome, readFamiliarWorkspaces } from "@/lib/coven-paths";
+import {
+  covenHome,
+  familiarWorkspacesRoot,
+  readFamiliarWorkspaces,
+} from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import {
   type ChatTurn,
@@ -180,8 +184,8 @@ async function conversationCwd(sessionId?: string): Promise<string | undefined> 
 
 /** Resolve the familiar's Coven workspace dir.
  *  Uses ~/.coven/familiars.toml workspace when present, otherwise
- *  ~/.coven/familiars/<id>. Falls back to undefined if the dir doesn't exist
- *  so callers can skip --cwd.
+ *  ~/.coven/workspaces/familiars/<id>. Falls back to undefined if the dir
+ *  doesn't exist so callers can skip --cwd.
  */
 async function resolveFamiliarWorkspace(
   familiarId: string,
@@ -199,7 +203,7 @@ async function resolveFamiliarWorkspace(
       /* fall through to default familiar workspace */
     }
   }
-  const familiarsRoot = path.join(covenHome(), "familiars");
+  const familiarsRoot = familiarWorkspacesRoot();
   const candidate = path.resolve(familiarsRoot, familiarId);
   const relative = path.relative(familiarsRoot, candidate);
   if (

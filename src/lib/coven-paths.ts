@@ -8,13 +8,21 @@ export function covenHome(): string {
   return process.env.COVEN_HOME || path.join(homedir(), ".coven");
 }
 
+export function covenWorkspacesRoot(): string {
+  return process.env.COVEN_WORKSPACES_ROOT || path.join(covenHome(), "workspaces");
+}
+
 export function covenWorkspaceRoot(): string {
   return (
     process.env.COVEN_WORKSPACE_ROOT ||
     process.env.WORKSPACE_ROOT ||
     process.env.NEXT_PUBLIC_WORKSPACE_ROOT ||
-    covenHome()
+    covenWorkspacesRoot()
   );
+}
+
+export function familiarWorkspacesRoot(): string {
+  return path.join(covenWorkspacesRoot(), "familiars");
 }
 
 function expandHome(value: string): string {
@@ -53,7 +61,7 @@ export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
 
 export async function familiarWorkspace(familiarId: string): Promise<string> {
   const declared = await readFamiliarWorkspaces();
-  return declared.get(familiarId) ?? path.join(covenHome(), "familiars", familiarId);
+  return declared.get(familiarId) ?? path.join(familiarWorkspacesRoot(), familiarId);
 }
 
 export async function familiarIds(): Promise<string[]> {
