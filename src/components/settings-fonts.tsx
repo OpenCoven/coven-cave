@@ -32,6 +32,13 @@ import {
   readReadingTracking,
   type ReadingTracking,
 } from "@/lib/reading-tracking";
+import {
+  DEFAULT_READING_ALIGN,
+  READING_ALIGN_OPTIONS,
+  applyReadingAlign,
+  readReadingAlign,
+  type ReadingAlign,
+} from "@/lib/reading-align";
 
 const LEADING_LABEL: Record<ReadingLeading, string> = {
   compact: "Compact",
@@ -43,6 +50,11 @@ const TRACKING_LABEL: Record<ReadingTracking, string> = {
   normal: "Normal",
   wide: "Wide",
   wider: "Wider",
+};
+
+const ALIGN_LABEL: Record<ReadingAlign, string> = {
+  left: "Left",
+  justify: "Justify",
 };
 
 const SANS_OPTIONS = FONT_OPTIONS.filter((o) => o.slot === "sans");
@@ -99,6 +111,7 @@ export function FontSettings() {
   const [scale, setScale] = useState<ScreenScale>(DEFAULT_SCREEN_SCALE);
   const [leading, setLeading] = useState<ReadingLeading>(DEFAULT_READING_LEADING);
   const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
+  const [align, setAlign] = useState<ReadingAlign>(DEFAULT_READING_ALIGN);
 
   useEffect(() => {
     const sans = readFontPref("sans");
@@ -112,6 +125,7 @@ export function FontSettings() {
     setScale(readScreenScale());
     setLeading(readReadingLeading());
     setTracking(readReadingTracking());
+    setAlign(readReadingAlign());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -147,12 +161,18 @@ export function FontSettings() {
     applyReadingTracking(next);
   };
 
+  const setTextAlign = (next: ReadingAlign) => {
+    setAlign(next);
+    applyReadingAlign(next);
+  };
+
   const reset = () => {
     select("sans", DEFAULT_FONT_ID.sans);
     select("mono", DEFAULT_FONT_ID.mono);
     setTextSize(DEFAULT_SCREEN_SCALE);
     setLineSpacing(DEFAULT_READING_LEADING);
     setLetterSpacing(DEFAULT_READING_TRACKING);
+    setTextAlign(DEFAULT_READING_ALIGN);
   };
 
   const isDefault =
@@ -160,7 +180,8 @@ export function FontSettings() {
     monoId === DEFAULT_FONT_ID.mono &&
     scale === DEFAULT_SCREEN_SCALE &&
     leading === DEFAULT_READING_LEADING &&
-    tracking === DEFAULT_READING_TRACKING;
+    tracking === DEFAULT_READING_TRACKING &&
+    align === DEFAULT_READING_ALIGN;
 
   return (
     <section className="flex flex-col gap-4">
@@ -235,6 +256,28 @@ export function FontSettings() {
                 }`}
               >
                 {TRACKING_LABEL[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text alignment</label>
+          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Alignment for reading text — chat, library, and memory.</p>
+          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
+            {READING_ALIGN_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setTextAlign(option)}
+                aria-pressed={align === option}
+                aria-label={`Text alignment ${ALIGN_LABEL[option]}`}
+                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  align === option
+                    ? "bg-[var(--accent-presence)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {ALIGN_LABEL[option]}
               </button>
             ))}
           </div>
