@@ -169,6 +169,27 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     }
   }, []);
 
+  const handleDelete = useCallback(
+    (path: string, key: string, source: "coven" | "file") => {
+      // optimistic removal from the rendered lists
+      if (source === "coven") setCovenEntries((prev) => prev.filter((e) => e.path !== path));
+      else setFileEntries((prev) => prev.filter((e) => e.fullPath !== path));
+      scheduleDelete({ key }, path.split("/").pop() ?? "entry", async () => {
+        await fetch("/api/memory/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+      });
+    },
+    [scheduleDelete],
+  );
+
+  const handleUndoDelete = useCallback(() => {
+    undoDelete();
+    void load(); // re-pull so the optimistically-removed row reappears
+  }, [undoDelete, load]);
+
   useEffect(() => {
     void load();
     const t = setInterval(load, 30_000);
@@ -441,6 +462,16 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                         Open memory
                       </button>
                       <ExpandMemoryButton path={entry.path} title={entry.title} />
+                      {classifyProtection(entry.path) !== "structural" && (
+                        <button
+                          type="button"
+                          className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
+                          aria-label={`Delete ${entry.title}`}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(entry.path, entry.id, "coven"); }}
+                        >
+                          <Icon name="ph:trash" width={12} aria-hidden />
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -498,6 +529,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             activeFamiliarId={familiarFilter}
             onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
             selectedRowId={compact ? null : selectedRowId}
+            onDelete={compact ? undefined : (p) => handleDelete(p, p, "file")}
           />
         </section>
         {!compact && selectedRowId ? (
@@ -581,6 +613,13 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </>
         )}
       </div>
+      {undoPending ? (
+        <LibraryUndoToast
+          label={undoPending.label}
+          onUndo={handleUndoDelete}
+          onDismiss={commitDelete}
+        />
+      ) : null}
     </div>
   );
 }
@@ -649,6 +688,8 @@ type MemoryFilesListProps = {
   selectedRowId?: string | null;
   /** When set and entries exceed `limit`, render a footer button that reveals more. */
   onShowMore?: () => void;
+  /** Soft-delete a file row by its full path. Structural entries hide the button. */
+  onDelete?: (path: string) => void;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -854,6 +895,7 @@ export function MemoryFilesList({
   onSelect,
   selectedRowId,
   onShowMore,
+  onDelete,
 }: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
   const hidden = entries.length - sliced.length;
@@ -907,8 +949,18 @@ export function MemoryFilesList({
                 </span>
                 <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
               </button>
-              <div className="flex items-center pr-2">
+              <div className="flex items-center gap-1 pr-2">
                 <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
+                {onDelete && classifyProtection(entry.fullPath) !== "structural" ? (
+                  <button
+                    type="button"
+                    className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
+                    aria-label={`Delete ${entry.relPath}`}
+                    onClick={(e) => { e.stopPropagation(); onDelete(entry.fullPath); }}
+                  >
+                    <Icon name="ph:trash" width={12} aria-hidden />
+                  </button>
+                ) : null}
               </div>
             </li>
             );
