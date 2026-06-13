@@ -67,6 +67,25 @@ function compactPath(path: string): string {
   return `${first}/…/${last.join("/")}`;
 }
 
+function fileBase(p: string): string {
+  const segments = p.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? p;
+}
+
+/** Directory portion of a full path, collapsed to ~ and ellipsized. "" when at root. */
+function fileDir(fullPath: string): string {
+  const base = fileBase(fullPath);
+  const parent = fullPath.slice(0, Math.max(0, fullPath.length - base.length)).replace(/\/$/, "");
+  return parent ? compactPath(parent) : "";
+}
+
+function formatBytes(n: number | undefined): string {
+  if (!n || n < 0 || !Number.isFinite(n)) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string): boolean {
   if (!query) return true;
   if ("familiar_id" in entry) {
@@ -98,6 +117,8 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
+  const [sortMode, setSortMode] = useState<"recent" | "name" | "size">("recent");
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const effectiveLimit = limit ?? Infinity;
   const fullView = effectiveLimit === Infinity;
   // Incremental render caps for the full view (rail/compact use `limit` instead).
@@ -129,6 +150,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
       setError(err instanceof Error ? err.message : "memory unavailable");
     } finally {
       setLoaded(true);
+      setLastLoadedAt(new Date().toISOString());
     }
   }, []);
 
@@ -154,14 +176,17 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     [covenEntries, familiarFilter, q],
   );
 
-  const visibleFiles = useMemo(
-    () =>
-      fileEntries
-        .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
-        .filter((entry) => memoryMatches(entry, q))
-        .sort((a, b) => (a.modified < b.modified ? 1 : -1)),
-    [fileEntries, q, sourceFilter],
-  );
+  const visibleFiles = useMemo(() => {
+    const cmp: Record<typeof sortMode, (a: FileMemoryEntry, b: FileMemoryEntry) => number> = {
+      recent: (a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0),
+      name: (a, b) => fileBase(a.relPath).localeCompare(fileBase(b.relPath)),
+      size: (a, b) => (b.size ?? 0) - (a.size ?? 0),
+    };
+    return fileEntries
+      .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
+      .filter((entry) => memoryMatches(entry, q))
+      .sort(cmp[sortMode]);
+  }, [fileEntries, q, sourceFilter, sortMode]);
 
   // Reset pagination whenever the result set changes underneath the user.
   useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
@@ -233,10 +258,17 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                 Focused recall for one agent at a time, with local memory files kept in the list surface.
               </p>
             </div>
-            <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
-              <Icon name="ph:arrows-clockwise" width={12} />
-              Refresh
-            </button>
+            <div className="flex items-center gap-2.5">
+              {lastLoadedAt ? (
+                <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${new Date(lastLoadedAt).toLocaleString()}`}>
+                  Updated {age(lastLoadedAt)}
+                </span>
+              ) : null}
+              <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+                <Icon name="ph:arrows-clockwise" width={12} />
+                Refresh
+              </button>
+            </div>
           </div>
         )}
 
@@ -268,16 +300,30 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           <div className={`relative ${compact ? "min-w-0" : "min-w-[220px]"} flex-1`}>
             <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
+              type="search"
+              aria-label={lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory` : "Search memory"}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Escape" && query) { event.preventDefault(); setQuery(""); } }}
               placeholder={lockToFamiliar && selectedFamiliar?.display_name ? `Search ${selectedFamiliar.display_name}'s memory...` : "Search memory..."}
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-8 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] [&::-webkit-search-cancel-button]:appearance-none"
             />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="focus-ring absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:x-bold" width={10} />
+              </button>
+            ) : null}
           </div>
           {lockToFamiliar ? null : (
             <select
               value={familiarFilter}
               onChange={(event) => setFamiliarFilter(event.target.value)}
+              aria-label="Filter memory by familiar"
               className="focus-ring h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
             >
               {familiarOptions.map((familiar) => (
@@ -397,13 +443,31 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         ) : null}
 
         <section className="min-h-0">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
-            <span className="text-[10px] text-[var(--text-muted)]">
-              {fullView && visibleFiles.length > fileLimit
-                ? `${fileLimit} of ${visibleFiles.length}`
-                : `${visibleFiles.length} visible`}
-            </span>
+            <div className="flex items-center gap-2">
+              {compact ? null : (
+                <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                  <span className="sr-only">Sort memory files</span>
+                  <Icon name="ph:caret-up-down" width={11} aria-hidden />
+                  <select
+                    value={sortMode}
+                    onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
+                    aria-label="Sort memory files"
+                    className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 py-0.5 pl-1 pr-4 text-[10px] text-[var(--text-secondary)]"
+                  >
+                    <option value="recent">Recent</option>
+                    <option value="name">Name</option>
+                    <option value="size">Size</option>
+                  </select>
+                </label>
+              )}
+              <span className="text-[10px] text-[var(--text-muted)]">
+                {fullView && visibleFiles.length > fileLimit
+                  ? `${fileLimit} of ${visibleFiles.length}`
+                  : `${visibleFiles.length} visible`}
+              </span>
+            </div>
           </div>
           <MemoryFilesList
             entries={visibleFiles}
@@ -469,12 +533,14 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                     <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
                       <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">{entry.sourceKindLabel}</span>
                       <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{entry.rootLabel}</span>
+                      {formatBytes(entry.size) ? <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{formatBytes(entry.size)}</span> : null}
                       <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(entry.modified)}</span>
                     </div>
                     <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 px-2.5 py-2">
                       <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Path</div>
                       <code className="mt-1 block break-all font-mono text-[11px] leading-4 text-[var(--text-primary)]">{compactPath(entry.fullPath)}</code>
                     </div>
+                    <MemoryFilePreview path={entry.fullPath} />
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
@@ -681,6 +747,54 @@ function ExpandMemoryButton({
   );
 }
 
+function MemoryFilePreview({ path }: { path: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setText(null);
+    setError(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/memory/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok) setText(typeof json.text === "string" ? json.text : "");
+        else setError(json.error ?? "Failed to load preview");
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load preview");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [path]);
+
+  const MAX_LINES = 40;
+  const lines = text?.split("\n") ?? [];
+  const clipped = lines.length > MAX_LINES;
+  const preview = clipped ? lines.slice(0, MAX_LINES).join("\n") : text ?? "";
+
+  return (
+    <div className="mt-3">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</div>
+      <div className="mt-1 max-h-[280px] overflow-auto rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 p-2">
+        {error ? (
+          <p className="text-[11px] text-[var(--color-warning)]">{error}</p>
+        ) : text === null ? (
+          <p className="text-[11px] text-[var(--text-muted)]">Loading preview…</p>
+        ) : preview.trim() === "" ? (
+          <p className="text-[11px] text-[var(--text-muted)]">Empty file.</p>
+        ) : (
+          <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-[var(--text-secondary)]">{preview}</pre>
+        )}
+      </div>
+      {clipped ? (
+        <p className="mt-1 text-[10px] text-[var(--text-muted)]">Showing first {MAX_LINES} lines — Expand for the full file.</p>
+      ) : null}
+    </div>
+  );
+}
+
 function SourceFilterChip({
   label,
   count,
@@ -741,7 +855,11 @@ export function MemoryFilesList({
         </div>
       ) : (
         <ul className={listClassName ?? "max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto"}>
-          {sliced.map((entry) => (
+          {sliced.map((entry) => {
+            const base = fileBase(entry.relPath);
+            const dir = fileDir(entry.fullPath);
+            const size = formatBytes(entry.size);
+            return (
             <li
               key={entry.fullPath}
               className={`flex min-w-0 items-stretch gap-1 px-1 ${selectedRowId === `file:${entry.fullPath}` ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]"}`}
@@ -753,9 +871,11 @@ export function MemoryFilesList({
               >
                 <Icon name="ph:file-text" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] text-[var(--text-primary)]">{entry.relPath}</span>
+                  <span className="block truncate text-[12px] font-medium text-[var(--text-primary)]" title={entry.relPath}>{base}</span>
                   <span className="mt-0.5 block truncate font-mono text-[10px] text-[var(--text-muted)]">
-                    {entry.sourceKindLabel} · {entry.rootLabel} · {compactPath(entry.fullPath)}
+                    {entry.sourceKindLabel}
+                    {dir ? <> · {dir}</> : null}
+                    {size ? <> · {size}</> : null}
                   </span>
                   {(entry.harnessId || entry.runtimeId || entry.origin || (entry.familiarId && entry.familiarId !== activeFamiliarId)) ? (
                     <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--text-muted)]">
@@ -772,7 +892,8 @@ export function MemoryFilesList({
                 <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
       {onShowMore && hidden > 0 ? (
