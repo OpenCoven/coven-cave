@@ -16,7 +16,14 @@ assert.match(projectsView, /onUpdateRoot=\{updateRoot\}/, "ProjectsView should w
 assert.match(projectsView, /onDelete=\{deleteProject\}/, "ProjectsView should wire deletion");
 assert.match(projectsView, /onNewChat\?\.?\(project\.root\)/, "Project rows should start chats with the selected project root");
 assert.match(projectsView, /chatCounts\.get\(normalizeProjectRoot\(project\.root\)\)/, "Project rows should count chats by normalized project root");
-assert.match(projectsView, /Loading projects\.\.\./, "ProjectsView should expose loading feedback");
+assert.match(projectsView, /import \{ EmptyState \} from "@\/components\/ui\/empty-state"/, "uses EmptyState primitive");
+assert.match(projectsView, /import \{ ErrorState \} from "@\/components\/ui\/error-state"/, "uses ErrorState primitive");
+assert.match(projectsView, /import \{ SkeletonRows \} from "@\/components\/ui\/skeleton"/, "uses SkeletonRows for first load");
+assert.match(projectsView, /<SkeletonRows/, "first load renders skeleton rows");
+assert.match(projectsView, /<EmptyState/, "empty state renders EmptyState");
+assert.match(projectsView, /<ErrorState/, "error renders ErrorState");
+assert.doesNotMatch(projectsView, /Loading projects\.\.\./, "bare loading text replaced by skeletons");
+assert.match(projectsView, /error && projects\.length === 0 \?/, "full-screen error only when there is no list to fall back to");
 
 const chatTabEvents = readFileSync(new URL("../lib/chat-tab-events.ts", import.meta.url), "utf8");
 
@@ -35,7 +42,6 @@ for (const icon of [
   "ph:folder-simple-dashed",
   "ph:chat-circle-dots-bold",
   "ph:trash-bold",
-  "ph:circle-notch-bold",
 ]) {
   assert.match(iconSource, new RegExp(`"${icon}"`), `${icon} should be in the icon allowlist`);
 }

@@ -6,6 +6,9 @@ import { Icon } from "@/lib/icon";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { useProjects } from "@/lib/use-projects";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 
 type ProjectsViewProps = {
   sessions?: Array<{ project_root?: string | null }>;
@@ -237,23 +240,20 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
-      <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Icon name="ph:folders-bold" width={16} className="text-[var(--accent-presence)]" />
-            <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Projects</h2>
-            <span className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-              {projects.length}
-            </span>
-          </div>
+      <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[12px] text-[var(--text-muted)]">
+            {projects.length} {projects.length === 1 ? "project" : "projects"}
+          </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void reload()}
               disabled={loading}
+              aria-label="Refresh projects"
               className="focus-ring flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
             >
-              <Icon name="ph:arrows-clockwise-bold" width={12} className={loading ? "animate-spin" : undefined} />
+              <Icon name="ph:arrows-clockwise-bold" width={12} className={loading ? "animate-spin" : undefined} aria-hidden />
               Refresh
             </button>
             <button
@@ -261,7 +261,7 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
               onClick={() => setShowForm((value) => !value)}
               className="focus-ring flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[12px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
             >
-              <Icon name="ph:plus-bold" width={12} />
+              <Icon name="ph:plus-bold" width={12} aria-hidden />
               New project
             </button>
           </div>
@@ -308,31 +308,57 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
       ) : null}
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        {error ? (
-          <div className="mb-3 rounded-lg border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-[12px] text-[var(--color-danger)]">
-            {error}
-          </div>
-        ) : null}
-
-        {loading && projects.length === 0 ? (
-          <div className="flex items-center gap-2 text-[13px] text-[var(--text-muted)]">
-            <Icon name="ph:circle-notch-bold" width={14} className="animate-spin" />
-            Loading projects...
+        {error && projects.length === 0 ? (
+          <ErrorState
+            icon="ph:warning"
+            headline="Couldn't load projects"
+            subtitle={error}
+            actions={
+              <button
+                type="button"
+                onClick={() => void reload()}
+                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              >
+                Retry
+              </button>
+            }
+          />
+        ) : loading && projects.length === 0 ? (
+          <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-2">
+            <SkeletonRows count={4} />
           </div>
         ) : projects.length === 0 ? (
-          <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[var(--border-hairline)] text-center">
-            <Icon name="ph:folder-open" width={28} className="text-[var(--text-muted)]" />
-            <p className="text-[13px] text-[var(--text-muted)]">No projects yet.</p>
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-            >
-              New project
-            </button>
-          </div>
+          <EmptyState
+            icon="ph:folder-open"
+            headline="No projects yet"
+            subtitle="Add a project folder to group chats by codebase."
+            actions={
+              <button
+                type="button"
+                onClick={() => setShowForm(true)}
+                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              >
+                New project
+              </button>
+            }
+          />
         ) : (
           <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-2">
+            {error ? (
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+              >
+                <span className="min-w-0 truncate">Couldn't refresh: {error}</span>
+                <button
+                  type="button"
+                  onClick={() => void reload()}
+                  className="focus-ring shrink-0 rounded-md border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
             {projects.map((project) => (
               <ProjectRow
                 key={project.id}
