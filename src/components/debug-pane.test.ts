@@ -133,8 +133,8 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /confirmUntracked !== true[\s\S]*?requiresConfirmUntracked/,
-  "Deleting an untracked file must be gated behind an explicit confirmUntracked flag",
+  /confirmDelete: body\.confirmUntracked === true[\s\S]*?requiresConfirmUntracked/,
+  "Deleting a new file must be gated behind an explicit confirmUntracked flag",
 );
 assert.match(
   changesRoute,
@@ -143,8 +143,13 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /\["checkout", "--", body\.path\]/,
-  "Tracked revert is scoped to git checkout -- <one file>",
+  /\["rm", "-f", "--", body\.path\]/,
+  "Reverting a staged-new file removes it via git rm -f -- <one file>",
+);
+assert.match(
+  changesRoute,
+  /\["checkout", "HEAD", "--", body\.path\]/,
+  "Tracked revert restores against HEAD (git checkout HEAD -- <one file>) so staged edits also revert",
 );
 assert.match(
   changesRoute,
