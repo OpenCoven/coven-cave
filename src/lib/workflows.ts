@@ -39,9 +39,12 @@ export type WorkflowSummary = {
   path?: string;
   validation_state?: "valid" | "warning" | "invalid" | "unknown";
   visibility?: {
+    public?: boolean;
+    personal?: boolean;
     coven_code?: boolean;
     coven_cave?: boolean;
   };
+  storage?: "public" | "personal";
 };
 
 export type WorkflowValidationTier = "schema" | "semantic" | "preflight";

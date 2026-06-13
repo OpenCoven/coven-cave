@@ -17,6 +17,7 @@ permissions:
   - file.write
   - sessions.spawn
 visibility:
+  public: true
   coven_cave: true
 steps:
   - id: define-goal

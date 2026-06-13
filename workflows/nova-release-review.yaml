@@ -16,6 +16,7 @@ limits:
 permissions:
   - repo.read
 visibility:
+  public: true
   coven_cave: true
   coven_code: true
 steps:

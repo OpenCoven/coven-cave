@@ -66,7 +66,7 @@ function stepToManifest(step: WorkflowStepSummary): Record<string, unknown> {
 
 /** Canonical manifest object for a workflow — cave-only fields stripped. */
 export function workflowToManifest(workflow: WorkflowSummary): Record<string, unknown> {
-  const { path: _path, validation_state: _state, ...rest } = workflow;
+  const { path: _path, validation_state: _state, storage: _storage, ...rest } = workflow;
   const manifest = compact({
     ...rest,
     steps: undefined,

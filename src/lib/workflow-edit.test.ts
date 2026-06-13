@@ -37,6 +37,7 @@ const workflow: WorkflowSummary = {
   pattern: "sequential",
   validation_state: "valid", // cave-only, must NOT serialize
   path: "release-review",    // cave-only, must NOT serialize
+  storage: "public",         // cave-only, must NOT serialize
   steps: [
     { id: "gate", kind: "human-gate", name: "Approval", uses: "valentina" },
     { id: "review", kind: "agent", uses: "nova", requires: ["gate"] },
@@ -47,6 +48,7 @@ const workflow: WorkflowSummary = {
 const manifest = workflowToManifest(workflow);
 assert.equal(manifest.validation_state, undefined, "cave-only validation_state is stripped");
 assert.equal(manifest.path, undefined, "cave-only path is stripped");
+assert.equal(manifest.storage, undefined, "cave-only storage is stripped");
 assert.equal(manifest.summary, undefined, "absent fields are stripped, not serialized as null");
 
 const yamlText = workflowToYaml(workflow);
