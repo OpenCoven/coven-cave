@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouterBlock =
-  source.match(/<ChatRouter\b[\s\S]*?onOpenTask=\{onOpenTask\}\s*\/>/)?.[0] ?? "";
+  source.match(/<ChatRouter\b[\s\S]*?\/>/)?.[0] ?? "";
 
 assert.ok(chatRouterBlock, "ChatSurface should render ChatRouter in conversation mode");
 

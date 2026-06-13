@@ -74,11 +74,11 @@ assert.match(
   /useFamiliarStudio/,
   "Rail must call into the Familiar Studio context",
 );
-assert.match(source, /draggable/, "Avatars must be draggable for reorder");
-assert.match(source, /onDragStart/, "onDragStart handler must be present");
-assert.match(source, /onDragOver/, "onDragOver handler must be present");
-assert.match(source, /onDrop/, "onDrop handler must be present");
-assert.match(source, /setFamiliarOrder/, "Must call setFamiliarOrder on drop");
+assert.match(source, /useSortable/, "Avatars must be sortable (dnd-kit) for reorder");
+assert.match(source, /<DndContext/, "Reorder must be wrapped in a DndContext");
+assert.match(source, /<SortableContext/, "Avatars must live inside a SortableContext");
+assert.match(source, /onDragEnd=\{handleDragEnd\}/, "DndContext must wire an onDragEnd handler");
+assert.match(source, /setFamiliarOrder\(arrayMove\(/, "Must persist the reordered list via setFamiliarOrder on drag end");
 assert.match(source, /openFamiliarStudioListView/, "Right-click on + opens list view");
 assert.match(source, /familiar-avatar-rail__add-menu/, "Right-click on + renders a context menu");
 assert.match(source, /New familiar/, "Menu item: New familiar (calls onAddFamiliar)");
