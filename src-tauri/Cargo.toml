@@ -1,10 +1,11 @@
 [package]
 name = "app"
 version = "0.0.79"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
+authors = ["OpenCoven contributors"]
+license = "MIT OR AGPL-3.0-only"
+repository = "https://github.com/OpenCoven/coven-cave"
+homepage = "https://github.com/OpenCoven/coven-cave"
 edition = "2021"
 rust-version = "1.77.2"
 
