@@ -36,4 +36,17 @@ const purged = await purgeMemoryTrash((r2 as { trashId: string }).trashId, home)
 assert.equal(purged.ok, true, "purge ok");
 assert.equal((await listMemoryTrash(home)).length, 0, "trash empty after purge");
 
+import { writeFile as wf2 } from "node:fs/promises";
+// Path-traversal: a malicious trashId must NOT delete/move files outside the trash dir.
+const victim = path.join(home, ".coven", "memory", "kitty", "victim.md");
+await wf2(victim, "do not delete me", "utf8");
+const evilPurge = await purgeMemoryTrash("../../memory/kitty/victim.md", home);
+assert.equal(evilPurge.ok, false, "traversal purge rejected");
+assert.equal(await readFile(victim, "utf8"), "do not delete me", "victim survived traversal purge");
+const evilRestore = await restoreMemoryFile("../../memory/kitty/victim", home);
+assert.equal(evilRestore.ok, false, "traversal restore rejected");
+assert.equal(await readFile(victim, "utf8"), "do not delete me", "victim survived traversal restore");
+// also reject absolute and dot-dot ids
+assert.equal((await purgeMemoryTrash("/etc/hosts", home)).ok, false, "absolute trashId rejected");
+
 console.log("memory-trash.test: ok");

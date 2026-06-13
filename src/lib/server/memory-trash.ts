@@ -13,6 +13,19 @@ export type TrashItem = { trashId: string; originalPath: string; deletedAt: stri
 
 type Sidecar = { originalPath: string; deletedAt: string };
 
+function isSafeTrashId(trashId: string): boolean {
+  // A trashId is a single path segment we generated as `${Date.now()}-${basename}`.
+  // Reject anything with a separator, parent ref, or absolute path.
+  return (
+    typeof trashId === "string" &&
+    trashId.length > 0 &&
+    !trashId.includes("/") &&
+    !trashId.includes("\\") &&
+    !trashId.includes("..") &&
+    path.basename(trashId) === trashId
+  );
+}
+
 function trashRoot(home: string): string {
   return path.join(home, ".coven", TRASH_DIRNAME, "memory");
 }
@@ -50,11 +63,13 @@ export async function listMemoryTrash(home = homedir()): Promise<TrashItem[]> {
 }
 
 export async function restoreMemoryFile(trashId: string, home = homedir()): Promise<TrashResult> {
+  if (!isSafeTrashId(trashId)) return { ok: false, error: "invalid trashId" };
   const dir = trashRoot(home);
   let meta: Sidecar;
   try {
     meta = JSON.parse(await readFile(path.join(dir, `${trashId}.json`), "utf8")) as Sidecar;
   } catch { return { ok: false, error: "not found" }; }
+  if (!classifyMemoryFilePath(meta.originalPath, home)) return { ok: false, error: "restore target not allowed" };
   const occupied = await access(meta.originalPath).then(() => true).catch(() => false);
   if (occupied) return { ok: false, error: "target already exists" };
   try {
@@ -68,8 +83,11 @@ export async function restoreMemoryFile(trashId: string, home = homedir()): Prom
 }
 
 export async function purgeMemoryTrash(trashId: string | undefined, home = homedir()): Promise<TrashResult> {
+  if (trashId !== undefined && !isSafeTrashId(trashId)) return { ok: false, error: "invalid trashId" };
   const dir = trashRoot(home);
-  const ids = trashId ? [trashId] : (await listMemoryTrash(home)).map((t) => t.trashId);
+  const ids = trashId
+    ? [trashId]
+    : (await listMemoryTrash(home)).map((t) => t.trashId).filter(isSafeTrashId);
   try {
     for (const id of ids) {
       await rm(path.join(dir, id), { force: true });
