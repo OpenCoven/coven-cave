@@ -17,6 +17,7 @@ import {
 } from "@/lib/workflow-draft";
 import {
   attachWorkflowToRole,
+  isPublicTemplate,
   loadWorkflowLayout,
   saveWorkflowLayout,
   deleteWorkflow,
@@ -295,6 +296,10 @@ export function WorkflowsView() {
   };
 
   const runSave = async (workflow: WorkflowSummary) => {
+    // Templates are read-only: saving an edit forks a personal copy under
+    // ~/.coven (the runtime routes any non-public manifest there) and leaves the
+    // repo template untouched.
+    const forking = isPublicTemplate(workflow);
     setBusyId(`${workflow.id}:save`);
     try {
       const result = await saveWorkflow(workflowToManifest(workflow));
@@ -309,7 +314,7 @@ export function WorkflowsView() {
         setDraftState(initialWorkflowDraft(result.workflow));
         setSelectedWorkflowId(result.workflow.id);
       }
-      showNotice("Workflow saved.");
+      showNotice(forking ? "Forked to a personal copy — the template stays untouched." : "Workflow saved.");
       void load(true);
     } finally {
       setBusyId(null);
@@ -367,6 +372,10 @@ export function WorkflowsView() {
   };
 
   const handleDelete = async (workflow: WorkflowSummary) => {
+    if (isPublicTemplate(workflow)) {
+      showNotice("Templates are read-only — duplicate to make an editable copy.");
+      return;
+    }
     if (!window.confirm(`Delete workflow \`${workflow.id}\`? The manifest file is removed.`)) return;
     const result = await deleteWorkflow(
       workflow.path ? { path: workflow.path } : { id: workflow.id },

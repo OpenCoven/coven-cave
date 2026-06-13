@@ -53,6 +53,22 @@ export type WorkflowSummary = {
   storage?: "public" | "personal";
 };
 
+/** A workflow whose manifest lives in the user's private Coven home (`~/.coven`). */
+export function isPersonalWorkflow(workflow: WorkflowSummary): boolean {
+  return workflow.storage === "personal";
+}
+
+/**
+ * A shared repo template (lives under `workflows/`). Templates are read-only in
+ * the Cave: deleting is blocked, and saving an edit *forks* a personal copy
+ * under `~/.coven` rather than mutating the repo file. `storage` is only set
+ * once the runtime has resolved the manifest's origin; an unknown origin is
+ * treated as editable so behavior is unchanged until the runtime lands.
+ */
+export function isPublicTemplate(workflow: WorkflowSummary): boolean {
+  return workflow.storage === "public";
+}
+
 export type WorkflowValidationTier = "schema" | "semantic" | "preflight";
 
 export type WorkflowValidationIssue = {

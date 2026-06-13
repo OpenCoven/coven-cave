@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@/lib/icon";
-import { workflowIssueSummary, type WorkflowValidationIssue, type WorkflowSummary } from "@/lib/workflows";
+import { isPublicTemplate, workflowIssueSummary, type WorkflowValidationIssue, type WorkflowSummary } from "@/lib/workflows";
 import type { WorkflowStudioActionState } from "./workflow-studio";
 
 type WorkflowRunStripProps = {
@@ -48,6 +48,9 @@ export function WorkflowRunStrip({
   const playBusy = workflow ? busyId === `${workflow.id}:play` : false;
   const saveBusy = workflow ? busyId === `${workflow.id}:save` : false;
   const anyBusy = busyId !== null;
+  // Templates are read-only; saving an edit forks a personal copy to ~/.coven.
+  const forking = workflow ? isPublicTemplate(workflow) : false;
+  const saveLabel = saveBusy ? (forking ? "Forking" : "Saving") : forking ? "Fork & Save" : "Save";
 
   return (
     <section className="workflow-run-strip" aria-label="Workflow actions">
@@ -77,10 +80,16 @@ export function WorkflowRunStrip({
           className="workflow-primary-button"
           disabled={!workflow || anyBusy || !dirty}
           onClick={() => workflow && onSave(workflow)}
-          title={dirty ? "Save manifest to disk" : "No unsaved changes"}
+          title={
+            !dirty
+              ? "No unsaved changes"
+              : forking
+                ? "Read-only template — saves a personal copy to ~/.coven"
+                : "Save manifest to disk"
+          }
         >
-          <Icon name="ph:floppy-disk-bold" width={14} />
-          {saveBusy ? "Saving" : "Save"}
+          <Icon name={forking ? "ph:git-fork-bold" : "ph:floppy-disk-bold"} width={14} />
+          {saveLabel}
         </button>
         <button type="button" disabled={!workflow || anyBusy} onClick={() => workflow && onValidate(workflow)}>
           <Icon name="ph:check-circle-bold" width={14} />

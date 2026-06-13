@@ -53,4 +53,11 @@ assert.match(client, /\/api\/workflows\/layout/, "Workflow client should call th
 assert.match(client, /\/api\/roles\/workflows/, "Workflow client should call the role-attach route");
 assert.match(client, /cave:\/\/workflows\//, "Scheduled reminders should deep-link back to the workflow");
 
+// Read-only templates + fork-on-save.
+assert.match(client, /export function isPersonalWorkflow/, "Workflow client should expose the personal-origin predicate");
+assert.match(client, /export function isPublicTemplate/, "Workflow client should expose the public-template predicate");
+assert.match(source, /if \(isPublicTemplate\(workflow\)\)[\s\S]{0,160}read-only/i, "Deleting a template should be blocked as read-only");
+assert.match(source, /const forking = isPublicTemplate\(workflow\)/, "Save should detect whether it is forking a template");
+assert.match(source, /forking \? "Forked to a personal copy/, "Saving a template edit should report a personal fork");
+
 console.log("workflows-view.test.ts: ok");

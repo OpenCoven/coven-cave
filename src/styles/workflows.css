@@ -679,9 +679,25 @@
 
 .workflow-library-footer {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--border);
+}
+
+.workflow-library-footer-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted-foreground);
+}
+
+.workflow-library-footer-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .workflow-library-footer button {
@@ -693,6 +709,11 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--card);
+}
+
+.workflow-library-footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .workflow-danger-button,

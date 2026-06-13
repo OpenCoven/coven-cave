@@ -169,13 +169,21 @@ assert.match(library, /workflow-dirty-dot/, "Library should mark unsaved drafts"
 
 // Personal vs public split: the library groups by manifest origin so private
 // (~/.coven) workflows never blur into shared repo templates.
-assert.match(library, /storage === "personal"/, "Library should classify workflows by storage origin");
+assert.match(library, /isPersonalWorkflow\(workflow\)/, "Library should classify workflows by storage origin");
 assert.match(library, /groups\.personal[\s\S]{0,400}Personal[\s\S]{0,400}groups\.templates[\s\S]{0,400}Templates/, "Library should render Personal then Templates groups");
 assert.match(library, /workflow-origin-dot-personal/, "Personal rows should carry a personal origin badge");
 assert.match(library, /workflow-origin-dot-public/, "Template rows should carry a public origin badge");
 assert.match(css, /\.workflow-library-group-heading/, "CSS should style the origin group headings");
 assert.match(css, /\.workflow-origin-dot-personal/, "CSS should style the personal origin badge");
 assert.match(css, /\.workflow-origin-dot-public/, "CSS should style the public origin badge");
+
+// Read-only templates: delete is blocked and saving forks a personal copy.
+assert.match(library, /disabled=\{isPublicTemplate\(selectedWorkflow\)\}/, "Delete should be disabled for read-only templates");
+assert.match(library, /Read-only template/, "Library footer should flag read-only templates");
+assert.match(css, /\.workflow-library-footer-note/, "CSS should style the read-only template note");
+assert.match(css, /\.workflow-library-footer button:disabled/, "CSS should dim disabled footer buttons");
+assert.match(runStrip, /isPublicTemplate\(workflow\)/, "Run strip should detect read-only templates");
+assert.match(runStrip, /Fork & Save/, "Save button should read 'Fork & Save' for templates");
 
 assert.match(manifestPreview, /workflowToYaml/, "Manifest preview should render live canonical YAML");
 

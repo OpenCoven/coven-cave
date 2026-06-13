@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { WorkflowSummary } from "@/lib/workflows";
+import { isPersonalWorkflow, isPublicTemplate, type WorkflowSummary } from "@/lib/workflows";
 
 type WorkflowLibraryProps = {
   workflows: WorkflowSummary[];
@@ -24,16 +24,6 @@ const validationLabels: Record<NonNullable<WorkflowSummary["validation_state"]>,
   invalid: "Blocked",
   unknown: "Unknown",
 };
-
-/**
- * A workflow is "personal" when its manifest lives under the user's private
- * Coven home (`storage: "personal"`, i.e. `~/.coven/workflows`). Everything
- * else — repo templates and role-declared placeholders — reads as a shared
- * public template. The library groups by this so the two never blur together.
- */
-function isPersonal(workflow: WorkflowSummary): boolean {
-  return workflow.storage === "personal";
-}
 
 function matchesQuery(workflow: WorkflowSummary, query: string): boolean {
   const haystack = [
@@ -75,7 +65,7 @@ export function WorkflowLibrary({
     const personal: WorkflowSummary[] = [];
     const templates: WorkflowSummary[] = [];
     for (const workflow of visible) {
-      (isPersonal(workflow) ? personal : templates).push(workflow);
+      (isPersonalWorkflow(workflow) ? personal : templates).push(workflow);
     }
     return { personal, templates };
   }, [visible]);
@@ -83,7 +73,7 @@ export function WorkflowLibrary({
   const renderItem = (workflow: WorkflowSummary) => {
     const active = selectedWorkflow?.id === workflow.id;
     const validationState = workflow.validation_state ?? "unknown";
-    const personal = isPersonal(workflow);
+    const personal = isPersonalWorkflow(workflow);
     return (
       <button
         key={`${workflow.id}:${workflow.path ?? ""}`}
@@ -197,19 +187,32 @@ export function WorkflowLibrary({
 
       {selectedWorkflow && (
         <div className="workflow-library-footer">
-          <button type="button" onClick={() => onDuplicate(selectedWorkflow)} title="Duplicate selected workflow">
-            <Icon name="ph:copy" width={13} />
-            Duplicate
-          </button>
-          <button
-            type="button"
-            className="workflow-danger-button"
-            onClick={() => onDelete(selectedWorkflow)}
-            title="Delete selected workflow"
-          >
-            <Icon name="ph:trash" width={13} />
-            Delete
-          </button>
+          {isPublicTemplate(selectedWorkflow) && (
+            <p className="workflow-library-footer-note" title="Templates live in the repo (workflows/). Editing and saving forks a personal copy to ~/.coven; the template itself stays untouched.">
+              <Icon name="ph:lock-simple" width={12} />
+              Read-only template — edits fork a personal copy
+            </p>
+          )}
+          <div className="workflow-library-footer-actions">
+            <button type="button" onClick={() => onDuplicate(selectedWorkflow)} title="Duplicate selected workflow">
+              <Icon name="ph:copy" width={13} />
+              Duplicate
+            </button>
+            <button
+              type="button"
+              className="workflow-danger-button"
+              disabled={isPublicTemplate(selectedWorkflow)}
+              onClick={() => onDelete(selectedWorkflow)}
+              title={
+                isPublicTemplate(selectedWorkflow)
+                  ? "Templates are read-only — duplicate to make an editable copy"
+                  : "Delete selected workflow"
+              }
+            >
+              <Icon name="ph:trash" width={13} />
+              Delete
+            </button>
+          </div>
         </div>
       )}
     </aside>
