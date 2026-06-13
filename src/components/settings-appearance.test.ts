@@ -189,6 +189,21 @@ assert.match(
   /<ReadingWidthController \/>/,
   "Root layout should mount the reading-width controller so saved width applies on load",
 );
+assert.match(
+  fontSettings,
+  /Font weight/,
+  "Typography (FontSettings) should expose a Font weight control",
+);
+assert.match(
+  fontSettings,
+  /aria-pressed=\{weight === option\}/,
+  "Font weight buttons should expose the selected level to assistive tech",
+);
+assert.match(
+  layout,
+  /<ReadingWeightController \/>/,
+  "Root layout should mount the reading font-weight controller so saved weight applies on load",
+);
 
 assert.match(
   layout,

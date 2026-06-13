@@ -47,8 +47,11 @@ export const FONT_OPTIONS: FontOption[] = [
 ];
 
 export const DEFAULT_FONT_ID: Record<FontSlot, string> = {
+  // Geist Sans: already preloaded by Next.js, renders immediately — clean neutral UI
   sans: "geist",
-  mono: "geist-mono",
+  // JetBrains Mono: canonical mono per OpenCoven DESIGN.md / brand/ui/typography.css
+  // Best-in-class readability for code, terminal output, and dense labels at small sizes
+  mono: "jetbrains-mono",
 };
 
 export function fontOptionById(id: string): FontOption | undefined {

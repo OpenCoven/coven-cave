@@ -22,7 +22,7 @@
  * renames.
  *
  * NOTE: The font keys ("cave:font:sans", "cave:font:mono"), default ids
- * ("geist", "geist-mono"), and the SANS_FALLBACK / MONO_FALLBACK strings
+ * ("geist", "jetbrains-mono"), and the SANS_FALLBACK / MONO_FALLBACK strings
  * are duplicated from src/lib/font-catalog.ts and src/lib/font-storage.ts.
  * Keep in sync when adding new fonts or changing fallback chains.
  */
@@ -79,7 +79,7 @@ const THEME_SCRIPT = `
       try { html.style.setProperty("--font-sans", "var(--font-" + fontSansId + "), " + SANS_FB); } catch (e) {}
     }
     var fontMonoId = localStorage.getItem("cave:font:mono");
-    if (fontMonoId && fontMonoId !== "geist-mono" && /^[a-z0-9-]+$/.test(fontMonoId)) {
+    if (fontMonoId && fontMonoId !== "jetbrains-mono" && /^[a-z0-9-]+$/.test(fontMonoId)) {
       try { html.style.setProperty("--font-mono", "var(--font-" + fontMonoId + "), " + MONO_FB); } catch (e) {}
     }
   } catch (e) {}
