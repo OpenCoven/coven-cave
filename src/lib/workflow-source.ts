@@ -505,7 +505,7 @@ export async function saveLocalWorkflow(body: {
       const filePath = path.resolve(root, file);
       const rel = path.relative(root, filePath);
       if (rel.startsWith("..") || path.isAbsolute(rel)) {
-        throw new Error("resolved workflow path escapes workflow directory");
+        throw new Error("resolved workflow path escapes workflow storage directory");
       }
       await writeFile(filePath, text, { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined });
       if (storage === "personal") {
