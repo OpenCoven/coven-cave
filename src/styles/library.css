@@ -46,6 +46,59 @@
   padding: 0 14px 8px;
 }
 
+/* Top header carries Back + Refresh actions beside the title. */
+.library-rail-header--actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-right: 8px;
+}
+.library-rail-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-rail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.library-rail-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.library-rail-action:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.library-rail-action:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+.library-rail-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+  color: var(--text-muted);
+}
+.library-rail-action--spinning > svg {
+  animation: library-rail-spin 0.7s linear infinite;
+}
+@keyframes library-rail-spin {
+  to { transform: rotate(360deg); }
+}
+
 .library-rail-list {
   display: flex;
   flex-direction: column;
