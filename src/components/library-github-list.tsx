@@ -92,7 +92,8 @@ function stateStyle(state?: LibraryGitHubItem["state"]): React.CSSProperties & {
 function parseGitHubUrl(url: string): { repo: string; kind: GitHubItemKind; number?: number } | null {
   try {
     const u = new URL(url);
-    if (!u.hostname.includes("github.com")) return null;
+    const hostname = u.hostname.toLowerCase();
+    if (hostname !== "github.com" && hostname !== "www.github.com") return null;
     const parts = u.pathname.replace(/^\//, "").split("/");
     if (parts.length < 2) return null;
     const repo = `${parts[0]}/${parts[1]}`;
