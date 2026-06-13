@@ -2,6 +2,14 @@
   "name": "coven-cave",
   "version": "0.0.79",
   "private": true,
+  "description": "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions.",
+  "author": "OpenCoven contributors",
+  "license": "MIT OR AGPL-3.0-only",
+  "homepage": "https://github.com/OpenCoven/coven-cave",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenCoven/coven-cave.git"
+  },
   "scripts": {
     "dev": "node --experimental-strip-types server.ts",
     "dev:app": "bash scripts/dev-app.sh",

@@ -23,6 +23,14 @@
       "app",
       "msi"
     ],
+    "publisher": "OpenCoven",
+    "homepage": "https://github.com/OpenCoven/coven-cave",
+    "copyright": "Copyright (c) 2026 OpenCoven contributors",
+    "license": "MIT OR AGPL-3.0-only",
+    "licenseFile": "../LICENSE",
+    "category": "DeveloperTool",
+    "shortDescription": "Desktop control room for OpenCoven familiars.",
+    "longDescription": "CovenCave is the OpenCoven desktop control room for managing familiars, local agent sessions, workflows, memory, tools, and release-ready automation from one native Tauri app.",
     "resources": [
       "resources/server/**/*",
       "resources/node/**/*"
