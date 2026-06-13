@@ -127,6 +127,24 @@ assert.match(
   "Text size buttons should expose the selected scale to assistive tech",
 );
 
+// Reading line-spacing applies app-wide (chat/library/memory render outside
+// Settings), so its controller must be mounted in the root layout.
+assert.match(
+  fontSettings,
+  /Line spacing/,
+  "Typography (FontSettings) should expose a Line spacing control",
+);
+assert.match(
+  fontSettings,
+  /aria-pressed=\{leading === option\}/,
+  "Line spacing buttons should expose the selected level to assistive tech",
+);
+assert.match(
+  layout,
+  /<ReadingLeadingController \/>/,
+  "Root layout should mount the reading line-spacing controller so saved spacing applies on load",
+);
+
 assert.match(
   layout,
   /<ScreenMagnificationController \/>/,

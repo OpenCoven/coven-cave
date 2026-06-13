@@ -32,4 +32,13 @@ const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "ut
 assert.match(globals, /--font-sans:\s*var\(--font-geist-sans\)/, ":root --font-sans default must remain");
 assert.match(globals, /--font-mono:\s*var\(--font-geist-mono\)/, ":root --font-mono default must remain");
 
+// The reading line-spacing control drives the shared .cave-md prose surface via
+// --cave-reading-leading, with a 1.7 fallback so the default is unchanged.
+const caveChat = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?line-height:\s*var\(--cave-reading-leading,\s*1\.7\)/,
+  ".cave-md line-height must read var(--cave-reading-leading, 1.7)",
+);
+
 console.log("font-css-vars.test.ts OK");
