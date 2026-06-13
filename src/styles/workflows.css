@@ -59,7 +59,6 @@
 
 .workflow-studio-shell.is-right-collapsed > .workflow-studio-side {
   border-left: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
 }
 
 .workflow-studio-shell.is-left-collapsed .workflow-studio-library-content,
@@ -114,6 +113,18 @@
 
 .workflow-panel-tab-right {
   justify-content: flex-start;
+}
+
+/* Collapsed: the whole narrow strip is the toggle, icon pinned to the top line.
+   padding-top reproduces the icon's expanded vertical position (8px margin +
+   half the 34px control's slack), so it doesn't jump when (de)collapsing. */
+.workflow-studio-shell.is-left-collapsed .workflow-panel-tab-left,
+.workflow-studio-shell.is-right-collapsed .workflow-panel-tab-right {
+  flex: 1 1 auto;
+  height: auto;
+  align-items: flex-start;
+  padding-top: 10px;
+  margin-bottom: 0;
 }
 
 .workflow-studio-side,
@@ -729,17 +740,17 @@
 
 .workflow-editor {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .workflow-field {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   font-size: 12px;
 }
 
 .workflow-field > span {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted-foreground);
 }
 
@@ -747,10 +758,10 @@
 .workflow-field select {
   width: 100%;
   font-size: 12px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--card);
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
   color: var(--text-primary, inherit);
 }
 
