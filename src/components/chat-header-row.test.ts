@@ -95,7 +95,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.cave-chat-cwd-inline\s*\{[\s\S]*?width:\s*clamp\(112px,\s*14vw,\s*190px\)/,
+  /\.cave-chat-cwd-inline\s*\{[\s\S]*?width:\s*clamp\(100px,\s*12vw,\s*168px\)/,
   "Each header ROOT/CWD editor should stay narrow inside the meta row",
 );
 

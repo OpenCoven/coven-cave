@@ -2713,6 +2713,14 @@ h3:hover .library-heading-anchor,
 .library-list-shell .board-table {
   table-layout: fixed;
 }
+/* Bookmarks: Title is the sole fluid column, so let it claim the full
+   width of its cell. The shared .board-table-title cap (300px) otherwise
+   strands the leftover space as a dead band once the panel is wide. */
+.library-list-shell .library-bookmarks-table .board-table-title {
+  display: flex;
+  max-width: none;
+  width: 100%;
+}
 .library-reading-table .library-reading-col-source {
   width: 92px;
   max-width: 92px;

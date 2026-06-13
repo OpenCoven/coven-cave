@@ -1326,11 +1326,11 @@ details[open] > .cave-tool-summary::before {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
   border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-  padding: 6px 12px 7px;
+  background: color-mix(in oklch, var(--bg-raised) 74%, transparent);
+  padding: 4px 10px 5px;
 }
 
 .cave-mobile-header-identity,
@@ -1345,15 +1345,15 @@ details[open] > .cave-tool-summary::before {
   min-width: 0;
   width: 100%;
   align-items: center;
-  gap: 7px;
-  min-height: 24px;
+  gap: 6px;
+  min-height: 22px;
   font-size: 12px;
 }
 
 .cave-chat-meta-line .cave-chat-title-input {
   flex: 1 1 auto;
   max-width: min(38vw, 460px);
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.2;
 }
 
@@ -1367,7 +1367,7 @@ details[open] > .cave-tool-summary::before {
   white-space: nowrap;
   color: var(--text-muted);
   font-family: var(--font-geist-mono);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 /* CHAT-D3-06: ticking elapsed inside the streaming meta line. Tabular digits
@@ -1383,6 +1383,32 @@ details[open] > .cave-tool-summary::before {
   border-radius: 999px;
   background: currentColor;
   box-shadow: 0 0 0 2px color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.cave-chat-icon-button {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-icon-button:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 72%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-chat-icon-button:disabled {
+  opacity: 0.45;
 }
 
 .cave-chat-back-button {
@@ -1420,15 +1446,63 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-cwd-inline {
   display: inline-flex;
-  width: clamp(112px, 14vw, 190px);
+  width: clamp(100px, 12vw, 168px);
   min-width: 0;
   flex: 0 1 auto;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--border-hairline);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: color-mix(in oklch, var(--bg-raised) 45%, transparent);
+  background: transparent;
   padding: 1px 6px;
+}
+
+.cave-chat-cwd-inline:hover,
+.cave-chat-cwd-inline:focus-within {
+  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
+}
+
+.cave-chat-session-actions {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.cave-chat-session-actions:empty {
+  display: none;
+}
+
+.cave-chat-session-actions > .focus-ring:not(.cave-chat-find):not(.cave-chat-cwd-pair),
+.cave-chat-session-actions .voice-call-button {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cave-chat-session-actions > .focus-ring:not(.cave-chat-find):not(.cave-chat-cwd-pair):hover:not(:disabled),
+.cave-chat-session-actions .voice-call-button:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
+  color: var(--text-primary);
+}
+
+.cave-chat-session-actions .voice-call-button:disabled {
+  opacity: 0.45;
 }
 
 @keyframes cave-chat-meta-blip {

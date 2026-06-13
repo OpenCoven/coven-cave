@@ -10,6 +10,11 @@ const source = readFileSync(
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
 assert.match(source, /model/);
+assert.match(
+  source,
+  /anthropic\/claude-fable-5/,
+  "Brain tab model suggestions should include Claude Fable 5",
+);
 assert.match(source, /note/);
 assert.match(source, /\/api\/harnesses/);
 assert.match(source, /\/api\/config/);

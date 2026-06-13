@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const turnRow = source.match(/function TurnRow[\s\S]*?\n}\n\nfunction AttachmentLightbox/)?.[0] ?? "";
 const splitReasoning = source.match(/function splitReasoning[\s\S]*?\n}\n\n\/\/ ── ChatEmptyState/)?.[0] ?? "";
 
@@ -217,6 +218,30 @@ assert.doesNotMatch(
   source,
   /<ChatLifecycleStatus\b/,
   "ChatLifecycleStatus bar should be folded into the header meta line",
+);
+
+assert.match(
+  source,
+  /className="cave-chat-icon-button cave-chat-back-button/,
+  "Open chat back control should use the shared minimal icon-button treatment",
+);
+
+assert.match(
+  source,
+  /<div className="cave-chat-session-actions">[\s\S]*<ChatFindBar[\s\S]*<InlineProjectField[\s\S]*<VoiceCallButton[\s\S]*Debug session[\s\S]*Delete chat/,
+  "Open chat header actions should sit in one compact session action cluster",
+);
+
+assert.match(
+  styles,
+  /\.cave-chat-linear-header\s*\{[\s\S]*padding:\s*4px 10px 5px;/,
+  "Open chat header should be compressed for a streamlined session UI",
+);
+
+assert.match(
+  styles,
+  /\.cave-chat-icon-button\s*\{[\s\S]*border:\s*1px solid transparent;[\s\S]*background:\s*transparent;/,
+  "Open chat header icon buttons should be chromeless until hover/focus",
 );
 assert.match(
   source,

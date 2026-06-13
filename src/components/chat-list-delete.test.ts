@@ -251,4 +251,20 @@ assert.doesNotMatch(
   "The old 40% muted-ink mix (~3:1 on dark, ~2.5:1 on light) must not return",
 );
 
+assert.match(
+  source,
+  /<SessionInitiatorChip initiator=\{s\.initiator\} \/>/,
+  "Chat rows should render the session initiator attribution pill",
+);
+assert.doesNotMatch(
+  globals,
+  /\.ui-initiator-chip\[data-initiator="familiar"\]\s*\{[\s\S]*?color:\s*var\(--accent\);/,
+  "Familiar initiator attribution text must not use the low-contrast accent token",
+);
+assert.match(
+  globals,
+  /\.ui-initiator-chip\[data-initiator="familiar"\]\s*\{[\s\S]*?color:\s*var\(--text-secondary\);/,
+  "Familiar initiator attribution text should use a readable text token",
+);
+
 console.log("chat-list-delete.test.ts: ok");

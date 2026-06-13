@@ -1039,8 +1039,9 @@ select {
 }
 
 .ui-initiator-chip[data-initiator="familiar"] {
-  color: var(--accent);
-  border-color: color-mix(in oklch, var(--accent) 24%, var(--border-hairline));
+  color: var(--text-secondary);
+  border-color: color-mix(in oklch, var(--text-secondary) 26%, var(--border-hairline));
+  background: color-mix(in oklch, var(--text-secondary) 7%, transparent);
 }
 
 .ui-initiator-chip-label {
@@ -4595,6 +4596,25 @@ button:active > .edge-rail-chip {
   .chat-list-footer {
     display: none;
   }
+}
+
+.chat-scope-tabs--minimal {
+  min-height: 38px;
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+}
+
+.chat-scope-tabs--minimal [role="tab"] {
+  padding-block: 8px;
+}
+
+.chat-scope-tabs__new {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding-inline: 6px;
+}
+
+.chat-scope-tabs__new:hover {
+  background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
 }
 
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS

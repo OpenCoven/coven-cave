@@ -889,7 +889,7 @@ function ChatBackButton({ onBack }: { onBack: () => void }) {
   return (
     <button
       type="button"
-      className="cave-chat-back-button focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      className="cave-chat-icon-button cave-chat-back-button focus-ring"
       aria-label="Back to chats"
       onClick={onBack}
     >
@@ -2614,73 +2614,75 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           onBack={onBack}
         >
-          {turns.length > 0 ? (
-            <ChatFindBar
-              open={findOpen}
-              query={findQuery}
-              activeIndex={findActiveIdx}
-              matchCount={findMatches.length}
-              focusNonce={findFocusNonce}
-              onOpen={openFind}
-              onClose={closeFind}
-              onQueryChange={setFindQuery}
-              onNext={findNext}
-              onPrev={findPrev}
-            />
-          ) : null}
-          {sessionId && (
-            <>
-              <InlineProjectField
-                projectId={projectIdDraft}
-                onProjectChange={setProjectIdDraft}
-                projects={projects}
+          <div className="cave-chat-session-actions">
+            {turns.length > 0 ? (
+              <ChatFindBar
+                open={findOpen}
+                query={findQuery}
+                activeIndex={findActiveIdx}
+                matchCount={findMatches.length}
+                focusNonce={findFocusNonce}
+                onOpen={openFind}
+                onClose={closeFind}
+                onQueryChange={setFindQuery}
+                onNext={findNext}
+                onPrev={findPrev}
               />
-              <VoiceCallButton
-                familiar={familiar}
-                callActive={voiceCallOpen}
-                onOpen={() => setVoiceCallOpen(true)}
-              />
-              <button
-                type="button"
-                className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                title="Debug session"
-                aria-label="Debug session"
-                onClick={openDebug}
-              >
-                <Icon name="ph:bug-bold" width={12} aria-hidden />
-              </button>
-              {confirmDelete ? (
-                <span className="inline-flex shrink-0 items-center gap-1 text-[10px]">
-                  <button
-                    type="button"
-                    className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
-                    onClick={() => setConfirmDelete(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Confirm delete chat"
-                    className="focus-ring rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] px-1.5 py-0.5 text-[var(--color-danger)] transition-colors disabled:opacity-40"
-                    onClick={() => void deleteChat()}
-                    disabled={deleting}
-                  >
-                    {deleting ? "Deleting…" : "Delete"}
-                  </button>
-                </span>
-              ) : (
+            ) : null}
+            {sessionId && (
+              <>
+                <InlineProjectField
+                  projectId={projectIdDraft}
+                  onProjectChange={setProjectIdDraft}
+                  projects={projects}
+                />
+                <VoiceCallButton
+                  familiar={familiar}
+                  callActive={voiceCallOpen}
+                  onOpen={() => setVoiceCallOpen(true)}
+                />
                 <button
                   type="button"
-                  className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--color-danger)]"
-                  title="Delete chat"
-                  aria-label="Delete chat"
-                  onClick={() => setConfirmDelete(true)}
+                  className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                  title="Debug session"
+                  aria-label="Debug session"
+                  onClick={openDebug}
                 >
-                  <Icon name="ph:trash" width={12} aria-hidden />
+                  <Icon name="ph:bug-bold" width={12} aria-hidden />
                 </button>
-              )}
-            </>
-          )}
+                {confirmDelete ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[10px]">
+                    <button
+                      type="button"
+                      className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+                      onClick={() => setConfirmDelete(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Confirm delete chat"
+                      className="focus-ring rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] px-1.5 py-0.5 text-[var(--color-danger)] transition-colors disabled:opacity-40"
+                      onClick={() => void deleteChat()}
+                      disabled={deleting}
+                    >
+                      {deleting ? "Deleting…" : "Delete"}
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--color-danger)]"
+                    title="Delete chat"
+                    aria-label="Delete chat"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Icon name="ph:trash" width={12} aria-hidden />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </MetaLine>
         <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
       </header>

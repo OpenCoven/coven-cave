@@ -259,7 +259,7 @@ export function ChatSurface({
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
-        <div className="chat-scope-tabs flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
+        <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
           <div role="tablist" className="flex items-end gap-1">
             {(["conversation", "memory"] as const).map((s) => {
@@ -303,7 +303,7 @@ export function ChatSurface({
               type="button"
               onClick={() => startConversation(activeFamiliarId)}
               title="New chat"
-              className="inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+              className="chat-scope-tabs__new inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:plus-bold" width={11} />
               New

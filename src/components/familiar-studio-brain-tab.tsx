@@ -20,6 +20,7 @@ type CapabilitiesResponse = {
 };
 
 const MODEL_SUGGESTIONS = [
+  "anthropic/claude-fable-5",
   "anthropic/claude-opus-4-7",
   "anthropic/claude-sonnet-4-6",
   "anthropic/claude-haiku-4-5",

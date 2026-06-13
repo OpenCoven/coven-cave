@@ -5,6 +5,7 @@ import "@/styles/workflows.css";
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { WorkflowGraphNode, WorkflowNodePositions } from "@/lib/workflow-graph";
+import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
   WorkflowDryRunPlan,
   WorkflowPattern,
@@ -52,6 +53,9 @@ export type WorkflowStudioProps = {
   engineUnavailable: boolean;
   notice: string | null;
   savedPositions: WorkflowNodePositions | null;
+  playback: WorkflowPlaybackState | null;
+  onStopPlayback: () => void;
+  onReplayRun: (run: WorkflowRunRecord) => void;
   onRefresh: () => void;
   onSelectWorkflow: (workflow: WorkflowSummary) => void;
   onSelectNode: (node: WorkflowGraphNode) => void;
@@ -133,6 +137,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           action={action}
           selectedNode={selectedNode}
           savedPositions={props.savedPositions}
+          playback={props.playback}
           onSelectNode={props.onSelectNode}
           onClearNode={props.onClearNode}
           onConnect={props.onConnect}
@@ -149,14 +154,22 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           canRedo={props.canRedo}
           engineUnavailable={props.engineUnavailable}
           notice={props.notice}
+          playback={props.playback}
           onValidate={props.onValidate}
           onDryRun={props.onDryRun}
           onPlay={props.onPlay}
           onSave={props.onSave}
           onUndo={props.onUndo}
           onRedo={props.onRedo}
+          onStopPlayback={props.onStopPlayback}
         />
-        <WorkflowRunsPanel runs={props.runs} loading={props.runsLoading} workflow={selectedWorkflow} />
+        <WorkflowRunsPanel
+          runs={props.runs}
+          loading={props.runsLoading}
+          workflow={selectedWorkflow}
+          playback={props.playback}
+          onReplayRun={props.onReplayRun}
+        />
       </main>
       <aside className="workflow-studio-side" aria-label="Workflow details">
         <button

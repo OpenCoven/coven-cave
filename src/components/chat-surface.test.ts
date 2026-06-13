@@ -24,6 +24,18 @@ assert.match(
   "ChatSurface should expose the primary chat launch action without a separate composer block",
 );
 
+assert.match(
+  chatSurface,
+  /className="chat-scope-tabs chat-scope-tabs--minimal/,
+  "ChatSurface should use the compact tab strip treatment on open chat sessions",
+);
+
+assert.match(
+  chatSurface,
+  /className="chat-scope-tabs__new/,
+  "ChatSurface new-chat action should use the minimal tab-strip action styling",
+);
+
 assert.doesNotMatch(
   chatSurface,
   /ph:plug|Configure plugins|onOpenMode/,
