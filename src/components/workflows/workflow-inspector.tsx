@@ -143,7 +143,7 @@ export function WorkflowInspector({
             onCommit={(next) => onUpdateStep(step.id, { summary: next || undefined })}
           />
           <Field
-            label="Permissions (comma-separated)"
+            label="Permissions"
             value={(step.permissions ?? []).join(", ")}
             placeholder="repo.read, web.fetch"
             onCommit={(next) => onUpdateStep(step.id, { permissions: parseCsv(next) })}
@@ -185,12 +185,13 @@ export function WorkflowInspector({
             onCommit={(next) => onUpdateMeta({ summary: next || undefined })}
           />
           <Field
-            label="Tags (comma-separated)"
+            label="Tags"
             value={(workflow.tags ?? []).join(", ")}
+            placeholder="library, annotation"
             onCommit={(next) => onUpdateMeta({ tags: parseCsv(next) })}
           />
           <Field
-            label="Permissions (comma-separated)"
+            label="Permissions"
             value={(workflow.permissions ?? []).join(", ")}
             placeholder="repo.read, web.fetch"
             onCommit={(next) => onUpdateMeta({ permissions: parseCsv(next) })}
