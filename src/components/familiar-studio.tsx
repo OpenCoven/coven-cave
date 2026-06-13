@@ -16,6 +16,7 @@ import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
 import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
 import { FamiliarStudioLifecycleTab } from "./familiar-studio-lifecycle-tab";
+import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
 import type { Familiar } from "@/lib/types";
 
 type Props = {
@@ -27,6 +28,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "look", label: "Look", icon: "ph:paint-brush" },
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "lifecycle", label: "Lifecycle", icon: "ph:arrows-clockwise" },
+  { id: "memory", label: "Memory", icon: "ph:archive" },
 ];
 
 export function FamiliarStudio({ familiars }: Props) {
@@ -196,6 +198,9 @@ export function FamiliarStudio({ familiars }: Props) {
           {activeTab === "brain" && familiar ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
           {activeTab === "lifecycle" ? (
             <FamiliarStudioLifecycleTab familiar={familiar} allResolved={resolved} />
+          ) : null}
+          {activeTab === "memory" && familiar ? (
+            <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
           ) : null}
         </div>
 
