@@ -55,7 +55,6 @@
 
 .workflow-studio-shell.is-left-collapsed > .workflow-studio-library-panel {
   border-right: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
 }
 
 .workflow-studio-shell.is-right-collapsed > .workflow-studio-side {

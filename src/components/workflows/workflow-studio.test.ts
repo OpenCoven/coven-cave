@@ -68,6 +68,14 @@ assert.match(
 );
 assert.match(css, /\.workflow-studio-shell/, "workflow CSS should style the studio shell");
 assert.match(css, /\.workflow-studio-shell \{[\s\S]{0,700}padding:\s*16px 16px 16px 0/, "Studio shell drops left padding so the library hugs the app nav (no blank band)");
+{
+  // The collapsed left library rail keeps its hairline divider but drops the
+  // background fill so the toggle blends with the canvas.
+  const collapsedLeft = css.match(/\.workflow-studio-shell\.is-left-collapsed > \.workflow-studio-library-panel \{[\s\S]*?\}/);
+  assert.ok(collapsedLeft, "Collapsed left library rail rule should exist");
+  assert.ok(/border-right/.test(collapsedLeft[0]), "Collapsed left rail keeps its hairline divider");
+  assert.ok(!/background/.test(collapsedLeft[0]), "Collapsed left rail should have no background fill");
+}
 assert.match(css, /@media \(max-width: 860px\)/, "workflow CSS should include mobile studio layout");
 assert.match(
   css,
