@@ -5,6 +5,18 @@ import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { useUndoDelete } from "@/lib/use-undo-delete";
+import { LibraryUndoToast } from "./library-undo-toast";
+import {
+  classifyProtection,
+  detectStale,
+  groupMemories,
+  normalizeCovenEntry,
+  normalizeFileEntry,
+  sortMemories,
+  type GroupBy,
+} from "@/lib/memory-management";
+import "@/styles/library.css";
 
 export type FileMemoryEntry = {
   root: string;
@@ -117,7 +129,10 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
-  const [sortMode, setSortMode] = useState<"recent" | "name" | "size">("recent");
+  const [sortMode, setSortMode] = useState<"recent" | "oldest" | "name" | "size" | "staleFirst">("recent");
+  const [groupMode, setGroupMode] = useState<GroupBy>("none");
+  const [staleOnly, setStaleOnly] = useState(false);
+  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const effectiveLimit = limit ?? Infinity;
   const fullView = effectiveLimit === Infinity;
@@ -154,6 +169,27 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     }
   }, []);
 
+  const handleDelete = useCallback(
+    (path: string, key: string, source: "coven" | "file") => {
+      // optimistic removal from the rendered lists
+      if (source === "coven") setCovenEntries((prev) => prev.filter((e) => e.path !== path));
+      else setFileEntries((prev) => prev.filter((e) => e.fullPath !== path));
+      scheduleDelete({ key }, path.split("/").pop() ?? "entry", async () => {
+        await fetch("/api/memory/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+      });
+    },
+    [scheduleDelete],
+  );
+
+  const handleUndoDelete = useCallback(() => {
+    undoDelete();
+    void load(); // re-pull so the optimistically-removed row reappears
+  }, [undoDelete, load]);
+
   useEffect(() => {
     void load();
     const t = setInterval(load, 30_000);
@@ -179,14 +215,46 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const visibleFiles = useMemo(() => {
     const cmp: Record<typeof sortMode, (a: FileMemoryEntry, b: FileMemoryEntry) => number> = {
       recent: (a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0),
+      oldest: (a, b) => (a.modified > b.modified ? 1 : a.modified < b.modified ? -1 : 0),
       name: (a, b) => fileBase(a.relPath).localeCompare(fileBase(b.relPath)),
       size: (a, b) => (b.size ?? 0) - (a.size ?? 0),
+      staleFirst: (a, b) =>
+        Number(detectStale(normalizeFileEntry(b)).stale) - Number(detectStale(normalizeFileEntry(a)).stale),
     };
     return fileEntries
       .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
       .filter((entry) => memoryMatches(entry, q))
+      .filter((entry) => !staleOnly || detectStale(normalizeFileEntry(entry)).stale)
       .sort(cmp[sortMode]);
-  }, [fileEntries, q, sourceFilter, sortMode]);
+  }, [fileEntries, q, sourceFilter, sortMode, staleOnly]);
+
+  // Lib-backed normalized files, used for grouping + the suggestions section.
+  const normalizedFiles = useMemo(() => fileEntries.map(normalizeFileEntry), [fileEntries]);
+  const fileByPath = useMemo(
+    () => new Map(fileEntries.map((e) => [e.fullPath, e])),
+    [fileEntries],
+  );
+  const visibleFileGroups = useMemo(() => {
+    let list = normalizedFiles
+      .filter((e) => {
+        const orig = fileByPath.get(e.path);
+        return orig ? (sourceFilter === "all" || orig.sourceKind === sourceFilter) && memoryMatches(orig, q) : false;
+      });
+    if (staleOnly) list = list.filter((e) => detectStale(e).stale);
+    list = sortMemories(list, sortMode);
+    return groupMemories(list, groupMode);
+  }, [normalizedFiles, fileByPath, sourceFilter, q, staleOnly, sortMode, groupMode]);
+
+  // Stale entries across BOTH sources, for the "Suggested for cleanup" section.
+  const suggestions = useMemo(() => {
+    const all = [...covenEntries.map((e) => normalizeCovenEntry(e)), ...normalizedFiles];
+    return all.filter((e) => detectStale(e).stale);
+  }, [covenEntries, normalizedFiles]);
+  // bulk-selectable = suggestions that are NOT protected from bulk
+  const bulkDeletable = useMemo(
+    () => suggestions.filter((e) => e.protection === "normal"),
+    [suggestions],
+  );
 
   // Reset pagination whenever the result set changes underneath the user.
   useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
@@ -332,6 +400,34 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             </select>
           )}
         </div>
+        {compact ? null : (
+          <div className="memory-controls mt-3">
+            <label className="memory-control">
+              Group
+              <select value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupBy)}>
+                <option value="none">None</option>
+                <option value="familiar">Familiar</option>
+                <option value="source">Source</option>
+                <option value="type">Type</option>
+                <option value="date">Date</option>
+              </select>
+            </label>
+            <label className="memory-control">
+              Sort
+              <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
+                <option value="recent">Recent</option>
+                <option value="oldest">Oldest</option>
+                <option value="name">Name</option>
+                <option value="size">Size</option>
+                <option value="staleFirst">Stale first</option>
+              </select>
+            </label>
+            <label className="memory-control memory-control-toggle">
+              <input type="checkbox" checked={staleOnly} onChange={(e) => setStaleOnly(e.target.checked)} />
+              Stale only
+            </label>
+          </div>
+        )}
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
 
@@ -366,6 +462,34 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               <span className="text-[var(--text-muted)]">Loading memories…</span>
             )}
           </div>
+        ) : null}
+        {!compact && suggestions.length > 0 ? (
+          <section className="memory-suggestions xl:col-[1/-1]" aria-label="Suggested for cleanup">
+            <header>
+              <h3>Suggested for cleanup ({suggestions.length})</h3>
+              <button
+                type="button"
+                disabled={bulkDeletable.length === 0}
+                onClick={() => bulkDeletable.forEach((e) => handleDelete(e.path, e.key, e.source))}
+              >
+                Delete {bulkDeletable.length} cleanable
+              </button>
+            </header>
+            <ul>
+              {suggestions.map((e) => (
+                <li key={e.key} className={e.protection !== "normal" ? "memory-suggestion-protected" : ""}>
+                  <span>{e.title}</span>
+                  <em>{detectStale(e).reason}</em>
+                  {e.protection !== "normal" ? (
+                    <span className="memory-protected-badge" title="Protected from bulk delete">🔒 protected</span>
+                  ) : null}
+                  {e.protection !== "structural" ? (
+                    <button type="button" onClick={() => handleDelete(e.path, e.key, e.source)}>Delete</button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
         ) : null}
         {compact || hasFamiliar ? (
         <section className="min-h-0">
@@ -422,6 +546,16 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                         Open memory
                       </button>
                       <ExpandMemoryButton path={entry.path} title={entry.title} />
+                      {classifyProtection(entry.path) !== "structural" && (
+                        <button
+                          type="button"
+                          className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
+                          aria-label={`Delete ${entry.title}`}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(entry.path, entry.id, "coven"); }}
+                        >
+                          <Icon name="ph:trash" width={12} aria-hidden />
+                        </button>
+                      )}
                     </div>
                   </article>
                 );
@@ -446,40 +580,53 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
             <div className="flex items-center gap-2">
-              {compact ? null : (
-                <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                  <span className="sr-only">Sort memory files</span>
-                  <Icon name="ph:caret-up-down" width={11} aria-hidden />
-                  <select
-                    value={sortMode}
-                    onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
-                    aria-label="Sort memory files"
-                    className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 py-0.5 pl-1 pr-4 text-[10px] text-[var(--text-secondary)]"
-                  >
-                    <option value="recent">Recent</option>
-                    <option value="name">Name</option>
-                    <option value="size">Size</option>
-                  </select>
-                </label>
-              )}
               <span className="text-[10px] text-[var(--text-muted)]">
-                {fullView && visibleFiles.length > fileLimit
+                {fullView && groupMode === "none" && visibleFiles.length > fileLimit
                   ? `${fileLimit} of ${visibleFiles.length}`
                   : `${visibleFiles.length} visible`}
               </span>
             </div>
           </div>
-          <MemoryFilesList
-            entries={visibleFiles}
-            onOpen={onOpenMemoryFile}
-            loaded={loaded}
-            error={error}
-            limit={fullView ? fileLimit : effectiveLimit}
-            onShowMore={fullView ? () => setFileLimit((n) => n + FILE_PAGE) : undefined}
-            activeFamiliarId={familiarFilter}
-            onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
-            selectedRowId={compact ? null : selectedRowId}
-          />
+          {!compact && groupMode !== "none" ? (
+            <div className="flex flex-col gap-3">
+              {visibleFileGroups.map((group) => {
+                const rows = group.entries
+                  .map((e) => fileByPath.get(e.path))
+                  .filter((e): e is FileMemoryEntry => Boolean(e));
+                if (rows.length === 0) return null;
+                return (
+                  <div key={group.key}>
+                    <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                      {group.label} ({rows.length})
+                    </h4>
+                    <MemoryFilesList
+                      entries={rows}
+                      onOpen={onOpenMemoryFile}
+                      loaded={loaded}
+                      error={error}
+                      activeFamiliarId={familiarFilter}
+                      onSelect={(rowId) => setSelectedRowId(rowId)}
+                      selectedRowId={selectedRowId}
+                      onDelete={(p) => handleDelete(p, p, "file")}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <MemoryFilesList
+              entries={visibleFiles}
+              onOpen={onOpenMemoryFile}
+              loaded={loaded}
+              error={error}
+              limit={fullView ? fileLimit : effectiveLimit}
+              onShowMore={fullView ? () => setFileLimit((n) => n + FILE_PAGE) : undefined}
+              activeFamiliarId={familiarFilter}
+              onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
+              selectedRowId={compact ? null : selectedRowId}
+              onDelete={compact ? undefined : (p) => handleDelete(p, p, "file")}
+            />
+          )}
         </section>
         {!compact && selectedRowId ? (
           <aside data-testid="memory-list-drawer" className="min-h-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
@@ -562,6 +709,13 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </>
         )}
       </div>
+      {undoPending ? (
+        <LibraryUndoToast
+          label={undoPending.label}
+          onUndo={handleUndoDelete}
+          onDismiss={commitDelete}
+        />
+      ) : null}
     </div>
   );
 }
@@ -630,6 +784,8 @@ type MemoryFilesListProps = {
   selectedRowId?: string | null;
   /** When set and entries exceed `limit`, render a footer button that reveals more. */
   onShowMore?: () => void;
+  /** Soft-delete a file row by its full path. Structural entries hide the button. */
+  onDelete?: (path: string) => void;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -835,6 +991,7 @@ export function MemoryFilesList({
   onSelect,
   selectedRowId,
   onShowMore,
+  onDelete,
 }: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
   const hidden = entries.length - sliced.length;
@@ -888,8 +1045,18 @@ export function MemoryFilesList({
                 </span>
                 <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
               </button>
-              <div className="flex items-center pr-2">
+              <div className="flex items-center gap-1 pr-2">
                 <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />
+                {onDelete && classifyProtection(entry.fullPath) !== "structural" ? (
+                  <button
+                    type="button"
+                    className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
+                    aria-label={`Delete ${entry.relPath}`}
+                    onClick={(e) => { e.stopPropagation(); onDelete(entry.fullPath); }}
+                  >
+                    <Icon name="ph:trash" width={12} aria-hidden />
+                  </button>
+                ) : null}
               </div>
             </li>
             );

@@ -2742,6 +2742,108 @@ h3:hover .library-heading-anchor,
   transition: width 0.1s linear;
 }
 
+/* ── Memory management controls (agents-memory-view) ───────────────── */
+.memory-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.memory-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.memory-control select {
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in srgb, var(--bg-raised) 40%, transparent);
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.memory-control-toggle {
+  cursor: pointer;
+}
+.memory-card-delete {
+  transition: color 0.12s ease;
+}
+.memory-suggestions {
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-raised) 25%, transparent);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.memory-suggestions header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.memory-suggestions header h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+.memory-suggestions header button {
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.memory-suggestions header button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.memory-suggestions ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.memory-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.memory-suggestions li > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.memory-suggestions li em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 10px;
+}
+.memory-suggestions li button {
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.memory-protected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 
 /* ── Reduced motion: reader transitions become instant ──────────── */
 @media (prefers-reduced-motion: reduce) {

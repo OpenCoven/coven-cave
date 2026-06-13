@@ -47,10 +47,11 @@ assert.match(
 
 assert.match(
   source,
-  /const \[sortMode, setSortMode\] = useState<"recent" \| "name" \| "size">\("recent"\);/,
-  "Files must default to recency sort with name/size alternatives",
+  /const \[sortMode, setSortMode\] = useState<"recent" \| "oldest" \| "name" \| "size" \| "staleFirst">\("recent"\);/,
+  "Files must default to recency sort with the extended sort alternatives",
 );
-assert.match(source, /aria-label="Sort memory files"/, "Sort control must be labelled");
+// Sort now lives in the management controls bar (group/sort/stale-only).
+assert.match(source, /value=\{sortMode\}/, "Sort control must be bound to sortMode");
 for (const opt of ["recent", "name", "size"]) {
   assert.ok(source.includes(`value="${opt}"`), `Sort option ${opt} must be offered`);
 }
