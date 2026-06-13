@@ -72,6 +72,40 @@ assert.match(
   "Pinned rows float by default, but a manual drag order takes precedence afterward",
 );
 
+// ── Advanced operations: Git / Inspector / Debug launchers ───────────────────
+assert.match(
+  source,
+  /event: "cave:changes-open", label: "Git"/,
+  "Rail footer launches git mode (working-tree diff) via the changes-open bridge",
+);
+assert.match(
+  source,
+  /event: "cave:inspector-open"[\s\S]*event: "cave:debug-open"/,
+  "Rail footer also launches the Inspector and Debug advanced panels",
+);
+assert.match(
+  source,
+  /window\.dispatchEvent\(new CustomEvent\(op\.event\)\)/,
+  "Advanced-op buttons dispatch their window event to the chat surface",
+);
+
+const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+assert.match(
+  chatSurface,
+  /onChangesOpen = \(\) => onSetRightPanel\("changes"\)/,
+  "ChatSurface maps changes-open to the git Changes panel",
+);
+assert.match(
+  chatSurface,
+  /addEventListener\("cave:changes-open", onChangesOpen\)/,
+  "ChatSurface listens for the rail's cave:changes-open event",
+);
+assert.match(
+  chatSurface,
+  /onInspectorOpen = \(\) => onSetRightPanel\("inspector"\)/,
+  "ChatSurface maps inspector-open to the Inspector panel",
+);
+
 // ── Preserved contracts other suites rely on ─────────────────────────────────
 assert.match(
   source,

@@ -18,7 +18,7 @@ import {
   readSessionOrder,
   writeSessionOrder,
 } from "@/lib/chat-session-order";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import {
   DndContext,
   PointerSensor,
@@ -38,6 +38,16 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 type ChatFilter = "all" | "active" | "tasks" | "pinned";
+
+// Advanced-operation launchers shown in the rail footer. Each dispatches a
+// window event the chat surface listens for, opening the matching right-side
+// panel. "Git" surfaces the working-tree diff for the active session — the
+// chat plane's git mode for agentic coding.
+const ADVANCED_OPS: Array<{ event: string; label: string; title: string; icon: IconName }> = [
+  { event: "cave:changes-open", label: "Git", title: "Git changes for this session", icon: "ph:git-diff" },
+  { event: "cave:inspector-open", label: "Inspect", title: "Open the agent inspector", icon: "ph:brain-bold" },
+  { event: "cave:debug-open", label: "Debug", title: "Open the session debug panel", icon: "ph:bug-bold" },
+];
 
 type Props = {
   groups: ChatProjectGroup[];
@@ -530,6 +540,26 @@ export function ChatProjectSidebar({
           </>
         )}
       </nav>
+
+      {/* ── Advanced operations ── quick launchers for the right-side panels
+            (Git diff / Inspector / Debug). They reach the chat surface's right
+            panel through the same window-event bridge as the MetaLine bug
+            button, so the rail stays decoupled from the panel's owner. */}
+      <div className="chat-thread-ops flex shrink-0 items-center gap-1 border-t border-[var(--border-hairline)] px-2 py-1.5">
+        {ADVANCED_OPS.map((op) => (
+          <button
+            key={op.event}
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent(op.event))}
+            title={op.title}
+            aria-label={op.title}
+            className="focus-ring flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-1 py-1 text-[10px] font-medium text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-secondary)]"
+          >
+            <Icon name={op.icon} width={12} aria-hidden />
+            <span className="truncate">{op.label}</span>
+          </button>
+        ))}
+      </div>
     </aside>
   );
 }
