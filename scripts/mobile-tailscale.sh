@@ -167,7 +167,7 @@ start_with_tmux() {
 
   if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
     # Native iOS app: keep the mobile ACCESS gate open (Tailscale Serve proxies to
-    # loopback, so the host gate already passes) but DO set the per-launch sidecar
+    # loopback, so the host gate already passes) but DO set the persisted sidecar
     # auth token from our file so /api/ is authenticated and the in-app
     # SidecarAuthMonitor is satisfied. The matching token reaches the webview via
     # ?covenCaveToken= in CAVE_MOBILE_DEV_URL. Read from the file (ignoring any
@@ -424,7 +424,7 @@ native_command() {
     exit 1
   fi
 
-  # Hand the per-launch sidecar auth token to the webview via the query string.
+  # Hand the persisted sidecar auth token to the webview via the query string.
   # SidecarAuthBridge stores it (sessionStorage), strips it from the visible URL,
   # and attaches it to every /api/ request (x-coven-cave-token header / EventSource
   # covenCaveToken param) so the gated proxy authenticates them.
