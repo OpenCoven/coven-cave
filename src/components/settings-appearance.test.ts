@@ -144,6 +144,21 @@ assert.match(
   /<ReadingLeadingController \/>/,
   "Root layout should mount the reading line-spacing controller so saved spacing applies on load",
 );
+assert.match(
+  fontSettings,
+  /Letter spacing/,
+  "Typography (FontSettings) should expose a Letter spacing control",
+);
+assert.match(
+  fontSettings,
+  /aria-pressed=\{tracking === option\}/,
+  "Letter spacing buttons should expose the selected level to assistive tech",
+);
+assert.match(
+  layout,
+  /<ReadingTrackingController \/>/,
+  "Root layout should mount the reading letter-spacing controller so saved tracking applies on load",
+);
 
 assert.match(
   layout,

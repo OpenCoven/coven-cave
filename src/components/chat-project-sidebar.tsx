@@ -483,7 +483,7 @@ export function ChatProjectSidebar({
                     >
                       <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
                       <Icon
-                        name={isSelected ? "ph:folder-open" : "ph:folder"}
+                        name={expanded ? "ph:folder-open" : "ph:folder"}
                         width={13}
                         aria-hidden
                         className="shrink-0 text-[var(--text-muted)]"

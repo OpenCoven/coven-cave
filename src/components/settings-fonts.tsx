@@ -25,11 +25,24 @@ import {
   readReadingLeading,
   type ReadingLeading,
 } from "@/lib/reading-leading";
+import {
+  DEFAULT_READING_TRACKING,
+  READING_TRACKING_OPTIONS,
+  applyReadingTracking,
+  readReadingTracking,
+  type ReadingTracking,
+} from "@/lib/reading-tracking";
 
 const LEADING_LABEL: Record<ReadingLeading, string> = {
   compact: "Compact",
   normal: "Normal",
   relaxed: "Relaxed",
+};
+
+const TRACKING_LABEL: Record<ReadingTracking, string> = {
+  normal: "Normal",
+  wide: "Wide",
+  wider: "Wider",
 };
 
 const SANS_OPTIONS = FONT_OPTIONS.filter((o) => o.slot === "sans");
@@ -85,6 +98,7 @@ export function FontSettings() {
   const [monoId, setMonoId] = useState<string>(DEFAULT_FONT_ID.mono);
   const [scale, setScale] = useState<ScreenScale>(DEFAULT_SCREEN_SCALE);
   const [leading, setLeading] = useState<ReadingLeading>(DEFAULT_READING_LEADING);
+  const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
 
   useEffect(() => {
     const sans = readFontPref("sans");
@@ -97,6 +111,7 @@ export function FontSettings() {
     // we only mirror them into local UI state.
     setScale(readScreenScale());
     setLeading(readReadingLeading());
+    setTracking(readReadingTracking());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -127,18 +142,25 @@ export function FontSettings() {
     applyReadingLeading(next);
   };
 
+  const setLetterSpacing = (next: ReadingTracking) => {
+    setTracking(next);
+    applyReadingTracking(next);
+  };
+
   const reset = () => {
     select("sans", DEFAULT_FONT_ID.sans);
     select("mono", DEFAULT_FONT_ID.mono);
     setTextSize(DEFAULT_SCREEN_SCALE);
     setLineSpacing(DEFAULT_READING_LEADING);
+    setLetterSpacing(DEFAULT_READING_TRACKING);
   };
 
   const isDefault =
     sansId === DEFAULT_FONT_ID.sans &&
     monoId === DEFAULT_FONT_ID.mono &&
     scale === DEFAULT_SCREEN_SCALE &&
-    leading === DEFAULT_READING_LEADING;
+    leading === DEFAULT_READING_LEADING &&
+    tracking === DEFAULT_READING_TRACKING;
 
   return (
     <section className="flex flex-col gap-4">
@@ -191,6 +213,28 @@ export function FontSettings() {
                 }`}
               >
                 {LEADING_LABEL[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Letter spacing</label>
+          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Tracking for reading text — chat, library, and memory.</p>
+          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
+            {READING_TRACKING_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setLetterSpacing(option)}
+                aria-pressed={tracking === option}
+                aria-label={`Letter spacing ${TRACKING_LABEL[option]}`}
+                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  tracking === option
+                    ? "bg-[var(--accent-presence)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {TRACKING_LABEL[option]}
               </button>
             ))}
           </div>

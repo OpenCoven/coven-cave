@@ -46,6 +46,59 @@
   padding: 0 14px 8px;
 }
 
+/* Top header carries Back + Refresh actions beside the title. */
+.library-rail-header--actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-right: 8px;
+}
+.library-rail-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-rail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.library-rail-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.library-rail-action:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.library-rail-action:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+.library-rail-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+  color: var(--text-muted);
+}
+.library-rail-action--spinning > svg {
+  animation: library-rail-spin 0.7s linear infinite;
+}
+@keyframes library-rail-spin {
+  to { transform: rotate(360deg); }
+}
+
 .library-rail-list {
   display: flex;
   flex-direction: column;
@@ -1167,6 +1220,10 @@ tr:focus-within .library-row-delete {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -2685,6 +2742,108 @@ h3:hover .library-heading-anchor,
   transition: width 0.1s linear;
 }
 
+/* ── Memory management controls (agents-memory-view) ───────────────── */
+.memory-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.memory-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.memory-control select {
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in srgb, var(--bg-raised) 40%, transparent);
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.memory-control-toggle {
+  cursor: pointer;
+}
+.memory-card-delete {
+  transition: color 0.12s ease;
+}
+.memory-suggestions {
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-raised) 25%, transparent);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.memory-suggestions header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.memory-suggestions header h3 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+.memory-suggestions header button {
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.memory-suggestions header button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.memory-suggestions ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.memory-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.memory-suggestions li > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.memory-suggestions li em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 10px;
+}
+.memory-suggestions li button {
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.memory-protected-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 
 /* ── Reduced motion: reader transitions become instant ──────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -2713,9 +2872,20 @@ h3:hover .library-heading-anchor,
 .library-list-shell .board-table {
   table-layout: fixed;
 }
-/* Bookmarks: Title is the sole fluid column, so let it claim the full
-   width of its cell. The shared .board-table-title cap (300px) otherwise
-   strands the leftover space as a dead band once the panel is wide. */
+/* Bookmarks: Title is the row's identity and must stay the priority column.
+   Use auto layout + a fluid first column (max-width:0 + width:100%) so the
+   Title absorbs all leftover space and *clips* — instead of fixed-layout,
+   where hidden Saved/Tags columns stop the Title from re-claiming their
+   width and it collapses to an indistinguishable "DeepWi…". Domain/Saved/
+   Tags keep their fixed widths and the repetitive domain truncates first. */
+.library-list-shell .library-bookmarks-table {
+  table-layout: auto;
+}
+.library-list-shell .library-bookmarks-table thead th:first-child,
+.library-list-shell .library-bookmarks-table tbody td:first-child {
+  width: 100%;
+  max-width: 0;
+}
 .library-list-shell .library-bookmarks-table .board-table-title {
   display: flex;
   max-width: none;

@@ -40,5 +40,10 @@ assert.match(
   /\.cave-md\s*\{[\s\S]*?line-height:\s*var\(--cave-reading-leading,\s*1\.7\)/,
   ".cave-md line-height must read var(--cave-reading-leading, 1.7)",
 );
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?letter-spacing:\s*var\(--cave-reading-tracking,\s*0\)/,
+  ".cave-md letter-spacing must read var(--cave-reading-tracking, 0)",
+);
 
 console.log("font-css-vars.test.ts OK");

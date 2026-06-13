@@ -26,6 +26,7 @@ export type MemoryEntry = {
   harnessId?: string;
   runtimeId?: string;
   sourceContext?: string;
+  excerpt?: string;
   /** Familiar id when this entry belongs to a specific agent workspace */
   familiarId?: string;
 };
@@ -33,6 +34,17 @@ export type MemoryEntry = {
 async function readSourceContext(filePath: string): Promise<string | undefined> {
   try {
     return parseMemorySourceContext(await readFile(/* turbopackIgnore: true */ filePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+async function readExcerpt(filePath: string): Promise<string | undefined> {
+  try {
+    const raw = await readFile(/* turbopackIgnore: true */ filePath, "utf8");
+    // strip a leading YAML frontmatter block, then take the first ~200 chars
+    const body = raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+    return body.slice(0, 200) || undefined;
   } catch {
     return undefined;
   }
@@ -60,6 +72,7 @@ async function walk(
         const classification = classifyMemoryFilePath(full);
         if (!classification) continue;
         const sourceContext = await readSourceContext(full);
+        const excerpt = await readExcerpt(full);
         acc.push({
           root: classification.root,
           rootLabel: classification.rootLabel,
@@ -75,6 +88,7 @@ async function walk(
           ...(classification.harnessId ? { harnessId: classification.harnessId } : {}),
           ...(classification.runtimeId ? { runtimeId: classification.runtimeId } : {}),
           ...(sourceContext ? { sourceContext } : {}),
+          ...(excerpt ? { excerpt } : {}),
           ...(classification.familiarId ? { familiarId: classification.familiarId } : {}),
         });
       } catch {
@@ -103,6 +117,7 @@ async function scanFamiliarWorkspaces(acc: MemoryEntry[]) {
       const classification = classifyMemoryFilePath(indexFile);
       if (!classification) continue;
       const sourceContext = await readSourceContext(indexFile);
+      const excerpt = await readExcerpt(indexFile);
       acc.push({
         root: classification.root,
         rootLabel: classification.rootLabel,
@@ -116,11 +131,27 @@ async function scanFamiliarWorkspaces(acc: MemoryEntry[]) {
         rootPath: classification.rootPath,
         ...(classification.harnessId ? { harnessId: classification.harnessId } : {}),
         ...(sourceContext ? { sourceContext } : {}),
+        ...(excerpt ? { excerpt } : {}),
         familiarId: classification.familiarId ?? familiarId,
       });
     } catch {
       /* no MEMORY.md for this familiar */
     }
+    await walk(memDir, acc, memDir);
+  }
+}
+
+async function scanCovenFamiliarWorkspaces(acc: MemoryEntry[]) {
+  const familiarsDir = path.join(homedir(), ".coven", "workspaces", "familiars");
+  let items;
+  try {
+    items = await readdir(familiarsDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const item of items) {
+    if (!item.isDirectory() || item.name.startsWith(".")) continue;
+    const memDir = path.join(familiarsDir, item.name, "memory");
     await walk(memDir, acc, memDir);
   }
 }
@@ -139,6 +170,7 @@ export async function GET() {
       const classification = classifyMemoryFilePath(source.rootPath);
       if (!classification) continue;
       const sourceContext = await readSourceContext(source.rootPath);
+      const excerpt = await readExcerpt(source.rootPath);
       entries.push({
         root: classification.root,
         rootLabel: classification.rootLabel,
@@ -154,6 +186,7 @@ export async function GET() {
         ...(classification.harnessId ? { harnessId: classification.harnessId } : {}),
         ...(classification.runtimeId ? { runtimeId: classification.runtimeId } : {}),
         ...(sourceContext ? { sourceContext } : {}),
+        ...(excerpt ? { excerpt } : {}),
       });
     } catch {
       /* missing memory source */
@@ -163,6 +196,7 @@ export async function GET() {
 
   // Per-familiar agent workspace memory dirs
   await scanFamiliarWorkspaces(entries);
+  await scanCovenFamiliarWorkspaces(entries);
 
   entries.sort((a, b) => (a.modified < b.modified ? 1 : -1));
   return NextResponse.json({ ok: true, entries });

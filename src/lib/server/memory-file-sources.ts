@@ -111,25 +111,52 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
   const openclawWorkspace = path.resolve(
     /* turbopackIgnore: true */ path.join(home, ".openclaw", "workspace"),
   );
-  if (!isWithinRoot(resolved, openclawWorkspace)) return null;
-  const rel = path.relative(openclawWorkspace, resolved);
-  const parts = rel.split(path.sep);
-  const familiarId = parts[0];
-  if (!familiarId || familiarId === ".." || familiarId === "memory" || familiarId === "MEMORY.md") return null;
-  const isFamiliarIndex = parts.length === 2 && parts[1] === "MEMORY.md";
-  const isFamiliarMemory = parts.length >= 3 && parts[1] === "memory";
-  if (!isFamiliarIndex && !isFamiliarMemory) return null;
-  return {
-    sourceId: "openclaw-familiar",
-    sourceKind: "external-harness",
-    sourceKindLabel: "External harness",
-    kind: "external-harness",
-    root: `familiar:${familiarId}`,
-    rootLabel: `${displayId(familiarId)} harness memory`,
-    rootPath: path.join(openclawWorkspace, familiarId),
-    harnessId: "openclaw",
-    familiarId,
-  };
+  if (isWithinRoot(resolved, openclawWorkspace)) {
+    const rel = path.relative(openclawWorkspace, resolved);
+    const parts = rel.split(path.sep);
+    const familiarId = parts[0];
+    if (familiarId && familiarId !== ".." && familiarId !== "memory" && familiarId !== "MEMORY.md") {
+      const isFamiliarIndex = parts.length === 2 && parts[1] === "MEMORY.md";
+      const isFamiliarMemory = parts.length >= 3 && parts[1] === "memory";
+      if (isFamiliarIndex || isFamiliarMemory) {
+        return {
+          sourceId: "openclaw-familiar",
+          sourceKind: "external-harness",
+          sourceKindLabel: "External harness",
+          kind: "external-harness",
+          root: `familiar:${familiarId}`,
+          rootLabel: `${displayId(familiarId)} harness memory`,
+          rootPath: path.join(openclawWorkspace, familiarId),
+          harnessId: "openclaw",
+          familiarId,
+        };
+      }
+    }
+  }
+
+  const covenFamiliars = path.resolve(
+    /* turbopackIgnore: true */ path.join(home, ".coven", "workspaces", "familiars"),
+  );
+  if (isWithinRoot(resolved, covenFamiliars)) {
+    const rel = path.relative(covenFamiliars, resolved);
+    const parts = rel.split(path.sep);
+    const familiarId = parts[0];
+    if (familiarId && familiarId !== ".." && parts[1] === "memory" && parts.length >= 3) {
+      return {
+        sourceId: "coven-familiar",
+        sourceKind: "coven-origin",
+        sourceKindLabel: "Coven origin",
+        kind: "coven-origin",
+        root: `coven-familiar:${familiarId}`,
+        rootLabel: `${displayId(familiarId)} memory`,
+        rootPath: path.join(covenFamiliars, familiarId),
+        origin: "coven",
+        familiarId,
+      };
+    }
+  }
+
+  return null;
 }
 
 export function isMemoryFilePathAllowed(fullPath: string, home = homedir()): boolean {

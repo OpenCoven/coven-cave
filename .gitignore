@@ -23,11 +23,16 @@ release/
 # Local Playwright verification outputs (e.g. scripts/verify-trace-graph-3d.mjs)
 artifacts/
 
-# Logs
+# Logs / scratch
 *.log
+*.tmp
+*.bak
 
 # OS junk
 .DS_Store
+.AppleDouble
+.Spotlight-V100
+.Trashes
 Thumbs.db
 desktop.ini
 ehthumbs.db
