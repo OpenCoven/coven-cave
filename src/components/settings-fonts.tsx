@@ -46,11 +46,24 @@ import {
   readReadingWidth,
   type ReadingWidth,
 } from "@/lib/reading-width";
+import {
+  DEFAULT_READING_WEIGHT,
+  READING_WEIGHT_OPTIONS,
+  applyReadingWeight,
+  readReadingWeight,
+  type ReadingWeight,
+} from "@/lib/reading-weight";
 
 const WIDTH_LABEL: Record<ReadingWidth, string> = {
   full: "Full",
   medium: "Medium",
   narrow: "Narrow",
+};
+
+const WEIGHT_LABEL: Record<ReadingWeight, string> = {
+  light: "Light",
+  normal: "Normal",
+  medium: "Medium",
 };
 
 const LEADING_LABEL: Record<ReadingLeading, string> = {
@@ -126,6 +139,7 @@ export function FontSettings() {
   const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
   const [align, setAlign] = useState<ReadingAlign>(DEFAULT_READING_ALIGN);
   const [width, setWidth] = useState<ReadingWidth>(DEFAULT_READING_WIDTH);
+  const [weight, setWeight] = useState<ReadingWeight>(DEFAULT_READING_WEIGHT);
 
   useEffect(() => {
     const sans = readFontPref("sans");
@@ -141,6 +155,7 @@ export function FontSettings() {
     setTracking(readReadingTracking());
     setAlign(readReadingAlign());
     setWidth(readReadingWidth());
+    setWeight(readReadingWeight());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -186,6 +201,11 @@ export function FontSettings() {
     applyReadingWidth(next);
   };
 
+  const setFontWeight = (next: ReadingWeight) => {
+    setWeight(next);
+    applyReadingWeight(next);
+  };
+
   const reset = () => {
     select("sans", DEFAULT_FONT_ID.sans);
     select("mono", DEFAULT_FONT_ID.mono);
@@ -194,6 +214,7 @@ export function FontSettings() {
     setLetterSpacing(DEFAULT_READING_TRACKING);
     setTextAlign(DEFAULT_READING_ALIGN);
     setReadingWidth(DEFAULT_READING_WIDTH);
+    setFontWeight(DEFAULT_READING_WEIGHT);
   };
 
   const isDefault =
@@ -203,7 +224,8 @@ export function FontSettings() {
     leading === DEFAULT_READING_LEADING &&
     tracking === DEFAULT_READING_TRACKING &&
     align === DEFAULT_READING_ALIGN &&
-    width === DEFAULT_READING_WIDTH;
+    width === DEFAULT_READING_WIDTH &&
+    weight === DEFAULT_READING_WEIGHT;
 
   return (
     <section className="flex flex-col gap-4">
@@ -322,6 +344,28 @@ export function FontSettings() {
                 }`}
               >
                 {WIDTH_LABEL[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Font weight</label>
+          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Base weight for reading text — chat, library, and memory.</p>
+          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
+            {READING_WEIGHT_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setFontWeight(option)}
+                aria-pressed={weight === option}
+                aria-label={`Font weight ${WEIGHT_LABEL[option]}`}
+                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  weight === option
+                    ? "bg-[var(--accent-presence)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {WEIGHT_LABEL[option]}
               </button>
             ))}
           </div>

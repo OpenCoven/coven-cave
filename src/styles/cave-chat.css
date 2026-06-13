@@ -32,6 +32,9 @@
   /* Max reading-width cap (Settings → Appearance → Typography). `none` when
      --cave-reading-width is unset, so prose fills its container by default. */
   max-width: var(--cave-reading-width, none);
+  /* Base reading font-weight (Settings → Appearance → Typography). Bold and
+     headings keep their own weights. Defaults to 400 when var is unset. */
+  font-weight: var(--cave-reading-weight, 400);
   color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: anywhere;

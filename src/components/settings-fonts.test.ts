@@ -83,4 +83,15 @@ assert.match(
   "reset restores the default reading width",
 );
 
+// Font weight control (base weight of .cave-md prose).
+assert.match(src, /Font weight/, "renders a Font weight control");
+assert.match(src, /READING_WEIGHT_OPTIONS/, "uses the reading-weight ladder");
+assert.match(src, /applyReadingWeight/, "applies font weight via the shared helper");
+assert.match(src, /aria-pressed=\{weight === option\}/, "font-weight buttons expose selected state");
+assert.match(
+  src,
+  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_WEIGHT[\s\S]*?\}/,
+  "reset restores the default font weight",
+);
+
 console.log("settings-fonts.test.ts OK");

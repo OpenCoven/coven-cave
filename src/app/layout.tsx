@@ -8,6 +8,7 @@ import { ReadingLeadingController } from "@/components/reading-leading-controlle
 import { ReadingTrackingController } from "@/components/reading-tracking-controller";
 import { ReadingAlignController } from "@/components/reading-align-controller";
 import { ReadingWidthController } from "@/components/reading-width-controller";
+import { ReadingWeightController } from "@/components/reading-weight-controller";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { PwaRegister } from "@/components/pwa-register";
@@ -65,6 +66,7 @@ export default function RootLayout({
             <ReadingTrackingController />
             <ReadingAlignController />
             <ReadingWidthController />
+            <ReadingWeightController />
             <PwaRegister />
             {children}
           </LiveRegionProvider>

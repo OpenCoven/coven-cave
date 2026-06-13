@@ -55,5 +55,10 @@ assert.match(
   /\.cave-md\s*\{[\s\S]*?max-width:\s*var\(--cave-reading-width,\s*none\)/,
   ".cave-md max-width must read var(--cave-reading-width, none)",
 );
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?font-weight:\s*var\(--cave-reading-weight,\s*400\)/,
+  ".cave-md font-weight must read var(--cave-reading-weight, 400)",
+);
 
 console.log("font-css-vars.test.ts OK");
