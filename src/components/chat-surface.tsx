@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { AgentsMemoryView } from "@/components/agents-memory-view";
+import { ProjectsView } from "@/components/projects-view";
 import { InspectorPane } from "@/components/inspector-pane";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
@@ -15,7 +17,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type AgentsScope = "conversation" | "memory";
+type AgentsScope = "conversation" | "memory" | "projects";
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -262,6 +264,17 @@ export function ChatSurface({
     window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, familiarId), 0);
   }
 
+  function startProjectChat(projectRoot: string) {
+    setScope("conversation");
+    window.setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
+  }
+
+  useEffect(() => {
+    const open = () => setScope("projects");
+    window.addEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
+    return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
+  }, []);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -272,10 +285,11 @@ export function ChatSurface({
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
           {/* Tabs flush left */}
           <div role="tablist" className="flex items-end gap-1">
-            {(["conversation", "memory"] as const).map((s) => {
+            {(["conversation", "memory", "projects"] as const).map((s) => {
               const labels: Record<string, string> = {
                 conversation: "Chats",
                 memory: "Memory",
+                projects: "Projects",
               };
               const isActive = scope === s;
               return (
@@ -331,6 +345,8 @@ export function ChatSurface({
               window.location.hash = `memory:${encodeURIComponent(path)}`;
             }}
           />
+        ) : scope === "projects" ? (
+          <ProjectsView sessions={sessions} onNewChat={startProjectChat} />
         ) : (
           <Group className="flex min-h-0 min-w-0 flex-1" orientation="horizontal">
             <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
