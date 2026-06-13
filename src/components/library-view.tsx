@@ -50,6 +50,28 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
   const [boardDraft, setBoardDraft] = useState<LibraryBookmark | null>(null);
 
+  // ── Nav history (powers the rail's Back control) ─────────────────────────
+  // A "location" is the section + collection + skill triple. We record the
+  // location we just left whenever it changes, so Back can restore it. The
+  // effect coalesces multi-setState navigations (e.g. selecting a collection
+  // sets both collection and section) into one transition via React batching.
+  type NavLoc = { section: LibrarySectionKind; collection: string; skillId: string | null };
+  const [navHistory, setNavHistory] = useState<NavLoc[]>([]);
+  const prevLocRef = useRef<NavLoc>({ section: "all", collection: "all", skillId: null });
+  const goingBackRef = useRef(false);
+  useEffect(() => {
+    const cur: NavLoc = { section: activeSection, collection: activeCollection, skillId: activeSkillId };
+    const prev = prevLocRef.current;
+    const same = prev.section === cur.section && prev.collection === cur.collection && prev.skillId === cur.skillId;
+    if (same) return;
+    if (goingBackRef.current) {
+      goingBackRef.current = false;
+    } else {
+      setNavHistory((h) => [...h, prev]);
+    }
+    prevLocRef.current = cur;
+  }, [activeSection, activeCollection, activeSkillId]);
+
   useEffect(() => {
     void fetch("/api/familiars", { cache: "no-store" })
       .then((r) => r.json())
@@ -117,6 +139,27 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
     setSelectedItem(null);
     setSearchQuery("");
   }
+
+  function goBack() {
+    setNavHistory((h) => {
+      if (h.length === 0) return h;
+      const target = h[h.length - 1];
+      goingBackRef.current = true;
+      setActiveSection(target.section);
+      setActiveCollection(target.collection);
+      setActiveSkillId(target.skillId);
+      setSelectedItem(null);
+      setSearchQuery("");
+      return h.slice(0, -1);
+    });
+  }
+
+  // Reload everything the nav surfaces: collections + docs for the active
+  // collection (loadDocs refreshes both). Skills are owned by the rail, which
+  // re-fetches them from its own Refresh handler alongside this.
+  const reloadLibrary = useCallback(() => {
+    void loadDocs(activeCollection);
+  }, [loadDocs, activeCollection]);
 
   const docCounts: Record<string, number> = { [activeCollection]: docs.length };
   const selectedDocId =  selectedItem?.kind === "doc"      ? selectedItem.doc.id  : null;
@@ -220,6 +263,10 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           setActiveSkillId(skill.id);
           setSelectedItem({ kind: "skill", skill });
         }}
+        canGoBack={navHistory.length > 0}
+        onBack={goBack}
+        onRefresh={reloadLibrary}
+        refreshing={loading}
       />
       <div className="library-divider" />
       {/* Preview pane — dominant left content area; graph and projects own the full canvas */}
