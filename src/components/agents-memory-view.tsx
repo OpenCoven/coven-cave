@@ -5,6 +5,18 @@ import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { useUndoDelete } from "@/lib/use-undo-delete";
+import { LibraryUndoToast } from "./library-undo-toast";
+import {
+  classifyProtection,
+  detectStale,
+  groupMemories,
+  normalizeCovenEntry,
+  normalizeFileEntry,
+  sortMemories,
+  type GroupBy,
+} from "@/lib/memory-management";
+import "@/styles/library.css";
 
 export type FileMemoryEntry = {
   root: string;
@@ -117,7 +129,10 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
-  const [sortMode, setSortMode] = useState<"recent" | "name" | "size">("recent");
+  const [sortMode, setSortMode] = useState<"recent" | "oldest" | "name" | "size" | "staleFirst">("recent");
+  const [groupMode, setGroupMode] = useState<GroupBy>("none");
+  const [staleOnly, setStaleOnly] = useState(false);
+  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const effectiveLimit = limit ?? Infinity;
   const fullView = effectiveLimit === Infinity;
@@ -179,14 +194,18 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const visibleFiles = useMemo(() => {
     const cmp: Record<typeof sortMode, (a: FileMemoryEntry, b: FileMemoryEntry) => number> = {
       recent: (a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0),
+      oldest: (a, b) => (a.modified > b.modified ? 1 : a.modified < b.modified ? -1 : 0),
       name: (a, b) => fileBase(a.relPath).localeCompare(fileBase(b.relPath)),
       size: (a, b) => (b.size ?? 0) - (a.size ?? 0),
+      staleFirst: (a, b) =>
+        Number(detectStale(normalizeFileEntry(b)).stale) - Number(detectStale(normalizeFileEntry(a)).stale),
     };
     return fileEntries
       .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
       .filter((entry) => memoryMatches(entry, q))
+      .filter((entry) => !staleOnly || detectStale(normalizeFileEntry(entry)).stale)
       .sort(cmp[sortMode]);
-  }, [fileEntries, q, sourceFilter, sortMode]);
+  }, [fileEntries, q, sourceFilter, sortMode, staleOnly]);
 
   // Reset pagination whenever the result set changes underneath the user.
   useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
