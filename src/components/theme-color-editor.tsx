@@ -119,32 +119,32 @@ function ColorSlot({ label, description, value, onChange }: ColorSlotProps) {
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
-      {/* Color swatch / native picker trigger */}
-      <button
-        type="button"
-        aria-label={`Pick ${label} color`}
-        onClick={() => inputRef.current?.click()}
-        className="focus-ring relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border-2 border-[var(--border-strong)] shadow-sm transition-transform hover:scale-105 active:scale-95"
+      {/* Color selector — the swatch IS a native color input. A transparent
+          <input type="color"> overlays the colored swatch so a real click opens
+          the OS color picker directly (programmatic .click() on color inputs is
+          unreliable inside the Tauri webview). */}
+      <label
+        title={`Pick ${label} color`}
+        className="group/swatch focus-within:ring-2 focus-within:ring-[var(--accent-presence)] relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-lg border-2 border-[var(--border-strong)] shadow-sm transition-transform hover:scale-105 active:scale-95"
         style={{ background: value }}
       >
         <Icon
-          name="ph:paint-brush"
+          name="ph:eyedropper"
           width={14}
-          className="absolute inset-0 m-auto text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] opacity-0 transition-opacity group-hover:opacity-100"
+          className="pointer-events-none text-white opacity-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] transition-opacity group-hover/swatch:opacity-100"
         />
-      </button>
-
-      {/* Hidden native color input */}
-      <input
-        ref={inputRef}
-        type="color"
-        className="sr-only"
-        value={pickerValue}
-        onChange={(e) => {
-          setInputVal(e.target.value);
-          onChange(e.target.value);
-        }}
-      />
+        <input
+          ref={inputRef}
+          type="color"
+          aria-label={`Pick ${label} color`}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          value={pickerValue}
+          onChange={(e) => {
+            setInputVal(e.target.value);
+            onChange(e.target.value);
+          }}
+        />
+      </label>
 
       {/* Labels */}
       <div className="min-w-0 flex-1">
