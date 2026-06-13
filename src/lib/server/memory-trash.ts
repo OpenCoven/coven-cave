@@ -1,0 +1,82 @@
+import path from "node:path";
+import { homedir } from "node:os";
+import { mkdir, rename, writeFile, readFile, readdir, rm, access } from "node:fs/promises";
+import { classifyMemoryFilePath } from "./memory-file-sources.ts";
+import { isStructuralMemoryPath } from "../memory-management.ts";
+
+export const TRASH_DIRNAME = ".cave-trash";
+
+export type TrashOk = { ok: true; trashId: string };
+export type TrashErr = { ok: false; error: string };
+export type TrashResult = TrashOk | TrashErr;
+export type TrashItem = { trashId: string; originalPath: string; deletedAt: string };
+
+type Sidecar = { originalPath: string; deletedAt: string };
+
+function trashRoot(home: string): string {
+  return path.join(home, ".coven", TRASH_DIRNAME, "memory");
+}
+
+export async function archiveMemoryFile(fullPath: string, home = homedir()): Promise<TrashResult> {
+  const resolved = path.resolve(fullPath);
+  if (!classifyMemoryFilePath(resolved, home)) return { ok: false, error: "path not allowed" };
+  if (isStructuralMemoryPath(resolved)) return { ok: false, error: "protected: structural memory" };
+  const dir = trashRoot(home);
+  const trashId = `${Date.now()}-${path.basename(resolved)}`;
+  try {
+    await mkdir(dir, { recursive: true });
+    await rename(resolved, path.join(dir, trashId));
+    const meta: Sidecar = { originalPath: resolved, deletedAt: new Date().toISOString() };
+    await writeFile(path.join(dir, `${trashId}.json`), JSON.stringify(meta), { mode: 0o600 });
+    return { ok: true, trashId };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "archive failed" };
+  }
+}
+
+export async function listMemoryTrash(home = homedir()): Promise<TrashItem[]> {
+  const dir = trashRoot(home);
+  let names: string[];
+  try { names = await readdir(dir); } catch { return []; }
+  const out: TrashItem[] = [];
+  for (const n of names) {
+    if (!n.endsWith(".json")) continue;
+    try {
+      const meta = JSON.parse(await readFile(path.join(dir, n), "utf8")) as Sidecar;
+      out.push({ trashId: n.slice(0, -5), originalPath: meta.originalPath, deletedAt: meta.deletedAt });
+    } catch { /* skip */ }
+  }
+  return out;
+}
+
+export async function restoreMemoryFile(trashId: string, home = homedir()): Promise<TrashResult> {
+  const dir = trashRoot(home);
+  let meta: Sidecar;
+  try {
+    meta = JSON.parse(await readFile(path.join(dir, `${trashId}.json`), "utf8")) as Sidecar;
+  } catch { return { ok: false, error: "not found" }; }
+  const occupied = await access(meta.originalPath).then(() => true).catch(() => false);
+  if (occupied) return { ok: false, error: "target already exists" };
+  try {
+    await mkdir(path.dirname(meta.originalPath), { recursive: true });
+    await rename(path.join(dir, trashId), meta.originalPath);
+    await rm(path.join(dir, `${trashId}.json`), { force: true });
+    return { ok: true, trashId };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "restore failed" };
+  }
+}
+
+export async function purgeMemoryTrash(trashId: string | undefined, home = homedir()): Promise<TrashResult> {
+  const dir = trashRoot(home);
+  const ids = trashId ? [trashId] : (await listMemoryTrash(home)).map((t) => t.trashId);
+  try {
+    for (const id of ids) {
+      await rm(path.join(dir, id), { force: true });
+      await rm(path.join(dir, `${id}.json`), { force: true });
+    }
+    return { ok: true, trashId: trashId ?? "all" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "purge failed" };
+  }
+}
