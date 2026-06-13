@@ -27,11 +27,20 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
+    const prevRootOverflow = document.documentElement.style.overflow;
+    const prevRootOverscroll = document.documentElement.style.overscrollBehavior;
     const prevOverflow = document.body.style.overflow;
+    const prevOverscroll = document.body.style.overscrollBehavior;
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
     document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
     return () => {
       window.removeEventListener("keydown", onKey);
+      document.documentElement.style.overflow = prevRootOverflow;
+      document.documentElement.style.overscrollBehavior = prevRootOverscroll;
       document.body.style.overflow = prevOverflow;
+      document.body.style.overscrollBehavior = prevOverscroll;
     };
   }, [open, onClose]);
 

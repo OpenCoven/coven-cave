@@ -505,6 +505,22 @@
   }
 }
 
+@media (max-width: 767px) and (pointer: coarse) {
+  .cave-bubble-actions {
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .cave-bubble-actions .cave-copy-btn-bubble {
+    min-width: 44px;
+    min-height: 36px;
+    border-radius: 8px;
+  }
+}
+
 /* Icon-only copy/expand button variant — tighter padding */
 .cave-copy-btn--icon {
   display: inline-flex;
@@ -1301,6 +1317,10 @@ details[open] > .cave-tool-summary::before {
   border-radius: 999px;
 }
 
+.cave-composer-popover {
+  overscroll-behavior: contain;
+}
+
 .cave-composer-topline {
   display: flex;
   align-items: center;
@@ -1870,8 +1890,8 @@ details[open] > .cave-tool-summary::before {
 .cave-mobile-context-panel {
   position: absolute;
   top: calc(100% + 8px);
-  right: 12px;
-  left: 12px;
+  right: max(12px, var(--sai-right));
+  left: max(12px, var(--sai-left));
   z-index: 70;
   display: flex;
   max-height: 0;
@@ -1890,6 +1910,7 @@ details[open] > .cave-tool-summary::before {
 .cave-mobile-context[open] .cave-mobile-context-panel {
   max-height: min(52vh, 360px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   opacity: 1;
   pointer-events: auto;
@@ -2045,6 +2066,11 @@ details[open] > .cave-tool-summary::before {
     backdrop-filter: blur(14px);
   }
 
+  .cave-chat-linear {
+    min-height: 0;
+    overflow: hidden;
+  }
+
   /* Mobile keeps its own identity rail + context menu; the desktop meta
      line and linked-context chips would double-report there. */
   .cave-chat-meta-line,
@@ -2068,9 +2094,16 @@ details[open] > .cave-tool-summary::before {
     gap: 9px;
   }
 
+  .cave-mobile-header-familiar > .cave-chat-back-button {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin: -8px -6px -8px -4px;
+  }
+
   .cave-mobile-daemon-pill {
     display: inline-flex;
     min-height: 28px;
+    max-width: 76px;
     flex: 0 0 auto;
     align-items: center;
     gap: 5px;
@@ -2078,6 +2111,7 @@ details[open] > .cave-tool-summary::before {
     padding: 0 9px;
     font-size: 10px;
     font-weight: 650;
+    white-space: nowrap;
   }
 
   .cave-mobile-daemon-pill > span {
@@ -2102,13 +2136,22 @@ details[open] > .cave-tool-summary::before {
     flex: 0 0 auto;
   }
 
+  .cave-mobile-context-trigger {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .cave-chat-linear .cave-chat-transcript {
     padding: 16px 12px 96px;
-    padding-bottom: calc(96px + var(--sai-bottom));
+    padding-bottom: calc(156px + var(--sai-bottom));
+    overscroll-behavior: contain;
+    scroll-padding-top: calc(var(--sai-top) + 64px);
+    scroll-padding-bottom: calc(172px + var(--sai-bottom));
+    -webkit-overflow-scrolling: touch;
   }
 
   .cave-chat-linear .cave-chat-thread {
     gap: 4px;
+    min-width: 0;
   }
 
   .cave-chat-linear .cave-md {
@@ -2136,28 +2179,90 @@ details[open] > .cave-tool-summary::before {
     padding: 10px 12px;
   }
 
+  .cave-linear-turn-body,
+  .cave-chat-linear .cave-bubble-assistant,
+  .cave-chat-linear .cave-bubble-user,
+  .cave-chat-linear .cave-md {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .cave-chat-linear .cave-md pre,
+  .cave-chat-linear .cave-md table,
+  .cave-chat-linear .cave-code-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .cave-scroll-bottom-button {
+    bottom: calc(92px + var(--sai-bottom));
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border-radius: 999px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   .cave-composer-dock {
     position: sticky;
-    bottom: calc(56px + var(--sai-bottom));
+    bottom: 0;
     z-index: 50;
     padding: 8px clamp(12px, 3vw, 18px)
             12px
             clamp(12px, 3vw, 18px);
+    background:
+      linear-gradient(to top, var(--bg-base) 68%, color-mix(in oklch, var(--bg-base) 86%, transparent));
+    border-top-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+    contain: layout paint style;
     transform: translateY(calc(-1 * var(--composer-kb-offset, 0px)));
     transition: transform var(--duration-fast) var(--ease-decelerate);
+    will-change: transform;
   }
 
   .cave-mobile-action-strip {
     display: flex;
+    margin-inline: -2px;
+    padding-inline: 2px;
+    scroll-padding-inline: 2px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .cave-composer-panel {
     border-radius: 9px;
   }
 
+  .cave-composer-popover {
+    max-height: min(42dvh, 300px);
+    border-radius: 10px;
+  }
+
+  .cave-composer-popover > ul {
+    max-height: min(36dvh, 240px);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .cave-composer-input {
     min-height: 42px;
     max-height: min(30vh, 150px);
+  }
+
+  .cave-composer-icon-button {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    border-radius: 9px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cave-mobile-action-chip {
+    min-height: var(--touch-target);
+    padding-inline: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cave-mobile-action-chip--icon {
+    width: var(--touch-target);
   }
 }
 

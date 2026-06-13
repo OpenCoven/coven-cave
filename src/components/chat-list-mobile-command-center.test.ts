@@ -37,7 +37,7 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-scroll\s*\{[\s\S]*padding-bottom\s*:\s*calc\(72px \+ var\(--sai-bottom\)\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-scroll\s*\{[\s\S]*padding-bottom\s*:\s*calc\(96px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
   "Mobile chat list should reserve bottom-tab breathing room",
 );
 
@@ -45,6 +45,30 @@ assert.match(
   styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-footer\s*\{[\s\S]*display\s*:\s*none/,
   "Mobile chat list should drop the desktop keyboard-shortcut footer",
+);
+
+assert.match(
+  source,
+  /"chat-list-row focus-ring-inset/,
+  "ChatList rows should expose a mobile grid hook",
+);
+
+assert.match(
+  source,
+  /className="chat-list-row-actions /,
+  "ChatList row actions should expose a mobile touch-target hook",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-row\s*\{[\s\S]*grid-template-areas\s*:[\s\S]*"dot content"[\s\S]*"\. actions"/,
+  "Mobile chat list rows should move actions below content instead of squeezing metadata",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-row-actions > button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
+  "Mobile chat list row actions should meet the 44px touch target",
 );
 
 console.log("chat-list-mobile-command-center.test.ts: ok");

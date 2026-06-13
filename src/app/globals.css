@@ -4319,6 +4319,9 @@ button:active > .edge-rail-chip {
     background: var(--bg-panel);
     border-right: 1px solid var(--border-hairline);
     box-shadow: 0 0 30px oklch(0 0 0 / 30%);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     transition: transform var(--duration-base) var(--ease-emphasized);
     will-change: transform;
   }
@@ -4451,6 +4454,7 @@ button:active > .edge-rail-chip {
   inset: 0;
   z-index: 199;
   background: var(--backdrop-scrim);
+  touch-action: none;
   animation: mobile-drawer-fade-in var(--duration-base) var(--ease-decelerate);
 }
 @keyframes mobile-drawer-fade-in {
@@ -4601,11 +4605,110 @@ button:active > .edge-rail-chip {
   }
 
   .chat-list-scroll {
-    padding-bottom: calc(72px + var(--sai-bottom));
+    padding-bottom: calc(96px + var(--sai-bottom));
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .chat-list-search-control,
+  .chat-list-filter-button,
+  .chat-list-new-button {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .chat-list-filter-button {
+    width: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  .chat-list-new-button {
+    padding-inline: 14px;
+  }
+
+  .chat-list-group-new {
+    right: 6px;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin-top: -12px;
   }
 
   .chat-list-footer {
     display: none;
+  }
+
+  .chat-list-row {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr);
+    grid-template-areas:
+      "dot content"
+      ". actions";
+    gap: 6px 10px;
+    padding: 14px 12px;
+  }
+
+  .chat-list-status-dot {
+    grid-area: dot;
+  }
+
+  .chat-list-row-content {
+    grid-area: content;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .chat-list-row-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .chat-list-row-tags {
+    max-width: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 4px;
+  }
+
+  .chat-list-row-time {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-list-row-title {
+    max-width: 100%;
+  }
+
+  .chat-list-row-actions,
+  .chat-list-row-confirm {
+    grid-area: actions;
+    justify-content: flex-end;
+    align-self: start;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .chat-list-row-actions > button {
+    display: grid;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    place-items: center;
+    border-radius: 10px;
+    padding: 0;
+    opacity: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .chat-list-row-confirm > button {
+    min-height: 36px;
+    padding-inline: 12px;
   }
 }
 

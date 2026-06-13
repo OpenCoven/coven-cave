@@ -13,7 +13,7 @@ assert.match(infoPlist, /<string>_tailscale\._udp<\/string>/);
 assert.match(infoPlist, /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
 
 const sourceInfoPlist = read("src-tauri/Info.ios.plist");
-assert.equal(sourceInfoPlist, infoPlist);
+assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
 
 const entitlements = read("src-tauri/gen/apple/app_iOS/app_iOS.entitlements");
 assert.match(entitlements, /com\.apple\.developer\.networking\.wifi-info/);
@@ -26,7 +26,15 @@ assert.match(libRs, /127\.0\.0\.1/);
 
 const mobileScript = read("scripts/mobile-tailscale.sh");
 assert.match(mobileScript, /native_command\(\)/);
-assert.match(mobileScript, /tauri ios dev/);
+assert.match(mobileScript, /HOME\/\.cargo\/bin/);
+assert.match(mobileScript, /ios\s+dev\s+--no-dev-server-wait/);
+assert.match(mobileScript, /--no-dev-server-wait/);
+assert.match(mobileScript, /beforeDevCommand/);
+assert.match(mobileScript, /const devUrl = process\.argv\[2\]/);
+assert.match(mobileScript, /"\$tauri_config"/);
+assert.match(mobileScript, /resolve_ios_device_name/);
+assert.match(mobileScript, /pnpm exec tauri "\$\{tauri_args\[@\]\}"/);
+assert.doesNotMatch(mobileScript, /tauri ios dev --device/);
 
 assert.equal(
   packageJson.scripts["mobile:tailscale:native"],

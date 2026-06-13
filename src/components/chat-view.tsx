@@ -2850,7 +2850,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               el.scrollTo({ top: el.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
             }}
             aria-label={`Scroll to bottom${newTurnsCount ? ` (${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""})` : ""}`}
-            className="sticky bottom-4 float-right z-20 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
+            className="cave-scroll-bottom-button sticky bottom-4 float-right z-20 flex h-7 w-7 items-center justify-center rounded-md border border-[var(--accent-presence)]/40 bg-[var(--bg-raised)] text-[var(--accent-presence)] shadow-[0_2px_12px_var(--accent-presence)/20] transition-all hover:border-[var(--accent-presence)]/70 hover:bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-raised))] hover:shadow-[0_2px_18px_var(--accent-presence)/35]"
             title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
             <Icon name="ph:caret-down-bold" width={12} />
@@ -2885,7 +2885,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       >
         <div className="cave-composer-shell">
           {mentionOpen ? (
-            <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={mentionListboxId} role="listbox" aria-label="Workspace files">
                 {mentionMatches.map((file, i) => {
                   const active = i === mentionActiveIdx;
@@ -2921,7 +2921,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </div>
           ) : null}
           {slashSuggestions.length > 0 ? (
-            <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
                 {slashSuggestions.map((cmd, i) => {
                   const active = i === slashIdx;
@@ -3075,7 +3075,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 />
                 <button
                   type="button"
-                  className="focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                  className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                   title="Attach files"
                   aria-label="Attach files"
                   disabled={busy || attachments.length >= 10}
@@ -3089,7 +3089,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   <button
                     type="button"
                     onClick={cancelSend}
-                    className="focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
+                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
                     title="Cancel (esc)"
                     aria-label="Cancel response"
                   >
@@ -3100,7 +3100,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     type="button"
                     onClick={() => void send()}
                     disabled={!input.trim() && attachments.length === 0}
-                    className="focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                     title={`Send (${keys.enter})`}
                     aria-label="Send message"
                   >

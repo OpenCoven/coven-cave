@@ -56,6 +56,11 @@ assert.match(
   /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-agent-panel\s*\{[\s\S]{0,200}position:\s*fixed/,
   "globals.css positions the three shell panels as fixed drawers",
 );
+assert.match(
+  globals,
+  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-agent-panel\s*\{[\s\S]*overscroll-behavior:\s*contain/,
+  "globals.css contains drawer panel rubber-band scroll on mobile",
+);
 
 // shell.tsx projects mobileDrawer state onto data-mobile-drawer.
 assert.match(
@@ -119,6 +124,16 @@ assert.match(
   mobileDrawer,
   /document\.body\.style\.overflow = "hidden"/,
   "MobileDrawer locks body scroll while open",
+);
+assert.match(
+  mobileDrawer,
+  /document\.documentElement\.style\.overflow = "hidden"/,
+  "MobileDrawer locks root scroll while open",
+);
+assert.match(
+  mobileDrawer,
+  /document\.body\.style\.overscrollBehavior = "none"/,
+  "MobileDrawer disables body overscroll while open",
 );
 
 console.log("shell-drawer-smoke.test.ts OK");

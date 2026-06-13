@@ -172,6 +172,11 @@ assert.match(
   /@media \(pointer: coarse\) \{\s*\.cave-bubble-actions,\s*\.cave-copy-btn-bubble \{\s*opacity: 1;/,
   "Coarse pointers have no hover — bubble action rows must be always visible there",
 );
+assert.match(
+  css,
+  /@media \(max-width: 767px\) and \(pointer: coarse\) \{[\s\S]*\.cave-bubble-actions\s*\{[\s\S]*position: static;[\s\S]*justify-content: flex-end;/,
+  "Phone bubble actions should move into normal flow instead of overlaying message text",
+);
 
 // CHAT-D7-08 CSS half: the wrapper owns horizontal overflow; cells restore
 // normal word wrapping so the table can exceed its container when needed.

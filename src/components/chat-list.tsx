@@ -473,7 +473,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
               disabled={!fallbackFamiliarId}
-              className="mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+	              className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
               Chat
@@ -486,7 +486,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
-          <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
+          <label className="chat-list-search-control flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
             <input
               ref={searchRef}
@@ -514,7 +514,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             title={unreadsOnly ? "Show all chats" : "Show unreads only"}
             aria-label={unreadsOnly ? "Show all chats" : "Show unreads only"}
             className={[
-              "focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
+              "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
               unreadsOnly
                 ? "border-[color-mix(in_oklch,var(--color-success)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)] text-[var(--color-success)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
@@ -532,7 +532,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             aria-label={showArchived ? "Hide archived chats" : "Show archived chats"}
             title={showArchived ? "Hide archived chats" : "Show archived chats"}
             className={[
-              "focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
+              "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
               showArchived
                 ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
                 : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
@@ -547,7 +547,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
               disabled={!fallbackFamiliarId}
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
+              className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
               Chat
@@ -660,7 +660,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                       {repoName(projectRoot)}
                     </span>
                     <button
-                      className="touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+	                      className="chat-list-group-new touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                       onClick={(e) => {
                         e.stopPropagation();
                         onNewChat(projectRoot, defaultFamiliarId ?? fallbackFamiliarId);
@@ -691,8 +691,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           onKeyDown={(e) => {
                             if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id, s.familiarId); }
                           }}
-                          className={[
-                            "focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
+	                          className={[
+	                            "chat-list-row focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
                               ? "bg-[var(--bg-raised)]"
                               : "hover:bg-[var(--bg-raised)]/50",
@@ -704,7 +704,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           )}
 
                           {/* Status dot (top-aligned) */}
-                          <span className="mt-[5px] shrink-0">
+	                          <span className="chat-list-status-dot mt-[5px] shrink-0">
                             <span
                               className={`block h-2 w-2 rounded-full ${st.dot}`}
                               title={st.label}
@@ -712,17 +712,17 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           </span>
 
                           {/* Content */}
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+	                          <span className="chat-list-row-content flex min-w-0 flex-1 flex-col gap-0.5">
                             {/* Row 1: familiar/project name + timestamp */}
-                            <span className="flex items-baseline justify-between gap-2">
-                              <span className="flex items-center gap-1.5 min-w-0">
+	                            <span className="chat-list-row-meta flex items-baseline justify-between gap-2">
+	                              <span className="chat-list-row-tags flex items-center gap-1.5 min-w-0">
                                 <span className="truncate text-[12px] font-medium text-[var(--text-secondary)]">
                                   {project || rowFamiliarName}
                                 </span>
                                 {s.origin ? <OriginChip origin={s.origin} /> : null}
                                 <SessionInitiatorChip initiator={s.initiator} />
                               </span>
-                              <span className="flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
+	                              <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
                                 <span>{chatDate(s.updated_at)}</span>
                                 <span aria-hidden>·</span>
                                 <span>{age(s.updated_at)}</span>
@@ -732,7 +732,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             {/* Row 2: session title (bold subject line)
                            Running sessions get full white; others are slightly muted
                            — mirrors the unread/read convention in email clients. */}
-                            <span className="flex min-w-0 items-center gap-1.5">
+	                            <span className="chat-list-row-title flex min-w-0 items-center gap-1.5">
                               {pinned && (
                                 <Icon
                                   name="ph:bookmark-simple-fill"
@@ -771,7 +771,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           {confirmDeleteId === s.id ? (
                             /* Inline delete confirmation — replaces row actions until resolved */
                             <span
-                              className="flex shrink-0 items-center gap-1.5 self-center"
+	                              className="chat-list-row-confirm flex shrink-0 items-center gap-1.5 self-center"
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => e.stopPropagation()}
                               role="group"
@@ -801,7 +801,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                Keyboard Enter on a button must not bubble into the
                                row's open handler. */
                             <span
-                              className="flex shrink-0 items-center gap-1 self-center"
+	                              className="chat-list-row-actions flex shrink-0 items-center gap-1 self-center"
                               onKeyDown={(e) => e.stopPropagation()}
                             >
                               <button

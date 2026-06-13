@@ -37,14 +37,14 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(96px \+ var\(--sai-bottom\)\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(156px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
   "Mobile transcript should reserve bottom safe-area breathing room above the composer",
 );
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-dock\s*\{[\s\S]*bottom\s*:\s*calc\(56px \+ var\(--sai-bottom\)\)/,
-  "Mobile composer should dock above the bottom tab bar instead of under it",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-dock\s*\{[\s\S]*bottom\s*:\s*0/,
+  "Mobile composer should dock to the chat surface; the shell already reserves bottom-tab space",
 );
 
 assert.match(
@@ -57,6 +57,36 @@ assert.match(
   styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-bubble-user\s*\{[\s\S]*max-width\s*:\s*min\(92%, 520px\)/,
   "Mobile user bubbles should use phone-friendly line length instead of desktop width",
+);
+
+assert.match(
+  source,
+  /className="cave-composer-popover absolute bottom-full/,
+  "Composer slash and mention menus should expose a mobile-bounded popover hook",
+);
+
+assert.match(
+  source,
+  /className="cave-scroll-bottom-button sticky bottom-4/,
+  "Scroll-to-bottom FAB should expose a mobile touch-target hook",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
+  "Mobile scroll-to-bottom FAB should meet the 44px touch target",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-popover\s*\{[\s\S]*max-height\s*:\s*min\(42dvh, 300px\)/,
+  "Mobile composer popovers should be bounded by the dynamic viewport",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-icon-button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
+  "Mobile composer icon buttons should meet the 44px touch target",
 );
 
 console.log("chat-view-mobile-command-center.test.ts: ok");

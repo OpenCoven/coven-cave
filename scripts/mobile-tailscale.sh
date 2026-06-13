@@ -11,6 +11,11 @@ PRINT_URL="${PRINT_URL:-0}"
 COPY_INVITE="${COPY_INVITE:-1}"
 USE_TMUX="${USE_TMUX:-1}"
 
+if [ -d "$HOME/.cargo/bin" ]; then
+  PATH="$HOME/.cargo/bin:$PATH"
+  export PATH
+fi
+
 STATE_ROOT="${COVEN_CAVE_MOBILE_STATE_ROOT:-${XDG_STATE_HOME:-$HOME/.local/state}/coven-cave}"
 STATE_DIR="${COVEN_CAVE_MOBILE_STATE_DIR:-$STATE_ROOT/mobile-tailscale-${PORT}}"
 TOKEN_FILE="$STATE_DIR/access-token"
@@ -213,14 +218,10 @@ start_next_server() {
 }
 
 serve_url_from_status() {
-  node - "$1" <<'NODE'
-const backendUrl = process.argv[2];
-let input = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (chunk) => {
-  input += chunk;
-});
-process.stdin.on("end", () => {
+  node - "$1" "$2" <<'NODE'
+const [backendUrl, input] = process.argv.slice(2);
+
+{
   let status;
   try {
     status = JSON.parse(input);
@@ -245,14 +246,65 @@ process.stdin.on("end", () => {
       const normalizedPath = path.startsWith("/") ? path : `/${path}`;
       const suffix = normalizedPath === "/" ? "/" : normalizedPath;
       console.log(`https://${normalizedHost}${suffix}`);
-      return;
+      process.exit(0);
     }
   }
 
   console.error(`tailscale serve URL not found for ${backendUrl}`);
   process.exit(1);
-});
+}
 NODE
+}
+
+resolve_ios_device_name() {
+  if [ "${CAVE_MOBILE_DEVICE:-0}" != "1" ]; then
+    return 0
+  fi
+
+  if [ -n "${CAVE_MOBILE_DEVICE_NAME:-}" ]; then
+    printf '%s\n' "$CAVE_MOBILE_DEVICE_NAME"
+    return 0
+  fi
+
+  need xcrun
+  local device_json
+  device_json="$(mktemp)"
+
+  if ! xcrun devicectl list devices --json-output "$device_json" >/dev/null; then
+    rm -f "$device_json"
+    echo "Unable to list iOS devices. Open Xcode, unlock/trust the device, then retry." >&2
+    exit 1
+  fi
+
+  if ! node - "$device_json" <<'NODE'
+const fs = require("node:fs");
+
+const devices = JSON.parse(fs.readFileSync(process.argv[2], "utf8"))?.result?.devices ?? [];
+const connected = devices.filter((device) => {
+  const props = device.deviceProperties ?? {};
+  const hardware = device.hardwareProperties ?? {};
+  const connection = device.connectionProperties ?? {};
+  return (
+    hardware.platform === "iOS" &&
+    Boolean(props.name) &&
+    connection.tunnelState !== "unavailable" &&
+    props.developerModeStatus !== "disabled"
+  );
+});
+
+if (connected.length === 0) {
+  console.error("No connected iOS device found. Unlock/trust the device and enable Developer Mode, or set CAVE_MOBILE_DEVICE_NAME.");
+  process.exit(1);
+}
+
+console.log(connected[0].deviceProperties.name);
+NODE
+  then
+    rm -f "$device_json"
+    exit 1
+  fi
+
+  rm -f "$device_json"
 }
 
 create_invite() {
@@ -342,15 +394,32 @@ native_command() {
   tailscale_cmd serve --bg "$TAILSCALE_BACKEND" >/dev/null
 
   status_json="$(tailscale_capture serve status --json)"
-  CAVE_MOBILE_DEV_URL="$(printf '%s' "$status_json" | serve_url_from_status "$TAILSCALE_BACKEND")"
+  CAVE_MOBILE_DEV_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json")"
+  if [ -z "$CAVE_MOBILE_DEV_URL" ]; then
+    echo "Unable to resolve Tailscale Serve URL for ${TAILSCALE_BACKEND}." >&2
+    exit 1
+  fi
   export CAVE_MOBILE_DEV_URL
+  tauri_config="$(
+    node - "$CAVE_MOBILE_DEV_URL" <<'NODE'
+const devUrl = process.argv[2];
+console.log(JSON.stringify({ build: { devUrl, beforeDevCommand: null } }));
+NODE
+  )"
 
   echo "Launching CovenCave native iOS app through Tailscale Serve."
+  tauri_args=(
+    ios
+    dev
+    --no-dev-server-wait
+    --config
+    "$tauri_config"
+  )
   if [ "${CAVE_MOBILE_DEVICE:-0}" = "1" ]; then
-    pnpm exec tauri ios dev --device
-  else
-    pnpm exec tauri ios dev
+    device_name="$(resolve_ios_device_name)"
+    tauri_args+=("$device_name")
   fi
+  pnpm exec tauri "${tauri_args[@]}"
 }
 
 invite_command() {
