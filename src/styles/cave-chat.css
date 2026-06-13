@@ -2206,8 +2206,8 @@ details[open] > .cave-tool-summary::before {
     position: sticky;
     bottom: 0;
     z-index: 50;
-    padding: 8px clamp(12px, 3vw, 18px)
-            12px
+    padding: 6px clamp(12px, 3vw, 18px)
+            8px
             clamp(12px, 3vw, 18px);
     background:
       linear-gradient(to top, var(--bg-base) 68%, color-mix(in oklch, var(--bg-base) 86%, transparent));
@@ -2227,6 +2227,7 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-composer-panel {
+    position: relative;
     border-radius: 9px;
   }
 
@@ -2242,8 +2243,22 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-composer-input {
-    min-height: 42px;
-    max-height: min(30vh, 150px);
+    min-height: 76px;
+    max-height: min(28vh, 140px);
+    padding: 11px 62px 12px 52px !important;
+    line-height: 1.45;
+  }
+
+  .cave-composer-controls {
+    pointer-events: none;
+    position: absolute;
+    inset-inline: 10px;
+    bottom: 10px;
+    padding: 0 !important;
+  }
+
+  .cave-composer-controls button {
+    pointer-events: auto;
   }
 
   .cave-composer-icon-button {
