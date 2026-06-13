@@ -185,7 +185,7 @@ start_with_nohup() {
   if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
     # Native iOS app: ACCESS gate stays open (loopback host), but set the sidecar
     # auth token so /api/ is authenticated. See start_with_tmux for the rationale.
-    nohup env -u COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN="$SIDECAR_AUTH_TOKEN" pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
+    COVEN_CAVE_AUTH_TOKEN="$SIDECAR_AUTH_TOKEN" nohup env -u COVEN_CAVE_ACCESS_TOKEN pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
   else
     nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
   fi
