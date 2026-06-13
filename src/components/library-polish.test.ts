@@ -257,6 +257,27 @@ assert.match(
   /\.library-title-cell\s*\{[\s\S]*?min-width:\s*0;/,
   "Bookmark title cells should be allowed to shrink inside the side panel",
 );
+// Title must stay the priority column: the bookmarks table uses auto layout
+// with a fluid (max-width:0 + width:100%) first column so the Title absorbs
+// leftover space and truncates LAST — even when Saved/Tags columns are hidden.
+// (Fixed-layout left the Title unable to re-claim hidden columns' width, so it
+// collapsed to an indistinguishable "DeepWi…".)
+assert.match(
+  libraryCss,
+  /\.library-list-shell \.library-bookmarks-table\s*\{[\s\S]*?table-layout:\s*auto;/,
+  "Bookmarks table should use auto layout so the Title can claim freed column width",
+);
+assert.match(
+  libraryCss,
+  /\.library-list-shell \.library-bookmarks-table[\s\S]*?td:first-child\s*\{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*0;/,
+  "Bookmarks Title cell should be the fluid clipping column (width:100%; max-width:0)",
+);
+// The repetitive Domain must be able to truncate rather than hold fixed width.
+assert.match(
+  libraryCss,
+  /\.library-domain-cell\s*\{[\s\S]*?text-overflow:\s*ellipsis;/,
+  "Bookmark domain cell should ellipsize so it yields width to the Title",
+);
 assert.doesNotMatch(
   github,
   /gh-row-action-strip-row/,
