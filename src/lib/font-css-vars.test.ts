@@ -60,5 +60,15 @@ assert.match(
   /\.cave-md\s*\{[\s\S]*?font-weight:\s*var\(--cave-reading-weight,\s*400\)/,
   ".cave-md font-weight must read var(--cave-reading-weight, 400)",
 );
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?hyphens:\s*var\(--cave-reading-hyphens,\s*manual\)/,
+  ".cave-md hyphens must read var(--cave-reading-hyphens, manual)",
+);
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?-webkit-hyphens:\s*var\(--cave-reading-hyphens,\s*manual\)/,
+  ".cave-md must also set -webkit-hyphens for the WebKit webview",
+);
 
 console.log("font-css-vars.test.ts OK");

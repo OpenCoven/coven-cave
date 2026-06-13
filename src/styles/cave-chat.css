@@ -35,6 +35,11 @@
   /* Base reading font-weight (Settings → Appearance → Typography). Bold and
      headings keep their own weights. Defaults to 400 when var is unset. */
   font-weight: var(--cave-reading-weight, 400);
+  /* Hyphenation (Settings → Appearance → Typography). `manual` (no auto
+     hyphenation) when unset; needs <html lang> + the -webkit- prefix for the
+     WebKit webview. */
+  -webkit-hyphens: var(--cave-reading-hyphens, manual);
+  hyphens: var(--cave-reading-hyphens, manual);
   color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: anywhere;

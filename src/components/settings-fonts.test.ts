@@ -94,4 +94,15 @@ assert.match(
   "reset restores the default font weight",
 );
 
+// Hyphenation control (.cave-md prose).
+assert.match(src, /Hyphenation/, "renders a Hyphenation control");
+assert.match(src, /READING_HYPHENS_OPTIONS/, "uses the reading-hyphens ladder");
+assert.match(src, /applyReadingHyphens/, "applies hyphenation via the shared helper");
+assert.match(src, /aria-pressed=\{hyphens === option\}/, "hyphenation buttons expose selected state");
+assert.match(
+  src,
+  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_HYPHENS[\s\S]*?\}/,
+  "reset restores the default hyphenation",
+);
+
 console.log("settings-fonts.test.ts OK");
