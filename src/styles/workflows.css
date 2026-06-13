@@ -183,7 +183,11 @@
 
 .workflow-icon-button,
 .workflow-run-actions button,
-.workflow-attachment-row button {
+/* Action buttons only (e.g. Save) — NOT the disclosure toggle, which is a
+   flat, left-aligned, full-width control styled by .workflow-attachment-toggle.
+   Without the :not(), this chrome centered the toggle label on rows that have
+   no count to mask it (Boards/Projects). */
+.workflow-attachment-row button:not(.workflow-attachment-toggle) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -571,7 +575,7 @@
   color: var(--muted-foreground);
 }
 
-.workflow-attachment-row button {
+.workflow-attachment-row button:not(.workflow-attachment-toggle) {
   padding: 0 9px;
 }
 
