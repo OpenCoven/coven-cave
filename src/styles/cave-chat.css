@@ -1366,7 +1366,7 @@ details[open] > .cave-tool-summary::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10.5px;
 }
 
@@ -1547,7 +1547,7 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-find__count {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

@@ -428,7 +428,7 @@
   background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
 }
 .hc-slash-name {
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
   min-width: 110px;
@@ -443,7 +443,7 @@
   text-overflow: ellipsis;
 }
 .hc-slash-arg {
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-muted);
   padding: 2px 6px;
