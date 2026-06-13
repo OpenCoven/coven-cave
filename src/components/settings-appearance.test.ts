@@ -204,6 +204,21 @@ assert.match(
   /<ReadingWeightController \/>/,
   "Root layout should mount the reading font-weight controller so saved weight applies on load",
 );
+assert.match(
+  fontSettings,
+  /Hyphenation/,
+  "Typography (FontSettings) should expose a Hyphenation control",
+);
+assert.match(
+  fontSettings,
+  /aria-pressed=\{hyphens === option\}/,
+  "Hyphenation buttons should expose the selected state to assistive tech",
+);
+assert.match(
+  layout,
+  /<ReadingHyphensController \/>/,
+  "Root layout should mount the reading hyphenation controller so saved setting applies on load",
+);
 
 assert.match(
   layout,
