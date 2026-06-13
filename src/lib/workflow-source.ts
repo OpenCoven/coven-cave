@@ -1,6 +1,7 @@
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { covenHome } from "./coven-paths.ts";
 import type {
   WorkflowDryRunPlan,
   WorkflowListResponse,
@@ -10,6 +11,10 @@ import type {
   WorkflowValidationResult,
 } from "./workflows.ts";
 import { listRoleWorkflowIds } from "./role-source.ts";
+
+type WorkflowStorageScope = "public" | "personal";
+type ManifestFile = { source: string; raw: unknown; storage: WorkflowStorageScope };
+type FoundWorkflow = WorkflowSummary & { storage: WorkflowStorageScope };
 
 /**
  * Local workflow source for the Cave Workflow Studio.
@@ -28,6 +33,12 @@ export function workflowsDir(): string {
   const override = process.env.COVEN_WORKFLOWS_DIR?.trim();
   if (override) return override;
   return path.join(process.cwd(), "workflows");
+}
+
+export function personalWorkflowsDir(): string {
+  const override = process.env.COVEN_PERSONAL_WORKFLOWS_DIR?.trim();
+  if (override) return override;
+  return path.join(covenHome(), "workflows", "personal");
 }
 
 const KNOWN_PATTERNS = new Set([
@@ -70,7 +81,11 @@ function coerceStep(raw: unknown, index: number): WorkflowStepSummary {
  * design — missing/invalid fields are surfaced by {@link validateManifest},
  * not by throwing here, so the studio can still render an invalid workflow.
  */
-export function coerceManifest(raw: unknown, source?: string): WorkflowSummary {
+export function coerceManifest(
+  raw: unknown,
+  source?: string,
+  storage?: WorkflowStorageScope,
+): WorkflowSummary {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const rawSteps = Array.isArray(obj.steps) ? obj.steps : [];
   const limits = (obj.limits && typeof obj.limits === "object" ? obj.limits : undefined) as
@@ -91,6 +106,7 @@ export function coerceManifest(raw: unknown, source?: string): WorkflowSummary {
     tags: asStringArray(obj.tags),
     permissions: asStringArray(obj.permissions),
     path: source,
+    storage,
   };
 
   if (limits) {
@@ -102,6 +118,8 @@ export function coerceManifest(raw: unknown, source?: string): WorkflowSummary {
   }
   if (visibility) {
     summary.visibility = {
+      public: typeof visibility.public === "boolean" ? visibility.public : undefined,
+      personal: typeof visibility.personal === "boolean" ? visibility.personal : undefined,
       coven_code: typeof visibility.coven_code === "boolean" ? visibility.coven_code : undefined,
       coven_cave: typeof visibility.coven_cave === "boolean" ? visibility.coven_cave : undefined,
     };
@@ -270,8 +288,7 @@ export function planDryRun(workflow: WorkflowSummary): WorkflowDryRunPlan {
   };
 }
 
-async function readManifestFiles(): Promise<Array<{ source: string; raw: unknown }>> {
-  const dir = workflowsDir();
+async function readManifestFilesInDir(dir: string, storage: WorkflowStorageScope): Promise<ManifestFile[]> {
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -282,25 +299,38 @@ async function readManifestFiles(): Promise<Array<{ source: string; raw: unknown
     .filter((name) => /\.ya?ml$/i.test(name))
     .sort((a, b) => a.localeCompare(b));
 
-  const out: Array<{ source: string; raw: unknown }> = [];
+  const out: ManifestFile[] = [];
   for (const name of files) {
     const full = path.join(dir, name);
     try {
       const text = await readFile(full, "utf8");
-      out.push({ source: name.replace(/\.ya?ml$/i, ""), raw: parseYaml(text) });
+      out.push({ source: name.replace(/\.ya?ml$/i, ""), raw: parseYaml(text), storage });
     } catch {
       // Unreadable/malformed file → surface as an invalid stub so it isn't silently dropped.
-      out.push({ source: name.replace(/\.ya?ml$/i, ""), raw: null });
+      out.push({ source: name.replace(/\.ya?ml$/i, ""), raw: null, storage });
     }
   }
   return out;
 }
 
+async function readManifestFiles(): Promise<ManifestFile[]> {
+  return [
+    ...(await readManifestFilesInDir(workflowsDir(), "public")),
+    ...(await readManifestFilesInDir(personalWorkflowsDir(), "personal")),
+  ];
+}
+
 /** Scan the manifest directory and return the workflow list response shape. */
 export async function loadLocalWorkflowList(): Promise<WorkflowListResponse> {
   const manifests = await readManifestFiles();
-  const workflows = manifests.map(({ source, raw }) => coerceManifest(raw, source));
-  const known = new Set(workflows.map((workflow) => workflow.id));
+  const workflows: WorkflowSummary[] = [];
+  const known = new Set<string>();
+  for (const { source, raw, storage } of manifests) {
+    const workflow = coerceManifest(raw, source, storage);
+    if (known.has(workflow.id)) continue;
+    workflows.push(workflow);
+    known.add(workflow.id);
+  }
   for (const id of await listRoleWorkflowIds()) {
     if (known.has(id)) continue;
     workflows.push({
@@ -321,10 +351,10 @@ export async function loadLocalWorkflowList(): Promise<WorkflowListResponse> {
 async function findLocalWorkflow(body: {
   id?: string;
   path?: string;
-}): Promise<WorkflowSummary | null> {
+}): Promise<FoundWorkflow | null> {
   const manifests = await readManifestFiles();
-  for (const { source, raw } of manifests) {
-    const summary = coerceManifest(raw, source);
+  for (const { source, raw, storage } of manifests) {
+    const summary = coerceManifest(raw, source, storage) as FoundWorkflow;
     if (body.id && summary.id === body.id) return summary;
     if (body.path && (summary.path === body.path || source === body.path)) return summary;
   }
@@ -390,6 +420,53 @@ export function workflowFileName(id: string): string | null {
   return `${id}.yaml`;
 }
 
+function manifestObject(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+}
+
+function visibilityObject(raw: unknown): Record<string, unknown> {
+  const visibility = manifestObject(raw).visibility;
+  return visibility && typeof visibility === "object" ? (visibility as Record<string, unknown>) : {};
+}
+
+function workflowStorageForManifest(raw: unknown): WorkflowStorageScope {
+  return visibilityObject(raw).public === true ? "public" : "personal";
+}
+
+function workflowDirForStorage(storage: WorkflowStorageScope): string {
+  return storage === "public" ? workflowsDir() : personalWorkflowsDir();
+}
+
+async function ensureWorkflowDir(storage: WorkflowStorageScope): Promise<string> {
+  const dir = workflowDirForStorage(storage);
+  await mkdir(dir, { recursive: true, mode: storage === "personal" ? 0o700 : undefined });
+  if (storage === "personal") {
+    await chmod(dir, 0o700);
+  }
+  return dir;
+}
+
+async function removeStoredWorkflowFiles(storage: WorkflowStorageScope, source: string): Promise<void> {
+  const dir = workflowDirForStorage(storage);
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return;
+  }
+  const files = entries.filter((name) => {
+    if (name === layoutFileName(source)) return true;
+    return /\.ya?ml$/i.test(name) && name.replace(/\.ya?ml$/i, "") === source;
+  });
+  for (const file of files) {
+    try {
+      await unlink(path.join(dir, file));
+    } catch {
+      // Best-effort cleanup of the stale copy; the new manifest has already saved.
+    }
+  }
+}
+
 // Writes are serialized through a promise chain (same pattern as cave-inbox)
 // so concurrent saves cannot interleave partial file states.
 let workflowWriteChain: Promise<unknown> = Promise.resolve();
@@ -420,17 +497,22 @@ export async function saveLocalWorkflow(body: {
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "YAML serialization failed", validation };
   }
+  const storage = workflowStorageForManifest(body.manifest);
   try {
     await withWorkflowWriteLock(async () => {
-      const dir = workflowsDir();
-      await mkdir(dir, { recursive: true });
-      await writeFile(path.join(dir, file), text, "utf8");
+      const dir = await ensureWorkflowDir(storage);
+      const filePath = path.join(dir, file);
+      await writeFile(filePath, text, { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined });
+      if (storage === "personal") {
+        await chmod(filePath, 0o600);
+      }
+      await removeStoredWorkflowFiles(storage === "public" ? "personal" : "public", summary.id);
     });
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "workflow write failed", validation };
   }
   const source = file.replace(/\.ya?ml$/i, "");
-  return { ok: true, workflow: coerceManifest(body.manifest, source), validation };
+  return { ok: true, workflow: coerceManifest(body.manifest, source, storage), validation };
 }
 
 /** Remove a workflow manifest by id or source path. */
@@ -446,7 +528,7 @@ export async function deleteLocalWorkflow(body: {
     return { ok: false, error: `Refusing to delete unsafe path \`${found.path}\`.` };
   }
   try {
-    const dir = workflowsDir();
+    const dir = workflowDirForStorage(found.storage);
     // Resolve the on-disk name from the directory listing (.yaml or .yml).
     const entries = await readdir(dir);
     const file = entries.find(
@@ -474,11 +556,16 @@ function layoutFileName(id: string): string | null {
   return file ? file.replace(/\.yaml$/, ".cave.json") : null;
 }
 
-/** Absolute path for a layout sidecar, constrained to workflowsDir(). */
-function layoutFilePath(id: string): string | null {
+async function storageForWorkflowId(id: string): Promise<WorkflowStorageScope> {
+  const found = await findLocalWorkflow({ id });
+  return found?.storage ?? "personal";
+}
+
+/** Absolute path for a layout sidecar, constrained to its workflow storage dir. */
+async function layoutFilePath(id: string): Promise<string | null> {
   const file = layoutFileName(id);
   if (!file) return null;
-  const root = path.resolve(workflowsDir());
+  const root = path.resolve(workflowDirForStorage(await storageForWorkflowId(id)));
   const target = path.resolve(root, file);
   const rel = path.relative(root, target);
   if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
@@ -487,7 +574,7 @@ function layoutFilePath(id: string): string | null {
 
 /** Saved node positions for a workflow, or null when none exist. */
 export async function loadWorkflowLayout(id: string): Promise<WorkflowLayout | null> {
-  const filePath = layoutFilePath(id);
+  const filePath = await layoutFilePath(id);
   if (!filePath) return null;
   try {
     const text = await readFile(filePath, "utf8");
@@ -510,19 +597,23 @@ export async function saveWorkflowLayout(
   id: string,
   positions: WorkflowLayout,
 ): Promise<{ ok: boolean; error?: string }> {
-  const filePath = layoutFilePath(id);
-  if (!filePath) {
+  const file = layoutFileName(id);
+  if (!file) {
     return { ok: false, error: `Workflow id \`${id}\` is not a safe filename slug.` };
   }
   try {
     await withWorkflowWriteLock(async () => {
-      const dir = workflowsDir();
-      await mkdir(dir, { recursive: true });
+      const storage = await storageForWorkflowId(id);
+      const dir = await ensureWorkflowDir(storage);
+      const filePath = path.join(dir, file);
       await writeFile(
         filePath,
         JSON.stringify({ version: 1, positions }, null, 2),
-        "utf8",
+        { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined },
       );
+      if (storage === "personal") {
+        await chmod(filePath, 0o600);
+      }
     });
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "layout write failed" };

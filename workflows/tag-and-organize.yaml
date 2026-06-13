@@ -15,6 +15,7 @@ permissions:
   - file.read
   - file.write
 visibility:
+  public: true
   coven_cave: true
 steps:
   - id: scan-items

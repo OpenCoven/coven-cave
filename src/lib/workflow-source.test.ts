@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -15,6 +15,15 @@ import {
   workflowFileName,
 } from "./workflow-source.ts";
 import { discoverRoleFiles } from "./role-source.ts";
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // A well-formed manifest validates clean and coerces to a valid summary.
 {
@@ -128,14 +137,18 @@ import { discoverRoleFiles } from "./role-source.ts";
 // Save and delete round-trip against a temp workflows dir.
 await (async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "cave-workflows-"));
+  const covenHome = await mkdtemp(path.join(tmpdir(), "cave-home-"));
   const prev = process.env.COVEN_WORKFLOWS_DIR;
+  const prevCovenHome = process.env.COVEN_HOME;
   process.env.COVEN_WORKFLOWS_DIR = dir;
+  process.env.COVEN_HOME = covenHome;
   try {
     const manifest = {
       id: "saved-flow",
       version: "0.1.0",
       name: "Saved Flow",
       pattern: "sequential",
+      visibility: { public: true, coven_cave: true },
       steps: [
         { id: "plan", kind: "agent" },
         { id: "go", kind: "agent", requires: ["plan"] },
@@ -167,15 +180,6 @@ await (async () => {
     const unsafe = await saveLocalWorkflow({ manifest: { id: "../evil", version: "1.0.0", steps: [{ id: "a", kind: "agent" }] } });
     assert.equal(unsafe.ok, false, "unsafe id is rejected");
 
-    // Delete by id.
-    const deleted = await deleteLocalWorkflow({ id: "saved-flow" });
-    assert.equal(deleted.ok, true, "delete succeeds");
-    const after = await loadLocalWorkflowList();
-    assert.equal(after.workflows.some((w) => w.id === "saved-flow"), false, "deleted workflow is gone");
-
-    const missing = await deleteLocalWorkflow({ id: "never-existed" });
-    assert.equal(missing.ok, false, "deleting an unknown workflow reports an error");
-
     // Layout sidecar: cave-only node positions round-trip beside manifests.
     const layoutSave = await saveWorkflowLayout("saved-flow", {
       plan: { x: 40, y: 80 },
@@ -184,15 +188,107 @@ await (async () => {
     assert.equal(layoutSave.ok, true, "layout sidecar saves");
     const layout = await loadWorkflowLayout("saved-flow");
     assert.deepEqual(layout?.plan, { x: 40, y: 80 }, "layout sidecar round-trips positions");
-    assert.equal(await loadWorkflowLayout("never-existed"), null, "missing sidecar reads as null");
     const unsafeLayout = await saveWorkflowLayout("../evil", { a: { x: 0, y: 0 } });
     assert.equal(unsafeLayout.ok, false, "unsafe layout ids are rejected");
     const sidecar = await readFile(path.join(dir, "saved-flow.cave.json"), "utf8");
     assert.match(sidecar, /"plan"/, "sidecar lives next to the manifest as <id>.cave.json");
+
+    // Delete by id.
+    const deleted = await deleteLocalWorkflow({ id: "saved-flow" });
+    assert.equal(deleted.ok, true, "delete succeeds");
+    const after = await loadLocalWorkflowList();
+    assert.equal(after.workflows.some((w) => w.id === "saved-flow"), false, "deleted workflow is gone");
+
+    const missing = await deleteLocalWorkflow({ id: "never-existed" });
+    assert.equal(missing.ok, false, "deleting an unknown workflow reports an error");
+    assert.equal(await loadWorkflowLayout("never-existed"), null, "missing sidecar reads as null");
   } finally {
     if (prev === undefined) delete process.env.COVEN_WORKFLOWS_DIR;
     else process.env.COVEN_WORKFLOWS_DIR = prev;
+    if (prevCovenHome === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = prevCovenHome;
     await rm(dir, { recursive: true, force: true });
+    await rm(covenHome, { recursive: true, force: true });
+  }
+})();
+
+// Personal saves stay private by default; explicit public workflows land in the repo workflow dir.
+await (async () => {
+  const publicDir = await mkdtemp(path.join(tmpdir(), "cave-public-workflows-"));
+  const covenHome = await mkdtemp(path.join(tmpdir(), "cave-home-"));
+  const prevWorkflowsDir = process.env.COVEN_WORKFLOWS_DIR;
+  const prevCovenHome = process.env.COVEN_HOME;
+  process.env.COVEN_WORKFLOWS_DIR = publicDir;
+  process.env.COVEN_HOME = covenHome;
+  try {
+    const personalManifest = {
+      id: "personal-flow",
+      version: "0.1.0",
+      name: "Personal Flow",
+      steps: [{ id: "plan", kind: "agent" }],
+    };
+    const personal = await saveLocalWorkflow({ manifest: personalManifest });
+    assert.equal(personal.ok, true, `personal save succeeds (${personal.error ?? ""})`);
+    assert.equal(await exists(path.join(publicDir, "personal-flow.yaml")), false, "personal saves do not write to the public workflow dir");
+    assert.equal(
+      await exists(path.join(covenHome, "workflows", "personal", "personal-flow.yaml")),
+      true,
+      "personal saves write under the private Coven home",
+    );
+    assert.equal(
+      (await stat(path.join(covenHome, "workflows", "personal", "personal-flow.yaml"))).mode & 0o777,
+      0o600,
+      "personal saves are owner-only readable",
+    );
+
+    const publicManifest = {
+      id: "public-flow",
+      version: "0.1.0",
+      name: "Public Flow",
+      visibility: { public: true, coven_cave: true },
+      steps: [{ id: "plan", kind: "agent" }],
+    };
+    const publicSave = await saveLocalWorkflow({ manifest: publicManifest });
+    assert.equal(publicSave.ok, true, `public save succeeds (${publicSave.error ?? ""})`);
+    assert.equal(await exists(path.join(publicDir, "public-flow.yaml")), true, "public saves write to the public workflow dir");
+    assert.equal(
+      await exists(path.join(covenHome, "workflows", "personal", "public-flow.yaml")),
+      false,
+      "public saves do not create a personal copy",
+    );
+
+    const list = await loadLocalWorkflowList();
+    assert.ok(list.workflows.some((workflow) => workflow.id === "personal-flow"), "personal workflow is listed");
+    assert.ok(list.workflows.some((workflow) => workflow.id === "public-flow"), "public workflow is listed");
+
+    const movedPublic = await saveLocalWorkflow({
+      manifest: { ...personalManifest, visibility: { public: true, coven_cave: true } },
+    });
+    assert.equal(movedPublic.ok, true, `personal-to-public save succeeds (${movedPublic.error ?? ""})`);
+    assert.equal(await exists(path.join(publicDir, "personal-flow.yaml")), true, "public promotion writes to the public dir");
+    assert.equal(
+      await exists(path.join(covenHome, "workflows", "personal", "personal-flow.yaml")),
+      false,
+      "public promotion removes the stale personal copy",
+    );
+
+    const movedPersonal = await saveLocalWorkflow({
+      manifest: { id: "public-flow", version: "0.1.0", name: "Private Again", steps: [{ id: "plan", kind: "agent" }] },
+    });
+    assert.equal(movedPersonal.ok, true, `public-to-personal save succeeds (${movedPersonal.error ?? ""})`);
+    assert.equal(await exists(path.join(publicDir, "public-flow.yaml")), false, "private demotion removes the stale public copy");
+    assert.equal(
+      await exists(path.join(covenHome, "workflows", "personal", "public-flow.yaml")),
+      true,
+      "private demotion writes to the private Coven home",
+    );
+  } finally {
+    if (prevWorkflowsDir === undefined) delete process.env.COVEN_WORKFLOWS_DIR;
+    else process.env.COVEN_WORKFLOWS_DIR = prevWorkflowsDir;
+    if (prevCovenHome === undefined) delete process.env.COVEN_HOME;
+    else process.env.COVEN_HOME = prevCovenHome;
+    await rm(publicDir, { recursive: true, force: true });
+    await rm(covenHome, { recursive: true, force: true });
   }
 })();
 

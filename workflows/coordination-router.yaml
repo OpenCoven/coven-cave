@@ -15,6 +15,7 @@ permissions:
   - memory.read
   - file.read
 visibility:
+  public: true
   coven_cave: true
 steps:
   - id: classify-task

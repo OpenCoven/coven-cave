@@ -16,6 +16,7 @@ permissions:
   - file.read
   - memory.read
 visibility:
+  public: true
   coven_cave: true
 steps:
   - id: scope-question
