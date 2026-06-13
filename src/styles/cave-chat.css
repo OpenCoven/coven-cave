@@ -471,26 +471,35 @@
   right: 0.45em;
 }
 
-/* When grouped inside .cave-bubble-actions, drop the absolute positioning so
- * the buttons can sit side-by-side in flex layout. The wrapper handles
- * placement. */
+/* Per-message action row — sits in normal flow BELOW the message rather than
+ * floating over its top-right corner, so it never obscures the prose. The
+ * assistant row reads left-aligned; the user row right-aligns via the bubble's
+ * items-end column. Hidden until the turn is hovered/focused, and it reserves
+ * its own height so revealing it never reflows the transcript. */
 .cave-bubble-actions {
-  position: absolute;
-  top: 0.35em;
-  right: 0.45em;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  margin-top: 5px;
+  opacity: 0;
+  transition: opacity var(--duration-fast, 120ms) var(--ease-standard, ease);
 }
+.group:hover .cave-bubble-actions,
+.group:focus-within .cave-bubble-actions {
+  opacity: 1;
+}
+/* The row owns the reveal; its buttons stay in flow and fully opaque. */
 .cave-bubble-actions .cave-copy-btn-bubble {
   position: static;
   top: auto;
   right: auto;
+  opacity: 1;
 }
 
 /* Touch devices have no hover (CHAT-D6-04) — keep per-message actions
  * always visible on coarse pointers. */
 @media (pointer: coarse) {
+  .cave-bubble-actions,
   .cave-copy-btn-bubble {
     opacity: 1;
   }
@@ -1704,16 +1713,14 @@ details[open] > .cave-tool-summary::before {
   flex-direction: column;
   padding: 14px 0 12px;
   border-bottom: 1px solid color-mix(in oklch, var(--foreground) 5%, transparent);
-  transition: background 0.1s;
 }
 
 .cave-linear-turn:last-child {
   border-bottom: 0;
 }
 
-.cave-linear-turn:hover {
-  background: color-mix(in oklch, var(--foreground) 1.5%, transparent);
-}
+/* No hover tint on chat turns — hovering a message must not shift its
+   background; the per-message action row is the only hover affordance. */
 
 /* User turn — right-aligned bubble */
 .cave-linear-turn--user {

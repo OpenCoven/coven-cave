@@ -822,12 +822,16 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <div className="relative cave-bubble-user">
+        <div className="cave-bubble-user">
           <MarkdownContent text={content} pending={pending} />
-          {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the
-              buttons are reachable by keyboard (Tab), screen readers, and touch. */}
+        </div>
+        {/* Action row sits BELOW the bubble (right-aligned via the items-end
+            column) so it never overlays the message. Always in the DOM
+            (CHAT-D6-04) — visibility is CSS-gated so the buttons are reachable
+            by keyboard (Tab), screen readers, and touch. */}
+        {!pending ? (
           <div className="cave-bubble-actions">
-            {!pending && onEdit ? (
+            {onEdit ? (
               <button
                 type="button"
                 aria-label="Edit message"
@@ -838,9 +842,9 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
                 <Icon name="ph:pencil-simple" width={11} aria-hidden />
               </button>
             ) : null}
-            {!pending && <CopyBubble text={content} />}
+            <CopyBubble text={content} />
           </div>
-        </div>
+        ) : null}
         <div className={`cave-bubble-timestamp cave-bubble-timestamp--right${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>
           {fmtBubbleTime(timestamp)}
         </div>
