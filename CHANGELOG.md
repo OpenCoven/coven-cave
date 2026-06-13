@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.79] - 2026-06-13
+
+This patch release follows v0.0.78 with mobile shell hardening: native browser IPC now stays desktop-only, and the mobile chat command center gets tighter composer geometry.
+
+### Fixed
+- **Mobile browser fallback** — BrowserPane and embedded Library link previews now call native `browser_*` IPC only on Tauri desktop, so mobile/iOS shells fall back cleanly instead of touching desktop-only commands.
+- **Mobile chat composer geometry** — the mobile composer controls now expose a dedicated overlay hook and tighter spacing so the command center stays usable on phone viewports.
+- **Mobile tab spacing** — shell detail panes no longer double-reserve bottom-tab height after the tabs moved into normal shell flow.
+
+### Tests
+- Added mobile coverage for the native-browser fallback path and the chat command-center composer overlay.
+
 ## [0.0.78] - 2026-06-13
 
 This patch release carries the latest tailnet/mobile dev auth hardening after v0.0.77, including Tailscale Serve host support and native iOS webview sidecar authentication.
