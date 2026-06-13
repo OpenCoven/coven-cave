@@ -501,9 +501,10 @@ export async function saveLocalWorkflow(body: {
   try {
     await withWorkflowWriteLock(async () => {
       const dir = await ensureWorkflowDir(storage);
-      const resolvedDir = path.resolve(dir);
-      const filePath = path.resolve(resolvedDir, file);
-      if (!filePath.startsWith(`${resolvedDir}${path.sep}`)) {
+      const root = path.resolve(dir);
+      const filePath = path.resolve(root, file);
+      const rel = path.relative(root, filePath);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) {
         throw new Error("resolved workflow path escapes workflow directory");
       }
       await writeFile(filePath, text, { encoding: "utf8", mode: storage === "personal" ? 0o600 : undefined });
