@@ -25,6 +25,16 @@ const validationLabels: Record<NonNullable<WorkflowSummary["validation_state"]>,
   unknown: "Unknown",
 };
 
+/**
+ * A workflow is "personal" when its manifest lives under the user's private
+ * Coven home (`storage: "personal"`, i.e. `~/.coven/workflows`). Everything
+ * else — repo templates and role-declared placeholders — reads as a shared
+ * public template. The library groups by this so the two never blur together.
+ */
+function isPersonal(workflow: WorkflowSummary): boolean {
+  return workflow.storage === "personal";
+}
+
 function matchesQuery(workflow: WorkflowSummary, query: string): boolean {
   const haystack = [
     workflow.id,
@@ -60,6 +70,49 @@ export function WorkflowLibrary({
     if (!trimmed) return workflows;
     return workflows.filter((workflow) => matchesQuery(workflow, trimmed));
   }, [query, workflows]);
+
+  const groups = useMemo(() => {
+    const personal: WorkflowSummary[] = [];
+    const templates: WorkflowSummary[] = [];
+    for (const workflow of visible) {
+      (isPersonal(workflow) ? personal : templates).push(workflow);
+    }
+    return { personal, templates };
+  }, [visible]);
+
+  const renderItem = (workflow: WorkflowSummary) => {
+    const active = selectedWorkflow?.id === workflow.id;
+    const validationState = workflow.validation_state ?? "unknown";
+    const personal = isPersonal(workflow);
+    return (
+      <button
+        key={`${workflow.id}:${workflow.path ?? ""}`}
+        type="button"
+        className={`workflow-library-item${active ? " is-active" : ""}`}
+        onClick={() => onSelectWorkflow(workflow)}
+      >
+        <span className="workflow-library-item-title">
+          <span className="workflow-library-item-name">{workflow.name ?? workflow.id}</span>
+          {active && dirty && <span className="workflow-dirty-dot" title="Unsaved changes" />}
+          <span
+            className={`workflow-origin-dot workflow-origin-dot-${personal ? "personal" : "public"}`}
+            title={
+              personal
+                ? "Personal — private to you (~/.coven/workflows)"
+                : "Template — shared in the repo (workflows/)"
+            }
+            aria-label={personal ? "Personal workflow" : "Public template"}
+          />
+        </span>
+        <span className="workflow-library-item-meta">
+          <span className={`workflow-health workflow-health-${validationState}`} />
+          {validationLabels[validationState]} · v{workflow.version}
+          {workflow.pattern ? ` · ${workflow.pattern}` : ""}
+        </span>
+        {workflow.summary && <span className="workflow-library-item-summary">{workflow.summary}</span>}
+      </button>
+    );
+  };
 
   return (
     <aside className="workflow-library" aria-label="Workflow library">
@@ -119,29 +172,26 @@ export function WorkflowLibrary({
           {visible.length === 0 && (
             <div className="workflow-library-state">No workflows match “{query.trim()}”.</div>
           )}
-          {visible.map((workflow) => {
-            const active = selectedWorkflow?.id === workflow.id;
-            const validationState = workflow.validation_state ?? "unknown";
-            return (
-              <button
-                key={`${workflow.id}:${workflow.path ?? ""}`}
-                type="button"
-                className={`workflow-library-item${active ? " is-active" : ""}`}
-                onClick={() => onSelectWorkflow(workflow)}
-              >
-                <span className="workflow-library-item-title">
-                  {workflow.name ?? workflow.id}
-                  {active && dirty && <span className="workflow-dirty-dot" title="Unsaved changes" />}
-                </span>
-                <span className="workflow-library-item-meta">
-                  <span className={`workflow-health workflow-health-${validationState}`} />
-                  {validationLabels[validationState]} · v{workflow.version}
-                  {workflow.pattern ? ` · ${workflow.pattern}` : ""}
-                </span>
-                {workflow.summary && <span className="workflow-library-item-summary">{workflow.summary}</span>}
-              </button>
-            );
-          })}
+          {groups.personal.length > 0 && (
+            <section className="workflow-library-group" aria-label="Personal workflows">
+              <p className="workflow-library-group-heading">
+                <span className="workflow-origin-dot workflow-origin-dot-personal" aria-hidden />
+                Personal
+                <span className="workflow-library-group-count">{groups.personal.length}</span>
+              </p>
+              {groups.personal.map(renderItem)}
+            </section>
+          )}
+          {groups.templates.length > 0 && (
+            <section className="workflow-library-group" aria-label="Public templates">
+              <p className="workflow-library-group-heading">
+                <span className="workflow-origin-dot workflow-origin-dot-public" aria-hidden />
+                Templates
+                <span className="workflow-library-group-count">{groups.templates.length}</span>
+              </p>
+              {groups.templates.map(renderItem)}
+            </section>
+          )}
         </div>
       )}
 

@@ -205,7 +205,39 @@
 .workflow-library-list {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+}
+
+.workflow-library-group {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.workflow-library-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.workflow-library-group-count {
+  margin-left: auto;
+  min-width: 16px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-align: center;
 }
 
 .workflow-library-item {
@@ -220,15 +252,43 @@
   text-align: left;
 }
 
+.workflow-library-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Origin marker: a diamond for personal (private to ~/.coven), a dot for shared
+   repo templates. Mirrors the section badges so a row reads on its own too. */
+.workflow-origin-dot {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.workflow-origin-dot-public {
+  background: var(--muted-foreground);
+}
+
+.workflow-origin-dot-personal {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--foreground) 72%, var(--primary, #6d5ae0));
+  transform: rotate(45deg);
+}
+
 .workflow-library-item.is-active {
   border-color: color-mix(in srgb, var(--foreground) 36%, var(--border));
   background: var(--muted);
 }
 
 .workflow-library-item-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 650;
 }

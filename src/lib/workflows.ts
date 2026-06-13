@@ -39,9 +39,18 @@ export type WorkflowSummary = {
   path?: string;
   validation_state?: "valid" | "warning" | "invalid" | "unknown";
   visibility?: {
+    public?: boolean;
+    personal?: boolean;
     coven_code?: boolean;
     coven_cave?: boolean;
   };
+  /**
+   * Where the manifest lives, derived from its on-disk location — not stored in
+   * the YAML. `public` manifests are repo templates under `workflows/`;
+   * `personal` manifests are private to the user under `~/.coven/workflows/`.
+   * The Workflow Studio groups the library by this so the two never blur.
+   */
+  storage?: "public" | "personal";
 };
 
 export type WorkflowValidationTier = "schema" | "semantic" | "preflight";
