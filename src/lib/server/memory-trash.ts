@@ -32,8 +32,16 @@ function trashRoot(home: string): string {
 
 export async function archiveMemoryFile(fullPath: string, home = homedir()): Promise<TrashResult> {
   const resolved = path.resolve(fullPath);
-  if (!classifyMemoryFilePath(resolved, home)) return { ok: false, error: "path not allowed" };
+  const cls = classifyMemoryFilePath(resolved, home);
+  if (!cls) return { ok: false, error: "path not allowed" };
   if (isStructuralMemoryPath(resolved)) return { ok: false, error: "protected: structural memory" };
+  // Explicit containment barrier: the resolved path must stay within its
+  // classified memory root. Redundant with classify's internal isWithinRoot
+  // check, but makes the path-traversal guard legible to static analysis.
+  const safeRoot = path.resolve(cls.rootPath);
+  if (resolved !== safeRoot && !resolved.startsWith(safeRoot + path.sep)) {
+    return { ok: false, error: "path not allowed" };
+  }
   const dir = trashRoot(home);
   const trashId = `${Date.now()}-${path.basename(resolved)}`;
   try {
@@ -65,17 +73,20 @@ export async function listMemoryTrash(home = homedir()): Promise<TrashItem[]> {
 export async function restoreMemoryFile(trashId: string, home = homedir()): Promise<TrashResult> {
   if (!isSafeTrashId(trashId)) return { ok: false, error: "invalid trashId" };
   const dir = trashRoot(home);
+  // basename() strips any directory component — a no-op given isSafeTrashId,
+  // but a sanitizer static analysis recognizes for the path joins below.
+  const safeId = path.basename(trashId);
   let meta: Sidecar;
   try {
-    meta = JSON.parse(await readFile(path.join(dir, `${trashId}.json`), "utf8")) as Sidecar;
+    meta = JSON.parse(await readFile(path.join(dir, `${safeId}.json`), "utf8")) as Sidecar;
   } catch { return { ok: false, error: "not found" }; }
   if (!classifyMemoryFilePath(meta.originalPath, home)) return { ok: false, error: "restore target not allowed" };
   const occupied = await access(meta.originalPath).then(() => true).catch(() => false);
   if (occupied) return { ok: false, error: "target already exists" };
   try {
     await mkdir(path.dirname(meta.originalPath), { recursive: true });
-    await rename(path.join(dir, trashId), meta.originalPath);
-    await rm(path.join(dir, `${trashId}.json`), { force: true });
+    await rename(path.join(dir, safeId), meta.originalPath);
+    await rm(path.join(dir, `${safeId}.json`), { force: true });
     return { ok: true, trashId };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "restore failed" };
@@ -90,8 +101,9 @@ export async function purgeMemoryTrash(trashId: string | undefined, home = homed
     : (await listMemoryTrash(home)).map((t) => t.trashId).filter(isSafeTrashId);
   try {
     for (const id of ids) {
-      await rm(path.join(dir, id), { force: true });
-      await rm(path.join(dir, `${id}.json`), { force: true });
+      const safeId = path.basename(id);
+      await rm(path.join(dir, safeId), { force: true });
+      await rm(path.join(dir, `${safeId}.json`), { force: true });
     }
     return { ok: true, trashId: trashId ?? "all" };
   } catch (err) {
