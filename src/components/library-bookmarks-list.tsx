@@ -182,8 +182,8 @@ type Props = {
 
 const COLS: { key: SortKey; label: string; width?: string }[] = [
   { key: "title",   label: "Title" },
-  { key: "domain",  label: "Domain",  width: "140px" },
-  { key: "savedAt", label: "Saved",   width: "80px" },
+  { key: "domain",  label: "Domain",  width: "150px" },
+  { key: "savedAt", label: "Saved",   width: "64px" },
 ];
 
 export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBoard }: Props) {
@@ -349,8 +349,8 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                     </span>
                   </th>
                 ))}
-                <th style={{ width: "160px" }}>Tags</th>
-                <th style={{ width: "64px" }} />
+                <th style={{ width: "128px" }}>Tags</th>
+                <th style={{ width: "56px" }} />
               </tr>
             </thead>
             <tbody>
