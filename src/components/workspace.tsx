@@ -125,6 +125,8 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
+  // Pending Workflow Studio deep link (set when opening a workflow from Roles).
+  const [workflowDeepLink, setWorkflowDeepLink] = useState<string | null>(null);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
@@ -1284,11 +1286,15 @@ export function Workspace() {
         initialTab="roles"
         familiars={resolvedFamiliars}
         onOpenChat={() => setMode("chat")}
+        onOpenWorkflow={(id) => { setWorkflowDeepLink(id); setMode("workflows"); }}
         onCreateSkill={() => setMode("capabilities")}
         onCreatePlugin={() => setMode("capabilities")}
       />
     ) : mode === "workflows" ? (
-      <WorkflowsView />
+      <WorkflowsView
+        initialWorkflowId={workflowDeepLink}
+        onDeepLinkConsumed={() => setWorkflowDeepLink(null)}
+      />
     ) : mode === "projects" ? (
       <ProjectsView
         sessions={sessions}

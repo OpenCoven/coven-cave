@@ -14,6 +14,8 @@ import {
   type SkillEntry as SkillEntryWithDetail,
   type FamiliarForSkill,
 } from "@/components/skill-detail-drawer";
+import { listWorkflows, saveWorkflow, type WorkflowSummary } from "@/lib/workflows";
+import { createWorkflowFromTemplate, workflowToManifest } from "@/lib/workflow-edit";
 
 type Tab = "roles" | "plugins" | "skills" | "workflows";
 
@@ -50,6 +52,8 @@ type WorkflowEntry = {
   id: string;
   /** Roles that declare this workflow */
   declaredBy: string[];
+  /** Resolved playground manifest, when one exists for this id */
+  manifest: WorkflowSummary | null;
 };
 
 type RoleEntry = {
@@ -70,6 +74,8 @@ type RoleEntry = {
 
 type Props = {
   onOpenChat: () => void;
+  /** Deep-link a workflow id into the Workflow Studio (playground). */
+  onOpenWorkflow?: (id: string) => void;
   onCreateSkill?: () => void;
   onCreatePlugin?: () => void;
   familiars?: FamiliarForSkill[];
@@ -107,6 +113,7 @@ const SECTION_LABEL: Record<Tab, string> = {
 
 export function PluginsView({
   onOpenChat,
+  onOpenWorkflow,
   onCreateSkill,
   onCreatePlugin,
   familiars = [],
@@ -132,6 +139,61 @@ export function PluginsView({
   const [roles, setRoles] = useState<RoleEntry[]>([]);
   const [rolesLoaded, setRolesLoaded] = useState(false);
   const [rolesError, setRolesError] = useState<string | null>(null);
+  // Real playground manifests — role-declared workflow ids resolve against
+  // these so the Roles page reflects the same truth as the Workflow Studio.
+  const [workflowManifests, setWorkflowManifests] = useState<Map<string, WorkflowSummary>>(new Map());
+  const [workflowBusy, setWorkflowBusy] = useState<string | null>(null);
+  const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
+
+  const loadWorkflowManifests = async () => {
+    try {
+      const result = await listWorkflows();
+      if (result.ok) {
+        setWorkflowManifests(new Map(result.workflows.map((wf) => [wf.id, wf])));
+      }
+    } catch {
+      // playground offline — declarations still render, just unresolved
+    }
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: manifests load once on mount
+  useEffect(() => {
+    void loadWorkflowManifests();
+  }, []);
+
+  // Scaffold a workflow manifest from a role-declared id that has none yet,
+  // then deep-link the new manifest into the Workflow Studio.
+  const handleCreateWorkflow = async (entry: WorkflowEntry) => {
+    setWorkflowBusy(entry.id);
+    setWorkflowNotice(null);
+    try {
+      const owningRole = roles.find(
+        (role) => entry.declaredBy.includes(role.name) || entry.declaredBy.includes(role.id),
+      );
+      const workflow = createWorkflowFromTemplate({
+        id: entry.id,
+        name: entry.id
+          .split(/[-_]/)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(" "),
+        pattern: "sequential",
+        familiar: owningRole?.familiar,
+      });
+      workflow.summary = owningRole
+        ? `Scaffolded from the ${owningRole.name} role declaration.`
+        : "Scaffolded from a role declaration.";
+      workflow.tags = entry.declaredBy.length > 0 ? entry.declaredBy.map((name) => `role:${name}`) : undefined;
+      const result = await saveWorkflow(workflowToManifest(workflow));
+      if (!result.ok) {
+        setWorkflowNotice(result.error ?? `Could not create ${entry.id}`);
+        return;
+      }
+      await loadWorkflowManifests();
+      onOpenWorkflow?.(entry.id);
+    } finally {
+      setWorkflowBusy(null);
+    }
+  };
 
   const handleRoleToggle = async (role: RoleEntry) => {
     const next = !role.active;
@@ -378,7 +440,8 @@ export function PluginsView({
     );
   }, [roles, query]);
 
-  // Aggregate unique workflow ids from all loaded roles
+  // Union of role-declared workflow ids and playground manifests, resolved
+  // against each other — the standardized view the studio also presents.
   const workflows = useMemo<WorkflowEntry[]>(() => {
     if (!rolesLoaded) return [];
     const map = new Map<string, string[]>();
@@ -389,8 +452,16 @@ export function PluginsView({
         map.set(wfId, existing);
       }
     }
-    return [...map.entries()].map(([id, declaredBy]) => ({ id, declaredBy }));
-  }, [roles, rolesLoaded]);
+    const declared = [...map.entries()].map(([id, declaredBy]) => ({
+      id,
+      declaredBy,
+      manifest: workflowManifests.get(id) ?? null,
+    }));
+    const playgroundOnly = [...workflowManifests.values()]
+      .filter((wf) => !map.has(wf.id))
+      .map((wf) => ({ id: wf.id, declaredBy: [] as string[], manifest: wf }));
+    return [...declared, ...playgroundOnly];
+  }, [roles, rolesLoaded, workflowManifests]);
 
   const skillsById = useMemo(() => {
     const map = new Map<string, SkillEntry>();
@@ -570,6 +641,11 @@ export function PluginsView({
                 loaded={rolesLoaded}
                 error={rolesError}
                 onOpenRole={(role) => { setSelectedRole(role); setTab("roles"); }}
+                onOpenWorkflow={onOpenWorkflow}
+                onCreateWorkflow={handleCreateWorkflow}
+                busyId={workflowBusy}
+                notice={workflowNotice}
+                onDismissNotice={() => setWorkflowNotice(null)}
               />
             ) : tab === "roles" ? (
               <RoleGrid
@@ -1337,12 +1413,22 @@ function WorkflowGrid({
   loaded,
   error,
   onOpenRole,
+  onOpenWorkflow,
+  onCreateWorkflow,
+  busyId,
+  notice,
+  onDismissNotice,
 }: {
   items: WorkflowEntry[];
   roles: RoleEntry[];
   loaded: boolean;
   error: string | null;
   onOpenRole: (role: RoleEntry) => void;
+  onOpenWorkflow?: (id: string) => void;
+  onCreateWorkflow: (entry: WorkflowEntry) => void;
+  busyId: string | null;
+  notice: string | null;
+  onDismissNotice: () => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -1357,15 +1443,35 @@ function WorkflowGrid({
   if (items.length === 0) {
     return (
       <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
-        No workflows declared in any role yet.
+        No workflows yet — none declared by a role or saved in the Workflow Studio.
       </p>
     );
   }
   return (
     <div className="flex flex-col gap-1">
+      {notice ? (
+        <div className="mb-1 flex items-center justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--accent-danger,#e5484d)_45%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--accent-danger,#e5484d)_8%,var(--bg-panel))] px-3 py-2 text-[12px] text-[var(--text-primary)]">
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={onDismissNotice}
+            className="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+            aria-label="Dismiss"
+          >
+            <Icon name="ph:x-bold" width={11} />
+          </button>
+        </div>
+      ) : null}
       {items.map((wf) => {
         const isOpen = expandedId === wf.id;
         const matchingRoles = roles.filter((r) => wf.declaredBy.includes(r.name) || wf.declaredBy.includes(r.id));
+        const busy = busyId === wf.id;
+        const subtitle =
+          wf.declaredBy.length === 0
+            ? "In the Workflow Studio · not declared by a role"
+            : wf.declaredBy.length === 1
+              ? `Declared by ${wf.declaredBy[0]}`
+              : `Declared by ${wf.declaredBy.slice(0, -1).join(", ")} and ${wf.declaredBy[wf.declaredBy.length - 1]}`;
         return (
           <div
             key={wf.id}
@@ -1373,37 +1479,69 @@ function WorkflowGrid({
               isOpen ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,var(--border-hairline))]" : "border-border hover:bg-[var(--bg-elevated)]"
             }`}
           >
-            <button
-              type="button"
-              onClick={() => setExpandedId(isOpen ? null : wf.id)}
-              aria-expanded={isOpen}
-              className="flex w-full items-start gap-3 px-4 py-3 text-left"
-            >
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-                <Icon name="ph:git-branch-bold" width={16} className="text-[var(--text-muted)]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[13px] font-medium text-[var(--text-primary)]">{wf.id}</span>
-                  <span className="rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
-                    workflow
-                  </span>
+            <div className="flex items-stretch">
+              <button
+                type="button"
+                onClick={() => setExpandedId(isOpen ? null : wf.id)}
+                aria-expanded={isOpen}
+                className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left"
+              >
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
+                  <Icon name="ph:git-branch-bold" width={16} className="text-[var(--text-muted)]" />
                 </div>
-                <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                  {wf.declaredBy.length === 1
-                    ? `Declared by ${wf.declaredBy[0]}`
-                    : `Declared by ${wf.declaredBy.slice(0, -1).join(", ")} and ${wf.declaredBy[wf.declaredBy.length - 1]}`}
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[13px] font-medium text-[var(--text-primary)]">{wf.id}</span>
+                    <span className="rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]">
+                      workflow
+                    </span>
+                    {wf.manifest ? (
+                      <span className="rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_45%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]">
+                        in studio
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{subtitle}</p>
+                </div>
+              </button>
+              <div className="flex shrink-0 items-center gap-2 px-3">
+                {wf.manifest ? (
+                  onOpenWorkflow ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenWorkflow(wf.id)}
+                      className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                    >
+                      <Icon name="ph:arrow-square-out" width={11} />
+                      Open
+                    </button>
+                  ) : null
+                ) : wf.declaredBy.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => onCreateWorkflow(wf)}
+                    disabled={busy}
+                    className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Icon name={busy ? "ph:circle-notch-bold" : "ph:plus-bold"} width={11} className={busy ? "animate-spin" : undefined} />
+                    {busy ? "Creating…" : "Create"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isOpen ? null : wf.id)}
+                  aria-expanded={isOpen}
+                  aria-label={isOpen ? "Collapse details" : "Expand details"}
+                  className="flex items-center text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                >
+                  <Icon
+                    name="ph:caret-down-bold"
+                    width={10}
+                    className={`transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
               </div>
-              <div className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--text-muted)]">
-                <span>{wf.declaredBy.length} role{wf.declaredBy.length !== 1 ? "s" : ""}</span>
-                <Icon
-                  name="ph:caret-down-bold"
-                  width={10}
-                  className={`transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
-                />
-              </div>
-            </button>
+            </div>
 
             {isOpen ? (
               <div className="border-t border-[var(--border-hairline)] px-4 py-3">
