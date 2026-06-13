@@ -27,4 +27,16 @@ assert.match(
   "mount effect applies both saved fonts",
 );
 
+// Text size control (reframed Screen magnification) lives in Typography.
+assert.match(src, /Text size/, "renders a Text size control");
+assert.match(src, /SCREEN_SCALE_OPTIONS/, "uses the shared scale ladder");
+assert.match(src, /applyScreenScale/, "applies the scale via the shared helper");
+assert.match(src, /aria-pressed=\{scale === option\}/, "scale buttons expose selected state");
+// Reset restores text size to the default too, not just the fonts.
+assert.match(
+  src,
+  /const reset = \(\) => \{[\s\S]*?DEFAULT_SCREEN_SCALE[\s\S]*?\}/,
+  "reset restores the default text size",
+);
+
 console.log("settings-fonts.test.ts OK");
