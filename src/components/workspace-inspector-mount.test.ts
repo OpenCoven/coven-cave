@@ -6,7 +6,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 
 assert.match(
   workspace,
-  /import \{ ChatSurface \} from "@\/components\/chat-surface";/,
+  /import \{ ChatSurface(?:, [^}]+)? \} from "@\/components\/chat-surface";/,
   "Workspace should import ChatSurface so agent sessions and the inspector are integrated",
 );
 

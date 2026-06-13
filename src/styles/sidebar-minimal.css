@@ -753,7 +753,7 @@
 
 .sidebar-folder-kbd {
   margin-left: auto;
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10px;
   color: var(--text-secondary);
   opacity: 0.85;

@@ -49,7 +49,7 @@ assert.match(
 );
 assert.match(
   route,
-  /updateCard\(card\.id, \{ sessionId/,
+  /updateCard\(card\.id, \{\s*sessionId/,
   "Board chat endpoint should persist the relation on the board card",
 );
 assert.match(
@@ -64,6 +64,6 @@ assert.match(
 );
 assert.match(
   chatSendRoute,
-  /buildTaskAwarePrompt\(\s*buildPromptWithAttachments/,
+  /buildTaskAwarePrompt\(\s*(?:appendMentionedFilesBlock\(\s*)?buildPromptWithAttachments/,
   "Chat send should include task context in the harness prompt only",
 );

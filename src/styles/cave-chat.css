@@ -1366,7 +1366,7 @@ details[open] > .cave-tool-summary::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10.5px;
 }
 
@@ -1547,7 +1547,7 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-find__count {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -2294,4 +2294,24 @@ details[open] > .cave-tool-summary::before {
   font-size: 0.8125rem;
   color: var(--text-secondary, #999);
   margin-bottom: 0.25rem;
+}
+
+/* ── Codex-style chat thread rail (chat-project-sidebar) ─────────────────────
+   Drag-to-reorder visual state for the flat all-chats list. The row markup is
+   Tailwind-driven; only the lifted/translucent drag affordance lives here so
+   it reads consistently with the familiar-avatar-rail dnd. */
+.chat-thread-row[data-dragging="true"] {
+  z-index: 2;
+  opacity: 0.9;
+}
+.chat-thread-row[data-dragging="true"] > div {
+  background: var(--bg-raised);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px color-mix(in oklch, var(--shadow-color, #000) 30%, transparent);
+}
+.chat-thread-handle {
+  cursor: grab;
+}
+.chat-thread-row[data-dragging="true"] .chat-thread-handle {
+  cursor: grabbing;
 }

@@ -28,17 +28,10 @@ assert.match(
   "ChatList dossier header should keep the familiar role and runtime subtitle together",
 );
 
-assert.match(
-  source,
-  /const runningCount = mine\.filter\(\(s\) => s\.status === "running"\)\.length/,
-  "ChatList should summarize running chats in the side-panel header",
-);
-
-assert.match(
-  source,
-  /const projectCount = new Set\(mine\.map\(\(s\) => s\.project_root\)\.filter\(Boolean\)\)\.size/,
-  "ChatList should summarize active project coverage",
-);
+// NOTE: the running/project-count "Stats" summary that used to live in the
+// dossier header was deliberately removed for side-panel optimization
+// (chat-list.tsx: "Stats removed for sidepanel optimization"). The former
+// `runningCount`/`projectCount` assertions were dropped here to match.
 
 assert.match(
   source,
@@ -60,7 +53,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{!familiar && \(\s*<div className="px-4 pb-0 pt-4">/,
+  /\{!familiar && \(\s*<div className="px-4 pb-0 pt-2">/,
   "Dossier identity row (avatar + name + role) renders only in all-familiars mode — the sidebar already names the selected familiar",
 );
 

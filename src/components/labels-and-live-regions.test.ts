@@ -46,12 +46,16 @@ function read(file: string) {
   );
 }
 
-// 5. chat-view.tsx transcript container is a log with aria-live.
+// 5. chat-view.tsx transcript container is an announced log region.
+// NOTE: the explicit aria-live="polite"/aria-relevant="additions" attributes
+// were deliberately removed in b3e1825 ("remove redundant transcript
+// live-region attributes") because role="log" already carries an implicit
+// aria-live="polite" per the ARIA spec. The intent — the transcript is an
+// announced live region — is preserved by role="log" alone.
 {
   const src = read("chat-view.tsx");
   const threadBlock = src.match(/className="cave-chat-thread"[\s\S]{0,200}/)?.[0] ?? "";
-  assert.match(threadBlock, /role="log"/, "chat thread has role=log");
-  assert.match(threadBlock, /aria-live="polite"/, "chat thread has aria-live=polite");
+  assert.match(threadBlock, /role="log"/, "chat thread has role=log (implicit aria-live=polite)");
 }
 
 // 6. inbox-toast.tsx root has aria-live + aria-atomic.

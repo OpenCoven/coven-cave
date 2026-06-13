@@ -30,6 +30,11 @@ jobs:
 
       - run: pnpm typecheck
 
+      # Guard: every *.test.ts/.mjs on disk must be wired into a CI test
+      # script (test:app/api/mobile) — authored tests can't silently never
+      # run. See scripts/check-tests-wired.mjs for the allowlist.
+      - run: pnpm check:tests-wired
+
       - run: pnpm test:app
 
       - run: pnpm test:api

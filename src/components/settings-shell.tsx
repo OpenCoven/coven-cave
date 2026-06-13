@@ -18,6 +18,7 @@ import {
   type ScreenScale,
 } from "@/lib/screen-magnification";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
+import { FontSettings } from "./settings-fonts";
 import {
   DEMO_MODE_EVENT,
   clearDemoModeData,
@@ -935,6 +936,8 @@ function AppearanceSection() {
           )}
         </div>
       </SettingsGroup>
+
+      <FontSettings />
     </SettingsPage>
   );
 }

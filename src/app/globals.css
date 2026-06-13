@@ -359,7 +359,7 @@ html {
 
 body {
   font-family:
-    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    var(--font-sans), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   line-height: var(--leading-normal);
@@ -725,7 +725,7 @@ select {
 
 .shell-nav-kbd,
 .shell-kbd {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 10px;
   color: var(--muted-foreground);
   background: oklch(1 0 0 / 4%);
@@ -799,7 +799,7 @@ select {
 }
 
 .shell-chip-mono {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   background: oklch(1 0 0 / 4%);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
@@ -1827,7 +1827,7 @@ select {
   color: var(--text-muted);
 }
 .ui-search-input-hint code {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   background: var(--bg-raised);
   padding: 1px 5px;
   border-radius: 4px;
@@ -2222,6 +2222,29 @@ select {
   opacity: 1;
 }
 
+/* ---- Projects viewer: file preview + project list ----------- */
+/* The preview pane is its own scroll container, so the in-block "Show more"
+   clamp (built for inline chat code) only strands space here. Lift the cap
+   and hide the expander — the file fills the pane and scrolls naturally. */
+.comux-file-preview .cave-code-wrap {
+  max-height: none;
+  margin: 0;
+}
+.comux-file-preview .cave-code-expand {
+  display: none;
+}
+/* Rendered-markdown previews read as docs, not chat bubbles. */
+.comux-md {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+/* Project list rows — softer selected state than a full accent fill. */
+.comux-project-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+
 /* ---- ThinkingIndicator ------------------------------------- */
 .ui-thinking {
   display: inline-flex;
@@ -2252,7 +2275,7 @@ select {
   .ui-thinking-dot { animation: none; opacity: 0.8; }
 }
 .ui-thinking-timer {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: var(--text-2xs);
   color: var(--text-muted);
 }
@@ -3710,7 +3733,7 @@ button:active > .edge-rail-chip {
 
 .top-bar__search kbd {
   margin-left: auto;
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1;
   color: var(--text-muted);
@@ -3851,7 +3874,7 @@ button:active > .edge-rail-chip {
   border-radius: var(--radius-control);
   background: var(--bg-base);
   color: var(--text-primary);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
@@ -3938,7 +3961,7 @@ button:active > .edge-rail-chip {
 
 .settings-familiars-panel__dl dd {
   color: var(--text-primary);
-  font-family: var(--font-geist-mono);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
 
