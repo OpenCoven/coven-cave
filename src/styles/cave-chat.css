@@ -1386,6 +1386,20 @@ details[open] > .cave-tool-summary::before {
   font-variant-numeric: tabular-nums;
 }
 
+/* The runtime renders as a working directory: a folder glyph + the cwd
+   (home-relative, left-truncated in JS so the repo name survives). The glyph
+   sits flush with its baseline so the segment reads as one token. */
+.cave-chat-meta-line__dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: bottom;
+}
+.cave-chat-meta-line__dir svg {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
 .cave-chat-meta-line__dot {
   width: 6px;
   height: 6px;

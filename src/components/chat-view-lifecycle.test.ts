@@ -318,7 +318,7 @@ assert.match(
 // "… · 7s · 12.4k tok · $0.08" — and stays silent when there is no usage.
 assert.match(
   source,
-  /const dur = fmtDuration\(args\.durationMs\);\s*\n\s*if \(dur\) parts\.push\(dur\);[\s\S]{0,300}?const usage = usageSummary\(args\.usage, args\.costUsd\);\s*\n\s*if \(usage\) parts\.push\(usage\);/,
+  /const dur = fmtDuration\(args\.durationMs\);\s*\n\s*if \(dur\) segs\.push\(dur\);[\s\S]{0,300}?const usage = usageSummary\(args\.usage, args\.costUsd\);\s*\n\s*if \(usage\) segs\.push\(usage\);/,
   "MetaLine's complete state appends the usage summary after the duration in the same dot-separated format (CHAT-D12-02)",
 );
 
@@ -390,15 +390,15 @@ assert.match(
   /\{state === "streaming" && pendingSince \? <MetaLineElapsed since=\{pendingSince\} \/> : null\}\s*\n\s*\{state === "streaming" \? " · esc to cancel" : null\}/,
   "Streaming meta line renders elapsed between the phase wording and the esc hint (CHAT-D3-06)",
 );
-// The esc hint moved out of metaLineString into MetaLine's JSX so the ticker
-// could slot in before it — the string builder must not duplicate it.
-const metaLineStringBody =
-  source.match(/function metaLineString\([\s\S]*?\n}\n/)?.[0] ?? "";
-assert.ok(metaLineStringBody, "metaLineString body should be extractable (CHAT-D3-06)");
+// The esc hint moved out of the meta builder into MetaLine's JSX so the ticker
+// could slot in before it — the segment builder must not duplicate it.
+const metaLineSegmentsBody =
+  source.match(/function metaLineSegments\([\s\S]*?\n}\n/)?.[0] ?? "";
+assert.ok(metaLineSegmentsBody, "metaLineSegments body should be extractable (CHAT-D3-06)");
 assert.doesNotMatch(
-  metaLineStringBody,
+  metaLineSegmentsBody,
   /esc to cancel/,
-  "metaLineString no longer carries the esc hint — MetaLine renders it after the ticker (CHAT-D3-06)",
+  "metaLineSegments no longer carries the esc hint — MetaLine renders it after the ticker (CHAT-D3-06)",
 );
 // The ticker anchors to the in-flight assistant turn's createdAt.
 assert.match(
