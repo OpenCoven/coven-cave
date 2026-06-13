@@ -86,22 +86,28 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// Full-width chat (2026-06-12) — supersedes CHAT-D10-04's 920px reading
-// measure by product decision: the thread and composer span the pane on
-// every width. The composer still shares the thread's measure so the input
-// lines up with the conversation column.
+// Centered reading column (2026-06-13, #536) — supersedes the 2026-06-12
+// full-width measure: the thread fills narrow panes but caps at 1180px and
+// centers (margin-inline: auto) on wide/full screens so the transcript sits
+// in the middle rather than sprawling left. The composer still shares the
+// thread's measure so the input lines up with the conversation column.
 // ---------------------------------------------------------------------------
 
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,
-  /max-width:\s*100%/,
-  "Linear thread must span the full pane (full-width chat)",
+  /max-width:\s*1180px/,
+  "Linear thread caps the reading measure at 1180px (centered column, 2026-06-13)",
+);
+assert.match(
+  linearThread,
+  /margin-inline:\s*auto/,
+  "Linear thread centers on wide/full screens (2026-06-13)",
 );
 assert.doesNotMatch(
   linearThread,
   /max-width:\s*(?:min\(100%,\s*)?920px/,
-  "The old 920px reading-measure cap must stay gone — chat is full width",
+  "The old 920px reading-measure cap must stay gone",
 );
 
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
