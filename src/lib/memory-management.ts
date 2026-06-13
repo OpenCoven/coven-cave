@@ -192,7 +192,16 @@ export function groupMemories(entries: ManagedMemoryEntry[], by: GroupBy, now = 
     let label: string;
     if (by === "familiar") { key = e.familiarId ?? "—"; label = e.familiarId ?? "Unassigned"; }
     else if (by === "source") { key = e.source; label = e.source === "coven" ? "Coven" : "Files"; }
-    else if (by === "type") { key = e.kind; label = e.kind; }
+    else if (by === "type") {
+      key = e.kind;
+      const kindLabels: Record<string, string> = {
+        "coven": "Coven",
+        "coven-origin": "Coven origin",
+        "external-harness": "External harness",
+        "runtime": "Runtime",
+      };
+      label = kindLabels[e.kind] ?? e.kind;
+    }
     else { const b = dateBucket(e.updatedAt, now); key = b.key; label = b.label; }
     if (!map.has(key)) map.set(key, { key, label, entries: [] });
     map.get(key)!.entries.push(e);
