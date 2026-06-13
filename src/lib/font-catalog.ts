@@ -48,7 +48,7 @@ export const FONT_OPTIONS: FontOption[] = [
 
 export const DEFAULT_FONT_ID: Record<FontSlot, string> = {
   sans: "geist",
-  mono: "geist-mono",
+  mono: "jetbrains-mono",
 };
 
 export function fontOptionById(id: string): FontOption | undefined {

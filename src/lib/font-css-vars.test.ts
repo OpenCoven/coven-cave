@@ -30,7 +30,7 @@ for (const rel of FILES) {
 
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 assert.match(globals, /--font-sans:\s*var\(--font-geist-sans\)/, ":root --font-sans default must remain");
-assert.match(globals, /--font-mono:\s*var\(--font-geist-mono\)/, ":root --font-mono default must remain");
+assert.match(globals, /--font-mono:\s*var\(--font-jetbrains-mono\)/, ":root --font-mono default is JetBrains Mono");
 
 // The reading line-spacing control drives the shared .cave-md prose surface via
 // --cave-reading-leading, with a 1.7 fallback so the default is unchanged.

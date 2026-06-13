@@ -65,8 +65,10 @@ test("applyFont(default) removes the override", () => {
 
 test("mono slot uses the mono key and --font-mono var", () => {
   const { props } = setupDom();
-  writeFontPref("mono", "jetbrains-mono");
-  applyFont("mono", "jetbrains-mono");
-  assert.equal(readFontPref("mono"), "jetbrains-mono");
-  assert.equal(props.get("--font-mono"), fontStack(fontOptionById("jetbrains-mono")));
+  // geist-mono is a non-default mono now (default is jetbrains-mono), so it
+  // sets the override rather than clearing it.
+  writeFontPref("mono", "geist-mono");
+  applyFont("mono", "geist-mono");
+  assert.equal(readFontPref("mono"), "geist-mono");
+  assert.equal(props.get("--font-mono"), fontStack(fontOptionById("geist-mono")));
 });

@@ -28,9 +28,9 @@ for (const o of FONT_OPTIONS) {
   assert.ok(o.label.length > 0, `label for ${o.id}`);
 }
 
-// Defaults are the existing Geist pair, so a fresh profile changes nothing.
+// Defaults are the Coven-branded pair: Geist Sans for UI, JetBrains Mono for code.
 assert.equal(DEFAULT_FONT_ID.sans, "geist");
-assert.equal(DEFAULT_FONT_ID.mono, "geist-mono");
+assert.equal(DEFAULT_FONT_ID.mono, "jetbrains-mono");
 assert.equal(fontOptionById("geist")?.cssVar, "--font-geist-sans");
 assert.equal(fontOptionById("geist-mono")?.cssVar, "--font-geist-mono");
 assert.equal(fontOptionById("nope"), undefined);
