@@ -2222,6 +2222,29 @@ select {
   opacity: 1;
 }
 
+/* ---- Projects viewer: file preview + project list ----------- */
+/* The preview pane is its own scroll container, so the in-block "Show more"
+   clamp (built for inline chat code) only strands space here. Lift the cap
+   and hide the expander — the file fills the pane and scrolls naturally. */
+.comux-file-preview .cave-code-wrap {
+  max-height: none;
+  margin: 0;
+}
+.comux-file-preview .cave-code-expand {
+  display: none;
+}
+/* Rendered-markdown previews read as docs, not chat bubbles. */
+.comux-md {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+/* Project list rows — softer selected state than a full accent fill. */
+.comux-project-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+
 /* ---- ThinkingIndicator ------------------------------------- */
 .ui-thinking {
   display: inline-flex;

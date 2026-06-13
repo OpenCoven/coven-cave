@@ -5,7 +5,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
-import { SyntaxBlock } from "@/components/message-bubble";
+import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import {
   deriveComuxProjects,
@@ -147,6 +147,20 @@ function uid(): string {
   return crypto.randomUUID();
 }
 
+const MARKDOWN_EXTS = new Set(["md", "mdx", "markdown"]);
+function isMarkdownPath(path: string | null): boolean {
+  if (!path) return false;
+  const ext = path.split(".").pop()?.toLowerCase();
+  return Boolean(ext && MARKDOWN_EXTS.has(ext));
+}
+
+function formatBytes(bytes: number | undefined): string | null {
+  if (typeof bytes !== "number" || bytes < 0) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function shortProjectTime(iso: string | null): string {
   if (!iso) return "No sessions yet";
   try {
@@ -173,6 +187,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [preview, setPreview] = useState<ProjectFilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [previewRaw, setPreviewRaw] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const treeRef = useRef<ProjectTreeHandle | null>(null);
 
@@ -397,6 +412,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     setPreviewPath(path);
     setPreviewLoading(true);
     setPreview(null);
+    setPreviewRaw(false);
     try {
       const res = await fetch(
         `/api/project-file?path=${encodeURIComponent(path)}`,
@@ -448,6 +464,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       )
       .slice(0, 6);
   }, [daemonSessions, selectedProject]);
+
+  const previewIsMarkdown = preview?.kind === "text" && isMarkdownPath(previewPath);
+  const previewLineCount = preview?.kind === "text" ? preview.content.split("\n").length : 0;
+  const renderAsMarkdown = previewIsMarkdown && !previewRaw;
 
   return (
     <div className="flex h-full flex-col">
@@ -655,35 +675,47 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               </span>
             </div>
             <div className="space-y-px px-1">
-              {projects.map((project) => (
-                <button
-                  key={project.root}
-                  type="button"
-                  onClick={() => selectProject(project)}
-                  title={project.root}
-                  className={`flex w-full items-center gap-2 rounded-[5px] px-2 py-[5px] text-left text-[12px] transition-colors ${
-                    selectedProject?.root === project.root
-                      ? "bg-[var(--accent-presence)] text-white"
-                      : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-                  }`}
-                >
-                  <Icon
-                    name={project.runningCount > 0 ? "ph:folder-open" : "ph:folder"}
-                    width={13}
-                    className={`shrink-0 ${
-                      selectedProject?.root === project.root
-                        ? "text-white/70"
-                        : "text-[var(--text-muted)]"
+              {projects.map((project) => {
+                const isActive = selectedProject?.root === project.root;
+                const meta: string[] = [];
+                if (project.sessionCount > 0) {
+                  meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
+                }
+                if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
+                return (
+                  <button
+                    key={project.root}
+                    type="button"
+                    onClick={() => selectProject(project)}
+                    title={project.root}
+                    className={`comux-project-row group flex w-full items-center gap-2 rounded-[6px] px-2 py-[6px] text-left text-[12px] transition-colors ${
+                      isActive
+                        ? "comux-project-row--active text-[var(--text-primary)]"
+                        : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                     }`}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                  {project.runningCount > 0 && (
-                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      selectedProject?.root === project.root ? "bg-white/60" : "bg-[var(--color-success)]"
-                    }`} />
-                  )}
-                </button>
-              ))}
+                  >
+                    <Icon
+                      name={project.runningCount > 0 ? "ph:folder-open" : "ph:folder"}
+                      width={14}
+                      className={`shrink-0 ${isActive ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-medium leading-tight">{project.name}</span>
+                      {meta.length > 0 && (
+                        <span className="truncate text-[10px] leading-tight text-[var(--text-muted)]">
+                          {meta.join(" · ")}
+                        </span>
+                      )}
+                    </span>
+                    {project.runningCount > 0 && (
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-success)]"
+                        title={`${project.runningCount} running`}
+                      />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -781,14 +813,17 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
 
                     {/* Files — native tree */}
                     <div>
-                      <div className="mb-1 flex items-center justify-end pr-0.5">
+                      <div className="mb-1 flex items-center gap-1.5 px-1 py-[3px]">
+                        <Icon name="ph:list-bullets" width={11} className="shrink-0 text-[var(--text-muted)]" />
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Files</span>
                         <button
                           type="button"
                           onClick={() => treeRef.current?.refresh()}
-                          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
-                          title="Refresh"
+                          className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          title="Refresh files"
+                          aria-label="Refresh files"
                         >
-                          <Icon name="ph:arrow-clockwise" width={10} />
+                          <Icon name="ph:arrow-clockwise" width={11} />
                         </button>
                       </div>
                       <ProjectTree
@@ -807,7 +842,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       {/* Preview header */}
                       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
                         <Icon
-                          name={preview?.kind === "image" ? "ph:file-image" : "ph:file-code"}
+                          name={preview?.kind === "image" ? "ph:file-image" : previewIsMarkdown ? "ph:file-text" : "ph:file-code"}
                           width={12}
                           className="shrink-0 text-[var(--text-muted)]"
                         />
@@ -816,6 +851,30 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             ? previewPath.slice(selectedProject.root.length).replace(/^\//, "")
                             : previewPath}
                         </span>
+                        {preview?.kind === "text" && (
+                          <span className="hidden shrink-0 items-center gap-2 font-mono text-[10px] text-[var(--text-muted)] sm:flex">
+                            <span>{previewLineCount.toLocaleString()} {previewLineCount === 1 ? "line" : "lines"}</span>
+                            {formatBytes(preview.size) && <span>· {formatBytes(preview.size)}</span>}
+                          </span>
+                        )}
+                        {previewIsMarkdown && (
+                          <div className="flex shrink-0 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewRaw(false)}
+                              className={`rounded-[4px] px-1.5 py-0.5 transition-colors ${!previewRaw ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                            >
+                              Rendered
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewRaw(true)}
+                              className={`rounded-[4px] px-1.5 py-0.5 transition-colors ${previewRaw ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                            >
+                              Raw
+                            </button>
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={copyPreview}
@@ -827,7 +886,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         </button>
                       </div>
                       {/* Preview content */}
-                      <div className="min-h-0 flex-1 overflow-auto p-3">
+                      <div className="comux-file-preview min-h-0 flex-1 overflow-auto p-3">
                         {previewLoading ? (
                           <div className="flex items-center gap-2 py-4 text-[11px] text-[var(--text-muted)]">
                             <Icon name="ph:arrow-clockwise" width={12} className="animate-spin" />
@@ -846,6 +905,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                 {typeof preview.size === "number" ? ` · ${preview.size.toLocaleString()} bytes` : ""}
                               </div>
                             </div>
+                          ) : renderAsMarkdown ? (
+                            <MarkdownBlock
+                              text={preview?.content ?? ""}
+                              className="comux-md max-w-[72ch]"
+                            />
                           ) : (
                             <SyntaxBlock
                               text={preview?.content ?? ""}
