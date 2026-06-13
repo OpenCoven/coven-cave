@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.76] - 2026-06-12
+
+Cave gets a security-hardening sweep, safer dependency intake, production workflow starters, and more durable chat tool history.
+
+### Added
+- **Production workflow starter manifests** — default workflow manifests now ship with repository coverage so the Workflow view has real starting points to build from.
+- **Supply-chain policy test** — dependencies must stay exact-pinned, the pnpm manager version is pinned, and pnpm's 3-day `minimumReleaseAge` gate is enforced in CI.
+
+### Changed
+- **Dependency intake hardening** — package ranges are pinned exactly, future saves default to exact versions, and too-fresh package releases are delayed for three days before install eligibility.
+- **Chat layout polish** — the chat surface uses the available width more fully and settled tool activity can collapse behind a compact meta row.
+- **Role/workflow internals** — role-file scanning is shared through one source library, reducing drift between workflow and role surfaces.
+
+### Fixed
+- **Persisted tool-use rows** — assistant tool rows now survive refreshes and chat switches instead of existing only in live client state.
+- **CSV import stability** — CSV mapping no longer falls into a render loop.
+- **Security hardening** — CodeQL-driven fixes tightened browser-pane URL handling, GitHub enrichment URL validation, graph/project/chat path constraints, chat mention paths, CI workflow permissions, regex tag stripping, slug generation, and GitHub library host checks.
+
 ## [0.0.75] - 2026-06-12
 
 Cave gets safer library/workflow file handling, live onboarding jobs, and clearer session provenance.
