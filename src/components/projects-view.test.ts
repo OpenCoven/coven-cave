@@ -18,14 +18,16 @@ assert.match(projectsView, /onNewChat\?\.?\(project\.root\)/, "Project rows shou
 assert.match(projectsView, /chatCounts\.get\(normalizeProjectRoot\(project\.root\)\)/, "Project rows should count chats by normalized project root");
 assert.match(projectsView, /Loading projects\.\.\./, "ProjectsView should expose loading feedback");
 
-assert.match(workspaceMode, /\| "projects"/, "WorkspaceMode should include projects");
-assert.match(workspace, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "Workspace should import ProjectsView");
-assert.match(workspace, /projects: "Projects"/, "Workspace h1 title map should cover projects mode");
-assert.match(workspace, /case "\/projects":[\s\S]*?setMode\("projects"\)/, "/projects slash command should open the Projects workspace");
-assert.match(workspace, /mode === "projects" \? \([\s\S]*?<ProjectsView[\s\S]*?sessions=\{sessions\}/, "Workspace should render ProjectsView for projects mode");
+const chatTabEvents = readFileSync(new URL("../lib/chat-tab-events.ts", import.meta.url), "utf8");
 
-assert.match(sidebar, /\| "projects"/, "Sidebar mode union should include projects");
-assert.match(sidebar, /\{ id: "projects", label: "Projects", iconName: "ph:folders-bold", group: "tools"/, "Sidebar should expose Projects in Tools");
+assert.doesNotMatch(workspaceMode, /\| "projects"/, "projects is no longer a top-level workspace mode");
+assert.doesNotMatch(workspace, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "workspace no longer renders ProjectsView directly");
+assert.doesNotMatch(workspace, /mode === "projects" \?/, "workspace has no projects render branch");
+assert.match(chatTabEvents, /CHAT_OPEN_PROJECTS_EVENT/, "reroute event exists");
+assert.match(workspace, /case "\/projects":[\s\S]*?CHAT_OPEN_PROJECTS_EVENT/, "/projects reroutes via the chat-open-projects event");
+
+assert.match(sidebar, /\{ id: "projects", label: "Projects", iconName: "ph:folders-bold", group: "tools"/, "Sidebar keeps the Projects Tools entry");
+assert.match(sidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Sidebar Projects entry reroutes into the chat tab");
 
 for (const icon of [
   "ph:folders-bold",

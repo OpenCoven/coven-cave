@@ -11,5 +11,4 @@ export type WorkspaceMode =
   | "github"
   | "roles"
   | "workflows"
-  | "capabilities"
-  | "projects";
+  | "capabilities";
