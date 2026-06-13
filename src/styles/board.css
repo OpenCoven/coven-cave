@@ -348,7 +348,7 @@
 .floor-session-branch { color:var(--text-muted); font-size:10px; }
 .floor-session-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
 .floor-session-meta { display:flex; align-items:center; gap:8px; color:var(--text-muted); font-size:10px; white-space:nowrap; }
-.floor-model-pill { max-width:90px; overflow:hidden; text-overflow:ellipsis; border-radius:5px; background:var(--bg-raised); padding:1px 5px; font-family:var(--font-geist-mono),ui-monospace,monospace; }
+.floor-model-pill { max-width:90px; overflow:hidden; text-overflow:ellipsis; border-radius:5px; background:var(--bg-raised); padding:1px 5px; font-family:var(--font-mono),ui-monospace,monospace; }
 .floor-session-more-button { display:inline-flex; align-items:center; border:1px solid var(--border-hairline); border-radius:6px; background:var(--bg-base); padding:3px 8px; color:var(--text-secondary); font-size:11px; transition:background .12s,color .12s,border-color .12s; }
 .floor-session-more-button:hover { border-color:var(--border-strong); background:var(--bg-hover); color:var(--text-primary); }
 .floor-session-empty-row .floor-session-label,.floor-session-more-row .floor-session-label { color:var(--text-muted); }
