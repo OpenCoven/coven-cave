@@ -33,4 +33,14 @@ assert.equal(file.size, 12);
 assert.equal(file.kind, "coven-origin");
 assert.equal(file.updatedAt, Date.parse("2001-09-09T01:46:40.000Z"));
 
+import { classifyProtection, isStructuralMemoryPath } from "./memory-management.ts";
+
+assert.equal(classifyProtection("/h/.coven/memory/kitty/MEMORY.md"), "structural");
+assert.equal(classifyProtection("/h/.openclaw/workspace/kitty/memory/.dreams/phase-signals.json"), "structural");
+assert.equal(classifyProtection("/h/.coven/workspaces/familiars/kitty/memory/dreaming/light/2026-04-26.md"), "bulk-protected");
+assert.equal(classifyProtection("/h/.coven/workspaces/familiars/kitty/memory/dreaming/deep/2026-04-26.md"), "bulk-protected");
+assert.equal(classifyProtection("/h/.coven/memory/kitty/note.md"), "normal");
+assert.equal(isStructuralMemoryPath("/h/x/MEMORY.md"), true);
+assert.equal(isStructuralMemoryPath("/h/x/note.md"), false);
+
 console.log("memory-management.test: ok");
