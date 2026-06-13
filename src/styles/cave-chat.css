@@ -1469,6 +1469,14 @@ details[open] > .cave-tool-summary::before {
   background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
 }
 
+/* The folder icon is the project picker's only affordance — hide the native
+   select chevron, which otherwise overlaps the truncated project name in the
+   narrow chip (WebKit webview needs the -webkit- prefix). */
+.cave-chat-cwd-inline select {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 .cave-chat-session-actions {
   display: inline-flex;
   min-width: 0;
