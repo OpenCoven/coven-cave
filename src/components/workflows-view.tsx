@@ -49,7 +49,15 @@ import {
   type WorkflowStudioActionState,
 } from "./workflows/workflow-studio";
 
-export function WorkflowsView() {
+export function WorkflowsView({
+  initialWorkflowId = null,
+  onDeepLinkConsumed,
+}: {
+  /** Select this workflow once when the studio opens (deep link from Roles). */
+  initialWorkflowId?: string | null;
+  /** Called after the deep-link target is selected, so the parent can clear it. */
+  onDeepLinkConsumed?: () => void;
+} = {}) {
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,6 +66,8 @@ export function WorkflowsView() {
   const [action, setAction] = useState<WorkflowStudioActionState | null>(null);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Deep-link target is honored at most once per mount (see selection effect).
+  const deepLinkConsumedRef = useRef(false);
   const [draftState, setDraftState] = useState<WorkflowDraftState | null>(null);
   const [runs, setRuns] = useState<WorkflowRunRecord[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
@@ -162,6 +172,23 @@ export function WorkflowsView() {
       setDraftState(null);
       return;
     }
+    // One-time deep link from Roles: select the requested workflow instead of
+    // defaulting to the first. Wait for the library to finish loading before
+    // giving up on a target that hasn't arrived yet.
+    if (!deepLinkConsumedRef.current && initialWorkflowId) {
+      const target = workflows.find((workflow) => workflow.id === initialWorkflowId);
+      if (target) {
+        deepLinkConsumedRef.current = true;
+        setSelectedWorkflowId(target.id);
+        setSelectedNodeId(null);
+        setDraftState(initialWorkflowDraft(target));
+        void loadRuns(target.id);
+        void loadLayout(target.id);
+        onDeepLinkConsumed?.();
+        return;
+      }
+      if (!loaded) return;
+    }
     const current = workflows.find((workflow) => workflow.id === selectedWorkflowId);
     if (current) return;
     const next = workflows[0];
@@ -170,7 +197,7 @@ export function WorkflowsView() {
     setDraftState(initialWorkflowDraft(next));
     void loadRuns(next.id);
     void loadLayout(next.id);
-  }, [loadRuns, selectedWorkflowId, workflows]);
+  }, [loadRuns, loadLayout, selectedWorkflowId, workflows, initialWorkflowId, loaded, onDeepLinkConsumed]);
 
   const selectedDryRun = useMemo<WorkflowDryRunPlan | undefined>(() => {
     if (action?.kind !== "dry-run" || action.id !== draft?.id) return undefined;
