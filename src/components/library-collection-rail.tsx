@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { LibraryCollection, LibrarySectionKind } from "@/lib/library-types";
 
@@ -42,6 +42,10 @@ type Props = {
   onSelectSection: (section: LibrarySectionKind) => void;
   onSelectSkill?: (skill: Skill) => void;
   activeSkillId?: string | null;
+  canGoBack?: boolean;
+  onBack?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 };
 
 // ── Rail ─────────────────────────────────────────────────────────────────────
@@ -55,26 +59,60 @@ export function LibraryCollectionRail({
   onSelectSection,
   onSelectSkill,
   activeSkillId,
+  canGoBack = false,
+  onBack,
+  onRefresh,
+  refreshing = false,
 }: Props) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skillsOpen, setSkillsOpen] = useState(false);
 
-  // Fetch skills from daemon via Cave proxy
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/skills", { cache: "no-store" });
-        const json = await res.json().catch(() => null) as { ok?: boolean; skills?: Skill[] } | null;
-        if (json?.ok && Array.isArray(json.skills)) setSkills(json.skills);
-      } catch { /* daemon unavailable — section stays hidden */ }
-    })();
+  // Fetch skills from daemon via Cave proxy. Exposed as a callback so the
+  // header Refresh button can re-pull them alongside the parent's reload.
+  const loadSkills = useCallback(async () => {
+    try {
+      const res = await fetch("/api/skills", { cache: "no-store" });
+      const json = await res.json().catch(() => null) as { ok?: boolean; skills?: Skill[] } | null;
+      if (json?.ok && Array.isArray(json.skills)) setSkills(json.skills);
+    } catch { /* daemon unavailable — section stays hidden */ }
   }, []);
+
+  useEffect(() => { void loadSkills(); }, [loadSkills]);
+
+  const handleRefresh = useCallback(() => {
+    onRefresh?.();
+    void loadSkills();
+  }, [onRefresh, loadSkills]);
 
   return (
     <div className="library-rail">
 
       {/* ── Research collections ─────────────────────────────── */}
-      <div className="library-rail-header">Library</div>
+      <div className="library-rail-header library-rail-header--actions">
+        <span className="library-rail-header-title">Library</span>
+        <div className="library-rail-header-actions">
+          <button
+            type="button"
+            className="library-rail-action"
+            onClick={() => onBack?.()}
+            disabled={!canGoBack}
+            title="Back"
+            aria-label="Back to previous library view"
+          >
+            <Icon name="ph:arrow-left" width={13} />
+          </button>
+          <button
+            type="button"
+            className={`library-rail-action${refreshing ? " library-rail-action--spinning" : ""}`}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh"
+            aria-label="Refresh library"
+          >
+            <Icon name="ph:arrow-clockwise" width={13} />
+          </button>
+        </div>
+      </div>
       <div className="library-rail-list">
         {collections.map((col) => {
           const count = docCounts[col.id] ?? 0;
