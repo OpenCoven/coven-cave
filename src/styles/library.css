@@ -1167,6 +1167,10 @@ tr:focus-within .library-row-delete {
   display: flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -2713,9 +2717,20 @@ h3:hover .library-heading-anchor,
 .library-list-shell .board-table {
   table-layout: fixed;
 }
-/* Bookmarks: Title is the sole fluid column, so let it claim the full
-   width of its cell. The shared .board-table-title cap (300px) otherwise
-   strands the leftover space as a dead band once the panel is wide. */
+/* Bookmarks: Title is the row's identity and must stay the priority column.
+   Use auto layout + a fluid first column (max-width:0 + width:100%) so the
+   Title absorbs all leftover space and *clips* — instead of fixed-layout,
+   where hidden Saved/Tags columns stop the Title from re-claiming their
+   width and it collapses to an indistinguishable "DeepWi…". Domain/Saved/
+   Tags keep their fixed widths and the repetitive domain truncates first. */
+.library-list-shell .library-bookmarks-table {
+  table-layout: auto;
+}
+.library-list-shell .library-bookmarks-table thead th:first-child,
+.library-list-shell .library-bookmarks-table tbody td:first-child {
+  width: 100%;
+  max-width: 0;
+}
 .library-list-shell .library-bookmarks-table .board-table-title {
   display: flex;
   max-width: none;
