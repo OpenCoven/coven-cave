@@ -97,7 +97,14 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [query, setQuery] = useState("");
   const [familiarFilter, setFamiliarFilter] = useState<string>(activeFamiliar?.id ?? familiars[0]?.id ?? "");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<"all" | FileMemoryEntry["sourceKind"]>("all");
   const effectiveLimit = limit ?? Infinity;
+  const fullView = effectiveLimit === Infinity;
+  // Incremental render caps for the full view (rail/compact use `limit` instead).
+  const FILE_PAGE = 80;
+  const FAMILIAR_PAGE = 80;
+  const [fileLimit, setFileLimit] = useState(FILE_PAGE);
+  const [familiarLimit, setFamiliarLimit] = useState(FAMILIAR_PAGE);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -150,10 +157,15 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const visibleFiles = useMemo(
     () =>
       fileEntries
+        .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
         .filter((entry) => memoryMatches(entry, q))
         .sort((a, b) => (a.modified < b.modified ? 1 : -1)),
-    [fileEntries, q],
+    [fileEntries, q, sourceFilter],
   );
+
+  // Reset pagination whenever the result set changes underneath the user.
+  useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
+  useEffect(() => { setFamiliarLimit(FAMILIAR_PAGE); }, [q, familiarFilter]);
 
   const familiarsWithMemory = useMemo(() => {
     const ids = new Set(covenEntries.map((entry) => entry.familiar_id));
@@ -193,6 +205,20 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     return [selectedFamiliar, ...options];
   }, [familiars, familiarsWithMemory, selectedFamiliar]);
 
+  // When the active familiar has no memories, the familiar column collapses so the
+  // (typically much larger) memory-files list claims the freed width instead of
+  // leaving a half-empty grid track. The drawer still gets its own track when open.
+  const hasFamiliar = visibleCoven.length > 0;
+  const contentClass = compact
+    ? "flex flex-col gap-4 overflow-y-auto p-4"
+    : hasFamiliar
+      ? selectedRowId
+        ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,360px)]"
+        : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+      : selectedRowId
+        ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]"
+        : "grid gap-4 overflow-y-auto p-4";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className={`shrink-0 border-b border-[var(--border-hairline)] ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
@@ -217,12 +243,24 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         {compact ? null : (
           <div
             data-testid="memory-stats-inline"
-            className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-[var(--text-secondary)]"
+            className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-[var(--text-secondary)]"
           >
-            <span><span className="text-[var(--text-muted)]">Agent memories</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
-            <span><span className="text-[var(--text-muted)]">Coven origin</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{fileSourceCounts.covenOrigin}</span></span>
-            <span><span className="text-[var(--text-muted)]">External harnesses</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{fileSourceCounts.externalHarnesses}</span></span>
-            <span><span className="text-[var(--text-muted)]">Runtime memory</span> <span className="ml-1 font-semibold text-[var(--text-primary)]">{fileSourceCounts.runtimeMemory}</span></span>
+            <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Agent memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
+            <span aria-hidden className="text-[var(--border-strong)]">·</span>
+            <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Files</span>
+            <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
+            <SourceFilterChip label="External harnesses" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
+            <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
+            {sourceFilter !== "all" ? (
+              <button
+                type="button"
+                onClick={() => setSourceFilter("all")}
+                className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:x-bold" width={9} />
+                Clear filter
+              </button>
+            ) : null}
           </div>
         )}
 
@@ -251,7 +289,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
 
-      <div className={`min-h-0 flex-1 ${compact ? "flex flex-col gap-4 overflow-y-auto p-4" : selectedRowId ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,360px)]" : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"}`}>
+      <div className={`min-h-0 flex-1 ${contentClass}`}>
         {compact && loaded && !error && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
           <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-10 text-center">
             <Icon name="ph:brain" width={22} className="text-[var(--text-muted)]" />
@@ -264,6 +302,26 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           </div>
         ) : (
           <>
+        {!compact && !hasFamiliar ? (
+          <div className="xl:col-[1/-1] flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-3.5 py-2.5 text-[11px] leading-5">
+            <Icon name="ph:brain" width={14} className="shrink-0 text-[var(--text-muted)]" />
+            {loaded ? (
+              error ? (
+                <span className="text-[var(--color-warning)]">Couldn’t load familiar memories. See the error above and try again.</span>
+              ) : query ? (
+                <span className="text-[var(--text-muted)]">No familiar memories match “{query.trim()}”.</span>
+              ) : (
+                <span className="text-[var(--text-muted)]">
+                  <span className="font-medium text-[var(--text-secondary)]">No familiar memories yet for {selectedFamiliar?.display_name ?? "this familiar"}.</span>{" "}
+                  They’re saved during chats; harness-written memory files appear in the list below.
+                </span>
+              )
+            ) : (
+              <span className="text-[var(--text-muted)]">Loading memories…</span>
+            )}
+          </div>
+        ) : null}
+        {compact || hasFamiliar ? (
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
@@ -274,8 +332,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
             </div>
           ) : (
+            <>
             <div className="grid gap-2 md:grid-cols-2">
-              {visibleCoven.slice(0, effectiveLimit === Infinity ? 80 : effectiveLimit).map((entry) => {
+              {visibleCoven.slice(0, fullView ? familiarLimit : effectiveLimit).map((entry) => {
                 const familiar = familiarById.get(entry.familiar_id);
                 return (
                   <article
@@ -322,20 +381,37 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                 );
               })}
             </div>
+            {fullView && visibleCoven.length > familiarLimit ? (
+              <button
+                type="button"
+                onClick={() => setFamiliarLimit((n) => n + FAMILIAR_PAGE)}
+                className="focus-ring mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:caret-down" width={11} />
+                Show more · {familiarLimit} of {visibleCoven.length}
+              </button>
+            ) : null}
+            </>
           )}
         </section>
+        ) : null}
 
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
-            <span className="text-[10px] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
+            <span className="text-[10px] text-[var(--text-muted)]">
+              {fullView && visibleFiles.length > fileLimit
+                ? `${fileLimit} of ${visibleFiles.length}`
+                : `${visibleFiles.length} visible`}
+            </span>
           </div>
           <MemoryFilesList
             entries={visibleFiles}
             onOpen={onOpenMemoryFile}
             loaded={loaded}
             error={error}
-            limit={effectiveLimit === Infinity ? 160 : effectiveLimit}
+            limit={fullView ? fileLimit : effectiveLimit}
+            onShowMore={fullView ? () => setFileLimit((n) => n + FILE_PAGE) : undefined}
             activeFamiliarId={familiarFilter}
             onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
             selectedRowId={compact ? null : selectedRowId}
@@ -486,6 +562,8 @@ type MemoryFilesListProps = {
   activeFamiliarId?: string | null;
   onSelect?: (rowId: string) => void;
   selectedRowId?: string | null;
+  /** When set and entries exceed `limit`, render a footer button that reveals more. */
+  onShowMore?: () => void;
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -603,6 +681,34 @@ function ExpandMemoryButton({
   );
 }
 
+function SourceFilterChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors ${
+        active
+          ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+          : "border-transparent text-[var(--text-secondary)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]/50"
+      }`}
+    >
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className="font-semibold text-[var(--text-primary)]">{count}</span>
+    </button>
+  );
+}
+
 export function MemoryFilesList({
   entries,
   onOpen,
@@ -614,8 +720,10 @@ export function MemoryFilesList({
   activeFamiliarId,
   onSelect,
   selectedRowId,
+  onShowMore,
 }: MemoryFilesListProps) {
   const sliced = entries.slice(0, limit ?? entries.length);
+  const hidden = entries.length - sliced.length;
   return (
     <div
       className={[
@@ -667,6 +775,16 @@ export function MemoryFilesList({
           ))}
         </ul>
       )}
+      {onShowMore && hidden > 0 ? (
+        <button
+          type="button"
+          onClick={onShowMore}
+          className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name="ph:caret-down" width={11} />
+          Show {Math.min(hidden, 80)} more · {sliced.length} of {entries.length}
+        </button>
+      ) : null}
     </div>
   );
 }
