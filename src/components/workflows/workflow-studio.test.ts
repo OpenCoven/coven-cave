@@ -67,6 +67,7 @@ assert.match(
   "WorkflowManifestPreview should keep the sidecar boundary visible",
 );
 assert.match(css, /\.workflow-studio-shell/, "workflow CSS should style the studio shell");
+assert.match(css, /\.workflow-studio-shell \{[\s\S]{0,700}padding:\s*16px 16px 16px 0/, "Studio shell drops left padding so the library hugs the app nav (no blank band)");
 assert.match(css, /@media \(max-width: 860px\)/, "workflow CSS should include mobile studio layout");
 assert.match(
   css,
