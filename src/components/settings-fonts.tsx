@@ -60,6 +60,18 @@ import {
   readReadingHyphens,
   type ReadingHyphens,
 } from "@/lib/reading-hyphens";
+import {
+  DEFAULT_READING_DROPCAP,
+  READING_DROPCAP_OPTIONS,
+  applyReadingDropcap,
+  readReadingDropcap,
+  type ReadingDropcap,
+} from "@/lib/reading-dropcap";
+
+const DROPCAP_LABEL: Record<ReadingDropcap, string> = {
+  off: "Off",
+  on: "On",
+};
 
 const WIDTH_LABEL: Record<ReadingWidth, string> = {
   full: "Full",
@@ -153,6 +165,7 @@ export function FontSettings() {
   const [width, setWidth] = useState<ReadingWidth>(DEFAULT_READING_WIDTH);
   const [weight, setWeight] = useState<ReadingWeight>(DEFAULT_READING_WEIGHT);
   const [hyphens, setHyphens] = useState<ReadingHyphens>(DEFAULT_READING_HYPHENS);
+  const [dropcap, setDropcap] = useState<ReadingDropcap>(DEFAULT_READING_DROPCAP);
 
   useEffect(() => {
     const sans = readFontPref("sans");
@@ -170,6 +183,7 @@ export function FontSettings() {
     setWidth(readReadingWidth());
     setWeight(readReadingWeight());
     setHyphens(readReadingHyphens());
+    setDropcap(readReadingDropcap());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -225,6 +239,11 @@ export function FontSettings() {
     applyReadingHyphens(next);
   };
 
+  const setDropCap = (next: ReadingDropcap) => {
+    setDropcap(next);
+    applyReadingDropcap(next);
+  };
+
   const reset = () => {
     select("sans", DEFAULT_FONT_ID.sans);
     select("mono", DEFAULT_FONT_ID.mono);
@@ -235,6 +254,7 @@ export function FontSettings() {
     setReadingWidth(DEFAULT_READING_WIDTH);
     setFontWeight(DEFAULT_READING_WEIGHT);
     setHyphenation(DEFAULT_READING_HYPHENS);
+    setDropCap(DEFAULT_READING_DROPCAP);
   };
 
   const isDefault =
@@ -246,7 +266,8 @@ export function FontSettings() {
     align === DEFAULT_READING_ALIGN &&
     width === DEFAULT_READING_WIDTH &&
     weight === DEFAULT_READING_WEIGHT &&
-    hyphens === DEFAULT_READING_HYPHENS;
+    hyphens === DEFAULT_READING_HYPHENS &&
+    dropcap === DEFAULT_READING_DROPCAP;
 
   return (
     <section className="flex flex-col gap-4">
@@ -409,6 +430,28 @@ export function FontSettings() {
                 }`}
               >
                 {HYPHENS_LABEL[option]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Drop cap</label>
+          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Enlarged first letter — Library documents only.</p>
+          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
+            {READING_DROPCAP_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setDropCap(option)}
+                aria-pressed={dropcap === option}
+                aria-label={`Drop cap ${DROPCAP_LABEL[option]}`}
+                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  dropcap === option
+                    ? "bg-[var(--accent-presence)] text-white"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {DROPCAP_LABEL[option]}
               </button>
             ))}
           </div>

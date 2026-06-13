@@ -219,6 +219,21 @@ assert.match(
   /<ReadingHyphensController \/>/,
   "Root layout should mount the reading hyphenation controller so saved setting applies on load",
 );
+assert.match(
+  fontSettings,
+  /Drop cap/,
+  "Typography (FontSettings) should expose a Drop cap control",
+);
+assert.match(
+  fontSettings,
+  /aria-pressed=\{dropcap === option\}/,
+  "Drop cap buttons should expose the selected state to assistive tech",
+);
+assert.match(
+  layout,
+  /<ReadingDropcapController \/>/,
+  "Root layout should mount the drop-cap controller so saved setting applies on load",
+);
 
 assert.match(
   layout,

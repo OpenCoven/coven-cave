@@ -1602,6 +1602,18 @@ tr:hover .library-row-delete,
   margin-top: 0;
 }
 
+/* Drop cap (Settings → Appearance → Typography → Drop cap). Library docs only;
+   gated behind data-reading-dropcap on <html> so it's off by default and never
+   touches chat/memory prose. */
+html[data-reading-dropcap="on"] .library-preview-md.cave-md p:first-of-type::first-letter {
+  float: left;
+  font-size: 3.2em;
+  line-height: 0.8;
+  padding-right: 0.07em;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 /* Lists — roomier */
 .library-preview-md.cave-md ul,
 .library-preview-md.cave-md ol {
