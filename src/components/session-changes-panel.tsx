@@ -84,10 +84,11 @@ function FileRow({
   onRevert: () => void;
 }) {
   // Two-step revert: first click arms an inline Cancel/Revert confirm that
-  // replaces the row action; only the explicit confirm commits. Untracked
-  // files get delete copy because reverting one deletes it.
+  // replaces the row action; only the explicit confirm commits. "New" files
+  // (untracked, or staged-but-never-committed) get delete copy because
+  // reverting one deletes it — it has no committed version to restore.
   const [confirmRevert, setConfirmRevert] = useState(false);
-  const untracked = file.status === "untracked";
+  const untracked = file.status === "untracked" || file.status === "added";
 
   return (
     <div className="rounded-md border border-[var(--border-hairline)]">
@@ -314,9 +315,10 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
           body: JSON.stringify({
             projectRoot,
             path: file.path,
-            // The untracked branch deletes the file; the confirm step the
-            // user just clicked through is the explicit consent for that.
-            confirmUntracked: file.status === "untracked",
+            // New files (untracked or staged-new) are deleted on revert; the
+            // confirm step the user just clicked through is the explicit
+            // consent for that.
+            confirmUntracked: file.status === "untracked" || file.status === "added",
           }),
         });
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };

@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import fs, { writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 
 export const dynamic = "force-dynamic";
 
@@ -30,16 +31,6 @@ const GIT_TIMEOUT_MS = 10_000;
 const MAX_GIT_BUFFER = 64 * 1024 * 1024;
 /** Diff payload cap (~200KB) so one giant lockfile diff can't flood the panel. */
 const DIFF_CAP_CHARS = 200 * 1024;
-
-type FileStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
-
-type ChangedFile = {
-  path: string;
-  status: FileStatus;
-  renamedFrom?: string;
-  insertions?: number;
-  deletions?: number;
-};
 
 // ── git helpers ───────────────────────────────────────────────────────────────
 
@@ -120,58 +111,23 @@ function pathNotAllowed(): NextResponse {
 }
 
 // ── status parsing ────────────────────────────────────────────────────────────
-
-function statusOf(x: string, y: string): FileStatus {
-  if (x === "?") return "untracked";
-  if (x === "R" || y === "R" || x === "C") return "renamed";
-  if (x === "A" || y === "A") return "added";
-  if (x === "D" || y === "D") return "deleted";
-  return "modified";
-}
-
-/** Parse `git status --porcelain=v1 -z`. Entries are NUL-separated
- *  `XY <path>`; renames/copies carry the original path as the next token. */
-function parsePorcelainZ(out: string): ChangedFile[] {
-  const tokens = out.split("\0");
-  const files: ChangedFile[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const entry = tokens[i];
-    if (entry.length < 4 || entry[2] !== " ") continue;
-    const x = entry[0];
-    const y = entry[1];
-    const file: ChangedFile = { path: entry.slice(3), status: statusOf(x, y) };
-    if (x === "R" || x === "C") {
-      file.renamedFrom = tokens[i + 1];
-      i++;
-    }
-    files.push(file);
-  }
-  return files;
-}
-
-/** Parse `git diff --numstat -z`: `ins\tdel\tpath` tokens; renames leave the
- *  path slot empty and append old/new as the following two tokens. Binary
- *  files report `-` and are skipped — counts are best-effort decoration. */
-function parseNumstatZ(out: string): Map<string, { insertions: number; deletions: number }> {
-  const map = new Map<string, { insertions: number; deletions: number }>();
-  const tokens = out.split("\0");
-  for (let i = 0; i < tokens.length; i++) {
-    const m = /^(\d+|-)\t(\d+|-)\t([\s\S]*)$/.exec(tokens[i]);
-    if (!m) continue;
-    let file = m[3];
-    if (file === "") {
-      file = tokens[i + 2] ?? "";
-      i += 2;
-    }
-    if (!file || m[1] === "-" || m[2] === "-") continue;
-    map.set(file, { insertions: Number(m[1]), deletions: Number(m[2]) });
-  }
-  return map;
-}
+// parsePorcelainZ / parseNumstatZ / statusOf live in @/lib/git-changes so the
+// NUL/rename parsing can be unit-tested without next/server or a git process.
 
 async function isTracked(repoRoot: string, relPath: string): Promise<boolean> {
   try {
     await git(repoRoot, ["ls-files", "--error-unmatch", "--", relPath]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when <relPath> exists in the HEAD tree. False on an unborn branch
+ *  (no HEAD) or when the path was never committed. */
+async function existsInHead(repoRoot: string, relPath: string): Promise<boolean> {
+  try {
+    await git(repoRoot, ["cat-file", "-e", `HEAD:${relPath}`]);
     return true;
   } catch {
     return false;
@@ -337,25 +293,41 @@ export async function POST(req: NextRequest) {
   if (!abs) return pathNotAllowed();
 
   try {
-    if (await isTracked(root.repoRoot, body.path)) {
-      // Restore the worktree copy (also resurrects a deleted tracked file).
-      await git(root.repoRoot, ["checkout", "--", body.path]);
-      return NextResponse.json({ ok: true, reverted: "checkout", path: body.path });
+    // Decide how to revert based on whether the file exists at HEAD. Reverting
+    // means "match HEAD": files in HEAD are restored (covers staged edits and
+    // deletions); files NOT in HEAD are new, so reverting deletes them and is
+    // gated behind an explicit confirmation.
+    const [inHead, tracked] = await Promise.all([
+      existsInHead(root.repoRoot, body.path),
+      isTracked(root.repoRoot, body.path),
+    ]);
+    const plan = planRevert({ inHead, tracked, confirmDelete: body.confirmUntracked === true });
+
+    switch (plan.action) {
+      case "checkout":
+        // `checkout HEAD --` updates index AND worktree, so staged edits and
+        // staged/unstaged deletions all revert to the committed version —
+        // matching the HEAD-relative diff the panel renders.
+        await git(root.repoRoot, ["checkout", "HEAD", "--", body.path]);
+        return NextResponse.json({ ok: true, reverted: "checkout", path: body.path });
+      case "rm":
+        // Staged new file: it never existed at HEAD, so reverting removes it
+        // from both index and worktree.
+        await git(root.repoRoot, ["rm", "-f", "--", body.path]);
+        return NextResponse.json({ ok: true, reverted: "rm", path: body.path });
+      case "clean":
+        await git(root.repoRoot, ["clean", "-f", "--", body.path]);
+        return NextResponse.json({ ok: true, reverted: "clean", path: body.path });
+      case "confirm-required":
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "new file — deleting it requires confirmUntracked",
+            requiresConfirmUntracked: true,
+          },
+          { status: 400 },
+        );
     }
-    // Untracked: reverting means deleting the file — destructive, so it is
-    // gated behind an explicit confirmUntracked flag from the client.
-    if (body.confirmUntracked !== true) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "untracked file — deleting it requires confirmUntracked",
-          requiresConfirmUntracked: true,
-        },
-        { status: 400 },
-      );
-    }
-    await git(root.repoRoot, ["clean", "-f", "--", body.path]);
-    return NextResponse.json({ ok: true, reverted: "clean", path: body.path });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
