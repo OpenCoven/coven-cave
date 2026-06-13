@@ -50,4 +50,15 @@ assert.match(
   "reset restores the default line spacing",
 );
 
+// Letter spacing control (reading tracking for .cave-md surfaces).
+assert.match(src, /Letter spacing/, "renders a Letter spacing control");
+assert.match(src, /READING_TRACKING_OPTIONS/, "uses the reading-tracking ladder");
+assert.match(src, /applyReadingTracking/, "applies letter spacing via the shared helper");
+assert.match(src, /aria-pressed=\{tracking === option\}/, "letter-spacing buttons expose selected state");
+assert.match(
+  src,
+  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_TRACKING[\s\S]*?\}/,
+  "reset restores the default letter spacing",
+);
+
 console.log("settings-fonts.test.ts OK");
