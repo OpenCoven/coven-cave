@@ -39,7 +39,6 @@ const EMPTY_TEXT: Record<LibrarySectionKind, string> = {
   github: "Select a GitHub item to preview",
   projects: "Select a project to preview",
   skills: "Select a skill to view",
-  graph: "Use the graph viewer to explore knowledge graphs",
 };
 
 // ── Helpers ──────────────────────────────────────────────────────

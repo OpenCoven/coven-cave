@@ -735,14 +735,6 @@
   overflow: hidden;
 }
 
-.library-graph-toolbar {
-  min-width: 0;
-}
-
-.library-graph-select {
-  min-width: 0;
-}
-
 .library-preview-empty-icon {
   color: var(--text-muted);
   opacity: 0.5;
@@ -2591,22 +2583,6 @@ h3:hover .library-heading-anchor,
     width: 100%;
     flex: 1 1 auto;
     min-height: 0;
-  }
-
-  .library-graph-toolbar {
-    flex-wrap: wrap;
-    gap: 6px 8px;
-    padding: 8px 12px;
-  }
-
-  .library-graph-select {
-    flex: 1 1 190px;
-    max-width: 100%;
-    margin-left: 0 !important;
-  }
-
-  .library-graph-actions {
-    margin-left: 0 !important;
   }
 
   .library-browse-canvas {
