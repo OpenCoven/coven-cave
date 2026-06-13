@@ -209,11 +209,21 @@ export function ChatSurface({
 
   // ChatView's MetaLine bug button opens the Debug tab from a different
   // subtree — same window-event bridge as the cave:agents-* events above.
+  // The thread rail's advanced-operations launchers (Git/Inspector/Debug)
+  // reach the right panel through the same bridge.
   useEffect(() => {
     if (!onSetRightPanel) return;
     const onDebugOpen = () => onSetRightPanel("debug");
+    const onInspectorOpen = () => onSetRightPanel("inspector");
+    const onChangesOpen = () => onSetRightPanel("changes");
     window.addEventListener("cave:debug-open", onDebugOpen);
-    return () => window.removeEventListener("cave:debug-open", onDebugOpen);
+    window.addEventListener("cave:inspector-open", onInspectorOpen);
+    window.addEventListener("cave:changes-open", onChangesOpen);
+    return () => {
+      window.removeEventListener("cave:debug-open", onDebugOpen);
+      window.removeEventListener("cave:inspector-open", onInspectorOpen);
+      window.removeEventListener("cave:changes-open", onChangesOpen);
+    };
   }, [onSetRightPanel]);
 
   useEffect(() => {
