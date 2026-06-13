@@ -597,15 +597,14 @@ export async function saveWorkflowLayout(
   id: string,
   positions: WorkflowLayout,
 ): Promise<{ ok: boolean; error?: string }> {
-  const file = layoutFileName(id);
-  if (!file) {
+  const filePath = await layoutFilePath(id);
+  if (!filePath) {
     return { ok: false, error: `Workflow id \`${id}\` is not a safe filename slug.` };
   }
   try {
     await withWorkflowWriteLock(async () => {
       const storage = await storageForWorkflowId(id);
-      const dir = await ensureWorkflowDir(storage);
-      const filePath = path.join(dir, file);
+      await ensureWorkflowDir(storage);
       await writeFile(
         filePath,
         JSON.stringify({ version: 1, positions }, null, 2),
