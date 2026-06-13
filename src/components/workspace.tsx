@@ -790,9 +790,17 @@ export function Workspace() {
         showAgentChatList();
         return;
       }
-      // Popped back out of a chat entry → show the list, but only while the
-      // chat surface is active; other surfaces own their own hash traffic.
-      if (modeRef.current === "chat") showAgentChatList();
+      // Popped back out of a chat entry to the root (empty hash) → show the
+      // list. A *non-empty* hash belongs to another surface's deep link — the
+      // `#card-<id>` the task chip writes, or `#memory:` / `#library:` — and
+      // that surface owns its own mode switch. Bouncing to the chat list here
+      // would hijack such navigation: writing `#card-<id>` synchronously fires
+      // this handler while `mode` is still "chat" (the intent's setMode("board")
+      // hasn't committed yet), so an unconditional showAgentChatList() clobbers
+      // the board switch in the same render batch and strands the user on the
+      // chat list. Gating on the empty hash leaves cross-surface deep links to
+      // their owners while preserving genuine Back-to-list.
+      if (modeRef.current === "chat" && !window.location.hash) showAgentChatList();
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
