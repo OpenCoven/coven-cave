@@ -36,9 +36,9 @@ assert.match(mobileScript, /resolve_ios_device_name/);
 assert.match(mobileScript, /pnpm exec tauri "\$\{tauri_args\[@\]\}"/);
 assert.doesNotMatch(mobileScript, /tauri ios dev --device/);
 
-// Native mode mints a per-launch sidecar auth token (COVEN_CAVE_AUTH_TOKEN) and
-// authenticates the in-app webview, instead of running fully ungated. This is
-// what satisfies the in-app SidecarAuthMonitor and gates /api/ over Tailscale.
+// Native mode uses a sidecar auth token (COVEN_CAVE_AUTH_TOKEN), persisted in the state dir,
+// to authenticate the in-app webview instead of running fully ungated. This satisfies the
+// in-app SidecarAuthMonitor and gates /api/ over Tailscale.
 assert.match(mobileScript, /SIDECAR_TOKEN_FILE=/);
 assert.match(mobileScript, /load_or_create_sidecar_token\(\)/);
 // The native server is now started WITH the sidecar auth token set (the old
