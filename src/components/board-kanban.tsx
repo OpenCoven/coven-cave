@@ -378,17 +378,23 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
   const resolvedFamiliars = useResolvedFamiliars(rawFamiliar ? [rawFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliars[0] ?? null;
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
-  const pri = PRIORITIES.find((p) => p.id === card.priority)!;
+  // Fallback rather than a non-null assertion: an unexpected priority value
+  // must not crash the whole board render.
+  const pri = PRIORITIES.find((p) => p.id === card.priority) ?? { id: card.priority, label: card.priority };
+  const statusLabel = COLUMNS.find((c) => c.id === card.status)?.label ?? card.status;
   const hasChips = !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
 
   return (
     <li draggable
       data-card-id={card.id}
+      role="button"
+      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}. Enter to open; Space to move.`}
+      aria-keyshortcuts="Enter Space"
       onDragStart={(e) => { draggedRef.current = true; onDragStart(e); }}
       onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); onDragEnd(); }}
       onClick={() => { if (draggedRef.current) return; onSelect(); }}
       onKeyDown={(e) => { if (e.key !== "Enter") return; e.preventDefault(); onSelect(); }}
-      tabIndex={0} aria-selected={isSelected} aria-grabbed={isGrabbed}
+      tabIndex={0}
       className={`board-kanban-card board-kanban-card--priority-${card.priority}${
         isSelected ? " board-kanban-card--selected" : ""
       }${isDragging ? " board-kanban-card--dragging" : ""}${

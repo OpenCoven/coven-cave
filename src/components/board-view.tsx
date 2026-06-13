@@ -38,6 +38,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const isMobile = useIsMobile();
   const [cards, setCards] = useState<Card[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Distinguish "still loading" from "loaded and empty" so the empty-state
+  // CTA doesn't flash on every open before the first GET resolves.
+  const [hasLoaded, setHasLoaded] = useState(false);
+  // Transient feedback when an optimistic mutation fails and is reverted.
+  const [actionError, setActionError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar"]));
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,6 +75,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     } catch (err) {
       setCards([]);
       setError(err instanceof Error ? err.message : "load failed");
+    } finally {
+      setHasLoaded(true);
     }
   }, []);
 
@@ -147,9 +154,21 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
   const patchCard = async (id: string, patch: Partial<Card>) => {
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
-    const json = await res.json();
-    if (!json.ok) await load();
+    try {
+      const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+      const json = await res.json();
+      if (!json.ok) {
+        // Revert to the server copy and tell the user — an optimistic change
+        // that silently snaps back reads as a glitch.
+        setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
+        await load();
+      } else {
+        setActionError(null);
+      }
+    } catch {
+      setActionError("Couldn't reach the server — your change was reverted.");
+      await load();
+    }
   };
 
   const moveCardToStatus = (id: string, status: CardStatus) => {
@@ -367,10 +386,33 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           <span className="min-w-0 truncate">{chatLinkError}</span>
         </div>
       )}
+      {actionError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{actionError}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setActionError(null)}
+            aria-label="Dismiss"
+            className="focus-ring shrink-0 rounded p-0.5 text-[var(--color-warning)] transition-opacity hover:opacity-70"
+          >
+            <Icon name="ph:x-bold" width={11} aria-hidden />
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        {cards.length === 0 && !error ? (
+        {!hasLoaded && !error ? (
+          <div className="flex h-full items-center justify-center p-6" role="status" aria-label="Loading tasks">
+            <Icon name="ph:circle-notch-bold" width={20} className="animate-spin text-[var(--text-muted)]" aria-hidden />
+          </div>
+        ) : cards.length === 0 && !error ? (
           <div className="flex h-full items-center justify-center p-6">
             <div className="max-w-md rounded-xl border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-6 text-center">
               <span className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-muted)]">
