@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useId, useMemo, useState, useRef, useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useFocusTrap } from "@/lib/use-focus-trap";
+import { SnoozeMenu } from "@/components/snooze-menu";
+import { itemDate, packEventColumns } from "@/lib/calendar-layout";
 import { useIsMobile } from "@/lib/use-viewport";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,6 +24,12 @@ type Props = {
   activeFamiliarId?: string | null;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
+  /** Mark an item done. Optimistic; the SSE stream reconciles. */
+  onComplete?: (id: string) => void;
+  /** Dismiss (remove) an item. */
+  onDismiss?: (id: string) => void;
+  /** Snooze an item until the given ISO timestamp. */
+  onSnooze?: (id: string, untilIso: string) => void;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -91,12 +100,6 @@ function defaultEntryFireAt(day: Date): string {
   return fallback.toISOString();
 }
 
-function itemDate(item: InboxItem): Date | null {
-  const iso = item.fireAt ?? item.firedAt ?? item.createdAt;
-  if (!iso) return null;
-  return new Date(iso);
-}
-
 function urgencyColor(item: InboxItem): string {
   const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
   if (!meta) return "bg-[var(--text-muted)]";
@@ -129,17 +132,20 @@ function ItemChip({
   item: InboxItem;
   onClick?: () => void;
 }) {
+  const done = item.status === "done";
   return (
     <button
       onClick={onClick}
-      className="focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-2.5 text-left text-[13px] transition-colors hover:bg-[var(--bg-elevated)] md:py-1 md:text-[11px]"
+      className={`focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-2.5 text-left text-[13px] transition-colors md:py-1 md:text-[11px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
     >
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
+      {done
+        ? <Icon name="ph:check-circle" className="shrink-0 text-[var(--text-muted)] text-[12px]" />
+        : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />}
       <Icon
         name={platformIcon(item)}
         className="shrink-0 text-[var(--text-muted)] text-[12px]"
       />
-      <span className="flex-1 truncate text-[var(--text-primary)]">{item.title}</span>
+      <span className={`flex-1 truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
       {(item.fireAt ?? item.firedAt) && (
         <span className="shrink-0 text-[var(--text-muted)]">
           {fmtTime((item.fireAt ?? item.firedAt)!)}
@@ -275,7 +281,7 @@ function AgendaView({
             </span>
           </div>
           <div className="flex flex-col gap-1">
-            {groupItems
+            {[...groupItems]
               .sort((a, b) => {
                 const ta = new Date(a.fireAt ?? a.createdAt).getTime();
                 const tb = new Date(b.fireAt ?? b.createdAt).getTime();
@@ -385,12 +391,6 @@ function TimeGrid({
     orientation: "vertical",
   });
 
-  function itemTop(item: InboxItem): number {
-    const d = itemDate(item);
-    if (!d) return 0;
-    return (d.getHours() + d.getMinutes() / 60) * HOUR_HEIGHT;
-  }
-
   const totalHeight = 24 * HOUR_HEIGHT;
   const nowMinutes = today.getHours() * 60 + today.getMinutes();
   const nowTop = (nowMinutes / 60) * HOUR_HEIGHT;
@@ -448,25 +448,38 @@ function TimeGrid({
               </div>
             )}
 
-            {/* Items */}
-            {col.items
-              .filter((it) => itemDate(it) !== null)
-              .map((item) => (
+            {/* Items — lane-packed so overlaps sit side by side */}
+            {packEventColumns(col.items).map((ev) => {
+              const widthPct = 100 / ev.lanes;
+              const leftPct = ev.lane * widthPct;
+              const height = Math.max(18, ((ev.end - ev.start) / 60) * HOUR_HEIGHT - 2);
+              const done = ev.item.status === "done";
+              return (
                 <button
-                  key={item.id}
+                  key={ev.item.id}
                   type="button"
                   data-calendar-event="true"
-                  onClick={() => onOpenItem?.(item)}
-                  className="absolute left-1 right-1 rounded px-1.5 py-0.5 text-left text-[10px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors overflow-hidden"
+                  onClick={() => onOpenItem?.(ev.item)}
+                  title={ev.item.title}
+                  className={`absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
+                    done
+                      ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
+                      : "border-[var(--accent-presence)]/30 bg-[var(--accent-presence)]/15 hover:bg-[var(--accent-presence)]/25"
+                  }`}
                   style={{
-                    top: itemTop(item) + 1,
-                    minHeight: 20,
+                    top: (ev.start / 60) * HOUR_HEIGHT + 1,
+                    height,
+                    left: `calc(${leftPct}% + 1px)`,
+                    width: `calc(${widthPct}% - 2px)`,
                   }}
                 >
-                  <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${urgencyColor(item)}`} />
-                  <span className="truncate">{item.title}</span>
+                  {done
+                    ? <Icon name="ph:check" width={9} className="shrink-0 text-[var(--text-muted)]" />
+                    : <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(ev.item)}`} />}
+                  <span className={`truncate ${done ? "line-through" : ""}`}>{ev.item.title}</span>
                 </button>
-              ))}
+              );
+            })}
           </div>
         ))}
       </div>
@@ -673,8 +686,17 @@ function MonthView({
               return (
                 <div
                   key={i}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${fmtDateHeading(day)}${dayItems.length ? `, ${dayItems.length} item${dayItems.length !== 1 ? "s" : ""}` : ""}`}
                   onClick={() => onDayClick?.(day)}
-                  className={`flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onDayClick?.(day);
+                    }
+                  }}
+                  className={`focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
@@ -692,19 +714,25 @@ function MonthView({
                     {day.getDate()}
                   </span>
                   <div className="flex flex-col gap-0.5 overflow-hidden">
-                    {dayItems.slice(0, 3).map((item) => (
+                    {dayItems.slice(0, 3).map((item) => {
+                      const done = item.status === "done";
+                      return (
                       <button
                         key={item.id}
                         onClick={(e) => {
                           e.stopPropagation();
                           onOpenItem?.(item);
                         }}
-                        className="focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 py-0.5 text-left text-[9px] hover:bg-[var(--bg-elevated)]"
+                        title={item.title}
+                        className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[9px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
                       >
-                        <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />
-                        <span className="truncate text-[var(--text-primary)]">{item.title}</span>
+                        {done
+                          ? <Icon name="ph:check" width={8} className="shrink-0 text-[var(--text-muted)]" />
+                          : <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
+                        <span className={`truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
                       </button>
-                    ))}
+                      );
+                    })}
                     {dayItems.length > 3 && (
                       <button
                         onClick={(e) => {
@@ -829,27 +857,63 @@ function MiniMonthPopover({
   );
 }
 
+/** Human label for the "Open" action based on what the item links to. */
+function openTargetLabel(item: InboxItem): string | null {
+  if (item.link) {
+    switch (item.link.kind) {
+      case "session": return "Open session";
+      case "card": return "Open card";
+      case "memory": return "Open memory";
+      case "url": return "Open link";
+    }
+  }
+  if (item.sessionId) return "Open session";
+  return null;
+}
+
+const KIND_LABEL: Record<InboxItem["kind"], string> = {
+  reminder: "Reminder",
+  agent: "Agent",
+  "response-needed": "Response needed",
+};
+
 function ItemDetailPanel({
   item,
   onClose,
+  onOpen,
+  onComplete,
+  onDismiss,
+  onSnooze,
 }: {
   item: InboxItem;
   onClose: () => void;
+  onOpen?: (item: InboxItem) => void;
+  onComplete?: (id: string) => void;
+  onDismiss?: (id: string) => void;
+  onSnooze?: (id: string, untilIso: string) => void;
 }) {
-  const [snoozeOpen, setSnoozeOpen] = useState(false);
-  const SNOOZE_OPTIONS = [
-    { label: "1 hour",   ms: 60 * 60 * 1000 },
-    { label: "3 hours",  ms: 3 * 60 * 60 * 1000 },
-    { label: "Tomorrow", ms: 24 * 60 * 60 * 1000 },
-  ];
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(true, panelRef, { onEscape: onClose });
+
   const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
+  const body = (item as unknown as { body?: string }).body;
+  const openLabel = openTargetLabel(item);
+  const isDone = item.status === "done";
 
   return (
-    <div className="cave-cal-detail-panel">
+    <div
+      ref={panelRef}
+      className="cave-cal-detail-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+    >
       <div className="cave-cal-detail-header">
         <div className="flex items-center gap-2 min-w-0">
           <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[14px]" />
-          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+          <span id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
             {item.title}
           </span>
         </div>
@@ -863,6 +927,10 @@ function ItemDetailPanel({
       </div>
 
       <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
+          {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success,#34d399)]"><Icon name="ph:check" width={9} />Done</span> : null}
+        </div>
         {meta?.urgency && meta.urgency !== "normal" && (
           <div className="flex items-center gap-1.5">
             <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
@@ -880,40 +948,49 @@ function ItemDetailPanel({
             </span>
           </div>
         )}
-        {(item as unknown as { body?: string }).body && (
+        {body && (
           <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
-            {(item as unknown as { body: string }).body}
+            {body}
           </p>
         )}
       </div>
 
-      <div className="px-4 py-3 border-t border-[var(--border-hairline)] flex gap-2">
-        <button
-          onClick={onClose}
-          className="focus-ring flex-1 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
-        >
-          Dismiss
-        </button>
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
+        {openLabel && onOpen ? (
           <button
-            onClick={() => setSnoozeOpen((v) => !v)}
-            className="focus-ring w-full rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
+            onClick={() => { onOpen(item); onClose(); }}
+            className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
           >
-            Snooze →
+            <Icon name="ph:arrow-square-out" width={12} />
+            {openLabel}
           </button>
-          {snoozeOpen && (
-            <div className="absolute bottom-full right-0 mb-1 w-32 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-lg overflow-hidden z-10">
-              {SNOOZE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.label}
-                  onClick={() => { setSnoozeOpen(false); onClose(); }}
-                  className="focus-ring w-full px-3 py-2 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] transition-colors"
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
+        ) : null}
+        <div className="flex items-center gap-2">
+          {!isDone && onComplete ? (
+            <button
+              onClick={() => { onComplete(item.id); onClose(); }}
+              className="focus-ring inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:check" width={12} />
+              Done
+            </button>
+          ) : null}
+          {onSnooze ? (
+            <SnoozeMenu
+              className="shrink-0"
+              onSnooze={(untilIso) => { onSnooze(item.id, untilIso); onClose(); }}
+            />
+          ) : null}
+          {onDismiss ? (
+            <button
+              onClick={() => { onDismiss(item.id); onClose(); }}
+              aria-label="Dismiss"
+              className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              title="Dismiss"
+            >
+              <Icon name="ph:trash" width={12} />
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -922,7 +999,7 @@ function ItemDetailPanel({
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, onOpenItem }: Props) {
+export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, onOpenItem, onComplete, onDismiss, onSnooze }: Props) {
   const isMobile = useIsMobile();
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
@@ -944,9 +1021,12 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
   // active familiar. Defensive null escape: bypass the filter entirely.
   const scopedItems = useMemo(
     () =>
-      activeFamiliarId == null
+      (activeFamiliarId == null
         ? items
-        : items.filter((it) => it.familiarId === activeFamiliarId),
+        : items.filter((it) => it.familiarId === activeFamiliarId)
+      // Dismissed items are removed from the calendar so a Dismiss reads as
+      // "gone"; done items stay (rendered with a completed treatment).
+      ).filter((it) => it.status !== "dismissed"),
     [items, activeFamiliarId],
   );
 
@@ -962,9 +1042,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
     const el = containerRef.current;
     if (!el) return;
     const handler = (e: KeyboardEvent) => {
-      // Don't fire when focus is inside input/textarea/select
-      const tag = (e.target as HTMLElement).tagName.toLowerCase();
-      if (["input", "textarea", "select"].includes(tag)) return;
+      // Don't fire when focus is inside an editable field (incl. contenteditable).
+      const target = e.target as HTMLElement;
+      const tag = target.tagName.toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
       switch (e.key) {
         case "ArrowLeft":  e.preventDefault(); navigate(-1); break;
         case "ArrowRight": e.preventDefault(); navigate(1);  break;
@@ -1149,6 +1230,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
         <ItemDetailPanel
           item={selectedItem}
           onClose={() => setSelectedItem(null)}
+          onOpen={onOpenItem}
+          onComplete={onComplete}
+          onDismiss={onDismiss}
+          onSnooze={onSnooze}
         />
       )}
     </div>

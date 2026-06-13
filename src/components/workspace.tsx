@@ -565,6 +565,26 @@ export function Workspace() {
     }
   }, []);
 
+  // Calendar item actions — optimistic local update + fire-and-forget POST;
+  // the /api/inbox/stream SSE reconciles authoritative state (same pattern as
+  // dismissToast/snoozeToast).
+  const completeInboxItem = useCallback((id: string) => {
+    setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "done" } : it)));
+    void fetch(`/api/inbox/${id}/done`, { method: "POST" });
+  }, []);
+  const dismissInboxItem = useCallback((id: string) => {
+    setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "dismissed" } : it)));
+    void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
+  }, []);
+  const snoozeInboxItem = useCallback((id: string, untilIso: string) => {
+    setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "snoozed", snoozeUntil: untilIso } : it)));
+    void fetch(`/api/inbox/${id}/snooze`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ untilIso }),
+    });
+  }, []);
+
   // Poll Inbox for unresolved-escalations count — drives the
   // sidebar/daemon-bar Inbox badge. Cheap GET every 30s; the route
   // already de-dupes via reconcileEscalations().
@@ -1297,6 +1317,9 @@ export function Workspace() {
             setMode("inbox");
           }
         }}
+        onComplete={completeInboxItem}
+        onDismiss={dismissInboxItem}
+        onSnooze={snoozeInboxItem}
       />
     ) : (
       <HomeComposer
