@@ -228,6 +228,23 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
       .sort(cmp[sortMode]);
   }, [fileEntries, q, sourceFilter, sortMode, staleOnly]);
 
+  // Lib-backed normalized files, used for grouping + the suggestions section.
+  const normalizedFiles = useMemo(() => fileEntries.map(normalizeFileEntry), [fileEntries]);
+  const fileByPath = useMemo(
+    () => new Map(fileEntries.map((e) => [e.fullPath, e])),
+    [fileEntries],
+  );
+  const visibleFileGroups = useMemo(() => {
+    let list = normalizedFiles
+      .filter((e) => {
+        const orig = fileByPath.get(e.path);
+        return orig ? (sourceFilter === "all" || orig.sourceKind === sourceFilter) && memoryMatches(orig, q) : false;
+      });
+    if (staleOnly) list = list.filter((e) => detectStale(e).stale);
+    list = sortMemories(list, sortMode);
+    return groupMemories(list, groupMode);
+  }, [normalizedFiles, fileByPath, sourceFilter, q, staleOnly, sortMode, groupMode]);
+
   // Reset pagination whenever the result set changes underneath the user.
   useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
   useEffect(() => { setFamiliarLimit(FAMILIAR_PAGE); }, [q, familiarFilter]);
@@ -372,6 +389,34 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             </select>
           )}
         </div>
+        {compact ? null : (
+          <div className="memory-controls mt-3">
+            <label className="memory-control">
+              Group
+              <select value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupBy)}>
+                <option value="none">None</option>
+                <option value="familiar">Familiar</option>
+                <option value="source">Source</option>
+                <option value="type">Type</option>
+                <option value="date">Date</option>
+              </select>
+            </label>
+            <label className="memory-control">
+              Sort
+              <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
+                <option value="recent">Recent</option>
+                <option value="oldest">Oldest</option>
+                <option value="name">Name</option>
+                <option value="size">Size</option>
+                <option value="staleFirst">Stale first</option>
+              </select>
+            </label>
+            <label className="memory-control memory-control-toggle">
+              <input type="checkbox" checked={staleOnly} onChange={(e) => setStaleOnly(e.target.checked)} />
+              Stale only
+            </label>
+          </div>
+        )}
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
       </div>
 
@@ -496,41 +541,53 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
             <div className="flex items-center gap-2">
-              {compact ? null : (
-                <label className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                  <span className="sr-only">Sort memory files</span>
-                  <Icon name="ph:caret-up-down" width={11} aria-hidden />
-                  <select
-                    value={sortMode}
-                    onChange={(event) => setSortMode(event.target.value as typeof sortMode)}
-                    aria-label="Sort memory files"
-                    className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 py-0.5 pl-1 pr-4 text-[10px] text-[var(--text-secondary)]"
-                  >
-                    <option value="recent">Recent</option>
-                    <option value="name">Name</option>
-                    <option value="size">Size</option>
-                  </select>
-                </label>
-              )}
               <span className="text-[10px] text-[var(--text-muted)]">
-                {fullView && visibleFiles.length > fileLimit
+                {fullView && groupMode === "none" && visibleFiles.length > fileLimit
                   ? `${fileLimit} of ${visibleFiles.length}`
                   : `${visibleFiles.length} visible`}
               </span>
             </div>
           </div>
-          <MemoryFilesList
-            entries={visibleFiles}
-            onOpen={onOpenMemoryFile}
-            loaded={loaded}
-            error={error}
-            limit={fullView ? fileLimit : effectiveLimit}
-            onShowMore={fullView ? () => setFileLimit((n) => n + FILE_PAGE) : undefined}
-            activeFamiliarId={familiarFilter}
-            onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
-            selectedRowId={compact ? null : selectedRowId}
-            onDelete={compact ? undefined : (p) => handleDelete(p, p, "file")}
-          />
+          {!compact && groupMode !== "none" ? (
+            <div className="flex flex-col gap-3">
+              {visibleFileGroups.map((group) => {
+                const rows = group.entries
+                  .map((e) => fileByPath.get(e.path))
+                  .filter((e): e is FileMemoryEntry => Boolean(e));
+                if (rows.length === 0) return null;
+                return (
+                  <div key={group.key}>
+                    <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                      {group.label} ({rows.length})
+                    </h4>
+                    <MemoryFilesList
+                      entries={rows}
+                      onOpen={onOpenMemoryFile}
+                      loaded={loaded}
+                      error={error}
+                      activeFamiliarId={familiarFilter}
+                      onSelect={(rowId) => setSelectedRowId(rowId)}
+                      selectedRowId={selectedRowId}
+                      onDelete={(p) => handleDelete(p, p, "file")}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <MemoryFilesList
+              entries={visibleFiles}
+              onOpen={onOpenMemoryFile}
+              loaded={loaded}
+              error={error}
+              limit={fullView ? fileLimit : effectiveLimit}
+              onShowMore={fullView ? () => setFileLimit((n) => n + FILE_PAGE) : undefined}
+              activeFamiliarId={familiarFilter}
+              onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
+              selectedRowId={compact ? null : selectedRowId}
+              onDelete={compact ? undefined : (p) => handleDelete(p, p, "file")}
+            />
+          )}
         </section>
         {!compact && selectedRowId ? (
           <aside data-testid="memory-list-drawer" className="min-h-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
