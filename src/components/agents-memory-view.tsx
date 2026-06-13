@@ -245,6 +245,17 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     return groupMemories(list, groupMode);
   }, [normalizedFiles, fileByPath, sourceFilter, q, staleOnly, sortMode, groupMode]);
 
+  // Stale entries across BOTH sources, for the "Suggested for cleanup" section.
+  const suggestions = useMemo(() => {
+    const all = [...covenEntries.map((e) => normalizeCovenEntry(e)), ...normalizedFiles];
+    return all.filter((e) => detectStale(e).stale);
+  }, [covenEntries, normalizedFiles]);
+  // bulk-selectable = suggestions that are NOT protected from bulk
+  const bulkDeletable = useMemo(
+    () => suggestions.filter((e) => e.protection === "normal"),
+    [suggestions],
+  );
+
   // Reset pagination whenever the result set changes underneath the user.
   useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
   useEffect(() => { setFamiliarLimit(FAMILIAR_PAGE); }, [q, familiarFilter]);
@@ -451,6 +462,34 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               <span className="text-[var(--text-muted)]">Loading memories…</span>
             )}
           </div>
+        ) : null}
+        {!compact && suggestions.length > 0 ? (
+          <section className="memory-suggestions xl:col-[1/-1]" aria-label="Suggested for cleanup">
+            <header>
+              <h3>Suggested for cleanup ({suggestions.length})</h3>
+              <button
+                type="button"
+                disabled={bulkDeletable.length === 0}
+                onClick={() => bulkDeletable.forEach((e) => handleDelete(e.path, e.key, e.source))}
+              >
+                Delete {bulkDeletable.length} cleanable
+              </button>
+            </header>
+            <ul>
+              {suggestions.map((e) => (
+                <li key={e.key} className={e.protection !== "normal" ? "memory-suggestion-protected" : ""}>
+                  <span>{e.title}</span>
+                  <em>{detectStale(e).reason}</em>
+                  {e.protection !== "normal" ? (
+                    <span className="memory-protected-badge" title="Protected from bulk delete">🔒 protected</span>
+                  ) : null}
+                  {e.protection !== "structural" ? (
+                    <button type="button" onClick={() => handleDelete(e.path, e.key, e.source)}>Delete</button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
         ) : null}
         {compact || hasFamiliar ? (
         <section className="min-h-0">
