@@ -131,6 +131,9 @@ export const ruleBasedStaleScorer: StaleScorer = {
       return { stale: true, reason: "No notable updates", confidence: 0.95 };
     }
     if (stripped.length === 0) {
+      // File entries set bodyHint="" because excerpts aren't loaded;
+      // trust the file has content if it has a non-zero size.
+      if (entry.size !== null && entry.size > 0) return NOT_STALE;
       return { stale: true, reason: "Empty entry", confidence: 0.8 };
     }
     if (stripped.length < 40 && /^\d{4}-\d{2}-\d{2}/.test(entry.title)) {
@@ -145,4 +148,70 @@ export function detectStale(
   scorer: StaleScorer = ruleBasedStaleScorer,
 ): StaleVerdict {
   return scorer.score(entry);
+}
+
+export type GroupBy = "none" | "familiar" | "source" | "type" | "date";
+export type SortMode = "recent" | "oldest" | "name" | "size" | "staleFirst";
+export type MemoryFacets = {
+  familiarId?: string;
+  source?: ManagedSource;
+  kind?: string;
+  staleOnly?: boolean;
+};
+export type MemoryGroup = { key: string; label: string; entries: ManagedMemoryEntry[] };
+
+export function sortMemories(entries: ManagedMemoryEntry[], sort: SortMode): ManagedMemoryEntry[] {
+  const out = [...entries];
+  switch (sort) {
+    case "recent": out.sort((x, y) => y.updatedAt - x.updatedAt); break;
+    case "oldest": out.sort((x, y) => x.updatedAt - y.updatedAt); break;
+    case "name": out.sort((x, y) => x.title.localeCompare(y.title)); break;
+    case "size": out.sort((x, y) => (y.size ?? -1) - (x.size ?? -1)); break;
+    case "staleFirst":
+      out.sort((x, y) => Number(detectStale(y).stale) - Number(detectStale(x).stale));
+      break;
+  }
+  return out;
+}
+
+function dateBucket(updatedAt: number, now = Date.now()): { key: string; label: string } {
+  if (!updatedAt) return { key: "z-unknown", label: "Unknown" };
+  const ageDays = (now - updatedAt) / 86_400_000;
+  if (ageDays < 1) return { key: "a-today", label: "Today" };
+  if (ageDays < 7) return { key: "b-week", label: "This week" };
+  if (ageDays < 31) return { key: "c-month", label: "This month" };
+  return { key: "d-older", label: "Older" };
+}
+
+export function groupMemories(entries: ManagedMemoryEntry[], by: GroupBy, now = Date.now()): MemoryGroup[] {
+  if (by === "none") return [{ key: "all", label: "All", entries: [...entries] }];
+  const map = new Map<string, MemoryGroup>();
+  for (const e of entries) {
+    let key: string;
+    let label: string;
+    if (by === "familiar") { key = e.familiarId ?? "—"; label = e.familiarId ?? "Unassigned"; }
+    else if (by === "source") { key = e.source; label = e.source === "coven" ? "Coven" : "Files"; }
+    else if (by === "type") { key = e.kind; label = e.kind; }
+    else { const b = dateBucket(e.updatedAt, now); key = b.key; label = b.label; }
+    if (!map.has(key)) map.set(key, { key, label, entries: [] });
+    map.get(key)!.entries.push(e);
+  }
+  return [...map.values()].sort((x, y) => x.key.localeCompare(y.key));
+}
+
+export function filterMemories(entries: ManagedMemoryEntry[], query: string, facets: MemoryFacets): ManagedMemoryEntry[] {
+  const q = query.trim().toLowerCase();
+  return entries.filter((e) => {
+    if (facets.familiarId && e.familiarId !== facets.familiarId) return false;
+    if (facets.source && e.source !== facets.source) return false;
+    if (facets.kind && e.kind !== facets.kind) return false;
+    if (facets.staleOnly && !detectStale(e).stale) return false;
+    if (!q) return true;
+    return (
+      e.title.toLowerCase().includes(q) ||
+      e.path.toLowerCase().includes(q) ||
+      e.bodyHint.toLowerCase().includes(q) ||
+      (e.familiarId ?? "").toLowerCase().includes(q)
+    );
+  });
 }

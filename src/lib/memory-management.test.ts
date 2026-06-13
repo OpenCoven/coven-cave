@@ -57,4 +57,31 @@ assert.equal(detectStale(mk({ protection: "structural", bodyHint: "" })).stale, 
 const always: StaleScorer = { score: () => ({ stale: true, reason: "x", confidence: 1 }) };
 assert.equal(detectStale(mk({}), always).stale, true, "scorer is pluggable");
 
+import { groupMemories, sortMemories, filterMemories } from "./memory-management.ts";
+
+const a = mk({ key: "a", title: "alpha", familiarId: "kitty", kind: "coven", updatedAt: 100, source: "coven", bodyHint: "No notable updates" });
+const b = mk({ key: "b", title: "beta", familiarId: "sage", kind: "coven-origin", updatedAt: 300, source: "file", size: 50 });
+const c = mk({ key: "c", title: "gamma", familiarId: "kitty", kind: "runtime", updatedAt: 200, source: "file", size: 10 });
+const all = [a, b, c];
+
+// sort
+assert.deepEqual(sortMemories(all, "recent").map((e) => e.key), ["b", "c", "a"], "recent = newest first");
+assert.deepEqual(sortMemories(all, "oldest").map((e) => e.key), ["a", "c", "b"], "oldest first");
+assert.deepEqual(sortMemories(all, "name").map((e) => e.key), ["a", "b", "c"], "name asc");
+assert.deepEqual(sortMemories(all, "size").map((e) => e.key), ["b", "c", "a"], "size desc (null last)");
+assert.equal(sortMemories(all, "staleFirst")[0].key, "a", "stale first");
+
+// group
+const g = groupMemories(all, "familiar");
+assert.deepEqual(g.map((x) => x.key), ["kitty", "sage"], "groups by familiar");
+assert.deepEqual(g[0].entries.map((e) => e.key), ["a", "c"], "kitty group members");
+assert.equal(groupMemories(all, "none").length, 1, "none = single group");
+assert.deepEqual(groupMemories(all, "source").map((x) => x.key).sort(), ["coven", "file"]);
+
+// filter
+assert.deepEqual(filterMemories(all, "alpha", {}).map((e) => e.key), ["a"], "text filter");
+assert.deepEqual(filterMemories(all, "", { familiarId: "kitty" }).map((e) => e.key), ["a", "c"], "facet familiar");
+assert.deepEqual(filterMemories(all, "", { source: "file" }).map((e) => e.key), ["b", "c"], "facet source");
+assert.deepEqual(filterMemories(all, "", { staleOnly: true }).map((e) => e.key), ["a"], "stale only");
+
 console.log("memory-management.test: ok");
