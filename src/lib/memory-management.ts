@@ -110,3 +110,39 @@ export function classifyProtection(filePath: string): ProtectionTier {
 export function isStructuralMemoryPath(filePath: string): boolean {
   return classifyProtection(filePath) === "structural";
 }
+
+export type StaleVerdict = { stale: boolean; reason: string; confidence: number };
+export interface StaleScorer {
+  score(entry: ManagedMemoryEntry): StaleVerdict;
+}
+
+const NOT_STALE: StaleVerdict = { stale: false, reason: "", confidence: 0 };
+
+/** Deterministic stale detection. AI scoring can later implement StaleScorer
+ *  and be passed to detectStale() with no caller changes. */
+export const ruleBasedStaleScorer: StaleScorer = {
+  score(entry) {
+    if (entry.protection === "structural") return NOT_STALE;
+    const stripped = entry.bodyHint
+      .replace(/^#.*$/gm, "")   // drop markdown headings
+      .replace(/^[-*]\s*/gm, "") // drop list bullets
+      .trim();
+    if (/^no notable updates\.?$/i.test(stripped)) {
+      return { stale: true, reason: "No notable updates", confidence: 0.95 };
+    }
+    if (stripped.length === 0) {
+      return { stale: true, reason: "Empty entry", confidence: 0.8 };
+    }
+    if (stripped.length < 40 && /^\d{4}-\d{2}-\d{2}/.test(entry.title)) {
+      return { stale: true, reason: "Trivial dated entry", confidence: 0.5 };
+    }
+    return NOT_STALE;
+  },
+};
+
+export function detectStale(
+  entry: ManagedMemoryEntry,
+  scorer: StaleScorer = ruleBasedStaleScorer,
+): StaleVerdict {
+  return scorer.score(entry);
+}

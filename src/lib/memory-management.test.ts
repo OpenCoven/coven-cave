@@ -33,7 +33,8 @@ assert.equal(file.size, 12);
 assert.equal(file.kind, "coven-origin");
 assert.equal(file.updatedAt, Date.parse("2001-09-09T01:46:40.000Z"));
 
-import { classifyProtection, isStructuralMemoryPath } from "./memory-management.ts";
+import { classifyProtection, isStructuralMemoryPath, detectStale, ruleBasedStaleScorer } from "./memory-management.ts";
+import type { StaleScorer, ManagedMemoryEntry } from "./memory-management.ts";
 
 assert.equal(classifyProtection("/h/.coven/memory/kitty/MEMORY.md"), "structural");
 assert.equal(classifyProtection("/h/.openclaw/workspace/kitty/memory/.dreams/phase-signals.json"), "structural");
@@ -42,5 +43,18 @@ assert.equal(classifyProtection("/h/.coven/workspaces/familiars/kitty/memory/dre
 assert.equal(classifyProtection("/h/.coven/memory/kitty/note.md"), "normal");
 assert.equal(isStructuralMemoryPath("/h/x/MEMORY.md"), true);
 assert.equal(isStructuralMemoryPath("/h/x/note.md"), false);
+
+const mk = (over: Partial<ManagedMemoryEntry>): ManagedMemoryEntry => ({
+  key: "k", path: "/p", source: "coven", familiarId: null, title: "t",
+  kind: "coven", updatedAt: 0, updatedAtLabel: "", size: null, bodyHint: "",
+  protection: "normal", ...over,
+});
+
+assert.equal(detectStale(mk({ bodyHint: "# Light Sleep\n- No notable updates." })).stale, true, "dream placeholder is stale");
+assert.equal(detectStale(mk({ bodyHint: "   " })).stale, true, "empty is stale");
+assert.equal(detectStale(mk({ bodyHint: "real content here that is substantive and long enough" })).stale, false, "substantive not stale");
+assert.equal(detectStale(mk({ protection: "structural", bodyHint: "" })).stale, false, "structural never stale");
+const always: StaleScorer = { score: () => ({ stale: true, reason: "x", confidence: 1 }) };
+assert.equal(detectStale(mk({}), always).stale, true, "scorer is pluggable");
 
 console.log("memory-management.test: ok");
