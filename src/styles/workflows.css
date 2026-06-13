@@ -1062,14 +1062,17 @@
 
 .workflow-manifest-yaml {
   margin: 0;
-  padding: 9px 10px;
+  padding: 11px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in oklch, var(--background) 80%, transparent);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
   overflow: auto;
-  max-height: 240px;
+  /* Larger preview: the manifest is the canonical "what Save writes", so give
+     it room to show most workflows without its own scrollbar. Scales with the
+     viewport; the side panel still scrolls past it on short screens. */
+  max-height: min(620px, 58vh);
   white-space: pre;
 }
 
