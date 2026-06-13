@@ -7,6 +7,33 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.77] - 2026-06-13
+
+A large reading-experience release: a full suite of long-form typography controls, board touch dragging and reliability fixes, real calendar actions, memory management, and continued CodeQL security hardening.
+
+### Added
+- **Reading typography suite** — new long-form reading controls: drop cap (library reader), hyphenation, font weight, text alignment, letter spacing, line spacing, maximum reading width, and a reframed Text size control.
+- **JetBrains Mono** is now the default monospace/code font.
+- **Board touch dragging** — cards can be dragged on touch devices, with a long-press ghost and reliable drop handling.
+- **Calendar item actions** — real Done/Dismiss/Snooze actions, an overlap-aware day grid, and an accessible, keyboard-navigable dialog.
+- **Memory management** — delete with undo, stale-memory suggestions, and grouping/sorting/filtering of memories.
+- **Library navigation** — Back and Refresh controls in the Library nav.
+- **Roles** — role workflows resolve against Workflow Studio manifests, with scaffold/open support.
+- **Projects** — richer project list with readable file previews.
+
+### Changed
+- **Chat surface polish** — honest header metadata, task chips navigate to the board, the transcript column centers on wide screens, the right session panel mirrors the left rail width, and message hover tint was dropped (copy moved to its own row).
+- **Chat list** — unified row pill chrome and uniform action buttons.
+- **Workflows** — enlarged manifest preview, left-aligned Boards/Projects attachment toggles, and saved builder node positions.
+- **iOS / mobile** — larger touch targets and Info.plist newline syncing.
+
+### Fixed
+- **Board reliability** — honest loading-vs-empty state, surfaced (and dismissible) move failures, a card crash guard, accessibility fixes, and a portaled task drawer so fixed positioning escapes the mode-fade transform.
+- **Library** — bookmark titles no longer collapse to "DeepWi…".
+- **Chat** — folder icon follows expand state rather than selection, and the native select chevron was removed from the project chip.
+- **Changes panel** — reverts against HEAD and handles staged files correctly.
+- **Security hardening** — additional CodeQL-driven path-injection fixes across workflow source file handling (alerts 42–45).
+
 ## [0.0.76] - 2026-06-12
 
 Cave gets a security-hardening sweep, safer dependency intake, production workflow starters, and more durable chat tool history.
