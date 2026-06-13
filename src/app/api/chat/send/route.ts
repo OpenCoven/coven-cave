@@ -26,6 +26,7 @@ import {
   flattenToolResultContent,
   formatToolInputValue,
   formatToolPayload,
+  toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
@@ -1093,6 +1094,7 @@ export async function POST(req: Request) {
                     block.id,
                     block.name,
                     formatToolInputValue(block.input),
+                    assistantText.length,
                   );
                   if (toolEv) push({ kind: "tool_use", ...toolEv });
                 }
@@ -1138,7 +1140,7 @@ export async function POST(req: Request) {
                 formatToolPayload(rest),
                 /error|fail|denied|exit\s*[1-9]/i.test(rest),
               )
-            : toolTracker.hookStart(name, formatToolPayload(rest));
+            : toolTracker.hookStart(name, formatToolPayload(rest), assistantText.length);
           push({ kind: "tool_use", ...toolEv });
         }
         const filtered = assistantFilter.push(cleaned + "\n");
@@ -1328,6 +1330,13 @@ export async function POST(req: Request) {
           ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
           createdAt: now,
         };
+        // Persist the turn's tool rows: the live chips exist only in client
+        // state fed by SSE; without this, refresh/chat-switch loses them.
+        // Offsets were stamped against the untrimmed stream — shift by the
+        // leading trim so interleaving matches the saved text.
+        const persistedTools = toPersistedTools(toolTracker.snapshot(),
+          assistantText.length - assistantText.trimStart().length,
+        );
         const assistantTurn: ChatTurn = {
           id: assistantTurnId,
           role: "assistant",
@@ -1338,6 +1347,7 @@ export async function POST(req: Request) {
           ...(cancelledByUser ? { cancelled: true } : {}),
           ...(result.usage ? { usage: result.usage } : {}),
           ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+          ...(persistedTools ? { tools: persistedTools } : {}),
           responseMetadata,
         };
         const conv = existing ?? {

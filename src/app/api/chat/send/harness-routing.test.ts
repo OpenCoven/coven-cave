@@ -12,6 +12,7 @@ import {
   formatToolInputValue,
   formatToolPayload,
   ToolCallTracker,
+  toPersistedTools,
 } from "../../../../lib/chat-tool-events.ts";
 
 const chatRoute = await readFile(
@@ -370,6 +371,30 @@ assert.match(
   "The resume retry should reset the tool tracker alongside the other per-attempt state",
 );
 
+assert.match(
+  chatRoute,
+  /toolTracker\.hookStart\(name, formatToolPayload\(rest\), assistantText\.length\)/,
+  "hook tool starts are stamped with the current assistant-text offset",
+);
+
+assert.match(
+  chatRoute,
+  /formatToolInputValue\(block\.input\),\s*assistantText\.length,/,
+  "envelope tool starts are stamped with the current assistant-text offset",
+);
+
+assert.match(
+  chatRoute,
+  /toPersistedTools\(toolTracker\.snapshot\(\)/,
+  "the saved assistant turn captures the tracker's final tool state",
+);
+
+assert.match(
+  chatRoute,
+  /\.\.\.\(persistedTools \? \{ tools: persistedTools \} : \{\}\)/,
+  "tools persist on the assistant turn alongside usage and cost",
+);
+
 // Behavioral: per-name FIFO queue gives overlapping same-name calls distinct
 // ids and pairs each post with the oldest open pre (correct durations).
 {
@@ -662,5 +687,85 @@ assert.match(
   );
   assert.equal(usageBreakdown(undefined, undefined), null);
 }
+
+// ── Tool persistence: tracker recording + snapshot (spec 2026-06-12) ────────
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.hookStart("Bash", '{"command":"ls"}', 12);
+  t = 1500;
+  tracker.hookEnd("Bash", "file-list", false);
+  const snap = tracker.snapshot();
+  assert.equal(snap.length, 1, "snapshot keeps the settled hook call");
+  assert.equal(snap[0].name, "Bash");
+  assert.equal(snap[0].status, "ok");
+  assert.equal(snap[0].durationMs, 1500);
+  assert.equal(snap[0].textOffset, 12, "offset stamped at start survives the end merge");
+  assert.equal(snap[0].input, '{"command":"ls"}', "input stored verbatim — the route formats before calling");
+  assert.equal(snap[0].output, "file-list");
+}
+
+{
+  let t = 0;
+  const tracker = new ToolCallTracker(() => t);
+  tracker.envelopeToolUse("toolu_x", "Read", '{"file":"a.ts"}', 40);
+  t = 250;
+  tracker.envelopeToolResult("toolu_x", "contents", false);
+  const snap = tracker.snapshot();
+  assert.equal(snap.length, 1, "envelope lifecycle recorded once");
+  assert.equal(snap[0].id, "toolu_x");
+  assert.equal(snap[0].textOffset, 40);
+  assert.equal(snap[0].status, "ok");
+  assert.equal(snap[0].durationMs, 250);
+}
+
+{
+  // Hook + envelope describing the same call must record ONE entry.
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.hookStart("Bash", undefined, 5);
+  tracker.envelopeToolUse("toolu_dup", "Bash", '{"command":"pwd"}', 9);
+  tracker.hookEnd("Bash", "done", false);
+  const snap = tracker.snapshot();
+  assert.equal(snap.length, 1, "linked hook+envelope call records a single entry");
+  assert.equal(snap[0].textOffset, 5, "first stamp (hook start) wins");
+  assert.equal(
+    snap[0].input,
+    '{"command":"pwd"}',
+    "envelope input backfills a hook call that had none (stored verbatim)",
+  );
+}
+
+{
+  // toPersistedTools: caps, running coercion, offset shift, empty → undefined.
+  const tracker = new ToolCallTracker(() => 0);
+  tracker.hookStart("Bash", "x".repeat(3000), 10);
+  // never ended — still running at save time
+  const persisted = toPersistedTools(tracker.snapshot(), 4);
+  assert.ok(persisted && persisted.length === 1);
+  assert.equal(persisted[0].status, "error", "running coerces to error at save");
+  assert.ok(
+    (persisted[0].output ?? "").includes("[tool did not settle before the turn ended]"),
+    "coercion is explained in the output",
+  );
+  assert.equal(persisted[0].input?.length, 2000, "input head-capped at 2000");
+  assert.equal(persisted[0].textOffset, 6, "offset shifted by the leading trim (10 - 4)");
+
+  const longOut = new ToolCallTracker(() => 0);
+  longOut.hookStart("Bash", undefined, 0);
+  longOut.hookEnd("Bash", "HEAD" + "y".repeat(9000), false);
+  const capped = toPersistedTools(longOut.snapshot(), 0);
+  assert.equal(capped?.[0].output?.length, 4000, "output tail-capped at 4000");
+  assert.ok(
+    !capped?.[0].output?.includes("HEAD"),
+    "output keeps the tail, not the head",
+  );
+
+  assert.equal(
+    toPersistedTools(new ToolCallTracker().snapshot(), 0),
+    undefined,
+    "no tools → undefined, not an empty array",
+  );
+}
+console.log("tool persistence tracker tests passed");
 
 console.log("harness-routing tests passed");
