@@ -4,7 +4,10 @@ import { readFile } from "node:fs/promises";
 
 const packageJson = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 const tauriConfig = JSON.parse(await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8"));
+const tauriIosConfig = JSON.parse(await readFile(new URL("../../src-tauri/tauri.ios.conf.json", import.meta.url), "utf8"));
 const cargoToml = await readFile(new URL("../../src-tauri/Cargo.toml", import.meta.url), "utf8");
+const sourceIosPlist = await readFile(new URL("../../src-tauri/Info.ios.plist", import.meta.url), "utf8");
+const generatedIosPlist = await readFile(new URL("../../src-tauri/gen/apple/app_iOS/Info.plist", import.meta.url), "utf8");
 const appVersionSource = await readFile(new URL("./app-version.ts", import.meta.url), "utf8");
 
 const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
@@ -12,6 +15,14 @@ const cargoDescription = cargoToml.match(/^description\s*=\s*"([^"]+)"/m)?.[1];
 const cargoAuthors = cargoToml.match(/^authors\s*=\s*\[([^\]]+)\]/m)?.[1] ?? "";
 const cargoLicense = cargoToml.match(/^license\s*=\s*"([^"]+)"/m)?.[1];
 const cargoRepository = cargoToml.match(/^repository\s*=\s*"([^"]+)"/m)?.[1];
+const sourceIosShortVersion = sourceIosPlist.match(
+  /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/,
+)?.[1];
+const sourceIosBuildVersion = sourceIosPlist.match(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+const generatedIosShortVersion = generatedIosPlist.match(
+  /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/,
+)?.[1];
+const generatedIosBuildVersion = generatedIosPlist.match(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
 
 assert.equal(tauriConfig.version, packageJson.version, "Tauri bundle version must match package.json");
 assert.equal(cargoVersion, packageJson.version, "Tauri Cargo package version must match package.json");
@@ -34,6 +45,16 @@ assert.match(
   /OpenCoven desktop control room/,
   "Tauri bundle long description must explain the app's purpose",
 );
+assert.equal(sourceIosShortVersion, packageJson.version, "Source iOS plist marketing version must match package.json");
+assert.equal(sourceIosBuildVersion, packageJson.version, "Source iOS plist build version must match package.json");
+assert.equal(generatedIosShortVersion, packageJson.version, "Generated iOS plist marketing version must match package.json");
+assert.equal(generatedIosBuildVersion, packageJson.version, "Generated iOS plist build version must match package.json");
+assert.match(
+  tauriIosConfig.build.beforeBuildCommand,
+  /TAURI_PLATFORM=ios bash scripts\/sidecar-bundle\.sh/,
+  "iOS builds must force the mobile sidecar skip",
+);
+assert.deepEqual(tauriIosConfig.bundle.resources, [], "iOS builds must not bundle the desktop Node sidecar resources");
 assert.match(
   appVersionSource,
   /from "\.\.\/\.\.\/package\.json"/,
