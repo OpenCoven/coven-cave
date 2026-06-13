@@ -61,4 +61,15 @@ assert.match(
   "reset restores the default letter spacing",
 );
 
+// Text alignment control (reading text-align for .cave-md surfaces).
+assert.match(src, /Text alignment/, "renders a Text alignment control");
+assert.match(src, /READING_ALIGN_OPTIONS/, "uses the reading-align ladder");
+assert.match(src, /applyReadingAlign/, "applies text alignment via the shared helper");
+assert.match(src, /aria-pressed=\{align === option\}/, "alignment buttons expose selected state");
+assert.match(
+  src,
+  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_ALIGN[\s\S]*?\}/,
+  "reset restores the default text alignment",
+);
+
 console.log("settings-fonts.test.ts OK");

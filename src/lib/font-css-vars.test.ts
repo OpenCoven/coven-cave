@@ -45,5 +45,10 @@ assert.match(
   /\.cave-md\s*\{[\s\S]*?letter-spacing:\s*var\(--cave-reading-tracking,\s*0\)/,
   ".cave-md letter-spacing must read var(--cave-reading-tracking, 0)",
 );
+assert.match(
+  caveChat,
+  /\.cave-md\s*\{[\s\S]*?text-align:\s*var\(--cave-reading-align,\s*left\)/,
+  ".cave-md text-align must read var(--cave-reading-align, left)",
+);
 
 console.log("font-css-vars.test.ts OK");
