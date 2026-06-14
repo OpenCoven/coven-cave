@@ -12,6 +12,7 @@ import {
 } from "react-resizable-panels";
 import { Icon, type IconName } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
+import { UpdateBannerTrigger } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 
@@ -407,6 +408,7 @@ function ShellInner({
       )}
       <Panel id="detail" className="shell-detail-panel">
         <main className="shell-detail" ref={detailElRef}>
+          <UpdateBannerTrigger />
           <ShellBannerStrip />
           {detail}
         </main>
@@ -624,7 +626,7 @@ function ShellBannerStrip() {
             type="button"
             className="shell-banner__dismiss"
             aria-label="Dismiss"
-            onClick={() => dismissBanner(b.id)}
+            onClick={() => { b.onDismiss?.(); dismissBanner(b.id); }}
             title="Dismiss"
           >
             <Icon name="ph:x" width={11} />
