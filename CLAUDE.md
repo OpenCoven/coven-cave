@@ -21,7 +21,7 @@ git worktree add -b <branch> .worktrees/<branch> origin/main
 # … commit (signed, per the global -S rule) …
 git push -u origin <branch>
 gh pr create --base main --head <branch> --title "…" --body "…"
-# wait for the 6 checks to go green, then:
+# wait for the 3 required checks to go green, then:
 gh pr merge <#> --squash --delete-branch
 ```
 
