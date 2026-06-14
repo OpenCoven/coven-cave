@@ -9,6 +9,8 @@ import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
+import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import {
   normalizeSelection,
@@ -101,14 +103,15 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const chatFamiliar = familiar ?? selectedViewFamiliar ?? sessionFamiliar ?? null;
   const fallbackFamiliarId = familiar?.id ?? familiars[0]?.id ?? null;
   const { projects } = useProjects();
+  const projectOverrides = useProjectOverrides();
 
   const sidebarSessions = useMemo(
     () => filterVisibleChatSessions(sessions, familiar?.id ?? null),
     [familiar?.id, sessions],
   );
   const sidebarGroups = useMemo(
-    () => deriveChatProjectGroups(sidebarSessions, projects),
-    [sidebarSessions, projects],
+    () => deriveChatProjectGroups(applyProjectOverrides(sidebarSessions, projectOverrides), projects),
+    [sidebarSessions, projects, projectOverrides],
   );
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),

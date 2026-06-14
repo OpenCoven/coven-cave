@@ -14,6 +14,8 @@ import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
 } from "@/lib/chat-projects";
+import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { useProjects } from "@/lib/use-projects";
 import {
@@ -179,6 +181,7 @@ function SortableChatListItem({
 
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
   const { projects } = useProjects();
+  const projectOverrides = useProjectOverrides();
   const [error, setError] = useState<string | null>(null);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
@@ -353,15 +356,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // ── Grouped by project_root ──────────────────────────────────────────────
 
   const grouped = useMemo(() => {
-    return deriveChatProjectGroups(filtered, projects);
-  }, [filtered, projects]);
+    return deriveChatProjectGroups(applyProjectOverrides(filtered, projectOverrides), projects);
+  }, [filtered, projects, projectOverrides]);
 
   // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
   // so it stays stable while typing. The persisted selection is normalized
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a persisted project selection must not scope the
   // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(mine, projects), [mine, projects]);
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(mine, projectOverrides), projects), [mine, projects, projectOverrides]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import type { SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
+import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import {
   PINNED_SESSIONS_KEY,
@@ -23,6 +24,7 @@ import {
   DndContext,
   PointerSensor,
   KeyboardSensor,
+  useDroppable,
   useSensor,
   useSensors,
   closestCenter,
@@ -197,6 +199,74 @@ function ThreadRow({
   );
 }
 
+// A project folder acts as a drop zone: dropping a chat anywhere on the folder
+// re-buckets it into that project (cave-local override; the agent cwd is
+// unchanged). id is `folder:<selectionKey>` so the drag handler can resolve it.
+function FolderDroppable({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      data-drop-over={isOver ? "true" : undefined}
+      className={isOver ? "rounded-md ring-1 ring-inset ring-[var(--accent-presence)]/60" : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
+// A chat row inside a project folder: click opens it; the handle drags it to
+// reorder within the folder or onto another folder to move it.
+function FolderChatRow({
+  session,
+  active,
+  onOpen,
+}: {
+  session: SessionRow;
+  active: boolean;
+  onOpen: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: session.id,
+  });
+  const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
+  const title = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  return (
+    <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/row relative">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onOpen();
+        }}
+        aria-current={active ? "true" : undefined}
+        className={[
+          "relative flex w-full items-center gap-2 py-1 pl-3 pr-2 text-left text-[11px] transition-colors",
+          active
+            ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
+            : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
+        ].join(" ")}
+      >
+        {active ? <AccentBar /> : null}
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to reorder or move to another project"
+          aria-label={`Move ${title}`}
+          className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/row:opacity-100"
+        >
+          <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
+        </button>
+        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+      </div>
+    </li>
+  );
+}
+
 export function ChatProjectSidebar({
   groups,
   selection,
@@ -292,6 +362,53 @@ export function ChatProjectSidebar({
 
   function togglePin(sessionId: string) {
     setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+  }
+
+  // Folder-tree DnD: reorder a chat within its project, or drop it onto another
+  // project folder to move it there (cave-local override — the agent cwd is
+  // never touched). over.id is a chat id (reorder/move-near) or `folder:<key>`.
+  function handleFolderDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+
+    const source = groups.find((g) => g.sessions.some((s) => s.id === activeId));
+    if (!source) return;
+
+    let target: ChatProjectGroup | undefined;
+    if (overId.startsWith("folder:")) {
+      const overKey = overId.slice("folder:".length);
+      target = groups.find((g) => selectionKey(g.projectId, g.projectRoot) === overKey);
+    } else {
+      target = groups.find((g) => g.sessions.some((s) => s.id === overId));
+    }
+    if (!target) return;
+
+    const sourceKey = selectionKey(source.projectId, source.projectRoot);
+    const targetKey = selectionKey(target.projectId, target.projectRoot);
+
+    if (sourceKey === targetKey) {
+      // Same folder → reorder via the shared manual-order list.
+      if (overId.startsWith("folder:")) return;
+      const ids = applyManualOrder(source.sessions, order).map((s) => s.id);
+      const from = ids.indexOf(activeId);
+      const to = ids.indexOf(overId);
+      if (from < 0 || to < 0) return;
+      const nextVisible = arrayMove(ids, from, to);
+      setOrder((prev) => {
+        const merged = mergeVisibleOrder(prev, nextVisible);
+        const live = new Set(allSessions.map((s) => s.id));
+        const pruned = merged.filter((id) => live.has(id));
+        writeSessionOrder(pruned);
+        return pruned;
+      });
+      return;
+    }
+
+    // Different folder → move (empty root = the ungrouped bucket).
+    setProjectOverride(activeId, target.projectRoot ?? "");
   }
 
   const FILTERS: Array<{ key: ChatFilter; label: string; count: number }> = [
@@ -451,13 +568,16 @@ export function ChatProjectSidebar({
               </button>
             </div>
 
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
             {groups.map((group) => {
               const key = selectionKey(group.projectId, group.projectRoot);
               const expanded = expandedKeys.includes(key);
               const isSelected = selection === key;
               const label = repoLabel(group);
+              const orderedSessions = applyManualOrder(group.sessions, order);
+              const orderedIds = orderedSessions.map((s) => s.id);
               return (
-                <div key={key}>
+                <FolderDroppable key={key} id={`folder:${key}`}>
                   <div
                     className={[
                       "group relative flex w-full items-center gap-1 pr-2 transition-colors",
@@ -504,39 +624,23 @@ export function ChatProjectSidebar({
                     </button>
                   </div>
                   {expanded ? (
-                    <ul>
-                      {group.sessions.map((session) => {
-                        const isActive = activeSessionId === session.id;
-                        return (
-                          <li key={session.id}>
-                            <button
-                              type="button"
-                              onClick={() => onOpenSession(session)}
-                              aria-current={isActive ? "true" : undefined}
-                              className={[
-                                "relative flex w-full items-center gap-2 py-1 pl-7 pr-2 text-left text-[11px] transition-colors",
-                                isActive
-                                  ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
-                              ].join(" ")}
-                            >
-                              {isActive ? <AccentBar /> : null}
-                              <span
-                                aria-hidden
-                                className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`}
-                              />
-                              <span className="min-w-0 flex-1 truncate">
-                                {stripLeadingTrailingEmoji(session.title || "(untitled chat)")}
-                              </span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <SortableContext items={orderedIds} strategy={verticalListSortingStrategy}>
+                      <ul>
+                        {orderedSessions.map((session) => (
+                          <FolderChatRow
+                            key={session.id}
+                            session={session}
+                            active={activeSessionId === session.id}
+                            onOpen={() => onOpenSession(session)}
+                          />
+                        ))}
+                      </ul>
+                    </SortableContext>
                   ) : null}
-                </div>
+                </FolderDroppable>
               );
             })}
+            </DndContext>
           </>
         )}
       </nav>
