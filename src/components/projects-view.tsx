@@ -118,14 +118,24 @@ function ProjectRow({
           {chatCount} {chatCount === 1 ? "chat" : "chats"}
         </span>
 
-        <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100">
+        <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity motion-reduce:transition-none sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
           <button
             type="button"
             onClick={() => onNewChat?.(project.root)}
             className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             title="New chat"
+            aria-label={`New chat in ${project.name}`}
           >
             <Icon name="ph:chat-circle-dots-bold" width={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setNameDraft(project.name); setEditingName(true); }}
+            aria-label={`Rename ${project.name}`}
+            title="Rename"
+            className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:pencil-simple-bold" width={14} aria-hidden />
           </button>
           {confirmDelete ? (
             <>
@@ -151,6 +161,7 @@ function ProjectRow({
               onClick={() => setConfirmDelete(true)}
               className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)]"
               title="Delete project"
+              aria-label={`Delete ${project.name}`}
             >
               <Icon name="ph:trash-bold" width={14} aria-hidden />
             </button>
