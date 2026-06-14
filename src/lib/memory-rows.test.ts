@@ -6,7 +6,8 @@ const NOW = Date.parse("2026-06-13T12:00:00Z");
 
 const coven = [
   { id: "c1", familiar_id: "echo", title: "Daily note", excerpt: "hello",
-    path: "/Users/x/.coven/echo/memory/2026-06-13.md", updated_at: "2026-06-13T11:00:00Z", source_context: "" },
+    path: "echo/2026-06-13.md", fullPath: "/Users/x/.coven/workspaces/familiars/echo/memory/2026-06-13.md",
+    updated_at: "2026-06-13T11:00:00Z", source_context: "" },
 ];
 const files = [
   { fullPath: "/Users/x/.coven/echo/memory/old.md", relPath: "old.md", rootLabel: "echo",
@@ -80,6 +81,26 @@ const files = [
   const rows = buildMemoryRows({ coven, files, familiarFilter: "echo", query: "",
     sourceFilter: "all", sortMode: "recent", staleOnly: false, now: NOW });
   assert.ok(rows.every((r) => ["structural", "bulk-protected", "normal"].includes(r.protection)));
+}
+
+// contentPath: files use their fullPath; agent rows carry the resolved fullPath.
+{
+  const rows = buildMemoryRows({ coven, files, familiarFilter: "echo", query: "",
+    sourceFilter: "all", sortMode: "recent", staleOnly: false, now: NOW });
+  const agent = rows.find((r) => r.kind === "agent");
+  const file = rows.find((r) => r.kind === "file");
+  assert.equal(agent.contentPath, "/Users/x/.coven/workspaces/familiars/echo/memory/2026-06-13.md",
+    "agent contentPath comes from the resolved fullPath");
+  assert.equal(agent.path, "echo/2026-06-13.md", "agent identity path stays the relative daemon path");
+  assert.equal(file.contentPath, file.path, "file contentPath equals its fullPath");
+}
+
+// Agent entry WITHOUT a resolved fullPath has no contentPath (reader falls back to excerpt).
+{
+  const rows = buildMemoryRows({
+    coven: [{ id: "c2", familiar_id: "echo", title: "No path", excerpt: "x", path: "echo/x.md", updated_at: "2026-06-13T09:00:00Z" }],
+    files: [], familiarFilter: "echo", query: "", sourceFilter: "all", sortMode: "recent", staleOnly: false, now: NOW });
+  assert.equal(rows[0].contentPath, undefined, "no fullPath → no contentPath");
 }
 
 // ── groupMemoryRows ──

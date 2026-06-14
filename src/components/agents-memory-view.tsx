@@ -619,7 +619,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         />
       ) : null}
       {expandRow ? (
-        <MemoryReaderModal path={expandRow.path} title={expandRow.title} onClose={() => setExpandRow(null)} />
+        <MemoryReaderModal path={expandRow.contentPath ?? expandRow.path} title={expandRow.title} onClose={() => setExpandRow(null)} />
       ) : null}
     </div>
   );

@@ -49,6 +49,8 @@ export type RawCovenEntry = {
   updated_at: string;
   excerpt?: string;
   source_context?: string;
+  /** Absolute, allow-listed path resolved by /api/coven-memory; reader loads full content from it. */
+  fullPath?: string;
 };
 
 export type RawFileEntry = {

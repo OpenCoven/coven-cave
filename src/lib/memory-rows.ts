@@ -16,7 +16,8 @@ export type MemoryRow = {
   rowId: string;            // "coven:<id>" | "file:<fullPath>"
   kind: MemoryRowKind;
   title: string;
-  path: string;             // full path for reader fetch + delete
+  path: string;             // identity path: file fullPath | coven relative path (delete/display)
+  contentPath?: string;     // absolute, allow-listed path the reader fetches; undefined → use excerpt
   sortTime: string;         // raw iso string
   size?: number;            // files only
   sourceLabel: string;      // familiar display name (resolved by caller) | sourceKindLabel
@@ -60,6 +61,7 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
         kind: "agent" as MemoryRowKind,
         title: e.title,
         path: e.path,
+        contentPath: e.fullPath,
         sortTime: e.updated_at,
         sourceLabel: args.familiarLabel ? args.familiarLabel(e.familiar_id) : e.familiar_id,
         stale: detectStale(managed).stale,
@@ -77,6 +79,7 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
         kind: "file" as MemoryRowKind,
         title: baseName(e.relPath),
         path: e.fullPath,
+        contentPath: e.fullPath,
         sortTime: e.modified,
         size: e.size,
         sourceLabel: e.sourceKindLabel,

@@ -11,7 +11,7 @@ assert.ok(!/memory-suggestions/.test(source), "the standalone Suggested-for-clea
 assert.match(source, /Stale \(\{suggestions\.length\}\)/, "a Stale (N) filter pill is present");
 assert.match(source, /Delete \{bulkDeletable\.length\} cleanable/, "bulk-delete action retained");
 assert.ok(!/memory-list-drawer/.test(source), "old grid drawer removed");
-assert.match(source, /MemoryReaderModal path=\{expandRow\.path\}/, "fullscreen expand wired to expandRow");
+assert.match(source, /MemoryReaderModal path=\{expandRow\.contentPath \?\? expandRow\.path\}/, "fullscreen expand uses the resolved content path");
 
 // Responsive: panes gate on selection below xl; reader has a Back button.
 assert.match(source, /selectedRowId \? "hidden xl:flex" : "flex"/, "list pane hides below xl when a row is selected");

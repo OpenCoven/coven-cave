@@ -8,6 +8,8 @@ export type CovenMemoryEntry = {
   updated_at: string;
   excerpt?: string;
   source_context?: string;
+  /** Absolute, allow-listed path from /api/coven-memory; present when full content is loadable. */
+  fullPath?: string;
 };
 
 export type AgentCardStats = {

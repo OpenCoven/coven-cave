@@ -17,11 +17,11 @@ assert.match(source, /<pre/, "Raw mode must render a <pre> of the source");
 assert.ok(!/Showing first/.test(source), "inline reader must NOT clip long files");
 assert.ok(!/MAX_LINES/.test(source), "inline reader must NOT use a line cap");
 
-// Agent (coven) rows render their excerpt and skip the file fetch (their relative
-// path is rejected by /api/memory/file). File rows still fetch.
-assert.match(source, /const isAgent = row\?\.kind === "agent"/, "reader must distinguish agent rows");
-assert.match(source, /useMemoryFile\(isAgent \? null :/, "agent rows must NOT fetch the file endpoint");
-assert.match(source, /isAgent \? row\.excerpt/, "agent body must come from the excerpt");
+// Content comes from the resolved contentPath; entries without one fall back to the
+// excerpt (e.g. agent memories the server couldn't resolve to an allow-listed file).
+assert.match(source, /useMemoryFile\(fetchPath\)/, "reader fetches the resolved contentPath");
+assert.match(source, /row\?\.contentPath \?\? null/, "fetchPath is the row's contentPath");
+assert.match(source, /hasFile \? text \?\? "" : row\.excerpt/, "no contentPath → excerpt fallback");
 
 // Copy-path + empty state + open-file + expand.
 assert.match(source, /navigator\.clipboard\.writeText/, "copy-path button must copy the path");

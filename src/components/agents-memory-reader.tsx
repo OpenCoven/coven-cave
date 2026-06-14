@@ -31,11 +31,11 @@ export function MemoryReaderPane({
 }) {
   const [mode, setMode] = useState<"rendered" | "raw">("rendered");
   const [copied, setCopied] = useState(false);
-  // Agent (coven) memories carry a relative path the file endpoint rejects, and the
-  // entry already ships its full body as `excerpt` — render that directly. Only file
-  // entries (absolute path) are fetched from /api/memory/file.
-  const isAgent = row?.kind === "agent";
-  const { text, error, loading } = useMemoryFile(isAgent ? null : row?.path ?? null);
+  // `contentPath` is the absolute, allow-listed path to fetch full content from — set
+  // for files and for agent memories the server could resolve. When absent (e.g. an
+  // agent memory with no resolvable file), fall back to the entry's `excerpt`.
+  const fetchPath = row?.contentPath ?? null;
+  const { text, error, loading } = useMemoryFile(fetchPath);
 
   if (!row) {
     return (
@@ -56,10 +56,12 @@ export function MemoryReaderPane({
     });
   };
 
-  // For agent rows the body is the excerpt; for file rows it's the fetched text.
-  const content = isAgent ? row.excerpt ?? "" : text ?? "";
-  const isFileLoading = !isAgent && (loading || text === null);
-  const emptyMsg = isAgent ? "No excerpt available." : "Empty file.";
+  // With a content path we render the fetched file; without one we render the excerpt.
+  const hasFile = Boolean(row.contentPath);
+  const content = hasFile ? text ?? "" : row.excerpt ?? "";
+  const isFileLoading = hasFile && (loading || text === null);
+  const fileError = hasFile ? error : null;
+  const emptyMsg = hasFile ? "Empty file." : "No excerpt available.";
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
@@ -152,8 +154,8 @@ export function MemoryReaderPane({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {!isAgent && error ? (
-          <p className="text-[12px] text-[var(--color-warning)]">{error}</p>
+        {fileError ? (
+          <p className="text-[12px] text-[var(--color-warning)]">{fileError}</p>
         ) : isFileLoading ? (
           <p className="text-[12px] text-[var(--text-muted)]">Loading memory…</p>
         ) : content.trim() === "" ? (

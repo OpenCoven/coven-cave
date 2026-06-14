@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
+import { resolveCovenMemoryFullPath } from "@/lib/server/coven-memory-path";
 
 export const dynamic = "force-dynamic";
 
@@ -21,5 +22,12 @@ export async function GET() {
       { status: 503 },
     );
   }
-  return NextResponse.json({ ok: true, entries: res.data });
+  // Attach a validated absolute path so the reader can load full content (the
+  // daemon's relative `path` is rejected by /api/memory/file). Undefined when it
+  // can't be resolved to an allow-listed file — the UI falls back to the excerpt.
+  const entries = res.data.map((entry) => {
+    const fullPath = resolveCovenMemoryFullPath(entry);
+    return fullPath ? { ...entry, fullPath } : entry;
+  });
+  return NextResponse.json({ ok: true, entries });
 }
