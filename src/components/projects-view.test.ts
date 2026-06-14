@@ -55,4 +55,11 @@ assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "renam
 assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
 assert.match(projectsView, /motion-reduce:transition-none/, "reveal respects reduced motion");
 
+// The "New project" inline form closes on Escape (parity with its Cancel button + the row inline-edits).
+assert.match(
+  projectsView,
+  /onSubmit=\{handleCreate\}[\s\S]{0,200}?onKeyDown[\s\S]{0,120}?"Escape"[\s\S]{0,80}?setShowForm\(false\)/,
+  "new-project form closes on Escape",
+);
+
 console.log("projects-view.test.ts: ok");
