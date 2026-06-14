@@ -57,8 +57,8 @@ assert.match(
 
 assert.match(
   source,
-  /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)\]/,
-  "List-mode container (non-compact) must use a balanced 1fr/1fr grid",
+  /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(420px,560px\)\]/,
+  "List-mode container (non-compact) must use an asymmetric list/reader grid",
 );
 
 assert.doesNotMatch(

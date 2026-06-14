@@ -22,37 +22,7 @@ for (const label of ["Agent memories", "Coven origin", "External harnesses", "Ru
   assert.ok(source.includes(label), `Inline stats row must keep label: ${label}`);
 }
 
-// ───────── Task 9: list-mode selection drawer ─────────
-
-assert.match(
-  source,
-  /const \[selectedRowId, setSelectedRowId\] = useState<string \| null>\(null\);/,
-  "AgentsMemoryView must keep a selectedRowId state",
-);
-
-assert.match(
-  source,
-  /data-testid="memory-list-drawer"/,
-  "List-mode drawer must be marked with data-testid='memory-list-drawer'",
-);
-
-assert.match(
-  source,
-  /!compact && selectedRowId\s*\?\s*\(/,
-  "Drawer renders only in non-compact mode when selectedRowId is set",
-);
-
-assert.match(
-  source,
-  /selectedRowId\s*\?\s*"grid gap-4 overflow-y-auto p-4 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(0,1fr\)_minmax\(280px,360px\)\]"/,
-  "Container grid must use a 3-track layout when the drawer is open",
-);
-
-assert.match(
-  source,
-  /setSelectedRowId\(null\)/,
-  "Drawer must provide a way to clear the selection",
-);
+// ───────── Graph-absence guards ─────────
 
 assert.doesNotMatch(
   source,

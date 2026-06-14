@@ -7,12 +7,6 @@ const hook = await readFile(new URL("../lib/use-memory-file.ts", import.meta.url
 assert.match(hook, /\/api\/memory\/file\?path=\$\{encodeURIComponent\(path\)\}/,
   "the shared hook must fetch the redaction-safe memory/file endpoint");
 
-// ───────── #5 Selected-file inline preview ─────────
-
-assert.match(source, /function MemoryFilePreview\(\{ path \}/, "A MemoryFilePreview component must exist");
-assert.match(source, /<MemoryFilePreview path=\{entry\.fullPath\} \/>/, "The file drawer must render the inline preview");
-assert.match(source, /Showing first \{MAX_LINES\} lines/, "Preview must disclose when it clips long files");
-
 // ───────── #6 basename-prominent rows + file size ─────────
 
 assert.match(source, /function fileBase\(/, "fileBase helper must exist");

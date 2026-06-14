@@ -66,30 +66,8 @@ assert.match(
 // Pagination resets when the result set changes underneath the user.
 assert.match(
   source,
-  /useEffect\(\(\) => \{ setFileLimit\(FILE_PAGE\); \}, \[q, sourceFilter, familiarFilter\]\);/,
+  /useEffect\(\(\) => \{ setFileLimit\(FILE_PAGE\); \}, \[q, sourceFilter, familiarFilter, staleOnly, sortMode\]\);/,
   "File pagination must reset on query / filter / familiar change",
-);
-
-// ───────── Empty familiar column collapses ─────────
-
-assert.match(
-  source,
-  /const hasFamiliar = visibleCoven\.length > 0;/,
-  "Layout must know whether the active familiar has any memories",
-);
-
-// When there are no familiar memories and the drawer is closed, the grid drops
-// to a single full-width track for the files list (no empty 1fr familiar column).
-assert.match(
-  source,
-  /: selectedRowId\s*\n\s*\? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(280px,360px\)\]"\s*\n\s*: "grid gap-4 overflow-y-auto p-4";/,
-  "Empty familiar layout must collapse to files-only (and files+drawer) tracks",
-);
-
-assert.match(
-  source,
-  /xl:col-\[1\/-1\]/,
-  "The empty-familiar banner must span the full content width",
 );
 
 console.log("agents-memory-view-filter-paginate.test.ts: ok");

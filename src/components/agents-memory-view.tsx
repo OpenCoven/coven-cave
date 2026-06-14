@@ -766,34 +766,6 @@ function ExpandMemoryButton({
   );
 }
 
-function MemoryFilePreview({ path }: { path: string }) {
-  const { text, error } = useMemoryFile(path);
-
-  const MAX_LINES = 40;
-  const lines = text?.split("\n") ?? [];
-  const clipped = lines.length > MAX_LINES;
-  const preview = clipped ? lines.slice(0, MAX_LINES).join("\n") : text ?? "";
-
-  return (
-    <div className="mt-3">
-      <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</div>
-      <div className="mt-1 max-h-[280px] overflow-auto rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 p-2">
-        {error ? (
-          <p className="text-[11px] text-[var(--color-warning)]">{error}</p>
-        ) : text === null ? (
-          <p className="text-[11px] text-[var(--text-muted)]">Loading preview…</p>
-        ) : preview.trim() === "" ? (
-          <p className="text-[11px] text-[var(--text-muted)]">Empty file.</p>
-        ) : (
-          <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-[var(--text-secondary)]">{preview}</pre>
-        )}
-      </div>
-      {clipped ? (
-        <p className="mt-1 text-[10px] text-[var(--text-muted)]">Showing first {MAX_LINES} lines — Expand for the full file.</p>
-      ) : null}
-    </div>
-  );
-}
 
 function SourceFilterChip({
   label,

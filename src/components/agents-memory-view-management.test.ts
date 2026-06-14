@@ -8,6 +8,6 @@ assert.match(source, /\[groupMode, setGroupMode\]/, "tracks group mode");
 assert.match(source, /\[staleOnly, setStaleOnly\]/, "tracks stale-only filter");
 assert.match(source, /"oldest"|"staleFirst"/, "sort mode extended");
 assert.match(source, /detectStale|ruleBasedStaleScorer/, "uses the stale scorer");
-assert.match(source, /Suggested for cleanup/, "renders a suggestions section");
+assert.match(source, /Stale \(\{suggestions\.length\}\)/, "renders a Stale (N) filter pill");
 assert.match(source, /classifyProtection|protection === "bulk-protected"|protection === "structural"/, "respects protection tiers");
 console.log("agents-memory-view-management.test: ok");
