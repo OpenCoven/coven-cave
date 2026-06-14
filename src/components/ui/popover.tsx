@@ -76,7 +76,14 @@ export function Popover({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onOpenChange(false);
+      if (e.key === "Escape") {
+        // Consume the Escape so it doesn't bubble to a parent dialog's keydown
+        // handler (e.g. the Settings panel, which closes itself on Escape). The
+        // listener is registered in the capture phase below so it runs before any
+        // such parent handler; stopPropagation then prevents that handler firing.
+        e.stopPropagation();
+        onOpenChange(false);
+      }
     };
     const onDocClick = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -85,12 +92,12 @@ export function Popover({
       onOpenChange(false);
     };
     const onReflow = () => compute();
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     document.addEventListener("mousedown", onDocClick);
     window.addEventListener("resize", onReflow);
     window.addEventListener("scroll", onReflow, true);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("mousedown", onDocClick);
       window.removeEventListener("resize", onReflow);
       window.removeEventListener("scroll", onReflow, true);
