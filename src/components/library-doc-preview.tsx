@@ -49,6 +49,17 @@ function fmtDate(iso?: string): string {
 }
 
 type UrlOpenKind = "web" | "github" | "vscode-file";
+const SIDECAR_TOKEN_PARAM = "covenCaveToken";
+const SIDECAR_STORAGE_KEY = "coven-cave:sidecar-auth-token";
+
+function readSidecarAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage.getItem(SIDECAR_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 function canOpenUrl(url: string, kind: UrlOpenKind): boolean {
   if (kind === "github") return isSafeGitHubUrl(url);
@@ -1068,9 +1079,12 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
 // Falls back to a "Open in system viewer" button if the path is unavailable.
 function PdfViewer({ localPath, title }: { localPath: string; title: string }) {
   const [error, setError] = useState(false);
+  const [sidecarAuthToken] = useState(() => readSidecarAuthToken());
   // Use the Next.js API route to serve the PDF (safe, no file:// CSP issues)
   const filename = localPath.split("/").pop() ?? "";
-  const iframeUrl = `/api/library/pdf?file=${encodeURIComponent(filename)}`;
+  const iframeUrl = sidecarAuthToken
+    ? `/api/library/pdf?file=${encodeURIComponent(filename)}&${SIDECAR_TOKEN_PARAM}=${encodeURIComponent(sidecarAuthToken)}`
+    : `/api/library/pdf?file=${encodeURIComponent(filename)}`;
   // file:// fallback for Tauri desktop mode
   const fileUrl = `file://${localPath}`;
 

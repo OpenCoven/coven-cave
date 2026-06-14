@@ -2093,34 +2093,35 @@ function StepFamiliar(props: {
       </label>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={props.onCreateLocal}
-          disabled={
-            picking !== null ||
-            !selectedHarnessId ||
-            !confirmCreateNewFamiliar ||
-            (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-          }
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-        >
-          <Icon name="ph:terminal-window" />
-          {picking === "local" ? "Creating..." : "Create new Coven familiar"}
-        </button>
-        <button
-          onClick={props.onConnectAgent}
-          disabled={
-            picking !== null ||
-            !selectedAgentId ||
-            familiarName.trim().length === 0 ||
-            (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-          }
-          className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-        >
-          <Icon name="ph:sparkle" />
-          {picking === "familiar"
-            ? "Connecting..."
-            : "Connect selected existing agent"}
-        </button>
+        {selectedHarnessId ? (
+          <button
+            onClick={props.onCreateLocal}
+            disabled={
+              picking !== null ||
+              !confirmCreateNewFamiliar ||
+              (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
+            }
+            className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+          >
+            <Icon name="ph:terminal-window" />
+            {picking === "local" ? "Creating..." : "Create new Coven familiar"}
+          </button>
+        ) : selectedAgentId ? (
+          <button
+            onClick={props.onConnectAgent}
+            disabled={
+              picking !== null ||
+              familiarName.trim().length === 0 ||
+              (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
+            }
+            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
+          >
+            <Icon name="ph:sparkle" />
+            {picking === "familiar"
+              ? "Connecting..."
+              : "Connect selected existing agent"}
+          </button>
+        ) : null}
       </div>
     </div>
   );

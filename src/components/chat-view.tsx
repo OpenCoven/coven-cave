@@ -147,6 +147,8 @@ type FailedSend = {
   mentionedFiles?: string[];
 };
 
+const COMPOSER_MAX_HEIGHT = 220;
+
 function shouldKeepLiveNewChatState({
   sessionId,
   currentSessionId,
@@ -1845,8 +1847,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   function resizeComposer() {
     const el = inputRef.current;
     if (!el) return;
+    const computedMaxHeight = Number.parseFloat(window.getComputedStyle(el).maxHeight);
+    const maxHeight = Number.isFinite(computedMaxHeight) ? computedMaxHeight : COMPOSER_MAX_HEIGHT;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    const isOverflowing = el.scrollHeight > maxHeight;
+    el.style.overflowY = isOverflowing ? "auto" : "hidden";
   }
 
   useEffect(() => {

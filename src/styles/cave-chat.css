@@ -1304,8 +1304,10 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-composer-input {
+  min-height: 96px;
   max-height: 220px;
-  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent-presence) 22%, transparent) transparent;
 }

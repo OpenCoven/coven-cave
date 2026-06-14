@@ -74,6 +74,18 @@ assert.match(
 
 assert.match(
   preview,
+  /const SIDECAR_TOKEN_PARAM = "covenCaveToken";[\s\S]*const SIDECAR_STORAGE_KEY = "coven-cave:sidecar-auth-token";[\s\S]*function readSidecarAuthToken\(\)[\s\S]*window\.sessionStorage\.getItem\(SIDECAR_STORAGE_KEY\)/,
+  "PDF previews should read the sidecar token saved by SidecarAuthBridge",
+);
+
+assert.match(
+  preview,
+  /const iframeUrl = sidecarAuthToken[\s\S]*`\/api\/library\/pdf\?file=\$\{encodeURIComponent\(filename\)\}&\$\{SIDECAR_TOKEN_PARAM\}=\$\{encodeURIComponent\(sidecarAuthToken\)\}`[\s\S]*`\/api\/library\/pdf\?file=\$\{encodeURIComponent\(filename\)\}`/,
+  "PDF preview iframes should authenticate same-origin API navigation with covenCaveToken",
+);
+
+assert.match(
+  preview,
   /function GitHubDetail[\s\S]*<LibraryLinkViewer/,
   "GitHub selections should render the embedded Library link viewer",
 );

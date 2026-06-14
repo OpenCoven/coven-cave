@@ -132,6 +132,12 @@ assert.match(
   "SSH copy is explicit that Cave holds no secrets",
 );
 
+assert.match(
+  source,
+  /selectedHarnessId \? \([\s\S]*Create new Coven familiar[\s\S]*\) : selectedAgentId \? \([\s\S]*Connect selected existing agent[\s\S]*\) : null/,
+  "the familiar binding step shows only the CTA for the selected setup path",
+);
+
 // ── Editable familiars ──────────────────────────────────────────────────────
 
 assert.match(
