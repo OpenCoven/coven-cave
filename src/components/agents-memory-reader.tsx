@@ -20,12 +20,14 @@ export function MemoryReaderPane({
   sizeLabel,
   onOpenFile,
   onExpand,
+  onBack,
 }: {
   row: MemoryRow | null;
   age: string;
   sizeLabel: string;
   onOpenFile: (path: string) => void;
   onExpand: (row: MemoryRow) => void;
+  onBack?: () => void;
 }) {
   const [mode, setMode] = useState<"rendered" | "raw">("rendered");
   const [copied, setCopied] = useState(false);
@@ -33,7 +35,7 @@ export function MemoryReaderPane({
 
   if (!row) {
     return (
-      <div className="grid min-h-0 place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8 text-center">
+      <div className="grid h-full min-h-0 place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8 text-center">
         <div>
           <Icon name="ph:book-open" width={24} className="mx-auto text-[var(--text-muted)]" aria-hidden />
           <p className="mt-3 text-[13px] font-medium text-[var(--text-primary)]">Select a memory to read</p>
@@ -51,9 +53,19 @@ export function MemoryReaderPane({
   };
 
   return (
-    <div className="flex min-h-0 flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
+    <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
       <div className="shrink-0 border-b border-[var(--border-hairline)] p-3">
         <div className="flex items-start justify-between gap-2">
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to list"
+              className="focus-ring mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] xl:hidden"
+            >
+              <Icon name="ph:arrow-left" width={13} aria-hidden />
+            </button>
+          ) : null}
           <h3
             className="min-w-0 flex-1 truncate text-[14px] font-semibold text-[var(--text-primary)]"
             title={row.title}

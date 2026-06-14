@@ -13,4 +13,13 @@ assert.match(source, /Delete \{bulkDeletable\.length\} cleanable/, "bulk-delete 
 assert.ok(!/memory-list-drawer/.test(source), "old grid drawer removed");
 assert.match(source, /MemoryReaderModal path=\{expandRow\.path\}/, "fullscreen expand wired to expandRow");
 
+// Responsive: panes gate on selection below xl; reader has a Back button.
+assert.match(source, /selectedRowId \? "hidden xl:flex" : "flex"/, "list pane hides below xl when a row is selected");
+assert.match(source, /selectedRowId \? "flex" : "hidden xl:flex"/, "reader wrapper hides below xl when nothing is selected");
+assert.match(source, /onBack=\{\(\) => setSelectedRowId\(null\)\}/, "reader receives a back-to-list handler");
+
+const reader = await readFile(new URL("./agents-memory-reader.tsx", import.meta.url), "utf8");
+assert.match(reader, /aria-label="Back to list"/, "reader renders a Back button");
+assert.match(reader, /xl:hidden/, "Back button is hidden at xl and above");
+
 console.log("agents-memory-master-detail: all assertions passed");

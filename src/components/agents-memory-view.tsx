@@ -449,7 +449,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           !compact ? (
           <>
             {/* LIST PANE */}
-            <section className="flex min-h-0 flex-col">
+            <section className={`min-h-0 flex-col ${selectedRowId ? "hidden xl:flex" : "flex"}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
                 <div className="flex items-center gap-2">
@@ -502,13 +502,16 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             </section>
 
             {/* READER PANE */}
-            <MemoryReaderPane
-              row={selectedRow}
-              age={selectedRow ? age(selectedRow.sortTime) : ""}
-              sizeLabel={selectedRow ? formatBytes(selectedRow.size) : ""}
-              onOpenFile={(p) => onOpenMemoryFile?.(p)}
-              onExpand={(r) => setExpandRow(r)}
-            />
+            <div className={`min-h-0 flex-col ${selectedRowId ? "flex" : "hidden xl:flex"}`}>
+              <MemoryReaderPane
+                row={selectedRow}
+                age={selectedRow ? age(selectedRow.sortTime) : ""}
+                sizeLabel={selectedRow ? formatBytes(selectedRow.size) : ""}
+                onOpenFile={(p) => onOpenMemoryFile?.(p)}
+                onExpand={(r) => setExpandRow(r)}
+                onBack={() => setSelectedRowId(null)}
+              />
+            </div>
           </>
           ) : (
           <>
