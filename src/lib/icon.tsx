@@ -151,6 +151,7 @@ export const ICON_NAMES = [
   "ph:terminal-window",
   "ph:chats-circle",
   "ph:pencil-simple",
+  "ph:pencil-simple-bold",
   "ph:list-bullets",
   "ph:trash",
   "ph:trash-bold",

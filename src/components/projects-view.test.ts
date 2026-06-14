@@ -42,8 +42,17 @@ for (const icon of [
   "ph:folder-simple-dashed",
   "ph:chat-circle-dots-bold",
   "ph:trash-bold",
+  "ph:pencil-simple-bold",
 ]) {
   assert.match(iconSource, new RegExp(`"${icon}"`), `${icon} should be in the icon allowlist`);
 }
+
+// Row actions must stay keyboard-reachable (focus-within), never display:none.
+assert.match(projectsView, /group-hover:opacity-100/, "row actions reveal on hover");
+assert.match(projectsView, /group-focus-within:opacity-100/, "row actions also reveal on keyboard focus");
+assert.match(projectsView, /aria-label=\{`New chat in /, "new-chat action is labeled per project");
+assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
+assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
+assert.match(projectsView, /motion-reduce:transition-none/, "reveal respects reduced motion");
 
 console.log("projects-view.test.ts: ok");
