@@ -13,7 +13,7 @@
  * contract already read by AppearanceSection.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { getSwatches, THEME_IDS, THEME_META, type ThemeId } from "@/lib/theme-palettes";
 import {
@@ -240,10 +240,17 @@ export function ThemeColorEditor({
     setSaved(false);
   };
 
-  const themeSwatches: ColorSwatch[] = THEME_IDS.map((id) => ({
-    hex: mode === "light" ? THEME_META[id].accentLight : THEME_META[id].accentDark,
-    label: THEME_META[id].name,
-  }));
+  const colorsRef = useRef(colors);
+  colorsRef.current = colors;
+
+  const themeSwatches: ColorSwatch[] = useMemo(
+    () =>
+      THEME_IDS.map((id) => ({
+        hex: mode === "light" ? THEME_META[id].accentLight : THEME_META[id].accentDark,
+        label: THEME_META[id].name,
+      })),
+    [mode],
+  );
   const [recents, setRecents] = useState<string[]>([]);
   useEffect(() => {
     setRecents(getRecentColors());
@@ -288,7 +295,7 @@ export function ThemeColorEditor({
           onChange={(v) => updateColor("bg", v)}
           themeSwatches={themeSwatches}
           recents={recents}
-          onCommit={() => commitRecent(colors.bg)}
+          onCommit={() => commitRecent(colorsRef.current.bg)}
         />
         <ColorSlot
           label="Accent"
@@ -297,16 +304,16 @@ export function ThemeColorEditor({
           onChange={(v) => updateColor("accent", v)}
           themeSwatches={themeSwatches}
           recents={recents}
-          onCommit={() => commitRecent(colors.accent)}
+          onCommit={() => commitRecent(colorsRef.current.accent)}
         />
         <ColorSlot
           label="Border"
-          description="Hairline borders and dividers"
+          description="Hairline borders and dividers — kept at 40% opacity"
           value={colors.border}
           onChange={(v) => updateColor("border", deriveBorderFromAccent(v))}
           themeSwatches={themeSwatches}
           recents={recents}
-          onCommit={() => commitRecent(colors.border)}
+          onCommit={() => commitRecent(colorsRef.current.border)}
         />
       </div>
 
