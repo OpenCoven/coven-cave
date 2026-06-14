@@ -707,14 +707,14 @@ export function Workspace() {
 
       // ⌘1..⌘9 -> sidebar surface
       if (meta && !alt && /^[1-9]$/.test(e.key)) {
-        const idx = parseInt(e.key, 10) - 1;
-        // ⌘9 -> Projects tab inside chat surface
+        // ⌘9 -> Projects tab inside chat surface (no SURFACE_ORDER lookup needed)
         if (e.key === "9") {
           e.preventDefault();
           setMode("chat");
           window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
           return;
         }
+        const idx = parseInt(e.key, 10) - 1;
         const target = SURFACE_ORDER[idx];
         if (target) {
           e.preventDefault();

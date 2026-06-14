@@ -32,9 +32,12 @@ export type FolderMode =
   | "github"
   | "roles"
   | "workflows"
-  | "projects"
   | "library"
   | "capabilities";
+
+// "projects" is a pseudo-mode rerouted by handleModeSelect (→ chat + event).
+// It is never passed to onModeChange; only FolderMode values are real modes.
+type FolderEntryId = FolderMode | "projects";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -66,7 +69,7 @@ export type SidebarMinimalProps = {
 };
 
 const FOLDER_MODES: Array<{
-  id: FolderMode;
+  id: FolderEntryId;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
@@ -214,7 +217,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   } = props;
 
   // Projects is no longer a top-level WorkspaceMode — reroute via the chat tab event.
-  const handleModeSelect = (id: string) => {
+  // The "projects" guard narrows id to FolderMode below, so onModeChange stays type-safe.
+  const handleModeSelect = (id: FolderEntryId) => {
     if (id === "projects") {
       onModeChange("chat");
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
