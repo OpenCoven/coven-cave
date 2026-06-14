@@ -153,6 +153,26 @@ assert.equal(
 );
 assert.equal(
   isAllowedRequestSource(
+    "https://cave.tailnet.example.ts.net:8443",
+    "http://127.0.0.1:3000",
+    false,
+    "cave.tailnet.example.ts.net:8443",
+  ),
+  true,
+  "Tailscale Serve origins should allow the same non-default HTTPS port as the forwarded Host",
+);
+assert.equal(
+  isAllowedRequestSource(
+    "https://cave.tailnet.example.ts.net:8444",
+    "http://127.0.0.1:3000",
+    false,
+    "cave.tailnet.example.ts.net:8443",
+  ),
+  false,
+  "Tailscale Serve origins must not borrow a different HTTPS port from the same host",
+);
+assert.equal(
+  isAllowedRequestSource(
     "https://other.tailnet.example.ts.net",
     "http://127.0.0.1:3000",
     false,

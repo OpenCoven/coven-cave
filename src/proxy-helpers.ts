@@ -33,6 +33,17 @@ function hostnameFromHost(host: string | null) {
     : host.split(":")[0];
 }
 
+function portFromHost(host: string | null) {
+  if (!host) return "";
+  if (host.startsWith("[")) {
+    const close = host.indexOf("]");
+    const rest = close >= 0 ? host.slice(close + 1) : "";
+    return rest.startsWith(":") ? rest.slice(1) : "";
+  }
+  const parts = host.split(":");
+  return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+
 function isTailscaleServeHost(host: string | null) {
   const hostname = hostnameFromHost(host);
   return Boolean(hostname?.endsWith(".ts.net"));
@@ -76,7 +87,7 @@ function sameTailscaleServeSource(value: string | null, host: string | null | un
     return (
       url.protocol === "https:" &&
       url.hostname === hostnameFromHost(host) &&
-      url.port === ""
+      url.port === portFromHost(host)
     );
   } catch {
     return false;
