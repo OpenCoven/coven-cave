@@ -306,7 +306,11 @@ export function Workspace() {
     setActiveId(id);
     if (!id) return;
     const last = getLastSurface(id);
-    if (last) setMode(last as WorkspaceMode);
+    // Guard against retired/unknown persisted modes (e.g. the removed
+    // "projects" standalone surface). Only restore if the stored string is
+    // still a valid WorkspaceMode; otherwise fall back to the default.
+    const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
+    if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
