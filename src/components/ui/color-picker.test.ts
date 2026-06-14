@@ -14,4 +14,13 @@ assert.match(picker, /recents/, "accepts recent colors");
 assert.match(picker, /aria-label=/, "swatch buttons are labeled");
 assert.match(picker, /export function ColorPicker/, "exports ColorPicker");
 
+// Editor integration (Task 3): the theme editor uses ColorPicker in place of the native input.
+const editor = readFileSync(new URL("../theme-color-editor.tsx", import.meta.url), "utf8");
+assert.match(editor, /import \{ ColorPicker(?:, type ColorSwatch)? \} from "@\/components\/ui\/color-picker"/, "editor imports ColorPicker");
+assert.match(editor, /<ColorPicker/, "editor renders ColorPicker");
+assert.match(editor, /<Popover/, "editor opens the picker in a Popover");
+assert.match(editor, /resolveToHex/, "editor resolves non-hex colors to hex for the picker");
+assert.match(editor, /addRecentColor|getRecentColors/, "editor wires recent colors");
+assert.doesNotMatch(editor, /type="color"/, "native color input removed");
+
 console.log("color-picker.test.ts: ok");
