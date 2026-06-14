@@ -311,6 +311,32 @@ else
   echo "$SHA  $DMG_BASENAME" > "$SUMS_PATH"
 fi
 echo "Wrote checksum entry to $SUMS_PATH"
+
+# ── Updater artifact (desktop auto-update) ───────────────────────────────
+# Tauri's build-time .app.tar.gz predates this script's manual re-sign +
+# notarization, so regenerate it from the FINAL stapled .app and sign it with
+# the updater key. The Tauri updater verifies the minisign signature; the
+# installed app must still pass Gatekeeper, which only the notarized bundle
+# does. Non-fatal by design: a failure here must never sink a release — the
+# DMG is the source of truth and the app falls back to manual download.
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+  echo ""
+  echo "==> Building signed updater artifact (.app.tar.gz)"
+  UPDATER_TARBALL="$DMG_DIR/CovenCave.app.tar.gz"
+  if tar -czf "$UPDATER_TARBALL" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"; then
+    if pnpm exec tauri signer sign "$UPDATER_TARBALL"; then
+      echo "    wrote $UPDATER_TARBALL (+ .sig)"
+    else
+      echo "    ! updater signing failed; skipping updater artifact" >&2
+      rm -f "$UPDATER_TARBALL"
+    fi
+  else
+    echo "    ! updater tarball creation failed; skipping" >&2
+  fi
+else
+  echo "==> TAURI_SIGNING_PRIVATE_KEY unset; skipping updater artifact"
+fi
+
 echo ""
 echo "Signature:"
 codesign -d --verbose=2 "$APP_PATH" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier|Timestamp"

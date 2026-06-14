@@ -16,8 +16,17 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/OpenCoven/coven-cave/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVBREJCNjNFRjBCMDk3QUIKUldTcmw3RHdQcmJiNmxiaEpuV1NDRlVHNzNkYWlMVzlRNnVGZXNRTHZEM1luV251OVRUbk0zdXUK"
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "dmg",
       "app",

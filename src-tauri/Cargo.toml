@@ -49,3 +49,8 @@ tauri-plugin-os = "2"
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri = { version = "2.11.2", features = ["tray-icon"] }
 portable-pty = "0.8"
+# Desktop auto-update: the updater plugin checks/downloads/installs signed
+# release artifacts; process gives us relaunch() after an install. Both are
+# desktop-only (mobile updates via the App Store / TestFlight).
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

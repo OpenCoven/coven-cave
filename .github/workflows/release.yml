@@ -221,11 +221,19 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Sign the updater artifacts (createUpdaterArtifacts in tauri.conf.json).
+          # Linux/Windows .sig files are uploaded next to the AppImage/MSI; the
+          # latest.json aggregation job composes the manifest from them.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
           releaseDraft: false
           prerelease: false
+          # latest.json is built by the dedicated `updater-manifest` job after
+          # all platforms upload their signed artifacts — per-job generation
+          # here would clobber the manifest with a single platform.
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
@@ -245,6 +253,10 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Updater signing key — release.sh regenerates the .app.tar.gz from the
+          # FINAL notarized .app and signs it, so the updated app stays notarized.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           bash scripts/release.sh "$RELEASE_VERSION"
@@ -269,6 +281,17 @@ jobs:
           fi
           mv "$SRC" "$DST"
           echo "Renamed to $DST"
+          # Per-arch updater artifact (if release.sh produced it). The macOS
+          # updater bundle is the signed .app.tar.gz; name it per-arch so the
+          # Intel and Apple Silicon legs upload distinct assets.
+          TARBALL="release/CovenCave.app.tar.gz"
+          if [ -f "$TARBALL" ]; then
+            mv "$TARBALL" "release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz"
+            mv "${TARBALL}.sig" "release/CovenCave-v${RELEASE_VERSION}-${{ matrix.arch_suffix }}.app.tar.gz.sig"
+            echo "Renamed updater artifact for ${{ matrix.arch_suffix }}"
+          else
+            echo "::warning::No updater .app.tar.gz from release.sh (auto-update unavailable for this arch)"
+          fi
 
       # Hard gate: fail the macOS leg if the produced DMG is not accepted
       # by Gatekeeper as a notarized Developer ID app. This is what makes
@@ -314,7 +337,10 @@ jobs:
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
+          files: |
+            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.dmg
+            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.app.tar.gz
+            release/CovenCave-v${{ env.RELEASE_VERSION }}-${{ matrix.arch_suffix }}.app.tar.gz.sig
 
   checksums:
     name: Publish SHA256SUMS
@@ -400,3 +426,45 @@ jobs:
           cat /tmp/release-body.md
           echo "--- end body ---"
           gh release edit "$RELEASE_TAG" --notes-file /tmp/release-body.md
+
+  # Compose the Tauri auto-update manifest (latest.json) from the signed
+  # updater artifacts each platform uploaded, then attach it to the release.
+  # The desktop app's updater endpoint points at
+  # releases/latest/download/latest.json. Runs after every build leg so the
+  # manifest reflects all platforms that produced a signed artifact.
+  updater-manifest:
+    name: Publish updater manifest (latest.json)
+    needs: build
+    runs-on: ubuntu-22.04
+    if: success()
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Resolve release tag
+        shell: bash
+        env:
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag. Expected format: vMAJOR.MINOR.PATCH[-PRERELEASE]"
+            exit 1
+          fi
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Generate latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node scripts/generate-latest-json.mjs "$RELEASE_TAG" "${RELEASE_TAG#v}" > latest.json
+          echo "--- latest.json ---"
+          cat latest.json
+
+      - name: Upload latest.json to GitHub Release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: latest.json
