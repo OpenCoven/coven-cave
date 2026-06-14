@@ -349,7 +349,6 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                     </span>
                   </th>
                 ))}
-                <th style={{ width: "96px" }}>Tags</th>
                 <th style={{ width: "56px" }} />
               </tr>
             </thead>
@@ -358,7 +357,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
                     <tr className="board-table-group-row" onClick={() => toggleGroup(key)}>
-                      <td colSpan={5}>
+                      <td colSpan={4}>
                         <span className="board-table-group-caret">
                           <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
                         </span>
@@ -392,16 +391,6 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <span className="board-table-muted">{relTime(item.savedAt)}</span>
-                      </td>
-                      <td>
-                        <div className="library-tag-chips">
-                          {item.tags.slice(0, 3).map((t: string) => (
-                            <span key={t} className="library-doclist-tag">{t}</span>
-                          ))}
-                          {item.tags.length > 3 && (
-                            <span className="board-table-muted">+{item.tags.length - 3}</span>
-                          )}
-                        </div>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
