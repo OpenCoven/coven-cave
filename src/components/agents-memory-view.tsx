@@ -399,16 +399,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         </div>
         {compact ? null : (
           <div className="memory-controls mt-3">
-            <label className="memory-control">
-              Group
-              <select value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupBy)}>
-                <option value="none">None</option>
-                <option value="familiar">Familiar</option>
-                <option value="source">Source</option>
-                <option value="type">Type</option>
-                <option value="date">Date</option>
-              </select>
-            </label>
+            {/* Group control is intentionally omitted in the unified master-detail
+                view — grouping over MemoryRow is a deferred follow-up. groupMode
+                state is retained for that work; it does not affect the flat list. */}
             <label className="memory-control">
               Sort
               <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
