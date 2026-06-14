@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { WorkflowGraphNode } from "@/lib/workflow-graph";
 import {
@@ -85,6 +86,7 @@ export function WorkflowInspector({
   onRemoveStep,
 }: WorkflowInspectorProps) {
   const issues = issuesForAction(action);
+  const [open, setOpen] = useState(false);
   const step = selectedNode
     ? workflow?.steps?.find((entry) => entry.id === selectedNode.id) ?? null
     : null;
@@ -92,9 +94,20 @@ export function WorkflowInspector({
   return (
     <section className="workflow-panel workflow-inspector" aria-label="Workflow inspector">
       <div className="workflow-panel-heading">
-        <div>
-          <p className="workflow-eyebrow">{step ? "Selected node" : "Workflow"}</p>
-          <h2>{step ? (step.name ?? step.id) : (workflow?.name ?? workflow?.id ?? "No workflow")}</h2>
+        <div className="workflow-heading-lead">
+          <button
+            type="button"
+            className="workflow-section-caret-btn"
+            aria-expanded={open}
+            aria-label={`${open ? "Collapse" : "Expand"} inspector`}
+            onClick={() => setOpen((value) => !value)}
+          >
+            <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
+          </button>
+          <div>
+            <p className="workflow-eyebrow">{step ? "Selected node" : "Workflow"}</p>
+            <h2>{step ? (step.name ?? step.id) : (workflow?.name ?? workflow?.id ?? "No workflow")}</h2>
+          </div>
         </div>
         {step && (
           <button
@@ -109,6 +122,8 @@ export function WorkflowInspector({
         )}
       </div>
 
+      {open && (
+      <>
       {step ? (
         <div className="workflow-editor">
           <Field label="Name" value={step.name ?? ""} onCommit={(next) => onUpdateStep(step.id, { name: next || undefined })} />
@@ -248,6 +263,8 @@ export function WorkflowInspector({
             </li>
           ))}
         </ul>
+      )}
+      </>
       )}
     </section>
   );

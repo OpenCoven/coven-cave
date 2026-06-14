@@ -102,13 +102,14 @@ assert.match(studio, /is-left-collapsed[\s\S]{0,160}is-right-collapsed/, "Studio
 assert.match(css, /\.workflow-panel-tab/, "Workflow CSS should style sidebar-like side-panel tab toggles");
 assert.match(css, /--workflow-top-control-height:\s*34px/, "Workflow top controls should share a standardized height");
 assert.match(css, /--workflow-top-control-offset:\s*8px/, "Workflow top controls should share a standardized y offset (8px matches the palette's vertical padding)");
-assert.match(css, /\.workflow-panel-tab[\s\S]{0,260}width:\s*100%[\s\S]{0,120}height:\s*var\(--workflow-top-control-height\)[\s\S]{0,120}margin-top:\s*var\(--workflow-top-control-offset\)[\s\S]{0,80}margin-bottom:\s*6px/, "Workflow panel tabs should span the full panel width, use the shared height/y offset, and leave padding below");
+assert.match(css, /\.workflow-panel-tab[\s\S]{0,320}width:\s*100%[\s\S]{0,160}height:\s*var\(--workflow-top-control-height\)[\s\S]{0,120}margin-top:\s*0[\s\S]{0,80}margin-bottom:\s*6px/, "Workflow panel tabs should span the full panel width, share the control height, and sit flush at the top (no offset) so the panel header pulls content up");
 assert.match(css, /\.workflow-studio-library-panel,[\s\S]{0,140}flex-direction:\s*column/, "Workflow panel content should sit below the full-width trigger row");
 assert.match(css, /\.workflow-palette-item[\s\S]{0,160}min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
 assert.match(css, /is-left-collapsed[\s\S]{0,120}grid-template-columns:\s*36px/, "Collapsed left workflow panel should keep a visible toggle rail");
 assert.match(css, /is-right-collapsed[\s\S]{0,160}36px;/, "Collapsed right workflow panel should keep a visible toggle rail");
-assert.match(css, /\.workflow-panel-tab-left[\s\S]{0,120}justify-content:\s*flex-end/, "Left workflow panel tab should sit at the top right");
-assert.match(css, /\.workflow-panel-tab-right[\s\S]{0,120}justify-content:\s*flex-start/, "Right workflow panel tab should sit at the top left");
+assert.match(studio, /<span className="workflow-panel-tab__title">/, "Panel tabs render a header title");
+assert.match(css, /\.workflow-panel-tab\b[\s\S]{0,200}justify-content:\s*space-between/, "Panel tab header lays title and toggle across the row");
+assert.match(css, /is-left-collapsed \.workflow-panel-tab-left \.workflow-panel-tab__title,[\s\S]{0,140}display:\s*none/, "Collapsed panel hides the header title, leaving only the toggle icon");
 assert.match(css, /\.workflow-studio-shell\.is-left-collapsed/, "Workflow CSS should collapse the left workflow panel");
 assert.match(css, /\.workflow-studio-shell\.is-right-collapsed/, "Workflow CSS should collapse the right workflow panel");
 

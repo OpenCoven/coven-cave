@@ -116,7 +116,8 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           title={leftPanelOpen ? "Hide workflow library" : "Show workflow library"}
           onClick={() => setLeftPanelOpen((open) => !open)}
         >
-          <Icon name={leftPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} />
+          <span className="workflow-panel-tab__title">Workflows</span>
+          <Icon name={leftPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} className="workflow-panel-tab__icon" />
         </button>
         <div className="workflow-studio-library-content">
           <WorkflowLibrary
@@ -188,7 +189,8 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
           onClick={() => setRightPanelOpen((open) => !open)}
         >
-          <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} />
+          <span className="workflow-panel-tab__title">Details</span>
+          <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} className="workflow-panel-tab__icon" />
         </button>
         <div className="workflow-studio-side-content">
           <WorkflowInspector

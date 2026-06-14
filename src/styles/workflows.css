@@ -79,21 +79,48 @@
   gap: 0;
 }
 
+/* The panel tab doubles as the panel HEADER: a full-width row with the panel
+   title and the collapse toggle, flush to the top so the sections sit right
+   under it (same idiom as the main sidebar header). */
 .workflow-panel-tab {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
   width: 100%;
   height: var(--workflow-top-control-height);
-  margin-top: var(--workflow-top-control-offset);
+  margin-top: 0;
   margin-bottom: 6px;
-  padding: 0 7px;
+  padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.workflow-panel-tab__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.workflow-panel-tab__icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.workflow-panel-tab:hover .workflow-panel-tab__icon {
+  color: var(--text-primary);
 }
 
 .workflow-panel-tab:hover {
@@ -107,12 +134,10 @@
   outline-offset: 1px;
 }
 
-.workflow-panel-tab-left {
-  justify-content: flex-end;
-}
-
-.workflow-panel-tab-right {
-  justify-content: flex-start;
+/* Collapsed: hide the title so only the toggle icon shows in the narrow strip. */
+.workflow-studio-shell.is-left-collapsed .workflow-panel-tab-left .workflow-panel-tab__title,
+.workflow-studio-shell.is-right-collapsed .workflow-panel-tab-right .workflow-panel-tab__title {
+  display: none;
 }
 
 /* Collapsed: the whole narrow strip is the toggle, icon pinned to the top line.
@@ -158,6 +183,45 @@
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+/* Collapsed sections trim the heading's bottom gap so headers stack tightly. */
+.workflow-panel:has(.workflow-section-caret-btn[aria-expanded="false"]) .workflow-panel-heading {
+  margin-bottom: 0;
+}
+
+/* Caret toggle + title group on the left of a collapsible section heading. */
+.workflow-heading-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workflow-section-caret-btn {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.workflow-section-caret-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.workflow-section-caret-btn:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 
 .workflow-panel-heading h2,
