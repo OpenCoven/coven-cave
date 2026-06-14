@@ -228,7 +228,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     await startTaskChat(id);
   };
 
-  const handleEnrichSteps = async () => {
+  const handleEnrichTasks = async () => {
     setEnriching(true);
     setEnrichProgress(null);
     try {
@@ -240,8 +240,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         },
         body: JSON.stringify({ intent: "board-enrich-steps" }),
       });
-      if (!res.ok) throw new Error(`enrich steps failed (${res.status})`);
-      if (!res.body) throw new Error("enrich steps: missing response body");
+      if (!res.ok) throw new Error(`enrich tasks failed (${res.status})`);
+      if (!res.body) throw new Error("enrich tasks: missing response body");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -340,16 +340,16 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           <button
             type="button"
             className="board-toolbar-btn"
-            onClick={handleEnrichSteps}
+            onClick={handleEnrichTasks}
             disabled={enriching || cards.length === 0}
-            title="Ask each familiar to populate steps for their assigned tasks"
+            title="Ask each familiar to refresh task steps, status, lifecycle, and priority"
           >
             <Icon name="ph:sparkle" width={13} />
             {enriching
               ? enrichProgress
                 ? `${enrichProgress.done}/${enrichProgress.total}`
-                : "Starting…"
-              : "Enrich steps"}
+                : "Starting..."
+              : "Enrich tasks"}
           </button>
                     <button type="button" className="board-new-card-btn"
             onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}>
