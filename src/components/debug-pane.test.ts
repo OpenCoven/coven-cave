@@ -77,8 +77,18 @@ assert.match(
 );
 assert.match(
   changesPanel,
-  /checkpointMessage[\s\S]*?Saved checkpoint/,
-  "Checkpoint completion should surface the saved patch path in the panel",
+  /checkpointMessage[\s\S]*?Checkpoint saved/,
+  "Checkpoint completion should surface a confirmation in the panel",
+);
+assert.match(
+  changesPanel,
+  /action: "restore-checkpoint"[\s\S]*?checkpoint: name/,
+  "Panel should let the user restore a saved checkpoint",
+);
+assert.match(
+  changesPanel,
+  /CheckpointSection|CheckpointRow/,
+  "Panel should render a saved-checkpoints list (restore/delete), not just write-only snapshots",
 );
 
 const changesRoute = await readFile(
@@ -158,7 +168,7 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /async function checkpointChanges[\s\S]*?\.git[\s\S]*?coven-cave[\s\S]*?checkpoints/,
+  /"coven-cave", "checkpoints"/,
   "Checkpoint snapshots should be stored under the repository .git directory, not in the worktree",
 );
 assert.match(
@@ -168,13 +178,40 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /status === "untracked"[\s\S]*?\["diff", "--no-index", "--", "\/dev\/null", abs\]/,
-  "Checkpoint snapshots should include untracked file contents as synthetic add-file diffs",
+  /status === "untracked"[\s\S]*?\["diff", "--no-index", "--", DEV_NULL, file\.path\]/,
+  "Untracked checkpoint diffs use repo-relative paths so the snapshot can be git apply'd back",
+);
+assert.match(
+  changesRoute,
+  /const DEV_NULL = os\.devNull/,
+  "The null device must be resolved per-platform (os.devNull), not hardcoded to /dev/null",
 );
 assert.match(
   changesRoute,
   /writeFileSync\(checkpointPath, patch/,
   "Checkpoint snapshots should persist the generated patch without changing the working tree",
+);
+// Finished-checkpoint surface: restore + delete actions and a name guard.
+assert.match(
+  changesRoute,
+  /action === "restore-checkpoint"[\s\S]*?action === "delete-checkpoint"/,
+  "Checkpoints must be restorable and deletable, not write-only",
+);
+assert.match(
+  changesRoute,
+  /resolveCheckpointPath[\s\S]*?isCheckpointName/,
+  "Checkpoint names must be validated (path-traversal guard) before filesystem access",
+);
+assert.match(
+  changesRoute,
+  /\["apply", "--3way"[\s\S]*?\]/,
+  "Restore applies the saved patch via git apply --3way",
+);
+// Reverts must snapshot first so they are recoverable; abort if the snapshot fails.
+assert.match(
+  changesRoute,
+  /could not create safety checkpoint, revert aborted/,
+  "A failed safety checkpoint must abort the revert rather than destroy without a backup",
 );
 
 console.log("debug-pane.test.ts: ok");

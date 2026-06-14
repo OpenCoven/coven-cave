@@ -2,19 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs, { writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
-import { parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
+import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 
 export const dynamic = "force-dynamic";
+
+/** Platform null device: `/dev/null` on POSIX, `nul` on Windows. */
+const DEV_NULL = os.devNull;
 
 /**
  * Working-tree changes for a chat session's project root (CHAT-D8-01).
  *
- * GET  ?projectRoot=<abs>             → list uncommitted changes (git status)
- * GET  ?projectRoot=<abs>&path=<rel>  → unified diff for one file (capped)
- * POST { projectRoot, path, confirmUntracked? } → revert ONE file
+ * GET  ?projectRoot=<abs>                  → list uncommitted changes (git status)
+ * GET  ?projectRoot=<abs>&path=<rel>       → unified diff for one file (capped)
+ * GET  ?projectRoot=<abs>&checkpoints=1    → list saved checkpoints
+ * GET  ?projectRoot=<abs>&checkpoint=<name>→ one checkpoint's patch text (capped)
+ * POST { projectRoot, path, confirmUntracked? } → revert ONE file (auto-checkpoints first)
  * POST { projectRoot, action: "checkpoint" } → save a patch snapshot
+ * POST { projectRoot, action: "restore-checkpoint", checkpoint } → git apply a snapshot
+ * POST { projectRoot, action: "delete-checkpoint", checkpoint } → remove a snapshot
  *
  * Security posture: every git invocation goes through execFile with an
  * argument array — no shell, so paths are never string-interpolated into a
@@ -173,7 +181,7 @@ async function diffFile(repoRoot: string, relPath: string, absPath: string): Pro
     // Untracked: synthesize an all-additions diff. --no-index exits 1 when
     // the files differ, which execFile reports as an error — recover stdout.
     try {
-      ({ stdout: diff } = await git(repoRoot, ["diff", "--no-index", "--", "/dev/null", absPath]));
+      ({ stdout: diff } = await git(repoRoot, ["diff", "--no-index", "--", DEV_NULL, absPath]));
     } catch (err) {
       const e = err as { code?: number; stdout?: string };
       if (e.code === 1 && typeof e.stdout === "string") diff = e.stdout;
@@ -192,6 +200,8 @@ async function diffFile(repoRoot: string, relPath: string, absPath: string): Pro
 export async function GET(req: NextRequest) {
   const projectRoot = req.nextUrl.searchParams.get("projectRoot");
   const filePath = req.nextUrl.searchParams.get("path");
+  const wantCheckpoints = req.nextUrl.searchParams.get("checkpoints");
+  const checkpointName = req.nextUrl.searchParams.get("checkpoint");
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "missing projectRoot param" }, { status: 400 });
   }
@@ -206,6 +216,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    if (wantCheckpoints !== null) {
+      return NextResponse.json({ ok: true, checkpoints: await listCheckpoints(root.repoRoot) });
+    }
+    if (checkpointName !== null) {
+      const abs = await resolveCheckpointPath(root.repoRoot, checkpointName);
+      if (!abs) return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+      let patch: string;
+      try {
+        patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
+      } catch {
+        return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+      }
+      const truncated = patch.length > DIFF_CAP_CHARS;
+      return NextResponse.json({
+        ok: true,
+        patch: truncated ? patch.slice(0, DIFF_CAP_CHARS) : patch,
+        truncated,
+      });
+    }
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
@@ -214,6 +243,30 @@ export async function GET(req: NextRequest) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
+}
+
+/** Absolute path to this repo's checkpoint store (under .git so snapshots
+ *  never themselves show up as worktree changes). */
+async function checkpointDirOf(repoRoot: string): Promise<string> {
+  const { stdout: gitDirOut } = await git(repoRoot, ["rev-parse", "--git-dir"]);
+  const gitDirRaw = gitDirOut.trim();
+  const gitDir = path.isAbsolute(gitDirRaw) ? gitDirRaw : path.resolve(/* turbopackIgnore: true */ repoRoot, gitDirRaw);
+  return path.join(/* turbopackIgnore: true */ gitDir, "coven-cave", "checkpoints");
+}
+
+/** Validate a checkpoint name and resolve it inside the checkpoint dir.
+ *  Returns null on a bad name or a path that escapes the dir. */
+async function resolveCheckpointPath(repoRoot: string, name: string): Promise<string | null> {
+  if (!isCheckpointName(name)) return null;
+  // path.basename strips any directory component — a recognized path-injection
+  // barrier and redundant with isCheckpointName (which already forbids slashes).
+  const base = path.basename(name);
+  if (base !== name) return null;
+  const dir = await checkpointDirOf(repoRoot);
+  const abs = path.join(/* turbopackIgnore: true */ dir, base);
+  // Belt-and-braces: verify the join stayed inside the checkpoint dir.
+  if (!abs.startsWith(dir + path.sep)) return null;
+  return abs;
 }
 
 async function checkpointChanges(repoRoot: string): Promise<string> {
@@ -232,7 +285,11 @@ async function checkpointChanges(repoRoot: string): Promise<string> {
       const abs = resolveContainedFile(repoRoot, file.path);
       if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) continue;
       try {
-        const { stdout } = await git(repoRoot, ["diff", "--no-index", "--", "/dev/null", abs]);
+        // Pass the REPO-RELATIVE path (cwd is repoRoot) so the synthesized
+        // add-file diff carries `b/<relpath>` headers that `git apply` can
+        // place back — absolute paths here would make the checkpoint
+        // un-restorable for untracked files.
+        const { stdout } = await git(repoRoot, ["diff", "--no-index", "--", DEV_NULL, file.path]);
         patch += stdout;
       } catch (err) {
         const e = err as { code?: number; stdout?: string };
@@ -242,10 +299,7 @@ async function checkpointChanges(repoRoot: string): Promise<string> {
     }
   }
 
-  const { stdout: gitDirOut } = await git(repoRoot, ["rev-parse", "--git-dir"]);
-  const gitDirRaw = gitDirOut.trim();
-  const gitDir = path.isAbsolute(gitDirRaw) ? gitDirRaw : path.resolve(/* turbopackIgnore: true */ repoRoot, gitDirRaw);
-  const checkpointDir = path.join(/* turbopackIgnore: true */ gitDir, "coven-cave", "checkpoints");
+  const checkpointDir = await checkpointDirOf(repoRoot);
   fs.mkdirSync(/* turbopackIgnore: true */ checkpointDir, { recursive: true, mode: 0o700 });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const checkpointPath = path.join(/* turbopackIgnore: true */ checkpointDir, `${stamp}.patch`);
@@ -253,10 +307,49 @@ async function checkpointChanges(repoRoot: string): Promise<string> {
   return checkpointPath;
 }
 
+type CheckpointMeta = { name: string; savedAt: string; bytes: number };
+
+/** List saved checkpoints, newest first. The stamp name sorts chronologically. */
+async function listCheckpoints(repoRoot: string): Promise<CheckpointMeta[]> {
+  const dir = await checkpointDirOf(repoRoot);
+  let names: string[];
+  try {
+    names = fs.readdirSync(/* turbopackIgnore: true */ dir);
+  } catch {
+    return []; // no checkpoints taken yet
+  }
+  const metas: CheckpointMeta[] = [];
+  for (const name of names) {
+    if (!isCheckpointName(name)) continue;
+    try {
+      const st = fs.statSync(/* turbopackIgnore: true */ path.join(dir, name));
+      metas.push({ name, savedAt: st.mtime.toISOString(), bytes: st.size });
+    } catch {
+      /* vanished between readdir and stat — skip */
+    }
+  }
+  metas.sort((a, b) => (a.name < b.name ? 1 : -1));
+  return metas;
+}
+
+/** Apply a saved checkpoint patch onto the current worktree (3-way so it can
+ *  reconstruct the snapshot even if the tree has moved since). */
+async function restoreCheckpoint(repoRoot: string, abs: string): Promise<void> {
+  const patch = fs.readFileSync(/* turbopackIgnore: true */ abs, "utf8");
+  if (!patch.trim()) return; // empty snapshot — nothing to apply
+  await git(repoRoot, ["apply", "--3way", "--whitespace=nowarn", abs]);
+}
+
 // ── POST: revert one file / checkpoint changes ───────────────────────────────
 
 export async function POST(req: NextRequest) {
-  let body: { projectRoot?: string; path?: string; confirmUntracked?: boolean; action?: "revert" | "checkpoint" };
+  let body: {
+    projectRoot?: string;
+    path?: string;
+    confirmUntracked?: boolean;
+    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint";
+    checkpoint?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -283,6 +376,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
     }
   }
+  if (action === "restore-checkpoint" || action === "delete-checkpoint") {
+    if (typeof body.checkpoint !== "string") {
+      return NextResponse.json({ ok: false, error: "checkpoint name is required" }, { status: 400 });
+    }
+    const abs = await resolveCheckpointPath(root.repoRoot, body.checkpoint);
+    if (!abs || !fs.existsSync(/* turbopackIgnore: true */ abs)) {
+      return NextResponse.json({ ok: false, error: "checkpoint not found" }, { status: 404 });
+    }
+    try {
+      if (action === "delete-checkpoint") {
+        fs.unlinkSync(/* turbopackIgnore: true */ abs);
+        return NextResponse.json({ ok: true, deleted: body.checkpoint });
+      }
+      await restoreCheckpoint(root.repoRoot, abs);
+      return NextResponse.json({ ok: true, restored: body.checkpoint });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
   if (typeof body.path !== "string") {
     return NextResponse.json(
       { ok: false, error: "projectRoot and path are required" },
@@ -303,30 +416,46 @@ export async function POST(req: NextRequest) {
     ]);
     const plan = planRevert({ inHead, tracked, confirmDelete: body.confirmUntracked === true });
 
+    if (plan.action === "confirm-required") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "new file — deleting it requires confirmUntracked",
+          requiresConfirmUntracked: true,
+        },
+        { status: 400 },
+      );
+    }
+
+    // Reverts are destructive (discard edits / delete files). Snapshot the whole
+    // working tree first so the action is recoverable; if the safety snapshot
+    // fails, abort rather than destroy without a backup.
+    let checkpointPath: string;
+    try {
+      checkpointPath = await checkpointChanges(root.repoRoot);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return NextResponse.json(
+        { ok: false, error: `could not create safety checkpoint, revert aborted: ${message}` },
+        { status: 500 },
+      );
+    }
+
     switch (plan.action) {
       case "checkout":
         // `checkout HEAD --` updates index AND worktree, so staged edits and
         // staged/unstaged deletions all revert to the committed version —
         // matching the HEAD-relative diff the panel renders.
         await git(root.repoRoot, ["checkout", "HEAD", "--", body.path]);
-        return NextResponse.json({ ok: true, reverted: "checkout", path: body.path });
+        return NextResponse.json({ ok: true, reverted: "checkout", path: body.path, checkpointPath });
       case "rm":
         // Staged new file: it never existed at HEAD, so reverting removes it
         // from both index and worktree.
         await git(root.repoRoot, ["rm", "-f", "--", body.path]);
-        return NextResponse.json({ ok: true, reverted: "rm", path: body.path });
+        return NextResponse.json({ ok: true, reverted: "rm", path: body.path, checkpointPath });
       case "clean":
         await git(root.repoRoot, ["clean", "-f", "--", body.path]);
-        return NextResponse.json({ ok: true, reverted: "clean", path: body.path });
-      case "confirm-required":
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "new file — deleting it requires confirmUntracked",
-            requiresConfirmUntracked: true,
-          },
-          { status: 400 },
-        );
+        return NextResponse.json({ ok: true, reverted: "clean", path: body.path, checkpointPath });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
