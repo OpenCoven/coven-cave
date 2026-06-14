@@ -49,21 +49,40 @@ export function Popover({
     const a = anchorRef.current;
     if (!a) return;
     const r = a.getBoundingClientRect();
-    const isTop = placement.startsWith("top");
+    const pop = popoverRef.current;
+    // scrollHeight = natural content height, stable regardless of the maxHeight we
+    // apply below (so the flip decision doesn't oscillate on reflow).
+    const popH = pop?.scrollHeight ?? 0;
+    const popW = pop?.offsetWidth ?? minWidth ?? r.width;
+    const MARGIN = 8;
+
+    // Vertical auto-flip: honor the requested side, but flip to the opposite side
+    // when the popover can't fit there and the other side has more room. Keeps it
+    // on-screen when the anchor sits low (or high) in the viewport.
+    const spaceBelow = window.innerHeight - r.bottom - offset;
+    const spaceAbove = r.top - offset;
+    const isTop = placement.startsWith("top")
+      ? !(popH > spaceAbove && spaceBelow > spaceAbove)
+      : popH > spaceBelow && spaceAbove > spaceBelow;
     const isEnd = placement.endsWith("end");
+
     const next: CSSProperties = {
       position: "absolute",
       minWidth: minWidth ?? r.width,
+      // Never exceed the chosen side's available space; scroll inside if it must.
+      maxHeight: `${Math.round(Math.max(isTop ? spaceAbove : spaceBelow, 160))}px`,
+      overflowY: "auto",
     };
     if (isTop) {
       next.bottom = window.innerHeight - r.top + offset;
     } else {
       next.top = r.bottom + offset;
     }
+    // Horizontal clamp: keep both edges within the viewport.
     if (isEnd) {
-      next.right = window.innerWidth - r.right;
+      next.right = Math.max(MARGIN, window.innerWidth - r.right);
     } else {
-      next.left = r.left;
+      next.left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - popW - MARGIN));
     }
     setStyle(next);
   }, [anchorRef, placement, offset, minWidth]);
