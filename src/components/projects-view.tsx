@@ -282,6 +282,9 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
       {showForm ? (
         <form
           onSubmit={handleCreate}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setShowForm(false);
+          }}
           className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-4 py-3 sm:px-6"
         >
           <div className="grid gap-2 lg:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
