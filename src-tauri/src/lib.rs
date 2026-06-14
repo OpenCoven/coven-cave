@@ -874,6 +874,11 @@ pub fn run() {
 
             app.handle().plugin(tauri_plugin_notification::init())?;
 
+            // Desktop auto-update: updater checks/downloads/installs signed
+            // release artifacts; process provides relaunch() after install.
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle().plugin(tauri_plugin_process::init())?;
+
             check_app_translocation();
 
             // Dev builds: when the configured dev server (tauri.conf.json
