@@ -6,6 +6,7 @@ import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/agents-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useMemoryFile } from "@/lib/use-memory-file";
 import { LibraryUndoToast } from "./library-undo-toast";
 import {
   classifyProtection,
@@ -800,32 +801,13 @@ type MemoryReaderModalProps = {
 };
 
 export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalProps) {
-  const [text, setText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { text, error } = useMemoryFile(path);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setText(null);
-    setError(null);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/memory/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok) setText(typeof json.text === "string" ? json.text : "");
-        else setError(json.error ?? "Failed to load memory");
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load memory");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [path]);
 
   const heading = title ?? path.split("/").pop() ?? "Memory";
 
@@ -904,26 +886,7 @@ function ExpandMemoryButton({
 }
 
 function MemoryFilePreview({ path }: { path: string }) {
-  const [text, setText] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setText(null);
-    setError(null);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/memory/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok) setText(typeof json.text === "string" ? json.text : "");
-        else setError(json.error ?? "Failed to load preview");
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load preview");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [path]);
+  const { text, error } = useMemoryFile(path);
 
   const MAX_LINES = 40;
   const lines = text?.split("\n") ?? [];

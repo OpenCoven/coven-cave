@@ -3,15 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const hook = await readFile(new URL("../lib/use-memory-file.ts", import.meta.url), "utf8");
+assert.match(hook, /\/api\/memory\/file\?path=\$\{encodeURIComponent\(path\)\}/,
+  "the shared hook must fetch the redaction-safe memory/file endpoint");
 
 // ───────── #5 Selected-file inline preview ─────────
 
 assert.match(source, /function MemoryFilePreview\(\{ path \}/, "A MemoryFilePreview component must exist");
-assert.match(
-  source,
-  /\/api\/memory\/file\?path=\$\{encodeURIComponent\(path\)\}/,
-  "Preview must fetch the redaction-safe memory/file endpoint",
-);
 assert.match(source, /<MemoryFilePreview path=\{entry\.fullPath\} \/>/, "The file drawer must render the inline preview");
 assert.match(source, /Showing first \{MAX_LINES\} lines/, "Preview must disclose when it clips long files");
 
