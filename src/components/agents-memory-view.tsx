@@ -11,12 +11,15 @@ import { LibraryUndoToast } from "./library-undo-toast";
 import {
   classifyProtection,
   detectStale,
-  groupMemories,
   normalizeCovenEntry,
   normalizeFileEntry,
-  sortMemories,
   type GroupBy,
+  type RawCovenEntry,
+  type RawFileEntry,
 } from "@/lib/memory-management";
+import { buildMemoryRows, type MemoryRow } from "@/lib/memory-rows";
+import { MemoryRowItem } from "@/components/agents-memory-row";
+import { MemoryReaderPane } from "@/components/agents-memory-reader";
 import "@/styles/library.css";
 
 export type FileMemoryEntry = {
@@ -133,15 +136,13 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   const [sortMode, setSortMode] = useState<"recent" | "oldest" | "name" | "size" | "staleFirst">("recent");
   const [groupMode, setGroupMode] = useState<GroupBy>("none");
   const [staleOnly, setStaleOnly] = useState(false);
+  const [expandRow, setExpandRow] = useState<MemoryRow | null>(null);
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const effectiveLimit = limit ?? Infinity;
-  const fullView = effectiveLimit === Infinity;
-  // Incremental render caps for the full view (rail/compact use `limit` instead).
+  // Incremental render cap for the full view (rail/compact use `limit` instead).
   const FILE_PAGE = 80;
-  const FAMILIAR_PAGE = 80;
   const [fileLimit, setFileLimit] = useState(FILE_PAGE);
-  const [familiarLimit, setFamiliarLimit] = useState(FAMILIAR_PAGE);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -229,24 +230,30 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
       .sort(cmp[sortMode]);
   }, [fileEntries, q, sourceFilter, sortMode, staleOnly]);
 
-  // Lib-backed normalized files, used for grouping + the suggestions section.
+  // Lib-backed normalized files, used by the suggestions/stale section.
   const normalizedFiles = useMemo(() => fileEntries.map(normalizeFileEntry), [fileEntries]);
-  const fileByPath = useMemo(
-    () => new Map(fileEntries.map((e) => [e.fullPath, e])),
-    [fileEntries],
-  );
-  const visibleFileGroups = useMemo(() => {
-    let list = normalizedFiles
-      .filter((e) => {
-        const orig = fileByPath.get(e.path);
-        return orig ? (sourceFilter === "all" || orig.sourceKind === sourceFilter) && memoryMatches(orig, q) : false;
-      });
-    if (staleOnly) list = list.filter((e) => detectStale(e).stale);
-    list = sortMemories(list, sortMode);
-    return groupMemories(list, groupMode);
-  }, [normalizedFiles, fileByPath, sourceFilter, q, staleOnly, sortMode, groupMode]);
 
-  // Stale entries across BOTH sources, for the "Suggested for cleanup" section.
+  // Unified master list backing the full-view two-pane layout.
+  const unifiedRows = useMemo(
+    () =>
+      buildMemoryRows({
+        coven: covenEntries as unknown as RawCovenEntry[],
+        files: fileEntries as unknown as RawFileEntry[],
+        familiarFilter,
+        query: q,
+        sourceFilter,
+        sortMode,
+        staleOnly,
+        familiarLabel: (id) => familiarById.get(id)?.display_name ?? id,
+      }),
+    [covenEntries, fileEntries, familiarFilter, q, sourceFilter, sortMode, staleOnly, familiarById],
+  );
+  const selectedRow = useMemo(
+    () => unifiedRows.find((r) => r.rowId === selectedRowId) ?? null,
+    [unifiedRows, selectedRowId],
+  );
+
+  // Stale entries across BOTH sources, powering the Stale pill + bulk delete.
   const suggestions = useMemo(() => {
     const all = [...covenEntries.map((e) => normalizeCovenEntry(e)), ...normalizedFiles];
     return all.filter((e) => detectStale(e).stale);
@@ -258,8 +265,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
   );
 
   // Reset pagination whenever the result set changes underneath the user.
-  useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter]);
-  useEffect(() => { setFamiliarLimit(FAMILIAR_PAGE); }, [q, familiarFilter]);
+  useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter, staleOnly, sortMode]);
 
   const familiarsWithMemory = useMemo(() => {
     const ids = new Set(covenEntries.map((entry) => entry.familiar_id));
@@ -299,19 +305,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     return [selectedFamiliar, ...options];
   }, [familiars, familiarsWithMemory, selectedFamiliar]);
 
-  // When the active familiar has no memories, the familiar column collapses so the
-  // (typically much larger) memory-files list claims the freed width instead of
-  // leaving a half-empty grid track. The drawer still gets its own track when open.
-  const hasFamiliar = visibleCoven.length > 0;
   const contentClass = compact
     ? "flex flex-col gap-4 overflow-y-auto p-4"
-    : hasFamiliar
-      ? selectedRowId
-        ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(280px,360px)]"
-        : "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
-      : selectedRowId
-        ? "grid gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]"
-        : "grid gap-4 overflow-y-auto p-4";
+    : "grid min-h-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
@@ -423,10 +419,16 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                 <option value="staleFirst">Stale first</option>
               </select>
             </label>
-            <label className="memory-control memory-control-toggle">
-              <input type="checkbox" checked={staleOnly} onChange={(e) => setStaleOnly(e.target.checked)} />
-              Stale only
-            </label>
+            <button
+              type="button"
+              aria-pressed={staleOnly}
+              onClick={() => setStaleOnly((s) => !s)}
+              className={`focus-ring inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] transition-colors ${
+                staleOnly ? "border-[var(--color-warning)] bg-[var(--color-warning)]/12 text-[var(--text-primary)]" : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              }`}
+            >
+              Stale ({suggestions.length})
+            </button>
           </div>
         )}
         {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
@@ -444,55 +446,73 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             </p>
           </div>
         ) : (
+          !compact ? (
           <>
-        {!compact && !hasFamiliar ? (
-          <div className="xl:col-[1/-1] flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-3.5 py-2.5 text-[11px] leading-5">
-            <Icon name="ph:brain" width={14} className="shrink-0 text-[var(--text-muted)]" />
-            {loaded ? (
-              error ? (
-                <span className="text-[var(--color-warning)]">Couldn’t load familiar memories. See the error above and try again.</span>
-              ) : query ? (
-                <span className="text-[var(--text-muted)]">No familiar memories match “{query.trim()}”.</span>
-              ) : (
-                <span className="text-[var(--text-muted)]">
-                  <span className="font-medium text-[var(--text-secondary)]">No familiar memories yet for {selectedFamiliar?.display_name ?? "this familiar"}.</span>{" "}
-                  They’re saved during chats; harness-written memory files appear in the list below.
-                </span>
-              )
-            ) : (
-              <span className="text-[var(--text-muted)]">Loading memories…</span>
-            )}
-          </div>
-        ) : null}
-        {!compact && suggestions.length > 0 ? (
-          <section className="memory-suggestions xl:col-[1/-1]" aria-label="Suggested for cleanup">
-            <header>
-              <h3>Suggested for cleanup ({suggestions.length})</h3>
-              <button
-                type="button"
-                disabled={bulkDeletable.length === 0}
-                onClick={() => bulkDeletable.forEach((e) => handleDelete(e.path, e.key, e.source))}
-              >
-                Delete {bulkDeletable.length} cleanable
-              </button>
-            </header>
-            <ul>
-              {suggestions.map((e) => (
-                <li key={e.key} className={e.protection !== "normal" ? "memory-suggestion-protected" : ""}>
-                  <span>{e.title}</span>
-                  <em>{detectStale(e).reason}</em>
-                  {e.protection !== "normal" ? (
-                    <span className="memory-protected-badge" title="Protected from bulk delete">🔒 protected</span>
+            {/* LIST PANE */}
+            <section className="flex min-h-0 flex-col">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
+                <div className="flex items-center gap-2">
+                  {staleOnly && bulkDeletable.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => bulkDeletable.forEach((e) => handleDelete(e.path, e.key, e.source))}
+                      className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--color-warning)] hover:bg-[var(--bg-raised)]"
+                    >
+                      <Icon name="ph:trash" width={11} />
+                      Delete {bulkDeletable.length} cleanable
+                    </button>
                   ) : null}
-                  {e.protection !== "structural" ? (
-                    <button type="button" onClick={() => handleDelete(e.path, e.key, e.source)}>Delete</button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-        {compact || hasFamiliar ? (
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {unifiedRows.length > fileLimit ? `${fileLimit} of ${unifiedRows.length}` : `${unifiedRows.length} shown`}
+                  </span>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+                {unifiedRows.length === 0 ? (
+                  <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+                    {loaded ? (error ? "Couldn't load memories. See the error above and try again." : "No memories match this view.") : "Loading memories…"}
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-[var(--border-hairline)]">
+                    {unifiedRows.slice(0, fileLimit).map((row) => (
+                      <MemoryRowItem
+                        key={row.rowId}
+                        row={row}
+                        age={age(row.sortTime)}
+                        selected={selectedRowId === row.rowId}
+                        onSelect={() => setSelectedRowId(row.rowId)}
+                        onExpand={() => setExpandRow(row)}
+                        onDelete={row.protection !== "structural" ? () => handleDelete(row.path, row.rowId, row.kind === "agent" ? "coven" : "file") : undefined}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {unifiedRows.length > fileLimit ? (
+                  <button
+                    type="button"
+                    onClick={() => setFileLimit((n) => n + FILE_PAGE)}
+                    className="focus-ring flex w-full items-center justify-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:caret-down" width={11} />
+                    Show more · {fileLimit} of {unifiedRows.length}
+                  </button>
+                ) : null}
+              </div>
+            </section>
+
+            {/* READER PANE */}
+            <MemoryReaderPane
+              row={selectedRow}
+              age={selectedRow ? age(selectedRow.sortTime) : ""}
+              sizeLabel={selectedRow ? formatBytes(selectedRow.size) : ""}
+              onOpenFile={(p) => onOpenMemoryFile?.(p)}
+              onExpand={(r) => setExpandRow(r)}
+            />
+          </>
+          ) : (
+          <>
+        {compact ? (
         <section className="min-h-0">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Familiar memory</h3>
@@ -503,24 +523,13 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
             </div>
           ) : (
-            <>
             <div className="grid gap-2 md:grid-cols-2">
-              {visibleCoven.slice(0, fullView ? familiarLimit : effectiveLimit).map((entry) => {
+              {visibleCoven.slice(0, effectiveLimit).map((entry) => {
                 const familiar = familiarById.get(entry.familiar_id);
                 return (
                   <article
                     key={entry.id}
-                    role={compact ? undefined : "button"}
-                    tabIndex={compact ? undefined : 0}
-                    onClick={() => { if (!compact) setSelectedRowId(`coven:${entry.id}`); }}
-                    onKeyDown={(e) => {
-                      if (compact) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setSelectedRowId(`coven:${entry.id}`);
-                      }
-                    }}
-                    className={`rounded-lg border p-3 transition-colors ${compact ? "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35" : selectedRowId === `coven:${entry.id}` ? "cursor-pointer border-[var(--accent-presence)] bg-[var(--bg-raised)]/55" : "cursor-pointer border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 hover:bg-[var(--bg-raised)]/50"}`}
+                    className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -547,32 +556,11 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                         Open memory
                       </button>
                       <ExpandMemoryButton path={entry.path} title={entry.title} />
-                      {classifyProtection(entry.path) !== "structural" && (
-                        <button
-                          type="button"
-                          className="memory-card-delete focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--color-warning)]"
-                          aria-label={`Delete ${entry.title}`}
-                          onClick={(e) => { e.stopPropagation(); handleDelete(entry.path, entry.id, "coven"); }}
-                        >
-                          <Icon name="ph:trash" width={12} aria-hidden />
-                        </button>
-                      )}
                     </div>
                   </article>
                 );
               })}
             </div>
-            {fullView && visibleCoven.length > familiarLimit ? (
-              <button
-                type="button"
-                onClick={() => setFamiliarLimit((n) => n + FAMILIAR_PAGE)}
-                className="focus-ring mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:caret-down" width={11} />
-                Show more · {familiarLimit} of {visibleCoven.length}
-              </button>
-            ) : null}
-            </>
           )}
         </section>
         ) : null}
@@ -581,133 +569,23 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memory files</h3>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-[var(--text-muted)]">
-                {fullView && groupMode === "none" && visibleFiles.length > fileLimit
-                  ? `${fileLimit} of ${visibleFiles.length}`
-                  : `${visibleFiles.length} visible`}
-              </span>
+              <span className="text-[10px] text-[var(--text-muted)]">{visibleFiles.length} visible</span>
             </div>
           </div>
-          {!compact && groupMode !== "none" ? (
-            <div className="flex flex-col gap-3">
-              {visibleFileGroups.map((group) => {
-                const rows = group.entries
-                  .map((e) => fileByPath.get(e.path))
-                  .filter((e): e is FileMemoryEntry => Boolean(e));
-                if (rows.length === 0) return null;
-                return (
-                  <div key={group.key}>
-                    <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                      {group.label} ({rows.length})
-                    </h4>
-                    <MemoryFilesList
-                      entries={rows}
-                      onOpen={onOpenMemoryFile}
-                      loaded={loaded}
-                      error={error}
-                      activeFamiliarId={familiarFilter}
-                      onSelect={(rowId) => setSelectedRowId(rowId)}
-                      selectedRowId={selectedRowId}
-                      onDelete={(p) => handleDelete(p, p, "file")}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <MemoryFilesList
-              entries={visibleFiles}
-              onOpen={onOpenMemoryFile}
-              loaded={loaded}
-              error={error}
-              limit={fullView ? fileLimit : effectiveLimit}
-              onShowMore={fullView ? () => setFileLimit((n) => n + FILE_PAGE) : undefined}
-              activeFamiliarId={familiarFilter}
-              onSelect={compact ? undefined : (rowId) => setSelectedRowId(rowId)}
-              selectedRowId={compact ? null : selectedRowId}
-              onDelete={compact ? undefined : (p) => handleDelete(p, p, "file")}
-            />
-          )}
+          <MemoryFilesList
+            entries={visibleFiles}
+            onOpen={onOpenMemoryFile}
+            loaded={loaded}
+            error={error}
+            limit={effectiveLimit}
+            activeFamiliarId={familiarFilter}
+            onSelect={undefined}
+            selectedRowId={null}
+            onDelete={undefined}
+          />
         </section>
-        {!compact && selectedRowId ? (
-          <aside data-testid="memory-list-drawer" className="min-h-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Selected</h3>
-              <button
-                type="button"
-                onClick={() => setSelectedRowId(null)}
-                className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                aria-label="Close drawer"
-              >
-                <Icon name="ph:x-bold" width={11} />
-              </button>
-            </div>
-            {(() => {
-              if (selectedRowId.startsWith("coven:")) {
-                const id = selectedRowId.slice("coven:".length);
-                const entry = visibleCoven.find((c) => c.id === id);
-                if (!entry) return <div className="mt-3 text-[12px] text-[var(--text-muted)]">Memory no longer in view.</div>;
-                const familiar = familiarById.get(entry.familiar_id);
-                return (
-                  <div className="mt-3">
-                    <h4 className="line-clamp-3 text-[14px] font-semibold leading-5 text-[var(--text-primary)]">{entry.title}</h4>
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">{familiar?.display_name ?? entry.familiar_id}</span>
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">Coven memory</span>
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(entry.updated_at)}</span>
-                    </div>
-                    {entry.excerpt ? <p className="mt-3 line-clamp-6 text-[12px] leading-5 text-[var(--text-secondary)]">{entry.excerpt}</p> : null}
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onOpenMemoryFile?.(entry.path)}
-                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                      >
-                        <Icon name="ph:file-text" width={12} />
-                        Open memory
-                      </button>
-                      <ExpandMemoryButton path={entry.path} title={entry.title} />
-                    </div>
-                  </div>
-                );
-              }
-              if (selectedRowId.startsWith("file:")) {
-                const fullPath = selectedRowId.slice("file:".length);
-                const entry = visibleFiles.find((f) => f.fullPath === fullPath);
-                if (!entry) return <div className="mt-3 text-[12px] text-[var(--text-muted)]">File no longer in view.</div>;
-                return (
-                  <div className="mt-3">
-                    <h4 className="line-clamp-3 text-[14px] font-semibold leading-5 text-[var(--text-primary)]">{entry.relPath}</h4>
-                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--text-muted)]">
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">{entry.sourceKindLabel}</span>
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{entry.rootLabel}</span>
-                      {formatBytes(entry.size) ? <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{formatBytes(entry.size)}</span> : null}
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{age(entry.modified)}</span>
-                    </div>
-                    <div className="mt-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)]/40 px-2.5 py-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Path</div>
-                      <code className="mt-1 block break-all font-mono text-[11px] leading-4 text-[var(--text-primary)]">{compactPath(entry.fullPath)}</code>
-                    </div>
-                    <MemoryFilePreview path={entry.fullPath} />
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onOpenMemoryFile?.(entry.fullPath)}
-                        className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-                      >
-                        <Icon name="ph:file-text" width={12} />
-                        Open file
-                      </button>
-                      <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} />
-                    </div>
-                  </div>
-                );
-              }
-              return null;
-            })()}
-          </aside>
-        ) : null}
           </>
+          )
         )}
       </div>
       {undoPending ? (
@@ -716,6 +594,9 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
           onUndo={handleUndoDelete}
           onDismiss={commitDelete}
         />
+      ) : null}
+      {expandRow ? (
+        <MemoryReaderModal path={expandRow.path} title={expandRow.title} onClose={() => setExpandRow(null)} />
       ) : null}
     </div>
   );
