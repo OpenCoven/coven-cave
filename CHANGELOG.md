@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.81] - 2026-06-14
+
+This patch release completes the Agent Memory redesign, adds local-change checkpoints and an in-app update button, and tidies the bookmarks table.
+
+### Added
+- **Update available button** — the app now surfaces a button when a newer release has been published.
+- **Agent memory grouping & full content** — the unified memory list can group by type, source, or date, and agent (familiar) memories now open their full file in the reader instead of just an excerpt.
+- **Change checkpoints** — the Changes view gained checkpoints with recoverable reverts.
+
+### Changed
+- **Bookmarks** — removed the Tags column from bookmark rows for a cleaner, more legible table.
+
+### Fixed
+- **Agent memory reader** — agent memories no longer fail with "path not allowed"; their content renders correctly.
+- **Changes** — fixed stale diffs and `.env` file mangling.
+
 ## [0.0.80] - 2026-06-13
 
 This patch release ships the next macOS desktop build and a fresh iOS/TestFlight build after the App Store Connect bootstrap work, carrying the latest mobile, chat, workflow, and memory polish from `main`.
