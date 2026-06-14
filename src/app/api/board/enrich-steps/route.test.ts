@@ -45,3 +45,45 @@ assert.match(
   /"--archive"[\s\S]*"--labels"[\s\S]*"board,enrich-steps"/,
   "One-shot enrichment runs should be archived and labeled",
 );
+
+assert.match(
+  source,
+  /type TaskEnrichment = \{[\s\S]*steps\?: string\[\][\s\S]*status\?: CardStatus[\s\S]*lifecycle\?: CardLifecycle[\s\S]*priority\?: CardPriority/,
+  "Enrich route should parse a full task metadata payload, not only step strings",
+);
+
+assert.match(
+  source,
+  /const STATUS_VALUES = new Set<CardStatus>\(/,
+  "Enrich route should validate returned status values against board statuses",
+);
+
+assert.match(
+  source,
+  /const LIFECYCLE_VALUES = new Set<CardLifecycle>\(/,
+  "Enrich route should validate returned lifecycle values against board lifecycles",
+);
+
+assert.match(
+  source,
+  /const PRIORITY_VALUES = new Set<CardPriority>\(/,
+  "Enrich route should validate returned priority values against board priorities",
+);
+
+assert.match(
+  source,
+  /const candidates = board\.cards\.filter\([\s\S]*c\.familiarId[\s\S]*!SKIP_LIFECYCLE\.has\(c\.lifecycle\)[\s\S]*\);/,
+  "Enrich route should revisit every active assigned task, including tasks that already have steps",
+);
+
+assert.doesNotMatch(
+  source,
+  /const candidates = board\.cards\.filter\([\s\S]*\(c\.steps \?\? \[\]\)\.length === 0[\s\S]*\);/,
+  "Enrich route should not skip active tasks only because steps already exist",
+);
+
+assert.match(
+  source,
+  /await updateCard\(card\.id, \{[\s\S]*steps:[\s\S]*status:[\s\S]*lifecycle:[\s\S]*priority:[\s\S]*needsHuman:[\s\S]*lifecycleReason:/,
+  "Enrich route should update steps, status, lifecycle, priority, and human/lifecycle metadata together",
+);

@@ -1,5 +1,14 @@
 import { loadBoard, updateCard } from "@/lib/cave-board";
-import type { CardStep } from "@/lib/cave-board-types";
+import {
+  LIFECYCLES,
+  PRIORITIES,
+  STATUSES,
+  type Card,
+  type CardLifecycle,
+  type CardPriority,
+  type CardStatus,
+  type CardStep,
+} from "@/lib/cave-board-types";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { familiarWorkspace } from "@/lib/coven-paths";
@@ -12,25 +21,97 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const ENRICH_INTENT = "board-enrich-steps";
+const STATUS_VALUES = new Set<CardStatus>(STATUSES);
+const LIFECYCLE_VALUES = new Set<CardLifecycle>(LIFECYCLES);
+const PRIORITY_VALUES = new Set<CardPriority>(PRIORITIES);
 
-// Prompt the familiar to return ONLY a JSON array of step strings — nothing else.
-function enrichPrompt(card: {
-  title: string;
-  notes?: string;
-  labels?: string[];
-}): string {
+type TaskEnrichment = {
+  steps?: string[];
+  status?: CardStatus;
+  lifecycle?: CardLifecycle;
+  priority?: CardPriority;
+  needsHuman?: boolean;
+  lifecycleReason?: string;
+};
+
+function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus): CardStatus {
+  if (lifecycle === "dispatched" || lifecycle === "running") return "running";
+  if (lifecycle === "review") return "review";
+  if (lifecycle === "completed") return "done";
+  if (lifecycle === "failed" || lifecycle === "cancelled") return "blocked";
+  if (currentStatus === "inbox") return "inbox";
+  return "backlog";
+}
+
+function lifecycleForStatus(status: CardStatus): CardLifecycle {
+  if (status === "running") return "running";
+  if (status === "review") return "review";
+  if (status === "blocked") return "failed";
+  if (status === "done") return "completed";
+  return "queued";
+}
+
+function statusMatchesLifecycle(lifecycle: CardLifecycle, status: CardStatus): boolean {
+  return statusForLifecycle(lifecycle, status) === status;
+}
+
+function stepKey(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function cleanStepStrings(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function mergeSteps(card: Card, steps: string[], now: string): CardStep[] {
+  if (steps.length === 0) return card.steps ?? [];
+  const existing = new Map((card.steps ?? []).map((step) => [stepKey(step.text), step]));
+  return steps.map((text) => {
+    const previous = existing.get(stepKey(text));
+    return {
+      id: previous?.id ?? crypto.randomUUID(),
+      text,
+      done: previous?.done ?? false,
+      addedAt: previous?.addedAt ?? now,
+      ...(previous?.doneAt ? { doneAt: previous.doneAt } : {}),
+    };
+  });
+}
+
+function cleanReason(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 240) : undefined;
+}
+
+function enrichPrompt(card: Card): string {
   const labels = card.labels?.length
     ? `\nLabels: ${card.labels.join(", ")}`
     : "";
   const notes = card.notes?.trim() ? `\n\nNotes:\n${card.notes.trim()}` : "";
+  const steps = card.steps?.length
+    ? `\n\nCurrent steps:\n${card.steps
+        .map((step, index) => `${index + 1}. [${step.done ? "x" : " "}] ${step.text}`)
+        .join("\n")}`
+    : "";
   return [
-    `You are helping plan the following task as a concrete checklist.`,
+    `You are refreshing a board task so it reflects the current best plan and state.`,
     `Task: ${card.title.trim()}${labels}${notes}`,
+    `Current status: ${card.status}`,
+    `Current lifecycle: ${card.lifecycle}`,
+    `Current priority: ${card.priority}`,
+    `Needs human: ${card.needsHuman ? "yes" : "no"}${steps}`,
     ``,
-    `Output ONLY a JSON array of step strings — no explanation, no markdown, no extra text.`,
-    `Each step must be a short, actionable sentence (< 80 chars).`,
-    `Produce 3–7 steps that reflect your role, skills, and the ideal process for this task.`,
-    `Example output: ["Step one","Step two","Step three"]`,
+    `Output ONLY one JSON object with these keys:`,
+    `{"steps":["short action"],"status":"backlog|inbox|running|review|blocked|done","lifecycle":"queued|dispatched|running|review|completed|failed|cancelled","priority":"low|medium|high|urgent","needsHuman":false,"lifecycleReason":"short reason"}`,
+    `Produce 3-8 steps that reflect your role, skills, and the ideal current process.`,
+    `Each step must be a short, actionable sentence under 80 characters.`,
+    `Use status, lifecycle, priority, needsHuman, and lifecycleReason to reflect the task's current reality.`,
+    `Return no explanation, no markdown, and no extra text.`,
   ].join("\n");
 }
 
@@ -105,13 +186,8 @@ function runCoven(
   });
 }
 
-// Parse familiar response — look for a JSON array anywhere in the output.
-function parseSteps(raw: string): string[] | null {
+function assistantTextFromOutput(raw: string): string {
   const clean = stripAnsi(raw);
-
-  // When using `--stream-json`, assistant text is wrapped in JSON envelopes.
-  // Extract the assistant's text payload first so we don't accidentally match
-  // other JSON arrays like `message.content`.
   let assistantText = "";
   for (const line of clean.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -139,22 +215,97 @@ function parseSteps(raw: string): string[] | null {
     // Fallback for harnesses that emit plain text even with --stream-json.
     assistantText += trimmed + "\n";
   }
+  return assistantText.trim() ? assistantText : clean;
+}
 
-  const haystack = assistantText.trim() ? assistantText : clean;
+function parseJsonObject(haystack: string): unknown {
+  const start = haystack.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < haystack.length; i += 1) {
+    const ch = haystack[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+    } else if (ch === "{") {
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return JSON.parse(haystack.slice(start, i + 1));
+      }
+    }
+  }
+  return null;
+}
+
+function parseJsonArray(haystack: string): unknown {
   const match = haystack.match(/\[[\s\S]*?\]/);
   if (!match) return null;
+  return JSON.parse(match[0]);
+}
+
+function parseTaskEnrichment(raw: string): TaskEnrichment | null {
+  const haystack = assistantTextFromOutput(raw);
   try {
-    const parsed = JSON.parse(match[0]);
-    if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
-      return parsed
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .slice(0, 7);
+    const parsed = parseJsonObject(haystack);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const candidate = parsed as Record<string, unknown>;
+      return {
+        steps: cleanStepStrings(candidate.steps),
+        status: STATUS_VALUES.has(candidate.status as CardStatus)
+          ? candidate.status as CardStatus
+          : undefined,
+        lifecycle: LIFECYCLE_VALUES.has(candidate.lifecycle as CardLifecycle)
+          ? candidate.lifecycle as CardLifecycle
+          : undefined,
+        priority: PRIORITY_VALUES.has(candidate.priority as CardPriority)
+          ? candidate.priority as CardPriority
+          : undefined,
+        needsHuman: typeof candidate.needsHuman === "boolean" ? candidate.needsHuman : undefined,
+        lifecycleReason: cleanReason(candidate.lifecycleReason),
+      };
     }
   } catch {
     /* */
   }
+  try {
+    const parsed = parseJsonArray(haystack);
+    const steps = cleanStepStrings(parsed);
+    return steps.length > 0 ? { steps } : null;
+  } catch {
+    /* */
+  }
   return null;
+}
+
+function normalizeTaskEnrichment(card: Card, enrichment: TaskEnrichment, now: string) {
+  const lifecycle = enrichment.lifecycle ?? (enrichment.status ? lifecycleForStatus(enrichment.status) : card.lifecycle);
+  const status = enrichment.status && statusMatchesLifecycle(lifecycle, enrichment.status)
+    ? enrichment.status
+    : statusForLifecycle(lifecycle, card.status);
+  const priority = enrichment.priority ?? card.priority;
+  const needsHuman = enrichment.needsHuman ?? (status === "blocked" && lifecycle !== "cancelled");
+  return {
+    steps: mergeSteps(card, enrichment.steps ?? [], now),
+    status,
+    lifecycle,
+    priority,
+    needsHuman,
+    lifecycleReason: enrichment.lifecycleReason ?? card.lifecycleReason,
+    lifecycleAt: lifecycle !== card.lifecycle ? now : card.lifecycleAt,
+  };
 }
 
 export async function POST(req: Request) {
@@ -170,16 +321,13 @@ export async function POST(req: Request) {
 
   const [board, config] = await Promise.all([loadBoard(), loadConfig()]);
 
-  // Only enrich tasks that:
-  // - have an assigned familiar
-  // - are not completed or cancelled
-  // - have no existing steps yet (or have 0 steps)
+  // Only enrich active tasks with an assigned familiar. Existing steps are
+  // included so the familiar can refresh stale plans and task metadata.
   const SKIP_LIFECYCLE = new Set(["completed", "cancelled"]);
   const candidates = board.cards.filter(
     (c) =>
       c.familiarId &&
-      !SKIP_LIFECYCLE.has(c.lifecycle) &&
-      (c.steps ?? []).length === 0,
+      !SKIP_LIFECYCLE.has(c.lifecycle),
   );
 
   const stream = new ReadableStream<Uint8Array>({
@@ -216,7 +364,7 @@ export async function POST(req: Request) {
 
         push({ kind: "progress", cardId: card.id, title: card.title });
 
-        const title = `Plan task steps: ${card.title.trim().slice(0, 80) || card.id}`;
+        const title = `Refresh task: ${card.title.trim().slice(0, 80) || card.id}`;
         const args: string[] = [
           "run",
           binding.harness,
@@ -234,27 +382,29 @@ export async function POST(req: Request) {
         const workspace = await resolveFamiliarWorkspace(familiarId);
         const raw = await runCoven(args, req.signal, workspace);
         if (req.signal.aborted) break;
-        const steps = parseSteps(raw);
+        const enrichment = parseTaskEnrichment(raw);
 
-        if (!steps || steps.length === 0) {
-          push({ kind: "skip", cardId: card.id, reason: "no_steps_parsed" });
+        if (!enrichment) {
+          push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
           continue;
         }
 
         const now = new Date().toISOString();
-        const cardSteps: CardStep[] = steps.map((text) => ({
-          id: crypto.randomUUID(),
-          text,
-          done: false,
-          addedAt: now,
-        }));
-
-        const updated = await updateCard(card.id, { steps: cardSteps });
+        const normalized = normalizeTaskEnrichment(card, enrichment, now);
+        const updated = await updateCard(card.id, {
+          steps: normalized.steps,
+          status: normalized.status,
+          lifecycle: normalized.lifecycle,
+          priority: normalized.priority,
+          needsHuman: normalized.needsHuman,
+          lifecycleReason: normalized.lifecycleReason,
+          lifecycleAt: normalized.lifecycleAt,
+        });
         if (!updated) {
           push({ kind: "skip", cardId: card.id, reason: "card_missing" });
           continue;
         }
-        push({ kind: "done", cardId: card.id, count: cardSteps.length });
+        push({ kind: "done", cardId: card.id, count: normalized.steps.length });
       }
 
       push({ kind: "complete" });
