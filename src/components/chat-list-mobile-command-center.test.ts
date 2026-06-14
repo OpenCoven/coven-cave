@@ -61,8 +61,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-row\s*\{[\s\S]*grid-template-areas\s*:[\s\S]*"dot content"[\s\S]*"\. actions"/,
-  "Mobile chat list rows should move actions below content instead of squeezing metadata",
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-row\s*\{[\s\S]*grid-template-areas\s*:[\s\S]*"handle dot content"[\s\S]*"\. \. actions"/,
+  "Mobile chat list rows should reserve a drag handle column and move actions below content",
 );
 
 assert.match(

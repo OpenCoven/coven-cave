@@ -4638,12 +4638,20 @@ button:active > .edge-rail-chip {
 
   .chat-list-row {
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr);
+    grid-template-columns: 24px 14px minmax(0, 1fr);
     grid-template-areas:
-      "dot content"
-      ". actions";
+      "handle dot content"
+      ". . actions";
     gap: 6px 10px;
     padding: 14px 12px;
+  }
+
+  .chat-list-drag-handle {
+    grid-area: handle;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    margin: -10px 0 0 -10px;
+    opacity: 1;
   }
 
   .chat-list-status-dot {

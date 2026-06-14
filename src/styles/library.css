@@ -1089,7 +1089,7 @@
 .library-reading-title {
   display: -webkit-box;
   max-width: 100%;
-  line-height: 1.35;
+  line-height: 1.32;
   overflow: hidden;
   /* break-word, not anywhere: only split words that genuinely can't fit,
      instead of shattering "Confirmation" into "Confirmati on". */
@@ -1100,7 +1100,9 @@
   white-space: normal;
 }
 .library-reading-author {
-  margin-top: 2px;
+  margin-top: 3px;
+  color: var(--text-muted);
+  line-height: 1.25;
 }
 .library-reading-col-added {
   text-align: right;
@@ -1168,8 +1170,8 @@ tr:focus-within .library-row-delete {
 .library-status-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
   text-transform: capitalize;
@@ -1182,6 +1184,8 @@ tr:focus-within .library-row-delete {
   color: var(--text-primary);
   cursor: pointer;
   outline: none;
+  min-height: 28px;
+  background-color: color-mix(in oklch, var(--bg-raised) 76%, transparent);
 }
 .library-status-select:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
@@ -1238,16 +1242,18 @@ tr:focus-within .library-row-delete {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  background: color-mix(in oklch, var(--bg-base) 97%, var(--bg-raised));
 }
 .library-list-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 94%, var(--bg-raised));
   flex-shrink: 0;
-  min-height: 40px;
+  min-height: 44px;
 }
 .library-list-header-title {
   font-size: 13px;
@@ -1273,7 +1279,7 @@ tr:focus-within .library-row-delete {
 }
 .library-list-header-controls .board-toolbar-btn {
   font-size: 11px;
-  padding: 3px 8px;
+  padding: 4px 9px;
   white-space: nowrap;
 }
 
@@ -2863,9 +2869,69 @@ h3:hover .library-heading-anchor,
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent-presence) 22%, transparent) transparent;
+  background: var(--bg-base);
 }
 .library-list-shell .board-table {
   table-layout: fixed;
+}
+.library-list-shell .library-doclist-search {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  flex-shrink: 0;
+  height: 48px;
+  padding-inline: 14px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 78%, transparent);
+  background: color-mix(in oklch, var(--bg-base) 96%, transparent);
+  backdrop-filter: blur(12px);
+}
+.library-list-shell .library-doclist-search-input {
+  font-size: 13px;
+}
+.library-reading-table .board-table-group-row {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  background: color-mix(in oklch, var(--bg-base) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+.library-reading-table .board-table-group-row td {
+  height: 36px;
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 72%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 88%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.library-reading-row {
+  min-height: 64px;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+.library-reading-row:hover {
+  background: color-mix(in oklch, var(--bg-raised) 52%, transparent);
+}
+.library-reading-row.selected {
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--accent-presence) 13%, transparent), transparent 42%),
+    color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent-presence);
+}
+.library-reading-row > td {
+  vertical-align: middle;
+}
+.library-reading-table .library-reading-col-status {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.library-reading-table .library-reading-col-added {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.library-reading-table .library-status-select {
+  width: 100%;
+  text-transform: capitalize;
 }
 /* Bookmarks: Title is the row's identity and must stay the priority column.
    Use auto layout + a fluid first column (max-width:0 + width:100%) so the
@@ -2943,23 +3009,23 @@ h3:hover .library-heading-anchor,
   .library-reading-row {
     box-sizing: border-box;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(126px, 142px) 44px;
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 176px) 42px;
     align-items: center;
-    column-gap: 10px;
-    min-height: 72px;
+    column-gap: 12px;
+    min-height: 74px;
     width: 100%;
   }
   .library-reading-row > td {
     box-sizing: border-box;
     display: block;
     min-width: 0;
-    padding: 12px 0;
+    padding: 13px 0;
   }
   .library-reading-row > .library-reading-col-title {
-    padding-left: 12px;
+    padding-left: 14px;
   }
   .library-reading-row > .library-reading-col-added {
-    padding-right: 12px;
+    padding-right: 14px;
   }
   .library-reading-table .library-reading-col-source,
   .library-reading-table .library-reading-col-progress,

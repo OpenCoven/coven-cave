@@ -109,6 +109,24 @@ assert.match(
   "Pin toggle should be a real button with a state-aware aria-label",
 );
 
+// Full ChatList drag reorder mirrors the thread rail: @dnd-kit handles the
+// gesture, the shared Cave-local order store persists the result, and stale ids
+// are pruned against live familiar-scoped sessions.
+assert.match(source, /from "@dnd-kit\/core"/, "ChatList should use @dnd-kit for drag reorder");
+assert.match(source, /const displayIds = useMemo\([\s\S]*displayGroups\.flatMap\(\(group\) => group\.sessions\.map\(\(session\) => session\.id\)\)/, "ChatList should derive one flat list of visible sortable ids");
+assert.match(source, /<DndContext[\s\S]*onDragEnd=\{\(event\) => handleDragEnd\(event, displayIds\)\}/, "The visible chat list should wire drag end with all displayed ids");
+assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalListSortingStrategy\}/, "All visible chat rows should share one SortableContext");
+assert.match(source, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
+assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
+assert.match(source, /if \(effectiveSelection === "all"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups so cross-project drag order can stick");
+assert.match(source, /partitionPinnedFirst\(rows, pinnedIds\)/, "Pinned rows should still float in the flat All chats view until manual drag order exists");
+assert.match(source, /applyManualOrder\(group\.sessions, sessionOrder\)/, "ChatList should apply the manual order inside visible project groups");
+assert.match(source, /mergeVisibleOrder\(prev\.length > 0 \? prev : fallbackOrderIds, nextVisible\)/, "ChatList should merge dragged visible rows back into the full saved order");
+assert.match(source, /const pruned = merged\.filter\(\(id\) => liveSessionIds\.has\(id\)\)/, "ChatList should prune stale session ids before persisting drag order");
+assert.match(source, /writeSessionOrder\(pruned\)/, "ChatList should persist drag order to the shared session-order store");
+assert.match(source, /activationConstraint: \{ distance: 5 \}/, "Pointer drag should require movement so normal clicks still open chats");
+assert.match(source, /aria-label=\{`Reorder chat \$\{rowName\}`\}/, "Drag handle should be accessible and scoped to the row");
+
 // Archive rides the existing sessions PATCH endpoint (Cave-local archived_at)
 // and archived rows stay hidden until the Show archived filter opts in.
 assert.match(

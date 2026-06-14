@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
@@ -30,6 +30,30 @@ import {
   sortPinnedFirst,
   togglePinnedSession,
 } from "@/lib/chat-session-prefs";
+import {
+  applyManualOrder,
+  mergeVisibleOrder,
+  partitionPinnedFirst,
+  readSessionOrder,
+  writeSessionOrder,
+} from "@/lib/chat-session-order";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type Props = {
   familiar: Familiar | null;
@@ -121,6 +145,36 @@ function HighlightedSnippet({ snippet, query }: { snippet: string; query: string
   );
 }
 
+type SortableHandleProps = {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  isDragging: boolean;
+};
+
+function SortableChatListItem({
+  id,
+  children,
+}: {
+  id: string;
+  children: (handleProps: SortableHandleProps) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+  };
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      data-dragging={isDragging ? "true" : undefined}
+      className="chat-list-sortable-row"
+    >
+      {children({ attributes, listeners, isDragging })}
+    </li>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
@@ -135,6 +189,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // Pins are Cave-local UI state (localStorage), same idiom as the project
   // sidebar persistence below — the daemon never learns about them.
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   // Archived rows are excluded server-side by /api/sessions/list; the toggle
   // opts into them with its own includeArchived fetch (the workspace's list
   // poll stays archive-free).
@@ -165,6 +220,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const panelTitle = familiar?.display_name ?? "Familiars";
   const panelRole = familiar?.role ?? "All project conversations";
   const panelRuntime = familiar ? (familiar.harness ?? "codex") : "mixed";
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
@@ -191,6 +250,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setPinnedIds(readPinnedSessions());
+    setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
   }, []);
   useEffect(() => {
@@ -310,11 +370,35 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     () => applyProjectScope(grouped, effectiveSelection),
     [grouped, effectiveSelection],
   );
-  // Pinned rows float to the top of their project group; recency order is
-  // preserved inside both partitions.
-  const displayGroups = useMemo(
-    () => sortPinnedFirst(scopedGroups, pinnedIds),
-    [scopedGroups, pinnedIds],
+  const displayGroups = useMemo(() => {
+    if (effectiveSelection === "all") {
+      let rows = scopedGroups.flatMap((group) => group.sessions);
+      rows = sessionOrder.length === 0
+        ? partitionPinnedFirst(rows, pinnedIds)
+        : applyManualOrder(rows, sessionOrder);
+      const latest = rows[0] ?? null;
+      return [{
+        projectId: null,
+        projectRoot: null,
+        projectName: null,
+        sessions: rows,
+        defaultFamiliarId: latest?.familiarId ?? fallbackFamiliarId,
+        updatedAt: latest ? (latest.updated_at || latest.created_at) : null,
+      }];
+    }
+    if (sessionOrder.length === 0) return sortPinnedFirst(scopedGroups, pinnedIds);
+    let changed = false;
+    const next = scopedGroups.map((group) => {
+      const ordered = applyManualOrder(group.sessions, sessionOrder);
+      if (ordered === group.sessions) return group;
+      changed = true;
+      return { ...group, sessions: ordered };
+    });
+    return changed ? next : scopedGroups;
+  }, [effectiveSelection, scopedGroups, sessionOrder, pinnedIds, fallbackFamiliarId]);
+  const displayIds = useMemo(
+    () => displayGroups.flatMap((group) => group.sessions.map((session) => session.id)),
+    [displayGroups],
   );
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
@@ -338,6 +422,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }, [contentHits, scopedGroups, mine, search]);
   const showContentSection =
     search.trim().length >= 2 && (contentLoading || contentMatches.length > 0);
+
+  const fallbackOrderIds = useMemo(() => mine.map((s) => s.id), [mine]);
+  const liveSessionIds = useMemo(() => new Set(mine.map((s) => s.id)), [mine]);
+
+  function handleDragEnd(event: DragEndEvent, displayIds: string[]) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = displayIds.indexOf(String(active.id));
+    const newIndex = displayIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const nextVisible = arrayMove(displayIds, oldIndex, newIndex);
+    setSessionOrder((prev) => {
+      const merged = mergeVisibleOrder(prev.length > 0 ? prev : fallbackOrderIds, nextVisible);
+      const pruned = merged.filter((id) => liveSessionIds.has(id));
+      writeSessionOrder(pruned);
+      return pruned;
+    });
+  }
   // ── Delete (two-step confirm) ────────────────────────────────────────────
 
   const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
@@ -649,6 +751,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         ) : (
           <>
           {visibleRows > 0 && (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={(event) => handleDragEnd(event, displayIds)}
+          >
+            <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-[var(--border-hairline)]">
             {displayGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => (
               <li key={projectRoot ?? "__none__"}>
@@ -683,7 +791,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     const rowName = s.title || s.id;
 
                     return (
-                      <li key={s.id}>
+                      <SortableChatListItem key={s.id} id={s.id}>
+                        {({ attributes, listeners }) => (
                         <div
                           role="button"
                           tabIndex={0}
@@ -702,6 +811,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           {isActive && (
                             <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-8 rounded-r-full bg-[var(--accent-presence)]" />
                           )}
+
+                          <button
+                            type="button"
+                            {...attributes}
+                            {...listeners}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Drag to reorder"
+                            aria-label={`Reorder chat ${rowName}`}
+                            className="chat-list-drag-handle touch-always-visible -ml-1 mt-0.5 grid h-6 w-4 shrink-0 cursor-grab touch-none place-items-center rounded text-[var(--text-muted)] opacity-0 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                          >
+                            <Icon name="ph:dots-six-vertical" width={12} aria-hidden />
+                          </button>
 
                           {/* Status dot (top-aligned) */}
                           <span className="chat-list-status-dot mt-[5px] shrink-0">
@@ -841,13 +962,16 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
                           )}
                         </div>
-                      </li>
+                        )}
+                      </SortableChatListItem>
                     );
                   })}
                 </ul>
               </li>
             ))}
           </ul>
+            </SortableContext>
+          </DndContext>
           )}
 
           {/* ── In conversations (CHAT-D9-02) — body matches for the query.

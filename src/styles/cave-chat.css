@@ -2482,3 +2482,22 @@ details[open] > .cave-tool-summary::before {
 .chat-thread-row[data-dragging="true"] .chat-thread-handle {
   cursor: grabbing;
 }
+
+/* Full chat list rows use the same persisted drag intent as the thread rail,
+   but keep their larger row surface as the open target. */
+.chat-list-sortable-row[data-dragging="true"] {
+  position: relative;
+  z-index: 2;
+  opacity: 0.94;
+}
+.chat-list-sortable-row[data-dragging="true"] > .chat-list-row {
+  background: var(--bg-raised);
+  box-shadow: 0 8px 22px color-mix(in oklch, var(--shadow-color, #000) 26%, transparent);
+}
+.chat-list-drag-handle {
+  cursor: grab;
+}
+.chat-list-sortable-row[data-dragging="true"] .chat-list-drag-handle {
+  cursor: grabbing;
+  opacity: 1;
+}

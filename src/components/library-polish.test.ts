@@ -122,8 +122,18 @@ assert.match(
 );
 assert.match(
   libraryCss,
-  /@container \(max-width: 560px\) \{[\s\S]*?\.library-reading-row\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(126px,\s*142px\)\s*44px;/,
-  "Narrow reading panels should render rows as a compact grid that gives Title flexible space",
+  /@container \(max-width: 560px\) \{[\s\S]*?\.library-reading-row\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(132px,\s*176px\)\s*42px;/,
+  "Narrow reading panels should render rows as a compact grid with a readable status control",
+);
+assert.match(
+  libraryCss,
+  /\.library-list-shell \.library-doclist-search\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?height:\s*48px;[\s\S]*?backdrop-filter:\s*blur\(12px\);/,
+  "Reading search should stay compact and sticky at the top of the side-panel list",
+);
+assert.match(
+  libraryCss,
+  /\.library-reading-row\.selected\s*\{[\s\S]*?linear-gradient\(90deg,[\s\S]*?box-shadow:\s*inset 3px 0 0 var\(--accent-presence\);/,
+  "Selected reading rows should use a left accent and soft fill instead of a heavy block",
 );
 assert.match(
   reading,
