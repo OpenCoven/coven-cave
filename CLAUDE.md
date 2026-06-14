@@ -9,7 +9,7 @@
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks (all must pass): `Frontend build`, `Rust check`, `Analyze (javascript-typescript)`, `Analyze (rust)`, `Analyze (actions)`, `Analyze (python)`.
+- Required status checks (all must pass): `Frontend build`, `Rust check`, `CodeQL`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR.)
 - `enforce_admins = true` — admins are **not** exempt.
 - Force-pushes and deletion of `main` are blocked.
 
