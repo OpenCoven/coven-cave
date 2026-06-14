@@ -9,6 +9,9 @@ export type ShellBanner = {
   severity: BannerSeverity;
   title: string;
   cta?: { label: string; onClick: () => void };
+  /** Called when the user dismisses the banner (before it's removed). Lets a
+   *  pusher persist the dismissal (e.g. "don't show this version again"). */
+  onDismiss?: () => void;
 };
 
 type Ctx = {

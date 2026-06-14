@@ -9,6 +9,7 @@ import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_R
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { APP_VERSION } from "@/lib/app-version";
+import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { FontSettings } from "./settings-fonts";
@@ -910,6 +911,7 @@ function AboutSection() {
     <SettingsPage title="About" description="Version and build information.">
       <SettingsGroup label="CovenCave">
         <SettingsKV label="App version" value={APP_VERSION} />
+        <UpdateSettingsRow />
         <SettingsKV label="Daemon version" value={version ?? "—"} />
         <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
       </SettingsGroup>
