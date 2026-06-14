@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildMemoryRows } from "./memory-rows.ts";
+import { buildMemoryRows, groupMemoryRows } from "./memory-rows.ts";
 
 const NOW = Date.parse("2026-06-13T12:00:00Z");
 
@@ -80,6 +80,46 @@ const files = [
   const rows = buildMemoryRows({ coven, files, familiarFilter: "echo", query: "",
     sourceFilter: "all", sortMode: "recent", staleOnly: false, now: NOW });
   assert.ok(rows.every((r) => ["structural", "bulk-protected", "normal"].includes(r.protection)));
+}
+
+// ── groupMemoryRows ──
+const GNOW = Date.parse("2026-06-13T12:00:00Z");
+const grows = [
+  { rowId: "coven:c1", kind: "agent", title: "Note", path: "sage/x.md", sortTime: "2026-06-13T11:00:00Z", sourceLabel: "Sage", stale: false, protection: "normal" },
+  { rowId: "file:f1", kind: "file", title: "new.md", path: "/x/new.md", size: 10, sortTime: "2026-06-13T10:00:00Z", sourceLabel: "Runtime memory", stale: false, protection: "normal" },
+  { rowId: "file:f2", kind: "file", title: "old.md", path: "/x/old.md", size: 20, sortTime: "2026-01-01T00:00:00Z", sourceLabel: "Coven origin", stale: false, protection: "normal" },
+];
+
+// none → single "All" group preserving order
+{
+  const g = groupMemoryRows(grows, "none");
+  assert.equal(g.length, 1);
+  assert.equal(g[0].key, "all");
+  assert.equal(g[0].rows.length, 3);
+}
+
+// type → Agent memories first, then Files; counts correct
+{
+  const g = groupMemoryRows(grows, "type");
+  assert.deepEqual(g.map((x) => x.label), ["Agent memories", "Files"]);
+  assert.equal(g[0].rows.length, 1);
+  assert.equal(g[1].rows.length, 2);
+}
+
+// source → one group per sourceLabel
+{
+  const g = groupMemoryRows(grows, "source");
+  assert.deepEqual(g.map((x) => x.label).sort(), ["Coven origin", "Runtime memory", "Sage"]);
+}
+
+// date → time buckets; Today before Older
+{
+  const g = groupMemoryRows(grows, "date", GNOW);
+  const today = g.find((x) => x.label === "Today");
+  const older = g.find((x) => x.label === "Older");
+  assert.equal(today.rows.length, 2, "the two June-13 rows bucket into Today");
+  assert.equal(older.rows.length, 1, "the Jan row buckets into Older");
+  assert.ok(g[0].key < g[g.length - 1].key, "buckets are key-ordered (Today→Older)");
 }
 
 console.log("memory-rows: all assertions passed");

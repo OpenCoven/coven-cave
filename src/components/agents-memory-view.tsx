@@ -17,7 +17,7 @@ import {
   type RawCovenEntry,
   type RawFileEntry,
 } from "@/lib/memory-management";
-import { buildMemoryRows, type MemoryRow } from "@/lib/memory-rows";
+import { buildMemoryRows, groupMemoryRows, type MemoryRow } from "@/lib/memory-rows";
 import { MemoryRowItem } from "@/components/agents-memory-row";
 import { MemoryReaderPane } from "@/components/agents-memory-reader";
 import "@/styles/library.css";
@@ -252,6 +252,23 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
     () => unifiedRows.find((r) => r.rowId === selectedRowId) ?? null,
     [unifiedRows, selectedRowId],
   );
+  // The visible page of rows (shared by flat + grouped rendering).
+  const pagedRows = useMemo(() => unifiedRows.slice(0, fileLimit), [unifiedRows, fileLimit]);
+  const renderRow = (row: MemoryRow) => (
+    <MemoryRowItem
+      key={row.rowId}
+      row={row}
+      age={age(row.sortTime)}
+      selected={selectedRowId === row.rowId}
+      onSelect={() => setSelectedRowId(row.rowId)}
+      onExpand={() => setExpandRow(row)}
+      onDelete={
+        row.protection !== "structural"
+          ? () => handleDelete(row.path, row.rowId, row.kind === "agent" ? "coven" : "file")
+          : undefined
+      }
+    />
+  );
 
   // Stale entries across BOTH sources, powering the Stale pill + bulk delete.
   const suggestions = useMemo(() => {
@@ -399,9 +416,15 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
         </div>
         {compact ? null : (
           <div className="memory-controls mt-3">
-            {/* Group control is intentionally omitted in the unified master-detail
-                view — grouping over MemoryRow is a deferred follow-up. groupMode
-                state is retained for that work; it does not affect the flat list. */}
+            <label className="memory-control">
+              Group
+              <select value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupBy)}>
+                <option value="none">None</option>
+                <option value="type">Type</option>
+                <option value="source">Source</option>
+                <option value="date">Date</option>
+              </select>
+            </label>
             <label className="memory-control">
               Sort
               <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
@@ -466,20 +489,24 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
                   <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
                     {loaded ? (error ? "Couldn't load memories. See the error above and try again." : "No memories match this view.") : "Loading memories…"}
                   </div>
-                ) : (
+                ) : groupMode === "none" ? (
                   <ul className="divide-y divide-[var(--border-hairline)]">
-                    {unifiedRows.slice(0, fileLimit).map((row) => (
-                      <MemoryRowItem
-                        key={row.rowId}
-                        row={row}
-                        age={age(row.sortTime)}
-                        selected={selectedRowId === row.rowId}
-                        onSelect={() => setSelectedRowId(row.rowId)}
-                        onExpand={() => setExpandRow(row)}
-                        onDelete={row.protection !== "structural" ? () => handleDelete(row.path, row.rowId, row.kind === "agent" ? "coven" : "file") : undefined}
-                      />
-                    ))}
+                    {pagedRows.map(renderRow)}
                   </ul>
+                ) : (
+                  <div>
+                    {groupMemoryRows(pagedRows, groupMode).map((group) => (
+                      <div key={group.key}>
+                        <h4 className="sticky top-0 z-[1] flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)] backdrop-blur">
+                          {group.label}
+                          <span className="font-normal text-[var(--text-muted)]">({group.rows.length})</span>
+                        </h4>
+                        <ul className="divide-y divide-[var(--border-hairline)]">
+                          {group.rows.map(renderRow)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
                 )}
                 {unifiedRows.length > fileLimit ? (
                   <button
