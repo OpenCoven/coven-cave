@@ -15,7 +15,15 @@ assert.match(projectsView, /onRename=\{renameProject\}/, "ProjectsView should wi
 assert.match(projectsView, /onUpdateRoot=\{updateRoot\}/, "ProjectsView should wire root updates");
 assert.match(projectsView, /onDelete=\{deleteProject\}/, "ProjectsView should wire deletion");
 assert.match(projectsView, /onNewChat\?\.?\(project\.root\)/, "Project rows should start chats with the selected project root");
-assert.match(projectsView, /chatCounts\.get\(normalizeProjectRoot\(project\.root\)\)/, "Project rows should count chats by normalized project root");
+assert.match(projectsView, /chats=\{chatsByRoot\.get\(normalizeProjectRoot\(project\.root\)\)/, "Project rows receive their chats grouped by normalized project root");
+// Nested chats are draggable: reorder within a project, move across projects.
+assert.match(projectsView, /<DndContext[\s\S]{0,120}onDragEnd=\{handleDragEnd\}/, "Projects view wraps the cards in a DndContext");
+assert.match(projectsView, /function ProjectChatRow/, "chats render as sortable rows");
+assert.match(projectsView, /useDroppable\(\{\s*id: `pcard:/, "project cards are drop targets");
+assert.match(projectsView, /applyProjectOverrides\(sessions, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied");
+assert.match(projectsView, /setProjectOverride\(activeId, targetRoot\)/, "cross-project drop moves the chat via an override");
+assert.match(projectsView, /mergeVisibleOrder[\s\S]{0,120}writeSessionOrder/, "same-project drop reorders via the shared manual order");
+assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it via the agents-open-session event");
 assert.match(projectsView, /import \{ EmptyState \} from "@\/components\/ui\/empty-state"/, "uses EmptyState primitive");
 assert.match(projectsView, /import \{ ErrorState \} from "@\/components\/ui\/error-state"/, "uses ErrorState primitive");
 assert.match(projectsView, /import \{ SkeletonRows \} from "@\/components\/ui\/skeleton"/, "uses SkeletonRows for first load");
