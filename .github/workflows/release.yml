@@ -463,6 +463,21 @@ jobs:
           echo "--- latest.json ---"
           cat latest.json
 
+      - name: Verify updater manifest is complete (no silent empty release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(node -e "const m=require('./latest.json'); process.stdout.write(String(Object.keys(m.platforms||{}).length))")
+          echo "latest.json platform count: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::latest.json has 0 platforms — no signed updater artifacts were produced, so in-app auto-update would silently find nothing."
+            echo "::error::Ensure the TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD) repo secrets are set so the build jobs emit signed *.sig artifacts."
+            exit 1
+          fi
+          if [ "$count" -lt 4 ]; then
+            echo "::warning::latest.json has only $count/4 platforms — some platforms lack a signed artifact (auto-update unavailable for those)."
+          fi
+
       - name: Upload latest.json to GitHub Release
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
