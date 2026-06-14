@@ -22,4 +22,9 @@ const reader = await readFile(new URL("./agents-memory-reader.tsx", import.meta.
 assert.match(reader, /aria-label="Back to list"/, "reader renders a Back button");
 assert.match(reader, /xl:hidden/, "Back button is hidden at xl and above");
 
+// Grouping: a Group control drives groupMemoryRows over the paged rows.
+assert.match(source, /value=\{groupMode\}/, "Group control is bound to groupMode");
+assert.match(source, /groupMemoryRows\(pagedRows, groupMode\)/, "grouped mode wraps the paged rows");
+assert.match(source, /groupMode === "none" \?/, "flat list renders only when group mode is none");
+
 console.log("agents-memory-master-detail: all assertions passed");
