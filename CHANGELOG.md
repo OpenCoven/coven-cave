@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.80] - 2026-06-13
+
+This patch release ships the next macOS desktop build and a fresh iOS/TestFlight build after the App Store Connect bootstrap work, carrying the latest mobile, chat, workflow, and memory polish from `main`.
+
+### Added
+- **Native iOS release path** — CovenCave now declares exempt encryption usage, skips desktop sidecar resources for iOS, and shows a mobile release bootstrap screen in the native shell.
+- **Projects in chat** — chat gains a first-class Projects tab and project selection improvements for routing work into the right local repo.
+- **Memory master-detail view** — the Agent Memory tab now uses a denser master-detail reader with reusable row/read hooks and better source handling.
+
+### Changed
+- **Workflow Studio** — workflow canvases gained a vertical layout mode and tighter canvas controls.
+- **Chat and reading polish** — chat lists, mobile command-center spacing, and Library reading styles were tightened for daily use.
+- **Library scope** — the old knowledge graph section was removed to keep the current Library surface focused.
+
+### Fixed
+- **iOS/TestFlight metadata** — bundle and generated iOS plist versions now advance with the app release, and export-compliance metadata is included for App Store Connect processing.
+- **Mobile shell bootstrap** — the iOS shell falls back to a clearer release bootstrap experience when the desktop daemon is not available.
+
 ## [0.0.79] - 2026-06-13
 
 This patch release follows v0.0.78 with mobile shell hardening: native browser IPC now stays desktop-only, and the mobile chat command center gets tighter composer geometry.
