@@ -93,3 +93,14 @@ export function planRevert(opts: {
   if (!opts.confirmDelete) return { action: "confirm-required" };
   return opts.tracked ? { action: "rm" } : { action: "clean" };
 }
+
+/**
+ * A checkpoint filename is the exact stamp the route writes:
+ * `new Date().toISOString()` with `:`/`.` replaced by `-`, plus `.patch`
+ * (e.g. `2026-06-13T07-00-33-123Z.patch`). Validating against this exact
+ * shape doubles as a path-traversal guard — the name can't contain a slash,
+ * `..`, or any extension other than `.patch`.
+ */
+export function isCheckpointName(name: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.patch$/.test(name);
+}

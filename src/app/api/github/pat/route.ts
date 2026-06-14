@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { resolveSecret } from "@/lib/vault";
+import { upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,25 +26,18 @@ const ENV_PATH = join(process.cwd(), ".env.local");
 const PAT_KEY = "GITHUB_PAT";
 const LOGIN_KEY = "GITHUB_USERNAME";
 
-function readEnvLocal(): Record<string, string> {
-  if (!existsSync(ENV_PATH)) return {};
-  const lines = readFileSync(ENV_PATH, "utf8").split("\n");
-  const map: Record<string, string> = {};
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
-    map[key] = val;
-  }
-  return map;
+/** Apply key updates to .env.local in place. `null` deletes a key. Comments,
+ *  blank lines, key ordering, and unrelated values are preserved (the old
+ *  parse-to-map + full rewrite mangled all of those). */
+function applyEnvUpdates(updates: Record<string, string | null>): void {
+  const existing = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, "utf8") : "";
+  writeFileSync(ENV_PATH, upsertEnvContent(existing, updates), "utf8");
 }
 
-function writeEnvLocal(map: Record<string, string>): void {
-  const lines = Object.entries(map).map(([k, v]) => `${k}=${v}`);
-  writeFileSync(ENV_PATH, lines.join("\n") + "\n", "utf8");
+/** True when .env.local already declares <key> (constant keys only). */
+function envFileHasKey(key: string): boolean {
+  if (!existsSync(ENV_PATH)) return false;
+  return new RegExp(`^\\s*${key}\\s*=`, "m").test(readFileSync(ENV_PATH, "utf8"));
 }
 
 async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null }> {
@@ -99,24 +93,26 @@ export async function POST(req: NextRequest) {
     login = result.login ?? login;
   }
 
-  // Write to .env.local — never log the PAT value
-  const env = readEnvLocal();
-  if (pat) env[PAT_KEY] = pat;
-  if (login) env[LOGIN_KEY] = login;
-  writeEnvLocal(env);
+  // Write to .env.local — never log the PAT value. Skip persisting the PAT as
+  // plaintext when it already matches the resolved secret (e.g. it comes from
+  // the 1Password vault), so we don't leave a dead shadow copy on disk.
+  const resolvedPat = resolveSecret(PAT_KEY);
+  const patIsVaultBacked = !!pat && pat === resolvedPat && !envFileHasKey(PAT_KEY);
+  const updates: Record<string, string | null> = {};
+  if (pat && !patIsVaultBacked) updates[PAT_KEY] = pat;
+  if (login) updates[LOGIN_KEY] = login;
+  if (Object.keys(updates).length) applyEnvUpdates(updates);
 
   // Inject into current process so next request picks it up without restart
   if (pat) process.env[PAT_KEY] = pat;
   if (login) process.env[LOGIN_KEY] = login;
 
-  return NextResponse.json({ ok: true, login });
+  return NextResponse.json({ ok: true, login, patStoredIn: patIsVaultBacked ? "vault" : pat ? "env" : undefined });
 }
 
 // DELETE — remove PAT
 export async function DELETE() {
-  const env = readEnvLocal();
-  delete env[PAT_KEY];
-  writeEnvLocal(env);
+  applyEnvUpdates({ [PAT_KEY]: null });
   delete process.env[PAT_KEY];
   return NextResponse.json({ ok: true });
 }

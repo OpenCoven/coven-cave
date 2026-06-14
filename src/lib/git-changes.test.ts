@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-const { statusOf, parsePorcelainZ, parseNumstatZ, planRevert } = await import("./git-changes.ts");
+const { statusOf, parsePorcelainZ, parseNumstatZ, planRevert, isCheckpointName } = await import("./git-changes.ts");
 
 // ── statusOf ────────────────────────────────────────────────────────────────
 {
@@ -82,6 +82,24 @@ const { statusOf, parsePorcelainZ, parseNumstatZ, planRevert } = await import(".
   // Untracked file: gated, then `clean` (unchanged behavior).
   assert.deepEqual(planRevert({ inHead: false, tracked: false, confirmDelete: false }), { action: "confirm-required" });
   assert.deepEqual(planRevert({ inHead: false, tracked: false, confirmDelete: true }), { action: "clean" });
+}
+
+// ── isCheckpointName (path-traversal guard for the checkpoint store) ──────────
+{
+  // The exact stamp shape checkpointChanges writes.
+  assert.equal(isCheckpointName("2026-06-13T07-00-33-123Z.patch"), true);
+  // Wrong extension / arbitrary file.
+  assert.equal(isCheckpointName("notes.txt"), false);
+  assert.equal(isCheckpointName("2026-06-13T07-00-33-123Z.patch.txt"), false);
+  // Traversal attempts must be rejected (no slashes, no ..).
+  assert.equal(isCheckpointName("../config"), false);
+  assert.equal(isCheckpointName("../../etc/passwd"), false);
+  assert.equal(isCheckpointName("sub/2026-06-13T07-00-33-123Z.patch"), false);
+  assert.equal(isCheckpointName("2026-06-13T07-00-33-123Z.patch/../x"), false);
+  // Missing milliseconds / malformed stamps.
+  assert.equal(isCheckpointName("2026-06-13T07-00-33Z.patch"), false);
+  assert.equal(isCheckpointName(".patch"), false);
+  assert.equal(isCheckpointName(""), false);
 }
 
 console.log("git-changes.test.ts: all assertions passed");

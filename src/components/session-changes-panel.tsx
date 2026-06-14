@@ -41,6 +41,24 @@ type DiffState = {
   error?: string;
 };
 
+type CheckpointMeta = { name: string; savedAt: string; bytes: number };
+
+/** "2026-06-13T07-00-33-123Z.patch" → a short, readable local timestamp. */
+function checkpointLabel(name: string): string {
+  const iso = name.replace(/\.patch$/, "").replace(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/,
+    "$1T$2:$3:$4.$5Z",
+  );
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? name : d.toLocaleString();
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 const STATUS_META: Record<FileStatus, { letter: string; label: string; color: string }> = {
   modified: { letter: "M", label: "modified", color: "var(--color-warning)" },
   added: { letter: "A", label: "added", color: "var(--accent-presence)" },
@@ -185,6 +203,133 @@ function FileRow({
   );
 }
 
+// ── Checkpoints ────────────────────────────────────────────────────────────────
+
+function CheckpointRow({
+  cp,
+  busy,
+  onRestore,
+  onDelete,
+}: {
+  cp: CheckpointMeta;
+  busy: boolean;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
+  // Restore mutates the working tree, so it gets the same two-step confirm as
+  // revert. Delete is non-destructive to the worktree (drops a snapshot), so
+  // it's a single click.
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const label = checkpointLabel(cp.name);
+  const btn =
+    "focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40";
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-2 py-1.5">
+      <Icon name="ph:archive" width={11} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
+      <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-secondary)]" title={cp.name}>
+        {label}
+      </span>
+      <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{formatBytes(cp.bytes)}</span>
+      {confirmRestore ? (
+        <span className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Confirm checkpoint restore">
+          <span className="text-[10px] font-medium text-[var(--text-secondary)]">Restore?</span>
+          <button
+            type="button"
+            onClick={() => setConfirmRestore(false)}
+            className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setConfirmRestore(false);
+              onRestore();
+            }}
+            aria-label={`Confirm restore checkpoint ${label}`}
+            className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
+          >
+            <Icon name="ph:arrow-counter-clockwise" width={10} aria-hidden />
+            {busy ? "…" : "Restore"}
+          </button>
+        </span>
+      ) : (
+        <>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirmRestore(true)}
+            title={`Restore checkpoint ${label}`}
+            aria-label={`Restore checkpoint ${label}`}
+            className={btn}
+          >
+            <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDelete}
+            title={`Delete checkpoint ${label}`}
+            aria-label={`Delete checkpoint ${label}`}
+            className={btn + " hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:text-[var(--color-danger)]"}
+          >
+            <Icon name="ph:trash" width={11} aria-hidden />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CheckpointSection({
+  checkpoints,
+  open,
+  busyName,
+  onToggleOpen,
+  onRestore,
+  onDelete,
+}: {
+  checkpoints: CheckpointMeta[];
+  open: boolean;
+  busyName: string | null;
+  onToggleOpen: () => void;
+  onRestore: (name: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  return (
+    <div className="mt-3 border-t border-[var(--border-hairline)] pt-2">
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        aria-expanded={open}
+        className="focus-ring flex w-full items-center gap-1.5 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
+      >
+        <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden />
+        Checkpoints
+        <span className="font-mono font-normal normal-case text-[var(--text-muted)]">{checkpoints.length}</span>
+      </button>
+      {open ? (
+        <div className="mt-1.5 flex flex-col gap-1">
+          {checkpoints.map((cp) => (
+            <CheckpointRow
+              key={cp.name}
+              cp={cp}
+              busy={busyName === cp.name}
+              onRestore={() => onRestore(cp.name)}
+              onDelete={() => onDelete(cp.name)}
+            />
+          ))}
+          <p className="px-0.5 pt-0.5 text-[10px] text-[var(--text-muted)]">
+            Restoring applies a saved snapshot over the working tree (3-way merge).
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── Panel body (mounted per project root) ─────────────────────────────────────
 
 function SessionChangesInner({ projectRoot, running }: { projectRoot: string; running: boolean }) {
@@ -200,6 +345,9 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [diffs, setDiffs] = useState<Record<string, DiffState>>({});
   const [revertingPath, setRevertingPath] = useState<string | null>(null);
+  const [checkpoints, setCheckpoints] = useState<CheckpointMeta[]>([]);
+  const [checkpointsOpen, setCheckpointsOpen] = useState(false);
+  const [busyCheckpoint, setBusyCheckpoint] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -225,17 +373,34 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
     }
   }, [projectRoot]);
 
+  const loadCheckpoints = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&checkpoints=1`,
+        { cache: "no-store" },
+      );
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; checkpoints?: CheckpointMeta[] };
+      if (json.ok) setCheckpoints(json.checkpoints ?? []);
+    } catch {
+      /* checkpoint list is auxiliary — don't surface as a panel error */
+    }
+  }, [projectRoot]);
+
   // Load when the panel becomes visible: on mount (the tab mounts the panel)
   // and when the document regains visibility. No polling while hidden — the
   // interval below only ticks for visible documents on a running session.
   useEffect(() => {
     void load();
+    void loadCheckpoints();
     const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
+      if (document.visibilityState === "visible") {
+        void load();
+        void loadCheckpoints();
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [load]);
+  }, [load, loadCheckpoints]);
 
   useEffect(() => {
     if (!running) return;
@@ -246,8 +411,11 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
   }, [load, running]);
 
   const fetchDiff = useCallback(
-    async (filePath: string) => {
-      setDiffs((prev) => ({ ...prev, [filePath]: { loading: true } }));
+    // `silent` re-fetches without flashing the "Loading diff…" state or wiping
+    // the visible diff on error — used by the poll refresh so an open diff for
+    // an actively-changing file stays current instead of going stale.
+    async (filePath: string, silent = false) => {
+      if (!silent) setDiffs((prev) => ({ ...prev, [filePath]: { loading: true } }));
       try {
         const res = await fetch(
           `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}&path=${encodeURIComponent(filePath)}`,
@@ -260,6 +428,7 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
           [filePath]: { loading: false, diff: json.diff ?? "", truncated: json.truncated },
         }));
       } catch (err) {
+        if (silent) return; // keep the last good diff on a background refresh
         setDiffs((prev) => ({
           ...prev,
           [filePath]: { loading: false, error: err instanceof Error ? err.message : String(err) },
@@ -268,6 +437,19 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
     },
     [projectRoot],
   );
+
+  // #4: when the file list refreshes (poll/visibility), re-fetch the currently
+  // expanded file's diff so it doesn't show a frozen snapshot. Keyed on a
+  // signature of the list so it only fires when something actually changed.
+  const filesSig = files.map((f) => `${f.path}:${f.insertions ?? 0}:${f.deletions ?? 0}`).join("|");
+  useEffect(() => {
+    if (!expandedPath) return;
+    if (!files.some((f) => f.path === expandedPath)) return;
+    void fetchDiff(expandedPath, true);
+    // expandedPath/files/fetchDiff intentionally omitted: refetch is driven by
+    // list-content changes (filesSig), not by expand/collapse (toggleFile owns that).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filesSig]);
 
   const toggleFile = useCallback(
     (file: ChangedFile) => {
@@ -296,13 +478,62 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
         error?: string;
       };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
-      setCheckpointMessage(`Saved checkpoint: ${json.checkpointPath ?? "patch saved"}`);
+      setCheckpointMessage("Checkpoint saved.");
+      setCheckpointsOpen(true);
+      void loadCheckpoints();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setCheckpointing(false);
     }
-  }, [projectRoot]);
+  }, [projectRoot, loadCheckpoints]);
+
+  const restoreCheckpoint = useCallback(
+    async (name: string) => {
+      setBusyCheckpoint(name);
+      setActionError(null);
+      setCheckpointMessage(null);
+      try {
+        const res = await fetch("/api/changes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectRoot, action: "restore-checkpoint", checkpoint: name }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        setCheckpointMessage(`Restored checkpoint ${checkpointLabel(name)}.`);
+        setDiffs({});
+        await load();
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusyCheckpoint(null);
+      }
+    },
+    [projectRoot, load],
+  );
+
+  const deleteCheckpoint = useCallback(
+    async (name: string) => {
+      setBusyCheckpoint(name);
+      setActionError(null);
+      try {
+        const res = await fetch("/api/changes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectRoot, action: "delete-checkpoint", checkpoint: name }),
+        });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+        await loadCheckpoints();
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusyCheckpoint(null);
+      }
+    },
+    [projectRoot, loadCheckpoints],
+  );
 
   const revertFile = useCallback(
     async (file: ChangedFile) => {
@@ -321,7 +552,11 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
             confirmUntracked: file.status === "untracked" || file.status === "added",
           }),
         });
-        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        const json = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          checkpointPath?: string;
+        };
         if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
         setDiffs((prev) => {
           const next = { ...prev };
@@ -329,14 +564,19 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
           return next;
         });
         setExpandedPath((prev) => (prev === file.path ? null : prev));
-        await load();
+        // Reverts auto-snapshot first — tell the user it's recoverable and
+        // refresh the checkpoint list so the new snapshot shows up.
+        if (json.checkpointPath) {
+          setCheckpointMessage("Reverted — a checkpoint was saved first, so you can undo it below.");
+        }
+        await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
         setActionError(err instanceof Error ? err.message : String(err));
       } finally {
         setRevertingPath(null);
       }
     },
-    [load, projectRoot],
+    [load, loadCheckpoints, projectRoot],
   );
 
   return (
@@ -474,6 +714,18 @@ function SessionChangesInner({ projectRoot, running }: { projectRoot: string; ru
             ))}
           </div>
         )}
+
+        {/* Checkpoints: saved snapshots (manual + auto-taken before reverts). */}
+        {loaded && !notARepo && !error && checkpoints.length > 0 ? (
+          <CheckpointSection
+            checkpoints={checkpoints}
+            open={checkpointsOpen}
+            busyName={busyCheckpoint}
+            onToggleOpen={() => setCheckpointsOpen((v) => !v)}
+            onRestore={(n) => void restoreCheckpoint(n)}
+            onDelete={(n) => void deleteCheckpoint(n)}
+          />
+        ) : null}
       </div>
     </div>
   );
