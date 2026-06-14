@@ -1,0 +1,18 @@
+/* Size + token overrides for react-colorful, scoped to the cave picker. */
+.cave-color-picker .react-colorful {
+  width: 100%;
+  height: 148px;
+  gap: 8px;
+}
+.cave-color-picker .react-colorful__saturation {
+  border-radius: 8px;
+  border-bottom: none;
+}
+.cave-color-picker .react-colorful__hue {
+  height: 14px;
+  border-radius: 8px;
+}
+.cave-color-picker .react-colorful__pointer {
+  width: 16px;
+  height: 16px;
+}

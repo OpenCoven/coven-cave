@@ -13,14 +13,17 @@
  * contract already read by AppearanceSection.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { getSwatches, THEME_META, type ThemeId } from "@/lib/theme-palettes";
+import { getSwatches, THEME_IDS, THEME_META, type ThemeId } from "@/lib/theme-palettes";
 import {
   COVEN_CUSTOM_THEME_KEY,
   COVEN_THEME_KEY,
   type Mode,
 } from "@/lib/theme-storage";
+import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
+import { Popover } from "@/components/ui/popover";
+import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,13 +31,6 @@ export interface ThreeColors {
   bg: string;
   accent: string;
   border: string;
-}
-
-interface ColorSlotProps {
-  label: string;
-  description: string;
-  value: string;
-  onChange: (v: string) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -45,6 +41,29 @@ function deriveBorderFromAccent(accent: string): string {
   const hex = accent.replace(/^#/, "");
   if (hex.length === 6) return `#${hex}66`;
   return accent;
+}
+
+/**
+ * Resolve any CSS color string to a 6-char #rrggbb the hex picker can display.
+ * Hex (incl. #rrggbbaa, alpha dropped) is handled directly; oklch()/named/rgb()
+ * are resolved through the browser's computed style. Returns #000000 if unresolvable.
+ */
+function resolveToHex(color: string): string {
+  const direct = /^#([0-9a-fA-F]{6})/.exec(color.trim());
+  if (direct) return `#${direct[1].toLowerCase()}`;
+  if (typeof document === "undefined") return "#000000";
+  const el = document.createElement("span");
+  el.style.color = color;
+  el.style.display = "none";
+  document.body.appendChild(el);
+  const rgb = getComputedStyle(el).color;
+  document.body.removeChild(el);
+  const m = /rgba?\(([^)]+)\)/.exec(rgb);
+  if (!m) return "#000000";
+  const parts = m[1].split(/[\s,]+/).filter(Boolean);
+  const [r, g, b] = parts.map((n) => parseInt(n, 10));
+  const hex = [r, g, b].map((n) => (Number.isFinite(n) ? n : 0).toString(16).padStart(2, "0")).join("");
+  return `#${hex}`;
 }
 
 /**
@@ -95,37 +114,31 @@ function persistCustomTheme(presetBase: ThemeId, colors: ThreeColors, mode: Mode
 
 // ─── ColorSlot ────────────────────────────────────────────────────────────────
 
-function ColorSlot({ label, description, value, onChange }: ColorSlotProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [inputVal, setInputVal] = useState(value);
+interface ColorSlotProps {
+  label: string;
+  description: string;
+  value: string;
+  onChange: (v: string) => void;
+  themeSwatches: ColorSwatch[];
+  recents: string[];
+  onCommit: () => void;
+}
 
-  // Keep text input in sync when value changes externally (e.g. preset switch).
-  useEffect(() => {
-    setInputVal(value);
-  }, [value]);
-
-  // Native <input type="color"> only accepts 6-char #rrggbb. Strip alpha.
-  const pickerValue = value.replace(/^#([0-9a-fA-F]{6}).*$/, "#$1");
-
-  const commitTextInput = (raw: string) => {
-    const trimmed = raw.trim();
-    // Accept: #rgb, #rrggbb, #rrggbbaa; or named/keyword colors
-    if (/^#([0-9a-fA-F]{3,8})$/.test(trimmed) || /^[a-z]+$/i.test(trimmed)) {
-      onChange(trimmed);
-    }
-    // Re-sync display even if invalid
-    setInputVal(trimmed || value);
-  };
+function ColorSlot({ label, description, value, onChange, themeSwatches, recents, onCommit }: ColorSlotProps) {
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  // Only resolve through the DOM when the picker is open (oklch bg etc.); hex is fast-pathed.
+  const pickerHex = open ? resolveToHex(value) : value;
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
-      {/* Color selector — the swatch IS a native color input. A transparent
-          <input type="color"> overlays the colored swatch so a real click opens
-          the OS color picker directly (programmatic .click() on color inputs is
-          unreliable inside the Tauri webview). */}
-      <label
+      <button
+        ref={anchorRef}
+        type="button"
+        aria-label={`Pick ${label} color`}
         title={`Pick ${label} color`}
-        className="group/swatch focus-within:ring-2 focus-within:ring-[var(--accent-presence)] relative grid h-10 w-10 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-lg border-2 border-[var(--border-strong)] shadow-sm transition-transform hover:scale-105 active:scale-95"
+        onClick={() => setOpen((o) => !o)}
+        className="focus-ring group/swatch relative grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg border-2 border-[var(--border-strong)] shadow-sm transition-transform hover:scale-105 active:scale-95"
         style={{ background: value }}
       >
         <Icon
@@ -133,39 +146,34 @@ function ColorSlot({ label, description, value, onChange }: ColorSlotProps) {
           width={14}
           className="pointer-events-none text-white opacity-0 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)] transition-opacity group-hover/swatch:opacity-100"
         />
-        <input
-          ref={inputRef}
-          type="color"
-          aria-label={`Pick ${label} color`}
-          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-          value={pickerValue}
-          onChange={(e) => {
-            setInputVal(e.target.value);
-            onChange(e.target.value);
-          }}
-        />
-      </label>
+      </button>
 
-      {/* Labels */}
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-[var(--text-primary)]">{label}</p>
         <p className="text-[11px] text-[var(--text-muted)]">{description}</p>
       </div>
 
-      {/* Hex text input */}
-      <input
-        type="text"
-        value={inputVal}
-        maxLength={9}
-        spellCheck={false}
-        onChange={(e) => setInputVal(e.target.value)}
-        onBlur={(e) => commitTextInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commitTextInput((e.target as HTMLInputElement).value);
+      <span
+        className="w-[92px] shrink-0 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-right font-mono text-[11px] uppercase text-[var(--text-secondary)]"
+        title={value}
+      >
+        {value}
+      </span>
+
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) onCommit();
         }}
-        className="w-[88px] shrink-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none focus:border-[var(--accent-presence)] focus:ring-1 focus:ring-[var(--accent-presence)]"
-        aria-label={`${label} hex value`}
-      />
+        anchorRef={anchorRef}
+        placement="bottom-start"
+        offset={8}
+      >
+        <div className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-xl">
+          <ColorPicker value={pickerHex} onChange={onChange} themeSwatches={themeSwatches} recents={recents} />
+        </div>
+      </Popover>
     </div>
   );
 }
@@ -232,6 +240,23 @@ export function ThemeColorEditor({
     setSaved(false);
   };
 
+  const colorsRef = useRef(colors);
+  colorsRef.current = colors;
+
+  const themeSwatches: ColorSwatch[] = useMemo(
+    () =>
+      THEME_IDS.map((id) => ({
+        hex: mode === "light" ? THEME_META[id].accentLight : THEME_META[id].accentDark,
+        label: THEME_META[id].name,
+      })),
+    [mode],
+  );
+  const [recents, setRecents] = useState<string[]>([]);
+  useEffect(() => {
+    setRecents(getRecentColors());
+  }, []);
+  const commitRecent = (hex: string) => setRecents(addRecentColor(hex));
+
   const handleSave = () => {
     persistCustomTheme(basePreset, colors, mode);
     setSaved(true);
@@ -268,18 +293,27 @@ export function ThemeColorEditor({
           description="Base canvas color"
           value={colors.bg}
           onChange={(v) => updateColor("bg", v)}
+          themeSwatches={themeSwatches}
+          recents={recents}
+          onCommit={() => commitRecent(colorsRef.current.bg)}
         />
         <ColorSlot
           label="Accent"
           description="Highlights, active states, buttons"
           value={colors.accent}
           onChange={(v) => updateColor("accent", v)}
+          themeSwatches={themeSwatches}
+          recents={recents}
+          onCommit={() => commitRecent(colorsRef.current.accent)}
         />
         <ColorSlot
           label="Border"
-          description="Hairline borders and dividers"
+          description="Hairline borders and dividers — kept at 40% opacity"
           value={colors.border}
-          onChange={(v) => updateColor("border", v)}
+          onChange={(v) => updateColor("border", deriveBorderFromAccent(v))}
+          themeSwatches={themeSwatches}
+          recents={recents}
+          onCommit={() => commitRecent(colorsRef.current.border)}
         />
       </div>
 
