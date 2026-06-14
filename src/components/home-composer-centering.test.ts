@@ -15,7 +15,7 @@ import { readFile } from "node:fs/promises";
 //      before paint (useLayoutEffect) so the first painted frame is centered.
 //
 //   2. "Centered, period" — the old vars only carried the nav/agent PANEL
-//      widths, ignoring separators and the right-edge agent-trigger rail
+//      widths, ignoring separators and the right-edge familiar-trigger rail
 //      (≈22px), leaving a permanent ~11px bias. The Shell must therefore
 //      expose the detail panel's actual left/right gaps (everything between
 //      the detail box and the viewport edges), not a partial reconstruction.
@@ -65,7 +65,7 @@ assert.match(
 // The old panel-width plumbing must be gone — it was both late (post-paint)
 // and incomplete (panels only, no rails/separators).
 assert.doesNotMatch(shell, /navWidthPx|agentWidthPx/, "old panel-width state removed");
-assert.doesNotMatch(shell, /--shell-nav-px|--shell-agent-px/, "old panel-width vars removed");
+assert.doesNotMatch(shell, /--shell-nav-px|--shell-familiar-px/, "old panel-width vars removed");
 
 // Startup settle gate: the panel library applies its persisted layout one
 // frame after first paint, so the gap correction lands a frame late. The
@@ -91,7 +91,7 @@ const css = await readFile(
 
 assert.match(
   shell,
-  /const homeCenteringActive = navOpen && agentOpen/,
+  /const homeCenteringActive = navOpen && familiarOpen/,
   "Home viewport-centering only activates when nav and agent panels are both open",
 );
 assert.match(

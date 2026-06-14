@@ -9,7 +9,7 @@ assert.match(events, /CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects"/, "ev
 
 assert.match(surface, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "chat-surface imports ProjectsView");
 assert.match(surface, /CHAT_OPEN_PROJECTS_EVENT/, "chat-surface references the reroute event");
-assert.match(surface, /type AgentsScope = "conversation" \| "memory" \| "projects"/, "scope union includes projects");
+assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "projects"/, "scope union includes projects");
 assert.match(surface, /\["conversation", "memory", "projects"\] as const/, "tablist lists the projects tab");
 assert.match(surface, /projects: "Projects"/, "projects tab is labeled");
 assert.match(surface, /scope === "projects" \? \(/, "projects scope renders its own panel");

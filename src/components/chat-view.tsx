@@ -433,11 +433,11 @@ function ChatEmptyState({
   return (
     <div className="cave-chat-empty select-none">
       <div className="cave-chat-empty-shell">
-        <div className="cave-chat-empty-agent">
+        <div className="cave-chat-empty-familiar">
           <div className="cave-chat-empty-mark">
             <Icon name="ph:sparkle-bold" width={17} aria-hidden />
           </div>
-          <div className="cave-chat-empty-agent-copy">
+          <div className="cave-chat-empty-familiar-copy">
             <h2 className="cave-chat-empty-title">
               {familiar.display_name}
             </h2>

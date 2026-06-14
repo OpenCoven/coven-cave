@@ -13,7 +13,7 @@ assert.match(
 
 assert.match(
   source,
-  /<header className="agent-panel-dossier chat-list-dossier /,
+  /<header className="familiar-panel-dossier chat-list-dossier /,
   "ChatList dossier header should expose a mobile-targetable class",
 );
 

@@ -244,7 +244,7 @@ function SettingsView() {
           <div className="multica-settings-card-header">
             <div>
               <div className="multica-settings-card-description">
-                Git repositories associated with this workspace. Agents use these to clone and work on code.
+                Git repositories associated with this workspace. Familiars use these to clone and work on code.
               </div>
             </div>
             <button className="multica-btn multica-btn--ghost" style={{ padding: "6px 10px" }}>

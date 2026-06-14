@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// 1. Shell exposes onAgentOpenChange prop and fires it on agentOpen state changes.
+// 1. Shell exposes onFamiliarOpenChange prop and fires it on familiarOpen state changes.
 {
   const src = readFileSync(
     new URL("./shell.tsx", import.meta.url),
@@ -10,13 +10,13 @@ import { readFileSync } from "node:fs";
   );
   assert.match(
     src,
-    /onAgentOpenChange\?:\s*\(open:\s*boolean\)\s*=>\s*void/,
-    "Shell declares onAgentOpenChange prop",
+    /onFamiliarOpenChange\?:\s*\(open:\s*boolean\)\s*=>\s*void/,
+    "Shell declares onFamiliarOpenChange prop",
   );
   assert.match(
     src,
-    /onAgentOpenChange\?\.\(agentOpen\)/,
-    "Shell calls onAgentOpenChange(agentOpen) in an effect",
+    /onFamiliarOpenChange\?\.\(familiarOpen\)/,
+    "Shell calls onFamiliarOpenChange(familiarOpen) in an effect",
   );
 }
 
@@ -37,11 +37,11 @@ import { readFileSync } from "node:fs";
     "Workspace imports setRailOpen",
   );
 
-  // 3. Workspace passes onAgentOpenChange to Shell.
+  // 3. Workspace passes onFamiliarOpenChange to Shell.
   assert.match(
     src,
-    /onAgentOpenChange=\{/,
-    "Workspace passes onAgentOpenChange to Shell",
+    /onFamiliarOpenChange=\{/,
+    "Workspace passes onFamiliarOpenChange to Shell",
   );
   assert.match(
     src,

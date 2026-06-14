@@ -2,7 +2,7 @@
 
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
-import { AgentsMemoryView } from "@/components/agents-memory-view";
+import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 
 type Props = {
   familiar: ResolvedFamiliar;
@@ -11,7 +11,7 @@ type Props = {
 
 export function FamiliarStudioMemoryTab({ familiar, allFamiliars }: Props) {
   return (
-    <AgentsMemoryView
+    <FamiliarsMemoryView
       familiars={allFamiliars}
       activeFamiliar={familiar}
       lockToFamiliar

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 assert.match(source, /buildMemoryRows\(/, "full view must derive rows from buildMemoryRows");
 assert.match(source, /import \{ MemoryRowItem \}/, "must render MemoryRowItem rows");
@@ -18,7 +18,7 @@ assert.match(source, /selectedRowId \? "hidden xl:flex" : "flex"/, "list pane hi
 assert.match(source, /selectedRowId \? "flex" : "hidden xl:flex"/, "reader wrapper hides below xl when nothing is selected");
 assert.match(source, /onBack=\{\(\) => setSelectedRowId\(null\)\}/, "reader receives a back-to-list handler");
 
-const reader = await readFile(new URL("./agents-memory-reader.tsx", import.meta.url), "utf8");
+const reader = await readFile(new URL("./familiars-memory-reader.tsx", import.meta.url), "utf8");
 assert.match(reader, /aria-label="Back to list"/, "reader renders a Back button");
 assert.match(reader, /xl:hidden/, "Back button is hidden at xl and above");
 
@@ -27,4 +27,4 @@ assert.match(source, /value=\{groupMode\}/, "Group control is bound to groupMode
 assert.match(source, /groupMemoryRows\(pagedRows, groupMode\)/, "grouped mode wraps the paged rows");
 assert.match(source, /groupMode === "none" \?/, "flat list renders only when group mode is none");
 
-console.log("agents-memory-master-detail: all assertions passed");
+console.log("familiars-memory-master-detail: all assertions passed");

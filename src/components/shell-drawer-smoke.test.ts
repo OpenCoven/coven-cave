@@ -3,7 +3,7 @@
 // Smoke test for the phase 2 mobile shell drawer wiring. Asserts the
 // CSS + the shell component still agree on the drawer contract:
 //   - globals.css gates drawer behaviour on `[data-mobile-drawer]`
-//   - shell.tsx exposes toggleNav / toggleList / toggleAgent and
+//   - shell.tsx exposes toggleNav / toggleList / toggleFamiliar and
 //     projects mobileDrawer state onto data-mobile-drawer
 //   - top-bar.tsx renders the three mobile-only toggle buttons
 //
@@ -38,7 +38,7 @@ assert.match(
 );
 assert.match(
   globals,
-  /\.shell-root\[data-mobile-drawer="agent"\]\s+\.shell-agent-panel/,
+  /\.shell-root\[data-mobile-drawer="agent"\]\s+\.shell-familiar-panel/,
   "globals.css drives the agent panel transform from [data-mobile-drawer=\"agent\"]",
 );
 
@@ -53,12 +53,12 @@ assert.match(
 );
 assert.match(
   globals,
-  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-agent-panel\s*\{[\s\S]{0,200}position:\s*fixed/,
+  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-familiar-panel\s*\{[\s\S]{0,200}position:\s*fixed/,
   "globals.css positions the three shell panels as fixed drawers",
 );
 assert.match(
   globals,
-  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-agent-panel\s*\{[\s\S]*overscroll-behavior:\s*contain/,
+  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-familiar-panel\s*\{[\s\S]*overscroll-behavior:\s*contain/,
   "globals.css contains drawer panel rubber-band scroll on mobile",
 );
 
@@ -87,8 +87,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /toggleAgent: \(\) =>/,
-  "ShellHandle exposes toggleAgent",
+  /toggleFamiliar: \(\) =>/,
+  "ShellHandle exposes toggleFamiliar",
 );
 
 // top-bar.tsx renders the three drawer toggles behind their callbacks.
@@ -104,8 +104,8 @@ assert.match(
 );
 assert.match(
   topBar,
-  /onToggleAgent\?\s*:\s*\(\)\s*=>\s*void/,
-  "TopBar accepts onToggleAgent prop",
+  /onToggleFamiliar\?\s*:\s*\(\)\s*=>\s*void/,
+  "TopBar accepts onToggleFamiliar prop",
 );
 assert.match(
   topBar,

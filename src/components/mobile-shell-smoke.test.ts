@@ -32,6 +32,6 @@ assert.match(
 );
 assert.match(
   workspace,
-  /agentRail=\{showCompanionRail \? \(/,
+  /familiarPanelRail=\{showCompanionRail \? \(/,
   "Browser and Agents modes should suppress the desktop companion trigger rail unless a floating rail tab is selected",
 );

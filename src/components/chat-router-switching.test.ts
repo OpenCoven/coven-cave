@@ -99,7 +99,7 @@ assert.match(
 
 const restoreEffect =
   workspaceSource.match(
-    /useEffect\(\(\) => \{\s*if \(!sessionsLoaded\) return;[\s\S]*?\}, \[sessionsLoaded, sessions, openAgentSession, showAgentChatList\]\);/,
+    /useEffect\(\(\) => \{\s*if \(!sessionsLoaded\) return;[\s\S]*?\}, \[sessionsLoaded, sessions, openFamiliarSession, showFamiliarChatList\]\);/,
   )?.[0] ?? "";
 
 assert.ok(
@@ -115,13 +115,13 @@ assert.match(
 
 assert.match(
   restoreEffect,
-  /openAgentSession\(sid, target\.familiarId\)/,
-  "A resolved deep link should open the session via openAgentSession (same lookup as /attach)",
+  /openFamiliarSession\(sid, target\.familiarId\)/,
+  "A resolved deep link should open the session via openFamiliarSession (same lookup as /attach)",
 );
 
 assert.match(
   restoreEffect,
-  /clearChatHash\(\);\s*showAgentChatList\(\)/,
+  /clearChatHash\(\);\s*showFamiliarChatList\(\)/,
   "Unknown/stale deep-link ids must fall back to the chat list with the hash cleared — no crash",
 );
 
@@ -136,7 +136,7 @@ assert.match(
 
 const popstateEffect =
   workspaceSource.match(
-    /useEffect\(\(\) => \{\s*const onPopState = \(\) => \{[\s\S]*?\};\s*window\.addEventListener\("popstate", onPopState\);[\s\S]*?\}, \[openAgentSession, showAgentChatList\]\);/,
+    /useEffect\(\(\) => \{\s*const onPopState = \(\) => \{[\s\S]*?\};\s*window\.addEventListener\("popstate", onPopState\);[\s\S]*?\}, \[openFamiliarSession, showFamiliarChatList\]\);/,
   )?.[0] ?? "";
 
 assert.match(
@@ -147,7 +147,7 @@ assert.match(
 
 assert.match(
   popstateEffect,
-  /if \(target\) \{\s*openAgentSession\(sid, target\.familiarId\);\s*return;\s*\}[\s\S]*clearChatHash\(\);\s*showAgentChatList\(\);/,
+  /if \(target\) \{\s*openFamiliarSession\(sid, target\.familiarId\);\s*return;\s*\}[\s\S]*clearChatHash\(\);\s*showFamiliarChatList\(\);/,
   "Popstate should clear stale chat hashes and return to the list when the target session is missing",
 );
 

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 // ───────── Task 7: inline stats row ─────────
 
@@ -27,13 +27,13 @@ for (const label of ["Familiar memories", "Coven origin", "External harnesses", 
 assert.doesNotMatch(
   source,
   /memory-graph-3d|MemoryGraph3D|buildMemoryGraphModel|Loading 3D memory graph|viewMode.*graph/s,
-  "AgentsMemoryView must not mount or import the removed 3D memory graph",
+  "FamiliarsMemoryView must not mount or import the removed 3D memory graph",
 );
 
 assert.doesNotMatch(
   source,
   /Selected memory|Click any card in the map|graph-recent-list/,
-  "AgentsMemoryView must not keep graph-only side panel copy",
+  "FamiliarsMemoryView must not keep graph-only side panel copy",
 );
 
 // ───────── Task 8: empty-state min-height collapsed ─────────
@@ -50,4 +50,4 @@ assert.match(
   "Empty-state card must use py-6 padding instead of min-h",
 );
 
-console.log("agents-memory-view-full-tab.test.ts: ok");
+console.log("familiars-memory-view-full-tab.test.ts: ok");

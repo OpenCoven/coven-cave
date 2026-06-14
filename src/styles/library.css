@@ -2235,12 +2235,12 @@ h3:hover .library-heading-anchor,
   line-height: 1.55;
 }
 
-.gh-modal-agent-row {
+.gh-modal-familiar-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.gh-modal-agent-pill {
+.gh-modal-familiar-pill {
   font-size: 12px;
   color: var(--text-secondary);
   background: var(--bg-raised);
@@ -2743,7 +2743,7 @@ h3:hover .library-heading-anchor,
   transition: width 0.1s linear;
 }
 
-/* ── Memory management controls (agents-memory-view) ───────────────── */
+/* ── Memory management controls (familiars-memory-view) ───────────────── */
 .memory-controls {
   display: flex;
   gap: 0.75rem;

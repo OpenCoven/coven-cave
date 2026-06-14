@@ -475,9 +475,9 @@ function HandoffModal({
               <span className="gh-modal-source-meta">{item.repo}{item.number ? ` #${item.number}` : ""} · {item.kind}</span>
             </div>
 
-            {/* Agent picker */}
+            {/* Familiar picker */}
             <label className="gh-modal-label">Familiar
-              <div className="gh-modal-agent-row">
+              <div className="gh-modal-familiar-row">
                 <select
                   className="gh-modal-select"
                   value={familiarId}
@@ -489,7 +489,7 @@ function HandoffModal({
                     <option key={f.id} value={f.id}>{f.display_name}</option>
                   ))}
                 </select>
-                {fam && <span className="gh-modal-agent-pill">{fam.display_name}</span>}
+                {fam && <span className="gh-modal-familiar-pill">{fam.display_name}</span>}
               </div>
             </label>
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
-import { AgentsMemoryView } from "@/components/agents-memory-view";
+import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
@@ -17,7 +17,7 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type AgentsScope = "conversation" | "memory" | "projects";
+type FamiliarsScope = "conversation" | "memory" | "projects";
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -166,7 +166,7 @@ export function ChatSurface({
   onSessionsChanged,
   onOpenTask,
 }: Props) {
-  const [scope, setScope] = useState<AgentsScope>("conversation");
+  const [scope, setScope] = useState<FamiliarsScope>("conversation");
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
@@ -286,7 +286,7 @@ export function ChatSurface({
           {/* Tabs flush left */}
           <div role="tablist" className="flex items-end gap-1">
             {(["conversation", "memory", "projects"] as const).map((s) => {
-              const labels: Record<AgentsScope, string> = {
+              const labels: Record<FamiliarsScope, string> = {
                 conversation: "Chats",
                 memory: "Memory",
                 projects: "Projects",
@@ -336,7 +336,7 @@ export function ChatSurface({
         </div>
 
         {scope === "memory" ? (
-          <AgentsMemoryView
+          <FamiliarsMemoryView
             familiars={scopedFamiliars}
             activeFamiliar={activeFamiliar}
             lockToFamiliar

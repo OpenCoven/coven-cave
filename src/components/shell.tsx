@@ -85,9 +85,9 @@ export type ShellNavItem = {
 };
 
 export type ShellHandle = {
-  openAgent: () => void;
-  closeAgent: () => void;
-  toggleAgent: () => void;
+  openFamiliar: () => void;
+  closeFamiliar: () => void;
+  toggleFamiliar: () => void;
   openNav: () => void;
   closeNav: () => void;
   toggleNav: () => void;
@@ -98,7 +98,7 @@ export type ShellHandle = {
 
 function ShellInner({
   familiarRail,
-  agentRail,
+  familiarPanelRail,
   nav,
   list,
   detail,
@@ -107,12 +107,12 @@ function ShellInner({
   topBar,
   mobileTabs,
   onNavOpenChange,
-  onAgentOpenChange,
+  onFamiliarOpenChange,
 }: {
   familiarRail?: ReactNode;
   /** Mirror of familiarRail on the right edge — typically a thin column with
    *  a toggle for the agent panel. Rendered after the panel group. */
-  agentRail?: ReactNode;
+  familiarPanelRail?: ReactNode;
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
@@ -124,11 +124,11 @@ function ShellInner({
    *  mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
-  onAgentOpenChange?: (open: boolean) => void;
+  onFamiliarOpenChange?: (open: boolean) => void;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
-  const agentRef = useRef<PanelImperativeHandle | null>(null);
+  const familiarRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -155,22 +155,22 @@ function ShellInner({
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
     return {
-      openAgent: () => {
+      openFamiliar: () => {
         if (isMobile) { setMobileDrawer("agent"); return; }
-        agentRef.current?.expand();
-        setAgentOpen(true);
+        familiarRef.current?.expand();
+        setFamiliarOpen(true);
       },
-      closeAgent: () => {
+      closeFamiliar: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "agent" ? null : c)); return; }
-        agentRef.current?.collapse();
-        setAgentOpen(false);
+        familiarRef.current?.collapse();
+        setFamiliarOpen(false);
       },
-      toggleAgent: () => {
+      toggleFamiliar: () => {
         if (isMobile) { toggleDrawer("agent"); return; }
-        const panel = agentRef.current;
+        const panel = familiarRef.current;
         if (!panel) return;
-        if (panel.isCollapsed()) { panel.expand(); setAgentOpen(true); }
-        else { panel.collapse(); setAgentOpen(false); }
+        if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
+        else { panel.collapse(); setFamiliarOpen(false); }
       },
       openNav: () => {
         if (isMobile) { setMobileDrawer("nav"); return; }
@@ -205,15 +205,15 @@ function ShellInner({
   }, [isMobile]);
 
   const twoPane = !list;
-  const hasAgent = !!agent;
+  const hasFamiliar = !!agent;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
-  if (hasAgent) panelIds.push("agent");
+  if (hasFamiliar) panelIds.push("agent");
   const groupId =
     (twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID) +
-    (hasAgent ? ".agent" : "");
+    (hasFamiliar ? ".agent" : "");
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
@@ -221,13 +221,13 @@ function ShellInner({
     storage: shellStorage,
   });
 
-  // Initialise agentOpen from persisted layout so the agent content renders
+  // Initialise familiarOpen from persisted layout so the agent content renders
   // immediately when layout is restored to an expanded state, rather than
   // waiting for the first onResize callback.
-  const agentPanelIdx = panelIds.indexOf("agent");
-  const [agentOpen, setAgentOpen] = useState(() => {
-    if (agentPanelIdx < 0 || !defaultLayout) return false;
-    const pct = defaultLayout[agentPanelIdx];
+  const familiarPanelIdx = panelIds.indexOf("agent");
+  const [familiarOpen, setFamiliarOpen] = useState(() => {
+    if (familiarPanelIdx < 0 || !defaultLayout) return false;
+    const pct = defaultLayout[familiarPanelIdx];
     return typeof pct === "number" && pct > 0;
   });
 
@@ -249,7 +249,7 @@ function ShellInner({
   //      ~nav/2 off-center at startup and then slid into place. The
   //      useLayoutEffect below runs in the same commit that mounts the
   //      panels, so the first painted frame already has correct gaps.
-  //   2. Panel widths miss the separators and the agent-trigger rail,
+  //   2. Panel widths miss the separators and the familiar-trigger rail,
   //      leaving a permanent ~11px centering bias.
   const detailElRef = useRef<HTMLElement | null>(null);
   const [detailGaps, setDetailGaps] = useState({ left: 0, right: 0 });
@@ -277,7 +277,7 @@ function ShellInner({
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [mounted, hasBottom, hasAgent, twoPane, isMobile]);
+  }, [mounted, hasBottom, hasFamiliar, twoPane, isMobile]);
 
   // The first painted frames can still shift: react-resizable-panels applies
   // its persisted layout (and Workspace collapses an empty companion rail)
@@ -298,8 +298,8 @@ function ShellInner({
   }, [navOpen, onNavOpenChange]);
 
   useEffect(() => {
-    onAgentOpenChange?.(agentOpen);
-  }, [agentOpen, onAgentOpenChange]);
+    onFamiliarOpenChange?.(familiarOpen);
+  }, [familiarOpen, onFamiliarOpenChange]);
 
   useEffect(() => {
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -317,19 +317,19 @@ function ShellInner({
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("list");
         else togglePanel(listRef.current);
-      } else if (key === "j" && hasAgent) {
+      } else if (key === "j" && hasFamiliar) {
         e.preventDefault();
         if (isMobile) {
           toggleDrawerSlot("agent");
         } else {
-          const panel = agentRef.current;
+          const panel = familiarRef.current;
           if (!panel) return;
           if (panel.isCollapsed()) {
             panel.expand();
-            setAgentOpen(true);
+            setFamiliarOpen(true);
           } else {
             panel.collapse();
-            setAgentOpen(false);
+            setFamiliarOpen(false);
           }
         }
       }
@@ -349,7 +349,7 @@ function ShellInner({
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
     };
-  }, [twoPane, hasAgent, hasBottom, isMobile]);
+  }, [twoPane, hasFamiliar, hasBottom, isMobile]);
 
   if (!mounted) {
     return (
@@ -413,30 +413,30 @@ function ShellInner({
           {detail}
         </main>
       </Panel>
-      {hasAgent && (
+      {hasFamiliar && (
         <>
           <Separator className="shell-separator" />
           <Panel
             id="agent"
-            className="shell-agent-panel"
+            className="shell-familiar-panel"
             defaultSize={"18%"}
             minSize="14%"
             maxSize="50%"
             collapsible
             collapsedSize={0}
-            panelRef={agentRef}
+            panelRef={familiarRef}
             onResize={(size) => {
-              setAgentOpen((size.asPercentage ?? 0) > 0);
+              setFamiliarOpen((size.asPercentage ?? 0) > 0);
             }}
           >
-            <aside className="shell-agent" aria-label="Companion">{agentOpen ? agent : null}</aside>
+            <aside className="shell-familiar" aria-label="Companion">{familiarOpen ? agent : null}</aside>
           </Panel>
         </>
       )}
     </Group>
   );
 
-  const homeCenteringActive = navOpen && agentOpen;
+  const homeCenteringActive = navOpen && familiarOpen;
   const homeCenterShift = homeCenteringActive
     ? Math.round((detailGaps.right - detailGaps.left) / 2)
     : 0;
@@ -460,10 +460,10 @@ function ShellInner({
   // stays hidden while the nav is open so the in-panel toggle owns collapsing.
   const navRail =
     !isMobile && !navOpen ? (
-      <aside className="agent-trigger-rail agent-trigger-rail--left" aria-label="Navigation toggle">
+      <aside className="familiar-trigger-rail familiar-trigger-rail--left" aria-label="Navigation toggle">
         <button
           type="button"
-          className="agent-trigger-rail__toggle"
+          className="familiar-trigger-rail__toggle"
           aria-label={navOpen ? "Hide navigation" : "Show navigation"}
           aria-expanded={navOpen}
           title={navOpen ? "Hide navigation (⌘B)" : "Show navigation (⌘B)"}
@@ -520,7 +520,7 @@ function ShellInner({
         ) : (
           horizontalGroup
         )}
-        {agentRail}
+        {familiarPanelRail}
       </div>
       {isMobile && mobileTabs ? mobileTabs : null}
       <MobileDrawer

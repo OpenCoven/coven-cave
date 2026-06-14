@@ -97,11 +97,11 @@ assert.match(
 // Regression guard: the popstate back-to-list fallback must be gated on an
 // EMPTY hash. Writing `#card-<id>` (the task chip's navigation) synchronously
 // fires this handler while mode is still "chat"; an unconditional
-// showAgentChatList() there clobbered the same-batch setMode("board") and
+// showFamiliarChatList() there clobbered the same-batch setMode("board") and
 // stranded the user on the chat list instead of the task's board inspector.
 assert.match(
   workspace,
-  /modeRef\.current === "chat" && !window\.location\.hash\) showAgentChatList\(\)/,
+  /modeRef\.current === "chat" && !window\.location\.hash\) showFamiliarChatList\(\)/,
   "Workspace popstate must only show the chat list on an empty hash, so the task chip's #card- navigation isn't hijacked back to the list",
 );
 

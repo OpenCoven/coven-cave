@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { AgentsMemoryView, MemoryFilesList } from "@/components/agents-memory-view";
-import type { FileMemoryEntry } from "@/components/agents-memory-view";
+import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
+import type { FileMemoryEntry } from "@/components/familiars-memory-view";
 import {
-  buildAgentCardStats,
-  type AgentCardStats,
+  buildFamiliarCardStats,
+  type FamiliarCardStats,
   type CovenMemoryEntry,
-} from "@/components/agents-view-stats";
+} from "@/components/familiars-view-stats";
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }
@@ -58,7 +58,7 @@ function familiarMatches(familiar: Familiar, query: string): boolean {
   );
 }
 
-export function AgentsView({
+export function FamiliarsView({
   familiars,
   sessions,
   activeFamiliar,
@@ -118,7 +118,7 @@ export function AgentsView({
   }, [loadMemory]);
 
   const stats = useMemo(
-    () => buildAgentCardStats({ familiars, sessions, covenEntries }),
+    () => buildFamiliarCardStats({ familiars, sessions, covenEntries }),
     [familiars, sessions, covenEntries],
   );
 
@@ -151,7 +151,7 @@ export function AgentsView({
   }, []);
 
   return (
-    <div className="agents-view flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
+    <div className="familiars-view flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
       <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -217,17 +217,17 @@ export function AgentsView({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {familiars.length === 0 ? (
           <div className="p-4">
-            <AgentsEmptyState onOpenOnboarding={onOpenOnboarding} />
+            <FamiliarsEmptyState onOpenOnboarding={onOpenOnboarding} />
           </div>
         ) : viewMode === "detail" && selectedFamiliar ? (
-          <div className="agents-view__detail flex h-full min-h-0">
-            <AgentDetailRail
+          <div className="familiars-view__detail flex h-full min-h-0">
+            <FamiliarDetailRail
               familiars={familiars}
               selectedId={selectedFamiliar.id}
               onSelect={enterDetail}
               onBack={backToRoster}
             />
-            <AgentDetailPanel
+            <FamiliarDetailPanel
               familiar={selectedFamiliar}
               familiars={familiars}
               sessions={sessions}
@@ -244,7 +244,7 @@ export function AgentsView({
           <div className="p-4">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {visibleFamiliars.map((familiar) => (
-                <AgentRosterCard
+                <FamiliarRosterCard
                   key={familiar.id}
                   familiar={familiar}
                   stats={stats.get(familiar.id) ?? emptyStats()}
@@ -259,7 +259,7 @@ export function AgentsView({
         )}
       </div>
       {viewMode === "agent-memory" && memoryFamiliar ? (
-        <AgentMemoryOverlay
+        <FamiliarMemoryOverlay
           familiars={familiars}
           familiar={memoryFamiliar}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
@@ -270,7 +270,7 @@ export function AgentsView({
   );
 }
 
-function emptyStats(): AgentCardStats {
+function emptyStats(): FamiliarCardStats {
   return {
     memoryCount: 0,
     latestMemory: null,
@@ -280,9 +280,9 @@ function emptyStats(): AgentCardStats {
   };
 }
 
-function AgentsEmptyState({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
+function FamiliarsEmptyState({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   return (
-    <div className="agents-view__empty mx-auto flex max-w-md flex-col items-center px-6 py-16 text-center">
+    <div className="familiars-view__empty mx-auto flex max-w-md flex-col items-center px-6 py-16 text-center">
       <Icon name="ph:sparkle" width={28} className="text-[var(--accent-presence)]" />
       <h2 className="mt-3 text-[14px] font-semibold text-[var(--text-primary)]">No familiars yet</h2>
       <p className="mt-1 text-[12px] text-[var(--text-muted)]">
@@ -304,14 +304,14 @@ type MemoryStatus = "loading" | "error" | "ready";
 
 type AgentRosterCardProps = {
   familiar: Familiar;
-  stats: AgentCardStats;
+  stats: FamiliarCardStats;
   daemonRunning: boolean;
   responseNeeded: boolean;
   memoryStatus: MemoryStatus;
   onSelect: () => void;
 };
 
-function AgentRosterCard({
+function FamiliarRosterCard({
   familiar,
   stats,
   daemonRunning,
@@ -329,7 +329,7 @@ function AgentRosterCard({
     <button
       type="button"
       onClick={onSelect}
-      className="focus-ring agents-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
+      className="focus-ring familiars-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
       aria-label={`Open ${familiar.display_name}`}
     >
       <div className="flex items-center gap-2">
@@ -392,7 +392,7 @@ function AgentRosterCard({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// AgentMemoryOverlay — modal-style full-screen overlay for selected familiar memory
+// FamiliarMemoryOverlay — modal-style full-screen overlay for selected familiar memory
 // ────────────────────────────────────────────────────────────────────────────
 
 type AgentMemoryOverlayProps = {
@@ -402,7 +402,7 @@ type AgentMemoryOverlayProps = {
   onOpenMemoryFile: (path: string) => void;
 };
 
-function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
+function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -416,14 +416,14 @@ function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: 
 
   return (
     <div
-      className="agents-view__overlay fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm"
+      className="familiars-view__overlay fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label={`Memory for ${familiar.display_name}`}
       onClick={onClose}
     >
       <div
-        className="agents-view__overlay-panel relative flex h-[100dvh] w-full flex-col overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl md:h-[85vh] md:w-[90vw] md:max-w-[1280px] md:rounded-xl"
+        className="familiars-view__overlay-panel relative flex h-[100dvh] w-full flex-col overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl md:h-[85vh] md:w-[90vw] md:max-w-[1280px] md:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -435,7 +435,7 @@ function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: 
           <Icon name="ph:x" width={12} />
           Close
         </button>
-        <AgentsMemoryView
+        <FamiliarsMemoryView
           familiars={familiars}
           activeFamiliar={familiar}
           lockToFamiliar
@@ -447,7 +447,7 @@ function AgentMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: 
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// AgentDetailRail — thin left avatar column in detail mode
+// FamiliarDetailRail — thin left avatar column in detail mode
 // ────────────────────────────────────────────────────────────────────────────
 
 type AgentDetailRailProps = {
@@ -457,13 +457,13 @@ type AgentDetailRailProps = {
   onBack: () => void;
 };
 
-function AgentDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetailRailProps) {
+function FamiliarDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetailRailProps) {
   return (
-    <nav className="agents-view__rail flex w-[64px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 py-3">
+    <nav className="familiars-view__rail flex w-[64px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 py-3">
       <button
         type="button"
         onClick={onBack}
-        className="focus-ring agents-view__rail-back inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        className="focus-ring familiars-view__rail-back inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
         aria-label="Back to roster"
         title="Back to roster"
       >
@@ -478,7 +478,7 @@ function AgentDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetai
               <button
                 type="button"
                 onClick={() => onSelect(f.id)}
-                className={`focus-ring agents-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                className={`focus-ring familiars-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
                   active
                     ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--accent-presence)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -498,7 +498,7 @@ function AgentDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetai
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// AgentDetailPanel — right-side panel with Memory / Files / Sessions tabs
+// FamiliarDetailPanel — right-side panel with Memory / Files / Sessions tabs
 // ────────────────────────────────────────────────────────────────────────────
 
 type DetailTab = "memory" | "files" | "sessions";
@@ -516,7 +516,7 @@ type AgentDetailPanelProps = {
   onOpenMemoryFile: (path: string) => void;
 };
 
-function AgentDetailPanel({
+function FamiliarDetailPanel({
   familiar,
   familiars,
   sessions,
@@ -545,7 +545,7 @@ function AgentDetailPanel({
   );
 
   return (
-    <section className="agents-view__panel flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
+    <section className="familiars-view__panel flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <header className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-3">
         <div className="flex items-center gap-2">
           <Icon name={(familiar.icon ?? "ph:circle-half-tilt") as IconName} width={18} className="text-[var(--accent-presence)]" />
@@ -586,7 +586,7 @@ function AgentDetailPanel({
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`focus-ring agents-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] capitalize transition-colors ${
+            className={`focus-ring familiars-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] capitalize transition-colors ${
               tab === id
                 ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
                 : "border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -600,7 +600,7 @@ function AgentDetailPanel({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {tab === "memory" ? (
-          <AgentsMemoryView
+          <FamiliarsMemoryView
             familiars={familiars}
             activeFamiliar={familiar}
             lockToFamiliar

@@ -13,7 +13,7 @@ type Props = {
   onOpenOnboarding: () => void;
 };
 
-export const AgentPanel = forwardRef<ChatRouterHandle, Props>(function AgentPanel(
+export const FamiliarPanel = forwardRef<ChatRouterHandle, Props>(function FamiliarPanel(
   props,
   ref,
 ) {

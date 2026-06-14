@@ -58,19 +58,19 @@ assert.doesNotMatch(route, /🐱|😅/, "Salem API replies must stay emoji-free 
 assert.match(widget, /preload/, "widget must load Salem preload metadata");
 assert.doesNotMatch(widget, /salem-panel__preload/, "preload count pills stay removed from the Salem header");
 
-// 6. Workspace exposes Salem via a right-edge agentRail toggle that mirrors
+// 6. Workspace exposes Salem via a right-edge familiarPanelRail toggle that mirrors
 //    the left-edge sidebar-trigger-rail. The standalone perch in layout.tsx
 //    has been retired in favour of the rail-based affordance.
 const workspace = await readFile(path.join(root, "src/components/workspace.tsx"), "utf8");
 const shell = await readFile(path.join(root, "src/components/shell.tsx"), "utf8");
 const companionRail = await readFile(path.join(root, "src/components/companion-rail.tsx"), "utf8");
-assert.match(shell, /agentRail\?:\s*ReactNode/, "Shell must declare an agentRail slot mirroring familiarRail");
-assert.match(workspace, /agentRail=\{/, "workspace must pass an agentRail to Shell");
-assert.match(workspace, /agent-trigger-rail--stacked/, "agentRail must use the stacked right tab opener");
-assert.match(workspace, /const openCompanionTab = useCallback/, "agentRail tabs must use the shared companion tab opener");
-assert.match(workspace, /shellRef\.current\?\.openAgent\(\)/, "agentRail tab opener must expand the right panel");
+assert.match(shell, /familiarPanelRail\?:\s*ReactNode/, "Shell must declare an familiarPanelRail slot mirroring familiarRail");
+assert.match(workspace, /familiarPanelRail=\{/, "workspace must pass an familiarPanelRail to Shell");
+assert.match(workspace, /familiar-trigger-rail--stacked/, "familiarPanelRail must use the stacked right tab opener");
+assert.match(workspace, /const openCompanionTab = useCallback/, "familiarPanelRail tabs must use the shared companion tab opener");
+assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "familiarPanelRail tab opener must expand the right panel");
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /shellRef\.current\?\.openAgent\(\)/, "Salem launcher must expand the right panel");
+assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher must expand the right panel");
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
 assert.match(workspace, /salemSlot=\{<SalemChatPanel \/>\}/, "workspace must render Salem in the companion rail");
 assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");

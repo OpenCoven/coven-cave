@@ -2,14 +2,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 // ───────── Source-kind filter chips ─────────
 
 assert.match(
   source,
   /const \[sourceFilter, setSourceFilter\] = useState<"all" \| FileMemoryEntry\["sourceKind"\]>\("all"\);/,
-  "AgentsMemoryView must track a source-kind filter",
+  "FamiliarsMemoryView must track a source-kind filter",
 );
 
 assert.match(
@@ -70,4 +70,4 @@ assert.match(
   "File pagination must reset on query / filter / familiar change",
 );
 
-console.log("agents-memory-view-filter-paginate.test.ts: ok");
+console.log("familiars-memory-view-filter-paginate.test.ts: ok");

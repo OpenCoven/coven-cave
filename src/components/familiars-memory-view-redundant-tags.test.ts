@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 // Prop on the type.
 assert.match(
@@ -25,11 +25,11 @@ assert.match(
   "MemoryFilesList must hide the familiar:<id> badge when it matches the active filter",
 );
 
-// The internal call site in AgentsMemoryView must thread the filter through.
+// The internal call site in FamiliarsMemoryView must thread the filter through.
 assert.match(
   source,
   /<MemoryFilesList[\s\S]*?activeFamiliarId=\{familiarFilter\}/,
-  "AgentsMemoryView must pass familiarFilter as activeFamiliarId to MemoryFilesList",
+  "FamiliarsMemoryView must pass familiarFilter as activeFamiliarId to MemoryFilesList",
 );
 
-console.log("agents-memory-view-redundant-tags.test.ts: ok");
+console.log("familiars-memory-view-redundant-tags.test.ts: ok");

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 // The <li> wrapping each memory file row must clamp its inner button.
 // Unique fingerprint: this is the only place we have `flex min-w-0 items-stretch gap-1 px-1`.
@@ -19,4 +19,4 @@ assert.match(
   "Memory file row <button> must include min-w-0 so truncate clamps",
 );
 
-console.log("agents-memory-view-overflow.test.ts: ok");
+console.log("familiars-memory-view-overflow.test.ts: ok");

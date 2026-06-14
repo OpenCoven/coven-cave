@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 // Static-source assertions: the function must define a threshold + take the last 3 segments.
 assert.match(
@@ -49,4 +49,4 @@ assert.equal(
   "Trivial path round-trips through the ~ replacement",
 );
 
-console.log("agents-memory-view-compact-path.test.ts: ok");
+console.log("familiars-memory-view-compact-path.test.ts: ok");

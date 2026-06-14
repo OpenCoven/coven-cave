@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildAgentCardStats } from "./agents-view-stats.ts";
+import { buildFamiliarCardStats } from "./familiars-view-stats.ts";
 
 const NOW = Date.parse("2026-06-08T12:00:00.000Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -25,7 +25,7 @@ const covenEntries = [
   { id: "m3", familiar_id: "f2", title: "Only f2 memory", path: "/c.md", updated_at: minutesAgo(120) },
 ];
 
-const stats = buildAgentCardStats({ familiars, sessions, covenEntries, now: NOW });
+const stats = buildFamiliarCardStats({ familiars, sessions, covenEntries, now: NOW });
 
 // f1
 const f1 = stats.get("f1");
@@ -51,7 +51,7 @@ assert.equal(f3?.sessionsLast7d, 0);
 assert.equal(f3?.hasActiveSession, false);
 
 // 7d window edge: session at exactly 7d should be EXCLUDED (strict less-than)
-const edge7d = buildAgentCardStats({
+const edge7d = buildFamiliarCardStats({
   familiars: [{ id: "x", display_name: "X", role: "" }],
   sessions: [{ id: "z", familiarId: "x", updated_at: daysAgo(7), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: daysAgo(7) }],
   covenEntries: [],
@@ -60,7 +60,7 @@ const edge7d = buildAgentCardStats({
 assert.equal(edge7d.get("x")?.sessionsLast7d, 0, "session at exactly 7d ago is excluded");
 
 // 5min window edge: session at exactly 5min should be INACTIVE (strict less-than)
-const edge5m = buildAgentCardStats({
+const edge5m = buildFamiliarCardStats({
   familiars: [{ id: "y", display_name: "Y", role: "" }],
   sessions: [{ id: "z", familiarId: "y", updated_at: minutesAgo(5), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(5) }],
   covenEntries: [],
@@ -69,7 +69,7 @@ const edge5m = buildAgentCardStats({
 assert.equal(edge5m.get("y")?.hasActiveSession, false, "session at exactly 5min ago is not active");
 
 // Empty inputs
-const empty = buildAgentCardStats({ familiars: [], sessions: [], covenEntries: [], now: NOW });
+const empty = buildFamiliarCardStats({ familiars: [], sessions: [], covenEntries: [], now: NOW });
 assert.equal(empty.size, 0);
 
-console.log("agents-view-stats: all assertions passed");
+console.log("familiars-view-stats: all assertions passed");

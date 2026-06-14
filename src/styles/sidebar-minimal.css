@@ -526,7 +526,7 @@
   color: var(--text-secondary);
 }
 
-/* ── FamiliarStrip (AgentPanel top) ──────────────────────────────────────── */
+/* ── FamiliarStrip (FamiliarPanel top) ──────────────────────────────────────── */
 .familiar-strip {
   display: flex;
   align-items: center;

@@ -6,7 +6,7 @@ const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8")
 
 assert.match(
   source,
-  /agent-panel-dossier/,
+  /familiar-panel-dossier/,
   "ChatList should render a compact agent dossier header for the side panel",
 );
 

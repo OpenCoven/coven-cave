@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
-import type { CovenMemoryEntry } from "@/components/agents-view-stats";
+import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { useMemoryFile } from "@/lib/use-memory-file";
@@ -18,8 +18,8 @@ import {
   type RawFileEntry,
 } from "@/lib/memory-management";
 import { buildMemoryRows, groupMemoryRows, type MemoryRow } from "@/lib/memory-rows";
-import { MemoryRowItem } from "@/components/agents-memory-row";
-import { MemoryReaderPane } from "@/components/agents-memory-reader";
+import { MemoryRowItem } from "@/components/familiars-memory-row";
+import { MemoryReaderPane } from "@/components/familiars-memory-reader";
 import "@/styles/library.css";
 
 export type FileMemoryEntry = {
@@ -126,7 +126,7 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
+export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
@@ -650,7 +650,7 @@ export function RailMemoryList({
   return (
     <div className="rail-memory">
       <div className="rail-memory__scroll">
-        <AgentsMemoryView
+        <FamiliarsMemoryView
           familiars={familiars}
           activeFamiliar={familiar}
           limit={20}
@@ -672,7 +672,7 @@ export function RailMemoryList({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Standalone file-list — reusable by the Agents detail panel without the
+// Standalone file-list — reusable by the Familiars detail panel without the
 // coven-memory half or the familiar <select>.
 // ────────────────────────────────────────────────────────────────────────────
 

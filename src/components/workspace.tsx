@@ -21,8 +21,8 @@ import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { FamiliarStudio } from "@/components/familiar-studio";
 import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
-import { AgentsView } from "@/components/agents-view";
-import { RailMemoryList } from "@/components/agents-memory-view";
+import { FamiliarsView } from "@/components/familiars-view";
+import { RailMemoryList } from "@/components/familiars-memory-view";
 import {
   getActiveFamiliar,
   setActiveFamiliar,
@@ -32,7 +32,7 @@ import {
   setRailOpen,
 } from "@/lib/familiar-memory";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
-import { AgentPanel } from "@/components/agent-panel";
+import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import { ComuxView } from "@/components/comux-view";
 import { GitHubView } from "@/components/github-view";
@@ -133,7 +133,7 @@ export function Workspace() {
     if (typeof window === "undefined") return "chat";
     return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";
   });
-  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+  const [familiarPanelOpen, setFamiliarPanelOpen] = useState(false);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -230,13 +230,13 @@ export function Workspace() {
 
   useEffect(() => {
     if (!activeId) {
-      queueMicrotask(() => shellRef.current?.closeAgent());
+      queueMicrotask(() => shellRef.current?.closeFamiliar());
       return;
     }
     const desired = getRailOpen(activeId);
     queueMicrotask(() => {
-      if (desired) shellRef.current?.openAgent();
-      else shellRef.current?.closeAgent();
+      if (desired) shellRef.current?.openFamiliar();
+      else shellRef.current?.closeFamiliar();
     });
   }, [activeId]);
 
@@ -247,7 +247,7 @@ export function Workspace() {
   useEffect(() => {
     const openSalem = () => {
       setRailTab("salem");
-      requestAnimationFrame(() => shellRef.current?.openAgent());
+      requestAnimationFrame(() => shellRef.current?.openFamiliar());
     };
     window.addEventListener("cave:salem-open", openSalem);
     return () => window.removeEventListener("cave:salem-open", openSalem);
@@ -682,7 +682,7 @@ export function Workspace() {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
   }, []);
 
-  const openAgentSession = useCallback((sessionId: string, familiarId?: string | null) => {
+  const openFamiliarSession = useCallback((sessionId: string, familiarId?: string | null) => {
     if (familiarId) setActiveId(familiarId);
     setPendingChatAction({
       kind: "open",
@@ -697,14 +697,14 @@ export function Workspace() {
     const sessionId =
       item.sessionId ?? (item.link?.kind === "session" ? item.link.ref : null);
     if (sessionId) {
-      openAgentSession(sessionId, item.familiarId);
+      openFamiliarSession(sessionId, item.familiarId);
       return;
     }
     if (item.familiarId) setActiveId(item.familiarId);
     setMode("inbox");
-  }, [openAgentSession]);
+  }, [openFamiliarSession]);
 
-  const startAgentChat = useCallback((
+  const startFamiliarChat = useCallback((
     familiarId?: string | null,
     projectRoot?: string | null,
     initialPrompt?: string | null,
@@ -772,16 +772,16 @@ export function Workspace() {
       // ⌘N → new chat (only on Chat surface)
       if (meta && !alt && e.key.toLowerCase() === "n" && mode === "chat") {
         e.preventDefault();
-        startAgentChat(activeId);
+        startFamiliarChat(activeId);
         return;
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [familiars, activeId, mode, selectFamiliar, startAgentChat]);
+  }, [familiars, activeId, mode, selectFamiliar, startFamiliarChat]);
 
-  const showAgentChatList = useCallback(() => {
+  const showFamiliarChatList = useCallback(() => {
     setPendingChatAction({ kind: "list", nonce: Date.now() });
     setMode("chat");
   }, []);
@@ -797,12 +797,12 @@ export function Workspace() {
     pendingChatDeepLinkRef.current = null;
     const target = sessions.find((s) => s.id === sid);
     if (target) {
-      openAgentSession(sid, target.familiarId);
+      openFamiliarSession(sid, target.familiarId);
     } else {
       clearChatHash();
-      showAgentChatList();
+      showFamiliarChatList();
     }
-  }, [sessionsLoaded, sessions, openAgentSession, showAgentChatList]);
+  }, [sessionsLoaded, sessions, openFamiliarSession, showFamiliarChatList]);
 
   // Browser Back/Forward between list ↔ chat (and chat ↔ chat). Only acts on
   // chat hashes — board `#card-` and library hashes keep their own listeners.
@@ -812,7 +812,7 @@ export function Workspace() {
       if (sid) {
         const target = sessionsRef.current.find((s) => s.id === sid);
         if (target) {
-          openAgentSession(sid, target.familiarId);
+          openFamiliarSession(sid, target.familiarId);
           return;
         }
         if (!sessionsLoadedRef.current) {
@@ -820,7 +820,7 @@ export function Workspace() {
           return;
         }
         clearChatHash();
-        showAgentChatList();
+        showFamiliarChatList();
         return;
       }
       // Popped back out of a chat entry to the root (empty hash) → show the
@@ -829,15 +829,15 @@ export function Workspace() {
       // that surface owns its own mode switch. Bouncing to the chat list here
       // would hijack such navigation: writing `#card-<id>` synchronously fires
       // this handler while `mode` is still "chat" (the intent's setMode("board")
-      // hasn't committed yet), so an unconditional showAgentChatList() clobbers
+      // hasn't committed yet), so an unconditional showFamiliarChatList() clobbers
       // the board switch in the same render batch and strands the user on the
       // chat list. Gating on the empty hash leaves cross-surface deep links to
       // their owners while preserving genuine Back-to-list.
-      if (modeRef.current === "chat" && !window.location.hash) showAgentChatList();
+      if (modeRef.current === "chat" && !window.location.hash) showFamiliarChatList();
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [openAgentSession, showAgentChatList]);
+  }, [openFamiliarSession, showFamiliarChatList]);
 
   // Leaving the chat surface invalidates a chat hash — clear it in place
   // (replace, not push) so a reload restores the surface the user actually
@@ -850,13 +850,13 @@ export function Workspace() {
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
     if (toast.sessionId) {
-      openAgentSession(toast.sessionId, toast.familiarId);
+      openFamiliarSession(toast.sessionId, toast.familiarId);
     } else {
       setMode("inbox");
     }
-  }, [openAgentSession]);
+  }, [openFamiliarSession]);
 
-  const toggleAgentPanel = useCallback(() => {
+  const toggleFamiliarPanel = useCallback(() => {
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "j",
@@ -870,19 +870,19 @@ export function Workspace() {
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
       setActiveId(intent.familiarId);
-      showAgentChatList();
+      showFamiliarChatList();
       return;
     }
     if (intent.kind === "open-session") {
-      openAgentSession(intent.sessionId, intent.familiarId);
+      openFamiliarSession(intent.sessionId, intent.familiarId);
       return;
     }
     if (intent.kind === "new-chat") {
-      startAgentChat(intent.familiarId);
+      startFamiliarChat(intent.familiarId);
       return;
     }
     if (intent.kind === "back-to-list") {
-      showAgentChatList();
+      showFamiliarChatList();
       return;
     }
     if (intent.kind === "open-tui-session") {
@@ -949,7 +949,7 @@ export function Workspace() {
   const handleSlashIntent = (command: string, args = ""): boolean => {
     switch (command) {
       case "/new":
-        startAgentChat(activeId);
+        startFamiliarChat(activeId);
         return true;
       case "/board":
         setMode("board");
@@ -957,7 +957,7 @@ export function Workspace() {
       case "/chats":
       case "/agents":
       case "/chat":
-        showAgentChatList();
+        showFamiliarChatList();
         return true;
       case "/inbox":
         setMode("inbox");
@@ -987,14 +987,14 @@ export function Workspace() {
         setMode("library");
         return true;
       case "/toggle-agent":
-        toggleAgentPanel();
+        toggleFamiliarPanel();
         return true;
       case "/quit":
-        showAgentChatList();
+        showFamiliarChatList();
         return true;
       case "/sessions":
         setMode("chat");
-        showAgentChatList();
+        showFamiliarChatList();
         return true;
       case "/familiar": {
         const name = args.trim().toLowerCase();
@@ -1004,7 +1004,7 @@ export function Workspace() {
           );
           if (match) {
             setActiveId(match.id);
-            showAgentChatList();
+            showFamiliarChatList();
             return true;
           }
         }
@@ -1019,7 +1019,7 @@ export function Workspace() {
         }
         // Find which familiar this session belongs to so we surface the right rail row
         const target = sessions.find((s) => s.id === sid);
-        openAgentSession(sid, target?.familiarId);
+        openFamiliarSession(sid, target?.familiarId);
         return true;
       }
       case "/tui": {
@@ -1136,7 +1136,7 @@ export function Workspace() {
 
   // Mood C three-pane Shell:
   //   nav   = always present (mode switcher + command launchers)
-  //   list  = unused by Agents; Inbox/Board/Plugins
+  //   list  = unused by Familiars; Inbox/Board/Plugins
   //           are full-width detail surfaces — they have their own list
   //           UI baked in and we don't want to double-list.
   //   detail = the active view. Agents mode renders an inline inspector
@@ -1152,16 +1152,16 @@ export function Workspace() {
 
   const openCompanionTab = useCallback((tab: CompanionTab) => {
     setRailTab(tab);
-    if (agentPanelOpen && railTab === tab) {
-      shellRef.current?.closeAgent();
+    if (familiarPanelOpen && railTab === tab) {
+      shellRef.current?.closeFamiliar();
       return;
     }
-    requestAnimationFrame(() => shellRef.current?.openAgent());
-  }, [agentPanelOpen, railTab]);
+    requestAnimationFrame(() => shellRef.current?.openFamiliar());
+  }, [familiarPanelOpen, railTab]);
 
   const openProjectChat = useCallback((projectRoot: string) => {
-    startAgentChat(activeId, projectRoot);
-  }, [activeId, startAgentChat]);
+    startFamiliarChat(activeId, projectRoot);
+  }, [activeId, startFamiliarChat]);
 
   const sidebar = (
     <SidebarMinimal
@@ -1170,7 +1170,7 @@ export function Workspace() {
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       addons={addons}
       onNewChat={() => {
-        startAgentChat(activeId);
+        startFamiliarChat(activeId);
       }}
       onToggleSidebar={() => shellRef.current?.toggleNav()}
       onOpenSettings={() => nextRouter.push("/settings")}
@@ -1182,7 +1182,7 @@ export function Workspace() {
         setMode(m as WorkspaceMode);
       }}
       onOpenSession={(id) => {
-        openAgentSession(id);
+        openFamiliarSession(id);
       }}
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}
@@ -1193,7 +1193,7 @@ export function Workspace() {
       onOpenInbox={() => setMode("inbox")}
       onOpenInboxItem={(item) => {
         if (item.sessionId) {
-          openAgentSession(item.sessionId, item.familiarId);
+          openFamiliarSession(item.sessionId, item.familiarId);
         } else {
           setMode("inbox");
         }
@@ -1219,7 +1219,7 @@ export function Workspace() {
         active={mode === "terminal"}
         sessions={sessions}
         onOpenSession={(sessionId, familiarId) => {
-          openAgentSession(sessionId, familiarId);
+          openFamiliarSession(sessionId, familiarId);
         }}
         onNewChat={openProjectChat}
       />
@@ -1231,14 +1231,14 @@ export function Workspace() {
       <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
       {terminalDetail}
       {mode === "terminal" ? null : mode === "agents" ? (
-      <AgentsView
+      <FamiliarsView
         familiars={familiars}
         sessions={sessions}
         activeFamiliar={active}
         daemonRunning={daemonRunning}
         responseNeeded={responseNeeded}
-        onStartChat={(familiarId) => startAgentChat(familiarId)}
-        onOpenSession={(sessionId, familiarId) => openAgentSession(sessionId, familiarId)}
+        onStartChat={(familiarId) => startFamiliarChat(familiarId)}
+        onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
         onOpenMemoryFile={(path) => {
           window.location.hash = `memory:${encodeURIComponent(path)}`;
         }}
@@ -1281,7 +1281,7 @@ export function Workspace() {
           requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
         }}
         sessions={sessions}
-        onOpenSession={openAgentSession}
+        onOpenSession={openFamiliarSession}
         onNewProjectChat={openProjectChat}
       />
     ) : mode === "board" ? (
@@ -1294,14 +1294,14 @@ export function Workspace() {
           requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
         }}
         onJumpToSession={(sessionId, familiarId) => {
-          openAgentSession(sessionId, familiarId);
+          openFamiliarSession(sessionId, familiarId);
         }}
       />
     ) : mode === "inbox" ? (
       <InboxEscalationsView
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
-            openAgentSession(item.sourceSessionKey);
+            openFamiliarSession(item.sourceSessionKey);
           } else if (item.sourceUrl) {
             window.open(item.sourceUrl, "_blank", "noopener");
           }
@@ -1310,14 +1310,14 @@ export function Workspace() {
         activeFamiliarId={activeId}
         onNewReminder={() => openReminderModal()}
         onOpenSession={(sessionId, familiarId) => {
-          openAgentSession(sessionId, familiarId);
+          openFamiliarSession(sessionId, familiarId);
         }}
       />
     ) : mode === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
     ) : mode === "github" ? (
       <GitHubView
-        onJumpToSession={openAgentSession}
+        onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       />
     ) : mode === "roles" ? (
@@ -1351,7 +1351,7 @@ export function Workspace() {
         }}
         onOpenItem={(item) => {
           if (item.sessionId) {
-            openAgentSession(item.sessionId, item.familiarId);
+            openFamiliarSession(item.sessionId, item.familiarId);
           } else {
             setMode("inbox");
           }
@@ -1366,7 +1366,7 @@ export function Workspace() {
         activeFamiliarId={activeId}
         sessions={sessions}
         onSetActiveFamiliar={setActiveId}
-        onStartChat={(prompt, fid) => startAgentChat(fid, null, prompt)}
+        onStartChat={(prompt, fid) => startFamiliarChat(fid, null, prompt)}
         onNavigateToBoard={() => setMode("board")}
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
@@ -1389,8 +1389,8 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}
-        onAgentOpenChange={(open) => {
-          setAgentPanelOpen(open);
+        onFamiliarOpenChange={(open) => {
+          setFamiliarPanelOpen(open);
           if (activeId) setRailOpen(activeId, open);
         }}
         topBar={
@@ -1404,13 +1404,13 @@ export function Workspace() {
             inboxPrefs={inboxPrefs}
             inboxBadgeCount={inboxBadgeCount}
             onOpenInboxItem={(item) => {
-              if (item.sessionId) openAgentSession(item.sessionId, item.familiarId);
+              if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
               else setMode("inbox");
             }}
             onNotificationPrefsChanged={refreshPrefs}
             onToggleNav={() => shellRef.current?.toggleNav()}
             onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
-            onToggleAgent={
+            onToggleFamiliar={
               showCompanionRail
                 ? () => {
                     openCompanionTab("salem");
@@ -1419,11 +1419,11 @@ export function Workspace() {
             }
           />
         }
-        agentRail={showCompanionRail ? (
-          <aside className="agent-trigger-rail agent-trigger-rail--stacked" aria-label="Right panel tabs">
+        familiarPanelRail={showCompanionRail ? (
+          <aside className="familiar-trigger-rail familiar-trigger-rail--stacked" aria-label="Right panel tabs">
             <button
               type="button"
-              className="agent-trigger-rail__toggle"
+              className="familiar-trigger-rail__toggle"
               aria-label="Toggle Salem"
               title="Toggle Salem (⌘J)"
               onClick={() => openCompanionTab("salem")}
@@ -1451,7 +1451,7 @@ export function Workspace() {
               // detail panel — suppress the rail's duplicate prompt there.
               suppressEmpty={mode === "chat"}
               chatSlot={
-                <AgentPanel
+                <FamiliarPanel
                   familiar={active}
                   sessions={sessions}
                   daemonRunning={daemonRunning}

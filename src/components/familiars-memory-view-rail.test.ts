@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-view.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 
 // ───────── Task 4: placeholder + pill ─────────
 
@@ -91,8 +91,8 @@ assert.match(
 
 assert.match(
   source,
-  /<div className="rail-memory__scroll">\s*<AgentsMemoryView/,
-  "RailMemoryList must wrap AgentsMemoryView in a .rail-memory__scroll div",
+  /<div className="rail-memory__scroll">\s*<FamiliarsMemoryView/,
+  "RailMemoryList must wrap FamiliarsMemoryView in a .rail-memory__scroll div",
 );
 
-console.log("agents-memory-view-rail.test.ts: ok");
+console.log("familiars-memory-view-rail.test.ts: ok");

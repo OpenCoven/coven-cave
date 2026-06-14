@@ -142,9 +142,9 @@ export const DEMO_ESCALATIONS: Escalation[] = [
     origin: "mention",
     fromFamiliar: "sage",
     aboutFamiliar: "cody",
-    title: "PR #36 AgentPanel missing snapshot test for slide-in animation",
+    title: "PR #36 FamiliarPanel missing snapshot test for slide-in animation",
     excerpt:
-      "The AgentPanel CSS transition is untested. Not a blocker — animation looks correct in local dev — but worth a fast snapshot before this merges to main.",
+      "The FamiliarPanel CSS transition is untested. Not a blocker — animation looks correct in local dev — but worth a fast snapshot before this merges to main.",
     severity: "info",
     state: "new",
     decisionRequired: false,

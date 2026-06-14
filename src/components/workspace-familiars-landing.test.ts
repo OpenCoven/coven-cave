@@ -24,19 +24,19 @@ assert.match(
 
 assert.match(
   workspace,
-  /import \{ AgentsView \} from "@\/components\/agents-view"/,
-  "workspace.tsx imports AgentsView",
+  /import \{ FamiliarsView \} from "@\/components\/familiars-view"/,
+  "workspace.tsx imports FamiliarsView",
 );
 
 assert.match(
   workspace,
-  /mode === "agents" \? \(\s*<AgentsView/,
-  "workspace.tsx renders AgentsView when mode === \"agents\"",
+  /mode === "agents" \? \(\s*<FamiliarsView/,
+  "workspace.tsx renders FamiliarsView when mode === \"agents\"",
 );
 
 assert.match(
   workspace,
-  /<AgentsView[\s\S]*activeFamiliar=\{active\}/,
+  /<FamiliarsView[\s\S]*activeFamiliar=\{active\}/,
   "Workspace passes the selected familiar into the Familiars page",
 );
 
@@ -54,7 +54,7 @@ assert.match(
 
 assert.match(
   workspace,
-  /if \(!activeId\) \{\s*queueMicrotask\(\(\) => shellRef\.current\?\.closeAgent\(\)\);\s*return;\s*\}/,
+  /if \(!activeId\) \{\s*queueMicrotask\(\(\) => shellRef\.current\?\.closeFamiliar\(\)\);\s*return;\s*\}/,
   "Workspace collapses the companion panel when no familiar is selected so empty rails do not crowd every surface",
 );
 
@@ -120,4 +120,4 @@ assert.match(
   "Sidebar Terminal takes the final ⌘8 shortcut",
 );
 
-console.log("workspace-agents-landing: all assertions passed");
+console.log("workspace-familiars-landing: all assertions passed");

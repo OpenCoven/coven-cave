@@ -41,7 +41,7 @@ type Props = {
    *  main chat surface opts in — the companion-rail ChatRouter must not fight
    *  it for the hash. Workspace owns mount-time restore + popstate handling. */
   syncUrlHash?: boolean;
-  /** Compact mode for the narrow companion sidepanel (AgentPanel). Hides the
+  /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Hides the
    *  project sidebar in both list and chat views to reclaim the limited width. */
   compact?: boolean;
 };

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./agents-memory-reader.tsx", import.meta.url), "utf8");
+const source = await readFile(new URL("./familiars-memory-reader.tsx", import.meta.url), "utf8");
 
 assert.match(source, /export function MemoryReaderPane\(/, "MemoryReaderPane must be exported");
 assert.match(source, /useMemoryFile\(/, "reader must load file content via the shared hook");
@@ -29,4 +29,4 @@ assert.match(source, /Select a memory to read/, "empty state when no row selecte
 assert.match(source, /onOpenFile/, "reader exposes an open-file callback");
 assert.match(source, /onExpand/, "reader exposes an expand callback");
 
-console.log("agents-memory-reader: all assertions passed");
+console.log("familiars-memory-reader: all assertions passed");

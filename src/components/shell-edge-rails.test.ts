@@ -15,48 +15,48 @@ const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8")
 
 assert.match(
   shell,
-  /agent-trigger-rail agent-trigger-rail--left/,
+  /familiar-trigger-rail familiar-trigger-rail--left/,
   "shell renders a left edge rail mirroring the right agent rail",
 );
 assert.match(
   shell,
-  /!isMobile && !navOpen \? \([\s\S]*?agent-trigger-rail--left/,
+  /!isMobile && !navOpen \? \([\s\S]*?familiar-trigger-rail--left/,
   "left edge rail appears on desktop once the nav is collapsed",
 );
 assert.match(
   shell,
-  /agent-trigger-rail--left[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
+  /familiar-trigger-rail--left[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
   "left edge rail toggle label reflects nav state",
 );
 assert.match(
   shell,
-  /agent-trigger-rail--left[\s\S]*?aria-expanded=\{navOpen\}/,
+  /familiar-trigger-rail--left[\s\S]*?aria-expanded=\{navOpen\}/,
   "left edge rail exposes nav expanded state",
 );
 assert.match(
   shell,
-  /agent-trigger-rail--left[\s\S]*?navRef\.current\?\.collapse\(\)[\s\S]*?navRef\.current\?\.expand\(\)/,
+  /familiar-trigger-rail--left[\s\S]*?navRef\.current\?\.collapse\(\)[\s\S]*?navRef\.current\?\.expand\(\)/,
   "left edge rail toggle collapses and expands the nav panel",
 );
 assert.match(
   shell,
-  /agent-trigger-rail--left[\s\S]*?navOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/,
+  /familiar-trigger-rail--left[\s\S]*?navOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/,
   "left edge rail icon reflects nav state",
 );
 
 assert.match(
   css,
-  /\.agent-trigger-rail--left \{[^}]*border-right: 1px solid var\(--border-hairline\)/,
+  /\.familiar-trigger-rail--left \{[^}]*border-right: 1px solid var\(--border-hairline\)/,
   "left rail variant flips the hairline to its right edge",
 );
 assert.match(
   css,
-  /\.agent-trigger-rail \{[^}]*width: 26px;[^}]*flex: 0 0 26px;/,
+  /\.familiar-trigger-rail \{[^}]*width: 26px;[^}]*flex: 0 0 26px;/,
   "edge trigger rails should be wide enough to read as intentional controls",
 );
 assert.match(
   css,
-  /\.agent-trigger-rail::before \{[^}]*width: 1px;[^}]*background: color-mix\(in oklch, var\(--accent\) 52%, transparent\)/,
+  /\.familiar-trigger-rail::before \{[^}]*width: 1px;[^}]*background: color-mix\(in oklch, var\(--accent\) 52%, transparent\)/,
   "edge trigger rails should carry a subtle accent guide line",
 );
 assert.match(css, /\.edge-rail-chip \{/, "edge-rail chip class exists");
@@ -67,12 +67,12 @@ assert.match(
 );
 assert.match(
   css,
-  /\.agent-trigger-rail__toggle\[aria-expanded="true"\] > \.edge-rail-chip/,
+  /\.familiar-trigger-rail__toggle\[aria-expanded="true"\] > \.edge-rail-chip/,
   "expanded side-panel triggers should have an active chip treatment",
 );
 assert.doesNotMatch(
   css,
-  /\.agent-trigger-rail__toggle \{[^}]*opacity: 0/,
+  /\.familiar-trigger-rail__toggle \{[^}]*opacity: 0/,
   "edge-rail toggles must be visible without hovering",
 );
 assert.match(
@@ -90,17 +90,17 @@ assert.match(
 // Browser surface is still reachable via the nav (⌘7).
 assert.doesNotMatch(
   workspace,
-  /agent-trigger-rail__toggle[\s\S]{0,160}ph:globe/,
+  /familiar-trigger-rail__toggle[\s\S]{0,160}ph:globe/,
   "right agent rail no longer exposes the browser globe tab",
 );
 assert.match(
   css,
-  /\.agent-trigger-rail--stacked \{[^}]*justify-content: stretch;/,
+  /\.familiar-trigger-rail--stacked \{[^}]*justify-content: stretch;/,
   "right edge stacked tabs stretch to fill the rail height",
 );
 assert.match(
   css,
-  /\.agent-trigger-rail--stacked \.agent-trigger-rail__toggle \{[^}]*flex: 1 1 0;/,
+  /\.familiar-trigger-rail--stacked \.familiar-trigger-rail__toggle \{[^}]*flex: 1 1 0;/,
   "stacked rail toggles each fill half the rail (50/50 split)",
 );
 assert.match(

@@ -524,8 +524,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       )}
       <section className="chat-list-surface flex h-full min-w-0 flex-1 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
 
-      {/* ── Agent dossier + command strip ── */}
-      <header className="agent-panel-dossier chat-list-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)]">
+      {/* ── Familiar dossier + command strip ── */}
+      <header className="familiar-panel-dossier chat-list-dossier border-b border-[var(--border-hairline)] bg-[var(--bg-base)]">
         {/* Brand accent bar */}
         <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-[var(--accent-presence)]/50 to-transparent" />
 

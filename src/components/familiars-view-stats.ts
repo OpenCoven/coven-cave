@@ -12,7 +12,7 @@ export type CovenMemoryEntry = {
   fullPath?: string;
 };
 
-export type AgentCardStats = {
+export type FamiliarCardStats = {
   memoryCount: number;
   latestMemory: { title: string; updatedAt: string } | null;
   lastSessionAt: string | null;
@@ -23,12 +23,12 @@ export type AgentCardStats = {
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60_000;
 const FIVE_MINUTES_MS = 5 * 60_000;
 
-export function buildAgentCardStats(args: {
+export function buildFamiliarCardStats(args: {
   familiars: Familiar[];
   sessions: SessionRow[];
   covenEntries: CovenMemoryEntry[];
   now?: number;
-}): Map<string, AgentCardStats> {
+}): Map<string, FamiliarCardStats> {
   const now = args.now ?? Date.now();
   const sevenCutoff = now - SEVEN_DAYS_MS;
   const activeCutoff = now - FIVE_MINUTES_MS;
@@ -49,7 +49,7 @@ export function buildAgentCardStats(args: {
     memoriesByFamiliar.set(entry.familiar_id, bucket);
   }
 
-  const result = new Map<string, AgentCardStats>();
+  const result = new Map<string, FamiliarCardStats>();
   for (const familiar of args.familiars) {
     const sessions = sessionsByFamiliar.get(familiar.id) ?? [];
     const memories = memoriesByFamiliar.get(familiar.id) ?? [];
@@ -69,7 +69,7 @@ export function buildAgentCardStats(args: {
       if (ms > activeCutoff) hasActiveSession = true;
     }
 
-    let latestMemory: AgentCardStats["latestMemory"] = null;
+    let latestMemory: FamiliarCardStats["latestMemory"] = null;
     let latestMs = -Infinity;
     for (const entry of memories) {
       const ms = Date.parse(entry.updated_at);

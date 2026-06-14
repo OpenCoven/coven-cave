@@ -2,10 +2,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const source = readFileSync(new URL("./agents-view.tsx", import.meta.url), "utf8");
-const card = source.match(/function AgentRosterCard[\s\S]*?\n\}\n/)?.[0] ?? "";
+const source = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
+const card = source.match(/function FamiliarRosterCard[\s\S]*?\n\}\n/)?.[0] ?? "";
 
-assert.ok(card.length > 0, "AgentRosterCard function should be present in agents-view.tsx");
+assert.ok(card.length > 0, "FamiliarRosterCard function should be present in familiars-view.tsx");
 
 assert.match(card, /aria-label=\{`Open \$\{familiar\.display_name\}`\}/, "Card has accessible label naming the familiar");
 
@@ -69,4 +69,4 @@ assert.match(
   "Latest memory title is rendered",
 );
 
-console.log("agent-roster-card: all assertions passed");
+console.log("familiar-roster-card: all assertions passed");

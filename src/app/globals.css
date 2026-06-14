@@ -413,7 +413,7 @@ select {
 .shell-nav-panel,
 .shell-list-panel,
 .shell-detail-panel,
-.shell-agent-panel,
+.shell-familiar-panel,
 .shell-bottom-panel {
   height: 100%;
   min-width: 0;
@@ -445,20 +445,20 @@ select {
 
 /* Inner panel border — subtle dividing line on the right edge of side panels */
 .shell-nav-panel { border-right: 1px solid var(--border-hairline); }
-.shell-agent-panel { border-left: 1px solid var(--border-hairline); }
+.shell-familiar-panel { border-left: 1px solid var(--border-hairline); }
 .shell-list-panel { border-right: 1px solid var(--border-hairline); }
 
 .shell-nav-panel > .shell-nav,
 .shell-list-panel > .shell-list,
 .shell-detail-panel > .shell-detail,
-.shell-agent-panel > .shell-agent,
+.shell-familiar-panel > .shell-familiar,
 .shell-bottom-panel > .shell-bottom {
   flex: 1 1 auto;
   width: 100%;
   min-width: 0;
 }
 
-.shell-agent {
+.shell-familiar {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -469,7 +469,7 @@ select {
 }
 
 /* Right-rail toggle tab — full-height strip, matches inspector closed state */
-.shell-agent-tab {
+.shell-familiar-tab {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -485,22 +485,22 @@ select {
   -webkit-app-region: no-drag;
   user-select: none;
 }
-.shell-agent-tab:hover {
+.shell-familiar-tab:hover {
   /* strip itself no longer interactive — hover handled per-button */
 }
-.shell-agent-tab--open {
+.shell-familiar-tab--open {
   background: var(--bg-raised);
   border-left-color: var(--border-strong);
 }
-.shell-agent-tab-label {
+.shell-familiar-tab-label {
   display: none;
 }
-.shell-agent-tab-chevron {
+.shell-familiar-tab-chevron {
   display: none;
 }
 
 /* Individual icon button inside the agent strip — each takes 50% height */
-.shell-agent-strip-btn {
+.shell-familiar-strip-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -515,24 +515,24 @@ select {
   flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
-.shell-agent-strip-btn:hover {
+.shell-familiar-strip-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.shell-agent-strip-btn--active {
+.shell-familiar-strip-btn--active {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
 }
-.shell-agent-strip-btn--active:hover {
+.shell-familiar-strip-btn--active:hover {
   background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
 }
 /* Bottom button gets a hairline top border as separator */
-.shell-agent-strip-btn--bottom {
+.shell-familiar-strip-btn--bottom {
   border-top: 1px solid var(--border-hairline);
 }
 
 /* Drag handle between browser/chat strip buttons */
-.shell-agent-strip-drag {
+.shell-familiar-strip-drag {
   width: 100%;
   height: 20px;
   flex-shrink: 0;
@@ -543,10 +543,10 @@ select {
   -webkit-app-region: no-drag;
   position: relative;
 }
-.shell-agent-strip-drag:hover {
+.shell-familiar-strip-drag:hover {
   background: var(--bg-hover);
 }
-.shell-agent-strip-drag::before {
+.shell-familiar-strip-drag::before {
   content: '';
   position: absolute;
   left: 8px;
@@ -555,7 +555,7 @@ select {
   background: var(--border-hairline);
 }
 /* Lock indicator dot */
-.shell-agent-strip-lock-dot {
+.shell-familiar-strip-lock-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
@@ -564,17 +564,17 @@ select {
   z-index: 1;
   transition: background 0.15s, transform 0.15s;
 }
-.shell-agent-strip-lock-dot--up {
+.shell-familiar-strip-lock-dot--up {
   background: color-mix(in oklch, var(--accent-presence) 60%, transparent);
   transform: translateY(-2px);
 }
-.shell-agent-strip-lock-dot--down {
+.shell-familiar-strip-lock-dot--down {
   background: color-mix(in oklch, var(--accent-presence) 60%, transparent);
   transform: translateY(2px);
 }
 
 /* Hairline divider between strip buttons */
-.shell-agent-strip-divider {
+.shell-familiar-strip-divider {
   width: 18px;
   height: 1px;
   background: var(--border-hairline);
@@ -2278,7 +2278,7 @@ select {
 }
 
 /* Left nav collapsed strip -- mirrors the agent tab on the right */
-/* Left-rail toggle tab — full-height strip, exact mirror of .shell-agent-tab */
+/* Left-rail toggle tab — full-height strip, exact mirror of .shell-familiar-tab */
 .shell-nav-tab {
   display: flex;
   flex-direction: column;
@@ -2303,7 +2303,7 @@ select {
   color: var(--text-primary);
 }
 .shell-nav-tab:focus-visible,
-.shell-agent-strip-btn:focus-visible {
+.shell-familiar-strip-btn:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: -2px;
 }
@@ -3228,11 +3228,11 @@ select {
 }
 
 /* ────────────────────────────────────────────────
-   Agent trigger rails — slim edge columns holding the
+   Familiar trigger rails — slim edge columns holding the
    left navigation toggle and right Salem toggle.
    ──────────────────────────────────────────────── */
 
-.agent-trigger-rail {
+.familiar-trigger-rail {
   position: relative;
   width: 26px;
   flex: 0 0 26px;
@@ -3248,13 +3248,13 @@ select {
   user-select: none;
 }
 
-.agent-trigger-rail--stacked {
+.familiar-trigger-rail--stacked {
   justify-content: stretch;
   gap: 0;
   padding-top: 0;
 }
 
-.agent-trigger-rail::before {
+.familiar-trigger-rail::before {
   content: "";
   position: absolute;
   top: 10px;
@@ -3267,17 +3267,17 @@ select {
   pointer-events: none;
 }
 
-.agent-trigger-rail--left {
+.familiar-trigger-rail--left {
   border-left: 0;
   border-right: 1px solid var(--border-hairline);
 }
 
-.agent-trigger-rail--left::before {
+.familiar-trigger-rail--left::before {
   right: 3px;
   left: auto;
 }
 
-.agent-trigger-rail__toggle {
+.familiar-trigger-rail__toggle {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3294,17 +3294,17 @@ select {
   transition: background 120ms ease, color 120ms ease;
 }
 
-.agent-trigger-rail--stacked .agent-trigger-rail__toggle {
+.familiar-trigger-rail--stacked .familiar-trigger-rail__toggle {
   flex: 1 1 0;
   min-height: 0;
 }
 
-.agent-trigger-rail__toggle:hover {
+.familiar-trigger-rail__toggle:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.agent-trigger-rail__toggle:focus-visible {
+.familiar-trigger-rail__toggle:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: -2px;
 }
@@ -3327,7 +3327,7 @@ select {
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
 }
 
-.agent-trigger-rail__toggle[aria-expanded="true"] > .edge-rail-chip {
+.familiar-trigger-rail__toggle[aria-expanded="true"] > .edge-rail-chip {
   color: var(--text-primary);
   border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
@@ -4313,7 +4313,7 @@ button:active > .edge-rail-chip {
      so the detail pane behind them is still visible during animation. */
   .shell-nav-panel,
   .shell-list-panel,
-  .shell-agent-panel {
+  .shell-familiar-panel {
     position: fixed !important;
     top: 0;
     bottom: 0;
@@ -4336,7 +4336,7 @@ button:active > .edge-rail-chip {
     transform: translateX(-100%);
     padding-left: var(--sai-left);
   }
-  .shell-agent-panel {
+  .shell-familiar-panel {
     right: 0;
     left: auto;
     border-right: none;
@@ -4346,7 +4346,7 @@ button:active > .edge-rail-chip {
   }
   .shell-root[data-mobile-drawer="nav"] .shell-nav-panel,
   .shell-root[data-mobile-drawer="list"] .shell-list-panel,
-  .shell-root[data-mobile-drawer="agent"] .shell-agent-panel {
+  .shell-root[data-mobile-drawer="agent"] .shell-familiar-panel {
     transform: translateX(0);
   }
   /* Hide the resize handles — pointer-drag has no meaning when panels
@@ -4429,9 +4429,9 @@ button:active > .edge-rail-chip {
   .top-bar__mobile-handoff {
     display: none;
   }
-  /* Hide the agent-trigger rail — its single button is now in the top
+  /* Hide the familiar-trigger rail — its single button is now in the top
      bar's mobile toggles, so showing both is redundant. */
-  .agent-trigger-rail {
+  .familiar-trigger-rail {
     display: none !important;
   }
 }
@@ -4441,7 +4441,7 @@ button:active > .edge-rail-chip {
 @media (max-width: 1023px) and (prefers-reduced-motion: reduce) {
   .shell-nav-panel,
   .shell-list-panel,
-  .shell-agent-panel {
+  .shell-familiar-panel {
     transition: none;
   }
 }

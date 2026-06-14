@@ -23,7 +23,7 @@ type Props = {
    *  with no list panel should pass `onToggleList={undefined}`. */
   onToggleNav?: () => void;
   onToggleList?: () => void;
-  onToggleAgent?: () => void;
+  onToggleFamiliar?: () => void;
 };
 
 export function TopBar(props: Props) {
@@ -40,7 +40,7 @@ export function TopBar(props: Props) {
     onNotificationPrefsChanged,
     onToggleNav,
     onToggleList,
-    onToggleAgent,
+    onToggleFamiliar,
   } = props;
 
   return (
@@ -111,11 +111,11 @@ export function TopBar(props: Props) {
         >
           <Icon name="ph:user" width={13} />
         </button>
-        {onToggleAgent ? (
+        {onToggleFamiliar ? (
           <button
             type="button"
             className="top-bar__mobile-toggle"
-            onClick={onToggleAgent}
+            onClick={onToggleFamiliar}
             aria-label="Open familiar panel (⌘J)"
             title="Open familiar panel"
           >

@@ -656,7 +656,7 @@
   gap: 18px;
 }
 
-.cave-chat-empty-agent {
+.cave-chat-empty-familiar {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -678,7 +678,7 @@
     inset 0 1px 0 oklch(1 0 0 / 7%);
 }
 
-.cave-chat-empty-agent-copy {
+.cave-chat-empty-familiar-copy {
   min-width: 0;
 }
 
@@ -832,7 +832,7 @@
     gap: 12px;
   }
 
-  .cave-chat-empty-agent {
+  .cave-chat-empty-familiar {
     justify-content: flex-start;
   }
 
