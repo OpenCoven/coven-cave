@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   DEFAULT_FONT_ID,
   FONT_OPTIONS,
@@ -114,6 +114,40 @@ const PREVIEW: Record<FontSlot, string> = {
   sans: "The quick brown fox jumps over 0123",
   mono: "const x = 42; // 0123",
 };
+
+// Shared segmented-control styling, hoisted so each option group stays terse.
+const segWrap =
+  "flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+
+function segBtn(active: boolean, extra = ""): string {
+  return `focus-ring ${extra} rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+    active
+      ? "bg-[var(--accent-presence)] text-white"
+      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+  }`;
+}
+
+// Compact label-left / control-right row used to group the reading-text controls,
+// which all share one caption instead of repeating it per control.
+function ReadingRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
+      <div className="min-w-0">
+        <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
+        {hint ? <div className="text-[11px] text-[var(--text-muted)]">{hint}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 function FontField({
   slot,
@@ -270,193 +304,162 @@ export function FontSettings() {
     dropcap === DEFAULT_READING_DROPCAP;
 
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-5">
       <div>
         <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Typography</h3>
         <p className="text-[11px] text-[var(--text-muted)]">
-          Choose the interface and code fonts and the overall text size. Changes apply immediately.
+          Choose the interface and code fonts and how text is sized. Changes apply immediately.
         </p>
       </div>
-      <div className="flex flex-col gap-4">
+
+      {/* Fonts — paired side by side, each with a live preview. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FontField slot="sans" label="Interface" options={SANS_OPTIONS} value={sansId} onChange={(id) => select("sans", id)} />
         <FontField slot="mono" label="Code &amp; terminal" options={MONO_OPTIONS} value={monoId} onChange={(id) => select("mono", id)} />
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text size</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Scale all text and UI.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {SCREEN_SCALE_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setTextSize(option)}
-                aria-pressed={scale === option}
-                aria-label={`Text size ${option}%`}
-                className={`focus-ring min-w-12 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  scale === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {option}%
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Line spacing</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Spacing for reading text — chat, library, and memory.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_LEADING_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setLineSpacing(option)}
-                aria-pressed={leading === option}
-                aria-label={`Line spacing ${LEADING_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  leading === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {LEADING_LABEL[option]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Letter spacing</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Tracking for reading text — chat, library, and memory.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_TRACKING_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setLetterSpacing(option)}
-                aria-pressed={tracking === option}
-                aria-label={`Letter spacing ${TRACKING_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  tracking === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {TRACKING_LABEL[option]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text alignment</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Alignment for reading text — chat, library, and memory.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_ALIGN_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setTextAlign(option)}
-                aria-pressed={align === option}
-                aria-label={`Text alignment ${ALIGN_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  align === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {ALIGN_LABEL[option]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Max reading width</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Caps line length for reading text — chat, library, and memory.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_WIDTH_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setReadingWidth(option)}
-                aria-pressed={width === option}
-                aria-label={`Max reading width ${WIDTH_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  width === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {WIDTH_LABEL[option]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Font weight</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Base weight for reading text — chat, library, and memory.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_WEIGHT_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setFontWeight(option)}
-                aria-pressed={weight === option}
-                aria-label={`Font weight ${WEIGHT_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  weight === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {WEIGHT_LABEL[option]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Hyphenation</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Hyphenate reading text — pairs well with Justify.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_HYPHENS_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setHyphenation(option)}
-                aria-pressed={hyphens === option}
-                aria-label={`Hyphenation ${HYPHENS_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  hyphens === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {HYPHENS_LABEL[option]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Drop cap</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Enlarged first letter — Library documents only.</p>
-          <div className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5">
-            {READING_DROPCAP_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setDropCap(option)}
-                aria-pressed={dropcap === option}
-                aria-label={`Drop cap ${DROPCAP_LABEL[option]}`}
-                className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  dropcap === option
-                    ? "bg-[var(--accent-presence)] text-white"
-                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {DROPCAP_LABEL[option]}
-              </button>
-            ))}
-          </div>
+      </div>
+
+      {/* Text size — the one control that scales the whole UI, not just prose. */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text size</label>
+        <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Scale all text and UI.</p>
+        <div className={segWrap}>
+          {SCREEN_SCALE_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setTextSize(option)}
+              aria-pressed={scale === option}
+              aria-label={`Text size ${option}%`}
+              className={segBtn(scale === option, "min-w-12")}
+            >
+              {option}%
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Reading text — one shared caption, then compact label/control rows. */}
+      <div className="flex flex-col gap-2">
+        <div>
+          <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Reading text</h4>
+          <p className="text-[11px] text-[var(--text-muted)]">Applies to chat, library, and memory.</p>
+        </div>
+        <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] px-3">
+          <ReadingRow label="Line spacing">
+            <div className={segWrap}>
+              {READING_LEADING_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setLineSpacing(option)}
+                  aria-pressed={leading === option}
+                  aria-label={`Line spacing ${LEADING_LABEL[option]}`}
+                  className={segBtn(leading === option)}
+                >
+                  {LEADING_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Letter spacing">
+            <div className={segWrap}>
+              {READING_TRACKING_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setLetterSpacing(option)}
+                  aria-pressed={tracking === option}
+                  aria-label={`Letter spacing ${TRACKING_LABEL[option]}`}
+                  className={segBtn(tracking === option)}
+                >
+                  {TRACKING_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Text alignment">
+            <div className={segWrap}>
+              {READING_ALIGN_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setTextAlign(option)}
+                  aria-pressed={align === option}
+                  aria-label={`Text alignment ${ALIGN_LABEL[option]}`}
+                  className={segBtn(align === option)}
+                >
+                  {ALIGN_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Max reading width">
+            <div className={segWrap}>
+              {READING_WIDTH_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setReadingWidth(option)}
+                  aria-pressed={width === option}
+                  aria-label={`Max reading width ${WIDTH_LABEL[option]}`}
+                  className={segBtn(width === option)}
+                >
+                  {WIDTH_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Font weight">
+            <div className={segWrap}>
+              {READING_WEIGHT_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setFontWeight(option)}
+                  aria-pressed={weight === option}
+                  aria-label={`Font weight ${WEIGHT_LABEL[option]}`}
+                  className={segBtn(weight === option)}
+                >
+                  {WEIGHT_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Hyphenation" hint="Pairs well with Justify.">
+            <div className={segWrap}>
+              {READING_HYPHENS_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setHyphenation(option)}
+                  aria-pressed={hyphens === option}
+                  aria-label={`Hyphenation ${HYPHENS_LABEL[option]}`}
+                  className={segBtn(hyphens === option)}
+                >
+                  {HYPHENS_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Drop cap" hint="Library documents only.">
+            <div className={segWrap}>
+              {READING_DROPCAP_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setDropCap(option)}
+                  aria-pressed={dropcap === option}
+                  aria-label={`Drop cap ${DROPCAP_LABEL[option]}`}
+                  className={segBtn(dropcap === option)}
+                >
+                  {DROPCAP_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+        </div>
+      </div>
+
       <div>
         <button
           type="button"

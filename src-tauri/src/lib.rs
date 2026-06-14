@@ -780,42 +780,51 @@ pub fn run() {
                 }
                 app.handle().plugin(tauri_plugin_notification::init())?;
 
-                // Resolve the Tailscale Serve URL.
-                // Priority: CAVE_MOBILE_DEV_URL env var -> tauri.conf.json devUrl -> localhost:3000
-                // Security: only https://*.ts.net and http(s)://localhost accepted.
-                let resolved_url: tauri::Url = {
-                    let from_env = std::env::var("CAVE_MOBILE_DEV_URL")
-                        .ok()
-                        .and_then(|s| tauri::Url::parse(&s).ok());
+                // Debug mobile builds are launched by scripts/mobile-tailscale.sh
+                // with a live Tailscale Serve dev URL. Release/TestFlight builds
+                // cannot receive that env var, so they must open the bundled
+                // connection screen instead of silently trying localhost:3000.
+                let webview_url = if cfg!(debug_assertions) {
+                    // Resolve the Tailscale Serve URL.
+                    // Priority: CAVE_MOBILE_DEV_URL env var -> tauri.conf.json devUrl -> localhost:3000
+                    // Security: only https://*.ts.net and http(s)://localhost accepted.
+                    let resolved_url: tauri::Url = {
+                        let from_env = std::env::var("CAVE_MOBILE_DEV_URL")
+                            .ok()
+                            .and_then(|s| tauri::Url::parse(&s).ok());
 
-                    let url = from_env
-                        .or_else(|| app.config().build.dev_url.clone())
-                        .unwrap_or_else(|| {
-                            tauri::Url::parse("http://localhost:3000")
-                                .expect("fallback url is valid")
-                        });
+                        let url = from_env
+                            .or_else(|| app.config().build.dev_url.clone())
+                            .unwrap_or_else(|| {
+                                tauri::Url::parse("http://localhost:3000")
+                                    .expect("fallback url is valid")
+                            });
 
-                    let host = url.host_str().unwrap_or("");
-                    let scheme = url.scheme();
-                    let allowed = (scheme == "https"
-                        && (host.ends_with(".ts.net") || host == "localhost"))
-                        || (scheme == "http"
-                            && (host == "localhost" || host == "127.0.0.1"));
+                        let host = url.host_str().unwrap_or("");
+                        let scheme = url.scheme();
+                        let allowed = (scheme == "https"
+                            && (host.ends_with(".ts.net") || host == "localhost"))
+                            || (scheme == "http"
+                                && (host == "localhost" || host == "127.0.0.1"));
 
-                    if !allowed {
-                        panic!(
-                            "CAVE_MOBILE_DEV_URL must be https://<host>.ts.net, https://localhost, http://localhost, or http://127.0.0.1 - got: {}",
-                            url
-                        );
-                    }
-                    log::info!("[cave-mobile] webview URL: {}", url);
-                    url
+                        if !allowed {
+                            panic!(
+                                "CAVE_MOBILE_DEV_URL must be https://<host>.ts.net, https://localhost, http://localhost, or http://127.0.0.1 - got: {}",
+                                url
+                            );
+                        }
+                        log::info!("[cave-mobile] webview URL: {}", url);
+                        url
+                    };
+                    tauri::WebviewUrl::External(resolved_url)
+                } else {
+                    tauri::WebviewUrl::App("index.html".into())
                 };
 
                 tauri::WebviewWindowBuilder::new(
                     app,
                     "main",
-                    tauri::WebviewUrl::External(resolved_url),
+                    webview_url,
                 )
                 .title("CovenCave")
                 .build()?;

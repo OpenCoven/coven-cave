@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
-import { workflowToGraph } from "@/lib/workflow-graph";
+import { workflowToGraph, type WorkflowLayoutDirection } from "@/lib/workflow-graph";
 import {
   advancePlayback,
   playbackFinished,
@@ -75,6 +75,8 @@ export function WorkflowsView({
   const [roles, setRoles] = useState<WorkflowRoleSummary[]>([]);
   const [engineUnavailable, setEngineUnavailable] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }> | null>(null);
+  const [layoutDirection, setLayoutDirection] = useState<WorkflowLayoutDirection>("horizontal");
+  const [viewResetKey, setViewResetKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   // Playback walks the graph node-by-node from an honest source (a dry-run
   // plan or a recorded run). The view owns the single ticking timer; the canvas
@@ -206,8 +208,8 @@ export function WorkflowsView({
 
   const selectedGraph = useMemo(() => {
     if (!draft) return null;
-    return workflowToGraph(draft, selectedDryRun, nodePositions);
-  }, [draft, nodePositions, selectedDryRun]);
+    return workflowToGraph(draft, selectedDryRun, nodePositions, layoutDirection);
+  }, [draft, layoutDirection, nodePositions, selectedDryRun]);
 
   const selectedNode = useMemo(
     () => selectedGraph?.nodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -510,6 +512,37 @@ export function WorkflowsView({
     void saveWorkflowLayout(draft.id, positions).catch(() => undefined);
   };
 
+  const defaultWorkflowPositions = useCallback((
+    workflow: WorkflowSummary,
+    direction: WorkflowLayoutDirection,
+  ) => {
+    return Object.fromEntries(
+      workflowToGraph(workflow, undefined, null, direction).nodes.map((node) => [node.id, node.position]),
+    );
+  }, []);
+
+  const applyWorkflowViewPositions = useCallback((positions: Record<string, { x: number; y: number }>) => {
+    if (!draft) return;
+    setSelectedNodeId(null);
+    setNodePositions(positions);
+    setViewResetKey((key) => key + 1);
+    void saveWorkflowLayout(draft.id, positions).catch(() => undefined);
+  }, [draft]);
+
+  const resetWorkflowView = useCallback(() => {
+    if (!draft) return;
+    const positions = defaultWorkflowPositions(draft, layoutDirection);
+    applyWorkflowViewPositions(positions);
+  }, [applyWorkflowViewPositions, defaultWorkflowPositions, draft, layoutDirection]);
+
+  const switchWorkflowLayout = useCallback(() => {
+    if (!draft) return;
+    const nextDirection: WorkflowLayoutDirection = layoutDirection === "horizontal" ? "vertical" : "horizontal";
+    const positions = defaultWorkflowPositions(draft, nextDirection);
+    setLayoutDirection(nextDirection);
+    applyWorkflowViewPositions(positions);
+  }, [applyWorkflowViewPositions, defaultWorkflowPositions, draft, layoutDirection]);
+
   const handleSchedule = async (fireAt: string, recurrence: WorkflowScheduleRecurrence) => {
     if (!draft) return;
     const result = await scheduleWorkflow({ workflow: draft, fireAt, recurrence });
@@ -540,9 +573,13 @@ export function WorkflowsView({
       engineUnavailable={engineUnavailable}
       notice={notice}
       savedPositions={nodePositions}
+      layoutDirection={layoutDirection}
+      viewResetKey={viewResetKey}
       playback={playback}
       onStopPlayback={stopPlayback}
       onReplayRun={replayRun}
+      onResetView={resetWorkflowView}
+      onSwitchLayout={switchWorkflowLayout}
       onRefresh={() => void load(true)}
       onSelectWorkflow={selectWorkflow}
       onSelectNode={(node) => setSelectedNodeId(node.id)}

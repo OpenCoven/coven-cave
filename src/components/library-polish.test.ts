@@ -170,14 +170,14 @@ assert.match(
 );
 assert.match(
   view,
-  /activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" &&/,
+  /activeSection !== "skills" && activeSection !== "projects" &&/,
   "List panel is hidden while Projects is active",
 );
 
 // ── Browse-first empty canvas ──
 assert.match(
   view,
-  /const showBrowseCanvas = selectedItem === null && activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects"/,
+  /const showBrowseCanvas = selectedItem === null && activeSection !== "skills" && activeSection !== "projects"/,
   "When no library item is selected, the dominant center canvas should become the browse list instead of an empty placeholder",
 );
 assert.match(
@@ -187,7 +187,7 @@ assert.match(
 );
 assert.match(
   view,
-  /activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas &&/,
+  /activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas &&/,
   "Right list panel should be hidden while the center browse canvas is active",
 );
 assert.match(

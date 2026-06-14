@@ -1,5 +1,32 @@
 # Coven Cave — Claude Code project notes
 
+## Branch protection on `main` — all changes go through a PR
+
+**Rule:** `main` is a protected branch. There are **no direct pushes** — not for collaborators, not for admins, not for Claude sessions (which push as the `BunsDev` admin). Every change lands via a pull request whose required checks are green. `git push origin main` (or `HEAD:main`) will be **rejected** with `GH006: Protected branch update failed`.
+
+**Why:** Direct-to-main pushes were bypassing PR review and CI, and a shared-checkout `git add -A` from one of several concurrent sessions swallowed other sessions' uncommitted work into a single unrelated direct push (commit `258af8d`). See issue #585 for the full write-up. Protection was enabled with `enforce_admins=true` to make the hard stop apply to everyone.
+
+**Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
+
+- PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
+- Required status checks (all must pass): `Frontend build`, `Rust check`, `CodeQL`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR.)
+- `enforce_admins = true` — admins are **not** exempt.
+- Force-pushes and deletion of `main` are blocked.
+
+**How to apply (the only path to `main`):**
+
+```bash
+# work on a branch (in a worktree, per the convention below)
+git worktree add -b <branch> .worktrees/<branch> origin/main
+# … commit (signed, per the global -S rule) …
+git push -u origin <branch>
+gh pr create --base main --head <branch> --title "…" --body "…"
+# wait for the 6 checks to go green, then:
+gh pr merge <#> --squash --delete-branch
+```
+
+Squash-merge through `gh`/the PR UI still works — it's a merge, not a direct push. Only `git push … main` is blocked. Don't try to "work around" protection (e.g. flipping `enforce_admins` off to push) — if a change can't go through a PR, surface it to the user.
+
 ## Worktree convention
 
 Use `.worktrees/<branch-name>/` subdirectories inside the repo. Confirmed in use; an empty `.wt/` stub also exists — ignore it, not the active convention. (Apparently a `cv-wt` claim+canary CLI exists too; if the canonical incantation matters, ask the user rather than guessing.)

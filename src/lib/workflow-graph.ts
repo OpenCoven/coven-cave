@@ -36,6 +36,8 @@ export type WorkflowGraph = {
   edges: WorkflowGraphEdge[];
 };
 
+export type WorkflowLayoutDirection = "horizontal" | "vertical";
+
 export function workflowNodeTone(kind: WorkflowStepKind): WorkflowNodeTone {
   if (kind === "agent") return "agent";
   if (kind === "human-gate") return "gate";
@@ -133,6 +135,7 @@ export function workflowToGraph(
   workflow: WorkflowSummary,
   dryRun?: WorkflowDryRunPlan,
   savedPositions?: WorkflowNodePositions | null,
+  layoutDirection: WorkflowLayoutDirection = "horizontal",
 ): WorkflowGraph {
   const steps = workflow.steps && workflow.steps.length > 0 ? workflow.steps : [fallbackStep(workflow)];
   // Layered layout: column = dependency depth (manifest order when no
@@ -152,8 +155,8 @@ export function workflowToGraph(
       id: step.id,
       type: "workflowStep",
       position: saved ?? {
-        x: 80 + depth * 240,
-        y: 80 + lane * 140,
+        x: layoutDirection === "vertical" ? 80 + lane * 240 : 80 + depth * 240,
+        y: layoutDirection === "vertical" ? 80 + depth * 140 : 80 + lane * 140,
       },
       data: {
         label: step.name ?? step.id,

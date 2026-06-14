@@ -11,6 +11,7 @@ assert.match(infoPlist, /<key>NSBonjourServices<\/key>/);
 assert.match(infoPlist, /<string>_tailscale\._tcp<\/string>/);
 assert.match(infoPlist, /<string>_tailscale\._udp<\/string>/);
 assert.match(infoPlist, /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
+assert.match(infoPlist, /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/);
 
 const sourceInfoPlist = read("src-tauri/Info.ios.plist");
 assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
@@ -23,6 +24,14 @@ assert.match(libRs, /CAVE_MOBILE_DEV_URL/);
 assert.match(libRs, /\.ts\.net/);
 assert.match(libRs, /WebviewUrl::External/);
 assert.match(libRs, /127\.0\.0\.1/);
+assert.match(libRs, /cfg!\(debug_assertions\)/);
+assert.match(libRs, /WebviewUrl::App\("index\.html"\.into\(\)\)/);
+
+const frontendStub = read("src-tauri/frontend-stub/index.html");
+assert.match(frontendStub, /Connect to CovenCave/);
+assert.match(frontendStub, /coven-cave:mobile-server-url/);
+assert.match(frontendStub, /window\.location\.assign/);
+assert.doesNotMatch(frontendStub, /Loading CovenCave/);
 
 const mobileScript = read("scripts/mobile-tailscale.sh");
 assert.match(mobileScript, /native_command\(\)/);

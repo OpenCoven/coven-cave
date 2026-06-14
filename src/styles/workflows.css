@@ -367,11 +367,17 @@
     var(--background);
 }
 
-.workflow-minimap-toggle {
+.workflow-canvas-toolbar {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workflow-canvas-tool {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -384,10 +390,14 @@
   box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
 }
 
-.workflow-minimap-toggle:hover,
-.workflow-minimap-toggle.is-active {
+.workflow-canvas-tool:hover,
+.workflow-canvas-tool.is-active {
   border-color: color-mix(in oklch, var(--accent-presence) 54%, var(--border));
   background: color-mix(in oklch, var(--card) 78%, var(--accent-presence) 22%);
+}
+
+.workflow-minimap-toggle {
+  flex: 0 0 auto;
 }
 
 .workflow-canvas-empty {

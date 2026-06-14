@@ -11,7 +11,6 @@ import { LibraryGitHubList } from "@/components/library-github-list";
 import { LibraryDocPreview, type SelectedItem } from "@/components/library-doc-preview";
 import { LibraryTimeline } from "@/components/library-timeline";
 import { ComuxView } from "@/components/comux-view";
-import { LibraryGraphView } from "@/components/library-graph-view";
 import type { TimelineEntry } from "@/app/api/library/all/route";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type {
@@ -176,7 +175,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const selectedBmId =   selectedItem?.kind === "bookmark" ? selectedItem.item.id : null;
   const selectedReadId = selectedItem?.kind === "reading"  ? selectedItem.item.id : null;
   const selectedGhId =   selectedItem?.kind === "github"   ? selectedItem.item.id : null;
-  const showBrowseCanvas = selectedItem === null && activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects";
+  const showBrowseCanvas = selectedItem === null && activeSection !== "skills" && activeSection !== "projects";
 
   function renderLibraryListContent() {
     if (activeSection === "all") {
@@ -269,12 +268,8 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         refreshing={loading}
       />
       <div className="library-divider" />
-      {/* Preview pane — dominant left content area; graph and projects own the full canvas */}
-      {activeSection === "graph" ? (
-        <div className="library-preview library-preview--full-canvas" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-          <LibraryGraphView />
-        </div>
-      ) : activeSection === "projects" ? (
+      {/* Preview pane — dominant left content area; projects owns the full canvas */}
+      {activeSection === "projects" ? (
         <div className="library-preview library-preview--full-canvas" style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           <ComuxView
             view="projects"
@@ -293,8 +288,8 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} docNav={docNav} />
       )}
 
-      {/* Collapsible list panel — hidden when graph, skills, or projects are active (these sections own the full canvas) */}
-      {activeSection !== "graph" && activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas && <div
+      {/* Collapsible list panel — hidden when skills or projects are active (these sections own the full canvas) */}
+      {activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas && <div
         className={[
           "library-list-panel",
           "transition-[width] duration-200 ease-out",

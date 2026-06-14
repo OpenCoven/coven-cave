@@ -52,6 +52,14 @@ assert.match(source, /saveWorkflowLayout/, "Workflows view persists dragged posi
 assert.match(client, /\/api\/workflows\/layout/, "Workflow client should call the layout route");
 assert.match(client, /\/api\/roles\/workflows/, "Workflow client should call the role-attach route");
 assert.match(client, /cave:\/\/workflows\//, "Scheduled reminders should deep-link back to the workflow");
+assert.match(source, /layoutDirection,\s*setLayoutDirection/, "Workflows view should track the active graph layout direction");
+assert.match(source, /const resetWorkflowView = useCallback/, "Workflows view should expose a reset-view handler");
+assert.match(source, /const switchWorkflowLayout = useCallback/, "Workflows view should expose a layout switch handler");
+assert.match(source, /defaultWorkflowPositions\(draft, layoutDirection\)/, "Reset should recompute canonical positions for the current layout");
+assert.match(source, /saveWorkflowLayout\(draft\.id, positions\)/, "Reset and layout switches should persist the canonical positions");
+assert.match(source, /layoutDirection=\{layoutDirection\}/, "Workflows view should pass the layout direction to the studio");
+assert.match(source, /onResetView=\{resetWorkflowView\}/, "Workflows view should pass reset view into the studio");
+assert.match(source, /onSwitchLayout=\{switchWorkflowLayout\}/, "Workflows view should pass layout switching into the studio");
 
 // Read-only templates + fork-on-save.
 assert.match(client, /export function isPersonalWorkflow/, "Workflow client should expose the personal-origin predicate");

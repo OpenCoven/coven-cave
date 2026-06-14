@@ -25,6 +25,7 @@ import {
   workflowToGraph,
   type WorkflowGraphNode,
   type WorkflowGraphNodeData,
+  type WorkflowLayoutDirection,
   type WorkflowNodePositions,
 } from "@/lib/workflow-graph";
 import {
@@ -44,9 +45,13 @@ type WorkflowCanvasProps = {
   action: WorkflowStudioActionState | null;
   selectedNode: WorkflowGraphNode | null;
   savedPositions: WorkflowNodePositions | null;
+  layoutDirection: WorkflowLayoutDirection;
+  viewResetKey: number;
   playback: WorkflowPlaybackState | null;
   onSelectNode: (node: WorkflowGraphNode) => void;
   onClearNode: () => void;
+  onResetView: () => void;
+  onSwitchLayout: () => void;
   onConnect: (source: string, target: string) => void;
   onDisconnect: (source: string, target: string) => void;
   onRemoveStep: (id: string) => void;
@@ -62,13 +67,14 @@ const PHASE_LABEL: Record<NonNullable<WorkflowGraphNodeData["phase"]>, string> =
 
 export function WorkflowStepNode({ data, selected }: NodeProps<WorkflowFlowNode>) {
   const phaseClass = data.phase ? ` workflow-node-phase-${data.phase}` : "";
+  const layoutDirection = data.layoutDirection === "vertical" ? "vertical" : "horizontal";
   return (
     <div className={`workflow-node workflow-node-${data.tone}${phaseClass}${selected ? " is-selected" : ""}`}>
       {/* Connection points React Flow attaches edges to. The layered layout runs
           left→right by dependency depth, so dependencies enter on the left
           (target) and continue on the right (source). Without these handles
           every edge fails with error #008 and no graph connections render. */}
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={layoutDirection === "vertical" ? Position.Top : Position.Left} />
       <div className="workflow-node-kind">{data.kind}</div>
       <div className="workflow-node-label">{data.label}</div>
       {data.uses && <div className="workflow-node-uses">{data.uses}</div>}
@@ -84,7 +90,7 @@ export function WorkflowStepNode({ data, selected }: NodeProps<WorkflowFlowNode>
           <div className={`workflow-node-status workflow-node-status-${data.status}`}>{data.status}</div>
         )
       )}
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={layoutDirection === "vertical" ? Position.Bottom : Position.Right} />
     </div>
   );
 }
@@ -113,9 +119,13 @@ export function WorkflowCanvas({
   action,
   selectedNode,
   savedPositions,
+  layoutDirection,
+  viewResetKey,
   playback,
   onSelectNode,
   onClearNode,
+  onResetView,
+  onSwitchLayout,
   onConnect,
   onDisconnect,
   onRemoveStep,
@@ -128,8 +138,8 @@ export function WorkflowCanvas({
   const playbackActiveId = useMemo(() => (playback ? activeStepId(playback) : null), [playback]);
   const graph = useMemo(() => {
     if (!workflow) return { nodes: [] as WorkflowGraphNode[], edges: [] };
-    return workflowToGraph(workflow, dryRunFromAction(action), savedPositions);
-  }, [action, savedPositions, workflow]);
+    return workflowToGraph(workflow, dryRunFromAction(action), savedPositions, layoutDirection);
+  }, [action, layoutDirection, savedPositions, workflow]);
 
   // Nodes live in local state so drags are interactive — a fully-controlled
   // graph snaps nodes back on the next render. The graph model stays the
@@ -137,12 +147,13 @@ export function WorkflowCanvas({
   // workflow is mounted.
   const [nodes, setNodes] = useState<WorkflowFlowNode[]>([]);
   const nodesRef = useRef<WorkflowFlowNode[]>([]);
-  const mountedWorkflowId = useRef<string | null>(null);
+  const mountedGraphKey = useRef<string | null>(null);
 
   useEffect(() => {
     setNodes((current) => {
-      const sameWorkflow = mountedWorkflowId.current === (workflow?.id ?? null);
-      mountedWorkflowId.current = workflow?.id ?? null;
+      const graphKey = `${workflow?.id ?? "none"}:${layoutDirection}:${viewResetKey}`;
+      const sameWorkflow = mountedGraphKey.current === graphKey;
+      mountedGraphKey.current = graphKey;
       const livePositions = new Map(current.map((node) => [node.id, node.position]));
       const next = graph.nodes.map(
         (node): WorkflowFlowNode => ({
@@ -152,13 +163,13 @@ export function WorkflowCanvas({
           position: (sameWorkflow ? livePositions.get(node.id) : undefined) ?? node.position,
           initialWidth: WORKFLOW_NODE_WIDTH,
           initialHeight: WORKFLOW_NODE_HEIGHT,
-          data: { ...node.data },
+          data: { ...node.data, layoutDirection },
         }),
       );
       nodesRef.current = next;
       return next;
     });
-  }, [graph, workflow?.id]);
+  }, [graph, layoutDirection, viewResetKey, workflow?.id]);
 
   const renderNodes = useMemo(
     () =>
@@ -252,19 +263,42 @@ export function WorkflowCanvas({
     );
   }
 
+  const flowKey = `${workflow.id}:${layoutDirection}:${viewResetKey}`;
+
   return (
     <section className="workflow-canvas" aria-label={`${workflow.name ?? workflow.id} graph`}>
-      <button
-        type="button"
-        className={`workflow-minimap-toggle${showMiniMap ? " is-active" : ""}`}
-        aria-label={showMiniMap ? "Hide workflow minimap" : "Show workflow minimap"}
-        aria-pressed={showMiniMap}
-        title={showMiniMap ? "Hide workflow minimap" : "Show workflow minimap"}
-        onClick={() => setShowMiniMap((visible) => !visible)}
-      >
-        <Icon name="ph:graph" width={14} />
-      </button>
+      <div className="workflow-canvas-toolbar" aria-label="Workflow canvas actions">
+        <button
+          type="button"
+          className="workflow-canvas-tool"
+          aria-label="Reset workflow view"
+          title="Reset workflow view"
+          onClick={onResetView}
+        >
+          <Icon name="ph:arrow-counter-clockwise" width={14} />
+        </button>
+        <button
+          type="button"
+          className="workflow-canvas-tool"
+          aria-label={layoutDirection === "horizontal" ? "Switch workflow layout to vertical" : "Switch workflow layout to horizontal"}
+          title={layoutDirection === "horizontal" ? "Switch layout to vertical" : "Switch layout to horizontal"}
+          onClick={onSwitchLayout}
+        >
+          <Icon name={layoutDirection === "horizontal" ? "ph:rows" : "ph:columns"} width={14} />
+        </button>
+        <button
+          type="button"
+          className={`workflow-canvas-tool workflow-minimap-toggle${showMiniMap ? " is-active" : ""}`}
+          aria-label={showMiniMap ? "Hide workflow minimap" : "Show workflow minimap"}
+          aria-pressed={showMiniMap}
+          title={showMiniMap ? "Hide workflow minimap" : "Show workflow minimap"}
+          onClick={() => setShowMiniMap((visible) => !visible)}
+        >
+          <Icon name="ph:graph" width={14} />
+        </button>
+      </div>
       <ReactFlow
+        key={flowKey}
         nodes={renderNodes}
         edges={edges}
         nodeTypes={nodeTypes}

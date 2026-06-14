@@ -4,7 +4,7 @@ import "@/styles/workflows.css";
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
-import type { WorkflowGraphNode, WorkflowNodePositions } from "@/lib/workflow-graph";
+import type { WorkflowGraphNode, WorkflowLayoutDirection, WorkflowNodePositions } from "@/lib/workflow-graph";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
   WorkflowDryRunPlan,
@@ -53,9 +53,13 @@ export type WorkflowStudioProps = {
   engineUnavailable: boolean;
   notice: string | null;
   savedPositions: WorkflowNodePositions | null;
+  layoutDirection: WorkflowLayoutDirection;
+  viewResetKey: number;
   playback: WorkflowPlaybackState | null;
   onStopPlayback: () => void;
   onReplayRun: (run: WorkflowRunRecord) => void;
+  onResetView: () => void;
+  onSwitchLayout: () => void;
   onRefresh: () => void;
   onSelectWorkflow: (workflow: WorkflowSummary) => void;
   onSelectNode: (node: WorkflowGraphNode) => void;
@@ -137,9 +141,13 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           action={action}
           selectedNode={selectedNode}
           savedPositions={props.savedPositions}
+          layoutDirection={props.layoutDirection}
+          viewResetKey={props.viewResetKey}
           playback={props.playback}
           onSelectNode={props.onSelectNode}
           onClearNode={props.onClearNode}
+          onResetView={props.onResetView}
+          onSwitchLayout={props.onSwitchLayout}
           onConnect={props.onConnect}
           onDisconnect={props.onDisconnect}
           onRemoveStep={props.onRemoveStep}

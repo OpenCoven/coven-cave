@@ -1,3 +1,191 @@
 <!doctype html>
-<html><head><title>CovenCave</title></head>
-<body>Loading CovenCave…</body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CovenCave</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #070707;
+        color: #f7f7f2;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+        background:
+          radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.12), transparent 30%),
+          linear-gradient(160deg, #101010 0%, #070707 52%, #18120d 100%);
+      }
+
+      main {
+        width: min(100%, 420px);
+        display: grid;
+        gap: 18px;
+      }
+
+      .mark {
+        width: 48px;
+        height: 48px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        display: grid;
+        place-items: center;
+        color: #ffffff;
+        font-size: 28px;
+        line-height: 1;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.1;
+        font-weight: 720;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: rgba(247, 247, 242, 0.72);
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
+      form {
+        display: grid;
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        font-size: 13px;
+        color: rgba(247, 247, 242, 0.74);
+      }
+
+      input {
+        width: 100%;
+        min-height: 48px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.32);
+        color: #ffffff;
+        padding: 0 13px;
+        font: inherit;
+      }
+
+      input:focus {
+        outline: 2px solid rgba(255, 255, 255, 0.7);
+        outline-offset: 2px;
+      }
+
+      button {
+        min-height: 48px;
+        border: 0;
+        border-radius: 8px;
+        background: #f7f7f2;
+        color: #090909;
+        font: inherit;
+        font-weight: 700;
+      }
+
+      .secondary {
+        background: transparent;
+        color: #f7f7f2;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .actions {
+        display: grid;
+        gap: 10px;
+      }
+
+      .error {
+        min-height: 20px;
+        color: #ffb4a8;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">C</div>
+      <h1>Connect to CovenCave</h1>
+      <p>
+        Paste your private CovenCave mobile invite or Tailscale URL to open the
+        iOS app against your running OpenCoven workspace.
+      </p>
+      <form id="connect-form">
+        <label>
+          Server URL
+          <input
+            id="server-url"
+            name="server-url"
+            type="url"
+            inputmode="url"
+            autocomplete="url"
+            placeholder="https://your-cave.example.ts.net"
+            required
+          />
+        </label>
+        <div class="actions">
+          <button type="submit">Connect</button>
+          <button class="secondary" id="clear-url" type="button">Clear saved URL</button>
+        </div>
+        <div class="error" id="error" role="status" aria-live="polite"></div>
+      </form>
+    </main>
+
+    <script>
+      (() => {
+        const storageKey = "coven-cave:mobile-server-url";
+        const form = document.getElementById("connect-form");
+        const input = document.getElementById("server-url");
+        const clear = document.getElementById("clear-url");
+        const error = document.getElementById("error");
+
+        const saved = window.localStorage.getItem(storageKey);
+        if (saved) input.value = saved;
+
+        function normalize(raw) {
+          const url = new URL(raw.trim());
+          const localHttp =
+            url.protocol === "http:" &&
+            (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+          if (url.protocol !== "https:" && !localHttp) {
+            throw new Error("Use an https URL, or localhost for local testing.");
+          }
+          return url.toString();
+        }
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          error.textContent = "";
+          try {
+            const next = normalize(input.value);
+            window.localStorage.setItem(storageKey, next);
+            window.location.assign(next);
+          } catch (err) {
+            error.textContent = err instanceof Error ? err.message : "Enter a valid CovenCave URL.";
+          }
+        });
+
+        clear.addEventListener("click", () => {
+          window.localStorage.removeItem(storageKey);
+          input.value = "";
+          error.textContent = "Saved URL cleared.";
+          input.focus();
+        });
+      })();
+    </script>
+  </body>
+</html>

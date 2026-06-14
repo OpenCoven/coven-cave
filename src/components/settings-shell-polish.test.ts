@@ -7,6 +7,24 @@ const source = readFileSync(
   "utf8",
 );
 
+assert.match(
+  source,
+  /const \[section, setSection\] = useState<Section>\("general"\)/,
+  "SettingsShell should render the same initial section on server and client",
+);
+
+assert.doesNotMatch(
+  source,
+  /useState<Section>\(initialSection\)/,
+  "SettingsShell must not read window.location.hash during the first client render",
+);
+
+assert.match(
+  source,
+  /useEffect\(\(\) => \{[\s\S]*window\.location\.hash\.replace\("#", ""\) as Section[\s\S]*setSection\(hash\)[\s\S]*setPickerView\(false\)/,
+  "SettingsShell should apply hash deep-links after hydration",
+);
+
 // Keyboard hint footer at the bottom of the shell.
 assert.match(
   source,
