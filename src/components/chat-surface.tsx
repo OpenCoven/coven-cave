@@ -286,7 +286,7 @@ export function ChatSurface({
           {/* Tabs flush left */}
           <div role="tablist" className="flex items-end gap-1">
             {(["conversation", "memory", "projects"] as const).map((s) => {
-              const labels: Record<string, string> = {
+              const labels: Record<AgentsScope, string> = {
                 conversation: "Chats",
                 memory: "Memory",
                 projects: "Projects",

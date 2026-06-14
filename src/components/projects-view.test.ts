@@ -31,7 +31,7 @@ assert.doesNotMatch(workspaceMode, /\| "projects"/, "projects is no longer a top
 assert.doesNotMatch(workspace, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "workspace no longer renders ProjectsView directly");
 assert.doesNotMatch(workspace, /mode === "projects" \?/, "workspace has no projects render branch");
 assert.match(chatTabEvents, /CHAT_OPEN_PROJECTS_EVENT/, "reroute event exists");
-assert.match(workspace, /case "\/projects":[\s\S]*?CHAT_OPEN_PROJECTS_EVENT/, "/projects reroutes via the chat-open-projects event");
+assert.match(workspace, /case "\/projects":[\s\S]*?setMode\("chat"\)[\s\S]*?CHAT_OPEN_PROJECTS_EVENT/, "/projects reroutes: setMode(chat) + chat-open-projects event");
 
 assert.match(sidebar, /\{ id: "projects", label: "Projects", iconName: "ph:folders-bold", group: "tools"/, "Sidebar keeps the Projects Tools entry");
 assert.match(sidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Sidebar Projects entry reroutes into the chat tab");
