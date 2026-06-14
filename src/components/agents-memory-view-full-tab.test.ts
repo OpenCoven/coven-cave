@@ -18,7 +18,7 @@ assert.doesNotMatch(
   "Old four-card stats grid must be removed",
 );
 
-for (const label of ["Agent memories", "Coven origin", "External harnesses", "Runtime memory"]) {
+for (const label of ["Familiar memories", "Coven origin", "External harnesses", "Runtime memory"]) {
   assert.ok(source.includes(label), `Inline stats row must keep label: ${label}`);
 }
 

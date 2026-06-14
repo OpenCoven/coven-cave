@@ -45,7 +45,7 @@ type ChatFilter = "all" | "active" | "tasks" | "pinned";
 // chat plane's git mode for agentic coding.
 const ADVANCED_OPS: Array<{ event: string; label: string; title: string; icon: IconName }> = [
   { event: "cave:changes-open", label: "Git", title: "Git changes for this session", icon: "ph:git-diff" },
-  { event: "cave:inspector-open", label: "Inspect", title: "Open the agent inspector", icon: "ph:brain-bold" },
+  { event: "cave:inspector-open", label: "Inspect", title: "Open the familiar inspector", icon: "ph:brain-bold" },
   { event: "cave:debug-open", label: "Debug", title: "Open the session debug panel", icon: "ph:bug-bold" },
 ];
 

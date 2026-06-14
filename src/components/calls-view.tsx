@@ -253,7 +253,7 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search agent, request, status..."
+                placeholder="Search familiar, request, status..."
                 className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-8 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
               />
             </div>
@@ -288,7 +288,7 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
             <Metric label="Inferred" value={metrics.inferred} tone="text-[var(--color-warning)]" />
             <Metric label="Running" value={metrics.running} tone="text-[var(--color-success)]" />
             <Metric label="Failed" value={metrics.failed} tone="text-[var(--color-danger)]" />
-            <Metric label="Agents" value={metrics.agents} tone="text-[var(--text-primary)]" />
+            <Metric label="Familiars" value={metrics.agents} tone="text-[var(--text-primary)]" />
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -427,7 +427,7 @@ function TraceInspector({
   if (selectedNode) {
     return (
       <aside className="min-h-0 overflow-y-auto rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-4">
-        <InspectorTitle eyebrow="Selected agent" title={familiarName(familiars, selectedNode.id)} />
+        <InspectorTitle eyebrow="Selected familiar" title={familiarName(familiars, selectedNode.id)} />
         <div className="mt-4 grid grid-cols-2 gap-2">
           <Metric label="Sent" value={selectedNode.sentCount} tone="text-[var(--text-primary)]" />
           <Metric label="Received" value={selectedNode.receivedCount} tone="text-[var(--text-primary)]" />

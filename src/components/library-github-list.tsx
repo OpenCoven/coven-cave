@@ -316,7 +316,7 @@ function AttachTaskModal({
   );
 }
 
-// ── Handoff to Agent modal ─────────────────────────────────────────────────
+// ── Handoff to Familiar modal ─────────────────────────────────────────────────
 
 // Scripted launch templates keyed by GitHub item kind
 const LAUNCH_TEMPLATES: Record<GitHubItemKind, string> = {
@@ -443,12 +443,12 @@ function HandoffModal({
         className="gh-modal gh-modal--wide"
         role="dialog"
         aria-modal="true"
-        aria-label="Handoff to Agent"
+        aria-label="Handoff to Familiar"
         tabIndex={-1}
       >
         <div className="gh-modal-header">
           <Icon name="ph:share-network" width={14} />
-          <span>Handoff to Agent</span>
+          <span>Handoff to Familiar</span>
           <button type="button" className="gh-modal-close" onClick={onClose}>
             <Icon name="ph:x" width={13} />
           </button>
@@ -476,7 +476,7 @@ function HandoffModal({
             </div>
 
             {/* Agent picker */}
-            <label className="gh-modal-label">Agent
+            <label className="gh-modal-label">Familiar
               <div className="gh-modal-agent-row">
                 <select
                   className="gh-modal-select"
@@ -820,8 +820,8 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                                 type="button"
                                 className="gh-row-action-btn"
                                 onClick={() => setHandoffItem(item)}
-                                aria-label={`Handoff ${item.title} to agent`}
-                                title="Handoff to agent"
+                                aria-label={`Handoff ${item.title} to familiar`}
+                                title="Handoff to familiar"
                               >
                                 <Icon name="ph:share-network" width={12} />
                               </button>

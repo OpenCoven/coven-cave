@@ -122,7 +122,7 @@ const grows = [
 // type → Agent memories first, then Files; counts correct
 {
   const g = groupMemoryRows(grows, "type");
-  assert.deepEqual(g.map((x) => x.label), ["Agent memories", "Files"]);
+  assert.deepEqual(g.map((x) => x.label), ["Familiar memories", "Files"]);
   assert.equal(g[0].rows.length, 1);
   assert.equal(g[1].rows.length, 2);
 }

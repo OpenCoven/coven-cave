@@ -125,11 +125,11 @@ function FamiliarScopeSelect({
 }) {
   return (
     <label className="sidebar-familiar-filter">
-      <span className="sidebar-familiar-filter__label">Agent</span>
+      <span className="sidebar-familiar-filter__label">Familiar</span>
       <span className="sidebar-familiar-filter__control">
         <Icon name="ph:sparkle" width={14} className="sidebar-familiar-filter__icon" aria-hidden />
         <select
-          aria-label="Filter workspace by agent"
+          aria-label="Filter workspace by familiar"
           value={activeFamiliarId ?? ""}
           onChange={(e) => onFamiliarScopeChange(e.currentTarget.value || null)}
           className="sidebar-familiar-filter__select"

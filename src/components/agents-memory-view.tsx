@@ -334,10 +334,10 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             <div>
               <div className="flex items-center gap-2">
                 <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
-                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Agent Memory</h2>
+                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
               </div>
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                Focused recall for one agent at a time, with local memory files kept in the list surface.
+                Focused recall for one familiar at a time, with local memory files kept in the list surface.
               </p>
             </div>
             <div className="flex items-center gap-2.5">
@@ -359,7 +359,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
             data-testid="memory-stats-inline"
             className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-[var(--text-secondary)]"
           >
-            <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Agent memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
+            <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
             <span aria-hidden className="text-[var(--border-strong)]">·</span>
             <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Files</span>
             <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
@@ -458,7 +458,7 @@ export function AgentsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, 
               No memories yet for {selectedFamiliar?.display_name ?? "this familiar"}
             </div>
             <p className="mt-1 max-w-[280px] text-[11px] leading-5 text-[var(--text-muted)]">
-              Familiar memories are saved during chats. Memory files appear when the agent's harness writes to disk.
+              Familiar memories are saved during chats. Memory files appear when the familiar's harness writes to disk.
             </p>
           </div>
         ) : (

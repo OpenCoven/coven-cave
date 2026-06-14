@@ -54,7 +54,7 @@ const WORKSPACE_NAV: Array<{ id: string; label: string; icon: string; view?: Vie
   { id: "issues-ws", label: "Issues", icon: "ph:kanban" },
   { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "autopilot", label: "Autopilot", icon: "ph:lightning", view: "autopilot" },
-  { id: "agents", label: "Agents", icon: "ph:robot" },
+  { id: "agents", label: "Familiars", icon: "ph:robot" },
   { id: "squads", label: "Squads", icon: "ph:users-three" },
   { id: "usage", label: "Usage", icon: "ph:chart-bar" },
 ];
@@ -153,7 +153,7 @@ function ViewSwitcher({ view, onView }: { view: View; onView: (v: View) => void 
   const opts: Array<{ id: View; label: string }> = [
     { id: "autopilot", label: "Autopilot" },
     { id: "settings", label: "Settings" },
-    { id: "agent", label: "Create Agent" },
+    { id: "agent", label: "Create Familiar" },
   ];
   return (
     <div className="multica-view-switcher">
@@ -280,8 +280,8 @@ function CreateAgentModal({ onClose }: { onClose: () => void }) {
         <div className="multica-modal-header">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
             <div>
-              <div className="multica-modal-title">Create Agent</div>
-              <div className="multica-modal-description">Create a new AI agent for your workspace.</div>
+              <div className="multica-modal-title">Create Familiar</div>
+              <div className="multica-modal-description">Create a new AI familiar for your workspace.</div>
             </div>
             <button className="multica-btn multica-btn--ghost" onClick={onClose} aria-label="Close">
               <Icon name="ph:x" width={14} />
@@ -308,11 +308,11 @@ function CreateAgentModal({ onClose }: { onClose: () => void }) {
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
               <div className="multica-field">
                 <label className="multica-field-label">Name</label>
-                <input className="multica-field-input" placeholder="e.g. Deep Research Agent" />
+                <input className="multica-field-input" placeholder="e.g. Deep Research Familiar" />
               </div>
               <div className="multica-field">
                 <label className="multica-field-label">Description</label>
-                <input className="multica-field-input" placeholder="What does this agent do?" />
+                <input className="multica-field-input" placeholder="What does this familiar do?" />
                 <div style={{ alignSelf: "flex-end", fontSize: 11, color: "var(--muted-foreground)" }}>0 / 255</div>
               </div>
             </div>

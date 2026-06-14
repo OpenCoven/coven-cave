@@ -565,7 +565,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     {" · "}
                   </>
                 ) : null}
-                Agent runtime{" "}
+                Familiar runtime{" "}
                 <span className="font-mono">{panelRuntime}</span>
               </p>
             </div>

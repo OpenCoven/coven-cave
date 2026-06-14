@@ -116,8 +116,8 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleAgent}
-            aria-label="Open agent panel (⌘J)"
-            title="Open agent panel"
+            aria-label="Open familiar panel (⌘J)"
+            title="Open familiar panel"
           >
             <Icon name="ph:cat" width={18} />
           </button>

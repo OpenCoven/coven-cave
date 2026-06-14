@@ -523,8 +523,8 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect, memoryCoun
   ], [sceneModel.edges, sceneModel.nodes]);
 
   const selectedSummary = useMemo(() => {
-    if (!selection) return `${graph.nodes.length} agents, ${graph.edges.length} routes, ${graph.traces.length} traces.`;
-    if (selection.kind === "node") return `Selected agent ${familiarName(familiars, selection.id)}.`;
+    if (!selection) return `${graph.nodes.length} familiars, ${graph.edges.length} routes, ${graph.traces.length} traces.`;
+    if (selection.kind === "node") return `Selected familiar ${familiarName(familiars, selection.id)}.`;
     if (selection.kind === "edge") {
       const edge = graph.edges.find((candidate) => edgeKey(candidate) === selection.key);
       return edge ? `Selected route ${familiarName(familiars, edge.caller)} to ${familiarName(familiars, edge.callee)}, ${edge.count} traces.` : "Selected route.";
@@ -576,7 +576,7 @@ export function TraceGraph3D({ graph, familiars, selection, onSelect, memoryCoun
         <div className="rounded-lg border border-white/10 bg-black/45 px-3 py-2 shadow-2xl backdrop-blur">
           <div className="text-[10px] font-semibold uppercase tracking-widest text-white/55">3D trace graph</div>
           <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-white/70">
-            <span>{graph.nodes.length} agents</span>
+            <span>{graph.nodes.length} familiars</span>
             <span>{graph.edges.length} routes</span>
             <span>{graph.traces.length} traces</span>
           </div>

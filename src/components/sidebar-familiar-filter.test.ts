@@ -32,7 +32,7 @@ assert.match(
 
 assert.match(
   sidebar,
-  /<span className="sidebar-familiar-filter__label">Agent<\/span>[\s\S]*aria-label="Filter workspace by agent"[\s\S]*<option value="">Familiars<\/option>/,
+  /<span className="sidebar-familiar-filter__label">Familiar<\/span>[\s\S]*aria-label="Filter workspace by familiar"[\s\S]*<option value="">Familiars<\/option>/,
   "Familiar selector should expose Familiars as the generic no-filter agent option",
 );
 

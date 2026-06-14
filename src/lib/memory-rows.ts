@@ -104,7 +104,7 @@ export function buildMemoryRows(args: BuildArgs): MemoryRow[] {
 
 export type MemoryRowGroup = { key: string; label: string; rows: MemoryRow[] };
 
-const TYPE_LABEL: Record<MemoryRowKind, string> = { agent: "Agent memories", file: "Files" };
+const TYPE_LABEL: Record<MemoryRowKind, string> = { agent: "Familiar memories", file: "Files" };
 
 function rowDateBucket(iso: string, now: number): { key: string; label: string } {
   const t = Date.parse(iso);

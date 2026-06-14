@@ -114,7 +114,7 @@ export function MemoryReaderPane({
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
-            {row.kind === "agent" ? "Agent memory" : "File"}
+            {row.kind === "agent" ? "Familiar memory" : "File"}
           </span>
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{row.sourceLabel}</span>
           {sizeLabel ? (

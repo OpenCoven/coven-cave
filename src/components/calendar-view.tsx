@@ -873,7 +873,7 @@ function openTargetLabel(item: InboxItem): string | null {
 
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   reminder: "Reminder",
-  agent: "Agent",
+  agent: "Familiar",
   "response-needed": "Response needed",
 };
 
