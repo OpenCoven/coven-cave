@@ -171,6 +171,22 @@ assert.equal(
   true,
   "normal same-origin browser dev mode remains allowed",
 );
+// Tailscale Serve over loopback: Serve terminates TLS and proxies to
+// 127.0.0.1, forwarding `Host: 127.0.0.1`, so the https://<machine>.ts.net
+// identity survives only in the Origin header (which fails the same-origin
+// gate). proxy() sets the trusted flag for sidecar-token-bearing requests
+// (CSRF-immune custom header), which must then pass; an untrusted cross-origin
+// request with the same loopback Host must still be rejected.
+assert.equal(
+  isAllowedRequestSource("https://mac.example.ts.net", "http://127.0.0.1:3000", true, "127.0.0.1:3000"),
+  true,
+  "token-authenticated Tailscale Serve POST (loopback-forwarded Host) must pass the origin gate",
+);
+assert.equal(
+  isAllowedRequestSource("https://mac.example.ts.net", "http://127.0.0.1:3000", false, "127.0.0.1:3000"),
+  false,
+  "untrusted cross-origin Tailscale Serve request (loopback-forwarded Host) must still be blocked",
+);
 
 // ─── shouldRequireMobileAccessCredential ──────────────────────────────────
 assert.equal(
