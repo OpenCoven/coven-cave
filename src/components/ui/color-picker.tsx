@@ -41,6 +41,14 @@ function SwatchButton({
   );
 }
 
+/**
+ * In-app color picker (react-colorful spectrum + hex field + swatch rows).
+ *
+ * `value` MUST be a `#rrggbb` hex string — non-hex inputs (oklch()/rgb()/named,
+ * or `#rrggbbaa`) are clamped to `#000000`/stripped. Callers must resolve any
+ * non-hex color to hex before passing it in (the theme editor does this via its
+ * `resolveToHex` helper). `onChange` emits a 6-char `#rrggbb`.
+ */
 export function ColorPicker({
   value,
   onChange,
@@ -61,7 +69,6 @@ export function ColorPicker({
         <HexColorInput
           color={pickerValue}
           onChange={onChange}
-          prefixed={false}
           aria-label="Hex color value"
           className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[11px] uppercase text-[var(--text-secondary)] outline-none"
         />
