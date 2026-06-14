@@ -65,6 +65,30 @@
         gap: 12px;
       }
 
+      .saved {
+        display: none;
+        gap: 6px;
+        padding: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .saved[data-visible="true"] {
+        display: grid;
+      }
+
+      .saved strong {
+        font-size: 13px;
+        font-weight: 740;
+      }
+
+      .saved span {
+        color: rgba(247, 247, 242, 0.66);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+
       label {
         display: grid;
         gap: 8px;
@@ -104,9 +128,32 @@
         border: 1px solid rgba(255, 255, 255, 0.2);
       }
 
+      .link-button {
+        min-height: auto;
+        justify-self: start;
+        padding: 0;
+        background: transparent;
+        color: #ffb4a8;
+        border: 0;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
       .actions {
         display: grid;
         gap: 10px;
+      }
+
+      details {
+        display: grid;
+        gap: 8px;
+        color: rgba(247, 247, 242, 0.72);
+        font-size: 13px;
+      }
+
+      summary {
+        min-height: 32px;
+        cursor: pointer;
       }
 
       .error {
@@ -121,25 +168,35 @@
       <div class="mark" aria-hidden="true">C</div>
       <h1>Connect to CovenCave</h1>
       <p>
-        Paste your private CovenCave mobile invite or Tailscale URL to open the
-        iOS app against your running OpenCoven workspace.
+        On your Mac, open CovenCave, click the phone icon, then scan the QR code
+        or paste the invite link here.
       </p>
+      <section class="saved" id="saved-card" aria-live="polite">
+        <strong>Saved connection</strong>
+        <span id="saved-host"></span>
+      </section>
       <form id="connect-form">
         <label>
-          Server URL
+          Invite link or Tailscale URL
           <input
             id="server-url"
             name="server-url"
             type="url"
             inputmode="url"
             autocomplete="url"
-            placeholder="https://your-cave.example.ts.net"
+            placeholder="https://coven-cave.tailnet.ts.net/?coven_access_token=..."
             required
           />
         </label>
+        <details>
+          <summary>Enter Tailscale URL manually</summary>
+          Use the plain .ts.net URL only after this app has already connected once
+          or if CovenCave is running without an invite gate.
+        </details>
         <div class="actions">
           <button type="submit">Connect</button>
-          <button class="secondary" id="clear-url" type="button">Clear saved URL</button>
+          <button class="secondary" id="paste-url" type="button">Paste invite link</button>
+          <button class="link-button" id="clear-url" type="button" hidden>Clear saved URL</button>
         </div>
         <div class="error" id="error" role="status" aria-live="polite"></div>
       </form>
@@ -148,34 +205,102 @@
     <script>
       (() => {
         const storageKey = "coven-cave:mobile-server-url";
+        const appConnectPrefix = "opencoven://connect";
         const form = document.getElementById("connect-form");
         const input = document.getElementById("server-url");
+        const paste = document.getElementById("paste-url");
         const clear = document.getElementById("clear-url");
         const error = document.getElementById("error");
+        const savedCard = document.getElementById("saved-card");
+        const savedHost = document.getElementById("saved-host");
 
-        const saved = window.localStorage.getItem(storageKey);
-        if (saved) input.value = saved;
+        function hostLabel(value) {
+          try {
+            const url = new URL(value);
+            return url.host || value;
+          } catch {
+            return value;
+          }
+        }
+
+        function renderSaved() {
+          const saved = window.localStorage.getItem(storageKey);
+          clear.hidden = !saved;
+          savedCard.dataset.visible = saved ? "true" : "false";
+          savedHost.textContent = saved ? hostLabel(saved) : "";
+          if (saved && !input.value) input.value = saved;
+        }
+
+        renderSaved();
+
+        function unwrapAppLink(url) {
+          const isAppConnect = url.toString().startsWith(appConnectPrefix);
+          if (!isAppConnect) return url;
+          const target = url.searchParams.get("url");
+          if (!target) throw new Error("That app link is missing its invite URL.");
+          return new URL(target);
+        }
 
         function normalize(raw) {
-          const url = new URL(raw.trim());
+          let url = new URL(raw.trim());
+          url = unwrapAppLink(url);
           const localHttp =
             url.protocol === "http:" &&
             (url.hostname === "localhost" || url.hostname === "127.0.0.1");
           if (url.protocol !== "https:" && !localHttp) {
-            throw new Error("Use an https URL, or localhost for local testing.");
+            throw new Error("Use an https invite link, or localhost for local testing.");
           }
           return url.toString();
+        }
+
+        function connect(raw) {
+          const next = normalize(raw);
+          window.localStorage.setItem(storageKey, next);
+          window.location.assign(next);
+        }
+
+        async function installDeepLinkHandler() {
+          const tauri = window.__TAURI__;
+          if (!tauri?.core?.invoke || !tauri?.event?.listen) return;
+
+          const open = (urls) => {
+            const raw = Array.isArray(urls) ? urls[0] : null;
+            if (!raw) return;
+            error.textContent = "";
+            try {
+              input.value = raw;
+              connect(raw);
+            } catch (err) {
+              error.textContent = err instanceof Error ? err.message : "Enter a valid CovenCave URL.";
+            }
+          };
+
+          try {
+            open(await tauri.core.invoke("plugin:deep-link|get_current"));
+            await tauri.event.listen("deep-link://new-url", (event) => open(event.payload));
+          } catch (err) {
+            error.textContent = err instanceof Error ? err.message : "Deep link setup failed.";
+          }
         }
 
         form.addEventListener("submit", (event) => {
           event.preventDefault();
           error.textContent = "";
           try {
-            const next = normalize(input.value);
-            window.localStorage.setItem(storageKey, next);
-            window.location.assign(next);
+            connect(input.value);
           } catch (err) {
             error.textContent = err instanceof Error ? err.message : "Enter a valid CovenCave URL.";
+          }
+        });
+
+        paste.addEventListener("click", async () => {
+          error.textContent = "";
+          try {
+            if (!navigator.clipboard?.readText) throw new Error("Clipboard paste is unavailable.");
+            input.value = await navigator.clipboard.readText();
+            input.focus();
+          } catch (err) {
+            error.textContent = err instanceof Error ? err.message : "Paste the invite link into the field.";
           }
         });
 
@@ -183,8 +308,11 @@
           window.localStorage.removeItem(storageKey);
           input.value = "";
           error.textContent = "Saved URL cleared.";
+          renderSaved();
           input.focus();
         });
+
+        void installDeepLinkHandler();
       })();
     </script>
   </body>

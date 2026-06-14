@@ -5,6 +5,9 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
+const tauriConfig = await readFile(new URL("../../src-tauri/tauri.conf.json", import.meta.url), "utf8");
+const tauriLib = await readFile(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
 
 assert.match(topBar, /onOpenMobileHandoff/, "TopBar should accept a mobile handoff opener");
 assert.match(topBar, /ph:phone/, "TopBar should render a recognizable phone icon");
@@ -14,8 +17,18 @@ assert.match(modal, /\/api\/mobile-handoff/, "Modal should call the mobile hando
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");
 assert.match(modal, /expiresAtIso/, "Modal should display the invite expiry");
 assert.match(modal, /navigator\.clipboard\.writeText/, "Modal should support copying the authenticated URL");
+assert.match(modal, /appUrl/, "Modal should expose the iOS app connect link");
+assert.match(modal, /Copy app link/, "Modal should make the app connect link copyable");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
 assert.match(css, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
 assert.match(css, /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/, "Phone handoff button should hide on mobile/tablet chrome");
+assert.match(mobileStub, /Invite link or Tailscale URL/, "Mobile connection screen should label the real accepted input");
+assert.match(mobileStub, /opencoven:\/\/connect/, "Mobile connection screen should accept app connect links");
+assert.match(mobileStub, /core\.invoke\("plugin:deep-link\|get_current"\)/, "Mobile connection screen should read launch-time native deep links");
+assert.match(mobileStub, /event\.listen\("deep-link:\/\/new-url"/, "Mobile connection screen should consume runtime native deep links");
+assert.match(mobileStub, /Paste invite link/, "Mobile connection screen should make paste the fallback path");
+assert.match(mobileStub, /id="clear-url"[\s\S]*hidden/, "Mobile connection screen should hide clear until a saved URL exists");
+assert.match(tauriConfig, /"deep-link"[\s\S]*"scheme": \["opencoven"\]/, "iOS app should register the app connect URL scheme");
+assert.match(tauriLib, /tauri_plugin_deep_link::init/, "iOS shell should install the deep-link plugin");
 
 console.log("mobile-handoff.test.ts OK");

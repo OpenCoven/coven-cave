@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import QRCode from "qrcode";
 import { stripAnsi } from "@/lib/ansi";
 import {
+  buildAppConnectUrl,
   createMobileInvite,
   findServeUrl,
   MOBILE_INVITE_TTL_MS,
@@ -132,7 +133,8 @@ async function mobileHandoff(req: Request) {
     sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
     ttlMs: MOBILE_INVITE_TTL_MS,
   });
-  const qrSvg = await QRCode.toString(invite.url, {
+  const appUrl = buildAppConnectUrl(invite.url);
+  const qrSvg = await QRCode.toString(appUrl, {
     type: "svg",
     margin: 1,
     width: 256,
@@ -144,6 +146,7 @@ async function mobileHandoff(req: Request) {
     backendUrl: backend,
     serveUrl,
     url: invite.url,
+    appUrl,
     expiresAt: invite.expiresAt,
     expiresAtIso: invite.expiresAtIso,
     qrSvg,

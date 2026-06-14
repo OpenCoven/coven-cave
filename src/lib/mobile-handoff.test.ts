@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  buildAppConnectUrl,
   buildInviteUrl,
   createMobileInvite,
   findServeUrl,
@@ -72,6 +73,16 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(
     url,
     "https://mb-black.taile46e90.ts.net/?coven_access_token=mobile-token&covenCaveToken=sidecar-token",
+  );
+}
+
+{
+  const appUrl = buildAppConnectUrl(
+    "https://mb-black.taile46e90.ts.net/?coven_access_token=mobile-token&covenCaveToken=sidecar-token",
+  );
+  assert.equal(
+    appUrl,
+    "opencoven://connect?url=https%3A%2F%2Fmb-black.taile46e90.ts.net%2F%3Fcoven_access_token%3Dmobile-token%26covenCaveToken%3Dsidecar-token",
   );
 }
 

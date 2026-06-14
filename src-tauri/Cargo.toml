@@ -35,6 +35,7 @@ once_cell = "1"
 parking_lot = "0.12"
 rand = "0.8"
 tauri-plugin-os = "2"
+tauri-plugin-deep-link = "2"
 
 # Desktop-only deps. `portable-pty` cannot build on iOS/Android (no
 # fork, no /dev/ptmx); the bottom-terminal surface gates its frontend

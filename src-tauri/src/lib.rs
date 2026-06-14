@@ -769,6 +769,7 @@ pub fn run() {
     #[cfg(mobile)]
     {
         builder
+            .plugin(tauri_plugin_deep_link::init())
             .invoke_handler(tauri::generate_handler![webview_probe_report])
             .setup(|app| {
                 if cfg!(debug_assertions) {
