@@ -31,7 +31,11 @@ export function MemoryReaderPane({
 }) {
   const [mode, setMode] = useState<"rendered" | "raw">("rendered");
   const [copied, setCopied] = useState(false);
-  const { text, error, loading } = useMemoryFile(row?.path ?? null);
+  // Agent (coven) memories carry a relative path the file endpoint rejects, and the
+  // entry already ships its full body as `excerpt` — render that directly. Only file
+  // entries (absolute path) are fetched from /api/memory/file.
+  const isAgent = row?.kind === "agent";
+  const { text, error, loading } = useMemoryFile(isAgent ? null : row?.path ?? null);
 
   if (!row) {
     return (
@@ -51,6 +55,11 @@ export function MemoryReaderPane({
       window.setTimeout(() => setCopied(false), 1500);
     });
   };
+
+  // For agent rows the body is the excerpt; for file rows it's the fetched text.
+  const content = isAgent ? row.excerpt ?? "" : text ?? "";
+  const isFileLoading = !isAgent && (loading || text === null);
+  const emptyMsg = isAgent ? "No excerpt available." : "Empty file.";
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30">
@@ -143,17 +152,17 @@ export function MemoryReaderPane({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {error ? (
+        {!isAgent && error ? (
           <p className="text-[12px] text-[var(--color-warning)]">{error}</p>
-        ) : loading || text === null ? (
+        ) : isFileLoading ? (
           <p className="text-[12px] text-[var(--text-muted)]">Loading memory…</p>
-        ) : text.trim() === "" ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Empty file.</p>
+        ) : content.trim() === "" ? (
+          <p className="text-[12px] text-[var(--text-muted)]">{emptyMsg}</p>
         ) : mode === "rendered" ? (
-          <MarkdownBlock text={text} />
+          <MarkdownBlock text={content} />
         ) : (
           <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-[var(--text-secondary)]">
-            {text}
+            {content}
           </pre>
         )}
       </div>
