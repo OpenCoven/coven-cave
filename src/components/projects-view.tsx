@@ -1,37 +1,120 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 
 import { Icon } from "@/lib/icon";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
+import type { SessionRow } from "@/lib/types";
+import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
+import {
+  applyManualOrder,
+  mergeVisibleOrder,
+  readSessionOrder,
+  writeSessionOrder,
+} from "@/lib/chat-session-order";
+import { applyProjectOverrides, setProjectOverride } from "@/lib/chat-project-overrides";
+import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+function chatDotClass(status: string): string {
+  if (status === "running") return "bg-[var(--accent-presence)]";
+  if (status === "failed" || status === "error") return "bg-[var(--color-danger)]";
+  return "bg-[var(--text-muted)]";
+}
+
+// A chat under a project card: click opens it (via the agents-open-session
+// event the chat surface already listens for); the handle drags it to reorder
+// within the project or onto another project card to move it.
+function ProjectChatRow({ session, onOpen }: { session: SessionRow; onOpen: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: session.id,
+  });
+  const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
+  const title = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  return (
+    <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/pc relative">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onOpen();
+        }}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+      >
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to reorder or move to another project"
+          aria-label={`Move ${title}`}
+          className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100"
+        >
+          <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
+        </button>
+        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${chatDotClass(session.status)}`} />
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+      </div>
+    </li>
+  );
+}
 
 type ProjectsViewProps = {
-  sessions?: Array<{ project_root?: string | null }>;
+  sessions?: SessionRow[];
   onNewChat?: (projectRoot: string) => void;
 };
 
+function openSessionById(sessionId: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId } }));
+}
+
 type ProjectRowProps = {
   project: CaveProject;
-  chatCount: number;
+  chats: SessionRow[];
   onRename: (id: string, name: string) => Promise<boolean>;
   onUpdateRoot: (id: string, root: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
   onNewChat?: (projectRoot: string) => void;
+  onOpenSession?: (sessionId: string) => void;
 };
 
 function ProjectRow({
   project,
-  chatCount,
+  chats,
   onRename,
   onUpdateRoot,
   onDelete,
   onNewChat,
+  onOpenSession,
 }: ProjectRowProps) {
+  const chatCount = chats.length;
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `pcard:${normalizeProjectRoot(project.root)}`,
+  });
   const [editingName, setEditingName] = useState(false);
   const [editingRoot, setEditingRoot] = useState(false);
   const [nameDraft, setNameDraft] = useState(project.name);
@@ -76,7 +159,14 @@ function ProjectRow({
   };
 
   return (
-    <article className="group rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 transition-colors hover:border-[var(--border-strong)]">
+    <article
+      ref={setDropRef}
+      data-drop-over={isOver ? "true" : undefined}
+      className={[
+        "group rounded-lg border bg-[var(--bg-raised)] px-4 py-3 transition-colors",
+        isOver ? "border-[var(--accent-presence)]" : "border-[var(--border-hairline)] hover:border-[var(--border-strong)]",
+      ].join(" ")}
+    >
       <div className="flex min-w-0 items-center gap-2">
         <Icon
           name="ph:folder-open-bold"
@@ -206,6 +296,20 @@ function ProjectRow({
           </button>
         )}
       </div>
+
+      {chats.length > 0 ? (
+        <SortableContext items={chats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+          <ul className="mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
+            {chats.map((session) => (
+              <ProjectChatRow key={session.id} session={session} onOpen={() => onOpenSession?.(session.id)} />
+            ))}
+          </ul>
+        </SortableContext>
+      ) : (
+        <p className="mt-2 border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-muted)]">
+          No chats yet — drag one here or start a new chat.
+        </p>
+      )}
     </article>
   );
 }
@@ -225,15 +329,70 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  const projectOverrides = useProjectOverrides();
+  const [order, setOrder] = useState<string[]>([]);
+  useEffect(() => {
+    setOrder(readSessionOrder());
+  }, []);
 
-  const chatCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const session of sessions) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Group sessions under their (override-aware) project root, applying the
+  // shared manual order, so each project card lists its chats in drag order.
+  const chatsByRoot = useMemo(() => {
+    const overridden = applyProjectOverrides(sessions, projectOverrides);
+    const byRoot = new Map<string, SessionRow[]>();
+    for (const session of overridden) {
       const root = normalizeProjectRoot(session.project_root);
-      counts.set(root, (counts.get(root) ?? 0) + 1);
+      const list = byRoot.get(root) ?? [];
+      list.push(session);
+      byRoot.set(root, list);
     }
-    return counts;
-  }, [sessions]);
+    for (const [root, list] of byRoot) byRoot.set(root, applyManualOrder(list, order));
+    return byRoot;
+  }, [sessions, projectOverrides, order]);
+
+  const rootBySession = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [root, list] of chatsByRoot) for (const s of list) map.set(s.id, root);
+    return map;
+  }, [chatsByRoot]);
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+    const sourceRoot = rootBySession.get(activeId);
+    if (sourceRoot === undefined) return;
+    const targetRoot = overId.startsWith("pcard:")
+      ? overId.slice("pcard:".length)
+      : rootBySession.get(overId);
+    if (targetRoot === undefined) return;
+
+    if (sourceRoot === targetRoot) {
+      if (overId.startsWith("pcard:")) return;
+      const ids = (chatsByRoot.get(targetRoot) ?? []).map((s) => s.id);
+      const from = ids.indexOf(activeId);
+      const to = ids.indexOf(overId);
+      if (from < 0 || to < 0) return;
+      const nextVisible = arrayMove(ids, from, to);
+      setOrder((prev) => {
+        const merged = mergeVisibleOrder(prev, nextVisible);
+        const live = new Set(sessions.map((s) => s.id));
+        const pruned = merged.filter((id) => live.has(id));
+        writeSessionOrder(pruned);
+        return pruned;
+      });
+      return;
+    }
+    // Different project → move (cave-local override; agent cwd untouched).
+    setProjectOverride(activeId, targetRoot);
+  }
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -373,17 +532,20 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
                 </button>
               </div>
             ) : null}
-            {projects.map((project) => (
-              <ProjectRow
-                key={project.id}
-                project={project}
-                chatCount={chatCounts.get(normalizeProjectRoot(project.root)) ?? 0}
-                onRename={renameProject}
-                onUpdateRoot={updateRoot}
-                onDelete={deleteProject}
-                onNewChat={onNewChat}
-              />
-            ))}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              {projects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
+                  onRename={renameProject}
+                  onUpdateRoot={updateRoot}
+                  onDelete={deleteProject}
+                  onNewChat={onNewChat}
+                  onOpenSession={openSessionById}
+                />
+              ))}
+            </DndContext>
           </div>
         )}
       </main>
