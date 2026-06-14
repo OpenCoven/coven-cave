@@ -106,11 +106,9 @@ export function WorkflowLibrary({
 
   return (
     <aside className="workflow-library" aria-label="Workflow library">
-      <div className="workflow-panel-heading">
-        <div>
-          <p className="workflow-eyebrow">Library</p>
-          <h2>Workflows</h2>
-        </div>
+      {/* The panel header ("Workflows" + collapse) supplies the title; this
+          row just carries the create/refresh actions, right-aligned. */}
+      <div className="workflow-library-toolbar">
         <div className="workflow-library-actions">
           <button
             type="button"

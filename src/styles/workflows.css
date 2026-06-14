@@ -190,6 +190,14 @@
   margin-bottom: 0;
 }
 
+/* Library actions toolbar — the panel header owns the title, so this is just
+   a right-aligned row of create/refresh buttons. */
+.workflow-library-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
 /* Caret toggle + title group on the left of a collapsible section heading. */
 .workflow-heading-lead {
   display: flex;
