@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.89] - 2026-06-15
+
+Patch release: the top-bar familiar switcher is always available.
+
+### Fixed
+- **Top bar** — the familiar switcher box now shows even before a familiar is active (e.g. on Home), falling back to the first familiar, so it's always reachable to make a selection (#684).
+
 ## [0.0.88] - 2026-06-15
 
 Patch release: a familiar switcher in the top bar.
