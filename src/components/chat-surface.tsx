@@ -10,6 +10,7 @@ import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { useIsMobile } from "@/lib/use-viewport";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -167,6 +168,10 @@ export function ChatSurface({
   onOpenTask,
 }: Props) {
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
+  // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
+  // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
+  // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
+  const isMobile = useIsMobile();
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
@@ -369,7 +374,7 @@ export function ChatSurface({
                 />
               </div>
             </Panel>
-            {rightPanel !== null && (
+            {rightPanel !== null && !isMobile && (
               <>
                 {/* Fixed-width mirror of the internal left rail (chat-thread-rail
                     is w-[230px]). No resize handle — the panel's own border-l is
@@ -397,6 +402,39 @@ export function ChatSurface({
           </Group>
         )}
       </div>
+      {/* Mobile: the inline 230px right sidebar can't fit beside the chat thread,
+          so the Inspector/Debug/Changes panels open in a right-edge sheet over a
+          dismissible scrim. Gated on isMobile so only one RightPanel mounts per
+          breakpoint — the InspectorPane won't double-fetch or duplicate DOM ids.
+          Scoped to the conversation tab to mirror the desktop placement. */}
+      {scope === "conversation" && rightPanel !== null && isMobile && (
+        <div
+          className="chat-right-sheet fixed inset-0 z-[200] flex justify-end lg:hidden"
+          role="presentation"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setRightPanel(null);
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Close session panels"
+            className="absolute inset-0 bg-[var(--backdrop-scrim)]"
+            onClick={() => setRightPanel(null)}
+          />
+          <div className="relative flex h-full w-[min(92vw,420px)] flex-col bg-[var(--bg-raised)] shadow-[-8px_0_32px_rgba(0,0,0,0.2)] [padding-bottom:var(--sai-bottom)] [padding-top:var(--sai-top)]">
+            <RightPanel
+              panel={rightPanel}
+              activeFamiliar={activeFamiliar}
+              inboxItems={inboxItems}
+              onSetPanel={setRightPanel}
+              onOpenInbox={onOpenInbox}
+              onCreateReminder={onCreateReminder}
+              onOpenInboxItem={onOpenInboxItem}
+              onInboxItemChanged={onInboxItemChanged}
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

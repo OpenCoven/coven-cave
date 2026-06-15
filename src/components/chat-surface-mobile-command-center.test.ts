@@ -47,4 +47,34 @@ assert.match(
   "Mobile chat should prevent the shell detail from becoming a second scroll owner",
 );
 
+// The Inspector/Debug/Changes panels live in a 230px right sidebar that is
+// hidden below the desktop shell breakpoint (no room beside the chat thread).
+// On mobile they must remain reachable — rendered in a right-edge sheet over a
+// dismissible scrim — instead of silently vanishing.
+assert.match(
+  source,
+  /scope === "conversation" && rightPanel !== null && isMobile && \(/,
+  "ChatSurface should render the session panels as a mobile sheet when the inline sidebar is hidden",
+);
+
+assert.match(
+  source,
+  /className="chat-right-sheet fixed inset-0 z-\[200\] flex justify-end lg:hidden"/,
+  "Mobile session-panel sheet should be a fixed right-edge overlay, hidden once the desktop sidebar fits (lg)",
+);
+
+assert.match(
+  source,
+  /aria-label="Close session panels"[\s\S]*?onClick=\{\(\) => setRightPanel\(null\)\}/,
+  "Mobile session-panel sheet should close on scrim tap",
+);
+
+// Gate the inline desktop sidebar on !isMobile so only one RightPanel mounts per
+// breakpoint — otherwise InspectorPane double-fetches and duplicates DOM ids.
+assert.match(
+  source,
+  /rightPanel !== null && !isMobile && \(/,
+  "Inline desktop right sidebar should not also mount on mobile (avoids duplicate RightPanel)",
+);
+
 console.log("chat-surface-mobile-command-center.test.ts: ok");
