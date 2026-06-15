@@ -17,8 +17,8 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const responseMetadata: ChatResponseMetadata = \{[\s\S]*familiarId: body\.familiarId,[\s\S]*harness: binding\.harness,[\s\S]*model: binding\.model,[\s\S]*runtime:/,
-  "Coven harness responses should derive metadata from the actual binding and runtime",
+  /const responseMetadata: ChatResponseMetadata = \{[\s\S]*familiarId: body\.familiarId,[\s\S]*harness: binding\.harness,[\s\S]*model: desiredModel,[\s\S]*runtime:/,
+  "Coven harness responses should derive metadata from the desired model and actual runtime",
 );
 
 assert.match(
@@ -41,8 +41,34 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /openClawChatResponse\(\{[\s\S]*model: binding\.model/,
-  "OpenClaw bridge responses should receive the familiar model for response metadata",
+  /openClawChatResponse\(\{[\s\S]*desiredModel,[\s\S]*modelState,/,
+  "OpenClaw bridge responses should receive desired model state for response metadata",
+);
+
+assert.match(
+  chatRoute,
+  /modelOverride\?: string/,
+  "SendBody should accept a modelOverride without treating it as global config",
+);
+assert.match(
+  chatRoute,
+  /modelOverrideScope\?: "next-message" \| "session"/,
+  "SendBody should distinguish next-message and session-scoped model intent",
+);
+assert.match(
+  chatRoute,
+  /desiredModel:/,
+  "Response metadata should carry desired model separately from confirmed model",
+);
+assert.match(
+  chatRoute,
+  /modelApplicationState:/,
+  "Response metadata should carry application state for honest UI rendering",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /saveConfig\([\s\S]*modelOverride/,
+  "Chat send must not mutate Cave config from a one-off or session model override",
 );
 
 assert.match(

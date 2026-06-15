@@ -114,6 +114,21 @@ assert.doesNotMatch(
   /"--session-id"/,
   "OpenClaw bridge no longer passes raw session ids — keys are the resume contract",
 );
+assert.doesNotMatch(
+  chatRoute,
+  /"--model"/,
+  "Cave chat must not pass a guessed --model flag until coven run exposes that contract",
+);
+assert.match(
+  chatRoute,
+  /modelApplicationState: modelState\.applicationState/,
+  "Response metadata should expose unsupported/saved state instead of claiming application",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /saveConfig\([\s\S]*modelOverride/,
+  "A chat send must not persist one-off model overrides into Cave config",
+);
 
 // Native (coven) path: same stable-identity contract.
 assert.match(

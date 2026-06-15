@@ -5,6 +5,8 @@ import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
+  type CaveConfig,
+  type FamiliarBinding,
   loadConfig,
   loadState,
   recordSessionFamiliar,
@@ -39,10 +41,16 @@ import {
 } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import {
+  type ConversationFile,
   type ChatTurn,
   loadConversation,
   saveConversation,
 } from "@/lib/cave-conversations";
+import {
+  cleanModelId,
+  resolveChatModelState,
+  type ChatModelState,
+} from "@/lib/chat-model-state";
 import {
   buildTaskAwarePrompt,
   taskContextForSession,
@@ -68,6 +76,8 @@ type SendBody = {
   prompt?: string;
   sessionId?: string;
   projectRoot?: string;
+  modelOverride?: string;
+  modelOverrideScope?: "next-message" | "session";
   attachments?: ChatAttachment[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
@@ -371,6 +381,27 @@ function sse(event: StreamEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function resolveSendModelMetadata(args: {
+  body: SendBody;
+  config: CaveConfig;
+  binding: FamiliarBinding;
+  existingConversation: ConversationFile | null;
+}): { desiredModel: string; modelState: ChatModelState } {
+  const requestedModel = cleanModelId(args.body.modelOverride);
+  const desiredModel =
+    requestedModel ?? args.existingConversation?.modelIntent?.model ?? args.binding.model;
+  const modelState = resolveChatModelState({
+    familiarId: args.body.familiarId,
+    harness: args.binding.harness,
+    runtime: null,
+    globalDefaultModel: args.config.defaults.model,
+    familiarModel: args.config.familiars[args.body.familiarId]?.model ?? null,
+    sessionModel: args.existingConversation?.modelIntent?.model ?? null,
+    nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
+  });
+  return { desiredModel, modelState };
+}
+
 type OpenClawAgentJson = {
   status?: string;
   summary?: string;
@@ -534,7 +565,8 @@ function openClawChatResponse(args: {
   promptText: string;
   harnessPrompt: string;
   attachments: ChatAttachment[];
-  model: string;
+  desiredModel: string;
+  modelState: ChatModelState;
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -582,8 +614,13 @@ function openClawChatResponse(args: {
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
-        model: args.model,
+        model: args.desiredModel,
         runtime: `local:${cwd}`,
+        desiredModel: args.desiredModel,
+        confirmedModel: undefined,
+        modelSource: args.modelState.source,
+        modelApplicationState: args.modelState.applicationState,
+        modelApplicationReason: args.modelState.reason,
       };
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn("openclaw", argv, {
@@ -802,6 +839,15 @@ export async function POST(req: Request) {
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
   const sshRuntime = isSshRuntime(binding.runtime) ? binding.runtime : null;
+  const existingConversation = body.sessionId
+    ? await loadConversation(body.sessionId).catch(() => null)
+    : null;
+  const { desiredModel, modelState } = resolveSendModelMetadata({
+    body,
+    config,
+    binding,
+    existingConversation,
+  });
 
   // Native Cave chat can drive Coven harnesses that resolve through
   // `coven run <harness> --stream-json`, including external adapter manifests.
@@ -878,7 +924,8 @@ export async function POST(req: Request) {
       promptText,
       harnessPrompt,
       attachments: persistedAttachments,
-      model: binding.model,
+      desiredModel,
+      modelState,
     });
   }
 
@@ -886,9 +933,6 @@ export async function POST(req: Request) {
   // started in (harness session stores are cwd-scoped) and the harness's
   // CURRENT session id (harnesses mint a new id on every resume, so the
   // client-held conversation id quickly stops matching any harness session).
-  const existingConversation = body.sessionId
-    ? await loadConversation(body.sessionId).catch(() => null)
-    : null;
   // Continued turns don't carry projectRoot — resume must run in the
   // directory the conversation started in, not homedir or the familiar
   // workspace, or `--continue <id>` misses (and the transparent retry forks
@@ -912,10 +956,15 @@ export async function POST(req: Request) {
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
-    model: binding.model,
+    model: desiredModel,
     runtime: sshRuntime
       ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
       : `local:${familiarCwd ?? cwd}`,
+    desiredModel,
+    confirmedModel: undefined,
+    modelSource: modelState.source,
+    modelApplicationState: modelState.applicationState,
+    modelApplicationReason: modelState.reason,
   };
 
   // Build coven run argv.
