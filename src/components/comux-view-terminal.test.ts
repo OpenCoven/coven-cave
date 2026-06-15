@@ -71,6 +71,20 @@ assert.match(
   "opening the active Terminal surface should auto-start one terminal session without respawning after in-surface closes",
 );
 
+// Cross-surface launch: the Projects page (and others) open a terminal in a
+// project's cwd by dispatching cave:terminal-open; the canonical terminal
+// instance handles it and spawns the shell in that project root.
+assert.match(
+  source,
+  /addSession\(detail\?\.projectRoot\)[\s\S]{0,200}?addEventListener\("cave:terminal-open"/,
+  "the terminal instance launches a session in the requested project root on cave:terminal-open",
+);
+assert.match(
+  source,
+  /if \(view !== "terminal"\) return;[\s\S]{0,260}?addEventListener\("cave:terminal-open"/,
+  "only the canonical terminal instance handles cave:terminal-open (single session, no duplicates)",
+);
+
 // ⌘N / ⌘W keydown handler is wired and respects modifier + contentEditable gate.
 assert.match(
   source,

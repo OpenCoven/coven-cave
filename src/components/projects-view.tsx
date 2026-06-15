@@ -283,6 +283,26 @@ function ProjectRow({
           </button>
           <button
             type="button"
+            onClick={() => {
+              // Launch a terminal in this project's cwd, then jump to the
+              // Terminal surface. The always-mounted terminal instance creates
+              // the session (spawning the shell in project.root); cave:navigate-mode
+              // brings the Terminal surface to the foreground.
+              window.dispatchEvent(
+                new CustomEvent("cave:terminal-open", { detail: { projectRoot: project.root } }),
+              );
+              window.dispatchEvent(
+                new CustomEvent("cave:navigate-mode", { detail: { mode: "terminal" } }),
+              );
+            }}
+            className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            title="Open terminal"
+            aria-label={`Open terminal in ${project.name}`}
+          >
+            <Icon name="ph:terminal-window-bold" width={14} aria-hidden />
+          </button>
+          <button
+            type="button"
             onClick={() => { setNameDraft(project.name); setEditingName(true); }}
             aria-label={`Rename ${project.name}`}
             title="Rename"

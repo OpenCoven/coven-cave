@@ -36,18 +36,16 @@ import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const LANGS = [
-  "typescript","tsx","javascript","jsx","rust","swift","python","go",
-  "ruby","bash","shell","json","yaml","toml","sql","html","css","scss",
-  "markdown","diff","dockerfile","graphql","lua","c","cpp","java",
-  "kotlin","php","scala","zig","elixir","erlang","haskell","ocaml",
-  "clojure","fsharp","r","dart","vue","svelte","text",
-] as const;
+// The bundled grammar list lives in code-lang.ts alongside the
+// extension→grammar resolver, so the highlighter's loaded langs and the
+// resolution table can never drift apart.
+const LANGS = SHIKI_LANGS;
 
 // ---------------------------------------------------------------------------
 // Timestamp formatting
@@ -127,7 +125,11 @@ async function renderCodeBlock(
   try {
     const hl = await getHighlighter();
     highlighted = hl.codeToHtml(code, {
-      lang: LANGS.includes(lang as (typeof LANGS)[number]) ? lang : "text",
+      // resolveShikiLang maps both fence names (`typescript`) AND bare file
+      // extensions (`ts`, `tsx`, `rs`) to a loadable grammar — without it the
+      // Projects file preview, which passes raw extensions, fell back to the
+      // unhighlighted "text" grammar for every file.
+      lang: resolveShikiLang(lang),
       theme: "mood-c-dark",
     });
   } catch (err) {

@@ -2299,6 +2299,21 @@ select {
 .comux-file-preview .cave-code-expand {
   display: none;
 }
+/* The preview pane owns its own header (path · language · line count · Copy),
+   so the SyntaxBlock's built-in code chrome (lang label + Copy traffic-light
+   bar) is a redundant second header here. Suppress it and let the highlighted
+   source sit flush under the pane header. */
+.comux-file-preview .cave-syntax-block .cave-code-header {
+  display: none;
+}
+/* Comfortable reading rhythm for source: a touch more line-height than the
+   chat default, and a subtle gutter rule separating line numbers from code. */
+.comux-file-preview .cave-syntax-block .cave-line {
+  line-height: 1.65;
+}
+.comux-file-preview .cave-syntax-block .cave-ln {
+  opacity: 0.55;
+}
 /* Rendered-markdown previews read as docs, not chat bubbles. */
 .comux-md {
   font-size: 13px;
