@@ -18,6 +18,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { covenHome } from "./coven-paths.ts";
+import { readEnvLocalValue } from "./env-file.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -188,6 +189,16 @@ function opRead(ref: string): string | null {
 export function resolveSecret(key: string): string | undefined {
   // Already in env (set via OS, .env.local, or prior resolve)
   if (process.env[key]?.trim()) return process.env[key]!.trim();
+
+  // Persisted in the writable .env.local (the in-app GitHub PAT form writes
+  // here). In packaged builds this lives outside the read-only bundle, where
+  // Next no longer auto-loads it into process.env at boot — read it directly
+  // and cache for the process lifetime.
+  const fromFile = readEnvLocalValue(key);
+  if (fromFile) {
+    process.env[key] = fromFile;
+    return fromFile;
+  }
 
   // Try vault
   const map = loadVaultMap();
