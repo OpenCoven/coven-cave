@@ -36,7 +36,7 @@ This means v0 model controls can safely improve visibility and Cave-local config
 - Let users change the model from chat where the scope is clear.
 - Preserve Familiar Studio as the place for durable familiar defaults.
 - Add session and one-off model intent only where the send path can persist and display it honestly.
-- Represent model application state as `applied`, `saved`, `unsupported`, `pending`, or `failed`.
+- Represent model application state as `unknown`, `saved`, `pending`, `applied`, `unsupported`, or `failed`.
 - Propagate model choices into Coven harness/runtime only when an explicit downstream contract supports it.
 - Add tests that prevent Cave from silently accepting a UI model choice while sending a different model downstream.
 
@@ -120,6 +120,8 @@ Examples:
 - `anthropic/claude-opus-4-7 confirmed`
 - `openai/gpt-5.5 saved`
 - `openai/gpt-5.5 unsupported by coven run`
+
+Here `confirmed` is the user-facing label for the `applied` `applicationState`; the remaining labels match their `applicationState` values directly.
 
 For old transcripts that only have the current `ChatResponseMetadata` shape, render exactly as today.
 
@@ -289,7 +291,7 @@ Example response:
   "state": {
     "familiarId": "salem",
     "harness": "claude",
-    "runtime": "local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+    "runtime": "local:/Users/<user>/code/coven-cave",
     "effectiveModel": "anthropic/claude-opus-4-7",
     "source": "familiar-default",
     "applicationState": "saved",
