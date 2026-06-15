@@ -143,6 +143,7 @@ async function mobileHandoff(req: Request) {
     ok: true,
     backendUrl: backend,
     serveUrl,
+    inviteUrl: invite.url,
     url: invite.url,
     appUrl: invite.url,
     expiresAt: invite.expiresAt,
