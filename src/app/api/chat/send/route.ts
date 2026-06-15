@@ -405,6 +405,20 @@ function resolveSendModelMetadata(args: {
   return { desiredModel, modelState };
 }
 
+function persistSendModelIntent(
+  conversation: ConversationFile,
+  body: SendBody,
+  modelState: ChatModelState,
+) {
+  if (body.modelOverrideScope !== "session" || modelState.source !== "session") return;
+  conversation.modelIntent = {
+    model: modelState.effectiveModel,
+    source: "session",
+    applicationState: modelState.applicationState,
+    reason: modelState.reason ?? "Saved for this chat.",
+  };
+}
+
 type OpenClawAgentJson = {
   status?: string;
   summary?: string;
@@ -752,6 +766,7 @@ function openClawChatResponse(args: {
           };
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
+          persistSendModelIntent(conv, args.body, args.modelState);
           conv.turns.push(
             {
               id: userTurnId,
@@ -845,6 +860,12 @@ export async function POST(req: Request) {
   const existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)
     : null;
+  if (existingConversation && existingConversation.familiarId !== body.familiarId) {
+    return new Response(
+      JSON.stringify({ ok: false, error: "not found" }),
+      { status: 404, headers: { "content-type": "application/json" } },
+    );
+  }
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -1421,6 +1442,7 @@ export async function POST(req: Request) {
         };
         conv.model = responseMetadata.model;
         conv.runtime = responseMetadata.runtime;
+        persistSendModelIntent(conv, body, modelState);
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
         await saveConversation(conv);
