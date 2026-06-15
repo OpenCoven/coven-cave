@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 
@@ -140,9 +140,30 @@ export async function loadBoard(): Promise<BoardFile> {
   }
 }
 
+// Serialize board mutations. Each mutator does load → modify → save; without
+// serialization two concurrent mutations both read the same snapshot and the
+// second save clobbers the first (lost update). Same pattern as cave-inbox /
+// workflow-source.
+let boardWriteChain: Promise<unknown> = Promise.resolve();
+function withBoardLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = boardWriteChain.then(fn, fn);
+  boardWriteChain = next.catch(() => undefined);
+  return next;
+}
+
+let boardTmpCounter = 0;
+
 export async function saveBoard(board: BoardFile): Promise<void> {
   await ensureDir();
-  await writeFile(BOARD_PATH, JSON.stringify(board, null, 2), "utf8");
+  // Atomic write: plain writeFile truncates-then-writes, so a concurrent reader
+  // can observe a half-written file. loadBoard() then fails to parse it and
+  // falls back to an empty board, making cards momentarily "vanish" — e.g. a
+  // task-chat POST 404ing ("not found") on a card that actually exists. Write to
+  // a temp file and rename() instead: rename is atomic on POSIX, so a reader
+  // always sees a complete old-or-new file, never a torn one.
+  const tmp = `${BOARD_PATH}.${process.pid}.${boardTmpCounter++}.tmp`;
+  await writeFile(tmp, JSON.stringify(board, null, 2), "utf8");
+  await rename(tmp, BOARD_PATH);
 }
 
 export type NewCardInput = {
@@ -161,6 +182,7 @@ export type NewCardInput = {
 };
 
 export async function createCard(input: NewCardInput): Promise<Card> {
+  return withBoardLock(async () => {
   const board = await loadBoard();
   const now = new Date().toISOString();
   const status: CardStatus = input.status ?? "backlog";
@@ -190,12 +212,14 @@ export async function createCard(input: NewCardInput): Promise<Card> {
   board.cards.push(card);
   await saveBoard(board);
   return card;
+  });
 }
 
 export async function updateCard(
   id: string,
   patch: Partial<Omit<Card, "id" | "createdAt">>,
 ): Promise<Card | null> {
+  return withBoardLock(async () => {
   const board = await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
@@ -233,6 +257,7 @@ export async function updateCard(
   board.cards[idx] = next;
   await saveBoard(board);
   return next;
+  });
 }
 
 /**
@@ -272,6 +297,7 @@ export async function transitionCard(
   id: string,
   { to, reason, retry }: TransitionInput,
 ): Promise<Card | null> {
+  return withBoardLock(async () => {
   const board = await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
@@ -328,15 +354,18 @@ export async function transitionCard(
   board.cards[idx] = next;
   await saveBoard(board);
   return next;
+  });
 }
 
 export async function deleteCard(id: string): Promise<boolean> {
+  return withBoardLock(async () => {
   const board = await loadBoard();
   const before = board.cards.length;
   board.cards = board.cards.filter((c) => c.id !== id);
   if (board.cards.length === before) return false;
   await saveBoard(board);
   return true;
+  });
 }
 
 export { BOARD_PATH };
