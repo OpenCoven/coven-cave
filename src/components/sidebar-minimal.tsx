@@ -14,7 +14,6 @@
 
 import React from "react";
 import { Icon } from "@/lib/icon";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -34,10 +33,6 @@ export type FolderMode =
   | "workflows"
   | "library"
   | "capabilities";
-
-// "projects" is a pseudo-mode rerouted by handleModeSelect (→ chat + event).
-// It is never passed to onModeChange; only FolderMode values are real modes.
-type FolderEntryId = FolderMode | "projects";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -69,7 +64,7 @@ export type SidebarMinimalProps = {
 };
 
 const FOLDER_MODES: Array<{
-  id: FolderEntryId;
+  id: FolderMode;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
@@ -89,7 +84,6 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools" },
-  { id: "projects", label: "Projects", iconName: "ph:folders-bold", group: "tools", kbd: "⌘9" },
   { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons" },
@@ -216,14 +210,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onFamiliarScopeChange,
   } = props;
 
-  // Projects is no longer a top-level WorkspaceMode — reroute via the chat tab event.
-  // The "projects" guard narrows id to FolderMode below, so onModeChange stays type-safe.
-  const handleModeSelect = (id: FolderEntryId) => {
-    if (id === "projects") {
-      onModeChange("chat");
-      window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
-      return;
-    }
+  // Projects lives only inside the Chat surface's Projects tab now (and ⌘9 /
+  // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
+  const handleModeSelect = (id: FolderMode) => {
     onModeChange(id);
   };
 

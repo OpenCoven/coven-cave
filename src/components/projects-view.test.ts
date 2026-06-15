@@ -41,8 +41,8 @@ assert.doesNotMatch(workspace, /mode === "projects" \?/, "workspace has no proje
 assert.match(chatTabEvents, /CHAT_OPEN_PROJECTS_EVENT/, "reroute event exists");
 assert.match(workspace, /case "\/projects":[\s\S]*?setMode\("chat"\)[\s\S]*?CHAT_OPEN_PROJECTS_EVENT/, "/projects reroutes: setMode(chat) + chat-open-projects event");
 
-assert.match(sidebar, /\{ id: "projects", label: "Projects", iconName: "ph:folders-bold", group: "tools"/, "Sidebar keeps the Projects Tools entry");
-assert.match(sidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Sidebar Projects entry reroutes into the chat tab");
+assert.doesNotMatch(sidebar, /id: "projects"/, "Sidebar no longer shows a Projects entry — Projects lives only in the Chat tab");
+assert.doesNotMatch(sidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Sidebar no longer imports the chat-tab reroute event (entry removed)");
 
 for (const icon of [
   "ph:folders-bold",
