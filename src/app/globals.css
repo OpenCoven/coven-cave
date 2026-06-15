@@ -176,6 +176,10 @@
   --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
   --ring-width: 2px;
   --ring-offset: 2px;
+  /* Inset offset for rings on items inside dense/clipping containers (list rows,
+     popover items, nav tabs) where an outset ring would be clipped by the parent.
+     Single source so these don't drift between -1px/-2px ad hoc. */
+  --ring-offset-inset: calc(-1 * var(--ring-width));
 
   /* ---- Surface alphas ---- */
   --backdrop-scrim: oklch(0 0 0 / 60%);
@@ -1825,7 +1829,7 @@ select {
 }
 .ui-search-input-clear:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 1px;
+  outline-offset: var(--ring-offset);
 }
 .ui-search-input-hint {
   display: flex;
@@ -1894,7 +1898,7 @@ select {
 }
 .ui-popover-item:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: -2px;
+  outline-offset: var(--ring-offset-inset);
 }
 .ui-popover-item--danger {
   color: var(--color-danger-soft);
@@ -1961,7 +1965,7 @@ select {
 }
 .ui-row-card:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: -1px;
+  outline-offset: var(--ring-offset-inset);
 }
 .ui-row-card--selected {
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
@@ -2373,7 +2377,7 @@ select {
 .shell-nav-tab:focus-visible,
 .shell-familiar-strip-btn:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: -2px;
+  outline-offset: var(--ring-offset-inset);
 }
 .shell-nav-tab--open {
   background: var(--bg-raised);
