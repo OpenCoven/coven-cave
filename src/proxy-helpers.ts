@@ -68,12 +68,6 @@ export function sameOrigin(value: string | null, expectedOrigin: string) {
       url.port === expected.port &&
       isLoopbackHost(url.host) &&
       isLoopbackHost(expected.host)
-    ) || (
-      url.protocol === "https:" &&
-      expected.protocol === "http:" &&
-      url.hostname === expected.hostname &&
-      url.port === expected.port &&
-      isTailscaleServeHost(expected.host)
     );
   } catch {
     return false;

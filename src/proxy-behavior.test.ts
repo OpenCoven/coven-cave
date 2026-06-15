@@ -126,8 +126,8 @@ assert.equal(
 );
 assert.equal(
   sameOrigin("https://cave.tailnet.example.ts.net", "http://cave.tailnet.example.ts.net"),
-  true,
-  "Tailscale Serve terminates HTTPS before proxying to the local HTTP backend",
+  false,
+  "Tailscale Serve HTTPS/HTTP mismatch no longer allowed without mobile credential",
 );
 
 // ─── isAllowedRequestSource ────────────────────────────────────────────────
@@ -138,8 +138,8 @@ assert.equal(
     "http://cave.tailnet.example.ts.net",
     false,
   ),
-  true,
-  "Tailscale Serve HTTPS to HTTP same-origin normalization is still recognized",
+  false,
+  "Tailscale Serve HTTPS to HTTP same-origin normalization requires mobile credential",
 );
 assert.equal(
   isAllowedRequestSource(
@@ -158,8 +158,8 @@ assert.equal(
     false,
     "cave.tailnet.example.ts.net:8443",
   ),
-  true,
-  "Tailscale Serve origins should allow the same non-default HTTPS port as the forwarded Host",
+  false,
+  "Tailscale Serve non-default HTTPS port without mobile credential must be rejected",
 );
 assert.equal(
   isAllowedRequestSource(
