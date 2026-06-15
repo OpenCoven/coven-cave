@@ -56,11 +56,24 @@ export function Popover({
     const popW = pop?.offsetWidth ?? minWidth ?? r.width;
     const MARGIN = 8;
 
+    // Measure against the VISUAL viewport, not the layout viewport, so the
+    // on-screen keyboard (iOS) is treated as unavailable space. getBoundingClientRect
+    // is in layout-viewport coords, so the visible region's bounds in those same
+    // coords are [offsetTop, offsetTop + height]. Falls back to innerHeight/Width
+    // where visualViewport is unavailable (older webviews, SSR is guarded by callers).
+    const vv = window.visualViewport;
+    const viewTop = vv?.offsetTop ?? 0;
+    const viewLeft = vv?.offsetLeft ?? 0;
+    const viewH = vv?.height ?? window.innerHeight;
+    const viewW = vv?.width ?? window.innerWidth;
+    const visibleBottom = viewTop + viewH;
+
     // Vertical auto-flip: honor the requested side, but flip to the opposite side
     // when the popover can't fit there and the other side has more room. Keeps it
-    // on-screen when the anchor sits low (or high) in the viewport.
-    const spaceBelow = window.innerHeight - r.bottom - offset;
-    const spaceAbove = r.top - offset;
+    // on-screen when the anchor sits low (or high) in the viewport — or when the
+    // keyboard has eaten the space below.
+    const spaceBelow = visibleBottom - r.bottom - offset;
+    const spaceAbove = r.top - viewTop - offset;
     const isTop = placement.startsWith("top")
       ? !(popH > spaceAbove && spaceBelow > spaceAbove)
       : popH > spaceBelow && spaceAbove > spaceBelow;
@@ -69,8 +82,10 @@ export function Popover({
     const next: CSSProperties = {
       position: "absolute",
       minWidth: minWidth ?? r.width,
-      // Never exceed the chosen side's available space; scroll inside if it must.
-      maxHeight: `${Math.round(Math.max(isTop ? spaceAbove : spaceBelow, 160))}px`,
+      // Never exceed the chosen side's visible space; scroll inside if it must. Floor
+      // low (120px) rather than 160 so a keyboard-shrunk viewport still clamps inside
+      // the visible band instead of disappearing under the keyboard.
+      maxHeight: `${Math.round(Math.max(Math.min(isTop ? spaceAbove : spaceBelow, viewH - 2 * MARGIN), 120))}px`,
       overflowY: "auto",
     };
     if (isTop) {
@@ -78,11 +93,11 @@ export function Popover({
     } else {
       next.top = r.bottom + offset;
     }
-    // Horizontal clamp: keep both edges within the viewport.
+    // Horizontal clamp: keep both edges within the visible viewport.
     if (isEnd) {
       next.right = Math.max(MARGIN, window.innerWidth - r.right);
     } else {
-      next.left = Math.max(MARGIN, Math.min(r.left, window.innerWidth - popW - MARGIN));
+      next.left = Math.max(MARGIN, Math.min(r.left, viewLeft + viewW - popW - MARGIN));
     }
     setStyle(next);
   }, [anchorRef, placement, offset, minWidth]);
@@ -115,11 +130,18 @@ export function Popover({
     document.addEventListener("mousedown", onDocClick);
     window.addEventListener("resize", onReflow);
     window.addEventListener("scroll", onReflow, true);
+    // Recompute when the on-screen keyboard opens/closes or the page pinch-zooms,
+    // so the popover re-clamps to the shrunken visible band instead of hiding under it.
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", onReflow);
+    vv?.addEventListener("scroll", onReflow);
     return () => {
       window.removeEventListener("keydown", onKey, true);
       document.removeEventListener("mousedown", onDocClick);
       window.removeEventListener("resize", onReflow);
       window.removeEventListener("scroll", onReflow, true);
+      vv?.removeEventListener("resize", onReflow);
+      vv?.removeEventListener("scroll", onReflow);
     };
   }, [open, onOpenChange, anchorRef, compute]);
 

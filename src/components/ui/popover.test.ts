@@ -21,4 +21,16 @@ assert.match(src, /spaceBelow|spaceAbove/, "compares room below vs above the anc
 assert.match(src, /Math\.min\(r\.left/, "clamps the left edge within the viewport");
 assert.match(src, /maxHeight/, "caps height (with overflowY:auto) so neither side overflows");
 
+// Visual-viewport awareness: the on-screen keyboard (iOS) shrinks the visible band
+// without changing window.innerHeight. The popover must measure against
+// window.visualViewport so it clamps inside the visible area instead of hiding
+// under the keyboard, and must recompute when the keyboard opens/closes.
+assert.match(src, /window\.visualViewport/, "measures against the visual viewport (keyboard-aware)");
+assert.match(src, /vv\?\.height|visualViewport\b[\s\S]*?\.height/, "uses the visual viewport height for fit checks");
+assert.match(
+  src,
+  /vv\?\.addEventListener\("resize"|visualViewport[\s\S]*?addEventListener\("resize"/,
+  "recomputes when the visual viewport resizes (keyboard show/hide)",
+);
+
 console.log("popover.test.ts: ok");
