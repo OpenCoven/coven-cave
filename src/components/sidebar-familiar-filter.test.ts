@@ -24,16 +24,13 @@ assert.doesNotMatch(
   "Sidebar should no longer render the global search action in the left panel",
 );
 
+// The horizontal dock is replaced by a single profile switcher (FamiliarSwitcher),
+// rendered in the sidebar header (desktop) and the mobile top bar.
+assert.doesNotMatch(sidebar, /<FamiliarDock/, "the horizontal familiar dock is replaced");
 assert.match(
   sidebar,
-  /<FamiliarDock/,
-  "sidebar mounts the FamiliarDock",
-);
-
-assert.match(
-  sidebar,
-  /onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
-  "dock is wired to the scope change handler",
+  /<FamiliarSwitcher[\s\S]*onSelectFamiliar=\{onFamiliarScopeChange\}/,
+  "sidebar mounts the familiar profile switcher wired to the scope handler",
 );
 
 assert.doesNotMatch(
@@ -46,18 +43,6 @@ assert.doesNotMatch(
   sidebar,
   /Coven \(all\)/,
   "Selector should use Familiars, not Coven (all), for the generic no-filter option",
-);
-
-assert.match(
-  sidebar,
-  /activeFamiliarId\?: string \| null/,
-  "Sidebar should receive the current familiar scope id (nullable until first familiar resolves)",
-);
-
-assert.match(
-  sidebar,
-  /onFamiliarScopeChange: \(id: string \| null\) => void/,
-  "Sidebar should expose a nullable callback for changing the active familiar scope",
 );
 
 assert.doesNotMatch(
@@ -92,8 +77,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /onFamiliarScopeChange=\{selectFamiliarScope\}/,
-  "Workspace should wire the sidebar familiar selector into nullable familiar scope state",
+  /onSelectFamiliar=\{selectFamiliarScope\}/,
+  "Workspace wires the top-bar familiar switcher into nullable familiar scope state",
 );
 
 assert.match(

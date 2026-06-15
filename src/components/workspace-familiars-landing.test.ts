@@ -84,16 +84,22 @@ assert.doesNotMatch(
   "Sidebar should not expose a Familiars subpage in Work",
 );
 
-assert.match(
+assert.doesNotMatch(
   sidebar,
   /<FamiliarDock/,
-  "Sidebar top slot renders the familiar dock in place of search",
+  "Sidebar no longer renders the familiar dock (scope moved to the top-bar switcher)",
+);
+
+assert.match(
+  topBar,
+  /<FamiliarSwitcher/,
+  "The top bar renders the familiar profile switcher",
 );
 
 assert.match(
   workspace,
-  /onFamiliarScopeChange=\{selectFamiliarScope\}/,
-  "Workspace wires the sidebar familiar scope selector into nullable familiar scope state",
+  /onSelectFamiliar=\{selectFamiliarScope\}/,
+  "Workspace wires the top-bar familiar switcher into nullable familiar scope state",
 );
 
 assert.doesNotMatch(
