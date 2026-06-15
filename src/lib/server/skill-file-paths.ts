@@ -1,5 +1,6 @@
 import path from "node:path";
 import { homedir } from "node:os";
+import { lstat, realpath } from "node:fs/promises";
 
 /**
  * Allow-list for the Capabilities skill-preview reader (/api/skills/file).
@@ -10,25 +11,45 @@ import { homedir } from "node:os";
  * path MUST be constrained to the well-known harness/skill roots under $HOME —
  * otherwise the route is an arbitrary-file-read primitive.
  *
- * The barrier is the inline `path.resolve` + containment check below: the
- * resolved candidate must live within one of the allow-listed roots and carry a
- * `.md` extension. A traversal-laden or out-of-tree path fails containment and
- * yields `false`, so the caller returns 403 and the UI falls back to the
- * scanned description/excerpt.
+ * The guard rejects symlinks, resolves both the candidate and root through the
+ * filesystem, and only allows expected instruction/skill filenames. This keeps
+ * the preview endpoint from exposing arbitrary markdown or symlink targets from
+ * broad harness directories.
  */
 const SKILL_ROOT_SUBPATHS = [".claude", ".coven", ".codex", ".cursor", ".gemini"];
+const ALLOWED_SKILL_FILE_NAMES = new Set(["SKILL.md", "CLAUDE.md", "AGENTS.md"]);
+
+export const MAX_SKILL_FILE_PREVIEW_BYTES = 512 * 1024;
 
 function isWithinRoot(resolved: string, root: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
-export function isAllowedSkillFilePath(fullPath: string, home = homedir()): boolean {
-  if (!fullPath) return false;
-  const resolved = path.resolve(/* turbopackIgnore: true */ fullPath);
-  // Only markdown files are previewable — skills and harness instructions are
-  // markdown; anything else (plugin binaries, configs) is not a skill doc.
-  if (path.extname(resolved).toLowerCase() !== ".md") return false;
-  return SKILL_ROOT_SUBPATHS.some((sub) =>
-    isWithinRoot(resolved, path.resolve(/* turbopackIgnore: true */ path.join(home, sub))),
-  );
+export function isAllowedSkillFileName(fullPath: string): boolean {
+  return ALLOWED_SKILL_FILE_NAMES.has(path.basename(fullPath));
+}
+
+export async function isAllowedSkillFilePath(fullPath: string, home = homedir()): Promise<boolean> {
+  if (!fullPath || !isAllowedSkillFileName(fullPath)) return false;
+
+  let candidateStat;
+  let candidateRealPath: string;
+  try {
+    candidateStat = await lstat(fullPath);
+    if (candidateStat.isSymbolicLink() || !candidateStat.isFile()) return false;
+    candidateRealPath = await realpath(fullPath);
+  } catch {
+    return false;
+  }
+
+  for (const sub of SKILL_ROOT_SUBPATHS) {
+    try {
+      const rootRealPath = await realpath(path.join(home, sub));
+      if (isWithinRoot(candidateRealPath, rootRealPath)) return true;
+    } catch {
+      // Missing harness roots are not previewable roots.
+    }
+  }
+
+  return false;
 }
