@@ -6,6 +6,8 @@ import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { SalemPathfinderCard } from "./salem-pathfinder-card";
+import type { SalemPathfinderCard as SalemPathfinderCardData } from "@/lib/salem/pathfinder-types";
 
 // Salem's 3D cat avatar shows up in two places — the floating perch
 // (88px) and the chat panel (40px). Dynamic-import so Three.js doesn't
@@ -70,8 +72,33 @@ export function SalemChatPanel() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [preload, setPreload] = useState<SalemPreloadContext | null>(null);
+  const [pathfinderCard, setPathfinderCard] = useState<SalemPathfinderCardData | null>(null);
+  const [pathfinding, setPathfinding] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const coarse = useIsCoarsePointer();
+
+  // Find your next path — deterministic, registry-backed recommendation. Uses
+  // the current input as intent (or a neutral prompt) and renders a card.
+  const findPath = async () => {
+    if (pathfinding) return;
+    setPathfinding(true);
+    setMood("thinking");
+    try {
+      const res = await fetch("/api/salem/pathfinder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "home", userMessage: input.trim() || "help me choose where to start" }),
+      });
+      const data = (await res.json()) as { card?: SalemPathfinderCardData };
+      if (data.card) setPathfinderCard(data.card);
+      setMood("happy");
+      setTimeout(() => setMood("idle"), 1800);
+    } catch {
+      setMood("idle");
+    } finally {
+      setPathfinding(false);
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -132,6 +159,17 @@ export function SalemChatPanel() {
           </div>
         </div>
         <div className="salem-panel__header-actions">
+          <button
+            type="button"
+            className="salem-panel__pathfind"
+            onClick={findPath}
+            disabled={pathfinding}
+            aria-label="Find your next path"
+            title="Find your next path"
+          >
+            <Icon name="ph:sparkle" width={13} aria-hidden />
+            <span className="salem-panel__pathfind-text">Find your next path</span>
+          </button>
           <Icon name="ph:book-open" width={14} />
         </div>
       </div>
@@ -149,7 +187,12 @@ export function SalemChatPanel() {
             )}
           </div>
         ))}
-        {loading && (
+        {pathfinderCard ? (
+          <div className="salem-msg salem-msg--salem">
+            <SalemPathfinderCard card={pathfinderCard} density="full" />
+          </div>
+        ) : null}
+        {(loading || pathfinding) && (
           <div className="salem-msg salem-msg--salem">
             <span className="salem-msg__text salem-thinking">thinking<span className="dots" /></span>
           </div>
