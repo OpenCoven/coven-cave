@@ -23,15 +23,6 @@ type CapabilitiesResponse = {
   error?: string;
 };
 
-const TYPE_FILTERS: Array<{ id: CapabilityType | "all"; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
-  { id: "all", label: "All", icon: "ph:lightning-bold" },
-  { id: "instructions", label: "Instructions", icon: "ph:note-pencil" },
-  { id: "skill", label: "Skills", icon: "ph:sparkle" },
-  { id: "plugin", label: "Plugins", icon: "ph:plug" },
-  { id: "mcp", label: "MCP", icon: "ph:plug-bold" },
-  { id: "warning", label: "Warnings", icon: "ph:warning-fill" },
-];
-
 const TYPE_LABEL: Record<CapabilityType, string> = {
   instructions: "Instructions",
   skill: "Skills",
@@ -355,7 +346,34 @@ export function CapabilitiesViewSurface({
             <CapabilitiesEmpty onRefresh={() => void load(true)} />
           ) : (
             <>
-              <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-6">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="focus-within:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] focus-within:ring-1">
+                  <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-muted-foreground" />
+                  <input
+                    type="search"
+                    aria-label="Search capabilities"
+                    value={query}
+                    onChange={(e) => applyQueryFilter(e.target.value)}
+                    placeholder="Search skills, plugins, paths, commands"
+                    className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => applyStatusFilter(e.target.value as CapabilityStatus | "all")}
+                  className="focus-ring h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
+                  aria-label="Filter by status"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="enabled">Enabled</option>
+                  <option value="available">Available</option>
+                  <option value="disabled">Disabled</option>
+                  <option value="warning">Warnings</option>
+                </select>
+              </div>
+
+              {/* Summary tiles double as the primary type/status filters. */}
+              <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-7">
                 <SummaryTile
                   icon="ph:heartbeat"
                   label="Readiness"
@@ -372,6 +390,13 @@ export function CapabilitiesViewSurface({
                     applyHarnessFilter(null);
                     applySummaryFilter("all");
                   }}
+                />
+                <SummaryTile
+                  icon="ph:note-pencil"
+                  label="Instructions"
+                  value={operatorView.summary.instructions.toString()}
+                  active={typeFilter === "instructions"}
+                  onClick={() => applySummaryFilter("instructions")}
                 />
                 <SummaryTile
                   icon="ph:sparkle"
@@ -403,24 +428,33 @@ export function CapabilitiesViewSurface({
                 />
               </div>
 
-              <CapabilityToolbar
-                query={query}
-                onQueryChange={applyQueryFilter}
-                typeFilter={typeFilter}
-                onTypeFilter={applyTypeFilter}
-                statusFilter={statusFilter}
-                onStatusFilter={applyStatusFilter}
-                harnesses={operatorView.harnesses}
-                harnessFilter={harnessFilter}
-                onHarnessFilter={applyHarnessFilter}
-              />
+              {operatorView.harnesses.length > 1 ? (
+                <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                  <FilterPill
+                    label="All harnesses"
+                    count={operatorView.harnesses.length}
+                    active={harnessFilter === null}
+                    onClick={() => applyHarnessFilter(null)}
+                  />
+                  {operatorView.harnesses.map((harness) => (
+                    <FilterPill
+                      key={harness.id}
+                      label={harness.label}
+                      count={harness.itemCount + harness.warningCount}
+                      active={harnessFilter === harness.id}
+                      warning={harness.warningCount > 0 || harness.disabledCount > 0}
+                      onClick={() => applyHarnessFilter(harnessFilter === harness.id ? null : harness.id)}
+                    />
+                  ))}
+                </div>
+              ) : null}
 
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <CapabilityMap
                   items={filteredItems}
                   selectedId={selectedItem?.id ?? null}
                   onSelect={(item) => setSelectionId(item.id)}
-                  onTypeFilter={(type) => applySummaryFilter(type)}
+                  onTypeFilter={(type) => applyTypeFilter(type)}
                 />
                 <CapabilityInspector
                   item={selectedItem}
@@ -439,89 +473,6 @@ export function CapabilitiesViewSurface({
       <footer className="shrink-0 border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
         ⌘R refresh · search narrows the operator map · read-only
       </footer>
-    </div>
-  );
-}
-
-function CapabilityToolbar({
-  query,
-  onQueryChange,
-  typeFilter,
-  onTypeFilter,
-  statusFilter,
-  onStatusFilter,
-  harnesses,
-  harnessFilter,
-  onHarnessFilter,
-}: {
-  query: string;
-  onQueryChange: (value: string) => void;
-  typeFilter: CapabilityType | "all";
-  onTypeFilter: (value: CapabilityType | "all") => void;
-  statusFilter: CapabilityStatus | "all";
-  onStatusFilter: (value: CapabilityStatus | "all") => void;
-  harnesses: CapabilityHarnessSummary[];
-  harnessFilter: string | null;
-  onHarnessFilter: (id: string | null) => void;
-}) {
-  return (
-    <div className="mb-4 rounded-lg border border-border bg-card p-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <label className="focus-within:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] focus-within:ring-1">
-          <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-muted-foreground" />
-          <input
-            type="search"
-            aria-label="Search capabilities"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search skills, plugins, paths, commands"
-            className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </label>
-        <select
-          value={statusFilter}
-          onChange={(e) => onStatusFilter(e.target.value as CapabilityStatus | "all")}
-          className="focus-ring h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
-          aria-label="Filter by status"
-        >
-          <option value="all">All statuses</option>
-          <option value="enabled">Enabled</option>
-          <option value="available">Available</option>
-          <option value="disabled">Disabled</option>
-          <option value="warning">Warnings</option>
-        </select>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {TYPE_FILTERS.map((filter) => (
-          <FilterPill
-            key={filter.id}
-            icon={filter.icon}
-            label={filter.label}
-            active={typeFilter === filter.id}
-            onClick={() => onTypeFilter(filter.id)}
-          />
-        ))}
-      </div>
-      {harnesses.length > 1 ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <FilterPill
-            label="All harnesses"
-            count={harnesses.length}
-            active={harnessFilter === null}
-            onClick={() => onHarnessFilter(null)}
-          />
-          {harnesses.map((harness) => (
-            <FilterPill
-              key={harness.id}
-              label={harness.label}
-              count={harness.itemCount + harness.warningCount}
-              active={harnessFilter === harness.id}
-              warning={harness.warningCount > 0 || harness.disabledCount > 0}
-              onClick={() => onHarnessFilter(harnessFilter === harness.id ? null : harness.id)}
-            />
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
