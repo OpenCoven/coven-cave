@@ -205,7 +205,6 @@
     <script>
       (() => {
         const storageKey = "coven-cave:mobile-server-url";
-        const appConnectPrefix = "opencoven://connect";
         const form = document.getElementById("connect-form");
         const input = document.getElementById("server-url");
         const paste = document.getElementById("paste-url");
@@ -233,17 +232,8 @@
 
         renderSaved();
 
-        function unwrapAppLink(url) {
-          const isAppConnect = url.toString().startsWith(appConnectPrefix);
-          if (!isAppConnect) return url;
-          const target = url.searchParams.get("url");
-          if (!target) throw new Error("That app link is missing its invite URL.");
-          return new URL(target);
-        }
-
         function normalize(raw) {
-          let url = new URL(raw.trim());
-          url = unwrapAppLink(url);
+          const url = new URL(raw.trim());
           const localHttp =
             url.protocol === "http:" &&
             (url.hostname === "localhost" || url.hostname === "127.0.0.1");
@@ -257,30 +247,6 @@
           const next = normalize(raw);
           window.localStorage.setItem(storageKey, next);
           window.location.assign(next);
-        }
-
-        async function installDeepLinkHandler() {
-          const tauri = window.__TAURI__;
-          if (!tauri?.core?.invoke || !tauri?.event?.listen) return;
-
-          const open = (urls) => {
-            const raw = Array.isArray(urls) ? urls[0] : null;
-            if (!raw) return;
-            error.textContent = "";
-            try {
-              input.value = raw;
-              connect(raw);
-            } catch (err) {
-              error.textContent = err instanceof Error ? err.message : "Enter a valid CovenCave URL.";
-            }
-          };
-
-          try {
-            open(await tauri.core.invoke("plugin:deep-link|get_current"));
-            await tauri.event.listen("deep-link://new-url", (event) => open(event.payload));
-          } catch (err) {
-            error.textContent = err instanceof Error ? err.message : "Deep link setup failed.";
-          }
         }
 
         form.addEventListener("submit", (event) => {
@@ -312,7 +278,6 @@
           input.focus();
         });
 
-        void installDeepLinkHandler();
       })();
     </script>
   </body>

@@ -124,7 +124,7 @@ export function MobileHandoffModal({ open, onClose }: Props) {
             {copied === "invite" ? "Invite copied" : "Copy invite"}
           </Button>
           <Button variant="primary" onClick={() => void copyUrl("app")} disabled={!handoff?.appUrl || loading}>
-            {copied === "app" ? "App link copied" : "Copy app link"}
+            {copied === "app" ? "Link copied" : "Copy link"}
           </Button>
         </>
       }
@@ -153,7 +153,7 @@ export function MobileHandoffModal({ open, onClose }: Props) {
               </p>
               <p className="mobile-handoff__url">{handoff.serveUrl}</p>
               <p className="mobile-handoff__hint">
-                The QR uses the iOS app link. If iOS does not hand it to the app, copy the invite link instead.
+                Scan the short-lived Tailscale invite link, or copy it and paste it into the mobile app.
               </p>
             </>
           ) : error ? (
