@@ -29,6 +29,7 @@ import { WorkflowRunStrip } from "./workflow-run-strip";
 import { WorkflowRunsPanel } from "./workflow-runs-panel";
 
 type WorkflowRunPreviewMode = "compact" | "custom" | "half" | "full" | "split";
+type WorkflowSidePanelSection = "inspector" | "attachments" | "manifest";
 
 type WorkflowRunPreviewPreset = {
   id: Exclude<WorkflowRunPreviewMode, "custom">;
@@ -42,6 +43,16 @@ const WORKFLOW_RUN_PREVIEW_PRESETS: WorkflowRunPreviewPreset[] = [
   { id: "half", label: "50%", icon: "ph:caret-up-down", title: "Use half-height run preview" },
   { id: "full", label: "Full", icon: "ph:arrows-out-simple", title: "Expand run preview to full height" },
   { id: "split", label: "Side by side", icon: "ph:columns", title: "Show runs beside the workflow view" },
+];
+
+const WORKFLOW_SIDE_PANEL_SECTIONS: Array<{
+  id: WorkflowSidePanelSection;
+  label: string;
+  icon: IconName;
+}> = [
+  { id: "inspector", label: "Inspect", icon: "ph:sliders-horizontal" },
+  { id: "attachments", label: "Bind", icon: "ph:paperclip" },
+  { id: "manifest", label: "Manifest", icon: "ph:code" },
 ];
 
 export type WorkflowStudioActionState = {
@@ -115,6 +126,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [sidePanelSection, setSidePanelSection] = useState<WorkflowSidePanelSection>("inspector");
   const [runPreviewMode, setRunPreviewMode] = useState<WorkflowRunPreviewMode>("compact");
   const [runPreviewHeight, setRunPreviewHeight] = useState(280);
   const [runPreviewSideWidth, setRunPreviewSideWidth] = useState(420);
@@ -265,35 +277,72 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
         </section>
       </main>
       <aside className="workflow-studio-side" aria-label="Workflow details">
-        <button
-          type="button"
-          className="workflow-panel-tab workflow-panel-tab-right"
-          aria-label={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
-          aria-expanded={rightPanelOpen}
-          title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
-          onClick={() => setRightPanelOpen((open) => !open)}
-        >
-          <span className="workflow-panel-tab__title">Details</span>
-          <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} className="workflow-panel-tab__icon" />
-        </button>
+        <div className="workflow-side-panel-header">
+          <div className="workflow-side-panel-tabs" role="tablist" aria-label="Workflow detail sections">
+            {WORKFLOW_SIDE_PANEL_SECTIONS.map((section) => {
+              const active = sidePanelSection === section.id;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  role="tab"
+                  id={`workflow-side-panel-tab-${section.id}`}
+                  aria-selected={active}
+                  aria-controls={`workflow-side-panel-${section.id}`}
+                  className="workflow-side-panel-tab"
+                  title={section.label}
+                  onClick={() => {
+                    setSidePanelSection(section.id);
+                    if (!rightPanelOpen) setRightPanelOpen(true);
+                  }}
+                >
+                  <Icon name={section.icon} width={13} aria-hidden />
+                  <span>{section.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="workflow-panel-collapse-button workflow-panel-tab-right"
+            aria-label={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
+            aria-expanded={rightPanelOpen}
+            title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
+            onClick={() => setRightPanelOpen((open) => !open)}
+          >
+            <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} className="workflow-panel-tab__icon" />
+          </button>
+        </div>
         <div className="workflow-studio-side-content">
-          <WorkflowInspector
-            workflow={selectedWorkflow}
-            selectedNode={selectedNode}
-            action={action}
-            onUpdateStep={props.onUpdateStep}
-            onUpdateMeta={props.onUpdateMeta}
-            onRemoveStep={props.onRemoveStep}
-          />
-          <WorkflowAttachments
-            workflow={selectedWorkflow}
-            familiarOptions={props.familiarOptions}
-            roles={props.roles}
-            onAttachRole={props.onAttachRole}
-            onUpdateMeta={props.onUpdateMeta}
-            onScheduleRequest={() => setScheduleOpen(true)}
-          />
-          <WorkflowManifestPreview workflow={selectedWorkflow} dirty={props.dirty} />
+          <div
+            id={`workflow-side-panel-${sidePanelSection}`}
+            role="tabpanel"
+            aria-labelledby={`workflow-side-panel-tab-${sidePanelSection}`}
+          >
+            {sidePanelSection === "inspector" && (
+              <WorkflowInspector
+                workflow={selectedWorkflow}
+                selectedNode={selectedNode}
+                action={action}
+                onUpdateStep={props.onUpdateStep}
+                onUpdateMeta={props.onUpdateMeta}
+                onRemoveStep={props.onRemoveStep}
+              />
+            )}
+            {sidePanelSection === "attachments" && (
+              <WorkflowAttachments
+                workflow={selectedWorkflow}
+                familiarOptions={props.familiarOptions}
+                roles={props.roles}
+                onAttachRole={props.onAttachRole}
+                onUpdateMeta={props.onUpdateMeta}
+                onScheduleRequest={() => setScheduleOpen(true)}
+              />
+            )}
+            {sidePanelSection === "manifest" && (
+              <WorkflowManifestPreview workflow={selectedWorkflow} dirty={props.dirty} />
+            )}
+          </div>
         </div>
       </aside>
       {createOpen && (

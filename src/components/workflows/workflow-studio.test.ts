@@ -101,10 +101,18 @@ assert.match(studio, /aria-label="Drag to resize run preview"/, "Run preview res
 assert.match(studio, /onUndo[\s\S]*onRedo/, "Studio should thread undo/redo");
 assert.match(studio, /leftPanelOpen,\s*setLeftPanelOpen[\s\S]{0,80}useState\(true\)/, "Studio should keep the workflow library panel open by default");
 assert.match(studio, /rightPanelOpen,\s*setRightPanelOpen[\s\S]{0,80}useState\(true\)/, "Studio should keep the workflow details panel open by default");
+assert.match(studio, /type WorkflowSidePanelSection/, "Workflow right panel should model distinct selectable sections");
+assert.match(studio, /sidePanelSection,\s*setSidePanelSection[\s\S]{0,100}useState<WorkflowSidePanelSection>\("inspector"\)/, "Workflow right panel should default to the inspector section");
+assert.match(studio, /role="tablist"[\s\S]{0,120}aria-label="Workflow detail sections"/, "Workflow right panel should expose section tabs instead of using selection as a close action");
+assert.match(studio, /setSidePanelSection\(section\.id\);[\s\S]{0,80}if \(!rightPanelOpen\) setRightPanelOpen\(true\);/, "Selecting a workflow side-panel tab should open or keep the panel open");
+assert.match(studio, /sidePanelSection === "inspector"[\s\S]{0,400}<WorkflowInspector/, "Workflow inspector should render only in the inspector tab panel");
+assert.match(studio, /sidePanelSection === "attachments"[\s\S]{0,500}<WorkflowAttachments/, "Workflow attachments should render only in the attachments tab panel");
+assert.match(studio, /sidePanelSection === "manifest"[\s\S]{0,300}<WorkflowManifestPreview/, "Workflow manifest should render only in the manifest tab panel");
 assert.match(studio, /aria-label=\{leftPanelOpen \? "Hide workflow library" : "Show workflow library"\}/, "Studio should expose an accessible left-panel toggle");
 assert.match(studio, /aria-label=\{rightPanelOpen \? "Hide workflow details" : "Show workflow details"\}/, "Studio should expose an accessible right-panel toggle");
 assert.match(studio, /workflow-studio-library-panel[\s\S]{0,500}workflow-panel-tab workflow-panel-tab-left[\s\S]{0,700}<WorkflowLibrary/, "Left workflow panel toggle should live at the panel top edge");
-assert.match(studio, /workflow-studio-side[\s\S]{0,500}workflow-panel-tab workflow-panel-tab-right[\s\S]{0,700}<WorkflowInspector/, "Right workflow panel toggle should live at the panel top edge");
+assert.match(studio, /workflow-studio-side[\s\S]{0,700}workflow-side-panel-tabs/, "Right workflow panel should render section tabs at the panel top edge");
+assert.match(studio, /workflow-panel-collapse-button workflow-panel-tab-right/, "Right workflow panel collapse should stay separate from section selection");
 assert.match(studio, /leftPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Left workflow panel toggle should use the sidebar tab icon");
 assert.match(studio, /rightPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Right workflow panel toggle should use the sidebar tab icon");
 assert.match(studio, /is-left-collapsed[\s\S]{0,160}is-right-collapsed/, "Studio should put collapsed panel state on the shell");
@@ -112,6 +120,8 @@ assert.match(css, /\.workflow-panel-tab/, "Workflow CSS should style sidebar-lik
 assert.match(css, /--workflow-top-control-height:\s*34px/, "Workflow top controls should share a standardized height");
 assert.match(css, /--workflow-top-control-offset:\s*8px/, "Workflow top controls should share a standardized y offset (8px matches the palette's vertical padding)");
 assert.match(css, /\.workflow-panel-tab[\s\S]{0,320}width:\s*100%[\s\S]{0,160}height:\s*var\(--workflow-top-control-height\)[\s\S]{0,120}margin-top:\s*0[\s\S]{0,80}margin-bottom:\s*6px/, "Workflow panel tabs should span the full panel width, share the control height, and sit flush at the top (no offset) so the panel header pulls content up");
+assert.match(css, /\.workflow-side-panel-header/, "Workflow right side panel should style its tab row separately from the collapse control");
+assert.match(css, /\.workflow-side-panel-tab\[aria-selected="true"\]/, "Workflow right side panel should show the selected section tab");
 assert.match(css, /\.workflow-studio-library-panel,[\s\S]{0,140}flex-direction:\s*column/, "Workflow panel content should sit below the full-width trigger row");
 assert.match(css, /\.workflow-palette-item[\s\S]{0,160}min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
 assert.match(css, /is-left-collapsed[\s\S]{0,120}grid-template-columns:\s*36px/, "Collapsed left workflow panel should keep a visible toggle rail");

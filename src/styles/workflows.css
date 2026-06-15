@@ -101,9 +101,8 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-/* The panel tab doubles as the panel HEADER: a full-width row with the panel
-   title and the collapse toggle, flush to the top so the sections sit right
-   under it (same idiom as the main sidebar header). */
+/* The left panel tab doubles as the panel header: a full-width row with the
+   title and collapse toggle, flush to the top so sections sit right under it. */
 .workflow-panel-tab {
   display: flex;
   align-items: center;
@@ -156,6 +155,77 @@
   outline-offset: 1px;
 }
 
+.workflow-side-panel-header {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  flex-shrink: 0;
+  width: 100%;
+  height: var(--workflow-top-control-height);
+  margin: 0 0 6px;
+}
+
+.workflow-side-panel-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.workflow-side-panel-tab,
+.workflow-panel-collapse-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: var(--workflow-top-control-height);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.workflow-side-panel-tab {
+  gap: 5px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workflow-side-panel-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-panel-collapse-button {
+  flex: 0 0 var(--workflow-top-control-height);
+  width: var(--workflow-top-control-height);
+}
+
+.workflow-side-panel-tab:hover,
+.workflow-panel-collapse-button:hover {
+  border-color: var(--border-hairline);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.workflow-side-panel-tab:focus-visible,
+.workflow-panel-collapse-button:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.workflow-side-panel-tab[aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
 /* Collapsed: hide the title so only the toggle icon shows in the narrow strip. */
 .workflow-studio-shell.is-left-collapsed .workflow-panel-tab-left .workflow-panel-tab__title,
 .workflow-studio-shell.is-right-collapsed .workflow-panel-tab-right .workflow-panel-tab__title {
@@ -172,6 +242,20 @@
   align-items: flex-start;
   padding-top: 10px;
   margin-bottom: 0;
+}
+
+.workflow-studio-shell.is-right-collapsed .workflow-side-panel-header {
+  flex: 1 1 auto;
+  height: auto;
+  margin-bottom: 0;
+}
+
+.workflow-studio-shell.is-right-collapsed .workflow-side-panel-tabs {
+  display: none;
+}
+
+.workflow-studio-shell.is-right-collapsed .workflow-panel-collapse-button.workflow-panel-tab-right {
+  width: 100%;
 }
 
 .workflow-studio-side,
@@ -1488,6 +1572,8 @@
   }
 
   .workflow-panel-tab,
+  .workflow-side-panel-tab,
+  .workflow-panel-collapse-button,
   .workflow-palette-item,
   .workflow-run-row,
   .workflow-history-button,
