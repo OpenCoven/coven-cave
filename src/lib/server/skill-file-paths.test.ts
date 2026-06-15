@@ -15,6 +15,9 @@ async function touch(relativePath: string, contents = "# preview\n") {
 
 const claudeSkill = await touch(path.join(".claude", "skills", "deep-research", "SKILL.md"));
 const covenSkill = await touch(path.join(".coven", "skills", "foo", "SKILL.md"));
+const agentsSkill = await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
+const claudeSkillSymlink = path.join(home, ".claude", "skills", "brainstorming");
+await symlink(path.join(home, ".agents", "skills", "brainstorming"), claudeSkillSymlink);
 const claudeInstructions = await touch(path.join(".claude", "CLAUDE.md"));
 const codexInstructions = await touch(path.join(".codex", "AGENTS.md"));
 const nonMarkdown = await touch(path.join(".claude", "skills", "x", "run.sh"));
@@ -36,6 +39,11 @@ assert.equal(
   await isAllowedSkillFilePath(covenSkill, home),
   true,
   "a SKILL.md under ~/.coven/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(path.join(claudeSkillSymlink, "SKILL.md"), home),
+  true,
+  "a SKILL.md reached through a symlinked skill directory is allowed when the target is ~/.agents/skills",
 );
 
 // Harness instructions files (CLAUDE.md / AGENTS.md) are allowed under roots.

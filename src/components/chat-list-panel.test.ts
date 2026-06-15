@@ -12,8 +12,8 @@ assert.match(
 
 assert.match(
   source,
-  /Familiar runtime/,
-  "ChatList should label the familiar harness/model metadata as agent runtime",
+  /Runtime/,
+  "ChatList should label the familiar agent source as a runtime",
 );
 
 assert.match(
@@ -24,7 +24,7 @@ assert.match(
 
 assert.match(
   source,
-  /panelRole[\s\S]*Familiar runtime/,
+  /panelRole[\s\S]*Runtime/,
   "ChatList dossier header should keep the familiar role and runtime subtitle together",
 );
 
