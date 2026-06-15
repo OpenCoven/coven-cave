@@ -9,19 +9,21 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.93] - 2026-06-15
 
-Patch release: ships the familiar sessions polish, board project grouping, and Delegations trace recovery work after 0.0.92.
+Patch release: ships the familiar sessions polish, board project grouping, Delegations trace recovery, and chat runtime-scope hardening work after 0.0.92.
 
 ### Added
 - **Familiars** — redesigns the familiar sessions surface around the Familiars header, moves familiar switching into the chat top bar, and restores uploaded avatar images across Cave (#746, #749).
 - **Board** — groups task cards by Project in Kanban swimlanes and table sections (#755).
 - **Chat** — injects familiar daily memory startup context into local familiar chat prompts and enlarges familiar avatars in assistant turns (#750, #752).
 - **Delegations** — infers familiar-to-familiar traces from session initiator provenance, so Cave-visible sessions started by another familiar appear in the Delegations graph even without an explicit call ledger entry.
+- **Chat** — routes Markdown links in assistant turns into the companion browser sidepanel while preserving right-panel collapse behavior (#763).
 
 ### Fixed
 - **Release workflow** — installs platform runner dependencies needed by release builds (#747).
 - **Familiars** — downsizes large uploaded avatar images before storage (#751).
 - **Capabilities** — restores Markdown/Codex automation descriptor previews after the #742 regression (#753).
 - **Layout** — tightens Cave sidepanel spacing (#748).
+- **Runtime scope** — refuses invalid local project roots instead of silently falling back to the home directory, and injects a runtime filesystem boundary into Cave-launched harness prompts so sessions know to stay inside their declared local or SSH root (#763; OpenCoven/coven#230).
 
 ## [0.0.92] - 2026-06-15
 
