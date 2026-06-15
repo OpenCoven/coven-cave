@@ -35,10 +35,11 @@ try {
   assert.match(context.contents, /blue orchid/);
 
   const prompt = buildPromptWithFamiliarStartupContext("What is today's codeword?", [context]);
-  assert.match(prompt, /Project Context \(familiar workspace files loaded at session start\):/);
-  assert.match(prompt, /# memory\/2026-06-15\.md instructions for /);
-  assert.match(prompt, /<INSTRUCTIONS>\n# Daily notes\n\nCodeword: blue orchid\n<\/INSTRUCTIONS>/);
-  assert.match(prompt, /What is today's codeword\?/);
+  assert.match(
+    prompt,
+    /<INSTRUCTIONS>\n\nProject Context \(familiar workspace files loaded at session start\):\n\n# memory\/2026-06-15\.md instructions for .+\n# Daily notes\n\nCodeword: blue orchid\n\n<\/INSTRUCTIONS>/,
+  );
+  assert.match(prompt, /<\/INSTRUCTIONS>\n\nWhat is today's codeword\?$/);
 
   assert.equal(
     await readFamiliarDailyMemoryStartupContext(workspace, {
