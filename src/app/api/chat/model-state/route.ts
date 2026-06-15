@@ -54,7 +54,7 @@ async function currentState(
     harness: binding.harness,
     runtime: conversation?.runtime ?? runtimeForBinding(binding),
     globalDefaultModel: config.defaults.model,
-    familiarModel: binding.model,
+    familiarModel: config.familiars[familiarId]?.model ?? null,
     sessionModel: conversation?.modelIntent?.model,
     nextMessageModel,
     lastResponseModel: lastResponseModel(conversation),

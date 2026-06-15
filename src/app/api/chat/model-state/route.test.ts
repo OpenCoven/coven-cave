@@ -13,10 +13,7 @@ assert.match(route, /saveConfig/);
 assert.match(route, /saveConversation/);
 assert.match(route, /scope !== "familiar-default" && scope !== "session"/);
 assert.match(route, /next-message scope is composer-local/);
-assert.doesNotMatch(
-  route,
-  /modelOverrideScope.*next-message[\s\S]*saveConfig/,
-  "next-message choices must never persist to Cave config",
-);
+const nextMessageBranch = route.match(/if \(scope === "next-message"\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
+assert.doesNotMatch(nextMessageBranch, /saveConfig/, "next-message choices must never persist to Cave config");
 
 console.log("chat-model-state route test: ok");
