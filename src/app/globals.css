@@ -4317,6 +4317,7 @@ button:active > .edge-rail-chip {
     position: fixed !important;
     top: 0;
     bottom: 0;
+    height: 100dvh;
     z-index: 200;
     width: min(86vw, 320px) !important;
     min-width: 0 !important;
@@ -4327,6 +4328,8 @@ button:active > .edge-rail-chip {
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    padding-top: var(--sai-top);
+    padding-bottom: var(--sai-bottom);
     transition: transform var(--duration-base) var(--ease-emphasized);
     will-change: transform;
   }
@@ -4387,8 +4390,8 @@ button:active > .edge-rail-chip {
     grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 0 calc(8px + var(--sai-right)) 0 calc(8px + var(--sai-left));
     padding-top: var(--sai-top);
-    height: calc(40px + var(--sai-top));
-    gap: 6px;
+    height: calc(52px + var(--sai-top));
+    gap: 8px;
   }
   .top-bar__mobile-toggle {
     display: inline-flex;
@@ -4405,7 +4408,9 @@ button:active > .edge-rail-chip {
                 color var(--duration-fast) var(--ease-standard);
   }
   .top-bar__mobile-toggle:hover,
-  .top-bar__mobile-toggle:focus-visible {
+  .top-bar__mobile-toggle:focus-visible,
+  .top-bar__mobile-toggle[aria-expanded="true"],
+  .top-bar__mobile-toggle[aria-pressed="true"] {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
@@ -4416,6 +4421,8 @@ button:active > .edge-rail-chip {
   .top-bar__search {
     min-width: 0;
     width: 100%;
+    min-height: var(--touch-target);
+    padding-block: 0;
   }
   .top-bar__search span {
     min-width: 0;
@@ -4479,29 +4486,41 @@ button:active > .edge-rail-chip {
   align-items: stretch;
   justify-content: space-around;
   gap: 0;
-  min-height: 56px;
+  min-height: 60px;
   padding: 0 calc(4px + var(--sai-left, 0px)) 0 calc(4px + var(--sai-right, 0px));
   padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border-top: 1px solid var(--border-hairline);
+  background:
+    linear-gradient(to top, color-mix(in oklch, var(--bg-base) 92%, transparent), color-mix(in oklch, var(--bg-raised) 88%, transparent)),
+    color-mix(in oklch, var(--bg-raised) 92%, transparent);
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 88%, transparent);
+  box-shadow: 0 -14px 32px color-mix(in oklch, black 18%, transparent);
 }
 .mobile-bottom-tab {
+  position: relative;
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 6px 10px;
+  gap: 3px;
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: 7px 6px 8px;
   background: transparent;
   border: 0;
   color: var(--text-muted);
   font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: color var(--duration-fast) var(--ease-standard);
+  border-radius: 10px;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+.mobile-bottom-tab:hover,
+.mobile-bottom-tab:focus-visible {
+  background: color-mix(in oklch, var(--bg-hover) 70%, transparent);
 }
 .mobile-bottom-tab:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
@@ -4521,13 +4540,34 @@ button:active > .edge-rail-chip {
   font-size: 11px;
   line-height: 1.1;
   font-weight: 500;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mobile-bottom-tab--active {
   color: var(--accent-presence);
 }
 .mobile-bottom-tab--active .mobile-bottom-tab__label {
   font-weight: 600;
+}
+.mobile-bottom-tab__indicator {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: calc(4px + max(0px, var(--sai-bottom)));
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform var(--duration-fast) var(--ease-emphasized),
+              opacity var(--duration-fast) var(--ease-standard);
+}
+.mobile-bottom-tab--active .mobile-bottom-tab__indicator {
+  transform: scaleX(1);
+  opacity: 1;
 }
 .mobile-bottom-tab__badge {
   position: absolute;

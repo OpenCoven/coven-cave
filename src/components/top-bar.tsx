@@ -24,6 +24,9 @@ type Props = {
   onToggleNav?: () => void;
   onToggleList?: () => void;
   onToggleFamiliar?: () => void;
+  navDrawerOpen?: boolean;
+  listDrawerOpen?: boolean;
+  familiarDrawerOpen?: boolean;
 };
 
 export function TopBar(props: Props) {
@@ -41,6 +44,9 @@ export function TopBar(props: Props) {
     onToggleNav,
     onToggleList,
     onToggleFamiliar,
+    navDrawerOpen,
+    listDrawerOpen,
+    familiarDrawerOpen,
   } = props;
 
   return (
@@ -53,8 +59,10 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleNav}
-            aria-label="Open navigation (⌘B)"
-            title="Open navigation"
+            aria-label={navDrawerOpen ? "Close navigation" : "Open navigation (⌘B)"}
+            aria-expanded={Boolean(navDrawerOpen)}
+            aria-controls="nav"
+            title={navDrawerOpen ? "Close navigation" : "Open navigation"}
           >
             <Icon name="ph:sidebar-simple" width={18} />
           </button>
@@ -64,8 +72,11 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleList}
-            aria-label="Open list (⌘\\)"
-            title="Open list"
+            aria-label={listDrawerOpen ? "Close list" : "Open list (⌘\\)"}
+            aria-expanded={Boolean(listDrawerOpen)}
+            aria-pressed={Boolean(listDrawerOpen)}
+            aria-controls="list"
+            title={listDrawerOpen ? "Close list" : "Open list"}
           >
             <Icon name="ph:list-checks-bold" width={18} />
           </button>
@@ -116,8 +127,11 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleFamiliar}
-            aria-label="Open familiar panel (⌘J)"
-            title="Open familiar panel"
+            aria-label={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel (⌘J)"}
+            aria-expanded={Boolean(familiarDrawerOpen)}
+            aria-pressed={Boolean(familiarDrawerOpen)}
+            aria-controls="agent"
+            title={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel"}
           >
             <Icon name="ph:cat" width={18} />
           </button>
