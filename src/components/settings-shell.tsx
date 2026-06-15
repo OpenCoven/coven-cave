@@ -200,10 +200,14 @@ export function SettingsShell() {
 // ─── Section: General ─────────────────────────────────────────────────────────
 
 function GeneralSection() {
-  const [demoMode, setDemoMode] = useState(() => isDemoModeEnabled());
+  // Start from the SSR-safe default (false) so the first client render matches the
+  // server's; read the real localStorage value after mount to avoid an aria-pressed
+  // hydration mismatch on the Demo mode toggle.
+  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
     const sync = () => setDemoMode(isDemoModeEnabled());
+    sync();
     window.addEventListener(DEMO_MODE_EVENT, sync);
     return () => window.removeEventListener(DEMO_MODE_EVENT, sync);
   }, []);

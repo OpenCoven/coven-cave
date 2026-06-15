@@ -264,3 +264,17 @@ assert.match(
   /clearDemoModeData/,
   "Settings should offer an easy demo-mode reset path",
 );
+
+// Demo-mode toggle must hydrate SSR-safe: reading localStorage during render makes
+// the first client render's aria-pressed disagree with the server's → hydration
+// mismatch. Start from the default and read the real value after mount.
+assert.doesNotMatch(
+  settings,
+  /useState\(\(\) => isDemoModeEnabled\(\)\)/,
+  "Demo-mode state must not read localStorage during render (SSR hydration mismatch)",
+);
+assert.match(
+  settings,
+  /const sync = \(\) => setDemoMode\(isDemoModeEnabled\(\)\);\s*sync\(\);/,
+  "Demo-mode reads its real value after mount via sync() in the effect",
+);
