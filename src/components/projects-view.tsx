@@ -50,13 +50,24 @@ function chatDotClass(status: string): string {
 
 // A chat under a project card: click opens it (via the agents-open-session
 // event the chat surface already listens for); the handle drags it to reorder
-// within the project or onto another project card to move it.
-function ProjectChatRow({ session, onOpen }: { session: SessionRow; onOpen: () => void }) {
+// within the project or onto another project card to move it. The trash button
+// deletes the chat with a two-step confirm, mirroring the Chats list.
+function ProjectChatRow({
+  session,
+  onOpen,
+  onDelete,
+}: {
+  session: SessionRow;
+  onOpen: () => void;
+  onDelete: (id: string) => Promise<void>;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id,
   });
   const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
   const title = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   return (
     <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/pc relative">
       <div
@@ -81,6 +92,47 @@ function ProjectChatRow({ session, onOpen }: { session: SessionRow; onOpen: () =
         </button>
         <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${chatDotClass(session.status)}`} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        {confirmDelete ? (
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmDelete(false);
+              }}
+              className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={async (e) => {
+                e.stopPropagation();
+                setDeleting(true);
+                await onDelete(session.id);
+                setDeleting(false);
+                setConfirmDelete(false);
+              }}
+              className="focus-ring rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDelete(true);
+            }}
+            title="Delete chat"
+            aria-label={`Delete ${title}`}
+            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100"
+          >
+            <Icon name="ph:trash-bold" width={11} aria-hidden />
+          </button>
+        )}
       </div>
     </li>
   );
@@ -89,6 +141,7 @@ function ProjectChatRow({ session, onOpen }: { session: SessionRow; onOpen: () =
 type ProjectsViewProps = {
   sessions?: SessionRow[];
   onNewChat?: (projectRoot: string) => void;
+  onSessionsChanged?: () => void;
 };
 
 function openSessionById(sessionId: string): void {
@@ -104,6 +157,7 @@ type ProjectRowProps = {
   onDelete: (id: string) => Promise<boolean>;
   onNewChat?: (projectRoot: string) => void;
   onOpenSession?: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => Promise<void>;
 };
 
 function ProjectRow({
@@ -114,6 +168,7 @@ function ProjectRow({
   onDelete,
   onNewChat,
   onOpenSession,
+  onDeleteSession,
 }: ProjectRowProps) {
   const chatCount = chats.length;
   const [showAllChats, setShowAllChats] = useState(false);
@@ -308,7 +363,12 @@ function ProjectRow({
           <SortableContext items={visibleChats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             <ul className="mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
               {visibleChats.map((session) => (
-                <ProjectChatRow key={session.id} session={session} onOpen={() => onOpenSession?.(session.id)} />
+                <ProjectChatRow
+                  key={session.id}
+                  session={session}
+                  onOpen={() => onOpenSession?.(session.id)}
+                  onDelete={onDeleteSession}
+                />
               ))}
             </ul>
           </SortableContext>
@@ -332,7 +392,7 @@ function ProjectRow({
   );
 }
 
-export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
+export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: ProjectsViewProps) {
   const {
     projects,
     loading,
@@ -347,6 +407,7 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const projectOverrides = useProjectOverrides();
   const [order, setOrder] = useState<string[]>([]);
   useEffect(() => {
@@ -424,6 +485,24 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
     setNameDraft("");
     setRootDraft("");
     setShowForm(false);
+  };
+
+  // Delete a chat from its project card, mirroring the Chats list delete
+  // (DELETE /api/chat/conversation/:id), then ask the parent to refetch
+  // sessions so the row disappears everywhere.
+  const handleDeleteSession = async (sessionId: string) => {
+    setSessionError(null);
+    try {
+      const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setSessionError(json.error ?? "delete failed");
+        return;
+      }
+      onSessionsChanged?.();
+    } catch (err) {
+      setSessionError(err instanceof Error ? err.message : "delete failed");
+    }
   };
 
   return (
@@ -550,6 +629,21 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
                 </button>
               </div>
             ) : null}
+            {sessionError ? (
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+              >
+                <span className="min-w-0 truncate">Couldn't delete chat: {sessionError}</span>
+                <button
+                  type="button"
+                  onClick={() => setSessionError(null)}
+                  className="focus-ring shrink-0 rounded-md border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ) : null}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               {projects.map((project) => (
                 <ProjectRow
@@ -561,6 +655,7 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
                   onDelete={deleteProject}
                   onNewChat={onNewChat}
                   onOpenSession={openSessionById}
+                  onDeleteSession={handleDeleteSession}
                 />
               ))}
             </DndContext>
