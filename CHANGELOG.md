@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.92] - 2026-06-15
+
+Patch release: ships the post-0.0.91 hardening and Cave polish sweep.
+
+### Added
+- **Salem Pathfinder** — adds the Home entry point, deterministic pathfinder cards, Save-to-Board flow, local feedback capture, and eval fixtures (#703, #724, #727, #730).
+- **Familiars** — replaces the scope dropdown with the horizontal dock, adds the sleeker Studio/dock surfaces, moves the switcher into the top bar, and gives the sidebar switcher a legible labeled trigger (#701, #722, #723, #729, #741, #744).
+- **Capabilities** — expands rows with inline inspector details and previews supported Markdown/Codex automation descriptors safely (#732, #737, #742).
+- **Calls** — surfaces delegation attention summaries in the calls graph (#740).
+
+### Fixed
+- **Security** — hardens daemon session APIs, launch cwd handling, local PDF serving, memory and skill file reads, checkpoint diff hooks, and sidecar dependency integrity (#705, #711, #715, #718, #719, #720, #721).
+- **Terminal** — locks down PTY websocket auth while restoring credential-less loopback and verifying peer address for the local desktop path (#708, #714, #735, #738).
+- **Mobile/Tailscale** — requires signed native access, avoids leaking handoff tokens, keeps proxy source checks same-origin, and fixes sidecar-token requests through Tailscale Serve (#706, #709, #710, #712, #713, #716, #739).
+- **Library** — dedupes table-of-contents heading IDs so duplicate React keys do not break the reader (#731).
+- **Memory** — blocks symlink escapes while preserving valid reads under a symlinked root (#717, #736).
+- **Workflows** — pins the collapsed right-panel toggle to the top (#734).
+
 ## [0.0.91] - 2026-06-15
 
 Patch release: tidies the GitHub PAT button.

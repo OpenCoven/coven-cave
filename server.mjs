@@ -18,56 +18,71 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   }
 }
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
-const ACCESS_COOKIE = "coven_access_token";
+const ACCESS_COOKIE = "coven_cave_access";
+const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const ACCESS_QUERY_PARAM = "coven_access_token";
 const sessions = /* @__PURE__ */ new Map();
-const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
-const DETACH_GRACE_MS = 6e4;
-function appendScrollback(session, data) {
-  session.scrollback.push(data);
-  session.scrollbackBytes += data.length;
-  while (session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES && session.scrollback.length > 1) {
-    const dropped = session.scrollback.shift();
-    if (dropped) session.scrollbackBytes -= dropped.length;
-  }
-}
-function getTokenFromCookie(header) {
-  if (!header) return "";
+function getTokensFromCookie(header) {
+  if (!header) return [];
+  const tokens = [];
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE) {
-      return decodeURIComponent(rest.join("=") ?? "");
+    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
+      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
     }
   }
-  return "";
+  return tokens;
 }
-function isLoopbackHostHeader(host) {
+function timingSafeEqualString(a, b) {
+  const aBytes = Buffer.from(a);
+  const bBytes = Buffer.from(b);
+  if (aBytes.length !== bBytes.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i += 1) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
+function isExpectedToken(value) {
+  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+}
+function bearerToken(req) {
+  const auth = req.headers.authorization ?? "";
+  return auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : null;
+}
+function isLoopbackHost(host) {
   if (!host) return false;
   const hostname2 = host.startsWith("[") ? host.slice(1, host.indexOf("]")) : host.split(":")[0];
   return hostname2 === "127.0.0.1" || hostname2 === "localhost" || hostname2 === "::1";
 }
-function isAuthorized(req) {
-  if (!ACCESS_TOKEN) return true;
-  const cookie = getTokenFromCookie(req.headers.cookie);
-  const auth = req.headers.authorization ?? "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-  const supplied = cookie || bearer;
-  if (supplied) return supplied === ACCESS_TOKEN;
-  return isLoopbackHostHeader(req.headers.host);
+function isLoopbackAddress(value) {
+  if (!value) return false;
+  if (value === "::1" || value === "127.0.0.1") return true;
+  if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
+  return false;
 }
-function isLoopbackHostname(hostname2) {
-  return hostname2 === "127.0.0.1" || hostname2 === "localhost" || hostname2 === "::1";
-}
-function isAllowedUpgradeOrigin(req) {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  let url;
+function sameOrigin(value, expectedOrigin) {
+  if (!value) return true;
   try {
-    url = new URL(origin);
+    const url = new URL(value);
+    if (url.origin === expectedOrigin) return true;
+    const expected = new URL(expectedOrigin);
+    return url.protocol === expected.protocol && url.port === expected.port && isLoopbackHost(url.host) && isLoopbackHost(expected.host);
   } catch {
     return false;
   }
-  if (isLoopbackHostname(url.hostname)) return true;
-  return url.host === (req.headers.host ?? "");
+}
+function isAllowedUpgradeSource(req) {
+  const host = req.headers.host;
+  if (!isLoopbackHost(host)) return false;
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
+  return sameOrigin(req.headers.origin, `http://${host}`);
+}
+function isAuthorized(req, query) {
+  if (!ACCESS_TOKEN) return false;
+  const queryToken = Array.isArray(query[ACCESS_QUERY_PARAM]) ? query[ACCESS_QUERY_PARAM][0] : query[ACCESS_QUERY_PARAM];
+  const candidates = [bearerToken(req), queryToken, ...getTokensFromCookie(req.headers.cookie)];
+  return candidates.some(isExpectedToken);
 }
 function defaultShell() {
   if (process.platform === "darwin") return "/bin/zsh";
@@ -165,10 +180,7 @@ function spawnPty(threadId, ws, cols, rows, cwd) {
     detachTimer: null
   };
   sessions.set(threadId, session);
-  shell.onData((data) => {
-    appendScrollback(session, Buffer.from(data, "utf8"));
-    if (session.ws) sendPtyData(session.ws, data);
-  });
+  shell.onData((data) => sendPtyData(ws, data));
   shell.onExit(({ exitCode }) => {
     const current = sessions.get(threadId);
     if (current?.pty === shell) {
@@ -234,22 +246,16 @@ function handlePtyConnection(ws, threadId, cols, rows, cwd) {
   ws.on("message", (data) => onWsMessage(threadId, data));
   ws.on("close", () => {
     const session = sessions.get(threadId);
-    if (session?.ws !== ws) return;
-    session.ws = null;
-    if (session.detachTimer) clearTimeout(session.detachTimer);
-    session.detachTimer = setTimeout(() => {
-      const current = sessions.get(threadId);
-      if (current !== session || current.ws) return;
-      sessions.delete(threadId);
-      try {
-        session.pty.kill();
-      } catch {
-      }
-    }, DETACH_GRACE_MS);
+    if (!session || session.ws !== ws) return;
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+    }
   });
 }
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? (dev ? "127.0.0.1" : "0.0.0.0");
+const hostname = process.env.HOSTNAME ?? "127.0.0.1";
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
@@ -269,12 +275,12 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  if (!isAllowedUpgradeOrigin(req)) {
+  if (!isAllowedUpgradeSource(req)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (!isAuthorized(req)) {
+  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
