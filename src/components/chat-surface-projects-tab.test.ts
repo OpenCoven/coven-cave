@@ -10,8 +10,12 @@ assert.match(events, /CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects"/, "ev
 assert.match(surface, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "chat-surface imports ProjectsView");
 assert.match(surface, /CHAT_OPEN_PROJECTS_EVENT/, "chat-surface references the reroute event");
 assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "projects"/, "scope union includes projects");
-assert.match(surface, /\["conversation", "memory", "projects"\] as const/, "tablist lists the projects tab");
-assert.match(surface, /projects: "Projects"/, "projects tab is labeled");
+assert.match(
+  surface,
+  /\{\s*id:\s*"conversation",\s*label:\s*"Chats"\s*\}[\s\S]*?\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}[\s\S]*?\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
+  "shared Tabs items list all three scopes ending with the projects tab",
+);
+assert.match(surface, /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/, "projects tab is labeled");
 assert.match(surface, /scope === "projects" \? \(/, "projects scope renders its own panel");
 assert.match(surface, /<ProjectsView[\s\S]*?sessions=\{sessions\}/, "projects panel renders ProjectsView with sessions");
 assert.match(surface, /onNewChat=\{startProjectChat\}/, "projects panel wires onNewChat to startProjectChat");
