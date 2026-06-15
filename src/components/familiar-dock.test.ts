@@ -14,4 +14,10 @@ assert.doesNotMatch(src, /onNewChat/, "dock filters; it does not start chats");
 // Add button quick-creates via the studio list (discoverable add path).
 assert.match(src, /familiar-dock__add/, "renders the add button");
 
+// Task 3: presence + unread
+assert.match(src, /import \{ computePresence, REMOTE_HARNESSES \} from "@\/lib\/presence"/, "uses presence helpers");
+assert.match(src, /familiar-dock__presence/, "renders a presence dot");
+assert.match(src, /familiar-dock__unread/, "renders an unread dot");
+assert.match(src, /responseNeeded\?\.has\(f\.id\)/, "unread comes from responseNeeded");
+
 console.log("familiar-dock.test.ts OK");

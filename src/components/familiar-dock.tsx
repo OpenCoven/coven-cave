@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -18,6 +19,8 @@ type Props = {
 export function FamiliarDock({
   familiars,
   activeFamiliarId,
+  sessions,
+  responseNeeded,
   onFamiliarScopeChange,
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
@@ -39,6 +42,13 @@ export function FamiliarDock({
 
         {familiars.map((f) => {
           const active = f.id === activeFamiliarId;
+          const needsReply = responseNeeded?.has(f.id) ?? false;
+          const presence = computePresence({
+            familiar: f,
+            sessions,
+            needsReply,
+            isRemoteHarness: f.harness ? REMOTE_HARNESSES.has(f.harness) : false,
+          });
           return (
             <button
               key={f.id}
@@ -47,12 +57,14 @@ export function FamiliarDock({
               style={{ ["--familiar-accent" as string]: f.color }}
               className={`familiar-dock__avatar${active ? " familiar-dock__avatar--active" : ""}`}
               aria-pressed={active}
-              aria-label={`Filter by ${f.display_name}`}
-              title={f.display_name}
+              aria-label={`Filter by ${f.display_name}${needsReply ? " — reply needed" : ""}`}
+              title={`${f.display_name} · ${presence.label}`}
               onClick={() => onFamiliarScopeChange(f.id)}
               onContextMenu={(e) => { e.preventDefault(); openFamiliarStudio(f.id, "identity"); }}
             >
               <FamiliarAvatar familiar={f} size="sm" />
+              <span className={`familiar-dock__presence ${presence.dot}`} aria-hidden />
+              {needsReply ? <span className="familiar-dock__unread" aria-hidden /> : null}
             </button>
           );
         })}
