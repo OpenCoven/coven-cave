@@ -6,6 +6,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { computeDockInlineCount } from "@/lib/familiar-dock-overflow";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
+import { Popover, PopoverBody, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -51,6 +52,14 @@ export function FamiliarDock({
   const inline = useMemo(() => familiars.slice(0, inlineCount), [familiars, inlineCount]);
   const overflow = useMemo(() => familiars.slice(inlineCount), [familiars, inlineCount]);
   const overflowCount = overflow.length;
+
+  const [query, setQuery] = useState("");
+  const [reordering, setReordering] = useState(false);
+  const q = query.trim().toLowerCase();
+  const matches = (f: ResolvedFamiliar) =>
+    !q || f.display_name.toLowerCase().includes(q) || (f.role ?? "").toLowerCase().includes(q);
+  const overflowMatches = overflow.filter(matches);
+  const inlineMatches = inline.filter(matches);
 
   return (
     <div className="familiar-dock" aria-label="Familiars">
@@ -120,6 +129,95 @@ export function FamiliarDock({
           <Icon name="ph:plus-bold" width={12} aria-hidden />
         </button>
       </div>
+
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen} anchorRef={overflowBtnRef} placement="bottom-end" minWidth={280}>
+        <div className="familiar-dock__pop">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter familiars…"
+            aria-label="Filter familiars"
+            className="familiar-dock__pop-search"
+            autoFocus
+          />
+          <PopoverBody>
+            {overflowMatches.length > 0 ? (
+              <>
+                <PopoverLabel>Not shown in dock</PopoverLabel>
+                {overflowMatches.map((f) => (
+                  <PopoverFamiliarRow
+                    key={f.id}
+                    familiar={f}
+                    active={f.id === activeFamiliarId}
+                    needsReply={responseNeeded?.has(f.id) ?? false}
+                    onSelect={() => { onFamiliarScopeChange(f.id); setPopoverOpen(false); }}
+                    onCustomize={() => { openFamiliarStudio(f.id, "identity"); setPopoverOpen(false); }}
+                  />
+                ))}
+              </>
+            ) : null}
+            {inlineMatches.length > 0 ? (
+              <>
+                <PopoverLabel>In dock</PopoverLabel>
+                {inlineMatches.map((f) => (
+                  <PopoverFamiliarRow
+                    key={f.id}
+                    familiar={f}
+                    active={f.id === activeFamiliarId}
+                    needsReply={responseNeeded?.has(f.id) ?? false}
+                    onSelect={() => { onFamiliarScopeChange(f.id); setPopoverOpen(false); }}
+                    onCustomize={() => { openFamiliarStudio(f.id, "identity"); setPopoverOpen(false); }}
+                  />
+                ))}
+              </>
+            ) : null}
+            <PopoverSeparator />
+            <div className="familiar-dock__pop-foot">
+              <button type="button" className="familiar-dock__pop-btn familiar-dock__pop-btn--pri"
+                onClick={() => { openFamiliarStudioListView(); setPopoverOpen(false); }}>
+                <Icon name="ph:plus-bold" width={11} aria-hidden /> New
+              </button>
+              <button type="button" className="familiar-dock__pop-btn"
+                onClick={() => { openFamiliarStudioListView(); setPopoverOpen(false); }}>
+                <Icon name="ph:list-bullets" width={11} aria-hidden /> Manage
+              </button>
+              <button type="button" className="familiar-dock__pop-btn"
+                onClick={() => { setReordering(true); setPopoverOpen(false); }}>
+                <Icon name="ph:arrows-out-line-vertical" width={11} aria-hidden /> Reorder
+              </button>
+            </div>
+          </PopoverBody>
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+function PopoverFamiliarRow({
+  familiar,
+  active,
+  needsReply,
+  onSelect,
+  onCustomize,
+}: {
+  familiar: ResolvedFamiliar;
+  active: boolean;
+  needsReply: boolean;
+  onSelect: () => void;
+  onCustomize: () => void;
+}) {
+  return (
+    <div className={`familiar-dock__pop-row${active ? " familiar-dock__pop-row--active" : ""}`}>
+      <button type="button" className="familiar-dock__pop-pick" onClick={onSelect} aria-pressed={active}>
+        <FamiliarAvatar familiar={familiar} size="sm" />
+        <span className="familiar-dock__pop-name">{familiar.display_name}</span>
+        <span className="familiar-dock__pop-role">{familiar.role}</span>
+        {needsReply ? <span className="familiar-dock__pop-unread" aria-hidden /> : null}
+      </button>
+      <button type="button" className="familiar-dock__pop-gear" aria-label={`Customize ${familiar.display_name}`} title="Customize" onClick={onCustomize}>
+        <Icon name="ph:gear-six" width={12} aria-hidden />
+      </button>
     </div>
   );
 }

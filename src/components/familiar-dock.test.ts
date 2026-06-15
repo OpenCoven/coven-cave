@@ -26,4 +26,11 @@ assert.match(src, /ResizeObserver/, "measures the row width responsively");
 assert.match(src, /familiar-dock__overflow/, "renders the overflow button");
 assert.match(src, /overflowCount > 0/, "overflow button is conditional on hidden count");
 
+// Task 5: overflow + operations popover
+assert.match(src, /from "@\/components\/ui\/popover"/, "uses the shared popover");
+assert.match(src, /placeholder="Filter familiars…"/, "popover has a search field");
+assert.match(src, /Not shown in dock/, "popover groups overflow familiars");
+assert.match(src, /openFamiliarStudioListView\(\)/, "Manage opens the studio list");
+assert.match(src, /Reorder/, "footer exposes Reorder");
+
 console.log("familiar-dock.test.ts OK");
