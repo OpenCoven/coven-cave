@@ -32,7 +32,8 @@ export type FolderMode =
   | "roles"
   | "workflows"
   | "library"
-  | "capabilities";
+  | "capabilities"
+  | "calls";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -89,6 +90,7 @@ const FOLDER_MODES: Array<{
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Reusable agent personas you can attach to a familiar" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools", description: "Skills and tools your familiars can use" },
+  { id: "calls", label: "Delegations", iconName: "ph:graph", group: "tools", description: "Delegation call graph and live floor activity" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you" },
 ];

@@ -4,6 +4,21 @@ import { readFileSync } from "node:fs";
 
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+
+// The Delegations (calls) surface is wired back into navigation: a Tools entry
+// in the sidebar + a render branch + a mode title in the workspace.
+assert.match(
+  source,
+  /\{ id: "calls", label: "Delegations", iconName: "ph:graph", group: "tools", description:/,
+  "Delegations should appear as a Tools surface (CallsView wired back into nav)",
+);
+assert.match(
+  workspace,
+  /mode === "calls" \?\s*\(\s*<CallsView/,
+  "workspace should render CallsView for the calls mode",
+);
+assert.match(workspace, /calls: "Delegations"/, "calls mode has a Delegations title");
 
 assert.match(
   source,
