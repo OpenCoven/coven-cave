@@ -7,7 +7,7 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-## [0.0.90] - 2026-06-15
+## [0.0.91] - 2026-06-15
 
 Patch release: tidies the GitHub PAT button.
 
