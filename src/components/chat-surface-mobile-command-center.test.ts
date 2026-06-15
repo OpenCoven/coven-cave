@@ -31,6 +31,18 @@ assert.match(
 
 assert.match(
   styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-scope-tabs\s*\{[\s\S]*min-height\s*:\s*calc\(var\(--touch-target\) \+ 4px\)/,
+  "Mobile chat tab strip should leave room for touch-sized tabs",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-scope-tabs \[role="tab"\],[\s\S]*\.chat-scope-tabs__new\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "Mobile chat scope tabs and New action should meet the shared touch target",
+);
+
+assert.match(
+  styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.shell-detail:has\(> \.cave-mode-fade > \.chat-surface\)\s*\{[\s\S]*overflow\s*:\s*hidden/,
   "Mobile chat should prevent the shell detail from becoming a second scroll owner",
 );

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./calendar-view.tsx", import.meta.url), "utf8");
+const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // ───────── Task 1: AM/PM hour labels ─────────
 assert.match(
@@ -145,4 +146,21 @@ assert.match(
   source,
   /aria-label="Add event"/,
   "Toolbar Add event button is labeled",
+);
+
+// ───────── Mobile toolbar hit areas ─────────
+assert.match(source, /calendar-toolbar/, "Calendar toolbar should expose a stable mobile hook");
+assert.match(source, /calendar-toolbar-icon/, "Calendar icon buttons should expose a mobile hook");
+assert.match(source, /calendar-toolbar-button/, "Calendar toolbar buttons should expose a mobile hook");
+assert.match(source, /calendar-heading-button/, "Calendar heading button should expose a mobile hook");
+assert.match(source, /calendar-empty-action/, "Calendar empty-state actions should expose a mobile hook");
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.calendar-toolbar-icon,[\s\S]*\.calendar-toolbar-button,[\s\S]*\.calendar-heading-button,[\s\S]*\.calendar-empty-action\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile calendar toolbar and empty-state controls should meet the shared touch target",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.calendar-toolbar-icon\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile calendar icon buttons should be square touch targets",
 );

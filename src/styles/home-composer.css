@@ -248,7 +248,7 @@
   .hc-familiar-select {
     width: 100%;
     max-width: none;
-    min-height: 36px;
+    min-height: var(--touch-target);
     font-size: 15px;
   }
 

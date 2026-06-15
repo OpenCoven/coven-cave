@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
+const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
 assert.match(
@@ -51,6 +52,33 @@ assert.doesNotMatch(
   pane,
   /w-\[2px\] rounded-r-full bg-\[var\(--fg-base\)\]\/20/,
   "Old 2px accent dot must be removed",
+);
+
+// ───────── Mobile browser chrome ─────────
+assert.match(pane, /browser-toolbar/, "Browser toolbar should expose a stable mobile chrome hook");
+assert.match(pane, /browser-toolbar-button/, "Browser toolbar buttons should expose a mobile hook");
+assert.match(pane, /browser-address-form/, "Browser address form should expose a mobile hook");
+assert.match(pane, /browser-address-input/, "Browser address input should expose a mobile hook");
+assert.match(pane, /browser-toolbar-save/, "Browser save button should expose a mobile hook");
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.browser-tab-rail\s*\{[\s\S]*display:\s*none/,
+  "Mobile browser should hide the hover rail instead of exposing tiny offscreen controls",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.browser-toolbar\s*\{[\s\S]*transform:\s*none !important[\s\S]*pointer-events:\s*auto !important/,
+  "Mobile browser toolbar should stay visible without relying on hover or keyboard shortcuts",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.browser-toolbar-button,[\s\S]*\.browser-toolbar-save\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile browser toolbar buttons should meet the shared touch target",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.browser-address-input\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile browser address input should meet the shared touch target",
 );
 
 // ───────── Task 4: Quick-open backdrop ─────────

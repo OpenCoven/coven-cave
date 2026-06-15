@@ -474,7 +474,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       {view === "terminal" ? (
         <div className="flex flex-1 flex-col min-h-0">
           {/* Session tab strip */}
-          <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-2 py-1 text-[11px]">
+          <div className="comux-terminal-tab-strip flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-2 py-1 text-[11px]">
             <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
               {sessions.map((s, i) => (
                 <div
@@ -514,7 +514,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       e.stopPropagation();
                       removeSession(i);
                     }}
-                    className="hidden items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] group-hover:inline-flex"
+                    className="comux-terminal-tab-close hidden items-center text-[var(--text-muted)] hover:text-[var(--text-primary)] group-hover:inline-flex"
                     aria-label={`Close ${s.label}`}
                   >
                     <Icon name="ph:x-bold" width={10} />
@@ -522,13 +522,13 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 </div>
               ))}
             </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <div className="flex items-center gap-0.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5">
+            <div className="comux-terminal-toolbar-actions flex shrink-0 items-center gap-1.5">
+              <div className="comux-terminal-split-controls flex items-center gap-0.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5">
                 <button
                   type="button"
                   onClick={() => onSplitTerminal("horizontal")}
                   disabled={sessions.length === 0}
-                  className="inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
+                  className="comux-terminal-toolbar-button inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
                   title="Split right"
                 >
                   <Icon name="ph:columns" width={12} aria-hidden />
@@ -538,7 +538,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   type="button"
                   onClick={() => onSplitTerminal("vertical")}
                   disabled={sessions.length === 0}
-                  className="inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
+                  className="comux-terminal-toolbar-button inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
                   title="Split down"
                 >
                   <Icon name="ph:rows" width={12} aria-hidden />
@@ -550,7 +550,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 onClick={() => addSession()}
                 aria-label="New terminal"
                 title="New terminal (⌘N)"
-                className="inline-grid h-[22px] w-[22px] place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                className="comux-terminal-add-button inline-grid h-[22px] w-[22px] place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
               >
                 <Icon name="ph:plus" width={12} aria-hidden />
               </button>
@@ -571,7 +571,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   <button
                     type="button"
                     onClick={() => addSession()}
-                    className="rounded border border-[var(--border-hairline)] px-3 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                    className="comux-terminal-empty-add rounded border border-[var(--border-hairline)] px-3 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                   >
                     + New terminal
                   </button>
