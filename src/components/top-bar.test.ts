@@ -64,4 +64,32 @@ assert.match(
   "Mobile handoff (open on phone) button is preserved",
 );
 
+// Active-familiar switcher box: a button showing the current familiar that opens
+// a Popover picker (desktop + mobile). Gated on onSelectFamiliar + activeFamiliar.
+assert.match(
+  source,
+  /className="top-bar__familiar"[\s\S]*aria-haspopup="listbox"/,
+  "Top bar renders a familiar switcher box that opens a listbox picker",
+);
+assert.match(
+  source,
+  /<FamiliarAvatar familiar=\{activeFamiliar\}/,
+  "Switcher box shows the active familiar's avatar",
+);
+assert.match(
+  source,
+  /<Popover[\s\S]*anchorRef=\{familiarBoxRef\}/,
+  "Picker uses the shared Popover anchored to the switcher box",
+);
+assert.match(
+  source,
+  /role="option"[\s\S]*onSelectFamiliar\?\.\(option\.id\)/,
+  "Picking a familiar option calls onSelectFamiliar with its id",
+);
+assert.match(
+  source,
+  /const showFamiliarSwitcher = Boolean\(onSelectFamiliar && activeFamiliar\)/,
+  "Switcher only renders when wired with a selection handler + active familiar",
+);
+
 console.log("top-bar.test.ts: ok");

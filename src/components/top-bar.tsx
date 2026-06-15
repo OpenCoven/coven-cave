@@ -1,8 +1,12 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { NotificationBell } from "@/components/notification-bell";
+import { Popover } from "@/components/ui/popover";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 import type { Familiar } from "@/lib/types";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 
@@ -17,6 +21,12 @@ type Props = {
   inboxBadgeCount: number;
   onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged: () => void;
+  /** Active-familiar switcher box. When `onSelectFamiliar` + `activeFamiliar`
+   *  are provided, the top bar renders a box showing the current familiar that
+   *  opens a picker (desktop + mobile). Resolved familiars carry avatar glyphs. */
+  activeFamiliar?: ResolvedFamiliar | null;
+  familiarOptions?: ResolvedFamiliar[];
+  onSelectFamiliar?: (id: string) => void;
   /** Mobile-only drawer toggles. Visibility is gated by CSS at <768px
    *  (.top-bar__mobile-toggle is `display: none` on desktop). Omit any
    *  that aren't applicable to the current surface — e.g. two-pane modes
@@ -47,7 +57,14 @@ export function TopBar(props: Props) {
     navDrawerOpen,
     listDrawerOpen,
     familiarDrawerOpen,
+    activeFamiliar,
+    familiarOptions,
+    onSelectFamiliar,
   } = props;
+
+  const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
+  const familiarBoxRef = useRef<HTMLButtonElement | null>(null);
+  const showFamiliarSwitcher = Boolean(onSelectFamiliar && activeFamiliar);
 
   return (
     <header className="top-bar">
@@ -95,6 +112,59 @@ export function TopBar(props: Props) {
       </button>
 
       <div className="top-bar__actions">
+        {showFamiliarSwitcher && activeFamiliar ? (
+          <>
+            <button
+              ref={familiarBoxRef}
+              type="button"
+              className="top-bar__familiar"
+              onClick={() => setFamiliarPickerOpen((open) => !open)}
+              aria-haspopup="listbox"
+              aria-expanded={familiarPickerOpen}
+              aria-label={`Switch familiar — current: ${activeFamiliar.display_name}`}
+              title="Switch familiar"
+            >
+              <FamiliarAvatar familiar={activeFamiliar} size="sm" />
+              <span className="top-bar__familiar-name">{activeFamiliar.display_name}</span>
+              <Icon name="ph:caret-down" width={10} />
+            </button>
+            <Popover
+              open={familiarPickerOpen}
+              onOpenChange={setFamiliarPickerOpen}
+              anchorRef={familiarBoxRef}
+              placement="bottom-end"
+              minWidth={208}
+              className="top-bar__familiar-popover"
+            >
+              <ul className="top-bar__familiar-list" role="listbox" aria-label="Switch familiar">
+                {(familiarOptions ?? []).map((option) => {
+                  const isActive = option.id === activeFamiliar.id;
+                  return (
+                    <li key={option.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        className={`top-bar__familiar-option${isActive ? " is-active" : ""}`}
+                        onClick={() => {
+                          onSelectFamiliar?.(option.id);
+                          setFamiliarPickerOpen(false);
+                        }}
+                      >
+                        <FamiliarAvatar familiar={option} size="sm" />
+                        <span className="top-bar__familiar-option-name">{option.display_name}</span>
+                        {option.harness ? (
+                          <span className="top-bar__familiar-option-meta">{option.harness}</span>
+                        ) : null}
+                        {isActive ? <Icon name="ph:check" width={12} /> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Popover>
+          </>
+        ) : null}
         <button
           type="button"
           className="top-bar__icon-btn top-bar__mobile-handoff"

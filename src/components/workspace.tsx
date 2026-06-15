@@ -1420,6 +1420,9 @@ export function Workspace() {
             onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
             inboxItems={inboxItemsWithEphemeral}
             familiars={familiars}
+            activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
+            familiarOptions={resolvedFamiliars}
+            onSelectFamiliar={setActiveId}
             inboxPrefs={inboxPrefs}
             inboxBadgeCount={inboxBadgeCount}
             onOpenInboxItem={(item) => {
