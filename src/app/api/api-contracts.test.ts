@@ -25,8 +25,7 @@ const contracts: RouteContract[] = [
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
-  { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
@@ -202,23 +201,6 @@ for (const contract of contracts) {
       source,
       /resolveAllowedProjectPath/,
       `${contract.route} should not reject symlinked familiar research dirs via the global project-root allowlist`,
-    );
-  }
-  if (contract.route === "/chat/conversation/[id]") {
-    assert.match(
-      source,
-      /\.\.\.\(args\.existing\?\.modelIntent \? \{ modelIntent: args\.existing\.modelIntent \} : \{\}\)/,
-      `${contract.route} must preserve session model intent when POST/PUT rebuilds a conversation`,
-    );
-    assert.match(
-      source,
-      /if \(!body \|\| typeof body !== "object" \|\| Array\.isArray\(body\)\) \{[\s\S]*?invalid json body/,
-      `${contract.route} PATCH must reject valid non-object JSON bodies before reading modelIntent`,
-    );
-    assert.match(
-      source,
-      /if \(!body\.modelIntent \|\| typeof body\.modelIntent !== "object" \|\| Array\.isArray\(body\.modelIntent\)\) \{[\s\S]*?invalid model intent/,
-      `${contract.route} PATCH must reject malformed modelIntent shapes before validating fields`,
     );
   }
   if (contract.localOriginGuard) {
