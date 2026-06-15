@@ -192,7 +192,7 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /scope === "memory" \? \([\s\S]*?\) : \(\s*<Group className="flex min-h-0 min-w-0 flex-1" orientation="horizontal">/,
+  /scope === "memory" \? \([\s\S]*?\) : \(\s*<Group\s+className="flex min-h-0 min-w-0 flex-1"\s+orientation="horizontal"/,
   "ChatSurface non-memory branch (conversation) should use remaining height below the tab bar instead of h-full",
 );
 
