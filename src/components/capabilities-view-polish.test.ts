@@ -134,7 +134,7 @@ assert.match(
 // stays a compact pill instead of a rounded-full circle.
 assert.match(
   globals,
-  /\.capabilities-view \.capability-chips button \{[\s\S]*min-height:\s*0/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.capabilities-view \.capability-chips button \{[\s\S]*min-height:\s*0/,
   "mobile chip-row buttons should reset the blanket min-height to stay compact pills",
 );
 
