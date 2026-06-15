@@ -244,6 +244,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             sessions={sessions}
             responseNeeded={responseNeeded}
             onSelectFamiliar={onFamiliarScopeChange}
+            labeled
           />
         </div>
         <ActionRow

@@ -3653,6 +3653,36 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
 }
 
+/* Labeled variant — the sidebar's familiar-scope control. Full-width row
+   (avatar/glyph + name + caret) that lines up with the New chat / Ask Salem
+   action rows beneath it, so the control reads as the scope selector instead of
+   a bare floating icon. The mobile top bar keeps the compact icon (no label). */
+.familiar-switcher__trigger[data-labeled="true"] {
+  width: 100%;
+  height: 32px;
+  gap: 8px;
+  padding: 0 8px 0 6px;
+  justify-content: flex-start;
+}
+.familiar-switcher__trigger-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.familiar-switcher__trigger[data-labeled="true"]:hover .familiar-switcher__trigger-label {
+  color: var(--text-primary);
+}
+.familiar-switcher__trigger[data-labeled="true"] .familiar-switcher__caret {
+  margin-left: auto;
+}
+.sidebar-familiar-slot { flex: 1; }
+.sidebar-familiar-slot > * { flex: 1; }
+
 /* Reply-needed dot on the collapsed trigger. */
 .familiar-switcher__unread {
   position: absolute;
