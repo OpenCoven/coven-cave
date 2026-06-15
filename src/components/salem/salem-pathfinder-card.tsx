@@ -27,6 +27,11 @@ type Props = {
   onSave?: (card: SalemPathfinderCard) => Promise<boolean> | void;
   /** Built-in follow-up affordance. Hidden if omitted. */
   onFollowUp?: () => void;
+  /**
+   * Local feedback capture (PR4). Hidden if omitted. Only fires on explicit
+   * user action; a correction note is optional and only sent on submit.
+   */
+  onFeedback?: (feedback: { helpful: boolean; correctionNote?: string }) => void;
 };
 
 const ACTION_ICON: Record<SalemPathfinderAction["kind"], IconName> = {
@@ -58,9 +63,16 @@ function CommandBlock({ command }: { command: string }) {
   );
 }
 
-export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoctor, onSave, onFollowUp }: Props) {
+export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoctor, onSave, onFollowUp, onFeedback }: Props) {
   const safe = sanitizeCard(card);
   const [saveState, setSaveState] = useState<"idle" | "confirm" | "saving" | "saved" | "error">("idle");
+  const [feedback, setFeedback] = useState<"idle" | "correct" | "sent">("idle");
+  const [correction, setCorrection] = useState("");
+
+  const sendFeedback = (helpful: boolean, correctionNote?: string) => {
+    onFeedback?.({ helpful, correctionNote: correctionNote?.trim() || undefined });
+    setFeedback("sent");
+  };
 
   // Save-to-Board requires an explicit confirm: first click arms, second saves.
   const handleSave = async () => {
@@ -203,6 +215,37 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
           </button>
         ) : null}
       </div>
+
+      {onFeedback ? (
+        <div className="salem-pf__feedback">
+          {feedback === "sent" ? (
+            <span className="salem-pf__feedback-thanks">Thanks — noted locally.</span>
+          ) : feedback === "correct" ? (
+            <div className="salem-pf__feedback-correct">
+              <input
+                className="salem-pf__feedback-input"
+                value={correction}
+                onChange={(e) => setCorrection(e.target.value)}
+                placeholder="Suggest a better path (optional)…"
+                aria-label="Suggest a better path"
+              />
+              <button type="button" className="salem-pf__action" onClick={() => sendFeedback(false, correction)}>
+                Submit
+              </button>
+            </div>
+          ) : (
+            <>
+              <span className="salem-pf__feedback-label">Was this helpful?</span>
+              <button type="button" className="salem-pf__feedback-btn" aria-label="Helpful" onClick={() => sendFeedback(true)}>
+                <Icon name="ph:thumbs-up" width={13} aria-hidden />
+              </button>
+              <button type="button" className="salem-pf__feedback-btn" aria-label="Not helpful" onClick={() => setFeedback("correct")}>
+                <Icon name="ph:thumbs-down" width={13} aria-hidden />
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
