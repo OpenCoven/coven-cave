@@ -74,6 +74,15 @@ export function harnessLabel(id: string): string {
   return HARNESS_LABEL[id] ?? id;
 }
 
+function skillSourcePath(skillPath?: string): string | undefined {
+  if (!skillPath) return undefined;
+  const cleanPath = skillPath.replace(/\/+$/, "");
+  const lowerPath = cleanPath.toLowerCase();
+  if (lowerPath.endsWith(".md") || lowerPath.endsWith(".toml")) return cleanPath;
+  if (lowerPath.includes("/.codex/automations/")) return cleanPath;
+  return `${cleanPath}/SKILL.md`;
+}
+
 export function normalizeCapabilities({
   manifests,
   covenSkills,
@@ -119,7 +128,7 @@ export function normalizeCapabilities({
         label: skill.name,
         status: "available",
         description: skill.description,
-        sourcePath: skill.path,
+        sourcePath: skillSourcePath(skill.path),
         tags: skillMeta.tags,
         version: skillMeta.version,
         kind: skillMeta.source,

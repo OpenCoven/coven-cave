@@ -20,7 +20,7 @@ const manifests = [
         name: "Review",
         source: "local",
         harness_id: "codex",
-        path: "/Users/buns/.codex/skills/review/SKILL.md",
+        path: "/Users/buns/.codex/skills/review",
         description: "Review code",
         tags: ["quality"],
       },
@@ -105,6 +105,9 @@ assert.deepEqual(ids, [
 const disabledMcp = view.items.find((item) => item.id === "codex:mcp:filesystem");
 assert.equal(disabledMcp?.status, "disabled");
 assert.equal(disabledMcp?.command, "fs-mcp");
+
+const reviewSkill = view.items.find((item) => item.id === "codex:skill:review");
+assert.equal(reviewSkill?.sourcePath, "/Users/buns/.codex/skills/review/SKILL.md");
 
 assert.deepEqual(
   filterCapabilityItems(view.items, { query: "config", types: new Set(["warning"]) }).map((item) => item.id),
