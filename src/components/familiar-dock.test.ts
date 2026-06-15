@@ -25,10 +25,12 @@ assert.match(src, /computeDockInlineCount/, "uses the overflow helper");
 assert.match(src, /ResizeObserver/, "measures the row width responsively");
 assert.match(src, /familiar-dock__overflow/, "renders the overflow button");
 assert.match(src, /overflowCount > 0/, "overflow button is conditional on hidden count");
+assert.match(src, /aria-haspopup="dialog"/, "overflow trigger matches the shared Popover dialog role");
 
 // Task 5: overflow + operations popover
 assert.match(src, /from "@\/components\/ui\/popover"/, "uses the shared popover");
 assert.match(src, /placeholder="Filter familiars…"/, "popover has a search field");
+assert.match(src, /className="familiar-dock__pop-search focus-ring-inset"/, "popover search keeps visible focus styling");
 assert.match(src, /Not shown in dock/, "popover groups overflow familiars");
 assert.match(src, /openFamiliarStudioListView\(\)/, "Manage opens the studio list");
 assert.match(src, /Reorder/, "footer exposes Reorder");
@@ -39,5 +41,10 @@ assert.match(src, /horizontalListSortingStrategy/, "horizontal sorting strategy"
 assert.match(src, /setFamiliarOrder\(arrayMove/, "persists reorder via setFamiliarOrder");
 assert.match(src, /useRovingTabIndex/, "roving tabindex for keyboard nav");
 assert.match(src, /orientation: "horizontal"/, "roving nav is horizontal");
+
+// Review polish: keyboard focus rings remain visible and accessible labels match actions.
+assert.match(src, /className=\{`familiar-dock__all focus-ring/, "All chip uses the shared focus ring");
+assert.match(src, /className=\{`familiar-dock__avatar focus-ring/, "dock avatars use the shared focus ring");
+assert.doesNotMatch(src, /aria-label=\{`Reorder \$\{familiar\.display_name\}`\}/, "sortable avatar label should not claim click-only reorder");
 
 console.log("familiar-dock.test.ts OK");

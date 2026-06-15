@@ -1,6 +1,15 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { computeDockInlineCount } from "./familiar-dock-overflow.ts";
+
+const src = readFileSync(new URL("./familiar-dock-overflow.ts", import.meta.url), "utf8");
+
+assert.match(
+  src,
+  /overflow control only needs to be reserved when callers\s+\* choose to show it/,
+  "reservedWidth docs clarify conditional overflow-trigger space",
+);
 
 // Wide container: everything fits inline, no overflow.
 assert.equal(

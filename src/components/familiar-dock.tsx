@@ -106,7 +106,7 @@ export function FamiliarDock({
       <div className="familiar-dock__row" ref={rowRef} role="toolbar" aria-label="Familiar scope">
         <button
           type="button"
-          className={`familiar-dock__all${activeFamiliarId == null ? " familiar-dock__all--active" : ""}`}
+          className={`familiar-dock__all focus-ring${activeFamiliarId == null ? " familiar-dock__all--active" : ""}`}
           aria-pressed={activeFamiliarId == null}
           onClick={() => onFamiliarScopeChange(null)}
           title="All familiars"
@@ -145,7 +145,7 @@ export function FamiliarDock({
                 type="button"
                 data-id={f.id}
                 style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
-                className={`familiar-dock__avatar${active ? " familiar-dock__avatar--active" : ""}`}
+                className={`familiar-dock__avatar focus-ring${active ? " familiar-dock__avatar--active" : ""}`}
                 aria-pressed={active}
                 aria-label={`Filter by ${f.display_name}${needsReply ? " — reply needed" : ""}`}
                 title={`${f.display_name} · ${presence.label}`}
@@ -166,7 +166,7 @@ export function FamiliarDock({
             ref={overflowBtnRef}
             className="familiar-dock__overflow"
             aria-label={`Show ${overflowCount} more familiars`}
-            aria-haspopup="menu"
+            aria-haspopup="dialog"
             aria-expanded={popoverOpen}
             onClick={() => setPopoverOpen((o) => !o)}
           >
@@ -198,7 +198,7 @@ export function FamiliarDock({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter familiars…"
             aria-label="Filter familiars"
-            className="familiar-dock__pop-search"
+            className="familiar-dock__pop-search focus-ring-inset"
             autoFocus
           />
           <PopoverBody>
@@ -280,14 +280,14 @@ function SortableDockAvatar({
       <button
         type="button"
         data-id={familiar.id}
-        className={`familiar-dock__avatar${active ? " familiar-dock__avatar--active" : ""}`}
+        className={`familiar-dock__avatar focus-ring${active ? " familiar-dock__avatar--active" : ""}`}
         title={`${familiar.display_name} · ${presence.label}`}
         onClick={onSelect}
         onContextMenu={(e) => { e.preventDefault(); onOpenStudio(); }}
         {...attributes}
         {...listeners}
         aria-pressed={active}
-        aria-label={`Reorder ${familiar.display_name}`}
+        aria-label={`Filter by ${familiar.display_name}${needsReply ? " — reply needed" : ""}`}
       >
         <FamiliarAvatar familiar={familiar} size="sm" />
         <span className={`familiar-dock__presence ${presence.dot}`} aria-hidden />

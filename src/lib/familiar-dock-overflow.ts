@@ -3,8 +3,9 @@
  * the overflow popover. Pure + UI-agnostic so it can be unit-tested without a
  * DOM; the component feeds it a measured container width (ResizeObserver).
  *
- * `reservedWidth` accounts for the fixed controls that always render (the All
- * chip, the overflow ··· button, the + add button, and inter-item gaps).
+ * `reservedWidth` accounts for non-avatar controls and gaps outside the inline
+ * avatar row. The overflow control only needs to be reserved when callers
+ * choose to show it for hidden familiars.
  */
 export function computeDockInlineCount(opts: {
   containerWidth: number;
