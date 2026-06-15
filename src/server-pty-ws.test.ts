@@ -20,6 +20,7 @@ assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upg
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
 assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSocket hosts by default");
+assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
 assert.match(src, /sameOrigin\(req\.headers\.origin/, "server rejects cross-origin WebSocket upgrades");
 assert.match(src, /process\.env\.HOSTNAME \?\? "127\.0\.0\.1"/, "server binds to loopback by default");
 assert.match(src, /pty\.spawn\(defaultShell\(\),\s*defaultShellArgs\(\)/, "server hardcodes shell and args");
