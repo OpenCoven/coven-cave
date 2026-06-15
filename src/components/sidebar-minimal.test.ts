@@ -70,8 +70,8 @@ assert.match(
 
 assert.match(
   source,
-  /<FamiliarScopeSelect[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
-  "Sidebar top slot renders the familiar scope selector",
+  /<FamiliarDock[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
+  "Sidebar top slot renders the familiar dock",
 );
 
 assert.doesNotMatch(
