@@ -188,7 +188,7 @@ async function diffFile(repoRoot: string, relPath: string, absPath: string): Pro
     // Untracked: synthesize an all-additions diff. --no-index exits 1 when
     // the files differ, which execFile reports as an error — recover stdout.
     try {
-      ({ stdout: diff } = await gitDiff(repoRoot, ["--no-index", "--", "/dev/null", absPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, absPath]));
     } catch (err) {
       const e = err as { code?: number; stdout?: string };
       if (e.code === 1 && typeof e.stdout === "string") diff = e.stdout;
@@ -296,7 +296,7 @@ async function checkpointChanges(repoRoot: string): Promise<string> {
         // add-file diff carries `b/<relpath>` headers that `git apply` can
         // place back — absolute paths here would make the checkpoint
         // un-restorable for untracked files.
-        const { stdout } = await gitDiff(repoRoot, ["--no-index", "--", "/dev/null", file.path]);
+        const { stdout } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, file.path]);
         patch += stdout;
       } catch (err) {
         const e = err as { code?: number; stdout?: string };
