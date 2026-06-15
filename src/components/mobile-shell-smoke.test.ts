@@ -62,6 +62,17 @@ assert.match(
 );
 
 assert.match(
+  workspace,
+  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.closeNav\(\);[\s\S]*setMode\(m as WorkspaceMode\);[\s\S]*shellRef\.current\?\.closeNav\(\);[\s\S]*\}\}/,
+  "Mobile sidebar destination taps should close the nav drawer after changing surfaces",
+);
+assert.match(
+  workspace,
+  /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.closeList\(\);[\s\S]*\}\}/,
+  "Mobile list drawer session taps should close the list drawer after opening a session",
+);
+
+assert.match(
   topBar,
   /aria-pressed=\{Boolean\(listDrawerOpen\)\}/,
   "Mobile list toggle should expose pressed state while the list drawer is open",
@@ -102,6 +113,11 @@ assert.match(
   /notification-bell__popover[\s\S]*notification-bell__settings-btn[\s\S]*notification-bell__open-inbox[\s\S]*notification-bell__list/,
   "Notification bell should expose stable hooks for mobile popover layout and actions",
 );
+assert.match(
+  notificationBell,
+  /notification-bell__mute[\s\S]*notification-bell__action/,
+  "Notification bell item controls should expose stable mobile hit-area hooks",
+);
 
 assert.match(
   globals,
@@ -131,6 +147,11 @@ assert.match(
   globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.notification-bell__settings-btn,[\s\S]*\.notification-bell__open-inbox\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile notification popover header actions should meet the 44px touch target",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.notification-bell__action,[\s\S]*min-height:\s*var\(--touch-target\)[\s\S]*\.notification-bell__mute\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile notification item actions and mute controls should meet the shared touch target",
 );
 
 assert.match(

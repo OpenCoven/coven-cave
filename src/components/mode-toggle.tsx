@@ -35,7 +35,7 @@ export function ModeToggle({ value, onChange }: ModeToggleProps) {
             type="button"
             aria-pressed={active}
             onClick={() => onChange(opt.id)}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
+            className={`mode-toggle__option inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
               active
                 ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
                 : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"

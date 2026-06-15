@@ -17,5 +17,6 @@ assert.match(source, /"dark"/, "dark option");
 
 // 4. Uses aria-pressed for accessibility (segmented control).
 assert.match(source, /aria-pressed/, "aria-pressed for active state");
+assert.match(source, /mode-toggle__option/, "mode toggle options expose a mobile hit-area hook");
 
 console.log("mode-toggle.test.ts OK");

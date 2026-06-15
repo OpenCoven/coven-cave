@@ -276,7 +276,7 @@ export function NotificationBell({
                         onClick={() => void toggleMute(it.familiarId!)}
                         title={muted ? `Unmute ${fname}` : `Mute ${fname}`}
                         aria-label={muted ? `Unmute ${fname}` : `Mute ${fname}`}
-                        className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
+                        className="notification-bell__mute touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
                       >
                         <Icon
                           name={muted ? "ph:bell-slash-fill" : "ph:bell-slash"}
@@ -333,7 +333,7 @@ function BellBtn({
     <button
       onClick={onClick}
       title={title}
-      className={`focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors ${
+      className={`notification-bell__action focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors ${
         primary
           ? "border-[var(--border-strong)] bg-[var(--bg-raised)] text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
           : "border-[var(--border-hairline)] bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"

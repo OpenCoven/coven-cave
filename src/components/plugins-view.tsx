@@ -501,7 +501,7 @@ export function PluginsView({
           : "Loading roles";
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
+    <div className="plugins-view flex h-full min-w-0 flex-col bg-background text-foreground">
       {/* ── Top bar: tabs left, controls right ─────────────────────────── */}
       <header className="shrink-0 border-b border-border px-4 sm:px-8">
         <div className="flex h-12 items-center justify-between gap-4">
@@ -1007,7 +1007,7 @@ function RoleCard({
         }
       }}
       className={[
-        "focus-ring group flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+        "plugins-role-card focus-ring group flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
         selected
           ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/10"
           : role.active
@@ -1069,7 +1069,7 @@ function RoleCard({
         disabled={toggling}
         onClick={handleToggle}
         className={[
-          "focus-ring ml-auto shrink-0 rounded-md p-1.5 transition-colors disabled:opacity-40",
+          "plugins-role-toggle focus-ring ml-auto shrink-0 rounded-md p-1.5 transition-colors disabled:opacity-40",
           role.active
             ? "text-[var(--color-success)] hover:bg-[color-mix(in_oklch,var(--color-success)_15%,transparent)]"
             : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]",

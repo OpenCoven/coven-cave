@@ -1171,18 +1171,25 @@ export function Workspace() {
       addons={addons}
       onNewChat={() => {
         startFamiliarChat(activeId);
+        shellRef.current?.closeNav();
       }}
       onToggleSidebar={() => shellRef.current?.toggleNav()}
-      onOpenSettings={() => nextRouter.push("/settings")}
+      onOpenSettings={() => {
+        shellRef.current?.closeNav();
+        nextRouter.push("/settings");
+      }}
       onModeChange={(m) => {
         if (m === "browser") {
           setMode("browser");
+          shellRef.current?.closeNav();
           return;
         }
         setMode(m as WorkspaceMode);
+        shellRef.current?.closeNav();
       }}
       onOpenSession={(id) => {
         openFamiliarSession(id);
+        shellRef.current?.closeList();
       }}
       inboxItems={inboxItemsWithEphemeral}
       inboxPrefs={inboxPrefs}

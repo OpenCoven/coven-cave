@@ -6,6 +6,10 @@ const source = readFileSync(
   new URL("./plugins-view.tsx", import.meta.url),
   "utf8",
 );
+const globals = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 // Keyboard hint footer (matches the terminal/inbox/calendar/library/home/browser pattern).
 assert.match(
@@ -70,6 +74,20 @@ assert.match(
   source,
   /ref=\{searchRef\}[\s\S]{0,160}type="search"/,
   "search input wires ref={searchRef}",
+);
+
+assert.match(source, /plugins-view/, "Plugins/Roles surface should expose a mobile hit-area root hook");
+assert.match(source, /plugins-role-card/, "Role cards should expose a mobile hit-area hook");
+assert.match(source, /plugins-role-toggle/, "Role activation toggles should expose a mobile hit-area hook");
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.plugins-view button,[\s\S]*\.plugins-view \[role="button"\][\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Plugins/Roles mobile controls should meet the shared touch target",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.plugins-role-toggle\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*min-width:\s*var\(--touch-target\)/,
+  "Role activation toggles should be square-enough touch targets on mobile",
 );
 
 console.log("plugins-view-polish.test.ts OK");

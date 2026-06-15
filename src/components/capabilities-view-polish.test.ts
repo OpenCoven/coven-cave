@@ -6,6 +6,10 @@ const source = readFileSync(
   new URL("./capabilities-view.tsx", import.meta.url),
   "utf8",
 );
+const globals = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 // Inner "Capabilities · read-only" header bar removed — duplicated the workspace breadcrumb.
 assert.doesNotMatch(
@@ -65,6 +69,13 @@ assert.match(
   source,
   /tag === "INPUT" \|\| tag === "TEXTAREA"/,
   "keydown handler skips when an input/textarea is focused",
+);
+
+assert.match(source, /capabilities-view/, "Capabilities surface should expose a mobile hit-area root hook");
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.capabilities-view button,[\s\S]*\.capabilities-view select,[\s\S]*\.capabilities-view label:has\(input\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Capabilities mobile controls should meet the shared touch target",
 );
 
 console.log("capabilities-view-polish.test.ts OK");

@@ -204,5 +204,10 @@ assert.match(
   /\.sidebar-toggle \{/,
   "the sidebar toggle button has dedicated styling",
 );
+assert.match(
+  styles,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-action-row,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile sidebar drawer rows and familiar select should meet the shared touch target",
+);
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

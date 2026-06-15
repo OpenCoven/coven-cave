@@ -122,11 +122,11 @@ export function WorkflowRunStrip({
           <Icon name={forking ? "ph:git-fork-bold" : "ph:floppy-disk-bold"} width={14} />
           {saveLabel}
         </button>
-        <button type="button" disabled={!workflow || anyBusy} onClick={() => workflow && onValidate(workflow)}>
+        <button type="button" className="workflow-run-action-button" disabled={!workflow || anyBusy} onClick={() => workflow && onValidate(workflow)}>
           <Icon name="ph:check-circle-bold" width={14} />
           {validateBusy ? "Validating" : "Validate"}
         </button>
-        <button type="button" disabled={!workflow || anyBusy} onClick={() => workflow && onDryRun(workflow)}>
+        <button type="button" className="workflow-run-action-button" disabled={!workflow || anyBusy} onClick={() => workflow && onDryRun(workflow)}>
           <Icon name="ph:rocket-bold" width={14} />
           {dryRunBusy ? "Planning" : "Dry-run"}
         </button>

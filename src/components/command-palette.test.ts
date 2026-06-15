@@ -6,6 +6,10 @@ const source = readFileSync(
   new URL("./command-palette.tsx", import.meta.url),
   "utf8",
 );
+const globals = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 // Input is labelled.
 assert.match(
@@ -19,6 +23,12 @@ assert.match(source, /role="listbox"/, "results container has role=listbox");
 
 // Items have role=option.
 assert.match(source, /role="option"/, "each result item has role=option");
+assert.match(source, /command-palette-row/, "command palette rows expose a mobile hit-area hook");
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.command-palette-row,[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "command palette mobile rows should meet the shared touch target",
+);
 
 // Input is linked to listbox via aria-controls.
 assert.match(source, /aria-controls=/, "input is linked to results via aria-controls");

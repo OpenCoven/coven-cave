@@ -121,7 +121,7 @@ export function SettingsShell() {
             if (isMobile && !pickerView) backToPicker();
             else router.back();
           }}
-          className="focus-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className="settings-back-button focus-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:arrow-left" width={13} />
           {isMobile && !pickerView ? "Settings" : "Back"}

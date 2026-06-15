@@ -137,6 +137,12 @@ assert.match(canvas, /layoutDirection === "vertical" \? Position\.Top : Position
 assert.match(canvas, /layoutDirection === "vertical" \? Position\.Bottom : Position\.Right/, "Vertical layout should move source handles to the bottom edge");
 assert.match(canvas, /key=\{flowKey\}/, "Canvas should remount React Flow when the view is reset so fitView reruns");
 assert.match(css, /\.workflow-canvas-toolbar/, "Workflow CSS should style the canvas action toolbar");
+assert.match(runStrip, /workflow-run-action-button/, "Workflow run strip text actions should expose a mobile hit-area hook");
+assert.match(
+  css,
+  /@media \(max-width: 767px\) \{[\s\S]*\.workflow-studio-shell\s*\{[\s\S]*--workflow-top-control-height:\s*var\(--touch-target\)[\s\S]*\.workflow-panel-tab,[\s\S]*\.workflow-palette-item,[\s\S]*\.workflow-run-row,[\s\S]*\.workflow-run-action-button,[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Workflow mobile controls should meet the shared touch target",
+);
 
 // Draggable nodes: local node state + drag-stop persistence to the sidecar.
 assert.match(canvas, /nodesDraggable/, "Canvas nodes must be draggable");

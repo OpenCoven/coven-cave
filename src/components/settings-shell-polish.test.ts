@@ -6,6 +6,10 @@ const source = readFileSync(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
+const globals = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   source,
@@ -30,6 +34,17 @@ assert.match(
   source,
   /Esc back · ↑↓ navigate sections/,
   "renders the keyboard hint footer below the content area",
+);
+
+assert.match(
+  source,
+  /settings-back-button/,
+  "Settings back control should expose a mobile hit-area hook",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.settings-back-button\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Settings mobile back control should meet the shared touch target",
 );
 
 // Esc keydown handler routes back.

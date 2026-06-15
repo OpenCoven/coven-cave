@@ -526,6 +526,19 @@
   color: var(--text-secondary);
 }
 
+@media (max-width: 1023px) {
+  .sidebar-header,
+  .sidebar-action-row,
+  .sidebar-folder-row,
+  .sidebar-foot-bell,
+  .sidebar-foot-btn,
+  .sidebar-familiar-filter__control,
+  .sidebar-familiar-filter__select {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 /* ── FamiliarStrip (FamiliarPanel top) ──────────────────────────────────────── */
 .familiar-strip {
   display: flex;
@@ -789,5 +802,18 @@
   .sidebar-foot-bell,
   .sidebar-foot-btn {
     min-height: 31px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .sidebar-minimal .sidebar-header,
+  .sidebar-minimal .sidebar-action-row,
+  .sidebar-minimal .sidebar-folder-row,
+  .sidebar-minimal .sidebar-foot-bell,
+  .sidebar-minimal .sidebar-foot-btn,
+  .sidebar-minimal .sidebar-familiar-filter__control,
+  .sidebar-minimal .sidebar-familiar-filter__select {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
   }
 }

@@ -1788,6 +1788,21 @@ select {
   .ui-search-input-field {
     min-height: var(--touch-target);
   }
+
+  .command-palette-row,
+  .notification-bell__action,
+  .mode-toggle__option {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .notification-bell__mute {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    opacity: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 .ui-search-input-clear {
@@ -4063,6 +4078,15 @@ button:active > .edge-rail-chip {
   outline-offset: 1px;
 }
 
+@media (max-width: 767px) {
+  .settings-back-button {
+    min-height: var(--touch-target);
+    border-radius: 10px;
+    padding-inline: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 /* ────────────────────────────────────────────────
    Calendar item detail panel
    Sits over the right edge of the calendar surface
@@ -4836,6 +4860,34 @@ button:active > .edge-rail-chip {
 
   .browser-toolbar-close {
     display: none;
+  }
+
+  .plugins-view button,
+  .plugins-view [role="button"],
+  .capabilities-view button,
+  .capabilities-view select,
+  .capabilities-view label:has(input) {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .plugins-view input,
+  .capabilities-view input {
+    min-height: var(--touch-target);
+    font-size: 16px;
+  }
+
+  .plugins-role-card {
+    align-items: flex-start;
+  }
+
+  .plugins-role-toggle {
+    width: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  .capabilities-view button.rounded-full {
+    padding-inline: 14px;
   }
 
   .chat-list-surface {

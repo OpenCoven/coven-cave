@@ -306,7 +306,7 @@ export function CapabilitiesViewSurface({
   const readinessStatus = operatorView.summary.warnings > 0 ? "warning" : operatorView.summary.disabled > 0 ? "disabled" : "all";
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-background text-foreground">
+    <div className="capabilities-view flex h-full min-w-0 flex-col bg-background text-foreground">
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1280px] px-4 pb-12 sm:px-8">
           <div className="pb-4 pt-5">

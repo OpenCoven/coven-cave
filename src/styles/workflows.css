@@ -1328,6 +1328,50 @@
   to { transform: rotate(360deg); }
 }
 
+@media (max-width: 767px) {
+  .workflow-studio-shell {
+    --workflow-top-control-height: var(--touch-target);
+  }
+
+  .workflow-panel-tab,
+  .workflow-palette-item,
+  .workflow-run-row,
+  .workflow-history-button,
+  .workflow-primary-button,
+  .workflow-play-button,
+  .workflow-run-action-button,
+  .workflow-library-footer button,
+  .workflow-field input,
+  .workflow-field select,
+  .workflow-search,
+  .workflow-section-caret-btn {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .workflow-icon-button,
+  .workflow-canvas-tool,
+  .workflow-canvas .react-flow__controls-button,
+  .workflow-section-caret-btn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+  }
+
+  .workflow-canvas .react-flow__node {
+    min-height: var(--touch-target) !important;
+  }
+
+  .workflow-search input {
+    min-height: var(--touch-target);
+    font-size: 16px;
+  }
+
+  .workflow-palette-item {
+    padding-inline: 12px;
+  }
+}
+
 /* Active dependency edge: brighten the path + arrowhead feeding the live step. */
 .workflow-canvas .react-flow__edge.workflow-edge-active .react-flow__edge-path {
   stroke: #d8c98f;
@@ -1562,4 +1606,22 @@
 .workflow-run-no-steps {
   font-size: 11px;
   margin: 0;
+}
+
+@media (max-width: 767px) {
+  .workflow-run-actions .workflow-history-button,
+  .workflow-run-actions .workflow-primary-button,
+  .workflow-run-actions .workflow-run-action-button,
+  .workflow-run-actions .workflow-play-button {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .workflow-run-actions .workflow-history-button {
+    min-width: var(--touch-target);
+  }
+
+  .workflow-canvas .react-flow__node {
+    min-height: calc(var(--touch-target) * 2) !important;
+  }
 }

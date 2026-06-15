@@ -485,7 +485,7 @@ export function CommandPalette({
                   tabIndex={-1}
                   onMouseEnter={() => setActiveIdx(i)}
                   onClick={() => fire(row)}
-                  className={`focus-ring-inset flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left text-sm transition-colors ${
+                  className={`command-palette-row focus-ring-inset flex w-full items-center gap-3 border-l-2 px-4 py-2 text-left text-sm transition-colors ${
                     active
                       ? "border-l-[var(--accent-presence)] bg-[var(--bg-hover)]"
                       : "border-l-transparent hover:bg-[var(--bg-hover)]"
