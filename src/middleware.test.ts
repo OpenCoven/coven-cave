@@ -18,13 +18,8 @@ assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject 
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
 assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated\)/, "valid mobile access should satisfy the API host gate");
-assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("origin"\), expectedOrigin, csrfTrusted, requestHost\)/, "origin gate should trust mobile-access- or sidecar-token-authenticated requests");
-assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("referer"\), expectedOrigin, csrfTrusted, requestHost\)/, "referer gate should trust mobile-access- or sidecar-token-authenticated requests");
-// Tailscale Serve fix: a request bearing the sidecar token (CSRF-immune custom
-// header) is trusted for the origin/referer gate, so Serve's cross-origin
-// (https://<machine>.ts.net → loopback) requests aren't 403'd as "forbidden origin".
-assert.match(source, /const sidecarAuthenticated = Boolean\(sidecarToken\) && suppliedToken === sidecarToken/, "proxy should derive sidecar-token authentication");
-assert.match(source, /const csrfTrusted = mobileAccessAuthenticated \|\| sidecarAuthenticated/, "csrf gate should trust either mobile-access or sidecar-token auth");
+assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("origin"\), expectedOrigin\)/, "API origin gate should always require same-origin sources");
+assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("referer"\), expectedOrigin\)/, "API referer gate should always require same-origin sources");
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
 
 // Ordering guard: dev-mode token-bypass (NextResponse.next() when no token is set)
