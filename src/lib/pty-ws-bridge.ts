@@ -2,6 +2,13 @@ type DataHandler = (bytes: Uint8Array) => void;
 type ExitHandler = (code: number) => void;
 type CloseHandler = (code: number, reason: string) => void;
 
+// Fail a connect that never reaches OPEN. On iOS a WKWebView WebSocket opened
+// right after the app resumes can hang in CONNECTING forever — no open, no
+// error, no close event ever fires. Without this bound the reconnect loop
+// awaits open() indefinitely and its `reconnecting` guard wedges the whole
+// terminal pane (every keypress is silently dropped).
+const CONNECT_TIMEOUT_MS = 8000;
+
 export class PtyWsBridge {
   private ws: WebSocket | null = null;
   private dataHandlers: DataHandler[] = [];
@@ -53,6 +60,20 @@ export class PtyWsBridge {
   private open(): Promise<void> {
     const target = this.lastConnect;
     if (!target) return Promise.reject(new Error("no connect parameters"));
+    // Tear down any prior socket before re-dialing. After an iOS app resume the
+    // previous socket can be a zombie — readyState still reads OPEN but the
+    // connection is dead, so it never fires close and silently swallows writes.
+    // Replacing it unconditionally on reconnect avoids talking into that black
+    // hole; the server adopts the running PTY for this threadId and replays.
+    const prev = this.ws;
+    this.ws = null;
+    if (prev && prev.readyState !== WebSocket.CLOSED) {
+      try {
+        prev.close(1000, "reconnect");
+      } catch {
+        /* ignore */
+      }
+    }
     return new Promise((resolve, reject) => {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       const params = new URLSearchParams({
@@ -70,7 +91,23 @@ export class PtyWsBridge {
       ws.binaryType = "arraybuffer";
       this.ws = ws;
 
+      // Connect watchdog (see CONNECT_TIMEOUT_MS): if the socket never reaches
+      // OPEN, abandon the stalled connection and reject so the reconnect loop
+      // can advance to its next backoff instead of hanging forever.
+      const watchdog = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (this.ws === ws) this.ws = null;
+        try {
+          ws.close(1000, "connect timeout");
+        } catch {
+          /* ignore */
+        }
+        reject(new Error("terminal websocket connect timed out"));
+      }, CONNECT_TIMEOUT_MS);
+
       ws.addEventListener("open", () => {
+        clearTimeout(watchdog);
         settled = true;
         resolve();
       });
@@ -95,6 +132,7 @@ export class PtyWsBridge {
         }
       });
       ws.addEventListener("close", (event) => {
+        clearTimeout(watchdog);
         const wasCurrent = this.ws === ws;
         if (wasCurrent) {
           this.ws = null;

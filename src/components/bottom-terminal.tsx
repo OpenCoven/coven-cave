@@ -479,6 +479,31 @@ export function BottomTerminal({
       const ro = new ResizeObserver(doResize);
       ro.observe(wrap);
 
+      // iOS/WKWebView suspends the WebSocket when the app is backgrounded and
+      // routinely resumes with a dead-but-OPEN ("zombie") socket that never
+      // fires close — so the onClose-driven reconnect never triggers and the
+      // pane hangs. Re-dial on every foreground for iOS to guarantee a live
+      // socket (the server adopts the running PTY and replays scrollback, so a
+      // healthy reconnect is a cheap no-op to the user). Browser/Android keep a
+      // tab-switch-surviving socket, so only redial there when it's truly down.
+      const onForeground = () => {
+        if (disposed) return;
+        if (
+          typeof document !== "undefined" &&
+          document.visibilityState === "hidden"
+        ) {
+          return;
+        }
+        if (platform === "ios" || !bridge.isOpen) {
+          void attemptReconnect();
+        }
+      };
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", onForeground);
+      }
+      window.addEventListener("pageshow", onForeground);
+      window.addEventListener("focus", onForeground);
+
       fitRef.current = () => {
         doResize();
         term.focus();
@@ -488,6 +513,11 @@ export function BottomTerminal({
       cleanup = () => {
         ro.disconnect();
         onDataDispose.dispose();
+        if (typeof document !== "undefined") {
+          document.removeEventListener("visibilitychange", onForeground);
+        }
+        window.removeEventListener("pageshow", onForeground);
+        window.removeEventListener("focus", onForeground);
         if (flushTimerRef.current) {
           clearTimeout(flushTimerRef.current);
           flushTimerRef.current = null;
