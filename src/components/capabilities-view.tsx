@@ -220,10 +220,13 @@ export function CapabilitiesViewSurface({
     operatorView.harnesses.find((h) => h.id === (selectedItem?.harnessId ?? harnessFilter)) ?? null;
 
   // Load the selected capability's markdown so the inspector can render a
-  // styled preview (skills are SKILL.md; instructions are CLAUDE.md/AGENTS.md).
-  // Non-markdown items and out-of-tree paths (403) fall back to the description.
+  // styled preview. Skills report their FOLDER as the path (the daemon doesn't
+  // point at the SKILL.md inside) so any skill is previewable and the route
+  // resolves the folder → SKILL.md; instructions report a CLAUDE.md/AGENTS.md
+  // file directly. Out-of-tree paths (403) fall back to the description.
   const previewPath = selectedItem?.sourcePath ?? null;
-  const isPreviewable = !!previewPath && previewPath.toLowerCase().endsWith(".md");
+  const isPreviewable =
+    !!previewPath && (selectedItem?.type === "skill" || previewPath.toLowerCase().endsWith(".md"));
   useEffect(() => {
     if (!previewPath || !isPreviewable) {
       setPreview({ path: null, status: "idle", text: null, error: null });
@@ -645,7 +648,8 @@ function CapabilityInspector({
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
 }) {
-  const isMarkdown = !!item?.sourcePath && item.sourcePath.toLowerCase().endsWith(".md");
+  const isMarkdown =
+    !!item?.sourcePath && (item.type === "skill" || item.sourcePath.toLowerCase().endsWith(".md"));
   const previewMatches = preview.path === item?.sourcePath;
   return (
     <aside className="min-w-0 rounded-lg border border-border bg-card xl:sticky xl:top-4 xl:self-start">
@@ -822,6 +826,13 @@ type SkillPreviewState = {
   error: string | null;
 };
 
+// Skill/instructions markdown opens with a YAML frontmatter block (name,
+// description, tags) which the inspector already surfaces as the title/badges.
+// Strip it so the preview shows the prose body, not raw `key: value` lines.
+function stripFrontmatter(text: string): string {
+  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/, "").trimStart();
+}
+
 function SkillPreviewBlock({
   preview,
   fallbackDescription,
@@ -829,6 +840,7 @@ function SkillPreviewBlock({
   preview: SkillPreviewState;
   fallbackDescription?: string;
 }) {
+  const body = preview.text ? stripFrontmatter(preview.text) : "";
   // Rendered the file content as styled markdown. On error (e.g. the path is
   // outside the previewable roots) fall back to the scanned description so the
   // inspector never goes blank.
@@ -849,8 +861,8 @@ function SkillPreviewBlock({
     <div>
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
       <div className="max-h-[440px] overflow-y-auto rounded-md border border-border bg-background px-3 py-2">
-        {preview.status === "loaded" && preview.text ? (
-          <MarkdownBlock text={preview.text} className="text-[12px]" />
+        {preview.status === "loaded" && body ? (
+          <MarkdownBlock text={body} className="text-[12px]" />
         ) : preview.status === "loaded" ? (
           <p className="text-[11px] italic text-muted-foreground">This file is empty.</p>
         ) : (
