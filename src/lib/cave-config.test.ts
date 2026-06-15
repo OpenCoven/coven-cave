@@ -16,6 +16,7 @@ try {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionOwned: {},
   });
 
   await config.recordSessionFamiliar("session-1", "cody");
@@ -26,6 +27,8 @@ try {
 
   let state = await config.loadState();
   assert.deepEqual(state.sessionFamiliar, { "session-1": "cody" });
+  assert.ok(state.sessionOwned["session-1"], "recordSessionFamiliar marks the session as Cave-owned");
+  assert.equal(await config.isOwnedSession("session-1"), true);
   assert.deepEqual(state.sessionTitles, { "session-1": "Renamed session" });
   assert.equal(state.sessionArchived["session-1"], archivedAt);
   assert.deepEqual(state.sessionSacrificed, {});
@@ -47,6 +50,7 @@ try {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
+    sessionOwned: { "session-1": state.sessionOwned["session-1"] },
   });
 
   const installedAt = await config.installMarketplacePlugin("github", "0.1.0", "catalog");

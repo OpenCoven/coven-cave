@@ -43,6 +43,7 @@ function defaultState(): CaveState {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionOwned: {},
   };
 }
 
@@ -219,10 +220,10 @@ async function saveState(state: CaveState): Promise<void> {
 }
 
 export async function recordOwnedSession(sessionId: string): Promise<void> {
-  const state = await loadState();
-  state.sessionOwned[sessionId] = new Date().toISOString();
   try {
-    await saveState(state);
+    await updateState((state) => {
+      state.sessionOwned[sessionId] = new Date().toISOString();
+    });
   } catch {
     /* best effort */
   }
@@ -233,10 +234,20 @@ export async function isOwnedSession(sessionId: string): Promise<boolean> {
   return Boolean(state.sessionOwned[sessionId] || state.sessionFamiliar[sessionId]);
 }
 
-export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {
-  const state = await loadState();
-  state.sessionOwned[sessionId] = state.sessionOwned[sessionId] ?? new Date().toISOString();
-  state.sessionFamiliar[sessionId] = familiarId;
+// In-process serialization of cave-state.json mutations. Without this, two
+// concurrent load→mutate→save calls (e.g. recordSessionFamiliar +
+// setSessionTitle fired via Promise.all on task-chat creation) both load the
+// same snapshot, each writes a different key, and the second saveState
+// silently clobbers the first — the field that lost the race vanishes from
+// disk. The mutex chain forces every mutation to do its own fresh load.
+let stateMutex: Promise<unknown> = Promise.resolve();
+
+async function updateState<T>(
+  mutator: (state: CaveState) => T | Promise<T>,
+): Promise<T> {
+  const previous = stateMutex;
+  let release!: () => void;
+  stateMutex = new Promise<void>((resolve) => { release = resolve; });
   try {
     await previous.catch(() => {});
     const state = await loadState();
@@ -251,6 +262,7 @@ export async function recordSessionFamiliar(sessionId: string, familiarId: strin
 export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {
   try {
     await updateState((state) => {
+      state.sessionOwned[sessionId] = state.sessionOwned[sessionId] ?? new Date().toISOString();
       state.sessionFamiliar[sessionId] = familiarId;
     });
   } catch {
