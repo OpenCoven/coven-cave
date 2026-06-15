@@ -1,7 +1,4 @@
 import { NextResponse } from "next/server";
-<<<<<<< HEAD
-import { readFile } from "node:fs/promises";
-=======
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
@@ -58,12 +55,8 @@ export async function GET(req: Request) {
   if (!target) {
     return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
   }
-<<<<<<< HEAD
-  if (!isAllowedMemoryFilePath(target)) {
-=======
   const readablePath = await allowedRealPath(target);
   if (!readablePath) {
->>>>>>> 902e207 (fix: canonicalize memory file paths)
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
   let raw: string;
