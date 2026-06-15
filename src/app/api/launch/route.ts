@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -23,14 +24,20 @@ function isAbsolutePath(p: string): boolean {
   return p.startsWith("/");
 }
 
+function shellQuote(input: string): string {
+  return "'" + input.replace(/'/g, "'\\''") + "'";
+}
+
 function buildCovenCommand(body: LaunchBody): string | null {
   if (body.mode === "attach") {
     if (!body.sessionId || !UUID_RE.test(body.sessionId)) return null;
     return `coven attach ${body.sessionId}`;
   }
   if (body.mode === "chat") {
-    const cwd = body.cwd && isAbsolutePath(body.cwd) ? body.cwd : null;
-    return cwd ? `cd ${JSON.stringify(cwd)} && coven chat` : "coven chat";
+    if (!body.cwd) return "coven chat";
+    if (!isAbsolutePath(body.cwd)) return null;
+    const cwd = resolveAllowedProjectPath(body.cwd);
+    return cwd ? `cd ${shellQuote(cwd)} && coven chat` : null;
   }
   return null;
 }
