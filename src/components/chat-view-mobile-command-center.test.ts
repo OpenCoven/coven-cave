@@ -125,4 +125,13 @@ assert.match(
   "Mobile scroll-to-bottom FAB should sit above the taller composer",
 );
 
+// The FAB must NOT use `float` — float removes it from flow and breaks
+// `position: sticky` (it then renders at the wrong spot / not at all in the
+// iOS WKWebView). Right-align via `ml-auto` instead so sticky keeps working.
+const fabClass = source.match(/className="cave-scroll-bottom-button[^"]*"/)?.[0] ?? "";
+assert.ok(fabClass, "scroll-to-bottom FAB className should be present");
+assert.ok(!/\bfloat-right\b/.test(fabClass), "scroll-to-bottom FAB must not use float-right (breaks position: sticky)");
+assert.match(fabClass, /\bml-auto\b/, "scroll-to-bottom FAB should right-align with ml-auto so sticky still applies");
+assert.match(fabClass, /\bsticky\b/, "scroll-to-bottom FAB stays position: sticky");
+
 console.log("chat-view-mobile-command-center.test.ts: ok");
