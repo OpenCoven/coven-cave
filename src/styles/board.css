@@ -118,11 +118,16 @@
   /* The task inspector goes full-screen on phones (.board-drawer is
      max-width:100vw), so its interactive controls are primary touch targets
      and must meet --touch-target — the desktop-dense 24-28px sizes are too
-     small to hit reliably with a thumb. */
+     small to hit reliably with a thumb.
+     Use min-* (not width/height): this mobile block sits earlier in the file
+     than the base .board-drawer-close/.board-drawer-path-open rules, so an
+     equal-specificity width/height would LOSE the cascade to them (verified:
+     the close button measured 28px). min-* clamps the base size up regardless
+     of source order. */
   .board-drawer-close,
   .board-drawer-path-open {
-    width: var(--touch-target);
-    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
 
   .board-drawer-lifecycle-action,
