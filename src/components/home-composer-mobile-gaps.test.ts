@@ -33,6 +33,19 @@ assert.match(
   ".hc-suggestion > span ellipsis chain (min-width: 0 + overflow + text-overflow + nowrap)",
 );
 
+// ───── Phone composer controls are thumb-sized ─────
+assert.match(
+  css,
+  /@media \(max-width: 520px\)\s*\{[\s\S]*?\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?\.hc-familiar-selector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-send-btn\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-dest-pills\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "phone composer action bar wraps into thumb-sized familiar/send/destination controls",
+);
+
+assert.match(
+  css,
+  /@media \(max-width: 520px\)\s*\{[\s\S]*?\.hc-suggestion\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "phone suggestion chips should meet the shared touch target",
+);
+
 // ───── Keyboard hint hides on touch ─────
 // Touch devices have no physical keyboard — hide the desktop-only legend.
 assert.match(

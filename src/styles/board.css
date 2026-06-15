@@ -50,6 +50,72 @@
 .board-new-card-btn:hover { background:color-mix(in oklch, var(--accent-presence) 85%, #000); transform:scale(1.02); }
 .board-new-card-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:2px; }
 
+@media (max-width: 767px) {
+  .board-header {
+    align-items: stretch;
+    gap: 10px;
+    padding: 18px 16px 16px;
+  }
+
+  .board-header-title {
+    flex: 1 0 100%;
+    font-size: 22px;
+    line-height: 1.15;
+  }
+
+  .board-search-wrap {
+    flex: 1 0 100%;
+    min-width: 0;
+    max-width: none;
+    margin-left: 0;
+  }
+
+  .board-search-icon {
+    left: 14px;
+  }
+
+  .board-search-input {
+    height: 44px;
+    padding-inline: 44px 36px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+
+  .board-search-clear {
+    right: 8px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .board-header-controls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .board-view-toggle {
+    display: none;
+  }
+
+  .board-toolbar-btn,
+  .board-new-card-btn {
+    min-height: var(--touch-target);
+    border-radius: 8px;
+    padding-inline: 14px;
+    font-size: 13px;
+  }
+
+  .board-toolbar-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .board-new-card-btn {
+    flex: 0 0 auto;
+  }
+}
+
 .board-filter-chips { display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:6px 16px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; }
 .board-filter-chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:11px; cursor:default; }
 .board-filter-chip-remove { display:flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:4px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; padding:0; margin-left:1px; transition:background .1s,color .1s; }
@@ -452,11 +518,15 @@
 }
 .board-card-stack__filters {
   display: flex;
+  align-items: center;
+  flex: 0 0 54px;
   gap: 6px;
+  min-height: 54px;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
   margin: 0 calc(-1 * clamp(12px, 4vw, 18px)) 4px;
-  padding: 2px clamp(12px, 4vw, 18px);
+  padding: 5px clamp(12px, 4vw, 18px);
   position: sticky;
   top: 0;
   background: var(--bg-base);
@@ -467,8 +537,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 12px;
+  height: var(--touch-target);
+  padding: 0 14px;
   border-radius: 999px;
   border: 1px solid var(--border-strong);
   background: var(--bg-raised);
@@ -529,7 +599,7 @@
   align-items: center;
   justify-content: center;
   min-width: var(--touch-target);
-  min-height: 32px;
+  min-height: var(--touch-target);
   padding: 0 10px;
   border-radius: 7px;
   border: 1px solid var(--border-hairline);

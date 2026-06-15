@@ -225,10 +225,64 @@
   font-weight: 500;
 }
 
-/* Hide text on very narrow viewports, keep icons */
 @media (max-width: 520px) {
-  .hc-dest-label { display: none; }
-  .hc-dest-pill { padding: 4px 6px; }
+  .hc-action-bar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .hc-familiar-selector {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: var(--touch-target);
+    padding: 0 34px 0 12px;
+  }
+
+  .hc-familiar-glyph {
+    width: 20px;
+    height: 20px;
+  }
+
+  .hc-familiar-select {
+    width: 100%;
+    max-width: none;
+    min-height: 36px;
+    font-size: 15px;
+  }
+
+  .hc-select-caret {
+    right: 12px;
+  }
+
+  .hc-send-btn {
+    min-height: var(--touch-target);
+    border-radius: 8px;
+    padding-inline: 16px;
+  }
+
+  .hc-dest-pills {
+    order: 3;
+    flex: 1 0 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .hc-dest-pill {
+    min-height: var(--touch-target);
+    justify-content: center;
+    gap: 6px;
+    padding: 0 8px;
+    border-color: var(--border-hairline);
+    background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+    font-size: 12px;
+  }
+
+  .hc-dest-label {
+    display: inline;
+  }
 }
 
 /* ── Send button ─────────────────────────────────────────────────────────── */
@@ -271,6 +325,14 @@
   opacity: 0.75;
   cursor: wait;
   transform: none;
+}
+
+@media (max-width: 520px) {
+  .hc-send-btn {
+    min-height: var(--touch-target);
+    border-radius: 8px;
+    padding-inline: 16px;
+  }
 }
 
 /* Spinner */
@@ -319,6 +381,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .hc-suggestion {
+    min-height: var(--touch-target);
+    justify-content: flex-start;
+    padding: 10px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+  }
 }
 
 /* The label inside each chip needs its own overflow context with min-width: 0
