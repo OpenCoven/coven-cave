@@ -2555,7 +2555,7 @@ h3:hover .library-heading-anchor,
   }
 
   .library-rail-item {
-    min-height: 34px;
+    min-height: var(--touch-target);
     width: auto;
     flex: 0 0 auto;
     border: 1px solid var(--border-hairline);
@@ -2621,6 +2621,44 @@ h3:hover .library-heading-anchor,
   .library-list-content--hidden {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .library-timeline-header.ui-view-header {
+    padding: 18px 16px 16px;
+    gap: 12px;
+  }
+
+  .library-timeline-header .ui-search-input,
+  .library-timeline-select,
+  .library-timeline-filter-button,
+  .library-timeline-group-toggle {
+    min-height: var(--touch-target);
+  }
+
+  .library-timeline-header .ui-search-input {
+    height: var(--touch-target);
+  }
+
+  .library-timeline-header .ui-search-input-leading {
+    width: var(--touch-target);
+  }
+
+  .library-timeline-select,
+  .library-timeline-filter-button {
+    height: var(--touch-target);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
+  .library-timeline-group-toggle {
+    height: var(--touch-target);
+    border-radius: 10px;
+    padding: 3px;
+  }
+
+  .library-timeline-group-toggle-option {
+    border-radius: 7px;
+    font-size: 13px;
   }
 
   .library-doclist-search {

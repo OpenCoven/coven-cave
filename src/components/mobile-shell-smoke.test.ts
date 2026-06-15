@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const mobileTabs = await readFile(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
 const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8");
+const notificationBell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -79,6 +80,18 @@ assert.match(
   globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__search\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile search button should meet the 44px touch target",
+);
+
+assert.match(
+  notificationBell,
+  /notification-bell__trigger/,
+  "Notification bell should expose a stable hook for mobile hit-area sizing",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.notification-bell__trigger,[\s\S]*\.top-bar__account\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile top-bar notification and account buttons should meet the 44px touch target",
 );
 
 assert.match(

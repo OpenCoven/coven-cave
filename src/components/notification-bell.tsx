@@ -119,7 +119,7 @@ export function NotificationBell({
     <div ref={wrapRef} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`focus-ring relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
+        className={`notification-bell__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
           displayBadgeCount > 0
             ? "border-[color-mix(in_oklch,var(--color-warning)_45%,var(--border-strong))] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_22%,transparent)]"
             : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"

@@ -46,4 +46,16 @@ assert.match(
   "Library lists should reserve space above the mobile bottom tabs",
 );
 
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.library-rail-item\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "Library rail filter chips should meet the 44px mobile touch target",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-header \.ui-search-input,[\s\S]*\.library-timeline-select,[\s\S]*\.library-timeline-filter-button,[\s\S]*\.library-timeline-group-toggle\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "Library timeline search, filters, and segmented controls should meet the 44px mobile touch target",
+);
+
 console.log("library-mobile-command-center.test.ts: ok");
