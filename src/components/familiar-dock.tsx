@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { computeDockInlineCount } from "@/lib/familiar-dock-overflow";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
@@ -25,6 +26,31 @@ export function FamiliarDock({
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const overflowBtnRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
+  const [rowWidth, setRowWidth] = useState(0);
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) setRowWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const ITEM_WIDTH = 38;
+  const RESERVED = 146;
+  const inlineCount = computeDockInlineCount({
+    containerWidth: rowWidth,
+    itemWidth: ITEM_WIDTH,
+    reservedWidth: RESERVED,
+    total: familiars.length,
+  });
+  const inline = useMemo(() => familiars.slice(0, inlineCount), [familiars, inlineCount]);
+  const overflow = useMemo(() => familiars.slice(inlineCount), [familiars, inlineCount]);
+  const overflowCount = overflow.length;
 
   return (
     <div className="familiar-dock" aria-label="Familiars">
@@ -40,7 +66,7 @@ export function FamiliarDock({
           <span>All</span>
         </button>
 
-        {familiars.map((f) => {
+        {inline.map((f) => {
           const active = f.id === activeFamiliarId;
           const needsReply = responseNeeded?.has(f.id) ?? false;
           const presence = computePresence({
@@ -68,6 +94,21 @@ export function FamiliarDock({
             </button>
           );
         })}
+
+        {overflowCount > 0 ? (
+          <button
+            type="button"
+            ref={overflowBtnRef}
+            className="familiar-dock__overflow"
+            aria-label={`Show ${overflowCount} more familiars`}
+            aria-haspopup="menu"
+            aria-expanded={popoverOpen}
+            onClick={() => setPopoverOpen((o) => !o)}
+          >
+            <Icon name="ph:dots-three-bold" width={14} aria-hidden />
+            <span className="familiar-dock__overflow-badge">{overflowCount}</span>
+          </button>
+        ) : null}
 
         <button
           type="button"

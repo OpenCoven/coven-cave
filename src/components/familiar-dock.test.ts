@@ -20,4 +20,10 @@ assert.match(src, /familiar-dock__presence/, "renders a presence dot");
 assert.match(src, /familiar-dock__unread/, "renders an unread dot");
 assert.match(src, /responseNeeded\?\.has\(f\.id\)/, "unread comes from responseNeeded");
 
+// Task 4: responsive overflow
+assert.match(src, /computeDockInlineCount/, "uses the overflow helper");
+assert.match(src, /ResizeObserver/, "measures the row width responsively");
+assert.match(src, /familiar-dock__overflow/, "renders the overflow button");
+assert.match(src, /overflowCount > 0/, "overflow button is conditional on hidden count");
+
 console.log("familiar-dock.test.ts OK");
