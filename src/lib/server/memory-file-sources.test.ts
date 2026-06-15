@@ -108,6 +108,25 @@ try {
     null,
     "familiar memory files reached through symlinked directories must stay blocked",
   );
+
+  // Regression (OS-independent): when the allowed root itself is reached through
+  // a symlinked ancestor (macOS /var→/private/var, a symlinked ~/.coven, network
+  // mounts), a legitimate in-root read must still resolve. A guard that compares
+  // the realpath'd target against a lexically-resolved root wrongly returns null
+  // here — but only on platforms where tmpdir is symlinked, so assert it via an
+  // explicit symlinked root that fails on every platform.
+  const realBase = path.join(tempRoot, "real-base");
+  const linkedRoot = path.join(tempRoot, "linked-root");
+  const linkedRootMemory = path.join(linkedRoot, ".openclaw", "workspace", "echo", "memory");
+  const linkedRootSafe = path.join(linkedRootMemory, "safe.md");
+  await mkdir(path.join(realBase, ".openclaw", "workspace", "echo", "memory"), { recursive: true });
+  await writeFile(path.join(realBase, ".openclaw", "workspace", "echo", "memory", "safe.md"), "safe via symlinked root");
+  await symlink(realBase, linkedRoot);
+  assert.equal(
+    await resolveAllowedMemoryFileReadPath(linkedRootSafe, linkedRoot),
+    await realpath(linkedRootSafe),
+    "in-root reads must resolve even when the allowed root is reached through a symlinked ancestor",
+  );
 } finally {
   await rm(tempRoot, { recursive: true, force: true });
 }
