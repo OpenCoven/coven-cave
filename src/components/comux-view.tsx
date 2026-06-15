@@ -6,6 +6,7 @@ import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
+import { resolveLangLabel } from "@/lib/code-lang";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import {
   deriveComuxProjects,
@@ -533,6 +534,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const previewIsMarkdown = preview?.kind === "text" && isMarkdownPath(previewPath);
   const previewLineCount = preview?.kind === "text" ? preview.content.split("\n").length : 0;
   const renderAsMarkdown = previewIsMarkdown && !previewRaw;
+  // Language badge for the preview header — resolves the file extension to a
+  // human grammar name ("ts" → "TypeScript") matching what the highlighter
+  // now actually colorizes.
+  const previewExt = previewPath ? previewPath.split(".").pop() : undefined;
+  const previewLangLabel = preview?.kind === "text" ? resolveLangLabel(previewExt) : null;
   const visiblePaneCount = visiblePaneSessionIds.length;
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [session.id, session])),
@@ -952,6 +958,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             ? previewPath.slice(selectedProject.root.length).replace(/^\//, "")
                             : previewPath}
                         </span>
+                        {previewLangLabel && (
+                          <span className="comux-preview-lang shrink-0 rounded-[5px] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 px-1.5 py-px font-mono text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
+                            {previewLangLabel}
+                          </span>
+                        )}
                         {preview?.kind === "text" && (
                           <span className="hidden shrink-0 items-center gap-2 font-mono text-[10px] text-[var(--text-muted)] sm:flex">
                             <span>{previewLineCount.toLocaleString()} {previewLineCount === 1 ? "line" : "lines"}</span>
