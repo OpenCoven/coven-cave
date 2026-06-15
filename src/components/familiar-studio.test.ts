@@ -30,4 +30,21 @@ assert.match(
   "Familiar Studio should call tabstrip hooks before early returns to keep hook order stable",
 );
 
+// The header avatar is a click-to-upload control wired to the shared image hook.
+assert.match(
+  source,
+  /<StudioHeaderAvatar familiar=\{familiar\} \/>/,
+  "Header renders the upload-capable avatar instead of a static one",
+);
+assert.match(
+  source,
+  /function StudioHeaderAvatar[\s\S]*useFamiliarImageUpload\(familiar\.id\)/,
+  "Header avatar uploads via the shared image hook",
+);
+assert.match(
+  source,
+  /function StudioHeaderAvatar[\s\S]*inputRef\.current\?\.click\(\)[\s\S]*type="file"/,
+  "Clicking the header avatar opens a hidden file picker",
+);
+
 console.log("familiar-studio.test.ts: ok");

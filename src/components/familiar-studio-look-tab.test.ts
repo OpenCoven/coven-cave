@@ -9,37 +9,18 @@ const source = readFileSync(
 
 assert.match(source, /export function FamiliarStudioLookTab/);
 assert.match(source, /FamiliarGlyphPickerPanel/);
-assert.match(source, /setFamiliarImage/);
-assert.match(source, /clearFamiliarImage/);
+// Image upload logic lives in the shared hook (also used by the Studio header).
+assert.match(source, /useFamiliarImageUpload/, "Look tab uploads via the shared hook");
 assert.match(source, /setFamiliarOverride/);
 assert.match(source, /color/);
 assert.match(source, /input.*type="color"/);
 assert.match(source, /input.*type="file"/);
 assert.match(source, /onDrop|onDragOver/, "Drag-drop wired for image upload");
+// Image selection above icons: the "Avatar image" section must render before "Icon".
 assert.match(
   source,
-  /MAX_FAMILIAR_IMAGE_DATAURL_BYTES/,
-  "Look tab should read the familiar image storage cap before saving",
-);
-assert.match(
-  source,
-  /prepareFamiliarImage/,
-  "Look tab should prepare uploaded images before setFamiliarImage",
-);
-assert.match(
-  source,
-  /downsizeFamiliarImage/,
-  "Oversized raster uploads should be automatically downsized",
-);
-assert.match(
-  source,
-  /DOWNSIZABLE_MIMES = new Set\(\["image\/png", "image\/jpeg", "image\/webp"\]\)/,
-  "Only raster formats should be canvas-downsized; SVG remains guarded by the store cap",
-);
-assert.match(
-  source,
-  /Image was downsized for Cave\./,
-  "User should get feedback when a large image is compressed successfully",
+  />Avatar image<\/h3>[\s\S]*>Icon<\/h3>/,
+  "Avatar image section should appear above the Icon section",
 );
 assert.match(
   source,

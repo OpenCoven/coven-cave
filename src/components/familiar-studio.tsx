@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -162,7 +163,7 @@ export function FamiliarStudio({ familiars }: Props) {
         <header className="familiar-studio__header">
           {familiar ? (
             <>
-              <FamiliarAvatar familiar={familiar} size="lg" />
+              <StudioHeaderAvatar familiar={familiar} />
               <div className="familiar-studio__heading">
                 <HeaderName familiar={familiar} />
                 <span className="familiar-studio__role">{familiar.role}</span>
@@ -245,6 +246,44 @@ function StudioScrim({ onClose }: { onClose: () => void }) {
       className="familiar-studio__scrim"
       onClick={onClose}
     />
+  );
+}
+
+// The header avatar doubles as an upload affordance: clicking it (or the
+// keyboard activation) opens the native file picker and commits a new avatar
+// image for this familiar. A hover/focus camera overlay signals it's clickable.
+// The avatar itself updates reactively (useResolvedFamiliars reads the image
+// store), so no local preview state is needed here.
+function StudioHeaderAvatar({ familiar }: { familiar: ResolvedFamiliar }) {
+  const { onFile, toast } = useFamiliarImageUpload(familiar.id);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <div className="familiar-studio__avatar-wrap">
+      <button
+        type="button"
+        className="familiar-studio__avatar-btn focus-ring"
+        onClick={() => inputRef.current?.click()}
+        aria-label={`Change ${familiar.display_name}'s avatar image`}
+        title="Upload a new image"
+      >
+        <FamiliarAvatar familiar={familiar} size="lg" />
+        <span className="familiar-studio__avatar-overlay" aria-hidden>
+          <Icon name="ph:camera" width={14} />
+        </span>
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={FAMILIAR_IMAGE_ACCEPT}
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void onFile(file);
+          e.target.value = "";
+        }}
+      />
+      {toast ? <span className="familiar-studio__avatar-toast" role="status">{toast}</span> : null}
+    </div>
   );
 }
 
