@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
+import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -918,6 +919,9 @@ function AboutSection() {
         <UpdateSettingsRow />
         <SettingsKV label="Daemon version" value={version ?? "—"} />
         <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
+      </SettingsGroup>
+      <SettingsGroup label="OpenCoven tools">
+        <OpenCovenToolsUpdate />
       </SettingsGroup>
       <SettingsGroup label="Links">
         <div className="flex flex-wrap gap-2">

@@ -75,6 +75,7 @@ const contracts: RouteContract[] = [
   { route: "/onboarding/ssh-check", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/status", methods: ["GET"], kind: "json" },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
+  { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
   { route: "/project-file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project-tree", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },

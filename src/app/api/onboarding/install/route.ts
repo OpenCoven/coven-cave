@@ -29,6 +29,13 @@ const INSTALL_TARGETS = {
     binary: "coven",
     timeoutMs: 240_000,
   },
+  "coven-code": {
+    kind: "npm",
+    label: "Coven Code",
+    packageName: "coven-code@latest",
+    binary: "coven-code",
+    timeoutMs: 240_000,
+  },
   codex: {
     kind: "npm",
     label: "Codex",

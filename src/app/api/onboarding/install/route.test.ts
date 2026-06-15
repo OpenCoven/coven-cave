@@ -16,6 +16,7 @@ assert.match(
 
 for (const pkg of [
   "@opencoven\\/cli@latest",
+  "coven-code@latest",
   "@openai\\/codex",
   "@anthropic-ai\\/claude-code",
   "openclaw@latest",
@@ -100,6 +101,12 @@ assert.match(
   source,
   /commandPath\(target\.binary\)/,
   "success is verified by resolving the installed binary, not just exit code 0",
+);
+
+assert.match(
+  source,
+  /"coven-code":\s*\{[\s\S]*packageName: "coven-code@latest"[\s\S]*binary: "coven-code"/,
+  "coven-code updates use the public npm package and verify the coven-code binary",
 );
 
 // ── Background install jobs ─────────────────────────────────────────────────
