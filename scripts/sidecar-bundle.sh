@@ -28,6 +28,25 @@ PUBLIC="$ROOT/public"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
 trap 'rm -rf "$PNPM_STAGE"' EXIT
 
+fix_node_pty_spawn_helpers() {
+  local base="$1"
+  local prebuilds="$base/node-pty/prebuilds"
+  local fixed=0
+
+  if [ ! -d "$prebuilds" ]; then
+    return 0
+  fi
+
+  while IFS= read -r -d '' helper; do
+    chmod 755 "$helper"
+    fixed=$((fixed + 1))
+  done < <(find "$prebuilds" -path "*/darwin-*/spawn-helper" -type f -print0)
+
+  if [ "$fixed" -gt 0 ]; then
+    echo "==> fixed node-pty spawn-helper mode in $base ($fixed)"
+  fi
+}
+
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
 
@@ -69,6 +88,7 @@ fi
   cd "$PNPM_STAGE" && pnpm install --prod --frozen-lockfile \
     --config.node-linker=hoisted --ignore-scripts
 ) >&2
+fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 
 echo "==> copying standalone tree → $DEST"
 rm -rf "$DEST"

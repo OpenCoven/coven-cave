@@ -23,7 +23,7 @@ test("sidecar bundle restores executable mode for node-pty spawn-helper", () => 
   assert.match(sidecarScript, /fix_node_pty_spawn_helpers\(\)/);
   assert.match(sidecarScript, /find "\$prebuilds" -path "\*\/darwin-\*\/spawn-helper"/);
   assert.match(sidecarScript, /chmod 755 "\$helper"/);
-  assert.match(sidecarScript, /fix_node_pty_spawn_helpers "\$NPM_STAGE\/node_modules"/);
+  assert.match(sidecarScript, /fix_node_pty_spawn_helpers "\$PNPM_STAGE\/node_modules"/);
   assert.match(sidecarScript, /fix_node_pty_spawn_helpers "\$DEST\/node_modules"/);
 });
 
