@@ -114,6 +114,24 @@
   .board-new-card-btn {
     flex: 0 0 auto;
   }
+
+  /* The task inspector goes full-screen on phones (.board-drawer is
+     max-width:100vw), so its interactive controls are primary touch targets
+     and must meet --touch-target — the desktop-dense 24-28px sizes are too
+     small to hit reliably with a thumb. */
+  .board-drawer-close,
+  .board-drawer-path-open {
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+
+  .board-drawer-lifecycle-action,
+  .board-drawer-chat-cta,
+  .board-drawer-delete-btn,
+  .board-drawer-field-select,
+  .board-drawer-field-input {
+    min-height: var(--touch-target);
+  }
 }
 
 .board-filter-chips { display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:6px 16px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; }
@@ -519,58 +537,27 @@
   padding: 12px clamp(12px, 4vw, 18px) calc(24px + var(--sai-bottom));
   gap: 18px;
 }
+/* Status filter row — Vercel-style underline tabs (see components/ui/tabs.tsx).
+   This element is the tablist; it stays a horizontally scrollable sticky
+   strip so all 7 tabs fit on a 360px screen. The underline/divider, colours
+   and per-tab styles come from the shared Tabs component, not from here. */
 .board-card-stack__filters {
-  display: flex;
-  align-items: center;
-  flex: 0 0 54px;
-  gap: 6px;
-  min-height: 54px;
+  flex: 0 0 auto;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
   margin: 0 calc(-1 * clamp(12px, 4vw, 18px)) 4px;
-  padding: 5px clamp(12px, 4vw, 18px);
+  padding: 0 clamp(12px, 4vw, 18px);
   position: sticky;
   top: 0;
   background: var(--bg-base);
   z-index: 2;
+  white-space: nowrap;
 }
 .board-card-stack__filters::-webkit-scrollbar { display: none; }
-.board-card-stack__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: var(--touch-target);
-  padding: 0 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
-              border-color var(--duration-fast) var(--ease-standard),
-              color var(--duration-fast) var(--ease-standard);
-}
-.board-card-stack__chip:hover { background: var(--bg-hover); }
-.board-card-stack__chip:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 2px;
-}
-.board-card-stack__chip--active {
-  background: color-mix(in oklch, var(--accent-presence) 22%, var(--bg-raised));
-  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
-  color: var(--text-primary);
-}
-.board-card-stack__chip-count {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.board-card-stack__chip--active .board-card-stack__chip-count {
-  color: var(--text-secondary);
-}
+/* Don't let the scroll container's items-end shrink tabs; keep their natural
+   width so the underline spans each label. */
+.board-card-stack__filters > [role="tab"] { flex: 0 0 auto; }
 
 .board-card-stack__section {
   display: flex;

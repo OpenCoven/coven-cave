@@ -18,6 +18,9 @@ import {
 } from "@/lib/coven-calls-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { CovenFloor } from "@/components/coven-floor";
+import { TraceGraphFallback } from "@/components/trace-graph-fallback";
+import { WebGLErrorBoundary } from "@/components/webgl-error-boundary";
+import { useIsMobile } from "@/lib/use-viewport";
 import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
 
@@ -123,6 +126,9 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
   const [selection, setSelection] = useState<Selection>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const [memoryCounts, setMemoryCounts] = useState<Map<string, number>>(new Map());
+  // Below the shell breakpoint a pan/zoom WebGL graph is impractical (and Three
+  // is heavy), so we render the 2D delegation list instead of the 3D scene.
+  const isMobile = useIsMobile();
 
   const load = useCallback(async () => {
     try {
@@ -293,13 +299,38 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="flex min-w-0 flex-col gap-3 overflow-hidden">
-              <TraceGraph3D
-                graph={graph}
-                familiars={famById}
-                selection={selection}
-                onSelect={setSelection}
-                memoryCounts={memoryCounts}
-              />
+              {isMobile ? (
+                <TraceGraphFallback
+                  graph={graph}
+                  familiars={famById}
+                  selection={selection}
+                  onSelect={setSelection}
+                  edgeKey={edgeKey}
+                  reason="mobile"
+                />
+              ) : (
+                <WebGLErrorBoundary
+                  resetKey={graph}
+                  fallback={
+                    <TraceGraphFallback
+                      graph={graph}
+                      familiars={famById}
+                      selection={selection}
+                      onSelect={setSelection}
+                      edgeKey={edgeKey}
+                      reason="webgl"
+                    />
+                  }
+                >
+                  <TraceGraph3D
+                    graph={graph}
+                    familiars={famById}
+                    selection={selection}
+                    onSelect={setSelection}
+                    memoryCounts={memoryCounts}
+                  />
+                </WebGLErrorBoundary>
+              )}
               <TraceTimeline traces={graph.traces} familiars={famById} selectedTraceId={selection?.kind === "trace" ? selection.id : null} onSelect={(trace) => setSelection({ kind: "trace", id: trace.id })} />
             </section>
             <TraceInspector

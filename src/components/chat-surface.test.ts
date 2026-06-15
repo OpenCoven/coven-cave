@@ -86,7 +86,7 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /memory: "Memory"/,
+  /\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}/,
   "ChatSurface should label the secondary primary tab Memory instead of Traces",
 );
 
