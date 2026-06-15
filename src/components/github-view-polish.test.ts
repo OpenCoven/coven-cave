@@ -60,4 +60,22 @@ assert.match(
   "keydown handler skips when an input/textarea is focused",
 );
 
+// When a PAT is connected the button is icon-only (no text label); it keeps an
+// aria-label for accessibility and only shows "Add PAT" text when not connected.
+assert.doesNotMatch(
+  source,
+  /PAT connected</,
+  "Connected PAT button drops its text label (icon only)",
+);
+assert.match(
+  source,
+  /aria-label=\{patStatus\?\.hasPat \? "GitHub PAT connected/,
+  "Icon-only connected PAT button keeps an aria-label",
+);
+assert.match(
+  source,
+  /\{patStatus\?\.hasPat \? null : "Add PAT"\}/,
+  "Disconnected state still shows the 'Add PAT' call to action",
+);
+
 console.log("github-view-polish.test.ts OK");
