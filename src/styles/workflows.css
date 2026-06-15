@@ -546,6 +546,145 @@
     var(--background);
 }
 
+/* ── Mobile step list ────────────────────────────────────────────────────────
+   Linear, scrollable alternative to the React Flow canvas (rendered below the
+   shell breakpoint). Slots into the same `canvas` grid area. */
+.workflow-step-list {
+  grid-area: canvas;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  -webkit-overflow-scrolling: touch;
+}
+.workflow-step-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.workflow-step-list-empty-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.workflow-step-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.workflow-step-list-item {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.workflow-step-card {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--touch-target);
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+.workflow-step-card:hover {
+  background: var(--bg-hover);
+}
+.workflow-step-card.is-selected {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border));
+}
+.workflow-step-card:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+.workflow-step-index {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-step-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.workflow-step-kind {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-muted);
+}
+.workflow-step-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-step-uses {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workflow-step-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+.workflow-step-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target);
+  min-width: var(--touch-target);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+.workflow-step-remove:hover {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+}
+.workflow-step-remove:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+
 .workflow-canvas-toolbar {
   position: absolute;
   top: 10px;

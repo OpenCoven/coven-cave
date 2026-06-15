@@ -4,6 +4,7 @@ import "@/styles/workflows.css";
 
 import { useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { useIsMobile } from "@/lib/use-viewport";
 import type { WorkflowGraphNode, WorkflowLayoutDirection, WorkflowNodePositions } from "@/lib/workflow-graph";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
@@ -20,6 +21,7 @@ import type {
 import { WorkflowAttachments } from "./workflow-attachments";
 import type { WorkflowFamiliarOption } from "./workflow-attachments";
 import { WorkflowCanvas } from "./workflow-canvas";
+import { WorkflowStepList } from "./workflow-step-list";
 import { WorkflowCreateDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
 import { WorkflowInspector } from "./workflow-inspector";
 import { WorkflowLibrary } from "./workflow-library";
@@ -124,6 +126,10 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
   } = props;
   const [createOpen, setCreateOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Below the shell breakpoint the React Flow canvas (pan/zoom/drag-connect) is
+  // awkward on touch, so we swap it for a linear, scrollable step list that reads
+  // from the same graph source.
+  const isMobile = useIsMobile();
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [sidePanelSection, setSidePanelSection] = useState<WorkflowSidePanelSection>("inspector");
@@ -204,23 +210,34 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
       </aside>
       <main className={mainClassName} style={mainStyle}>
         <WorkflowPalette workflow={selectedWorkflow} onAddStep={props.onAddStep} />
-        <WorkflowCanvas
-          workflow={selectedWorkflow}
-          action={action}
-          selectedNode={selectedNode}
-          savedPositions={props.savedPositions}
-          layoutDirection={props.layoutDirection}
-          viewResetKey={props.viewResetKey}
-          playback={props.playback}
-          onSelectNode={props.onSelectNode}
-          onClearNode={props.onClearNode}
-          onResetView={props.onResetView}
-          onSwitchLayout={props.onSwitchLayout}
-          onConnect={props.onConnect}
-          onDisconnect={props.onDisconnect}
-          onRemoveStep={props.onRemoveStep}
-          onSavePositions={props.onSavePositions}
-        />
+        {isMobile ? (
+          <WorkflowStepList
+            workflow={selectedWorkflow}
+            action={action}
+            selectedNode={selectedNode}
+            playback={props.playback}
+            onSelectNode={props.onSelectNode}
+            onRemoveStep={props.onRemoveStep}
+          />
+        ) : (
+          <WorkflowCanvas
+            workflow={selectedWorkflow}
+            action={action}
+            selectedNode={selectedNode}
+            savedPositions={props.savedPositions}
+            layoutDirection={props.layoutDirection}
+            viewResetKey={props.viewResetKey}
+            playback={props.playback}
+            onSelectNode={props.onSelectNode}
+            onClearNode={props.onClearNode}
+            onResetView={props.onResetView}
+            onSwitchLayout={props.onSwitchLayout}
+            onConnect={props.onConnect}
+            onDisconnect={props.onDisconnect}
+            onRemoveStep={props.onRemoveStep}
+            onSavePositions={props.onSavePositions}
+          />
+        )}
         <WorkflowRunStrip
           workflow={selectedWorkflow}
           action={action}

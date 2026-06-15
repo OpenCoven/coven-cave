@@ -1076,6 +1076,43 @@ function LinkedContextRow({
   );
 }
 
+// Compact, always-visible linked-task chip for the mobile chat header. The
+// task tied to this chat used to live only inside the kebab context menu; on
+// mobile it now rides directly in the info header so the affiliation is
+// visible without opening a menu. Tapping opens the task on the board.
+function MobileHeaderTask({
+  task,
+  onOpenTask,
+}: {
+  task: NonNullable<ChatLinkedContext["task"]>;
+  onOpenTask?: (cardId: string) => void;
+}) {
+  const inner = (
+    <>
+      <Icon name="ph:kanban" width={12} className="cave-mobile-header-task__icon" aria-hidden />
+      <span className="cave-mobile-header-task__title">{task.title}</span>
+      <span className="cave-mobile-header-task__status">{task.status}</span>
+      {onOpenTask ? (
+        <Icon name="ph:arrow-square-out" width={11} className="cave-mobile-header-task__open" aria-hidden />
+      ) : null}
+    </>
+  );
+  return onOpenTask ? (
+    <button
+      type="button"
+      className="cave-mobile-header-task"
+      onClick={() => onOpenTask(task.id)}
+      aria-label={`Open linked task: ${task.title}`}
+    >
+      {inner}
+    </button>
+  ) : (
+    <div className="cave-mobile-header-task" role="note" aria-label={`Linked task: ${task.title}`}>
+      {inner}
+    </div>
+  );
+}
+
 function MobileChatContextMenu({
   familiar,
   session,
@@ -1095,7 +1132,6 @@ function MobileChatContextMenu({
   onOpenTask?: (cardId: string) => void;
   onOpenDebug?: () => void;
 }) {
-  const task = linkedContext?.task ?? null;
   const github = linkedContext?.github ?? [];
   const repo = repoName(session?.project_root ?? projectRoot);
   const runtime = [
@@ -1131,24 +1167,8 @@ function MobileChatContextMenu({
             <span className="min-w-0 flex-1 truncate">Debug session</span>
           </button>
         ) : null}
-        {task ? (
-          onOpenTask ? (
-            <button
-              type="button"
-              className="cave-mobile-context-link"
-              onClick={() => onOpenTask(task.id)}
-            >
-              <Icon name="ph:kanban" width={13} aria-hidden />
-              <span className="min-w-0 flex-1 truncate">Task: {task.title}</span>
-              <Icon name="ph:arrow-square-out" width={12} aria-hidden />
-            </button>
-          ) : (
-            <span className="cave-mobile-context-link">
-              <Icon name="ph:kanban" width={13} aria-hidden />
-              <span className="min-w-0 flex-1 truncate">Task: {task.title}</span>
-            </span>
-          )
-        ) : null}
+        {/* The linked task now rides in the mobile header (MobileHeaderTask),
+            so it's intentionally not duplicated here. */}
         {github.length ? (
           <div className="cave-mobile-context-links">
             {github.slice(0, 3).map((item) => (
@@ -2622,6 +2642,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             onOpenDebug={sessionId ? () => setDebugModalOpen(true) : undefined}
           />
         </div>
+        {linkedContext?.task ? (
+          <MobileHeaderTask task={linkedContext.task} onOpenTask={onOpenTask} />
+        ) : null}
         <MetaLine
           session={session ?? null}
           linkedContext={linkedContext}

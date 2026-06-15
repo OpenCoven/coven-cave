@@ -1383,6 +1383,7 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-mobile-header-identity,
+.cave-mobile-header-task,
 .cave-mobile-action-strip,
 .cave-mobile-context {
   display: none;
@@ -2130,6 +2131,51 @@ details[open] > .cave-tool-summary::before {
   .cave-mobile-daemon-pill--offline {
     background: color-mix(in oklch, var(--color-danger) 16%, transparent);
     color: var(--color-danger);
+  }
+
+  /* Linked-task chip — full-width row directly under the identity line, so the
+     chat's task affiliation is visible without opening the kebab menu. */
+  .cave-mobile-header-task {
+    display: flex;
+    width: 100%;
+    min-height: 34px;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 9px;
+    border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+    background: color-mix(in oklch, var(--accent-presence) 11%, transparent);
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .cave-mobile-header-task__icon {
+    flex: 0 0 auto;
+    color: var(--accent-presence);
+  }
+
+  .cave-mobile-header-task__title {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .cave-mobile-header-task__status {
+    flex: 0 0 auto;
+    text-transform: capitalize;
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .cave-mobile-header-task__open {
+    flex: 0 0 auto;
+    color: var(--text-muted);
   }
 
   .cave-mobile-context {

@@ -134,4 +134,43 @@ assert.ok(!/\bfloat-right\b/.test(fabClass), "scroll-to-bottom FAB must not use 
 assert.match(fabClass, /\bml-auto\b/, "scroll-to-bottom FAB should right-align with ml-auto so sticky still applies");
 assert.match(fabClass, /\bsticky\b/, "scroll-to-bottom FAB stays position: sticky");
 
+// The chat's linked task is surfaced directly in the mobile header (not just
+// buried in the kebab drawer), so its affiliation is visible at a glance.
+assert.match(
+  source,
+  /function MobileHeaderTask\(/,
+  "Mobile header should have a dedicated linked-task chip component",
+);
+
+assert.match(
+  source,
+  /\{linkedContext\?\.task \? \(\s*<MobileHeaderTask task=\{linkedContext\.task\} onOpenTask=\{onOpenTask\} \/>/,
+  "Mobile chat header should render the linked task chip when the chat is tied to a task",
+);
+
+assert.match(
+  source,
+  /aria-label=\{`Open linked task: \$\{task\.title\}`\}/,
+  "Linked-task header chip should be a labelled control that opens the task",
+);
+
+// The task lives in the header now, so it must not be duplicated in the kebab.
+assert.doesNotMatch(
+  source,
+  /cave-mobile-context-link[\s\S]{0,80}Task: \$\{task\.title\}/,
+  "Linked task should not be duplicated inside the mobile context drawer",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-mobile-header-task\s*\{[\s\S]*width\s*:\s*100%[\s\S]*min-height\s*:\s*34px/,
+  "Mobile linked-task chip should be a full-width, comfortably tappable header row",
+);
+
+assert.match(
+  styles,
+  /\.cave-mobile-header-identity,\s*\.cave-mobile-header-task,/,
+  "Linked-task chip should be hidden on desktop alongside the other mobile-only header elements",
+);
+
 console.log("chat-view-mobile-command-center.test.ts: ok");
