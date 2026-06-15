@@ -8,8 +8,14 @@ const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.me
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
-assert.match(src, /coven_access_token/, "server accepts the same access cookie as REST middleware");
+assert.doesNotMatch(src, /if \(!ACCESS_TOKEN\) return true/, "missing access token must not authorize every WebSocket upgrade");
+assert.match(src, /isLocalUpgrade\(req\)/, "unauthenticated PTY upgrades are restricted to local loopback callers");
+assert.match(src, /isAllowedBrowserSource\(req\)/, "PTY upgrades enforce browser Origin/Referer checks");
+assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "local PTY upgrades verify the peer address, not only the Host header");
+assert.match(src, /ACCESS_TOKEN_COOKIE/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
+assert.match(src, /isAllowedRequestSource/, "server reuses the proxy source-origin guard for WebSocket upgrades");
+assert.match(src, /const hostname = process\.env\.HOST \?\? "127\.0\.0\.1"/, "server binds loopback by default");
 assert.match(src, /pty\.spawn\(defaultShell\(\),\s*defaultShellArgs\(\)/, "server hardcodes shell and args");
 assert.doesNotMatch(src, /query\.command|query\.args|query\.env/, "renderer must not supply process authority through query params");
 assert.match(src, /statSync\(raw\)/, "projectRoot is stat-validated before use as cwd");

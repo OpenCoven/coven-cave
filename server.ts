@@ -6,11 +6,17 @@ import { parse } from "node:url";
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
+import {
+  ACCESS_TOKEN_COOKIE,
+  isAllowedRequestSource,
+  isLoopbackHost,
+} from "./src/proxy-helpers.ts";
+
 const require = createRequire(import.meta.url);
 const pty: typeof import("node-pty") = require("node-pty");
 
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
-const ACCESS_COOKIE = "coven_access_token";
+const ACCESS_COOKIE = ACCESS_TOKEN_COOKIE;
 
 type PtySession = {
   pty: import("node-pty").IPty;
@@ -30,14 +36,54 @@ function getTokenFromCookie(header: string | undefined): string {
   return "";
 }
 
-function isAuthorized(req: IncomingMessage): boolean {
-  if (!ACCESS_TOKEN) return true;
+function hasAccessToken(req: IncomingMessage): boolean {
+  if (!ACCESS_TOKEN) return false;
 
   const cookie = getTokenFromCookie(req.headers.cookie);
   if (cookie === ACCESS_TOKEN) return true;
 
   const auth = req.headers.authorization ?? "";
   return auth.startsWith("Bearer ") && auth.slice("Bearer ".length) === ACCESS_TOKEN;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isLoopbackAddress(value: string | undefined): boolean {
+  if (!value) return false;
+  if (value === "::1" || value === "127.0.0.1") return true;
+  if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
+  return false;
+}
+
+function isLocalUpgrade(req: IncomingMessage): boolean {
+  return (
+    isLoopbackHost(headerValue(req.headers.host) ?? null) &&
+    isLoopbackAddress(req.socket.remoteAddress)
+  );
+}
+
+function requestOrigin(req: IncomingMessage): string | null {
+  const host = headerValue(req.headers.host);
+  if (!host) return null;
+  const encrypted = Boolean((req.socket as typeof req.socket & { encrypted?: boolean }).encrypted);
+  const proto = headerValue(req.headers["x-forwarded-proto"]) ?? (encrypted ? "https" : "http");
+  const firstProto = proto.split(",", 1)[0];
+  return `${firstProto.trim() || "http"}://${host}`;
+}
+
+function isAllowedBrowserSource(req: IncomingMessage): boolean {
+  const expectedOrigin = requestOrigin(req);
+  if (!expectedOrigin) return false;
+  return (
+    isAllowedRequestSource(headerValue(req.headers.origin) ?? null, expectedOrigin) &&
+    isAllowedRequestSource(headerValue(req.headers.referer) ?? null, expectedOrigin)
+  );
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  return (hasAccessToken(req) || isLocalUpgrade(req)) && isAllowedBrowserSource(req);
 }
 
 function defaultShell(): string {
@@ -193,7 +239,7 @@ function handlePtyConnection(
   ws.on("message", (data) => onWsMessage(threadId, data));
   ws.on("close", () => {
     const session = sessions.get(threadId);
-    if (session?.ws !== ws) return;
+    if (!session || session.ws !== ws) return;
     sessions.delete(threadId);
     try {
       session.pty.kill();
@@ -204,7 +250,7 @@ function handlePtyConnection(
 }
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
+const hostname = process.env.HOST ?? "127.0.0.1";
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 
 const app = next({ dev, hostname, port });
