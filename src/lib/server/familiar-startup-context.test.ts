@@ -37,7 +37,14 @@ try {
   const prompt = buildPromptWithFamiliarStartupContext("What is today's codeword?", [context]);
   assert.match(prompt, /Project Context \(familiar workspace files loaded at session start\):/);
   assert.match(prompt, /# memory\/2026-06-15\.md instructions for /);
-  assert.match(prompt, /<INSTRUCTIONS>\n# Daily notes\n\nCodeword: blue orchid\n<\/INSTRUCTIONS>/);
+  assert.match(prompt, /# Daily notes\n\nCodeword: blue orchid/);
+  assert.match(prompt, /^<INSTRUCTIONS>\n/);
+  assert.equal(
+    prompt.indexOf("<INSTRUCTIONS>"),
+    prompt.lastIndexOf("<INSTRUCTIONS>"),
+    "entire startup context should be wrapped in a single INSTRUCTIONS block",
+  );
+  assert.match(prompt, /<\/INSTRUCTIONS>\n\nWhat is today's codeword\?/);
   assert.match(prompt, /What is today's codeword\?/);
 
   assert.equal(

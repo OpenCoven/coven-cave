@@ -57,15 +57,15 @@ export function buildPromptWithFamiliarStartupContext(
   const blocks = contextFiles.map((file) =>
     [
       `# ${displayRelativePath(file.relativePath)} instructions for ${file.absolutePath}`,
-      "<INSTRUCTIONS>",
       file.contents.trimEnd(),
-      "</INSTRUCTIONS>",
     ].join("\n"),
   );
-  const context = [
+  const contextBody = [
     "Project Context (familiar workspace files loaded at session start):",
     ...blocks,
   ].join("\n\n");
+
+  const context = `<INSTRUCTIONS>\n${contextBody}\n</INSTRUCTIONS>`;
 
   return text ? `${context}\n\n${text}` : context;
 }
