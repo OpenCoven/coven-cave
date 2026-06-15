@@ -7,6 +7,7 @@ import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -88,31 +89,10 @@ const RESULT_LIMITS = {
 //
 // We only honour the *first* `@token` in the query — multiple `@`s collapse
 // down to the first (the rest stay as literal text in the free-text portion).
-export function parseFamiliarToken(query: string): { token: string | null; rest: string } {
-  const m = query.match(/(^|\s)@([\w-]*)/);
-  if (!m) return { token: null, rest: query };
-  const token = m[2].toLowerCase();
-  const rest = (query.slice(0, m.index! + m[1].length) + query.slice(m.index! + m[1].length + 1 + m[2].length)).trim();
-  return { token, rest };
-}
-
-function normalizeFamiliarHandle(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, "");
-}
-
-export function resolveFamiliarIds(familiars: Familiar[], token: string | null): Set<string> | null {
-  if (token === null) return null;
-  if (token === "") return new Set(familiars.map((f) => f.id));
-  const t = token.toLowerCase();
-  const out = new Set<string>();
-  for (const f of familiars) {
-    const candidates = [f.id, f.name ?? "", f.display_name];
-    if (candidates.some((c) => normalizeFamiliarHandle(c).includes(t))) {
-      out.add(f.id);
-    }
-  }
-  return out;
-}
+// The parsing/resolution lives in the React-free `command-palette-scope` lib
+// module (imported above) so it can be unit-tested directly; re-exported here
+// to preserve the existing public import site.
+export { parseFamiliarToken, resolveFamiliarIds };
 
 export function CommandPalette({
   open,
@@ -387,6 +367,17 @@ export function CommandPalette({
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));
   }, [rows.length, activeIdx]);
 
+  // Visible familiar-scope state. When the query carries an `@token`, surface a
+  // chip below the input so the active scope is explicit (and announced) rather
+  // than only implied by the filtered results.
+  const scopeInfo = useMemo(() => {
+    const { token } = parseFamiliarToken(query);
+    if (token === null) return null;
+    const ids = resolveFamiliarIds(familiars, token);
+    const matched = familiars.filter((f) => ids?.has(f.id));
+    return { token, matched, isBare: token === "" };
+  }, [query, familiars]);
+
   const fire = (row: Row) => {
     if (row.kind === "familiar") {
       onIntent({ kind: "switch-familiar", familiarId: row.familiar.id });
@@ -463,6 +454,38 @@ export function CommandPalette({
           }
           className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
+        {scopeInfo ? (
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label={
+              scopeInfo.isBare
+                ? "Scoped to all familiars"
+                : scopeInfo.matched.length > 0
+                  ? `Scoped to ${scopeInfo.matched.map((f) => f.display_name).join(", ")}`
+                  : `No familiar matches @${scopeInfo.token}`
+            }
+            className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2 text-xs"
+          >
+            <span
+              className="inline-flex shrink-0 items-center rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 font-medium text-[var(--text-primary)]"
+              aria-hidden
+            >
+              @{scopeInfo.token || "…"}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]">
+              {scopeInfo.isBare
+                ? "All familiars — type a handle to narrow"
+                : scopeInfo.matched.length > 0
+                  ? scopeInfo.matched
+                      .slice(0, 3)
+                      .map((f) => f.display_name)
+                      .join(", ") +
+                    (scopeInfo.matched.length > 3 ? ` +${scopeInfo.matched.length - 3} more` : "")
+                  : "no familiar match — showing suggestions"}
+            </span>
+          </div>
+        ) : null}
         <ul
           id="command-palette-listbox"
           role="listbox"
