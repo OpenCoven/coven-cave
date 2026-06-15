@@ -664,13 +664,13 @@ function CapabilityInspector({
 
       {item ? (
         <div className="space-y-3 p-3">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="capability-chips flex flex-wrap items-center gap-1.5">
             <Badge>{TYPE_LABEL[item.type]}</Badge>
             <Badge tone={item.status}>{STATUS_LABEL[item.status]}</Badge>
             <button
               type="button"
               onClick={() => onSelectHarness(item.harnessId === "coven" ? null : item.harnessId)}
-              className="focus-ring rounded-full border border-border px-2 py-px text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="focus-ring inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {item.harnessLabel}
             </button>
@@ -1015,7 +1015,7 @@ function Badge({
   tone?: CapabilityStatus;
 }) {
   return (
-    <span className={`rounded-full px-2 py-px text-[10px] ${badgeClass(tone)}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] ${badgeClass(tone)}`}>
       {children}
     </span>
   );

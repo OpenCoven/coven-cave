@@ -4894,6 +4894,16 @@ button:active > .edge-rail-chip {
     padding-inline: 14px;
   }
 
+  /* Inspector metadata chips stay compact, centered pills on mobile. Without
+     this, the blanket touch-target min-height above (plus the row's flex
+     stretch) inflates these dense chips into circular blobs. The lone
+     interactive chip keeps a comfortable tap height via block padding. */
+  .capabilities-view .capability-chips button {
+    min-height: 0;
+    padding-block: 4px;
+    padding-inline: 10px;
+  }
+
   .chat-list-surface {
     min-height: 0;
     overflow: hidden;
