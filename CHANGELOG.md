@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.86] - 2026-06-15
+
+Patch release: finishes repairing the auto-updater (the GitHub PAT no longer writes inside the signed bundle) and fixes the mobile scroll-to-bottom button.
+
+### Fixed
+- **Updater** — the in-app GitHub PAT form no longer writes `.env.local` inside the read-only, code-signed `.app` bundle (it resolves to a writable per-user path, read back via the vault resolver). This was the last of the runtime writes that broke the bundle's signature seal and the in-place auto-updater (#657).
+- **Chat** — the mobile scroll-to-bottom button now renders correctly. It used `float: right` with `position: sticky`, which broke sticky positioning in the iOS WKWebView so the button landed too high or not at all; it now right-aligns with `ml-auto` and sits above the composer (#662).
+
 ## [0.0.85] - 2026-06-15
 
 Patch release: a recoverable update flow, a mobile task-page fix, and the chat rail redesign on top of 0.0.84.
