@@ -15,8 +15,8 @@ type GroupBy = "status" | "sourceType" | "none";
 const INLINE_STATUS_OPTIONS: ReadingStatus[] = ["want-to-read", "reading", "done"];
 
 const STATUS_ORDER: Record<ReadingStatus, number> = {
-  reading: 0,
-  "want-to-read": 1,
+  "want-to-read": 0,
+  reading: 1,
   done: 2,
   abandoned: 3,
 };
