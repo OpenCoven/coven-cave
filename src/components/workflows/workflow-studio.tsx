@@ -2,8 +2,8 @@
 
 import "@/styles/workflows.css";
 
-import { useState } from "react";
-import { Icon } from "@/lib/icon";
+import { useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { Icon, type IconName } from "@/lib/icon";
 import type { WorkflowGraphNode, WorkflowLayoutDirection, WorkflowNodePositions } from "@/lib/workflow-graph";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
@@ -27,6 +27,22 @@ import { WorkflowManifestPreview } from "./workflow-manifest-preview";
 import { WorkflowPalette } from "./workflow-palette";
 import { WorkflowRunStrip } from "./workflow-run-strip";
 import { WorkflowRunsPanel } from "./workflow-runs-panel";
+
+type WorkflowRunPreviewMode = "compact" | "custom" | "half" | "full" | "split";
+
+type WorkflowRunPreviewPreset = {
+  id: Exclude<WorkflowRunPreviewMode, "custom">;
+  label: string;
+  icon: IconName;
+  title: string;
+};
+
+const WORKFLOW_RUN_PREVIEW_PRESETS: WorkflowRunPreviewPreset[] = [
+  { id: "compact", label: "Compact", icon: "ph:rows", title: "Keep runs compact at the bottom" },
+  { id: "half", label: "50%", icon: "ph:caret-up-down", title: "Use half-height run preview" },
+  { id: "full", label: "Full", icon: "ph:arrows-out-simple", title: "Expand run preview to full height" },
+  { id: "split", label: "Side by side", icon: "ph:columns", title: "Show runs beside the workflow view" },
+];
 
 export type WorkflowStudioActionState = {
   id: string;
@@ -99,11 +115,50 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [runPreviewMode, setRunPreviewMode] = useState<WorkflowRunPreviewMode>("compact");
+  const [runPreviewHeight, setRunPreviewHeight] = useState(280);
+  const [runPreviewSideWidth, setRunPreviewSideWidth] = useState(420);
   const shellClassName = [
     "workflow-studio-shell",
     leftPanelOpen ? "" : "is-left-collapsed",
     rightPanelOpen ? "" : "is-right-collapsed",
   ].filter(Boolean).join(" ");
+  const mainClassName = [
+    "workflow-studio-main",
+    `is-run-preview-${runPreviewMode}`,
+  ].join(" ");
+  const mainStyle = {
+    "--workflow-runs-height": `${runPreviewHeight}px`,
+    "--workflow-runs-side-width": `${runPreviewSideWidth}px`,
+  } as CSSProperties;
+
+  function startRunPreviewResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    const split = runPreviewMode === "split";
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startHeight = runPreviewHeight;
+    const startWidth = runPreviewSideWidth;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (split) {
+        const nextWidth = Math.min(760, Math.max(320, startWidth + startX - moveEvent.clientX));
+        setRunPreviewSideWidth(nextWidth);
+        return;
+      }
+      const nextHeight = Math.min(720, Math.max(160, startHeight + startY - moveEvent.clientY));
+      setRunPreviewMode("custom");
+      setRunPreviewHeight(nextHeight);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }
 
   return (
     <section className={shellClassName} aria-label="Workflow Studio">
@@ -135,7 +190,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           />
         </div>
       </aside>
-      <main className="workflow-studio-main">
+      <main className={mainClassName} style={mainStyle}>
         <WorkflowPalette workflow={selectedWorkflow} onAddStep={props.onAddStep} />
         <WorkflowCanvas
           workflow={selectedWorkflow}
@@ -172,13 +227,42 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           onRedo={props.onRedo}
           onStopPlayback={props.onStopPlayback}
         />
-        <WorkflowRunsPanel
-          runs={props.runs}
-          loading={props.runsLoading}
-          workflow={selectedWorkflow}
-          playback={props.playback}
-          onReplayRun={props.onReplayRun}
-        />
+        <section className="workflow-run-preview-frame" aria-label="Run preview details">
+          <button
+            type="button"
+            className="workflow-run-preview-resizer"
+            aria-label="Drag to resize run preview"
+            title={runPreviewMode === "split" ? "Drag horizontally to resize run preview" : "Drag vertically to resize run preview"}
+            onPointerDown={startRunPreviewResize}
+          >
+            <Icon name="ph:dots-six-vertical" width={15} aria-hidden />
+          </button>
+          <div className="workflow-run-preview-toolbar" role="toolbar" aria-label="Run preview layout">
+            {WORKFLOW_RUN_PREVIEW_PRESETS.map((preset) => {
+              const active = runPreviewMode === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`workflow-run-preview-mode${active ? " is-active" : ""}`}
+                  aria-pressed={active}
+                  title={preset.title}
+                  onClick={() => setRunPreviewMode(preset.id)}
+                >
+                  <Icon name={preset.icon} width={12} aria-hidden />
+                  <span>{preset.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <WorkflowRunsPanel
+            runs={props.runs}
+            loading={props.runsLoading}
+            workflow={selectedWorkflow}
+            playback={props.playback}
+            onReplayRun={props.onReplayRun}
+          />
+        </section>
       </main>
       <aside className="workflow-studio-side" aria-label="Workflow details">
         <button

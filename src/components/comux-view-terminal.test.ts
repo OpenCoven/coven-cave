@@ -65,6 +65,11 @@ assert.match(
   /comux-terminal-empty-add/,
   "terminal empty-state add button exposes a stable mobile hit-area hook",
 );
+assert.match(
+  source,
+  /const wasActiveTerminalRef = useRef\(false\);[\s\S]*?const activeTerminal = view === "terminal" && active;[\s\S]*?wasActiveTerminalRef\.current = true;[\s\S]*?if \(sessions\.length > 0\) return;[\s\S]*?addSession\(\);/,
+  "opening the active Terminal surface should auto-start one terminal session without respawning after in-surface closes",
+);
 
 // ⌘N / ⌘W keydown handler is wired and respects modifier + contentEditable gate.
 assert.match(
