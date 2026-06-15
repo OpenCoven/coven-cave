@@ -16,6 +16,7 @@ try {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionOwned: {},
   });
 
   await config.recordSessionFamiliar("session-1", "cody");
@@ -47,6 +48,7 @@ try {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
+    sessionOwned: {},
   });
 
   const installedAt = await config.installMarketplacePlugin("github", "0.1.0", "catalog");
