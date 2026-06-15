@@ -23,6 +23,7 @@ const DEFAULT_STATE: CaveState = {
   sessionTitles: {},
   sessionArchived: {},
   sessionSacrificed: {},
+  sessionOwned: {},
 };
 
 function defaultConfig(): CaveConfig {
@@ -42,6 +43,7 @@ function defaultState(): CaveState {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionOwned: {},
   };
 }
 
@@ -91,6 +93,8 @@ export type CaveState = {
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
   sessionSacrificed: Record<string, string>;
+  /** Sessions created through Cave's browser-facing session API. */
+  sessionOwned: Record<string, string>;
 };
 
 export async function loadConfig(): Promise<CaveConfig> {
@@ -203,6 +207,7 @@ export async function loadState(): Promise<CaveState> {
       sessionTitles: parsed.sessionTitles ?? {},
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
+      sessionOwned: parsed.sessionOwned ?? {},
     };
   } catch {
     return defaultState();
@@ -215,11 +220,8 @@ async function saveState(state: CaveState): Promise<void> {
 }
 
 // In-process serialization of cave-state.json mutations. Without this, two
-// concurrent load→mutate→save calls (e.g. recordSessionFamiliar +
-// setSessionTitle fired via Promise.all on task-chat creation) both load the
-// same snapshot, each writes a different key, and the second saveState
-// silently clobbers the first — the field that lost the race vanishes from
-// disk. The mutex chain forces every mutation to do its own fresh load.
+// concurrent load→mutate→save calls both load the same snapshot, each writes
+// a different key, and the second saveState silently clobbers the first.
 let stateMutex: Promise<unknown> = Promise.resolve();
 
 async function updateState<T>(
@@ -237,6 +239,21 @@ async function updateState<T>(
   } finally {
     release();
   }
+}
+
+export async function recordOwnedSession(sessionId: string): Promise<void> {
+  const state = await loadState();
+  state.sessionOwned[sessionId] = new Date().toISOString();
+  try {
+    await saveState(state);
+  } catch {
+    /* best effort */
+  }
+}
+
+export async function isOwnedSession(sessionId: string): Promise<boolean> {
+  const state = await loadState();
+  return Boolean(state.sessionOwned[sessionId] || state.sessionFamiliar[sessionId]);
 }
 
 export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {

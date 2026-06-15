@@ -3,6 +3,8 @@ import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "
 import { loadBoard, updateCard } from "@/lib/cave-board";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
+import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
+import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -19,13 +21,16 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const { id } = await params;
-  let body: { familiarId?: string | null; projectRoot?: string | null } = {};
-  try {
-    body = await req.json();
-  } catch {
-    body = {};
-  }
+  const parsed = await readJsonBody<{ familiarId?: string | null; projectRoot?: string | null }>(
+    req,
+    MAX_SESSION_JSON_BYTES,
+  );
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
 
   const board = await loadBoard();
   const card = board.cards.find((candidate) => candidate.id === id);
@@ -52,11 +57,17 @@ export async function POST(
     });
   }
 
+  // card.cwd wins; body.projectRoot covers "card had no CWD, user supplied one" flow.
+  const projectRoot = normalizeProjectRoot(card.cwd ?? body.projectRoot ?? process.cwd());
+  if (!projectRoot) {
+    return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
+  }
+
   const config = await loadConfig();
   const binding = bindingFor(config, familiarId);
-  // The task's own CWD wins; body.projectRoot covers the "card had no CWD,
-  // user supplied one at start time" prompt flow.
-  const projectRoot = card.cwd ?? body.projectRoot ?? process.cwd();
+  if (!isAllowedHarness(binding.harness)) {
+    return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
+  }
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
