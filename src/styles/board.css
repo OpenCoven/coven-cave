@@ -298,7 +298,10 @@
 @keyframes board-drawer-in { from{transform:translateX(100%)} to{transform:translateX(0)} }
 .board-drawer--closing { animation:board-drawer-out .18s ease-in forwards; }
 @keyframes board-drawer-out { from{transform:translateX(0)} to{transform:translateX(100%)} }
-.board-drawer-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:14px 16px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; }
+/* padding-top/right clear the iOS status bar + Dynamic Island and the
+   landscape rounded corner so the title and close button are never occluded;
+   --sai-* fall back to 0px off-device so desktop is unaffected. */
+.board-drawer-header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:14px 16px; padding-top:calc(14px + var(--sai-top)); padding-right:calc(16px + var(--sai-right)); border-bottom:1px solid var(--border-hairline); flex-shrink:0; }
 .board-drawer-title { font-size:13px; font-weight:600; color:var(--text-primary); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .board-drawer-title-input { flex:1; min-width:0; background:transparent; border:1px solid transparent; border-radius:7px; padding:4px 8px; margin-left:-8px; font:600 15px/1.3 var(--font-sans,inherit); color:var(--text-primary); outline:none; text-overflow:ellipsis; transition:background .12s,border-color .12s,box-shadow .12s; }
 .board-drawer-title-input:hover { border-color:var(--border-hairline); background:color-mix(in oklch,var(--bg-hover) 50%,transparent); }
