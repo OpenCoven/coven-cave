@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
@@ -125,6 +125,7 @@ export function FamiliarStudio({ familiars }: Props) {
       role="dialog"
       aria-label={`Familiar Studio${familiar ? ` — ${familiar.display_name}` : ""}`}
       className="familiar-studio__drawer"
+      style={familiar ? ({ ["--familiar-accent"]: familiar.color } as CSSProperties) : undefined}
     >
       {/* Tabstrip */}
       <div
