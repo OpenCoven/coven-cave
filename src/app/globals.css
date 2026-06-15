@@ -4418,6 +4418,17 @@ button:active > .edge-rail-chip {
     outline: var(--ring-width) solid var(--ring-focus);
     outline-offset: -2px;
   }
+  .top-bar__actions .notification-bell__trigger,
+  .top-bar__account {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+  .top-bar__account {
+    border-radius: var(--radius-control);
+    background: transparent;
+  }
   .top-bar__search {
     min-width: 0;
     width: 100%;
