@@ -62,6 +62,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /const desiredModel = modelState\.effectiveModel === "unknown" \? args\.binding\.model : modelState\.effectiveModel;/,
+  "Desired model should come from resolved model state so source and model cannot diverge",
+);
+assert.match(
+  chatRoute,
   /modelApplicationState:/,
   "Response metadata should carry application state for honest UI rendering",
 );

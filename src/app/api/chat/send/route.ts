@@ -388,8 +388,6 @@ function resolveSendModelMetadata(args: {
   existingConversation: ConversationFile | null;
 }): { desiredModel: string; modelState: ChatModelState } {
   const requestedModel = cleanModelId(args.body.modelOverride);
-  const desiredModel =
-    requestedModel ?? args.existingConversation?.modelIntent?.model ?? args.binding.model;
   const modelState = resolveChatModelState({
     familiarId: args.body.familiarId,
     harness: args.binding.harness,
@@ -399,6 +397,7 @@ function resolveSendModelMetadata(args: {
     sessionModel: args.existingConversation?.modelIntent?.model ?? null,
     nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
   });
+  const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
   return { desiredModel, modelState };
 }
 
