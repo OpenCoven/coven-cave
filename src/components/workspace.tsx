@@ -1393,7 +1393,7 @@ export function Workspace() {
           setFamiliarPanelOpen(open);
           if (activeId) setRailOpen(activeId, open);
         }}
-        topBar={
+        topBar={({ navDrawerOpen, listDrawerOpen, familiarDrawerOpen }) => (
           <TopBar
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenInbox={() => setMode("inbox")}
@@ -1410,6 +1410,9 @@ export function Workspace() {
             onNotificationPrefsChanged={refreshPrefs}
             onToggleNav={() => shellRef.current?.toggleNav()}
             onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
+            navDrawerOpen={navDrawerOpen}
+            listDrawerOpen={listDrawerOpen}
+            familiarDrawerOpen={familiarDrawerOpen}
             onToggleFamiliar={
               showCompanionRail
                 ? () => {
@@ -1418,7 +1421,7 @@ export function Workspace() {
                 : undefined
             }
           />
-        }
+        )}
         familiarPanelRail={showCompanionRail ? (
           <aside className="familiar-trigger-rail familiar-trigger-rail--stacked" aria-label="Right panel tabs">
             <button

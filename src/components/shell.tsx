@@ -96,6 +96,14 @@ export type ShellHandle = {
   toggleList: () => void;
 };
 
+type ShellMobileChromeState = {
+  navDrawerOpen: boolean;
+  listDrawerOpen: boolean;
+  familiarDrawerOpen: boolean;
+};
+
+type ShellTopBar = ReactNode | ((state: ShellMobileChromeState) => ReactNode);
+
 function ShellInner({
   familiarRail,
   familiarPanelRail,
@@ -118,7 +126,7 @@ function ShellInner({
   detail: ReactNode;
   agent?: ReactNode;
   bottom?: ReactNode;
-  topBar?: ReactNode;
+  topBar?: ShellTopBar;
   /** Mobile/tablet-only bottom tab bar. Rendered after `.shell-body`
    *  inside `.shell-frame`, but only when the viewport matches the
    *  mobile breakpoint (≤1023px). */
@@ -149,6 +157,12 @@ function ShellInner({
   useEffect(() => {
     if (!isMobile) setMobileDrawer(null);
   }, [isMobile]);
+  const mobileChromeState: ShellMobileChromeState = {
+    navDrawerOpen: isMobile && mobileDrawer === "nav",
+    listDrawerOpen: isMobile && mobileDrawer === "list",
+    familiarDrawerOpen: isMobile && mobileDrawer === "agent",
+  };
+  const renderedTopBar = typeof topBar === "function" ? topBar(mobileChromeState) : topBar;
 
   useImperativeHandle(ref, () => {
     const toggleDrawer = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -354,7 +368,7 @@ function ShellInner({
   if (!mounted) {
     return (
       <div className="shell-frame flex h-full w-full flex-col">
-        {topBar}
+        {renderedTopBar}
         <div className="shell-body flex flex-1 min-h-0">
           {familiarRail}
           <div className="shell-root flex-1 min-h-0" />
@@ -454,7 +468,6 @@ function ShellInner({
     "--shell-right-gap-px": `${detailGaps.right}px`,
     "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
-
   // Floating reopen affordance — once the sidebar is collapsed (via its own
   // top toggle, ⌘B, or a drag), this left-edge rail is how it comes back. It
   // stays hidden while the nav is open so the in-panel toggle owns collapsing.
@@ -490,7 +503,7 @@ function ShellInner({
       style={shellFrameStyle}
       data-settled={settled ? "" : undefined}
     >
-      {topBar}
+      {renderedTopBar}
       <div className="shell-body flex flex-1 min-h-0">
         {familiarRail}
         {navRail}
