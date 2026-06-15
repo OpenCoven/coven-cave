@@ -3,6 +3,11 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "local": true,
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
   "windows": [
     "main"
   ],

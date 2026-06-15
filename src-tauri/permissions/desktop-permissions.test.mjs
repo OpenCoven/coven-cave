@@ -63,6 +63,11 @@ function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
 
 test("packaged desktop app can use native browser and terminal commands", () => {
   assert.equal(defaultCapability.local, true, "packaged local app origin must receive the default capability");
+  assert.deepEqual(
+    defaultCapability.platforms,
+    ["linux", "macOS", "windows"],
+    "desktop-only permissions must not leak into mobile Tauri builds",
+  );
   assert.ok(defaultCapability.permissions.includes("default"), "default capability should include custom app permissions");
 
   for (const permissionId of requiredPermissionIds) {
@@ -243,8 +248,8 @@ test("terminal commands use Tauri camelCase command arguments", () => {
   );
   assert.match(
     bottomTerminal,
-    /invoke\("pty_stop", \{ threadId: threadId \}/,
-    "pty_stop must pass threadId so desktop cleanup reaches Rust",
+    /Deliberately NO pty_stop here/,
+    "terminal unmount must not race the next pane mount by stopping the PTY",
   );
   assert.doesNotMatch(
     bottomTerminal,
