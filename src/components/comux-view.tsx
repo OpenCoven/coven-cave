@@ -190,6 +190,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [previewRaw, setPreviewRaw] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const treeRef = useRef<ProjectTreeHandle | null>(null);
+  const wasActiveTerminalRef = useRef(false);
 
   // Daemon project root — forwarded to BottomTerminal so terminals open in
   // the right CWD instead of the app bundle dir.
@@ -276,6 +277,18 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     });
     return id;
   }, [currentIdx, daemonProjectRoot, selectedProjectRoot, sessions]);
+
+  useEffect(() => {
+    const activeTerminal = view === "terminal" && active;
+    if (!activeTerminal) {
+      wasActiveTerminalRef.current = false;
+      return;
+    }
+    if (wasActiveTerminalRef.current) return;
+    wasActiveTerminalRef.current = true;
+    if (sessions.length > 0) return;
+    addSession();
+  }, [active, addSession, sessions.length, view]);
 
   const removeSession = useCallback(
     (idx: number) => {

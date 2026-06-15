@@ -89,6 +89,15 @@ assert.match(studio, /WorkflowPalette/, "Studio should include the step palette"
 assert.match(studio, /WorkflowRunsPanel/, "Studio should include the runs panel");
 assert.match(studio, /WorkflowCreateDialog/, "Studio should wire the create dialog");
 assert.match(studio, /WorkflowScheduleDialog/, "Studio should wire the schedule dialog");
+assert.match(studio, /type WorkflowRunPreviewMode/, "Run preview layout modes should be typed");
+assert.match(studio, /runPreviewMode,\s*setRunPreviewMode[\s\S]{0,80}useState<WorkflowRunPreviewMode>\("compact"\)/, "Run preview should default to compact bottom mode");
+assert.match(studio, /--workflow-runs-height/, "Run preview should expose a CSS height variable for drag resizing");
+assert.match(studio, /--workflow-runs-side-width/, "Run preview should expose a CSS side width variable for split resizing");
+assert.match(studio, /startRunPreviewResize/, "Run preview should expose a drag resize handler");
+assert.match(studio, /setRunPreviewMode\("custom"\)/, "Dragging the bottom run preview should switch to a custom height");
+assert.match(studio, /WORKFLOW_RUN_PREVIEW_PRESETS[\s\S]{0,500}50%[\s\S]{0,500}Full[\s\S]{0,500}Side by side/, "Run preview presets should offer half, full, and side-by-side modes");
+assert.match(studio, /workflow-run-preview-toolbar/, "Run preview should render a mode toolbar");
+assert.match(studio, /aria-label="Drag to resize run preview"/, "Run preview resize handle should be accessible");
 assert.match(studio, /onUndo[\s\S]*onRedo/, "Studio should thread undo/redo");
 assert.match(studio, /leftPanelOpen,\s*setLeftPanelOpen[\s\S]{0,80}useState\(true\)/, "Studio should keep the workflow library panel open by default");
 assert.match(studio, /rightPanelOpen,\s*setRightPanelOpen[\s\S]{0,80}useState\(true\)/, "Studio should keep the workflow details panel open by default");
@@ -245,6 +254,13 @@ assert.match(manifestPreview, /workflowToYaml/, "Manifest preview should render 
 
 assert.match(css, /\.workflow-palette/, "CSS should style the palette");
 assert.match(css, /\.workflow-runs-panel/, "CSS should style the runs panel");
+assert.match(css, /grid-template-areas:[\s\S]*"palette"[\s\S]*"canvas"[\s\S]*"strip"[\s\S]*"runs"/, "Workflow main grid should name the bottom run preview area");
+assert.match(css, /\.workflow-run-preview-frame/, "CSS should style the run preview frame");
+assert.match(css, /\.workflow-run-preview-resizer/, "CSS should style the draggable run preview handle");
+assert.match(css, /\.workflow-studio-main\.is-run-preview-half/, "CSS should support a 50% bottom run preview");
+assert.match(css, /\.workflow-studio-main\.is-run-preview-full/, "CSS should support a full-height bottom run preview");
+assert.match(css, /\.workflow-studio-main\.is-run-preview-split/, "CSS should support a side-by-side run preview");
+assert.match(css, /\.workflow-studio-main\.is-run-preview-split\s*\{[\s\S]*grid-template-areas:[\s\S]*"palette palette"[\s\S]*"canvas runs"[\s\S]*"strip runs"/, "Side-by-side mode should place runs next to the workflow view");
 assert.match(css, /\.workflow-dialog/, "CSS should style dialogs");
 assert.match(css, /\.workflow-field/, "CSS should style editor fields");
 
