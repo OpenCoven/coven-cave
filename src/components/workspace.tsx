@@ -255,6 +255,16 @@ export function Workspace() {
     return () => window.removeEventListener("cave:salem-open", openSalem);
   }, []);
 
+  // Cross-surface "create a familiar" bridge. The dock (and any deep surface
+  // that can't reach openOnboarding directly) announces intent and the
+  // Workspace opens onboarding — the app's canonical create-a-familiar flow,
+  // since familiars are daemon-owned and have no cave-side create path.
+  useEffect(() => {
+    const openCreate = () => setOnboardingOpen(true);
+    window.addEventListener("cave:onboarding-open", openCreate);
+    return () => window.removeEventListener("cave:onboarding-open", openCreate);
+  }, []);
+
   // Cross-surface navigation bridge: surfaces that don't own setMode (e.g. the
   // chat rail's nav block) announce a target mode and the Workspace switches to
   // it. Keeps those surfaces decoupled from the mode state owner.

@@ -39,6 +39,14 @@ export function FamiliarDock({
   onFamiliarScopeChange,
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
+  // Familiars are daemon-owned — there is no cave-side create. "New familiar"
+  // routes to onboarding (the app's canonical create flow) via the same
+  // window-event bus the Workspace listens on (see `cave:onboarding-open`).
+  const fireCreateFamiliar = () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("cave:onboarding-open"));
+    }
+  };
   const rowRef = useRef<HTMLDivElement | null>(null);
   const overflowBtnRef = useRef<HTMLButtonElement | null>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -178,9 +186,9 @@ export function FamiliarDock({
         <button
           type="button"
           className="familiar-dock__add"
-          aria-label="Add familiar"
-          title="Add familiar"
-          onClick={() => openFamiliarStudioListView()}
+          aria-label="New familiar"
+          title="New familiar"
+          onClick={fireCreateFamiliar}
         >
           <Icon name="ph:plus-bold" width={12} aria-hidden />
         </button>
@@ -235,8 +243,8 @@ export function FamiliarDock({
             <PopoverSeparator />
             <div className="familiar-dock__pop-foot">
               <button type="button" className="familiar-dock__pop-btn familiar-dock__pop-btn--pri"
-                onClick={() => { openFamiliarStudioListView(); setPopoverOpen(false); }}>
-                <Icon name="ph:plus-bold" width={11} aria-hidden /> New
+                onClick={() => { fireCreateFamiliar(); setPopoverOpen(false); }}>
+                <Icon name="ph:plus-bold" width={11} aria-hidden /> New familiar
               </button>
               <button type="button" className="familiar-dock__pop-btn"
                 onClick={() => { openFamiliarStudioListView(); setPopoverOpen(false); }}>

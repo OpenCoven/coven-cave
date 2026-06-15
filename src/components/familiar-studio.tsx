@@ -97,6 +97,8 @@ export function FamiliarStudio({ familiars }: Props) {
   // Open-for-id-that-no-longer-exists empty state.
   if (activeFamiliarId && !familiar) {
     return (
+      <>
+        <StudioScrim onClose={closeFamiliarStudio} />
       <aside
         role="dialog"
         aria-label="Familiar Studio"
@@ -112,10 +114,13 @@ export function FamiliarStudio({ familiars }: Props) {
           This familiar is no longer available.
         </div>
       </aside>
+      </>
     );
   }
 
   return (
+    <>
+      <StudioScrim onClose={closeFamiliarStudio} />
     <aside
       role="dialog"
       aria-label={`Familiar Studio${familiar ? ` — ${familiar.display_name}` : ""}`}
@@ -219,6 +224,26 @@ export function FamiliarStudio({ familiars }: Props) {
         </footer>
       </div>
     </aside>
+    </>
+  );
+}
+
+/**
+ * Dimming scrim behind the drawer. Adopts the app-wide `--backdrop-scrim`
+ * convention (see `.ui-modal-backdrop` / `.mobile-drawer-backdrop`) so the
+ * Studio reads as a modal surface and closes on outside click — matching every
+ * other drawer/modal in the app. Click-away + the existing Esc handler are the
+ * two dismiss paths; the X button is the third.
+ */
+function StudioScrim({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Close Familiar Studio"
+      tabIndex={-1}
+      className="familiar-studio__scrim"
+      onClick={onClose}
+    />
   );
 }
 
