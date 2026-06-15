@@ -140,17 +140,35 @@ export async function proxy(req: NextRequest) {
   if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated)) {
     return jsonError(403, "forbidden host");
   }
-  if (!isAllowedRequestSource(req.headers.get("origin"), expectedOrigin)) {
-    return jsonError(403, "forbidden origin");
-  }
-  if (!isAllowedRequestSource(req.headers.get("referer"), expectedOrigin)) {
-    return jsonError(403, "forbidden referer");
+
+  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
+  // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
+  // is provably first-party: a browser cannot set a custom header on a
+  // cross-origin request (it forces a CORS preflight the server never approves),
+  // so such a request cannot be CSRF regardless of its Origin. Tailscale Serve
+  // terminates TLS and proxies to loopback, forwarding `Host: 127.0.0.1`, so a
+  // legitimately-authenticated WKWebView request keeps its real
+  // https://<machine>.ts.net identity only in the Origin header — which otherwise
+  // fails the same-origin gate and 403s every mutating request as "forbidden
+  // origin" (fixed in #618; #716 reverted it and re-broke mobile-over-Serve).
+  // Scope is deliberately the header ONLY: NOT the access cookie (auto-sent
+  // cross-origin → CSRF) and NOT the query/referer token paths. The token value
+  // is still validated below; this only relaxes the CSRF source gate.
+  const headerCsrfTrusted =
+    Boolean(sidecarToken) && req.headers.get(TOKEN_HEADER) === sidecarToken;
+
+  if (!headerCsrfTrusted) {
+    if (!isAllowedRequestSource(req.headers.get("origin"), expectedOrigin)) {
+      return jsonError(403, "forbidden origin");
+    }
+    if (!isAllowedRequestSource(req.headers.get("referer"), expectedOrigin)) {
+      return jsonError(403, "forbidden referer");
+    }
   }
   if (!hasSafeContentType(req)) {
     return jsonError(415, "unsupported content-type");
   }
 
-  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   const suppliedToken =
     req.headers.get(TOKEN_HEADER) ??
     req.nextUrl.searchParams.get(TOKEN_PARAM) ??

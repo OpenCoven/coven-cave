@@ -18,9 +18,31 @@ assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject 
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
 assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated\)/, "valid mobile access should satisfy the API host gate");
-assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("origin"\), expectedOrigin\)/, "API origin gate should always require same-origin sources");
-assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("referer"\), expectedOrigin\)/, "API referer gate should always require same-origin sources");
+assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("origin"\), expectedOrigin\)/, "API origin gate should require same-origin sources unless header-CSRF-trusted");
+assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("referer"\), expectedOrigin\)/, "API referer gate should require same-origin sources unless header-CSRF-trusted");
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
+
+// Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the
+// sidecar token in the CSRF-immune CUSTOM HEADER bypasses the origin/referer gate
+// — Serve forwards `Host: 127.0.0.1`, so the real ts.net identity survives only in
+// the Origin header and otherwise 403s every mutating request. The bypass is keyed
+// to the header ONLY; the access cookie / mobile-access path must NOT grant it
+// (cookies auto-send cross-origin → CSRF).
+assert.match(
+  source,
+  /const headerCsrfTrusted =\s*Boolean\(sidecarToken\) && req\.headers\.get\(TOKEN_HEADER\) === sidecarToken/,
+  "origin/referer gate bypass must be keyed to the custom sidecar header token",
+);
+assert.match(
+  source,
+  /if \(!headerCsrfTrusted\) \{[\s\S]*?isAllowedRequestSource\(req\.headers\.get\("origin"\)/,
+  "origin gate must run unless the request is header-CSRF-trusted",
+);
+assert.doesNotMatch(
+  source,
+  /csrfTrusted\s*=\s*mobileAccessAuthenticated/,
+  "cookie-backed mobile-access must NOT bypass the CSRF origin gate",
+);
 
 // Ordering guard: dev-mode token-bypass (NextResponse.next() when no token is set)
 // must sit AFTER the host / origin / referer / content-type checks. Pre-fix,
