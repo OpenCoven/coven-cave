@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 
@@ -75,12 +75,21 @@ export function Tabs<T extends string>({
   bordered = true,
 }: TabsProps<T>) {
   const listRef = useRef<HTMLDivElement>(null);
-  useRovingTabIndex({
+  const { setActiveIndex } = useRovingTabIndex({
     containerRef: listRef,
     itemSelector: '[role="tab"]:not([aria-disabled="true"])',
     orientation,
     loop: false,
   });
+
+  useEffect(() => {
+    const selectedIndex = items
+      .filter((item) => !item.disabled)
+      .findIndex((item) => item.id === value);
+    if (selectedIndex >= 0) {
+      setActiveIndex(selectedIndex);
+    }
+  }, [items, setActiveIndex, value]);
 
   const vertical = orientation === "vertical";
   const sm = size === "sm";
@@ -105,7 +114,6 @@ export function Tabs<T extends string>({
     >
       {items.map((t) => {
         const isActive = t.id === value;
-        const accent = t.accent ?? "var(--text-primary)";
         const tabId = idPrefix ? `${idPrefix}-tab-${t.id}` : undefined;
         const panelId = idPrefix ? `${idPrefix}-panel-${t.id}` : undefined;
 
@@ -122,18 +130,19 @@ export function Tabs<T extends string>({
             aria-selected={isActive}
             aria-controls={panelId}
             aria-disabled={t.disabled ? true : undefined}
+            disabled={t.disabled}
             title={t.title}
             onClick={() => !t.disabled && onChange(t.id)}
             className={className}
             style={
-              isActive
-                ? ({ ["--cv-tab-accent" as string]: accent } as React.CSSProperties)
+              isActive && t.accent
+                ? ({ ["--cv-tab-accent" as string]: t.accent } as React.CSSProperties)
                 : undefined
             }
           >
             {t.icon ? <Icon name={t.icon} width={sm ? 12 : 13} aria-hidden /> : null}
             <span className="cv-tab-label truncate">{t.label}</span>
-            {typeof t.count === "number" && t.count > 0 ? (
+            {typeof t.count === "number" ? (
               <span className="cv-tab-count text-[10px] tabular-nums opacity-70">
                 {t.count}
               </span>

@@ -43,9 +43,28 @@ test("keyboard navigation via roving tabindex is built in", () => {
   assert.match(src, /useRovingTabIndex\(/, "uses the roving tabindex hook");
 });
 
+test("selected tab keeps the roving tabindex tab stop in sync", () => {
+  assert.match(src, /import \{ useEffect, useRef, type ReactNode \} from "react"/, "imports useEffect");
+  assert.match(src, /const \{ setActiveIndex \} = useRovingTabIndex\(/, "captures roving tabindex setter");
+  assert.match(src, /useEffect\(\(\) => \{[\s\S]*findIndex\(\(item\) => item\.id === value\)/, "finds the selected enabled tab");
+  assert.match(src, /setActiveIndex\(selectedIndex\)/, "moves the tab stop to the selected tab");
+});
+
+test("active tab accent is only set when callers provide an override", () => {
+  assert.doesNotMatch(src, /t\.accent \?\? "var\(--text-primary\)"/, "does not force a default accent on every active tab");
+  assert.match(src, /isActive && t\.accent/, "gates inline accent style on per-tab accent");
+  assert.match(src, /\["--cv-tab-accent" as string\]: t\.accent/, "writes the caller-provided accent");
+});
+
+test("disabled tabs use native button disabled semantics", () => {
+  assert.match(src, /aria-disabled=\{t\.disabled \? true : undefined\}/, "keeps aria-disabled for tab semantics");
+  assert.match(src, /disabled=\{t\.disabled\}/, "also disables the native button");
+});
+
 test("tabs support optional icon and count badge", () => {
   assert.match(src, /t\.icon \?/, "optional leading icon");
-  assert.match(src, /t\.count/, "optional count badge");
+  assert.match(src, /typeof t\.count === "number" \?/, "optional count badge renders when a count is provided");
+  assert.doesNotMatch(src, /t\.count > 0/, "zero counts remain visible");
 });
 
 console.log("ui/tabs.test.ts OK");
