@@ -67,6 +67,11 @@ assert.match(
 );
 assert.match(
   chatRoute,
+  /const sessionModel =[\s\S]*args\.body\.modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null;/,
+  "Session-scoped send overrides should flow through the same model-state source as desiredModel",
+);
+assert.match(
+  chatRoute,
   /modelApplicationState:/,
   "Response metadata should carry application state for honest UI rendering",
 );

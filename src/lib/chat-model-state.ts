@@ -98,12 +98,12 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
 
   const sessionModel = cleanModelId(input.sessionModel);
   if (sessionModel) {
-    const application = modelApplicationForHarness(input.application);
+    const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
       effectiveModel: sessionModel,
       source: "session",
-      applicationState: application.state,
-      reason: application.reason,
+      applicationState: application?.state ?? "saved",
+      reason: application?.reason ?? UNSUPPORTED_REASON,
     });
   }
 

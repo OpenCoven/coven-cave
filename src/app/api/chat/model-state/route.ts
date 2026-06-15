@@ -113,6 +113,7 @@ export async function PATCH(req: Request) {
   if (!sessionId) return jsonError("sessionId is required for session scope", 400);
   const conversation = await loadConversation(sessionId);
   if (!conversation) return jsonError("not found", 404);
+  if (conversation.familiarId !== familiarId) return jsonError("not found", 404);
   conversation.modelIntent = {
     model,
     source: "session",

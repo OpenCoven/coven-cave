@@ -36,6 +36,11 @@ assert.equal(
   "session",
 );
 assert.equal(
+  resolveChatModelState({ ...base, sessionModel: "anthropic/claude-opus-4-7" }).applicationState,
+  "saved",
+  "session model intent is saved in Cave until a runtime application path confirms otherwise",
+);
+assert.equal(
   resolveChatModelState({
     ...base,
     sessionModel: "anthropic/claude-opus-4-7",

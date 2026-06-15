@@ -124,6 +124,11 @@ assert.match(
   /modelApplicationState: modelState\.applicationState/,
   "Response metadata should expose unsupported/saved state instead of claiming application",
 );
+assert.match(
+  chatRoute,
+  /const sessionModel =[\s\S]*modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null/,
+  "Session-scoped model overrides should feed the response model state, not only desiredModel",
+);
 assert.doesNotMatch(
   chatRoute,
   /saveConfig\([\s\S]*modelOverride/,
