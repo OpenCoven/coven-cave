@@ -20,7 +20,12 @@ function realpathOrResolve(value: string): string {
 
 function resolveResearchPath(p: string): string | null {
   const root = realpathOrResolve(RESEARCH_ROOT);
-  const resolved = realpathOrResolve(p);
+
+  // Always anchor incoming input to the trusted SAGE_ROOT first, then canonicalize.
+  // This prevents arbitrary absolute/cwd-based interpretation of user-controlled paths.
+  const candidate = path.resolve(SAGE_ROOT, p);
+  const resolved = realpathOrResolve(candidate);
+
   if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
   return resolved;
 }
