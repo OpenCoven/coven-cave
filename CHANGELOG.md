@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.90] - 2026-06-15
+
+Patch release: tidies the GitHub PAT button.
+
+### Changed
+- **GitHub** — when a PAT is connected, the toolbar button is now icon-only (key icon, no "PAT connected" text), with an aria-label for accessibility; the disconnected state keeps the "Add PAT" text (#688).
+
 ## [0.0.89] - 2026-06-15
 
 Patch release: the top-bar familiar switcher is always available.
