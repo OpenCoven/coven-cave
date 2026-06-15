@@ -48,7 +48,14 @@ async function isRealPathWithinAllowedRoot(targetPath: string, allowedRoot: stri
     realpathIfPresent(allowedRoot),
   ]);
   if (realTarget === null || realRoot === null) return false;
-  return isWithinRoot(realTarget, realRoot) && isWithinRoot(realTarget, path.resolve(allowedRoot));
+  // Containment is realpath-vs-realpath: both operands are canonicalized above,
+  // which correctly blocks symlink escapes. A previous extra clause also compared
+  // the realpath'd target against a LEXICALLY-resolved root
+  // (path.resolve(allowedRoot)); when any ancestor of the allowed root is a
+  // symlink (macOS /var→/private/var, a symlinked ~/.coven, network mounts), the
+  // canonical prefix never matched the lexical one, so legitimate memory reads
+  // were wrongly rejected. realRoot already carries the canonical prefix.
+  return isWithinRoot(realTarget, realRoot);
 }
 
 function familiarAllowedRootPath(fullPath: string, classification: MemoryFileClassification): string | null {
