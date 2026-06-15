@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import {
   archiveSessionLocal,
   sacrificeSessionLocal,
   setSessionTitle,
   summonSessionLocal,
 } from "@/lib/cave-config";
+
+/** Validate session ID: only alphanum, hyphens, colons, dots — no path traversal. */
+function isValidSessionId(id: string): boolean {
+  return /^[A-Za-z0-9:._-]{1,256}$/.test(id);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +25,12 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ ok: false, error: "missing session id" }, { status: 400 });
+  if (!id || !isValidSessionId(id)) {
+    return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
 
   let body: PatchBody;
@@ -55,12 +64,15 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const { id } = await params;
-  if (!id) {
-    return NextResponse.json({ ok: false, error: "missing session id" }, { status: 400 });
+  if (!id || !isValidSessionId(id)) {
+    return NextResponse.json({ ok: false, error: "invalid session id" }, { status: 400 });
   }
   const sacrificedAt = await sacrificeSessionLocal(id);
   return NextResponse.json({ ok: true, sacrificedAt });
