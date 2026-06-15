@@ -57,7 +57,8 @@ export async function POST(
     });
   }
 
-  const projectRoot = normalizeProjectRoot(body.projectRoot);
+  // card.cwd wins; body.projectRoot covers "card had no CWD, user supplied one" flow.
+  const projectRoot = normalizeProjectRoot(card.cwd ?? body.projectRoot ?? process.cwd());
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
   }
