@@ -63,4 +63,17 @@ assert.match(
   "Mobile BoardCardStack section add button should meet the shared touch target",
 );
 
+// The task inspector goes full-screen on phones, so its controls are primary
+// touch targets — the desktop-dense 24-28px close/action sizes must scale up.
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close,\s*\n\s*\.board-drawer-path-open\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile inspector close/open-path controls should meet the shared touch target",
+);
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-lifecycle-action,[\s\S]*\.board-drawer-chat-cta,[\s\S]*\.board-drawer-delete-btn,[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile inspector lifecycle/chat/delete actions should meet the shared touch target",
+);
+
 console.log("board-ux-polish.test.ts: ok");
