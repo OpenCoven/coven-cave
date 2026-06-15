@@ -103,8 +103,13 @@ assert.match(
 );
 assert.match(
   src,
-  /return isLoopbackHostHeader\(req\.headers\.host\);/,
-  "credential-less loopback upgrades stay authorized",
+  /return isLoopbackRemoteAddress\(req\.socket\.remoteAddress\);/,
+  "credential-less upgrades require a real loopback TCP peer",
+);
+assert.doesNotMatch(
+  src,
+  /isLoopbackHostHeader\(req\.headers\.host\)|return isLoopbackHostHeader/,
+  "PTY websocket auth must not trust the client-controlled Host header for loopback",
 );
 
 const bridge = readFileSync(new URL("./lib/pty-ws-bridge.ts", import.meta.url), "utf8");

@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
+import { isIP } from "node:net";
 import { parse } from "node:url";
 
 import next from "next";
@@ -73,13 +74,12 @@ function getTokenFromCookie(header: string | undefined): string {
   return "";
 }
 
-// Mirrors isLoopbackHost in src/proxy-helpers.ts (host header, port stripped).
-function isLoopbackHostHeader(host: string | undefined): boolean {
-  if (!host) return false;
-  const hostname = host.startsWith("[")
-    ? host.slice(1, host.indexOf("]"))
-    : host.split(":")[0];
-  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+function isLoopbackRemoteAddress(address: string | undefined): boolean {
+  if (!address) return false;
+  if (address === "::1") return true;
+
+  const ipv4 = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+  return isIP(ipv4) === 4 && ipv4.startsWith("127.");
 }
 
 function isAuthorized(req: IncomingMessage): boolean {
@@ -91,13 +91,10 @@ function isAuthorized(req: IncomingMessage): boolean {
   const supplied = cookie || bearer;
   // A supplied credential is always verified, even on loopback.
   if (supplied) return supplied === ACCESS_TOKEN;
-  // No credential: loopback connections are the local app itself — the
-  // mobile-access token gates remote (Tailscale) entry, which arrives with a
-  // tailnet Host header even though the socket is proxied via loopback.
-  // Mirrors shouldRequireMobileAccessCredential (src/proxy-helpers.ts,
-  // 9d0001c); without this, every desktop-webview terminal upgrade 401'd the
-  // moment the Tauri shell exported COVEN_CAVE_ACCESS_TOKEN.
-  return isLoopbackHostHeader(req.headers.host);
+  // No credential: only a real loopback TCP peer is the local app itself.
+  // The Host header is client-controlled and must not grant the loopback
+  // exemption for remote clients that can reach an exposed server.
+  return isLoopbackRemoteAddress(req.socket.remoteAddress);
 }
 
 function isLoopbackHostname(hostname: string): boolean {
