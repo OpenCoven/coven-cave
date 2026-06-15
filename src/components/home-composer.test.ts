@@ -7,8 +7,8 @@ const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? ""
 
 assert.match(
   destinations,
-  /id: "chat"[\s\S]*label: "Chat"/,
-  "HomeComposer should keep Chat as a launch destination",
+  /id: "chat"[\s\S]*label: "Familiar"/,
+  "HomeComposer should frame chat launch as a Familiar destination",
 );
 
 assert.match(

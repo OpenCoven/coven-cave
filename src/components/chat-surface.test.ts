@@ -89,6 +89,16 @@ assert.match(
   /\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}/,
   "ChatSurface should label the secondary primary tab Memory instead of Traces",
 );
+assert.match(
+  chatSurface,
+  /<FamiliarSwitcher[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onSelectFamiliar=\{\(id\) => \{/,
+  "ChatSurface should move familiar selection into the page header",
+);
+assert.match(
+  chatSurface,
+  /\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\}/,
+  "ChatSurface should name the primary history tab Sessions inside the Familiars page",
+);
 
 assert.match(
   chatSurface,
@@ -189,7 +199,7 @@ assert.match(
 assert.match(
   workspace,
   /mode === "chat"[\s\S]*<ChatSurface/,
-  "Workspace should mount ChatSurface for chat mode",
+  "Workspace should mount ChatSurface for the internal chat mode",
 );
 
 assert.match(

@@ -3620,6 +3620,14 @@ button:active > .edge-rail-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+}
+
+.top-bar__actions .familiar-switcher__trigger[data-labeled="true"] {
+  width: min(174px, 34vw);
+  height: 34px;
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
 }
 
 /* ── Familiar profile switcher ──────────────────────────────────────────────
@@ -3653,10 +3661,11 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
 }
 
-/* Labeled variant — the sidebar's familiar-scope control. Full-width row
+/* Labeled variant — the familiar-scope control. Full-width row
    (avatar/glyph + name + caret) that lines up with the New chat / Ask Salem
    action rows beneath it, so the control reads as the scope selector instead of
-   a bare floating icon. The mobile top bar keeps the compact icon (no label). */
+   a bare floating icon. Surface-specific wrappers constrain this width where
+   needed, such as the Familiars header and mobile top bar. */
 .familiar-switcher__trigger[data-labeled="true"] {
   width: 100%;
   height: 32px;

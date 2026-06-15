@@ -2,7 +2,7 @@
 
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
- * viewports. Surfaces the most-used destinations (Home, Chat, Board, Inbox,
+ * viewports. Surfaces the most-used destinations (Home, Familiars, Board, Inbox,
  * Library, Delegations) as a tablist with icon + label and an active highlight.
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
@@ -23,7 +23,7 @@ type TabDef = {
 
 const TABS: TabDef[] = [
   { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
-  { id: "chat", label: "Chat", ariaLabel: "Chat", iconName: "ph:chats" },
+  { id: "chat", label: "Familiars", ariaLabel: "Familiars", iconName: "ph:chats" },
   { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
   { id: "inbox", label: "Inbox", ariaLabel: "Inbox and automations", iconName: "ph:tray" },
   { id: "library", label: "Library", ariaLabel: "Library", iconName: "ph:books" },

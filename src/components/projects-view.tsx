@@ -268,7 +268,7 @@ function ProjectRow({
         )}
 
         <span className="shrink-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-          {chatCount} {chatCount === 1 ? "chat" : "chats"}
+          {chatCount} {chatCount === 1 ? "session" : "sessions"}
         </span>
 
         <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity motion-reduce:transition-none sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
@@ -276,8 +276,8 @@ function ProjectRow({
             type="button"
             onClick={() => onNewChat?.(project.root)}
             className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            title="New chat"
-            aria-label={`New chat in ${project.name}`}
+            title="New session"
+            aria-label={`New session in ${project.name}`}
           >
             <Icon name="ph:chat-circle-dots-bold" width={14} aria-hidden />
           </button>
@@ -381,13 +381,13 @@ function ProjectRow({
               aria-expanded={showAllChats}
               className="focus-ring mt-1 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
             >
-              {showAllChats ? "Show less" : `Show all ${chats.length} chats`}
+              {showAllChats ? "Show less" : `Show all ${chats.length} sessions`}
             </button>
           ) : null}
         </>
       ) : (
         <p className="mt-2 border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-muted)]">
-          No chats yet — drag one here or start a new chat.
+          No sessions yet — drag one here or start a new session.
         </p>
       )}
     </article>

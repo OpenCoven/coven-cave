@@ -27,7 +27,7 @@ assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it
 // Long chat lists are capped with a Show all / Show less toggle.
 assert.match(projectsView, /const CHAT_CAP =/, "nested chat lists are capped");
 assert.match(projectsView, /chats\.slice\(0, CHAT_CAP\)/, "only the first CHAT_CAP chats render until expanded");
-assert.match(projectsView, /Show all \$\{chats\.length\} chats/, "a toggle reveals the rest");
+assert.match(projectsView, /Show all \$\{chats\.length\} sessions/, "a toggle reveals the rest");
 assert.match(projectsView, /import \{ EmptyState \} from "@\/components\/ui\/empty-state"/, "uses EmptyState primitive");
 assert.match(projectsView, /import \{ ErrorState \} from "@\/components\/ui\/error-state"/, "uses ErrorState primitive");
 assert.match(projectsView, /import \{ SkeletonRows \} from "@\/components\/ui\/skeleton"/, "uses SkeletonRows for first load");
@@ -62,7 +62,7 @@ for (const icon of [
 // Row actions must stay keyboard-reachable (focus-within), never display:none.
 assert.match(projectsView, /group-hover:opacity-100/, "row actions reveal on hover");
 assert.match(projectsView, /group-focus-within:opacity-100/, "row actions also reveal on keyboard focus");
-assert.match(projectsView, /aria-label=\{`New chat in /, "new-chat action is labeled per project");
+assert.match(projectsView, /aria-label=\{`New session in /, "new-session action is labeled per project");
 assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
 assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
 assert.match(projectsView, /motion-reduce:transition-none/, "reveal respects reduced motion");

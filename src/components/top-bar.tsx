@@ -31,6 +31,7 @@ type Props = {
    *  reply badges (and the unread dot on the collapsed profile button). */
   sessions?: SessionRow[];
   responseNeeded?: Set<string>;
+  familiarSwitcherLabeled?: boolean;
   /** Mobile-only drawer toggles. Visibility is gated by CSS at <768px
    *  (.top-bar__mobile-toggle is `display: none` on desktop). Omit any
    *  that aren't applicable to the current surface — e.g. two-pane modes
@@ -66,6 +67,7 @@ export function TopBar(props: Props) {
     onSelectFamiliar,
     sessions,
     responseNeeded,
+    familiarSwitcherLabeled,
   } = props;
 
   // Show the switcher whenever there are familiars to pick and a selection
@@ -127,6 +129,7 @@ export function TopBar(props: Props) {
             responseNeeded={responseNeeded}
             onSelectFamiliar={onSelectFamiliar}
             placement="bottom-end"
+            labeled={familiarSwitcherLabeled}
           />
         ) : null}
         <button

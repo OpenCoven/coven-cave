@@ -6,7 +6,7 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
- *      Work  (Home / Chat / Board / Calendar / Automations)
+ *      Work  (Home / Familiars / Board / Calendar / Automations)
  *      Knowledge (Library)
  *      Tools (Browser / Terminal / Roles / Workflows / Capabilities / GitHub)
  *   3. Footer: Settings
@@ -80,7 +80,7 @@ const FOLDER_MODES: Array<{
 }> = [
   // Work
   { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description: "Overview and quick actions" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
+  { id: "chat", label: "Familiars", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
   { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
   { id: "inbox", label: "Automations", iconName: "ph:tray", group: "work", kbd: "⌘5", description: "Scheduled runs and items needing attention" },
@@ -198,7 +198,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     responseNeeded,
   } = props;
 
-  // Projects lives only inside the Chat surface's Projects tab now (and ⌘9 /
+  // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
   const handleModeSelect = (id: FolderMode) => {
     onModeChange(id);
@@ -234,7 +234,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </button>
       ) : null}
 
-      {/* Header actions: familiar profile switcher + New chat. The same switcher
+      {/* Header actions: familiar profile switcher + New session. The same switcher
           also renders in the mobile top bar; on desktop this is its home. */}
       <div className="sidebar-actions sidebar-action-stack">
         <div className="sidebar-familiar-slot">
@@ -249,7 +249,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </div>
         <ActionRow
           icon={<Icon name="ph:note-pencil" width={14} />}
-          label="New chat"
+          label="New session"
           onClick={onNewChat}
         />
         <ActionRow

@@ -71,7 +71,7 @@ type WorkspaceMode = WorkspaceModeFromDaemon;
 const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   agents: "Familiars",
   home: "Home",
-  chat: "Chat",
+  chat: "Familiars",
   board: "Board",
   calendar: "Calendar",
   inbox: "Automations",
@@ -1449,6 +1449,7 @@ export function Workspace() {
             onSelectFamiliar={selectFamiliarScope}
             sessions={sessions}
             responseNeeded={responseNeeded}
+            familiarSwitcherLabeled={mode === "chat"}
             inboxPrefs={inboxPrefs}
             inboxBadgeCount={inboxBadgeCount}
             onOpenInboxItem={(item) => {

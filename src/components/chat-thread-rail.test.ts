@@ -4,11 +4,11 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 
-// ── Always-visible flat all-chats list (Codex-style visibility) ───────────────
+// ── Always-visible flat all-sessions list (Codex-style visibility) ───────────
 assert.match(
   source,
   /const allSessions = useMemo\(\(\) => \{[\s\S]*groups\.flatMap\(\(g\) => g\.sessions\)/,
-  "Rail should flatten every project group into one always-visible all-chats list",
+  "Rail should flatten every project group into one always-visible all-sessions list",
 );
 assert.match(
   source,
@@ -36,15 +36,15 @@ assert.match(
   "Persisted order must be pruned against live sessions so it can't grow unbounded across deletes",
 );
 
-// ── Launch new chats from the rail ───────────────────────────────────────────
+// ── Launch new sessions from the rail ────────────────────────────────────────
 assert.match(
   source,
   /onClick=\{\(\) => onNewChat\(null\)\}[\s\S]*New/,
-  "Rail header should carry a prominent New chat launcher (global new chat)",
+  "Rail header should carry a prominent New session launcher",
 );
 
 // ── Search + mode filters (All / Active / Tasks / Pinned) ────────────────────
-assert.match(source, /placeholder="Search chats…"/, "Rail offers inline chat search");
+assert.match(source, /placeholder="Search sessions…"/, "Rail offers inline session search");
 assert.match(
   source,
   /type ChatFilter = "all" \| "active" \| "tasks" \| "pinned"/,

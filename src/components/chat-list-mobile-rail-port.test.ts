@@ -4,12 +4,16 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
-// ── Familiar switching lives in the sidepanel selector ──────────────────────
-assert.doesNotMatch(source, /function ChatListFamiliarStrip/, "ChatList should not render a redundant circular familiar strip");
-assert.doesNotMatch(source, /chat-list-familiar-strip/, "ChatList should not keep the removed strip styling hook");
+// ── Familiar switcher lives in the header, not the mobile chat list ──────────
+assert.doesNotMatch(source, /function ChatListFamiliarStrip/, "ChatList should not duplicate the header familiar selector");
+assert.doesNotMatch(source, /chat-list-familiar-strip/, "Mobile list should not keep the removed familiar-strip hook");
 assert.doesNotMatch(source, /<FamiliarAvatar familiar=\{f\} size="md"/, "ChatList should not map familiars into circular selector chips");
 assert.doesNotMatch(styles, /\.chat-list-familiar-strip/, "Removed familiar strip should not leave dead mobile CSS behind");
+assert.match(topBar, /labeled=\{familiarSwitcherLabeled\}/, "TopBar can render the labeled familiar selector");
+assert.match(workspace, /familiarSwitcherLabeled=\{mode === "chat"\}/, "Workspace labels the top-bar selector on the Familiars page");
 
 // ── Counted PINNED / SESSIONS section headers ────────────────────────────────
 assert.match(source, /function ChatListSection/, "ChatList gains a counted section-header primitive");

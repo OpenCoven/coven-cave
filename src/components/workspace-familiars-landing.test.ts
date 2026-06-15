@@ -49,7 +49,7 @@ assert.match(
 assert.match(
   workspace,
   /hideChatTab=\{mode === "chat"\}/,
-  "Workspace should hide the companion rail Chat tab while the main surface is already Chats",
+  "Workspace should hide the companion rail Chat tab while the main surface is already Familiars",
 );
 
 assert.match(

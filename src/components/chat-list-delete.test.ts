@@ -156,7 +156,7 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-pressed=\{showArchived\}[\s\S]*?aria-label=\{showArchived \? "Hide archived chats" : "Show archived chats"\}/,
+  /aria-pressed=\{showArchived\}[\s\S]*?aria-label=\{showArchived \? "Hide archived sessions" : "Show archived sessions"\}/,
   "Show archived filter should be an aria-labeled toggle alongside the existing filters",
 );
 

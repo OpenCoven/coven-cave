@@ -79,8 +79,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description:/,
-  "Chat should move to the ⌘2 Work shortcut after removing Familiars",
+  /\{ id: "chat", label: "Familiars", iconName: "ph:chats", group: "work", kbd: "⌘2", description:/,
+  "Familiars should live at the ⌘2 Work shortcut",
 );
 
 assert.match(

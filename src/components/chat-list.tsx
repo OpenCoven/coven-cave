@@ -523,9 +523,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         expandedKeys={expandedKeys}
         open={sidebarOpen}
         activeSessionId={activeId}
-        familiars={familiars}
-        activeFamiliarId={familiar?.id ?? null}
-        onSelectFamiliar={(id) => onNewChat(undefined, id)}
         onSetOpen={setSidebarOpen}
         onSelect={setSelection}
         onToggleExpanded={(key) =>
@@ -591,7 +588,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               </p>
             </div>
 
-            {/* + Chat CTA */}
+            {/* + Session CTA */}
             <button
               type="button"
               onClick={() => onNewChat(undefined, fallbackFamiliarId)}
@@ -599,7 +596,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               className="chat-list-new-button mt-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
-              Chat
+              Session
             </button>
           </div>
         </div>
@@ -616,7 +613,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search chats…"
+              placeholder="Search sessions…"
               className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
             />
             {search && (
@@ -634,8 +631,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <button
             type="button"
             onClick={() => setUnreadsOnly((v) => !v)}
-            title={unreadsOnly ? "Show all chats" : "Show unreads only"}
-            aria-label={unreadsOnly ? "Show all chats" : "Show unreads only"}
+            title={unreadsOnly ? "Show all sessions" : "Show active only"}
+            aria-label={unreadsOnly ? "Show all sessions" : "Show active only"}
             className={[
               "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
               unreadsOnly
@@ -652,8 +649,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             type="button"
             onClick={() => setShowArchived((v) => !v)}
             aria-pressed={showArchived}
-            aria-label={showArchived ? "Hide archived chats" : "Show archived chats"}
-            title={showArchived ? "Hide archived chats" : "Show archived chats"}
+            aria-label={showArchived ? "Hide archived sessions" : "Show archived sessions"}
+            title={showArchived ? "Hide archived sessions" : "Show archived sessions"}
             className={[
               "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
               showArchived
@@ -664,7 +661,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <Icon name="ph:archive" width={12} aria-hidden />
           </button>
 
-          {/* With the identity row hidden, the + Chat CTA lives here */}
+          {/* With the identity row hidden, the + Session CTA lives here */}
           {familiar && (
             <button
               type="button"
@@ -673,7 +670,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               className="chat-list-new-button flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-3 text-[12px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 hover:shadow-[0_2px_12px_color-mix(in_oklch,var(--accent-presence)_50%,transparent)] active:scale-95"
             >
               <Icon name="ph:plus-bold" width={11} />
-              Chat
+              Session
             </button>
           )}
         </div>
@@ -759,7 +756,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Icon name="ph:magnifying-glass" width={20} className="text-[var(--text-muted)]" />
             <p className="text-sm text-[var(--text-muted)]">
-              {search.trim() ? `No results for "${search}"` : "No chats match the current filters"}
+              {search.trim() ? `No results for "${search}"` : "No sessions match the current filters"}
             </p>
             <button
               type="button"
@@ -780,7 +777,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
           <ul className="divide-y divide-[var(--border-hairline)]">
             {displayGroups.map(({ projectRoot, sessions: rows, defaultFamiliarId }) => {
-              // Flat "All chats" view (the phone surface): split the list into a
+              // Flat "All sessions" view (the phone surface): split the list into a
               // counted PINNED section and a counted SESSIONS section, mirroring
               // the desktop rail. firstPinnedIdx/firstRestIdx place each header
               // before its first member, so it reads right regardless of order.
@@ -805,8 +802,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                         e.stopPropagation();
                         onNewChat(projectRoot, defaultFamiliarId ?? fallbackFamiliarId);
                       }}
-                      title={`New chat in ${repoName(projectRoot)}`}
-                      aria-label={`New chat in ${repoName(projectRoot)}`}
+                      title={`New session in ${repoName(projectRoot)}`}
+                      aria-label={`New session in ${repoName(projectRoot)}`}
                     >
                       <Icon name="ph:plus" width="0.7rem" height="0.7rem" />
                     </button>

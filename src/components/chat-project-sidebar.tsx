@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
 import type { WorkspaceMode } from "@/lib/workspace-mode";
 import {
   PINNED_SESSIONS_KEY,
@@ -75,10 +73,6 @@ type Props = {
   expandedKeys: string[];
   open: boolean;
   activeSessionId?: string | null;
-  /** Familiars for the footer avatar strip (optional — omitted in compact embeds). */
-  familiars?: Familiar[];
-  activeFamiliarId?: string | null;
-  onSelectFamiliar?: (id: string) => void;
   onSetOpen: (open: boolean) => void;
   onSelect: (selection: ProjectSelection) => void;
   onToggleExpanded: (key: string) => void;
@@ -361,71 +355,12 @@ function FolderChatRow({
   );
 }
 
-// Footer avatar strip — the rail's familiar switcher. Clicking starts a fresh
-// chat scoped to that familiar; the trailing chip jumps to the Familiars surface
-// to add or manage one. Mirrors the look of the standalone familiar-avatar-rail.
-function RailFamiliarStrip({
-  familiars,
-  activeFamiliarId,
-  onSelectFamiliar,
-}: {
-  familiars: Familiar[];
-  activeFamiliarId?: string | null;
-  onSelectFamiliar: (id: string) => void;
-}) {
-  const resolved = useResolvedFamiliars(familiars);
-  const MAX = 6;
-  const shown = resolved.slice(0, MAX);
-  const overflow = resolved.length - shown.length;
-  return (
-    <div className="flex shrink-0 items-center gap-1 border-t border-[var(--border-hairline)] px-2 py-1.5">
-      {shown.map((f) => {
-        const active = f.id === activeFamiliarId;
-        return (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => onSelectFamiliar(f.id)}
-            title={`New chat with ${f.display_name}`}
-            aria-label={`New chat with ${f.display_name}`}
-            aria-pressed={active}
-            style={{ ["--familiar-accent" as string]: f.color }}
-            className={[
-              "grid h-6 w-6 shrink-0 place-items-center rounded-full border bg-[var(--bg-raised)] transition-all hover:scale-105",
-              active
-                ? "border-[var(--familiar-accent,var(--accent-presence))] ring-1 ring-[var(--familiar-accent,var(--accent-presence))]"
-                : "border-transparent",
-            ].join(" ")}
-          >
-            <FamiliarAvatar familiar={f} size="sm" />
-          </button>
-        );
-      })}
-      {overflow > 0 ? (
-        <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">+{overflow}</span>
-      ) : null}
-      <button
-        type="button"
-        onClick={() => navigateToMode("agents")}
-        title="Open familiars"
-        aria-label="Open familiars"
-        className="focus-ring ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] hover:text-[var(--text-secondary)]"
-      >
-        <Icon name="ph:plus" width={11} aria-hidden />
-      </button>
-    </div>
-  );
-}
-
 export function ChatProjectSidebar({
   groups,
   selection,
   expandedKeys,
   open,
   activeSessionId,
-  familiars = [],
-  activeFamiliarId,
-  onSelectFamiliar,
   onSetOpen,
   onSelect,
   onToggleExpanded,
@@ -597,8 +532,8 @@ export function ChatProjectSidebar({
         <button
           type="button"
           onClick={() => onSetOpen(true)}
-          title="Show chats"
-          aria-label="Show chats"
+          title="Show sessions"
+          aria-label="Show sessions"
           aria-expanded={false}
           className="focus-ring flex w-7 flex-col items-center pt-3 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]"
         >
@@ -617,8 +552,8 @@ export function ChatProjectSidebar({
         <button
           type="button"
           onClick={() => onSetOpen(false)}
-          title="Hide chats"
-          aria-label="Hide chats"
+          title="Hide sessions"
+          aria-label="Hide sessions"
           aria-expanded
           className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/40 hover:text-[var(--text-primary)]"
         >
@@ -632,8 +567,8 @@ export function ChatProjectSidebar({
           icon="ph:plus-bold"
           prominent
           kbd="⌘N"
-          title="New chat"
-          ariaLabel="New chat"
+          title="New session"
+          ariaLabel="New session"
           onClick={() => onNewChat(null)}
           label="New session"
         />
@@ -655,8 +590,8 @@ export function ChatProjectSidebar({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search chats…"
-            aria-label="Search chats"
+            placeholder="Search sessions…"
+            aria-label="Search sessions"
             className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
           />
           {search && (
@@ -673,7 +608,7 @@ export function ChatProjectSidebar({
       </div>
 
       {/* Filter chips — All · Active · Tasks · Pinned */}
-      <div className="chat-thread-filters flex shrink-0 items-center gap-1 px-2 pb-2" role="tablist" aria-label="Chat filters">
+      <div className="chat-thread-filters flex shrink-0 items-center gap-1 px-2 pb-2" role="tablist" aria-label="Session filters">
         {FILTERS.map((f) => {
           const isActive = filter === f.key;
           return (
@@ -698,15 +633,15 @@ export function ChatProjectSidebar({
         })}
       </div>
 
-      <nav aria-label="Chats" className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {/* ── Flat, always-visible all-chats list, grouped into sections ── */}
+      <nav aria-label="Familiar sessions" className="min-h-0 flex-1 overflow-y-auto pb-2">
+        {/* ── Flat, always-visible all-sessions list, grouped into sections ── */}
         {display.length === 0 ? (
           <p className="px-3 py-6 text-center text-[11px] text-[var(--text-muted)]">
             {search.trim()
-              ? "No chats match your search"
+              ? "No sessions match your search"
               : filter === "all"
-                ? "No chats yet"
-                : `No ${filter} chats`}
+                ? "No sessions yet"
+                : `No ${filter} sessions`}
           </p>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -718,7 +653,7 @@ export function ChatProjectSidebar({
                   </li>
                   {pinnedRows.length === 0 ? (
                     <li className="px-3 pb-1 text-[11px] text-[var(--text-muted)]">
-                      Pin a chat to keep it here
+                      Pin a session to keep it here
                     </li>
                   ) : (
                     pinnedRows.map((session) => (
@@ -785,7 +720,7 @@ export function ChatProjectSidebar({
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
                     ].join(" ")}
                   >
-                    All chats
+                    All sessions
                   </button>
                 }
               />
@@ -839,8 +774,8 @@ export function ChatProjectSidebar({
                     <button
                       type="button"
                       onClick={() => onNewChat(group.projectRoot)}
-                      title={`New chat in ${label}`}
-                      aria-label={`New chat in ${label}`}
+                      title={`New session in ${label}`}
+                      aria-label={`New session in ${label}`}
                       className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <Icon name="ph:plus" width={11} aria-hidden />
@@ -887,17 +822,6 @@ export function ChatProjectSidebar({
           </button>
         ))}
       </div>
-
-      {/* ── Familiar switcher strip ── start a chat with any familiar, or jump
-            to the Familiars surface to add one. Only shown when wired with
-            familiars + a select handler (omitted in compact embeds). */}
-      {onSelectFamiliar && familiars.length > 0 ? (
-        <RailFamiliarStrip
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId}
-          onSelectFamiliar={onSelectFamiliar}
-        />
-      ) : null}
     </aside>
   );
 }

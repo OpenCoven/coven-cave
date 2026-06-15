@@ -13,6 +13,8 @@ import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
@@ -38,7 +40,7 @@ type Props = {
   pendingChatAction?: PendingChatAction;
   onSetInspectorOpen: (open: boolean) => void;
   onSetRightPanel?: (panel: RightPanelKind | null) => void;
-  onSetActiveFamiliar: (id: string) => void;
+  onSetActiveFamiliar: (id: string | null) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
   onSessionStarted: () => void;
@@ -185,6 +187,7 @@ export function ChatSurface({
   }
 
   const scopedFamiliars = useMemo(() => activeFamiliar ? [activeFamiliar] : familiars, [activeFamiliar, familiars]);
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
   // Window events
   useEffect(() => {
@@ -288,31 +291,48 @@ export function ChatSurface({
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
-        <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
-          {/* Tabs flush left — Vercel-style underline tabs. The header row
-              already draws the divider, so the tablist itself is borderless. */}
-          <Tabs<FamiliarsScope>
-            bordered={false}
-            value={scope}
-            onChange={(s) => {
-              setScope(s);
-              if (s === "conversation") {
-                window.setTimeout(() => routerRef.current?.goToList(), 0);
-              }
-            }}
-            items={[
-              { id: "conversation", label: "Chats" },
-              { id: "memory", label: "Memory" },
-              { id: "projects", label: "Projects" },
-            ]}
-          />
+        <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="chat-surface__familiar-scope flex w-[min(220px,34vw)] min-w-0 shrink-0 py-1.5 max-sm:w-[min(168px,42vw)]">
+              <FamiliarSwitcher
+                familiars={resolvedFamiliars}
+                activeFamiliarId={activeFamiliarId}
+                sessions={sessions}
+                onSelectFamiliar={(id) => {
+                  onSetActiveFamiliar(id);
+                  setScope("conversation");
+                  window.setTimeout(() => routerRef.current?.goToList(), 0);
+                }}
+                placement="bottom-start"
+                labeled
+              />
+            </div>
+            <span aria-hidden className="h-5 w-px shrink-0 bg-[var(--border-hairline)]" />
+            {/* Tabs flush left — Vercel-style underline tabs. The header row
+                already draws the divider, so the tablist itself is borderless. */}
+            <Tabs<FamiliarsScope>
+              bordered={false}
+              value={scope}
+              onChange={(s) => {
+                setScope(s);
+                if (s === "conversation") {
+                  window.setTimeout(() => routerRef.current?.goToList(), 0);
+                }
+              }}
+              items={[
+                { id: "conversation", label: "Sessions" },
+                { id: "memory", label: "Memory" },
+                { id: "projects", label: "Projects" },
+              ]}
+            />
+          </div>
 
           {/* Actions flush right — chromeless */}
           <div className="flex items-center gap-2 py-1.5">
             <button
               type="button"
               onClick={() => startConversation(activeFamiliarId)}
-              title="New chat"
+              title="New session"
               className="chat-scope-tabs__new inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:plus-bold" width={11} />

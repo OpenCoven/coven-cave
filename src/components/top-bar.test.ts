@@ -84,6 +84,16 @@ assert.match(
 );
 assert.match(
   source,
+  /familiarSwitcherLabeled\?: boolean/,
+  "Top bar accepts a labeled familiar switcher mode for the Familiars page",
+);
+assert.match(
+  source,
+  /labeled=\{familiarSwitcherLabeled\}/,
+  "Top bar forwards the page-specific labeled mode into FamiliarSwitcher",
+);
+assert.match(
+  source,
   /const showFamiliarSwitcher = Boolean\(onSelectFamiliar && \(familiarOptions\?\.length \?\? 0\) > 0\)/,
   "Switcher renders when wired with a selection handler and at least one familiar",
 );

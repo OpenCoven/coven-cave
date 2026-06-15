@@ -12,7 +12,7 @@ assert.match(surface, /CHAT_OPEN_PROJECTS_EVENT/, "chat-surface references the r
 assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "projects"/, "scope union includes projects");
 assert.match(
   surface,
-  /\{\s*id:\s*"conversation",\s*label:\s*"Chats"\s*\}[\s\S]*?\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}[\s\S]*?\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
+  /\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\}[\s\S]*?\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}[\s\S]*?\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
   "shared Tabs items list all three scopes ending with the projects tab",
 );
 assert.match(surface, /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/, "projects tab is labeled");

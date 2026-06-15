@@ -27,13 +27,13 @@ import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-command
 export type Destination = "chat" | "board" | "reminder";
 
 const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
-  { id: "chat",     label: "Chat",     icon: "ph:chat-circle-dots" },
+  { id: "chat",     label: "Familiar", icon: "ph:chat-circle-dots" },
   { id: "board",    label: "Tasks",    icon: "ph:kanban" },
   { id: "reminder", label: "Reminder", icon: "ph:alarm-fill" },
 ];
 
 const PLACEHOLDERS: Record<Destination, string> = {
-  chat: "Ask anything in Chat…",
+  chat: "Ask a familiar anything…",
   board: "Describe a new task…",
   reminder: "Remind me about…",
 };

@@ -61,37 +61,28 @@ assert.match(
 assert.match(source, /label="Projects"/, "Projects keep a section header");
 assert.match(
   source,
-  /Pin a chat to keep it here/,
+  /Pin a session to keep it here/,
   "Empty PINNED section shows a hint, like the mockup",
 );
 
-// ── Familiar-avatar footer strip ─────────────────────────────────────────────
-assert.match(source, /function RailFamiliarStrip/, "Rail footer carries a familiar-avatar strip");
-assert.match(source, /useResolvedFamiliars\(familiars\)/, "The strip resolves familiars for display");
-assert.match(source, /<FamiliarAvatar familiar=\{f\} size="sm"/, "Each chip reuses the FamiliarAvatar");
-assert.match(
-  source,
-  /onClick=\{\(\) => navigateToMode\("agents"\)\}/,
-  "The trailing + chip jumps to the Familiars surface",
-);
-assert.match(
-  source,
-  /\{onSelectFamiliar && familiars\.length > 0 \?/,
-  "The strip only renders when wired (optional in compact embeds)",
-);
+// ── Familiar selection lives in the page header, not this rail ───────────────
+assert.doesNotMatch(source, /function RailFamiliarStrip/, "Rail no longer carries a duplicate familiar-avatar strip");
+assert.doesNotMatch(source, /<FamiliarAvatar familiar=\{f\} size="sm"/, "Familiar chips moved out of the session rail");
+assert.match(source, /placeholder="Search sessions…"/, "Rail search uses session language");
+assert.match(source, /aria-label="Familiar sessions"/, "Rail names the region as familiar sessions");
 
-// ── Ops footer (Git / Inspect / Debug) is kept alongside the avatars ─────────
+// ── Ops footer (Git / Inspect / Debug) is preserved ─────────────────────────
 assert.match(
   source,
   /event: "cave:changes-open", label: "Git"/,
   "Git/Inspect/Debug ops row is preserved",
 );
 
-// ── Router forwards the familiar wiring into the rail ─────────────────────────
-assert.match(
+// ── Router no longer forwards familiar selection into the rail ───────────────
+assert.doesNotMatch(
   router,
-  /familiars=\{familiars\}[\s\S]{0,120}activeFamiliarId=\{familiar\?\.id \?\? null\}[\s\S]{0,160}onSelectFamiliar=\{/,
-  "ChatRouter forwards familiars + active id + select handler into the sidebar",
+  /onSelectFamiliar=\{/,
+  "ChatRouter keeps familiar selection out of the session rail",
 );
 
 console.log("chat-rail-modern-redesign.test.ts: ok");
