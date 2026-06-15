@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { WorkflowRoleSummary, WorkflowSummary } from "@/lib/workflows";
 
@@ -31,28 +31,17 @@ function AttachmentSection({
   action?: ReactNode;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   return (
     <article className="workflow-attachment-row">
       <div className="workflow-attachment-head">
-        <button
-          type="button"
-          className="workflow-attachment-toggle"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Icon
-            name={open ? "ph:caret-down" : "ph:caret-right"}
-            width={11}
-            className="workflow-attachment-caret"
-          />
+        <span className="workflow-attachment-title">
           <Icon name={icon} width={13} />
           <span>{title}</span>
           {count && <span className="workflow-attachment-count">{count}</span>}
-        </button>
+        </span>
         {action}
       </div>
-      {open && <div className="workflow-attachment-body">{children}</div>}
+      <div className="workflow-attachment-body">{children}</div>
     </article>
   );
 }
@@ -61,7 +50,8 @@ function AttachmentSection({
  * Cave bindings for the selected workflow. Familiars persist into the
  * manifest (`familiar:` field), roles persist into ROLE.md `workflows:`
  * lists; boards/projects remain visibly pending until an API owns them.
- * Every section collapses independently; bodies span the panel's full width.
+ * Sections render flat inside the Bind tab — no per-section collapse framing;
+ * bodies span the panel's full width.
  */
 export function WorkflowAttachments({
   workflow,
@@ -71,7 +61,6 @@ export function WorkflowAttachments({
   onUpdateMeta,
   onScheduleRequest,
 }: WorkflowAttachmentsProps) {
-  const [open, setOpen] = useState(false);
   const attachedRoles = workflow
     ? roles.filter((role) => role.workflows.includes(workflow.id)).length
     : 0;
@@ -80,15 +69,6 @@ export function WorkflowAttachments({
     <section className="workflow-panel workflow-attachments" aria-label="Workflow attachments">
       <div className="workflow-panel-heading">
         <div className="workflow-heading-lead">
-          <button
-            type="button"
-            className="workflow-section-caret-btn"
-            aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} Cave bindings`}
-            onClick={() => setOpen((value) => !value)}
-          >
-            <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
-          </button>
           <div>
             <p className="workflow-eyebrow">Attachments</p>
             <h2>Cave bindings</h2>
@@ -106,7 +86,6 @@ export function WorkflowAttachments({
         </button>
       </div>
 
-      {open && (
       <div className="workflow-attachment-list">
         <AttachmentSection icon="ph:mask-happy" title="Familiars" count={workflow?.familiar ?? undefined}>
           {workflow ? (
@@ -191,8 +170,7 @@ export function WorkflowAttachments({
           <p>No project attachment</p>
         </AttachmentSection>
       </div>
-      )}
-      {open && <p className="workflow-muted">Boards/Projects: persistence pending daemon API</p>}
+      <p className="workflow-muted">Boards/Projects: persistence pending daemon API</p>
     </section>
   );
 }
