@@ -37,5 +37,8 @@ assert.match(source, /const applyTypeFilter = \(value: CapabilityType \| "all"\)
 assert.match(source, /const applyStatusFilter = \(value: CapabilityStatus \| "all"\) => \{[\s\S]*setStatusFilter\(value\);[\s\S]*setSelectionId\(null\);[\s\S]*\};/, "status changes should clear stale inspector selection");
 assert.match(source, /const readinessStatus = operatorView\.summary\.warnings > 0 \? "warning" : operatorView\.summary\.disabled > 0 \? "disabled" : "all";/, "readiness tile should route to disabled when disabled is the only issue type");
 assert.match(source, /type="search"[\s\S]*aria-label="Search capabilities"/, "search input should expose a stable accessible name");
+assert.match(source, /function isMarkdownPreviewable\(/, "previewability should be based on markdown-capable files");
+assert.match(source, /json\.path \?\? previewPath/, "preview state should preserve the server-resolved markdown file path");
+assert.match(source, /Markdown preview/, "capability file previews should be explicitly labelled as markdown previews");
 
 console.log("capabilities-view.test.ts: ok");

@@ -58,6 +58,20 @@ type Props = {
 type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
 type BoardResponse = { ok: true; cards: Card[] } | { ok: false; error?: string };
 type CovenMemoryResponse = { ok: boolean; entries?: Array<{ familiar_id: string }> };
+type CallsMetrics = {
+  explicit: number;
+  inferred: number;
+  running: number;
+  failed: number;
+  agents: number;
+  routes: number;
+};
+type CallsAttention = {
+  busiest: DelegationGraphEdge | null;
+  latestTrace: DelegationTrace | null;
+  runningTrace: DelegationTrace | null;
+  failedTrace: DelegationTrace | null;
+};
 
 const TIME_WINDOWS: Array<{ id: TimeWindow; label: string }> = [
   { id: "24h", label: "24h" },
@@ -71,6 +85,10 @@ function edgeKey(edge: DelegationGraphEdge): string {
 
 function familiarName(familiars: Map<string, Familiar>, id: string): string {
   return familiars.get(id)?.display_name ?? id;
+}
+
+function routeLabel(familiars: Map<string, Familiar>, caller: string, callee: string): string {
+  return `${familiarName(familiars, caller)} -> ${familiarName(familiars, callee)}`;
 }
 
 function shortTime(iso: string): string {
@@ -204,12 +222,20 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
     ? graph.edges.find((edge) => edge.traces.some((trace) => trace.id === selectedTrace.id)) ?? null
     : null;
 
-  const metrics = useMemo(() => ({
+  const metrics = useMemo<CallsMetrics>(() => ({
     explicit: graph.traces.filter((trace) => trace.source === "explicit").length,
     inferred: graph.traces.filter((trace) => trace.source === "inferred").length,
     running: graph.traces.filter((trace) => trace.status === "running").length,
     failed: graph.traces.filter((trace) => trace.status === "failed").length,
     agents: graph.nodes.length,
+    routes: graph.edges.length,
+  }), [graph]);
+
+  const attention = useMemo<CallsAttention>(() => ({
+    busiest: graph.edges[0] ?? null,
+    latestTrace: graph.traces[0] ?? null,
+    runningTrace: graph.traces.find((trace) => trace.status === "running") ?? null,
+    failedTrace: graph.traces.find((trace) => trace.status === "failed") ?? null,
   }), [graph]);
 
   return (
@@ -253,49 +279,24 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
             <div className="border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-5 py-1.5 text-[11px] text-[var(--color-warning)]">{error}</div>
           ) : null}
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
-            <div className="relative min-w-[220px] flex-1 md:max-w-[360px]">
-              <Icon name="ph:magnifying-glass" width={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search familiar, request, status..."
-                className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-8 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
-              />
-            </div>
-            <div className="flex items-center overflow-hidden rounded-md border border-[var(--border-hairline)]">
-              {TIME_WINDOWS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setTimeWindow(id)}
-                  className={[
-                    "h-8 px-3 text-[11px] transition-colors",
-                    timeWindow === id ? "bg-[var(--accent-presence)] text-white" : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]",
-                  ].join(" ")}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <label className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 text-[11px] text-[var(--text-secondary)]">
-              <input type="checkbox" checked={includeInferred} onChange={(e) => setIncludeInferred(e.target.checked)} className="accent-[var(--accent-presence)]" />
-              Include inferred
-            </label>
-            <button type="button" onClick={() => void load()} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">
-              <Icon name="ph:arrows-clockwise-bold" width={12} />
-              Refresh
-            </button>
-            {lastLoadedAt ? <span className="text-[10px] text-[var(--text-muted)]">updated {new Date(lastLoadedAt).toLocaleTimeString()}</span> : null}
-          </div>
+          <CallsToolbar
+            query={query}
+            onQueryChange={setQuery}
+            timeWindow={timeWindow}
+            onTimeWindowChange={setTimeWindow}
+            includeInferred={includeInferred}
+            onIncludeInferredChange={setIncludeInferred}
+            onRefresh={() => void load()}
+            lastLoadedAt={lastLoadedAt}
+          />
 
-          <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-[var(--border-hairline)] px-5 py-3 md:grid-cols-5">
-            <Metric label="Explicit" value={metrics.explicit} tone="text-[var(--accent-presence)]" />
-            <Metric label="Inferred" value={metrics.inferred} tone="text-[var(--color-warning)]" />
-            <Metric label="Running" value={metrics.running} tone="text-[var(--color-success)]" />
-            <Metric label="Failed" value={metrics.failed} tone="text-[var(--color-danger)]" />
-            <Metric label="Familiars" value={metrics.agents} tone="text-[var(--text-primary)]" />
-          </div>
+          <AttentionStrip
+            metrics={metrics}
+            attention={attention}
+            familiars={famById}
+            onSelectEdge={(edge) => setSelection({ kind: "edge", key: edgeKey(edge) })}
+            onSelectTrace={(trace) => setSelection({ kind: "trace", id: trace.id })}
+          />
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="flex min-w-0 flex-col gap-3 overflow-hidden">
@@ -336,6 +337,8 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
             <TraceInspector
               graph={graph}
               familiars={famById}
+              metrics={metrics}
+              attention={attention}
               selectedEdge={selectedEdge ?? selectedTraceEdge}
               selectedNode={selectedNode}
               selectedTrace={selectedTrace}
@@ -345,6 +348,178 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
         </div>
       )}
     </section>
+  );
+}
+
+function CallsToolbar({
+  query,
+  onQueryChange,
+  timeWindow,
+  onTimeWindowChange,
+  includeInferred,
+  onIncludeInferredChange,
+  onRefresh,
+  lastLoadedAt,
+}: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  timeWindow: TimeWindow;
+  onTimeWindowChange: (value: TimeWindow) => void;
+  includeInferred: boolean;
+  onIncludeInferredChange: (value: boolean) => void;
+  onRefresh: () => void;
+  lastLoadedAt: string | null;
+}) {
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/95 px-5 py-3">
+      <label className="relative min-w-[240px] flex-1 md:max-w-[420px]">
+        <Icon name="ph:magnifying-glass" width={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+        <input
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search routes, familiars, requests"
+          aria-label="Search delegation traces"
+          className="h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 pl-8 pr-3 text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+        />
+      </label>
+      <div className="flex h-8 items-center overflow-hidden rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30" aria-label="Time window">
+        {TIME_WINDOWS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onTimeWindowChange(id)}
+            className={[
+              "h-8 px-3 text-[11px] transition-colors",
+              timeWindow === id
+                ? "bg-[var(--accent-presence)] text-white"
+                : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]",
+            ].join(" ")}
+            aria-pressed={timeWindow === id}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <label className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-3 text-[11px] text-[var(--text-secondary)]">
+        <input
+          type="checkbox"
+          checked={includeInferred}
+          onChange={(e) => onIncludeInferredChange(e.target.checked)}
+          className="accent-[var(--accent-presence)]"
+        />
+        Include inferred
+      </label>
+      <button
+        type="button"
+        onClick={onRefresh}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      >
+        <Icon name="ph:arrows-clockwise-bold" width={12} aria-hidden />
+        Refresh
+      </button>
+      {lastLoadedAt ? (
+        <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+          Updated {new Date(lastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function AttentionStrip({
+  metrics,
+  attention,
+  familiars,
+  onSelectEdge,
+  onSelectTrace,
+}: {
+  metrics: CallsMetrics;
+  attention: CallsAttention;
+  familiars: Map<string, Familiar>;
+  onSelectEdge: (edge: DelegationGraphEdge) => void;
+  onSelectTrace: (trace: DelegationTrace) => void;
+}) {
+  return (
+    <div
+      data-testid="calls-attention-strip"
+      className="grid shrink-0 grid-cols-1 gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-base)] px-5 py-3 md:grid-cols-2 xl:grid-cols-4"
+    >
+      <AttentionCard
+        icon="ph:heartbeat"
+        label="Running now"
+        value={metrics.running.toString()}
+        detail={attention.runningTrace ? routeLabel(familiars, attention.runningTrace.callerFamiliarId, attention.runningTrace.calleeFamiliarId) : "No active handoffs"}
+        tone="success"
+        onClick={attention.runningTrace ? () => onSelectTrace(attention.runningTrace!) : undefined}
+      />
+      <AttentionCard
+        icon="ph:warning-fill"
+        label="Needs review"
+        value={metrics.failed.toString()}
+        detail={attention.failedTrace ? routeLabel(familiars, attention.failedTrace.callerFamiliarId, attention.failedTrace.calleeFamiliarId) : "No failed traces"}
+        tone={metrics.failed > 0 ? "danger" : "quiet"}
+        onClick={attention.failedTrace ? () => onSelectTrace(attention.failedTrace!) : undefined}
+      />
+      <AttentionCard
+        icon="ph:graph"
+        label="Busiest route"
+        value={attention.busiest ? `${attention.busiest.count}` : "0"}
+        detail={attention.busiest ? routeLabel(familiars, attention.busiest.caller, attention.busiest.callee) : `${metrics.routes} routes visible`}
+        tone="presence"
+        onClick={attention.busiest ? () => onSelectEdge(attention.busiest!) : undefined}
+      />
+      <AttentionCard
+        icon="ph:clock"
+        label="Latest trace"
+        value={attention.latestTrace ? shortTime(attention.latestTrace.createdAt) : "None"}
+        detail={attention.latestTrace ? routeLabel(familiars, attention.latestTrace.callerFamiliarId, attention.latestTrace.calleeFamiliarId) : `${metrics.explicit} explicit / ${metrics.inferred} inferred`}
+        tone="quiet"
+        onClick={attention.latestTrace ? () => onSelectTrace(attention.latestTrace!) : undefined}
+      />
+    </div>
+  );
+}
+
+function AttentionCard({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+  onClick,
+}: {
+  icon: Parameters<typeof Icon>[0]["name"];
+  label: string;
+  value: string;
+  detail: string;
+  tone: "success" | "danger" | "presence" | "quiet";
+  onClick?: () => void;
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-[var(--color-success)]"
+      : tone === "danger"
+        ? "text-[var(--color-danger)]"
+        : tone === "presence"
+          ? "text-[var(--accent-presence)]"
+          : "text-[var(--text-primary)]";
+  const Component = onClick ? "button" : "div";
+  return (
+    <Component
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={[
+        "min-w-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-3 py-2 text-left",
+        onClick ? "transition-colors hover:bg-[var(--bg-raised)]/55" : "",
+      ].join(" ")}
+    >
+      <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+        <Icon name={icon} width={12} aria-hidden />
+        <span className="truncate">{label}</span>
+      </div>
+      <div className={`mt-1 truncate text-lg font-semibold tabular-nums ${toneClass}`}>{value}</div>
+      <div className="mt-0.5 truncate text-[11px] text-[var(--text-secondary)]">{detail}</div>
+    </Component>
   );
 }
 
@@ -369,29 +544,39 @@ function TraceTimeline({
   onSelect: (trace: DelegationTrace) => void;
 }) {
   return (
-    <div className="min-h-[170px] overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20">
-      <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
-        <h2 className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Recent trace events</h2>
-        <span className="text-[10px] text-[var(--text-muted)]">{traces.length} visible</span>
+    <div className="min-h-[190px] overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-3 py-2">
+        <div className="min-w-0">
+          <h2 className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Trace timeline</h2>
+          <p className="mt-0.5 truncate text-[10px] text-[var(--text-muted)]">Newest delegation events first</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">{traces.length} visible</span>
       </div>
       {traces.length === 0 ? (
-        <div className="grid min-h-[120px] place-items-center text-sm text-[var(--text-muted)]">No trace events match the current filters.</div>
+        <div className="grid min-h-[130px] place-items-center px-4 text-center text-sm text-[var(--text-muted)]">
+          No trace events match the current filters.
+        </div>
       ) : (
-        <div className="max-h-[220px] overflow-y-auto">
+        <div className="max-h-[240px] overflow-y-auto">
           {traces.slice(0, 30).map((trace) => (
             <button
               key={trace.id}
               type="button"
               onClick={() => onSelect(trace)}
               className={[
-                "grid w-full grid-cols-[92px_minmax(0,1fr)_auto] items-start gap-3 border-b border-[var(--border-hairline)] px-3 py-2 text-left text-[12px] transition-colors last:border-b-0",
-                selectedTraceId === trace.id ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : "hover:bg-[var(--bg-raised)]/40",
+                "grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[var(--border-hairline)] px-3 py-2.5 text-left text-[12px] transition-colors last:border-b-0 md:grid-cols-[108px_minmax(0,1fr)_auto]",
+                selectedTraceId === trace.id
+                  ? "bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]"
+                  : "hover:bg-[var(--bg-raised)]/40",
               ].join(" ")}
             >
-              <span className="text-[10px] text-[var(--text-muted)]">{shortTime(trace.createdAt)}</span>
+              <span className="hidden text-[10px] leading-5 text-[var(--text-muted)] md:block">{shortTime(trace.createdAt)}</span>
               <span className="min-w-0">
-                <span className="block truncate font-medium text-[var(--text-primary)]">{familiarName(familiars, trace.callerFamiliarId)} -&gt; {familiarName(familiars, trace.calleeFamiliarId)}</span>
-                <span className="mt-0.5 block truncate text-[var(--text-secondary)]">{trace.request}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium text-[var(--text-primary)]">{routeLabel(familiars, trace.callerFamiliarId, trace.calleeFamiliarId)}</span>
+                  <span className="shrink-0 text-[10px] text-[var(--text-muted)] md:hidden">{shortTime(trace.createdAt)}</span>
+                </span>
+                <span className="mt-0.5 block truncate text-[var(--text-secondary)]" title={trace.request}>{trace.request}</span>
               </span>
               <span className="flex flex-wrap justify-end gap-1">
                 <span className={`rounded-full border px-1.5 py-0.5 text-[10px] ${sourceTone(trace.source)}`}>{trace.source}</span>
@@ -408,6 +593,8 @@ function TraceTimeline({
 function TraceInspector({
   graph,
   familiars,
+  metrics,
+  attention,
   selectedEdge,
   selectedNode,
   selectedTrace,
@@ -415,6 +602,8 @@ function TraceInspector({
 }: {
   graph: DelegationGraph;
   familiars: Map<string, Familiar>;
+  metrics: CallsMetrics;
+  attention: CallsAttention;
   selectedEdge: DelegationGraphEdge | null;
   selectedNode: DelegationGraphNode | null;
   selectedTrace: DelegationTrace | null;
@@ -470,18 +659,32 @@ function TraceInspector({
     );
   }
 
-  const busiest = graph.edges[0];
   return (
     <aside className="min-h-0 overflow-y-auto rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-4">
       <InspectorTitle eyebrow="Trace inspector" title="Select an edge, node, or event" />
       <p className="mt-3 text-[12px] leading-relaxed text-[var(--text-secondary)]">
         Explicit calls are solid traces. Inferred traces are dashed and amber, and can be hidden from the toolbar.
       </p>
-      {busiest ? (
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Metric label="Routes" value={metrics.routes} tone="text-[var(--text-primary)]" />
+        <Metric label="Familiars" value={metrics.agents} tone="text-[var(--text-primary)]" />
+        <Metric label="Running" value={metrics.running} tone="text-[var(--color-success)]" />
+        <Metric label="Failed" value={metrics.failed} tone="text-[var(--color-danger)]" />
+      </div>
+      {attention.busiest ? (
         <div className="mt-4 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-3 py-2">
           <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Busiest route</div>
-          <div className="mt-1 text-sm font-medium text-[var(--text-primary)]">{familiarName(familiars, busiest.caller)} -&gt; {familiarName(familiars, busiest.callee)}</div>
-          <div className="mt-1 text-[11px] text-[var(--text-muted)]">{busiest.count} traces</div>
+          <div className="mt-1 text-sm font-medium text-[var(--text-primary)]">{routeLabel(familiars, attention.busiest.caller, attention.busiest.callee)}</div>
+          <div className="mt-1 text-[11px] text-[var(--text-muted)]">{attention.busiest.count} traces · latest {shortTime(attention.busiest.lastSeenAt)}</div>
+        </div>
+      ) : null}
+      {attention.latestTrace ? (
+        <div className="mt-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Latest trace</div>
+          <div className="mt-1 text-sm font-medium text-[var(--text-primary)]">
+            {routeLabel(familiars, attention.latestTrace.callerFamiliarId, attention.latestTrace.calleeFamiliarId)}
+          </div>
+          <div className="mt-1 line-clamp-2 text-[11px] leading-5 text-[var(--text-secondary)]">{attention.latestTrace.request}</div>
         </div>
       ) : null}
     </aside>

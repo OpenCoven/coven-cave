@@ -64,32 +64,33 @@ assert.match(
   "Mobile handoff (open on phone) button is preserved",
 );
 
-// Active-familiar switcher box: a button showing the current familiar that opens
-// a Popover picker (desktop + mobile). Gated on a display familiar (active, or first option as fallback).
+// Active-familiar profile switcher: the top bar delegates to the dedicated
+// FamiliarSwitcher component (account-style profile button + menu), passing the
+// scope, options, live sessions, and reply set. Rendered only when wired.
 assert.match(
   source,
-  /className="top-bar__familiar"[\s\S]*aria-haspopup="listbox"/,
-  "Top bar renders a familiar switcher box that opens a listbox picker",
+  /import \{ FamiliarSwitcher \} from "@\/components\/familiar-switcher"/,
+  "Top bar imports the dedicated FamiliarSwitcher",
 );
 assert.match(
   source,
-  /<FamiliarAvatar familiar=\{displayFamiliar\}/,
-  "Switcher box shows the active familiar's avatar",
+  /<FamiliarSwitcher[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
+  "Top bar renders FamiliarSwitcher wired to the selection handler",
 );
 assert.match(
   source,
-  /<Popover[\s\S]*anchorRef=\{familiarBoxRef\}/,
-  "Picker uses the shared Popover anchored to the switcher box",
+  /<FamiliarSwitcher[\s\S]*sessions=\{sessions \?\? \[\]\}[\s\S]*responseNeeded=\{responseNeeded\}/,
+  "Switcher receives live sessions + reply set for presence and badges",
 );
 assert.match(
   source,
-  /role="option"[\s\S]*onSelectFamiliar\?\.\(option\.id\)/,
-  "Picking a familiar option calls onSelectFamiliar with its id",
+  /const showFamiliarSwitcher = Boolean\(onSelectFamiliar && \(familiarOptions\?\.length \?\? 0\) > 0\)/,
+  "Switcher renders when wired with a selection handler and at least one familiar",
 );
 assert.match(
   source,
-  /const showFamiliarSwitcher = Boolean\(onSelectFamiliar && displayFamiliar\)/,
-  "Switcher only renders when wired with a selection handler + active familiar",
+  /onSelectFamiliar\?: \(id: string \| null\) => void/,
+  "Selection handler is nullable so the menu can scope to all familiars",
 );
 
 console.log("top-bar.test.ts: ok");

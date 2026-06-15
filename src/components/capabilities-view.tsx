@@ -47,6 +47,7 @@ const STATUS_LABEL: Record<CapabilityStatus, string> = {
 
 const CAPABILITY_TYPES = new Set<CapabilityType>(["instructions", "skill", "plugin", "mcp", "warning"]);
 const CAPABILITY_STATUSES = new Set<CapabilityStatus>(["available", "enabled", "disabled", "warning"]);
+const MARKDOWN_PREVIEW_FILE_NAMES = new Set(["skill.md", "claude.md", "agents.md"]);
 
 function readUrlParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -77,6 +78,14 @@ function initialTypeFilter(): CapabilityType | "all" {
 
 function initialStatusFilter(): CapabilityStatus | "all" {
   return readCapabilityStatusParam("status");
+}
+
+function isMarkdownPreviewable(path?: string): boolean {
+  if (!path) return false;
+  const normalized = path.toLowerCase();
+  if (!normalized.endsWith(".md")) return false;
+  const filename = normalized.split("/").pop() ?? "";
+  return MARKDOWN_PREVIEW_FILE_NAMES.has(filename);
 }
 
 export function CapabilitiesViewSurface({
@@ -207,13 +216,12 @@ export function CapabilitiesViewSurface({
     [operatorView.items, selectionId],
   );
 
-  // Load the selected capability file so the inspector can render a styled
-  // preview. Skills are normalized to their actual descriptor file;
-  // instructions report a CLAUDE.md/AGENTS.md file directly. Out-of-tree
-  // paths (403) fall back to the description.
+  // Load the selected capability markdown so the inspector can render a styled
+  // Markdown preview. Skills are normalized to SKILL.md; instructions report a
+  // CLAUDE.md/AGENTS.md file directly. Out-of-tree paths (403) fall back to the
+  // description.
   const previewPath = selectedItem?.sourcePath ?? null;
-  const isPreviewable =
-    !!previewPath && (selectedItem?.type === "skill" || previewPath.toLowerCase().endsWith(".md"));
+  const isPreviewable = isMarkdownPreviewable(previewPath ?? undefined);
   useEffect(() => {
     if (!previewPath || !isPreviewable) {
       setPreview({ path: null, status: "idle", text: null, error: null });
@@ -226,12 +234,12 @@ export function CapabilitiesViewSurface({
         const res = await fetch(`/api/skills/file?path=${encodeURIComponent(previewPath)}`, {
           cache: "no-store",
         });
-        const json = (await res.json()) as { ok: boolean; text?: string; error?: string };
+        const json = (await res.json()) as { ok: boolean; path?: string; text?: string; error?: string };
         if (cancelled) return;
         if (!json.ok) {
           setPreview({ path: previewPath, status: "error", text: null, error: json.error ?? `http ${res.status}` });
         } else {
-          setPreview({ path: previewPath, status: "loaded", text: json.text ?? "", error: null });
+          setPreview({ path: json.path ?? previewPath, status: "loaded", text: json.text ?? "", error: null });
         }
       } catch (err) {
         if (cancelled) return;
@@ -567,11 +575,9 @@ function CapabilityMapRow({
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
 }) {
-  // Every row expands inline to reveal its inspector details. Skill descriptors
-  // and any .md instruction additionally render a file preview beneath the
-  // details.
-  const isPreviewable =
-    !!item.sourcePath && (item.type === "skill" || item.sourcePath.toLowerCase().endsWith(".md"));
+  // Every row expands inline to reveal its inspector details. Known markdown
+  // capability files render beneath the details as styled markdown.
+  const isPreviewable = isMarkdownPreviewable(item.sourcePath);
   const previewMatches = preview.path === item.sourcePath;
   return (
     <div>
@@ -802,7 +808,7 @@ function SkillPreviewBlock({
       <InspectorBlock label="Detail" value={fallbackDescription} />
     ) : (
       <div>
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Markdown preview</p>
         <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] leading-5 text-muted-foreground">
           Preview unavailable for this file.
         </p>
@@ -813,7 +819,7 @@ function SkillPreviewBlock({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Markdown preview</p>
         {canExpand ? (
           <button
             type="button"

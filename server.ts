@@ -85,6 +85,13 @@ function isLoopbackHost(host: string | null | undefined): boolean {
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
 }
 
+function isLoopbackAddress(value: string | undefined): boolean {
+  if (!value) return false;
+  if (value === "::1" || value === "127.0.0.1") return true;
+  if (value.startsWith("::ffff:")) return value.slice("::ffff:".length) === "127.0.0.1";
+  return false;
+}
+
 function sameOrigin(value: string | undefined, expectedOrigin: string): boolean {
   if (!value) return true;
   try {
@@ -106,6 +113,7 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
 function isAllowedUpgradeSource(req: IncomingMessage): boolean {
   const host = req.headers.host;
   if (!isLoopbackHost(host)) return false;
+  if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 

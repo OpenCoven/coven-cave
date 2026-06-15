@@ -74,7 +74,7 @@ export function harnessLabel(id: string): string {
   return HARNESS_LABEL[id] ?? id;
 }
 
-function skillFilePath(skillPath?: string): string | undefined {
+function skillSourcePath(skillPath?: string): string | undefined {
   if (!skillPath) return undefined;
   const cleanPath = skillPath.replace(/\/+$/, "");
   const lowerPath = cleanPath.toLowerCase();
@@ -128,7 +128,7 @@ export function normalizeCapabilities({
         label: skill.name,
         status: "available",
         description: skill.description,
-        sourcePath: skillFilePath(skill.path),
+        sourcePath: skillSourcePath(skill.path),
         tags: skillMeta.tags,
         version: skillMeta.version,
         kind: skillMeta.source,

@@ -1657,7 +1657,7 @@ function StepRuntimes({
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-          A runtime (harness) is the agent CLI your familiar speaks through.
+          A runtime is the agent CLI your familiar speaks through.
           You only need{" "}
           <span className="font-medium text-[var(--text-primary)]">one</span> —
           pick whichever you already use, or one-click install any of them
@@ -2021,7 +2021,7 @@ function StepFamiliar(props: {
             <span className="font-medium text-[var(--text-primary)]">
               Runs on a remote machine (SSH)
             </span>{" "}
-            — the familiar&rsquo;s harness runs over SSH on another box (a
+            — the familiar&rsquo;s runtime uses SSH transport on another box (a
             build server, a homelab, a VM). Cave connects non-interactively
             with your SSH keys and never stores passwords or key material.
           </span>
@@ -2111,7 +2111,7 @@ function StepFamiliar(props: {
               {" "}bound to the{" "}
               <span className="font-medium text-[var(--text-primary)]">
                 {selectedHarness.label}
-              </span>{" "}harness
+              </span>{" "}runtime
             </>
           ) : null}
           .
@@ -2170,7 +2170,7 @@ function StepMeetFamiliars({
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
         {statusOk
-          ? "Your familiars are loaded. Everything about them stays editable — name, look, brain, harness — in the Familiar Studio, any time."
+          ? "Your familiars are loaded. Everything about them stays editable — name, look, brain, runtime, transport — in the Familiar Studio, any time."
           : "Once the daemon is running and a familiar exists, they appear here."}
       </p>
       {familiars.length > 0 ? (
