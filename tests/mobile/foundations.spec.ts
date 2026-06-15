@@ -134,7 +134,7 @@ test.describe("mobile foundations", () => {
     await expect(page.locator(".library-doclist-item")).toHaveCount(docs.length);
 
     const metrics = await page.evaluate(() => {
-      const panel = document.querySelector(".library-list-panel");
+      const panel = document.querySelector(".library-list-panel, .library-browse-canvas");
       const doclist = document.querySelector(".library-doclist");
       const items = document.querySelector(".library-doclist-items");
       const panelRect = panel?.getBoundingClientRect();

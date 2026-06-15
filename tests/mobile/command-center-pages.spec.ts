@@ -39,7 +39,7 @@ test.describe("mobile command center pages", () => {
 
     await expect(page.locator(".library-preview").first()).toBeHidden();
 
-    const list = await box(page, ".library-list-panel");
+    const list = await box(page, ".library-list-panel, .library-browse-canvas");
     const rail = await box(page, ".library-rail");
 
     expect(list.width, "Library list should claim the phone width").toBeGreaterThanOrEqual(340);

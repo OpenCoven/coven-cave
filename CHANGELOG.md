@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.82] - 2026-06-14
+
+This patch release ships the Tailscale/proxy fixes needed for the new Cave release, plus the latest Projects and mobile handoff polish from `main`.
+
+### Added
+- **Nested project chats** — the Projects view now renders nested chats and supports dragging chats across projects.
+
+### Fixed
+- **Tailscale Serve origin handling** — daemon proxy requests over a non-default Tailscale Serve HTTPS port are accepted only when the forwarded `.ts.net` host and port match, clearing the forbidden-origin banner on the 8443 Cave route.
+- **Token-bearing proxy calls** — authenticated Cave requests now bypass the browser-origin gate correctly.
+- **iOS handoff invites** — mobile handoff links open in the iOS shell again.
+
 ## [0.0.81] - 2026-06-14
 
 This patch release completes the Agent Memory redesign, adds local-change checkpoints and an in-app update button, and tidies the bookmarks table.
