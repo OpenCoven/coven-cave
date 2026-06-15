@@ -25,7 +25,7 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" \}/,
+  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description:/,
   "Sidebar navigation should expose Roles as a tools surface",
 );
 

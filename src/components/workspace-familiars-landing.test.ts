@@ -104,19 +104,19 @@ assert.doesNotMatch(
 
 assert.match(
   sidebar,
-  /\{ id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1" \}/,
+  /\{ id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description:/,
   "Sidebar Home keeps its shortcut hint",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description:/,
   "Sidebar Browser shifts to ⌘7 after removing Familiars from Work",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" \}/,
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8", description:/,
   "Sidebar Terminal takes the final ⌘8 shortcut",
 );
 

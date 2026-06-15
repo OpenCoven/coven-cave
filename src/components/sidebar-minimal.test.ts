@@ -67,13 +67,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2" \}/,
+  /\{ id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description:/,
   "Chat should move to the ⌘2 Work shortcut after removing Familiars",
 );
 
 assert.match(
   source,
-  /\{ id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3" \}/,
+  /\{ id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description:/,
   "Board should move to the ⌘3 Work shortcut after removing Familiars",
 );
 
@@ -85,31 +85,31 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7" \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description:/,
   "Browser remains a Tools surface and moves to ⌘7",
 );
 
 assert.match(
   source,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8" \}/,
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8", description:/,
   "Terminal remains a Tools surface and takes ⌘8",
 );
 
 assert.match(
   source,
-  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools" \}/,
+  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description:/,
   "Roles should appear as a Tools surface",
 );
 
 assert.match(
   source,
-  /\{ id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools" \}/,
+  /\{ id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description:/,
   "Workflows should appear as a Tools surface",
 );
 
 assert.match(
   source,
-  /\{ id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools" \}/,
+  /\{ id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools", description:/,
   "Capabilities should appear as a Tools surface",
 );
 
@@ -208,6 +208,35 @@ assert.match(
   styles,
   /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-action-row,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile sidebar drawer rows and familiar select should meet the shared touch target",
+);
+
+// Every surface carries a one-line description, and FolderRow surfaces it as a
+// title (hover tooltip / touch long-press hint / AT description) — so the
+// look-alike surfaces (Roles vs Workflows vs Capabilities) are differentiated.
+assert.match(
+  source,
+  /id: "roles"[\s\S]*?description: "Reusable agent personas/,
+  "Roles is described as personas, distinct from Workflows/Capabilities",
+);
+assert.match(
+  source,
+  /id: "workflows"[\s\S]*?description: "Multi-step pipelines/,
+  "Workflows is described as pipelines, distinct from Roles/Capabilities",
+);
+assert.match(
+  source,
+  /id: "capabilities"[\s\S]*?description: "Skills and tools/,
+  "Capabilities is described as skills/tools, distinct from Roles/Workflows",
+);
+assert.match(
+  source,
+  /title=\{title\}/,
+  "FolderRow renders the description as a native title (hover/long-press/AT)",
+);
+assert.match(
+  source,
+  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?`/,
+  "title combines label + description (+ shortcut when present)",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");
