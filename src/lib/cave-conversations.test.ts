@@ -230,6 +230,35 @@ assert.equal(await deleteConversation("usage-turn"), true);
   );
 }
 
+await saveConversation({
+  sessionId: "model-intent",
+  familiarId: "salem",
+  harness: "claude",
+  model: "anthropic/claude-sonnet-4-6",
+  modelIntent: {
+    model: "anthropic/claude-opus-4-7",
+    source: "session",
+    applicationState: "saved",
+    reason: "Use Opus for this chat.",
+  },
+  title: "Model intent",
+  createdAt: "2026-06-15T00:00:00.000Z",
+  updatedAt: "2026-06-15T00:00:00.000Z",
+  turns: [],
+});
+const modelIntentConv = await loadConversation("model-intent");
+assert.deepEqual(
+  modelIntentConv?.modelIntent,
+  {
+    model: "anthropic/claude-opus-4-7",
+    source: "session",
+    applicationState: "saved",
+    reason: "Use Opus for this chat.",
+  },
+  "conversation-level model intent must round-trip through the store",
+);
+assert.equal(await deleteConversation("model-intent"), true);
+
 if (previousHome === undefined) {
   delete process.env.HOME;
 } else {
