@@ -11,6 +11,7 @@ import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
+import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -288,43 +289,23 @@ export function ChatSurface({
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between border-b border-[var(--border-hairline)] px-4">
-          {/* Tabs flush left */}
-          <div role="tablist" className="flex items-end gap-1">
-            {(["conversation", "memory", "projects"] as const).map((s) => {
-              const labels: Record<FamiliarsScope, string> = {
-                conversation: "Chats",
-                memory: "Memory",
-                projects: "Projects",
-              };
-              const isActive = scope === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => {
-                    setScope(s);
-                    if (s === "conversation") {
-                      window.setTimeout(() => routerRef.current?.goToList(), 0);
-                    }
-                  }}
-                  className={[
-                    "relative px-3 py-2.5 text-[12px] font-medium transition-colors outline-none",
-                    // 2px underline for the active tab + faint underline on
-                    // hover so the affordance is visible before click.
-                    "after:absolute after:bottom-0 after:left-3 after:right-3 after:h-[2px] after:rounded-full after:transition-colors",
-                    isActive
-                      ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] after:bg-transparent hover:after:bg-[color-mix(in_oklch,var(--text-muted)_45%,transparent)]",
-                    "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-t-sm",
-                  ].join(" ")}
-                >
-                  {labels[s]}
-                </button>
-              );
-            })}
-          </div>
+          {/* Tabs flush left — Vercel-style underline tabs. The header row
+              already draws the divider, so the tablist itself is borderless. */}
+          <Tabs<FamiliarsScope>
+            bordered={false}
+            value={scope}
+            onChange={(s) => {
+              setScope(s);
+              if (s === "conversation") {
+                window.setTimeout(() => routerRef.current?.goToList(), 0);
+              }
+            }}
+            items={[
+              { id: "conversation", label: "Chats" },
+              { id: "memory", label: "Memory" },
+              { id: "projects", label: "Projects" },
+            ]}
+          />
 
           {/* Actions flush right — chromeless */}
           <div className="flex items-center gap-2 py-1.5">
@@ -351,7 +332,7 @@ export function ChatSurface({
             }}
           />
         ) : scope === "projects" ? (
-          <ProjectsView sessions={sessions} onNewChat={startProjectChat} />
+          <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} />
         ) : (
           <Group className="flex min-h-0 min-w-0 flex-1" orientation="horizontal">
             <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
