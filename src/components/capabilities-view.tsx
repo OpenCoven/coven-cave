@@ -48,6 +48,10 @@ const STATUS_LABEL: Record<CapabilityStatus, string> = {
 const CAPABILITY_TYPES = new Set<CapabilityType>(["instructions", "skill", "plugin", "mcp", "warning"]);
 const CAPABILITY_STATUSES = new Set<CapabilityStatus>(["available", "enabled", "disabled", "warning"]);
 const MARKDOWN_PREVIEW_FILE_NAMES = new Set(["skill.md", "claude.md", "agents.md"]);
+// Codex automation descriptors preview as their `automation.toml` (#737); the
+// server skill-file reader allow-lists this exact name. It isn't markdown, but
+// it renders through the same styled preview, so the gate accepts it too.
+const AUTOMATION_PREVIEW_FILE_NAME = "automation.toml";
 
 function readUrlParam(name: string): string | null {
   if (typeof window === "undefined") return null;
@@ -83,8 +87,12 @@ function initialStatusFilter(): CapabilityStatus | "all" {
 function isMarkdownPreviewable(path?: string): boolean {
   if (!path) return false;
   const normalized = path.toLowerCase();
-  if (!normalized.endsWith(".md")) return false;
   const filename = normalized.split("/").pop() ?? "";
+  // #742 limited previews to known markdown files; #737 added Codex automation
+  // descriptors whose path ends in automation.toml. Without this the automation
+  // preview never renders client-side even though the server serves it.
+  if (filename === AUTOMATION_PREVIEW_FILE_NAME) return true;
+  if (!normalized.endsWith(".md")) return false;
   return MARKDOWN_PREVIEW_FILE_NAMES.has(filename);
 }
 

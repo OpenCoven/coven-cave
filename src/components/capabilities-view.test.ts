@@ -38,6 +38,10 @@ assert.match(source, /const applyStatusFilter = \(value: CapabilityStatus \| "al
 assert.match(source, /const readinessStatus = operatorView\.summary\.warnings > 0 \? "warning" : operatorView\.summary\.disabled > 0 \? "disabled" : "all";/, "readiness tile should route to disabled when disabled is the only issue type");
 assert.match(source, /type="search"[\s\S]*aria-label="Search capabilities"/, "search input should expose a stable accessible name");
 assert.match(source, /function isMarkdownPreviewable\(/, "previewability should be based on markdown-capable files");
+// #742 limited previews to markdown; #737 added Codex automation descriptors
+// (automation.toml). The gate must accept that filename or automation previews
+// silently never render (regression caught in review).
+assert.match(source, /filename === AUTOMATION_PREVIEW_FILE_NAME/, "preview gate accepts Codex automation descriptors (automation.toml)");
 assert.match(source, /json\.path \?\? previewPath/, "preview state should preserve the server-resolved markdown file path");
 assert.match(source, /Markdown preview/, "capability file previews should be explicitly labelled as markdown previews");
 
