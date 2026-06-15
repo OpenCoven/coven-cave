@@ -216,7 +216,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   return NextResponse.json({ ok: true, conversation });
 }
 
-export const PATCH = async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isSafeConversationSessionId(id)) {
     return jsonError("invalid session id", 400);
@@ -259,7 +259,7 @@ export const PATCH = async (req: Request, { params }: { params: Promise<{ id: st
   }
 
   return jsonError("nothing to patch", 400);
-};
+}
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
