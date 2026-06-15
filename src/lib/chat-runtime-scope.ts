@@ -75,6 +75,8 @@ export async function resolveLocalRuntimeCwd(
   const scopedCandidate = relToHome === "" ? homeRoot : path.join(homeRoot, relToHome);
   let resolved: string;
   try {
+    // lgtm[js/path-injection] scopedCandidate is built from a home-relative path
+    // validated above and is checked again after symlink resolution below.
     resolved = await realpath(scopedCandidate);
   } catch {
     throw new RuntimeScopeError(
