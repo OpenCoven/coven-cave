@@ -6,6 +6,8 @@ import { setDemoModeEnabled } from "@/lib/demo-mode";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
+import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 
 // Guided onboarding: one numbered path from "nothing installed" to "chatting
 // with a familiar". Every step carries its own instructions, a one-click
@@ -972,6 +974,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     return firstIncomplete?.key ?? null;
   }, [steps]);
 
+  // Safe machine-state context for Setup Salem — platform + detected runtime
+  // health only; never secrets, tokens, or logs (design §"Privacy").
+  const salemMachineState = useMemo<SalemPathfinderRequest["machineState"]>(() => ({
+    platform:
+      platform === "mac" ? "macos" : platform === "windows" ? "windows" : platform === "linux" ? "linux" : "unknown",
+    covenCli: status ? (status.steps.covenCli.ok ? "healthy" : "missing") : "unknown",
+    daemon: status ? (status.steps.daemon.ok ? "running" : "stopped") : "unknown",
+    familiarCount: status?.steps.familiars.ok ? 1 : 0,
+  }), [platform, status]);
+
   const openStepKey = expandedStep ?? activeStepKey ?? "familiars";
 
   if (!open) return null;
@@ -1111,6 +1123,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         {setupError ? (
           <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]">
             {setupError}
+          </section>
+        ) : null}
+
+        {!status?.complete ? (
+          <section className="mt-5" aria-label="Ask Salem for setup help">
+            <SalemPathfinderEntry
+              mode="setup"
+              density="slim"
+              defaultMessage="Help me get my first familiar running in Cave"
+              machineState={salemMachineState}
+              currentSurface="setup"
+              onRunDoctor={() => void recheckNow()}
+              onRoute={() => onDismiss()}
+            />
           </section>
         ) : null}
 
