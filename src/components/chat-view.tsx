@@ -30,6 +30,7 @@ import { Modal } from "@/components/ui/modal";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
+import { ChatModelControl } from "@/components/chat-model-control";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { VoiceCallButton } from "./voice-call-button";
 import { VoiceCallOverlay } from "./voice-call-overlay";
@@ -49,6 +50,7 @@ import { useProjects } from "@/lib/use-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolInputAsDiff } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
+import type { ChatModelState } from "@/lib/chat-model-state";
 
 type ToolEvent = {
   id: string;
@@ -1268,6 +1270,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [input, setInput] = useState("");
   // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -1319,6 +1322,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setNewTurnsCount(0);
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ familiarId: familiar.id });
+    if (sessionId) params.set("sessionId", sessionId);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
+        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+        if (!cancelled) setModelState(json.ok && json.state ? json.state : null);
+      } catch {
+        if (!cancelled) setModelState(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [familiar.id, sessionId]);
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2662,6 +2683,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           onBack={onBack}
         >
+          <ChatModelControl state={modelState} />
           <div className="cave-chat-session-actions">
             {turns.length > 0 ? (
               <ChatFindBar

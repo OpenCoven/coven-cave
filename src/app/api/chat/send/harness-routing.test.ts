@@ -114,6 +114,41 @@ assert.doesNotMatch(
   /"--session-id"/,
   "OpenClaw bridge no longer passes raw session ids — keys are the resume contract",
 );
+assert.doesNotMatch(
+  chatRoute,
+  /"--model"/,
+  "Cave chat must not pass a guessed --model flag until coven run exposes that contract",
+);
+assert.match(
+  chatRoute,
+  /modelApplicationState: modelState\.applicationState/,
+  "Response metadata should expose unsupported/saved state instead of claiming application",
+);
+assert.match(
+  chatRoute,
+  /const sessionModel =[\s\S]*modelOverrideScope === "session"[\s\S]*\? requestedModel[\s\S]*: args\.existingConversation\?\.modelIntent\?\.model \?\? null/,
+  "Session-scoped model overrides should feed the response model state, not only desiredModel",
+);
+assert.match(
+  chatRoute,
+  /if \(existingConversation && existingConversation\.familiarId !== body\.familiarId\)/,
+  "Send must reject session ids owned by a different familiar before reading model intent",
+);
+assert.match(
+  chatRoute,
+  /persistSendModelIntent\(conv, args\.body, args\.modelState\)/,
+  "OpenClaw transcript persistence should save direct session-scoped model intent",
+);
+assert.match(
+  chatRoute,
+  /persistSendModelIntent\(conv, body, modelState\)/,
+  "Native transcript persistence should save direct session-scoped model intent",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /saveConfig\([\s\S]*modelOverride/,
+  "A chat send must not persist one-off model overrides into Cave config",
+);
 
 // Native (coven) path: same stable-identity contract.
 assert.match(

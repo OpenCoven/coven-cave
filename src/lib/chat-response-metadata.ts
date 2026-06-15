@@ -1,8 +1,15 @@
+import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+
 export type ChatResponseMetadata = {
   familiarId: string;
   harness: string;
   model: string;
   runtime: string;
+  desiredModel?: string;
+  confirmedModel?: string;
+  modelSource?: ModelScope;
+  modelApplicationState?: ModelApplicationState;
+  modelApplicationReason?: string;
 };
 
 /** Collapse a user home prefix to "~" so the directory reads as a location the
