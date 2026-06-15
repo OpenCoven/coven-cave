@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.85] - 2026-06-15
+
+Patch release: a recoverable update flow, a mobile task-page fix, and the chat rail redesign on top of 0.0.84.
+
+### Fixed
+- **Updater** — a failed native install no longer dead-ends. The settings row and banner now surface the real failure reason and offer a working manual Download (release page) plus Retry, so the update is always reachable (#642).
+- **Mobile** — the board card "task page" drawer header now clears the iOS status bar / Dynamic Island, so the title and close button are no longer occluded (#640).
+
+### Changed
+- **Chat rail** — modern redesign with a nav block, counted sections, and a familiar strip (#644).
+- **OpenCoven tools** — added tool update controls.
+
 ## [0.0.84] - 2026-06-15
 
 Patch release with capabilities, library, and iOS fixes on top of 0.0.83.
