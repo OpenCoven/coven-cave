@@ -18,7 +18,7 @@ type RouteContract = {
 
 const contracts: RouteContract[] = [
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
-  { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
@@ -150,11 +150,11 @@ for (const contract of contracts) {
   assert.deepEqual(exportedMethods(source), contract.methods, `${contract.route} HTTP method exports changed`);
   assert.equal(usesJsonResponse(source), true, `${contract.route} must return an explicit Response/NextResponse`);
 
-  const readsJson = /req\.json\(\)/.test(source);
+  const readsJson = /req\.json\(\)|readJsonBody[<(]/.test(source);
   assert.equal(readsJson, contract.readsJson === true, `${contract.route} req.json() contract changed`);
 
   if (contract.invalidJson === "guarded") {
-    assert.match(source, /invalid json|invalid JSON/, `${contract.route} must preserve invalid-JSON handling`);
+    assert.match(source, /invalid json|invalid JSON|readJsonBody/, `${contract.route} must preserve invalid-JSON handling`);
   }
   if (contract.invalidJson === "fallback-empty") {
     assert.match(source, /let body:[\s\S]{0,160}=\s*\{\}/, `${contract.route} must initialize an optional request body`);
