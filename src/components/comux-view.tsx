@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
@@ -12,18 +12,26 @@ import {
   projectName,
   type ComuxProject,
 } from "@/lib/comux-projects";
+import {
+  addTerminalSession,
+  closeTerminalSession,
+  createTerminalLayout,
+  focusTerminalSession,
+  moveTerminalPane,
+  normalizeTerminalLayout,
+  removeTerminalPaneView,
+  renameTerminalSession,
+  terminalLayoutVisibleSessionIds,
+  type TerminalLayoutNode,
+  type TerminalLayoutState,
+  type TerminalSession,
+  type TerminalSplitDirection,
+  type TerminalSplitSide,
+} from "@/lib/terminal-layout";
 import type { SessionRow } from "@/lib/types";
 
 type ComuxViewMode = "terminal" | "projects";
 
-type TerminalSession = {
-  id: string;
-  label: string;
-  projectRoot?: string;
-};
-
-type SplitDirection = "horizontal" | "vertical";
-type SplitSide = "left" | "right" | "top" | "bottom";
 type SessionPlacement = "replace" | "split";
 
 type Props = {
@@ -39,49 +47,15 @@ type ProjectFilePreview =
   | { kind: "image"; dataUrl: string; mimeType: string; size?: number };
 
 const STORAGE_SESSIONS = "cave:comux:sessions";
+const STORAGE_LAYOUT = "cave:comux:terminal-layout:v1";
 const TERMINAL_SESSION_DRAG_TYPE = "application/x-cave-terminal-session";
-
-function uniqueSessionIds(ids: string[]): string[] {
-  const seen = new Set<string>();
-  const next: string[] = [];
-  for (const id of ids) {
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    next.push(id);
-  }
-  return next;
-}
-
-function directionForSplitSide(side: SplitSide): SplitDirection {
-  return side === "left" || side === "right" ? "horizontal" : "vertical";
-}
-
-function insertPaneSession(
-  paneIds: string[],
-  sourceSessionId: string,
-  targetSessionId: string | undefined,
-  side: SplitSide,
-): string[] {
-  if (!targetSessionId || sourceSessionId === targetSessionId) {
-    return uniqueSessionIds(paneIds.length ? paneIds : [sourceSessionId]);
-  }
-  const base = uniqueSessionIds(paneIds).filter((id) => id !== sourceSessionId);
-  const targetIdx = base.indexOf(targetSessionId);
-  if (targetIdx === -1) return uniqueSessionIds([...base, sourceSessionId]);
-  const insertIdx = side === "left" || side === "top" ? targetIdx : targetIdx + 1;
-  return [
-    ...base.slice(0, insertIdx),
-    sourceSessionId,
-    ...base.slice(insertIdx),
-  ];
-}
 
 function TerminalDropZone({
   side,
   onSplit,
 }: {
-  side: SplitSide;
-  onSplit: (sessionId: string, side: SplitSide) => void;
+  side: TerminalSplitSide;
+  onSplit: (sessionId: string, side: TerminalSplitSide) => void;
 }) {
   const [over, setOver] = useState(false);
 
@@ -117,7 +91,7 @@ function TerminalDropZone({
   );
 }
 
-function readSessions(): TerminalSession[] {
+function readLegacySessions(): TerminalSession[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_SESSIONS);
@@ -140,6 +114,99 @@ function readSessions(): TerminalSession[] {
     }));
   } catch {
     return [];
+  }
+}
+
+function isLayoutNode(value: unknown): value is TerminalLayoutNode {
+  if (typeof value !== "object" || value === null) return false;
+  const node = value as Record<string, unknown>;
+  if (node.kind === "leaf") return typeof node.sessionId === "string";
+  if (node.kind !== "horizontal" && node.kind !== "vertical") return false;
+  return Array.isArray(node.children) && node.children.every((entry) => {
+    if (typeof entry !== "object" || entry === null) return false;
+    const child = entry as Record<string, unknown>;
+    return typeof child.size === "number" && isLayoutNode(child.node);
+  });
+}
+
+function readTerminalLayout(): TerminalLayoutState {
+  if (typeof window === "undefined") return createTerminalLayout();
+  try {
+    const raw = window.localStorage.getItem(STORAGE_LAYOUT);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<TerminalLayoutState>;
+      if (
+        parsed.version === 1 &&
+        Array.isArray(parsed.sessions) &&
+        (parsed.root === null || isLayoutNode(parsed.root))
+      ) {
+        const layout: TerminalLayoutState = {
+          version: 1,
+          sessions: parsed.sessions.filter(
+            (session): session is TerminalSession =>
+              typeof session === "object" &&
+              session !== null &&
+              typeof (session as Record<string, unknown>).id === "string" &&
+              typeof (session as Record<string, unknown>).label === "string",
+          ).map((session) => ({
+            id: session.id,
+            label: session.label,
+            projectRoot:
+              typeof session.projectRoot === "string"
+                ? session.projectRoot
+                : undefined,
+          })),
+          activeSessionId:
+            typeof parsed.activeSessionId === "string"
+              ? parsed.activeSessionId
+              : null,
+          root: parsed.root ?? null,
+        };
+        return normalizeTerminalLayout(layout);
+      }
+    }
+  } catch {
+    // Fall back to the legacy flat session list below.
+  }
+  const legacy = readLegacySessions();
+  return createTerminalLayout(legacy, legacy[0]?.id ?? null);
+}
+
+type TerminalLayoutAction =
+  | {
+      type: "add";
+      session: TerminalSession;
+      placement?: SessionPlacement;
+      targetSessionId?: string | null;
+      side?: TerminalSplitSide;
+    }
+  | { type: "close"; sessionId: string }
+  | { type: "focus"; sessionId: string }
+  | { type: "move"; sourceSessionId: string; targetSessionId: string; side: TerminalSplitSide }
+  | { type: "remove-view"; sessionId: string }
+  | { type: "rename"; sessionId: string; label: string };
+
+function terminalLayoutReducer(
+  state: TerminalLayoutState,
+  action: TerminalLayoutAction,
+): TerminalLayoutState {
+  switch (action.type) {
+    case "add":
+      return addTerminalSession(state, action.session, {
+        placement: action.placement,
+        targetSessionId: action.targetSessionId ?? undefined,
+        side: action.side,
+      });
+    case "close":
+      return closeTerminalSession(state, action.sessionId);
+    case "focus":
+      return focusTerminalSession(state, action.sessionId);
+    case "move":
+      return moveTerminalPane(state, action);
+    case "remove-view":
+      return removeTerminalPaneView(state, action.sessionId);
+    case "rename":
+      return renameTerminalSession(state, action.sessionId, action.label);
   }
 }
 
@@ -177,10 +244,17 @@ function shortProjectTime(iso: string | null): string {
 }
 
 export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true }: Props) {
-  const [sessions, setSessions] = useState<TerminalSession[]>(readSessions);
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [paneSessionIds, setPaneSessionIds] = useState<string[]>([]);
-  const [splitDirection, setSplitDirection] = useState<SplitDirection>("horizontal");
+  const [terminalLayout, dispatchTerminalLayout] = useReducer(
+    terminalLayoutReducer,
+    undefined,
+    readTerminalLayout,
+  );
+  const sessions = terminalLayout.sessions;
+  const activeSessionId = terminalLayout.activeSessionId;
+  const currentIdx = Math.max(
+    0,
+    sessions.findIndex((session) => session.id === activeSessionId),
+  );
 
   // Project tab state
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -214,20 +288,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     })();
   }, []);
 
-  // Persist sessions
+  // Persist the full pane tree. Keep the legacy flat key in sync so older
+  // versions can still recover terminal tabs if a user rolls back.
   useEffect(() => {
+    window.localStorage.setItem(STORAGE_LAYOUT, JSON.stringify(terminalLayout));
     window.localStorage.setItem(STORAGE_SESSIONS, JSON.stringify(sessions));
-  }, [sessions]);
-
-  useEffect(() => {
-    setPaneSessionIds((prev) => {
-      if (sessions.length === 0) return [];
-      const validIds = new Set(sessions.map((session) => session.id));
-      const filtered = uniqueSessionIds(prev.filter((id) => validIds.has(id)));
-      if (filtered.length > 0) return filtered;
-      return [sessions[Math.min(currentIdx, sessions.length - 1)]?.id ?? sessions[0].id];
-    });
-  }, [currentIdx, sessions]);
+  }, [terminalLayout, sessions]);
 
   const projects = useMemo(
     () => deriveComuxProjects(daemonSessions, daemonProjectRoot),
@@ -254,29 +320,23 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const addSession = useCallback((rootOverride?: string, placement: SessionPlacement = "replace") => {
     const id = uid();
     const root = rootOverride ?? selectedProjectRoot ?? daemonProjectRoot;
-    const activeSessionId = sessions[currentIdx]?.id;
-    setSessions((prev) => {
-      const next = [
-        ...prev,
-        {
-          id,
-          label: root ? `${projectName(root)} ${prev.length + 1}` : `Terminal ${prev.length + 1}`,
-          projectRoot: root,
-        },
-      ];
-      setCurrentIdx(next.length - 1);
-      return next;
-    });
-    setPaneSessionIds((prev) => {
-      if (placement === "split") return uniqueSessionIds([...prev, id]);
-      if (prev.length === 0) return [id];
-      const target = activeSessionId && prev.includes(activeSessionId)
-        ? activeSessionId
-        : prev[0];
-      return prev.map((paneId) => (paneId === target ? id : paneId));
+    const targetSessionId =
+      terminalLayout.activeSessionId ??
+      terminalLayoutVisibleSessionIds(terminalLayout)[0] ??
+      null;
+    dispatchTerminalLayout({
+      type: "add",
+      session: {
+        id,
+        label: root ? `${projectName(root)} ${sessions.length + 1}` : `Terminal ${sessions.length + 1}`,
+        projectRoot: root,
+      },
+      placement,
+      targetSessionId,
+      side: placement === "split" ? "right" : undefined,
     });
     return id;
-  }, [currentIdx, daemonProjectRoot, selectedProjectRoot, sessions]);
+  }, [daemonProjectRoot, selectedProjectRoot, sessions.length, terminalLayout]);
 
   useEffect(() => {
     const activeTerminal = view === "terminal" && active;
@@ -292,55 +352,36 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
 
   const removeSession = useCallback(
     (idx: number) => {
-      setSessions((prev) => {
-        const removedId = prev[idx]?.id;
-        const next = prev.filter((_, i) => i !== idx);
-        if (removedId) {
-          setPaneSessionIds((panes) => panes.filter((id) => id !== removedId));
-          // Closing a tab is the ONLY place a desktop PTY is killed. The
-          // terminal component deliberately does not stop the shell on
-          // unmount — tab switches remount terminals through the keepalive
-          // container, and killing there raced the next mount's liveness
-          // check, leaving a dead pane that ate keystrokes.
-          const internals = (window as unknown as Record<string, unknown>)
-            .__TAURI_INTERNALS__;
-          if (internals) {
-            void import("@tauri-apps/api/core")
-              .then(({ invoke }) =>
-                invoke("pty_stop", { threadId: `cave.comux.${removedId}` }),
-              )
-              .catch(() => {});
-          }
-        }
-        setCurrentIdx((ci) => {
-          if (next.length === 0) return 0;
-          if (ci >= next.length) return next.length - 1;
-          if (ci > idx) return ci - 1;
-          return ci;
-        });
-        return next;
-      });
+      const removedId = sessions[idx]?.id;
+      if (!removedId) return;
+      dispatchTerminalLayout({ type: "close", sessionId: removedId });
+      // Closing a tab is the ONLY place a desktop PTY is killed. The
+      // terminal component deliberately does not stop the shell on
+      // unmount — tab switches remount terminals through the keepalive
+      // container, and killing there raced the next mount's liveness
+      // check, leaving a dead pane that ate keystrokes.
+      const internals = (window as unknown as Record<string, unknown>)
+        .__TAURI_INTERNALS__;
+      if (internals) {
+        void import("@tauri-apps/api/core")
+          .then(({ invoke }) =>
+            invoke("pty_stop", { threadId: `cave.comux.${removedId}` }),
+          )
+          .catch(() => {});
+      }
     },
-    [],
+    [sessions],
   );
 
   const renameSession = useCallback((idx: number, label: string) => {
-    setSessions((prev) =>
-      prev.map((s, i) => (i === idx ? { ...s, label } : s)),
-    );
-  }, []);
+    const session = sessions[idx];
+    if (!session) return;
+    dispatchTerminalLayout({ type: "rename", sessionId: session.id, label });
+  }, [sessions]);
 
-  const visiblePaneSessionIds = useMemo(() => {
-    const validIds = new Set(sessions.map((session) => session.id));
-    return uniqueSessionIds(paneSessionIds.filter((id) => validIds.has(id)));
-  }, [paneSessionIds, sessions]);
-
-  const visiblePaneSessions = useMemo(
-    () =>
-      visiblePaneSessionIds
-        .map((id) => sessions.find((session) => session.id === id))
-        .filter((session): session is TerminalSession => Boolean(session)),
-    [sessions, visiblePaneSessionIds],
+  const visiblePaneSessionIds = useMemo(
+    () => terminalLayoutVisibleSessionIds(terminalLayout),
+    [terminalLayout],
   );
 
   const hiddenPaneSessions = useMemo(() => {
@@ -349,50 +390,47 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   }, [sessions, visiblePaneSessionIds]);
 
   const focusSessionById = useCallback((sessionId: string) => {
-    const idx = sessions.findIndex((session) => session.id === sessionId);
-    if (idx >= 0) setCurrentIdx(idx);
-  }, [sessions]);
+    dispatchTerminalLayout({ type: "focus", sessionId });
+  }, []);
 
   const selectSession = useCallback((idx: number) => {
     const session = sessions[idx];
     if (!session) return;
-    setCurrentIdx(idx);
-    setPaneSessionIds((prev) => {
-      if (prev.includes(session.id)) return prev;
-      if (prev.length === 0) return [session.id];
-      return prev.map((paneId, paneIdx) => (paneIdx === 0 ? session.id : paneId));
-    });
+    dispatchTerminalLayout({ type: "focus", sessionId: session.id });
   }, [sessions]);
 
   const splitSessionIntoPane = useCallback(
-    (sessionId: string, targetSessionId: string, side: SplitSide) => {
+    (sessionId: string, targetSessionId: string, side: TerminalSplitSide) => {
       if (!sessions.some((session) => session.id === sessionId)) return;
       if (sessionId === targetSessionId) return;
-      setSplitDirection(directionForSplitSide(side));
-      setPaneSessionIds((prev) =>
-        insertPaneSession(prev.length ? prev : [targetSessionId], sessionId, targetSessionId, side),
-      );
-      focusSessionById(sessionId);
+      dispatchTerminalLayout({
+        type: "move",
+        sourceSessionId: sessionId,
+        targetSessionId,
+        side,
+      });
     },
-    [focusSessionById, sessions],
+    [sessions],
   );
 
   const onSplitTerminal = useCallback(
-    (direction: SplitDirection) => {
-      const side: SplitSide = direction === "horizontal" ? "right" : "bottom";
-      const activeSessionId = sessions[currentIdx]?.id;
-      const nextId = addSession(undefined, "split");
-      setSplitDirection(direction);
-      setPaneSessionIds((prev) =>
-        insertPaneSession(
-          prev.filter((paneId) => paneId !== nextId),
-          nextId,
-          activeSessionId ?? prev[prev.length - 1],
-          side,
-        ),
-      );
+    (direction: TerminalSplitDirection) => {
+      const side: TerminalSplitSide = direction === "horizontal" ? "right" : "bottom";
+      const id = uid();
+      const root = selectedProjectRoot ?? daemonProjectRoot;
+      dispatchTerminalLayout({
+        type: "add",
+        session: {
+          id,
+          label: root ? `${projectName(root)} ${sessions.length + 1}` : `Terminal ${sessions.length + 1}`,
+          projectRoot: root,
+        },
+        placement: "split",
+        targetSessionId: terminalLayout.activeSessionId ?? visiblePaneSessionIds[0] ?? null,
+        side,
+      });
     },
-    [addSession, currentIdx, sessions],
+    [daemonProjectRoot, selectedProjectRoot, sessions.length, terminalLayout.activeSessionId, visiblePaneSessionIds],
   );
 
   useEffect(() => {
@@ -481,6 +519,105 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const previewIsMarkdown = preview?.kind === "text" && isMarkdownPath(previewPath);
   const previewLineCount = preview?.kind === "text" ? preview.content.split("\n").length : 0;
   const renderAsMarkdown = previewIsMarkdown && !previewRaw;
+  const visiblePaneCount = visiblePaneSessionIds.length;
+  const sessionById = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
+  );
+  const nodeKey = useCallback((node: TerminalLayoutNode): string => {
+    if (node.kind === "leaf") return node.sessionId;
+    return `${node.kind}:${node.children.map((entry) => nodeKey(entry.node)).join("|")}`;
+  }, []);
+  const renderTerminalNode = useCallback(
+    (node: TerminalLayoutNode, path = "root"): ReactNode => {
+      if (node.kind === "leaf") {
+        const s = sessionById.get(node.sessionId);
+        if (!s) return null;
+        const isActive = s.id === activeSessionId;
+        return (
+          <div
+            className="comux-terminal-pane"
+            data-terminal-pane-id={s.id}
+            data-active={isActive ? "true" : undefined}
+            onClick={() => focusSessionById(s.id)}
+          >
+            <div className="comux-terminal-pane-bar">
+              <Icon name="ph:terminal-window" width={12} aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{s.label}</span>
+              {visiblePaneCount > 1 ? (
+                <button
+                  type="button"
+                  className="comux-terminal-pane-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dispatchTerminalLayout({ type: "remove-view", sessionId: s.id });
+                  }}
+                  aria-label={`Remove ${s.label} from split`}
+                  title="Remove split"
+                >
+                  <Icon name="ph:x-bold" width={10} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+            <div className="comux-terminal-pane-body">
+              <TerminalDropZone side="left" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
+              <TerminalDropZone side="right" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
+              <TerminalDropZone side="top" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
+              <TerminalDropZone side="bottom" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
+              <BottomTerminal
+                threadId={`cave.comux.${s.id}`}
+                active={active && isActive}
+                projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
+              />
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <Group
+          className="h-full min-h-0 w-full"
+          orientation={node.kind}
+        >
+          {node.children.map((entry, paneIdx) => {
+            const key = nodeKey(entry.node);
+            return (
+              <Fragment key={`${path}:${key}`}>
+                <Panel
+                  id={`terminal-pane-${path}-${key}`}
+                  minSize={18}
+                  defaultSize={entry.size}
+                  className="h-full min-h-0 min-w-0 overflow-hidden"
+                >
+                  {renderTerminalNode(entry.node, `${path}-${paneIdx}`)}
+                </Panel>
+                {paneIdx < node.children.length - 1 ? (
+                  <Separator
+                    className="comux-terminal-resize shrink-0"
+                    data-terminal-resize-handle={`${path}-${paneIdx}`}
+                    data-orientation={node.kind === "horizontal" ? "col" : "row"}
+                  >
+                    <SeparatorHandle orientation={node.kind === "horizontal" ? "col" : "row"} />
+                  </Separator>
+                ) : null}
+              </Fragment>
+            );
+          })}
+        </Group>
+      );
+    },
+    [
+      active,
+      activeSessionId,
+      daemonProjectRoot,
+      focusSessionById,
+      nodeKey,
+      selectedProjectRoot,
+      sessionById,
+      splitSessionIntoPane,
+      visiblePaneCount,
+    ],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -595,70 +732,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               </div>
             ) : (
               <>
-                <Group
-                  className="h-full min-h-0 w-full"
-                  orientation={splitDirection}
-                >
-                  {visiblePaneSessions.map((s, paneIdx) => {
-                    const sessionIdx = sessions.findIndex((session) => session.id === s.id);
-                    return (
-                      <Fragment key={s.id}>
-                        <Panel
-                          id={`terminal-pane-${s.id}`}
-                          minSize={18}
-                          defaultSize={100 / Math.max(visiblePaneSessions.length, 1)}
-                          className="h-full min-h-0 min-w-0 overflow-hidden"
-                        >
-                          <div
-                            className="comux-terminal-pane"
-                            data-terminal-pane-id={s.id}
-                            data-active={sessionIdx === currentIdx ? "true" : undefined}
-                            onClick={() => focusSessionById(s.id)}
-                          >
-                            <div className="comux-terminal-pane-bar">
-                              <Icon name="ph:terminal-window" width={12} aria-hidden />
-                              <span className="min-w-0 flex-1 truncate">{s.label}</span>
-                              {visiblePaneSessions.length > 1 ? (
-                                <button
-                                  type="button"
-                                  className="comux-terminal-pane-action"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPaneSessionIds((prev) => prev.filter((id) => id !== s.id));
-                                  }}
-                                  aria-label={`Remove ${s.label} from split`}
-                                  title="Remove split"
-                                >
-                                  <Icon name="ph:x-bold" width={10} aria-hidden />
-                                </button>
-                              ) : null}
-                            </div>
-                            <div className="comux-terminal-pane-body">
-                              <TerminalDropZone side="left" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
-                              <TerminalDropZone side="right" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
-                              <TerminalDropZone side="top" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
-                              <TerminalDropZone side="bottom" onSplit={(dragged, side) => splitSessionIntoPane(dragged, s.id, side)} />
-                              <BottomTerminal
-                                threadId={`cave.comux.${s.id}`}
-                                active={active && sessionIdx === currentIdx}
-                                projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
-                              />
-                            </div>
-                          </div>
-                        </Panel>
-                        {paneIdx < visiblePaneSessions.length - 1 ? (
-                          <Separator
-                            className="comux-terminal-resize shrink-0"
-                            data-terminal-resize-handle={paneIdx}
-                            data-orientation={splitDirection === "horizontal" ? "col" : "row"}
-                          >
-                            <SeparatorHandle orientation={splitDirection === "horizontal" ? "col" : "row"} />
-                          </Separator>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                </Group>
+                {terminalLayout.root ? renderTerminalNode(terminalLayout.root) : null}
                 <div className="comux-terminal-keepalive" aria-hidden="true">
                   {hiddenPaneSessions.map((s) => (
                     <BottomTerminal

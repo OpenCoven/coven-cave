@@ -123,7 +123,7 @@ assert.match(
 );
 assert.match(
   source,
-  /active=\{active && sessionIdx === currentIdx\}/,
+  /active=\{active && isActive\}/,
   "Hidden terminal views should keep PTYs mounted without stealing focus",
 );
 
@@ -157,12 +157,12 @@ assert.match(
 );
 assert.match(
   source,
-  /<Group[\s\S]{0,220}orientation=\{splitDirection\}[\s\S]*?<Panel[\s\S]*?<Separator[\s\S]*?<SeparatorHandle/,
-  "visible terminal panes render inside a resizable panel group",
+  /renderTerminalNode[\s\S]*?<Group[\s\S]{0,220}orientation=\{node\.kind\}[\s\S]*?<Panel[\s\S]*?<Separator[\s\S]*?<SeparatorHandle/,
+  "visible terminal panes render a recursive resizable panel tree",
 );
 assert.match(
   source,
-  /data-terminal-resize-handle=\{paneIdx\}/,
+  /data-terminal-resize-handle=\{`\$\{path\}-\$\{paneIdx\}`\}/,
   "terminal resize separators expose stable QA hooks",
 );
 assert.match(
