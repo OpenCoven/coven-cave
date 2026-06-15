@@ -53,6 +53,7 @@ for (const icon of [
   "ph:folder-open-bold",
   "ph:folder-simple-dashed",
   "ph:chat-circle-dots-bold",
+  "ph:terminal-window-bold",
   "ph:trash-bold",
   "ph:pencil-simple-bold",
 ]) {
@@ -63,6 +64,18 @@ for (const icon of [
 assert.match(projectsView, /group-hover:opacity-100/, "row actions reveal on hover");
 assert.match(projectsView, /group-focus-within:opacity-100/, "row actions also reveal on keyboard focus");
 assert.match(projectsView, /aria-label=\{`New session in /, "new-session action is labeled per project");
+// Terminal action launches a terminal in the project's cwd, then jumps to the surface.
+assert.match(projectsView, /aria-label=\{`Open terminal in \$\{project\.name\}`\}/, "terminal action labeled per project");
+assert.match(
+  projectsView,
+  /new CustomEvent\("cave:terminal-open", \{ detail: \{ projectRoot: project\.root \} \}\)/,
+  "terminal action launches a terminal scoped to the project's cwd",
+);
+assert.match(
+  projectsView,
+  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "terminal" \} \}\)/,
+  "terminal action brings the Terminal surface to the foreground",
+);
 assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
 assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
 assert.match(projectsView, /motion-reduce:transition-none/, "reveal respects reduced motion");
