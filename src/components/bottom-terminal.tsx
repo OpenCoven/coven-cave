@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { TerminalKeyBar } from "@/components/terminal-key-bar";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 
 // Bottom terminal pane — xterm.js in the browser, hooked up to a
@@ -60,6 +62,33 @@ export function BottomTerminal({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  // Touch accessory key bar: soft keyboards lack Esc/Tab/Ctrl/arrows. Only shown
+  // on coarse pointers. Ctrl is sticky — the toggle flips ctrlStickyRef, and the
+  // onData handler (set up once at mount) reads the ref to transform the next
+  // typed character into its control code. clearCtrlRef lets that handler reset
+  // the visual state from inside its stable closure.
+  const isCoarse = useIsCoarsePointer();
+  const [ctrlActive, setCtrlActive] = useState(false);
+  const ctrlStickyRef = useRef(false);
+  const clearCtrlRef = useRef<() => void>(() => {});
+  clearCtrlRef.current = () => {
+    ctrlStickyRef.current = false;
+    setCtrlActive(false);
+  };
+  const sendKey = useCallback((seq: string) => {
+    const term = termRef.current;
+    if (!term) return;
+    term.focus();
+    term.input(seq);
+  }, []);
+  const toggleCtrl = useCallback(() => {
+    setCtrlActive((on) => {
+      const next = !on;
+      ctrlStickyRef.current = next;
+      return next;
+    });
+    termRef.current?.focus();
+  }, []);
   const wsBridgeRef = useRef<PtyWsBridge | null>(null);
   // Keep a ref to projectRoot so the PTY-start effect always reads the latest
   // value, even when it arrives asynchronously after initial mount.
@@ -246,9 +275,17 @@ export function BottomTerminal({
       // fields intentionally stay snake_case for Serde.
       const onDataDispose = term.onData((data) => {
         if (stopped) return;
+        let out = data;
+        // Sticky Ctrl (mobile key bar): fold the next single character into its
+        // C0 control code (Ctrl-C, Ctrl-A, …), then drop back to normal input.
+        if (ctrlStickyRef.current && data.length === 1) {
+          const code = data.toUpperCase().charCodeAt(0);
+          if (code >= 0x40 && code <= 0x5f) out = String.fromCharCode(code & 0x1f);
+          clearCtrlRef.current();
+        }
         void bridge.invoke("pty_write", {
           threadId: threadId,
-          bytes: Array.from(new TextEncoder().encode(data)),
+          bytes: Array.from(new TextEncoder().encode(out)),
         }).catch((err) => log("pty_write FAILED", err));
       });
 
@@ -547,16 +584,21 @@ export function BottomTerminal({
   }
 
   return (
-    <>
+    <div className="flex h-full w-full flex-col overflow-hidden">
       <div
         ref={wrapRef}
-        className="h-full w-full overflow-hidden"
+        className="min-h-0 w-full flex-1 overflow-hidden"
         style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
         // Clicking anywhere in the terminal area refocuses xterm so keyboard
         // input is routed correctly without the user having to click exactly
         // on the cursor.
         onClick={() => termRef.current?.focus()}
       />
+      {/* Touch accessory bar — only on coarse pointers (phones/tablets), where
+          the soft keyboard can't produce Esc/Tab/Ctrl/arrows. */}
+      {isCoarse ? (
+        <TerminalKeyBar onKey={sendKey} ctrlActive={ctrlActive} onToggleCtrl={toggleCtrl} />
+      ) : null}
       {/* Offscreen text mirror of PTY output for screen readers. */}
       <div
         className="sr-only"
@@ -569,6 +611,6 @@ export function BottomTerminal({
           <div key={i}>{line}</div>
         ))}
       </div>
-    </>
+    </div>
   );
 }
