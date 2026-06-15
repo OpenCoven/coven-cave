@@ -28,8 +28,15 @@ test("workspace passes suppressEmpty={mode === 'chat'} to CompanionRail", () => 
   assert.match(src, /suppressEmpty=\{mode === "chat"\}/, "suppressEmpty wired for chat mode");
 });
 
-test("chat-surface tab strip uses ARIA roles and the rounded underline", () => {
+test("chat-surface tab strip uses the shared Vercel-style Tabs component", () => {
   const src = read("./chat-surface.tsx");
+  // Tab visuals + ARIA now come from the shared component.
+  assert.match(src, /import \{ Tabs \} from "@\/components\/ui\/tabs"/, "imports shared Tabs");
+  assert.match(src, /<Tabs<FamiliarsScope>/, "renders shared Tabs for the scope strip");
+});
+
+test("shared Tabs component renders ARIA roles and the rounded 2px underline", () => {
+  const src = read("./ui/tabs.tsx");
   assert.match(src, /role="tablist"/, "tablist role present");
   assert.match(src, /role="tab"/, "tab role present");
   assert.match(src, /aria-selected=\{isActive\}/, "aria-selected wired");

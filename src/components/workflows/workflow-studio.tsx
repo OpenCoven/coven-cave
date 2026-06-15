@@ -5,6 +5,7 @@ import "@/styles/workflows.css";
 import { useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useIsMobile } from "@/lib/use-viewport";
+import { Tabs } from "@/components/ui/tabs";
 import type { WorkflowGraphNode, WorkflowLayoutDirection, WorkflowNodePositions } from "@/lib/workflow-graph";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
@@ -295,30 +296,23 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
       </main>
       <aside className="workflow-studio-side" aria-label="Workflow details">
         <div className="workflow-side-panel-header">
-          <div className="workflow-side-panel-tabs" role="tablist" aria-label="Workflow detail sections">
-            {WORKFLOW_SIDE_PANEL_SECTIONS.map((section) => {
-              const active = sidePanelSection === section.id;
-              return (
-                <button
-                  key={section.id}
-                  type="button"
-                  role="tab"
-                  id={`workflow-side-panel-tab-${section.id}`}
-                  aria-selected={active}
-                  aria-controls={`workflow-side-panel-${section.id}`}
-                  className="workflow-side-panel-tab"
-                  title={section.label}
-                  onClick={() => {
-                    setSidePanelSection(section.id);
-                    if (!rightPanelOpen) setRightPanelOpen(true);
-                  }}
-                >
-                  <Icon name={section.icon} width={13} aria-hidden />
-                  <span>{section.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          <Tabs<WorkflowSidePanelSection>
+            className="workflow-side-panel-tabs"
+            ariaLabel="Workflow detail sections"
+            idPrefix="workflow-side-panel"
+            fill
+            value={sidePanelSection}
+            onChange={(id) => {
+              setSidePanelSection(id);
+              if (!rightPanelOpen) setRightPanelOpen(true);
+            }}
+            items={WORKFLOW_SIDE_PANEL_SECTIONS.map((s) => ({
+              id: s.id,
+              label: s.label,
+              icon: s.icon,
+              title: s.label,
+            }))}
+          />
           <button
             type="button"
             className="workflow-panel-collapse-button workflow-panel-tab-right"
@@ -332,7 +326,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
         </div>
         <div className="workflow-studio-side-content">
           <div
-            id={`workflow-side-panel-${sidePanelSection}`}
+            id={`workflow-side-panel-panel-${sidePanelSection}`}
             role="tabpanel"
             aria-labelledby={`workflow-side-panel-tab-${sidePanelSection}`}
           >
