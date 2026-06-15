@@ -369,7 +369,13 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  if (!isAuthorized(req, query)) {
+  // Only enforce token auth when a token is actually configured (remote/mobile
+  // access mode). With no token set — the local desktop app and dev server —
+  // the loopback host+origin gate above is the protection, and credential-less
+  // connections are the local app itself. #714 dropped this and 401'd every
+  // local terminal (reintroducing the v0.0.72 "Terminal connection failed"
+  // regression that server-pty-ws.test.ts warns about).
+  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

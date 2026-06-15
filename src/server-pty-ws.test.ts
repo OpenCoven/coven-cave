@@ -12,6 +12,11 @@ assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token
 assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");
 assert.match(src, /if \(!ACCESS_TOKEN\) return false/, "PTY WebSocket auth fails closed when no access token is configured");
+// The 401 only applies when a token is actually configured (remote/mobile). With
+// no token (the local desktop app / dev server) the loopback host+origin gate is
+// the protection — guarding the 401 on ACCESS_TOKEN keeps credential-less local
+// connections working. #714 dropped this guard and 401'd every local terminal.
+assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
 assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSocket hosts by default");
