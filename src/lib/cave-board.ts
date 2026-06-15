@@ -215,6 +215,8 @@ export type NewCardInput = {
   github?: CardGitHubLink[];
   labels?: string[];
   template?: string | null;
+  /** Optional checklist steps to seed the card with (e.g. a Salem path). */
+  steps?: { text: string }[];
 };
 
 export async function createCard(input: NewCardInput): Promise<Card> {
@@ -243,7 +245,10 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     lifecycleAt: now,
     retryCount: 0,
     maxRetries: DEFAULT_MAX_RETRIES,
-    steps: [],
+    steps: (input.steps ?? [])
+      .map((s) => (s?.text ?? "").trim())
+      .filter(Boolean)
+      .map((text) => ({ id: crypto.randomUUID(), text, done: false, addedAt: now })),
   };
   board.cards.push(card);
   await saveBoard(board);

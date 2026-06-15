@@ -19,8 +19,12 @@ type Props = {
   onRoute?: (target: string) => void;
   /** run-doctor action — wired in the Setup entry (PR2). Hidden if omitted. */
   onRunDoctor?: () => void;
-  /** save-board-checklist action — wired in the Home entry (PR3). Hidden if omitted. */
-  onSave?: (card: SalemPathfinderCard) => void;
+  /**
+   * save-board-checklist action — wired in the Home entry (PR3). Hidden if
+   * omitted. Returns truthy on success so the card can show saved/failed state.
+   * The card requires an explicit confirm click before invoking this.
+   */
+  onSave?: (card: SalemPathfinderCard) => Promise<boolean> | void;
   /** Built-in follow-up affordance. Hidden if omitted. */
   onFollowUp?: () => void;
 };
@@ -56,6 +60,32 @@ function CommandBlock({ command }: { command: string }) {
 
 export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoctor, onSave, onFollowUp }: Props) {
   const safe = sanitizeCard(card);
+  const [saveState, setSaveState] = useState<"idle" | "confirm" | "saving" | "saved" | "error">("idle");
+
+  // Save-to-Board requires an explicit confirm: first click arms, second saves.
+  const handleSave = async () => {
+    if (!onSave) return;
+    if (saveState === "idle") {
+      setSaveState("confirm");
+      return;
+    }
+    if (saveState === "confirm") {
+      setSaveState("saving");
+      try {
+        const ok = await onSave(safe);
+        setSaveState(ok === false ? "error" : "saved");
+      } catch {
+        setSaveState("error");
+      }
+    }
+  };
+  const SAVE_LABEL: Record<string, string> = {
+    idle: "Save to Board",
+    confirm: "Confirm — save to Board",
+    saving: "Saving…",
+    saved: "Saved to Board",
+    error: "Save failed — retry",
+  };
   const slim = density === "slim";
 
   const runAction = (a: SalemPathfinderAction) => {
@@ -86,8 +116,24 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
   const actionEnabled = (a: SalemPathfinderAction) =>
     (a.kind !== "save-board-checklist" || !!onSave) && (a.kind !== "run-doctor" || !!onRunDoctor);
 
-  const renderAction = (a: SalemPathfinderAction, primary: boolean, key: string) =>
-    actionEnabled(a) ? (
+  const renderAction = (a: SalemPathfinderAction, primary: boolean, key: string) => {
+    if (!actionEnabled(a)) return null;
+    if (a.kind === "save-board-checklist") {
+      return (
+        <button
+          key={key}
+          type="button"
+          className={`salem-pf__action salem-pf__action--save`}
+          data-save-state={saveState}
+          onClick={() => void handleSave()}
+          disabled={saveState === "saving" || saveState === "saved"}
+        >
+          <Icon name={saveState === "saved" ? "ph:check" : ACTION_ICON[a.kind]} width={12} aria-hidden />
+          <span>{SAVE_LABEL[saveState]}</span>
+        </button>
+      );
+    }
+    return (
       <button
         key={key}
         type="button"
@@ -97,7 +143,8 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
         <Icon name={ACTION_ICON[a.kind]} width={12} aria-hidden />
         <span>{a.label}</span>
       </button>
-    ) : null;
+    );
+  };
 
   return (
     <div className="salem-pf" data-confidence={safe.confidence} aria-label={`Recommended path: ${safe.title}`}>

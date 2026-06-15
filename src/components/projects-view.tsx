@@ -605,13 +605,27 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
             headline="No projects yet"
             subtitle="Add a project folder to group chats by codebase."
             actions={
-              <button
-                type="button"
-                onClick={() => setShowForm(true)}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-              >
-                New project
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowForm(true)}
+                  className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                >
+                  New project
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.dispatchEvent(new CustomEvent("cave:salem-open"));
+                    }
+                  }}
+                  className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                >
+                  <Icon name="ph:sparkle" width={13} aria-hidden />
+                  Ask Salem
+                </button>
+              </>
             }
           />
         ) : (

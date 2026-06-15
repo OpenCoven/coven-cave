@@ -100,6 +100,34 @@ export function SalemChatPanel() {
     }
   };
 
+  // Save a recommended path to the Board as a card + checklist (design §"Data
+  // Flow" step 8). The card requires an explicit confirm before calling this.
+  const saveCardToBoard = async (card: SalemPathfinderCardData): Promise<boolean> => {
+    const notes = [
+      card.summary,
+      card.assumptions.length ? `Assumptions: ${card.assumptions.join("; ")}` : "",
+      card.links.length ? `Links: ${card.links.map((l) => l.url).join(", ")}` : "",
+      "Source: Salem pathfinder",
+    ].filter(Boolean).join("\n\n");
+    try {
+      const res = await fetch("/api/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Salem path: ${card.title}`,
+          notes,
+          labels: ["salem", "happy-path", card.recommendedPathId],
+          links: card.links.map((l) => l.url),
+          steps: card.steps.map((s) => ({ text: `${s.title} — ${s.body}` })),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
+      return res.ok && data.ok !== false;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -189,7 +217,7 @@ export function SalemChatPanel() {
         ))}
         {pathfinderCard ? (
           <div className="salem-msg salem-msg--salem">
-            <SalemPathfinderCard card={pathfinderCard} density="full" />
+            <SalemPathfinderCard card={pathfinderCard} density="full" onSave={saveCardToBoard} />
           </div>
         ) : null}
         {(loading || pathfinding) && (

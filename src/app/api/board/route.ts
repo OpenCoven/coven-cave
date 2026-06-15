@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     github?: CardGitHubLink[];
     labels?: string[];
     template?: string | null;
+    steps?: { text: string }[];
   };
   try {
     body = await req.json();
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
     github: body.github,
     labels: body.labels,
     template: body.template,
+    steps: body.steps,
   });
   return NextResponse.json({ ok: true, card });
 }
