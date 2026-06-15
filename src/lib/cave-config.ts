@@ -43,6 +43,7 @@ function defaultState(): CaveState {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionOwned: {},
   };
 }
 
@@ -218,6 +219,28 @@ async function saveState(state: CaveState): Promise<void> {
   await writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
 }
 
+// In-process serialization of cave-state.json mutations. Without this, two
+// concurrent load→mutate→save calls both load the same snapshot, each writes
+// a different key, and the second saveState silently clobbers the first.
+let stateMutex: Promise<unknown> = Promise.resolve();
+
+async function updateState<T>(
+  mutator: (state: CaveState) => T | Promise<T>,
+): Promise<T> {
+  const previous = stateMutex;
+  let release!: () => void;
+  stateMutex = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    await previous.catch(() => {});
+    const state = await loadState();
+    const result = await mutator(state);
+    await saveState(state);
+    return result;
+  } finally {
+    release();
+  }
+}
+
 export async function recordOwnedSession(sessionId: string): Promise<void> {
   const state = await loadState();
   state.sessionOwned[sessionId] = new Date().toISOString();
@@ -231,21 +254,6 @@ export async function recordOwnedSession(sessionId: string): Promise<void> {
 export async function isOwnedSession(sessionId: string): Promise<boolean> {
   const state = await loadState();
   return Boolean(state.sessionOwned[sessionId] || state.sessionFamiliar[sessionId]);
-}
-
-export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {
-  const state = await loadState();
-  state.sessionOwned[sessionId] = state.sessionOwned[sessionId] ?? new Date().toISOString();
-  state.sessionFamiliar[sessionId] = familiarId;
-  try {
-    await previous.catch(() => {});
-    const state = await loadState();
-    const result = await mutator(state);
-    await saveState(state);
-    return result;
-  } finally {
-    release();
-  }
 }
 
 export async function recordSessionFamiliar(sessionId: string, familiarId: string): Promise<void> {
