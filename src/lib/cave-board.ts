@@ -60,9 +60,7 @@ function normalizeList(values: string[] | undefined): string[] {
 
 // Defensive coercion for `links`. The Card type declares `links: string[]`, but
 // older/hand-edited boards (and agent writes) have stored entries as
-// `{ label, url }` objects — the same shape as the GitHub link list. A raw
-// `.trim()` on such an object throws, and because loadBoard() maps every card
-// inside one try, a single malformed entry zeroed the ENTIRE board. Pull the
+// `{ label, url }` objects — the same shape as the GitHub link list. Pull the
 // `url` out of object entries so legacy data is salvaged instead of fatal.
 function toStringList(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -145,16 +143,20 @@ async function ensureDir() {
 }
 
 export async function loadBoard(): Promise<BoardFile> {
-  let parsed: Partial<BoardFile>;
+  let parsed: unknown;
   try {
     const raw = await readFile(BOARD_PATH, "utf8");
-    parsed = JSON.parse(raw) as Partial<BoardFile>;
+    parsed = JSON.parse(raw);
   } catch {
     // Missing file or torn/invalid JSON — nothing recoverable.
     return EMPTY;
   }
 
-  const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return EMPTY;
+  }
+  const board = parsed as Partial<BoardFile>;
+  const rawCards = Array.isArray(board.cards) ? board.cards : [];
   const projects = await loadProjects();
   // Normalize each card in isolation. A single malformed card (e.g. `links`
   // stored as objects instead of strings) must never throw out of the whole
@@ -171,7 +173,7 @@ export async function loadBoard(): Promise<BoardFile> {
       );
     }
   }
-  return { version: parsed.version ?? 1, cards };
+  return { version: board.version ?? 1, cards };
 }
 
 // Serialize board mutations. Each mutator does load → modify → save; without

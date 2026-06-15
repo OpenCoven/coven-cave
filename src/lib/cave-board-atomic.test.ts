@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -26,7 +26,19 @@ assert.ok(
   `refusing to run: BOARD_PATH (${board.BOARD_PATH}) is not under the temp home`,
 );
 
-// 1. Concurrent creates — no lost updates (the write lock). Without
+// 1. Valid JSON with the wrong top-level shape is corrupted data too. It should
+//    behave like a missing/invalid file, not throw outside loadBoard().
+await mkdir(path.dirname(board.BOARD_PATH), { recursive: true });
+for (const value of ["null", "[]", "0"]) {
+  await writeFile(board.BOARD_PATH, value, "utf8");
+  assert.deepEqual(
+    await board.loadBoard(),
+    { version: 1, cards: [] },
+    `valid non-object board JSON (${value}) loads as an empty board`,
+  );
+}
+
+// 2. Concurrent creates — no lost updates (the write lock). Without
 //    serialization every create reads the same snapshot and the last save wins,
 //    leaving a single card.
 const N = 25;
@@ -35,18 +47,18 @@ const afterCreate = await board.loadBoard();
 assert.equal(afterCreate.cards.length, N, "all concurrent creates persisted (no lost updates)");
 assert.equal(new Set(afterCreate.cards.map((c) => c.id)).size, N, "every card id is distinct");
 
-// 2. The on-disk file is always complete, valid JSON — never torn.
+// 3. The on-disk file is always complete, valid JSON — never torn.
 const raw = await readFile(board.BOARD_PATH, "utf8");
 assert.equal(JSON.parse(raw).cards.length, N, "persisted file parses with all cards");
 
-// 3. No leftover temp files after atomic writes.
+// 4. No leftover temp files after atomic writes.
 const dir = path.dirname(board.BOARD_PATH);
 assert.ok(
   !(await readdir(dir)).some((name) => name.endsWith(".tmp")),
   "no leftover .tmp files after atomic writes",
 );
 
-// 4. Reads interleaved with a burst of writes never observe an empty board
+// 5. Reads interleaved with a burst of writes never observe an empty board
 //    (the torn-read 404). With atomic rename a reader always sees a complete
 //    old-or-new file.
 const targetId = afterCreate.cards[0].id;
@@ -60,7 +72,7 @@ await Promise.all([
 ]);
 assert.equal(tornReads, 0, "no torn reads (empty board) during concurrent writes");
 
-// 5. A single malformed card must NOT zero the whole board. Regression: a card
+// 6. A single malformed card must NOT zero the whole board. Regression: a card
 //    whose `links` were stored as `{label,url}` objects (instead of string[])
 //    made backfillCard().normalizeList() throw `value.trim is not a function`;
 //    because loadBoard() mapped every card inside one try, that one poison card
