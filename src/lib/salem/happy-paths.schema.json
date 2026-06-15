@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SalemHappyPathRegistry",
+  "type": "object",
+  "required": ["version", "paths"],
+  "properties": {
+    "version": { "type": "string" },
+    "paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/path" }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "audiences",
+        "intents",
+        "surface",
+        "primaryTarget",
+        "summary",
+        "prerequisites",
+        "steps",
+        "successMoment",
+        "blockers",
+        "links",
+        "maturity"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "audiences": { "type": "array", "items": { "type": "string" } },
+        "intents": { "type": "array", "items": { "type": "string" } },
+        "surface": { "type": "string", "enum": ["setup", "home", "both"] },
+        "primaryTarget": {
+          "type": "object",
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["cave-route", "repo", "product", "external-link"] },
+            "name": { "type": "string" },
+            "route": { "type": "string" },
+            "repo": { "type": "string" },
+            "url": { "type": "string" }
+          }
+        },
+        "summary": { "type": "string" },
+        "prerequisites": { "type": "array", "items": { "type": "string" } },
+        "steps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },
+        "successMoment": { "type": "string" },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/blocker" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/link" } },
+        "maturity": { "type": "string", "enum": ["experimental", "beta", "stable-ish"] }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "title", "body"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "command": { "type": "string" },
+        "caveAction": { "$ref": "#/$defs/action" }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "required": ["label", "suggestion"],
+      "properties": {
+        "label": { "type": "string" },
+        "suggestion": { "type": "string" }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["label", "url"],
+      "properties": {
+        "label": { "type": "string" },
+        "url": { "type": "string" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["kind", "label"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["cave-route", "copy-command", "run-doctor", "save-board-checklist", "external-link"]
+        },
+        "label": { "type": "string" },
+        "target": { "type": "string" }
+      }
+    }
+  }
+}

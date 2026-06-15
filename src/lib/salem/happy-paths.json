@@ -1,0 +1,232 @@
+{
+  "version": "0.1.0",
+  "paths": [
+    {
+      "id": "first-familiar-cave",
+      "title": "Run your first familiar in Cave",
+      "audiences": ["new-user", "builder"],
+      "intents": [
+        "i want a familiar on my machine",
+        "get started with cave",
+        "set up my first agent",
+        "talk to a familiar",
+        "first run"
+      ],
+      "surface": "both",
+      "primaryTarget": { "kind": "product", "name": "Coven Cave" },
+      "summary": "Install the Coven CLI, start the daemon, and create a familiar you can talk to inside Cave.",
+      "prerequisites": ["A terminal", "Node.js 18+"],
+      "steps": [
+        {
+          "id": "install-cli",
+          "title": "Install the Coven CLI",
+          "body": "Install the CLI that Cave drives under the hood.",
+          "command": "npm install -g @opencoven/cli"
+        },
+        {
+          "id": "start-daemon",
+          "title": "Start the Coven daemon",
+          "body": "Cave talks to a local daemon for sessions and familiars.",
+          "command": "coven daemon serve"
+        },
+        {
+          "id": "create-familiar",
+          "title": "Create your first familiar",
+          "body": "Add a named familiar from the Cave sidebar dock, then select it.",
+          "caveAction": { "kind": "cave-route", "label": "Open Cave home", "target": "/" }
+        },
+        {
+          "id": "say-hello",
+          "title": "Say hello",
+          "body": "Open a chat with your familiar and ask it to do something small to confirm it responds."
+        }
+      ],
+      "successMoment": "You can talk to a named familiar and see its work in Cave.",
+      "blockers": [
+        { "label": "Daemon won't start", "suggestion": "Run coven doctor to diagnose the local runtime." },
+        { "label": "No familiars listed", "suggestion": "Add one from the sidebar familiar dock's + button." }
+      ],
+      "links": [
+        { "label": "Cave docs", "url": "https://docs.opencoven.ai/cave" },
+        { "label": "Familiars guide", "url": "https://docs.opencoven.ai/familiars" }
+      ],
+      "maturity": "beta"
+    },
+    {
+      "id": "castcodes-workspace",
+      "title": "Set up a coding workspace with CastCodes",
+      "audiences": ["developer", "builder"],
+      "intents": [
+        "i want a desktop ai coding workspace",
+        "code with an agent",
+        "castcodes",
+        "project-scoped agent",
+        "review changes in a workspace"
+      ],
+      "surface": "home",
+      "primaryTarget": { "kind": "product", "name": "CastCodes" },
+      "summary": "Use CastCodes for a desktop, project-scoped AI coding workspace where you can run an agent and review its changes.",
+      "prerequisites": ["A git project", "Coven CLI installed"],
+      "steps": [
+        {
+          "id": "open-castcodes",
+          "title": "Open CastCodes",
+          "body": "Launch CastCodes and point it at a project directory.",
+          "caveAction": { "kind": "external-link", "label": "CastCodes docs", "target": "https://docs.opencoven.ai/castcodes" }
+        },
+        {
+          "id": "scope-project",
+          "title": "Scope a project",
+          "body": "Select the repository you want the agent to work in so sessions stay project-scoped."
+        },
+        {
+          "id": "run-session",
+          "title": "Run an agent session",
+          "body": "Start a session, give it a task, and watch it work against your project."
+        },
+        {
+          "id": "review-changes",
+          "title": "Review changes",
+          "body": "Inspect the diff before accepting — CastCodes keeps the agent's work visible and reviewable."
+        }
+      ],
+      "successMoment": "You can run a visible, project-scoped agent session and review its changes.",
+      "blockers": [
+        { "label": "No provider connected", "suggestion": "Connect a model provider in CastCodes settings before running a session." }
+      ],
+      "links": [
+        { "label": "CastCodes docs", "url": "https://docs.opencoven.ai/castcodes" }
+      ],
+      "maturity": "experimental"
+    },
+    {
+      "id": "coven-code-terminal",
+      "title": "Work in the terminal with Coven Code",
+      "audiences": ["developer", "terminal-user"],
+      "intents": [
+        "i want a terminal agent",
+        "tui agent",
+        "coven code",
+        "command line coding agent",
+        "work in a project from the terminal"
+      ],
+      "surface": "home",
+      "primaryTarget": { "kind": "product", "name": "Coven Code" },
+      "summary": "Use Coven Code for a terminal/TUI agent: launch it, connect a provider, and work inside a project from the command line.",
+      "prerequisites": ["A terminal", "Coven CLI installed"],
+      "steps": [
+        {
+          "id": "launch-coven-code",
+          "title": "Launch Coven Code",
+          "body": "Start the terminal agent in your project directory.",
+          "command": "coven code"
+        },
+        {
+          "id": "connect-provider",
+          "title": "Connect a provider",
+          "body": "Configure a model provider so the agent can run."
+        },
+        {
+          "id": "work-in-project",
+          "title": "Work in your project",
+          "body": "Give the agent a task and iterate from the terminal."
+        }
+      ],
+      "successMoment": "You can launch Coven Code, connect a provider, and work in a project.",
+      "blockers": [
+        { "label": "coven: command not found", "suggestion": "Install the Coven CLI with npm install -g @opencoven/cli." }
+      ],
+      "links": [
+        { "label": "Coven Code docs", "url": "https://docs.opencoven.ai/coven-code" }
+      ],
+      "maturity": "experimental"
+    },
+    {
+      "id": "coven-runtime-builder",
+      "title": "Understand and build the Coven runtime",
+      "audiences": ["builder", "contributor"],
+      "intents": [
+        "i want to understand the runtime",
+        "build the runtime",
+        "how does coven work",
+        "local harness substrate",
+        "daemon-backed session"
+      ],
+      "surface": "home",
+      "primaryTarget": { "kind": "repo", "name": "OpenCoven/coven", "repo": "OpenCoven/coven", "url": "https://github.com/OpenCoven/coven" },
+      "summary": "Read the OpenCoven/coven repo to understand Coven as the local harness substrate, then run a daemon-backed session.",
+      "prerequisites": ["Git", "Node.js 18+"],
+      "steps": [
+        {
+          "id": "clone-coven",
+          "title": "Clone the runtime",
+          "body": "Get the OpenCoven/coven source.",
+          "command": "git clone https://github.com/OpenCoven/coven"
+        },
+        {
+          "id": "read-architecture",
+          "title": "Read the architecture",
+          "body": "Skim the README and daemon docs to understand how the harness runs familiars locally.",
+          "caveAction": { "kind": "external-link", "label": "Open the repo", "target": "https://github.com/OpenCoven/coven" }
+        },
+        {
+          "id": "run-daemon-session",
+          "title": "Run a daemon-backed session",
+          "body": "Start the daemon and run a session to see the substrate in action.",
+          "command": "coven daemon serve"
+        }
+      ],
+      "successMoment": "You understand Coven as the local harness substrate and can run a daemon-backed session.",
+      "blockers": [
+        { "label": "Build fails", "suggestion": "Run coven doctor and check the runtime prerequisites." }
+      ],
+      "links": [
+        { "label": "OpenCoven/coven", "url": "https://github.com/OpenCoven/coven" },
+        { "label": "Runtime docs", "url": "https://docs.opencoven.ai/runtime" }
+      ],
+      "maturity": "experimental"
+    },
+    {
+      "id": "familiar-contract-spec",
+      "title": "Define a familiar with familiar-contract",
+      "audiences": ["builder", "author"],
+      "intents": [
+        "i want to define a familiar properly",
+        "familiar spec",
+        "familiar identity",
+        "familiar contract",
+        "compliant familiar directory"
+      ],
+      "surface": "both",
+      "primaryTarget": { "kind": "repo", "name": "OpenCoven/familiar-contract", "repo": "OpenCoven/familiar-contract", "url": "https://github.com/OpenCoven/familiar-contract" },
+      "summary": "Use the familiar-contract spec to capture a familiar's identity, purpose, memory, authority, and human belonging in a compliant directory.",
+      "prerequisites": ["Git"],
+      "steps": [
+        {
+          "id": "read-contract",
+          "title": "Read the contract",
+          "body": "Review the familiar-contract spec to learn the required fields.",
+          "caveAction": { "kind": "external-link", "label": "Open familiar-contract", "target": "https://github.com/OpenCoven/familiar-contract" }
+        },
+        {
+          "id": "draft-identity",
+          "title": "Draft the identity",
+          "body": "Capture identity, purpose, memory, authority, and human belonging for your familiar."
+        },
+        {
+          "id": "validate-directory",
+          "title": "Validate the directory",
+          "body": "Lay out a compliant familiar directory and validate it against the spec."
+        }
+      ],
+      "successMoment": "You have identity, purpose, memory, authority, and human belonging captured in a compliant familiar directory.",
+      "blockers": [
+        { "label": "Unsure which fields are required", "suggestion": "The contract README lists every required field with examples." }
+      ],
+      "links": [
+        { "label": "OpenCoven/familiar-contract", "url": "https://github.com/OpenCoven/familiar-contract" }
+      ],
+      "maturity": "experimental"
+    }
+  ]
+}
