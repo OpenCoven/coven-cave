@@ -20,6 +20,30 @@ assert.match(
 
 assert.match(
   source,
+  /data-testid="calls-attention-strip"/,
+  "Delegations view should expose an attention strip above the graph",
+);
+
+assert.match(
+  source,
+  /function CallsToolbar/,
+  "Delegations controls should be grouped in a dedicated toolbar component",
+);
+
+assert.match(
+  source,
+  /Busiest route/,
+  "Delegations attention/inspector should surface the busiest route without requiring selection",
+);
+
+assert.match(
+  source,
+  /Latest trace/,
+  "Delegations attention/inspector should surface latest trace context without requiring selection",
+);
+
+assert.match(
+  source,
   /<TraceGraph3D[\s\S]*graph=\{graph\}/,
   "Delegations view should render the 3D trace graph as the primary graph surface",
 );
