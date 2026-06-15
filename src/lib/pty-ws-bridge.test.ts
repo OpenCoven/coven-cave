@@ -32,3 +32,22 @@ assert.match(
   "close handlers fire only for the bridge's current socket — dispose() nulls ws first so intentional teardown stays silent",
 );
 console.log("pty-ws-bridge reconnect assertions: ok");
+
+// ── iOS resume resilience ─────────────────────────────────────────────────────
+// iOS/WKWebView resumes from background with either a socket stuck in
+// CONNECTING forever (no open/error/close) or a zombie OPEN socket on a dead
+// connection. The first wedged the reconnect loop (no connect timeout); the
+// second was talked into silently (no teardown before re-dial).
+assert.match(src, /const CONNECT_TIMEOUT_MS\b/, "connect has a bounded timeout");
+assert.match(
+  src,
+  /const watchdog = setTimeout\([\s\S]{0,400}reject\(new Error\("terminal websocket connect timed out"\)\)/,
+  "a connect that never reaches OPEN rejects so the reconnect loop can advance instead of hanging",
+);
+assert.match(src, /clearTimeout\(watchdog\)/, "the connect watchdog is cleared once the socket settles");
+assert.match(
+  src,
+  /const prev = this\.ws;[\s\S]{0,300}prev\.close\(1000, "reconnect"\)/,
+  "a prior (possibly zombie) socket is torn down before re-dialing",
+);
+console.log("pty-ws-bridge iOS-resume assertions: ok");

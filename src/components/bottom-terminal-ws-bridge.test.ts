@@ -47,3 +47,18 @@ assert.match(
   "snapshot replay happens before the live data listener registers",
 );
 console.log("bottom-terminal disconnect-recovery assertions: ok");
+
+// ── iOS background/resume recovery ────────────────────────────────────────────
+// iOS/WKWebView resumes with a zombie OPEN socket that never fires close, so
+// the onClose-driven reconnect never runs and the pane hangs. Re-dial on
+// foreground: force it on iOS (zombie sockets lie about being open), and on
+// other platforms redial only when the socket is actually down.
+assert.match(src, /addEventListener\("visibilitychange", onForeground\)/, "terminal re-validates its socket when the app returns to the foreground");
+assert.match(src, /addEventListener\("pageshow", onForeground\)/, "pageshow (iOS bfcache resume) also re-validates the socket");
+assert.match(
+  src,
+  /if \(platform === "ios" \|\| !bridge\.isOpen\) \{\s*\n\s*void attemptReconnect\(\);/,
+  "iOS always re-dials on foreground (zombie OPEN sockets); other platforms only when the socket is down",
+);
+assert.match(src, /removeEventListener\("visibilitychange", onForeground\)/, "foreground listeners are torn down on cleanup");
+console.log("bottom-terminal iOS-resume assertions: ok");
