@@ -12,6 +12,11 @@ assert.match(infoPlist, /<string>_tailscale\._tcp<\/string>/);
 assert.match(infoPlist, /<string>_tailscale\._udp<\/string>/);
 assert.match(infoPlist, /<key>NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
 assert.match(infoPlist, /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/);
+assert.match(
+  infoPlist,
+  /<key>CFBundleURLTypes<\/key>\s*<array>[\s\S]*<key>CFBundleURLSchemes<\/key>\s*<array>[\s\S]*<string>opencoven<\/string>[\s\S]*<\/array>[\s\S]*<\/array>/,
+  "iOS Info.plist should register the opencoven URL scheme",
+);
 
 const sourceInfoPlist = read("src-tauri/Info.ios.plist");
 assert.equal(sourceInfoPlist.trimEnd(), infoPlist.trimEnd());
