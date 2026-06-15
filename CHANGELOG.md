@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.88] - 2026-06-15
+
+Patch release: a familiar switcher in the top bar.
+
+### Added
+- **Top bar** — a familiar switcher box showing the active familiar; click it to open a picker and switch familiars, on desktop and mobile (#679).
+
 ## [0.0.87] - 2026-06-15
 
 Patch release: positions the mobile scroll-to-bottom button correctly.
