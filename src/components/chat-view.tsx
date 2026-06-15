@@ -3313,7 +3313,7 @@ function TurnRow({
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
         {/* Avatar + right column */}
         <div className="cave-linear-turn-avatar" aria-hidden>
-          <FamiliarIcon familiar={familiar} size="sm" />
+          <FamiliarIcon familiar={familiar} size="lg" />
         </div>
         <div className="cave-linear-turn-right">
           <div className="cave-linear-turn-meta">
