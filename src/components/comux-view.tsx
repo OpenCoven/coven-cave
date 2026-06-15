@@ -338,6 +338,20 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     return id;
   }, [daemonProjectRoot, selectedProjectRoot, sessions.length, terminalLayout]);
 
+  // Cross-surface launch: other surfaces (e.g. the Projects page) open a
+  // terminal in a specific project by dispatching `cave:terminal-open` with the
+  // project root. Only the canonical terminal instance handles it so a single
+  // session is created, and it spawns in that project's cwd via addSession.
+  useEffect(() => {
+    if (view !== "terminal") return;
+    const onTerminalOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectRoot?: string }>).detail;
+      addSession(detail?.projectRoot);
+    };
+    window.addEventListener("cave:terminal-open", onTerminalOpen as EventListener);
+    return () => window.removeEventListener("cave:terminal-open", onTerminalOpen as EventListener);
+  }, [view, addSession]);
+
   useEffect(() => {
     const activeTerminal = view === "terminal" && active;
     if (!activeTerminal) {
