@@ -111,4 +111,31 @@ assert.match(
   "Capabilities mobile controls should meet the shared touch target",
 );
 
+// Inspector chip row: the type/status/harness chips must sit in a flex row that
+// centers (not stretches) its items, so the blanket mobile touch-target height
+// can't inflate the badges into circular blobs next to the taller harness chip.
+assert.match(
+  source,
+  /className="capability-chips flex flex-wrap items-center gap-1\.5"/,
+  "inspector chip row should be a center-aligned wrapping flex row hooked as .capability-chips",
+);
+// Both static badges and the interactive harness chip render as centered pills.
+assert.match(
+  source,
+  /inline-flex items-center rounded-full px-2 py-0\.5 text-\[10px\] \$\{badgeClass\(tone\)\}/,
+  "Badge should be a centered rounded pill (inline-flex items-center)",
+);
+assert.match(
+  source,
+  /inline-flex items-center rounded-full border border-border px-2 py-0\.5 text-\[10px\]/,
+  "harness chip should match the badge pill shape (centered, rounded, py-0.5)",
+);
+// Mobile: the chip row's interactive button opts out of the 44px blanket so it
+// stays a compact pill instead of a rounded-full circle.
+assert.match(
+  globals,
+  /\.capabilities-view \.capability-chips button \{[\s\S]*min-height:\s*0/,
+  "mobile chip-row buttons should reset the blanket min-height to stay compact pills",
+);
+
 console.log("capabilities-view-polish.test.ts OK");
