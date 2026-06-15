@@ -16,7 +16,7 @@ import { lstat, realpath } from "node:fs/promises";
  * the preview endpoint from exposing arbitrary markdown or symlink targets from
  * broad harness directories.
  */
-const SKILL_ROOT_SUBPATHS = [".claude", ".coven", ".codex", ".cursor", ".gemini"];
+const SKILL_ROOT_SUBPATHS = [".claude", ".coven", ".codex", ".cursor", ".gemini", path.join(".agents", "skills")];
 const ALLOWED_SKILL_FILE_NAMES = new Set(["SKILL.md", "CLAUDE.md", "AGENTS.md"]);
 
 export const MAX_SKILL_FILE_PREVIEW_BYTES = 512 * 1024;

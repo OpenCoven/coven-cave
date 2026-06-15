@@ -41,7 +41,7 @@ Cave also needs a local runtime source: Codex, Claude Code, Hermes, an existing 
 | Git | Recommended | The working-tree changes panel, project file tree, and patch checkpoints shell out to `git`. Everything else (chat, boards, workflows, library) works without it. Setup flags it but never blocks on it. |
 | `coven` CLI | **Yes** | Powers native familiar chat, the daemon, and doctor checks. Setup walks you through `npm i -g @opencoven/cli@latest`. |
 | A runtime source | **Yes** (any one) | Codex, Claude Code, Hermes, or an OpenClaw agent — see below. |
-| OpenSSH / Tailscale / graphify | Optional | Only for SSH-runtime familiars, mobile handoff, and Library knowledge graphs respectively; each surfaces a clear message if missing. |
+| OpenSSH / Tailscale / graphify | Optional | Only for SSH-transport familiars, mobile handoff, and Library knowledge graphs respectively; each surfaces a clear message if missing. |
 
 ### First Familiar Without OpenClaw
 

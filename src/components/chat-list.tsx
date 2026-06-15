@@ -644,7 +644,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     {" · "}
                   </>
                 ) : null}
-                Familiar runtime{" "}
+                Runtime{" "}
                 <span className="font-mono">{panelRuntime}</span>
               </p>
             </div>
@@ -799,7 +799,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               </div>
               <div className="mt-4 divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
                 <div className="flex items-center justify-between gap-3 py-2">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Harness</p>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Runtime</p>
                   <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{panelRuntime}</p>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-2">
