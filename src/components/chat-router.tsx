@@ -4,6 +4,8 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView } from "@/components/chat-view";
+import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
+import { caveChatoutCodex } from "@/lib/feature-flags";
 import { useIsMobile } from "@/lib/use-viewport";
 import {
   deriveChatProjectGroups,
@@ -337,32 +339,36 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       />
       )}
       <div className="min-h-0 min-w-0 flex-1">
-        <ChatView
-          ref={viewHandle}
-          familiar={chatFamiliar}
-          sessionId={view.sessionId}
-          session={activeSession}
-          projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
-          initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
-          daemonRunning={daemonRunning}
-          onSessionsChanged={onSessionsChanged}
-          onBack={() => setView({ kind: "list" })}
-          onSessionStarted={(sid) => {
-            // Only promote the sessionId in the view state when the current chat
-            // has no session yet (null). If a session is already set, leave the
-            // view alone — updating it would re-mount ChatView and lose the live
-            // currentSessionRef, breaking follow-up messages.
-            setView((prev) =>
-              prev.kind === "chat" && prev.sessionId === null
-                ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
-                : prev,
-            );
-            onSessionStarted?.();
-          }}
-          onSlashCommand={onSlashFromChat}
-          onOpenOnboarding={onOpenOnboarding}
-          onOpenTask={onOpenTask}
-        />
+        {caveChatoutCodex() ? (
+          <FamiliarChatoutCodexSurface />
+        ) : (
+          <ChatView
+            ref={viewHandle}
+            familiar={chatFamiliar}
+            sessionId={view.sessionId}
+            session={activeSession}
+            projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
+            initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+            daemonRunning={daemonRunning}
+            onSessionsChanged={onSessionsChanged}
+            onBack={() => setView({ kind: "list" })}
+            onSessionStarted={(sid) => {
+              // Only promote the sessionId in the view state when the current chat
+              // has no session yet (null). If a session is already set, leave the
+              // view alone — updating it would re-mount ChatView and lose the live
+              // currentSessionRef, breaking follow-up messages.
+              setView((prev) =>
+                prev.kind === "chat" && prev.sessionId === null
+                  ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+                  : prev,
+              );
+              onSessionStarted?.();
+            }}
+            onSlashCommand={onSlashFromChat}
+            onOpenOnboarding={onOpenOnboarding}
+            onOpenTask={onOpenTask}
+          />
+        )}
       </div>
     </div>
   );
