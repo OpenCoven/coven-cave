@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.87] - 2026-06-15
+
+Patch release: positions the mobile scroll-to-bottom button correctly.
+
+### Fixed
+- **Chat** — the mobile scroll-to-bottom button now hugs just above the composer instead of floating high in the transcript (its `bottom` offset was tuned to the composer's actual height) (#674).
+
 ## [0.0.86] - 2026-06-15
 
 Patch release: finishes repairing the auto-updater (the GitHub PAT no longer writes inside the signed bundle) and fixes the mobile scroll-to-bottom button.
