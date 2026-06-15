@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { homedir } from "node:os";
+import path from "node:path";
+import { NextRequest, NextResponse } from "next/server";
+import { PdfRouteError, readLocalPdfFile } from "./pdf-file";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +14,9 @@ export async function GET(req: NextRequest) {
   const file = req.nextUrl.searchParams.get("file");
   if (!file) return NextResponse.json({ ok: false, error: "file required" }, { status: 400 });
 
-  // Safety: no path traversal — only bare filenames allowed
-  const basename = path.basename(file);
-  if (basename !== file || file.includes("/") || file.includes("..")) {
-    return NextResponse.json({ ok: false, error: "invalid filename" }, { status: 400 });
-  }
-  if (!basename.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ ok: false, error: "only pdf files allowed" }, { status: 400 });
-  }
-
-  const fullPath = path.join(PAPERS_DIR, basename);
   try {
-    const buf = await fs.readFile(fullPath);
-    return new NextResponse(buf, {
+    const { basename, buffer } = await readLocalPdfFile(PAPERS_DIR, file);
+    return new NextResponse(buffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
@@ -34,7 +24,10 @@ export async function GET(req: NextRequest) {
         "Cache-Control": "private, max-age=3600",
       },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof PdfRouteError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
     return NextResponse.json({ ok: false, error: "file not found" }, { status: 404 });
   }
 }
