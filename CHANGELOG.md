@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.83] - 2026-06-15
+
+Patch release carrying the latest `main` polish on top of the refreshed
+OpenCoven app icon (shipped in 0.0.82).
+
+### Changed
+- **Navigation** — Projects moved out of the left sidebar; it now lives solely as the Chat Projects tab.
+- **Capabilities** — skill markdown renders as a styled preview in the inspector.
+
+### Fixed
+- **Mobile** — composer/library rendering polish, notification popover fit, and larger touch targets.
+- **iOS** — capability scoping fix.
+
 ## [0.0.82] - 2026-06-14
 
 This patch release ships the Tailscale/proxy fixes needed for the new Cave release, plus the latest Projects and mobile handoff polish from `main`.
