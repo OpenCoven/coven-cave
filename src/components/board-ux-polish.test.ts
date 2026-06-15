@@ -72,8 +72,8 @@ assert.match(
 // touch targets — the desktop-dense 24-28px close/action sizes must scale up.
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close,\s*\n\s*\.board-drawer-path-open\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
-  "Mobile inspector close/open-path controls should meet the shared touch target",
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close,\s*\n\s*\.board-drawer-path-open\s*\{[\s\S]*min-width:\s*var\(--touch-target\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile inspector close/open-path controls should meet the shared touch target via min-* (so the 44px hit area wins the cascade over the earlier-in-file base width/height)",
 );
 assert.match(
   styles,
