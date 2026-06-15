@@ -1880,7 +1880,7 @@ details[open] > .cave-tool-summary::before {
 
 .cave-linear-turn--assistant .cave-linear-turn-content {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
 }
@@ -2315,7 +2315,7 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-linear-turn--assistant .cave-linear-turn-content {
-    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-columns: 38px minmax(0, 1fr);
     gap: 9px;
   }
 
