@@ -74,4 +74,17 @@ assert.match(
   "new-project form closes on Escape",
 );
 
+// Project rows render flat — a bottom hairline divider instead of a bordered
+// rounded card box, so the Projects tab reads as a flat list.
+assert.doesNotMatch(
+  projectsView,
+  /group rounded-lg border bg-\[var\(--bg-raised\)\]/,
+  "Project rows should not be bordered rounded card boxes",
+);
+assert.match(
+  projectsView,
+  /group border-b border-\[var\(--border-hairline\)\] px-2 py-3/,
+  "Project rows should be flat rows separated by a hairline divider",
+);
+
 console.log("projects-view.test.ts: ok");

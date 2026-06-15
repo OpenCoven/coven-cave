@@ -484,7 +484,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   </span>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+              <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-hairline)]">
                 {unifiedRows.length === 0 ? (
                   <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
                     {loaded ? (error ? "Couldn't load memories. See the error above and try again." : "No memories match this view.") : "Loading memories…"}
@@ -546,13 +546,13 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
             </div>
           ) : (
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="flex flex-col divide-y divide-[var(--border-hairline)] border-t border-[var(--border-hairline)]">
               {visibleCoven.slice(0, effectiveLimit).map((entry) => {
                 const familiar = familiarById.get(entry.familiar_id);
                 return (
                   <article
                     key={entry.id}
-                    className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 transition-colors"
+                    className="px-1 py-3 transition-colors hover:bg-[var(--bg-raised)]/30"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
