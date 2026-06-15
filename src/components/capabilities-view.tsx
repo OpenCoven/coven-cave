@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
+import { MarkdownBlock } from "@/components/message-bubble";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   filterCapabilityItems,
@@ -106,6 +107,12 @@ export function CapabilitiesViewSurface({
   const [urlFiltersHydrated, setUrlFiltersHydrated] = useState(false);
   const [selectionId, setSelectionId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SkillPreviewState>({
+    path: null,
+    status: "idle",
+    text: null,
+    error: null,
+  });
 
   const load = useCallback(async (refresh = false) => {
     setRefreshing(refresh);
@@ -211,6 +218,45 @@ export function CapabilitiesViewSurface({
   );
   const selectedHarness =
     operatorView.harnesses.find((h) => h.id === (selectedItem?.harnessId ?? harnessFilter)) ?? null;
+
+  // Load the selected capability's markdown so the inspector can render a
+  // styled preview (skills are SKILL.md; instructions are CLAUDE.md/AGENTS.md).
+  // Non-markdown items and out-of-tree paths (403) fall back to the description.
+  const previewPath = selectedItem?.sourcePath ?? null;
+  const isPreviewable = !!previewPath && previewPath.toLowerCase().endsWith(".md");
+  useEffect(() => {
+    if (!previewPath || !isPreviewable) {
+      setPreview({ path: null, status: "idle", text: null, error: null });
+      return;
+    }
+    let cancelled = false;
+    setPreview({ path: previewPath, status: "loading", text: null, error: null });
+    void (async () => {
+      try {
+        const res = await fetch(`/api/skills/file?path=${encodeURIComponent(previewPath)}`, {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as { ok: boolean; text?: string; error?: string };
+        if (cancelled) return;
+        if (!json.ok) {
+          setPreview({ path: previewPath, status: "error", text: null, error: json.error ?? `http ${res.status}` });
+        } else {
+          setPreview({ path: previewPath, status: "loaded", text: json.text ?? "", error: null });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setPreview({
+          path: previewPath,
+          status: "error",
+          text: null,
+          error: err instanceof Error ? err.message : "fetch failed",
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [previewPath, isPreviewable]);
 
   const copyCapabilityDetail = useCallback(async (key: string, value?: string) => {
     if (!value) return;
@@ -376,6 +422,7 @@ export function CapabilitiesViewSurface({
                 <CapabilityInspector
                   item={selectedItem}
                   harness={selectedHarness}
+                  preview={preview}
                   copiedKey={copiedKey}
                   onCopy={copyCapabilityDetail}
                   onOpenPath={openLocalPath}
@@ -584,6 +631,7 @@ function CapabilityMapRow({
 function CapabilityInspector({
   item,
   harness,
+  preview,
   copiedKey,
   onCopy,
   onOpenPath,
@@ -591,11 +639,14 @@ function CapabilityInspector({
 }: {
   item: CapabilityMapItem | null;
   harness: CapabilityHarnessSummary | null;
+  preview: SkillPreviewState;
   copiedKey: string | null;
   onCopy: (key: string, value?: string) => void;
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
 }) {
+  const isMarkdown = !!item?.sourcePath && item.sourcePath.toLowerCase().endsWith(".md");
+  const previewMatches = preview.path === item?.sourcePath;
   return (
     <aside className="min-w-0 rounded-lg border border-border bg-card xl:sticky xl:top-4 xl:self-start">
       <div className="border-b border-border px-3 py-2">
@@ -621,7 +672,14 @@ function CapabilityInspector({
             </button>
           </div>
 
-          {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
+          {isMarkdown ? (
+            <SkillPreviewBlock
+              preview={previewMatches ? preview : { path: item.sourcePath ?? null, status: "loading", text: null, error: null }}
+              fallbackDescription={item.description}
+            />
+          ) : item.description ? (
+            <InspectorBlock label="Detail" value={item.description} />
+          ) : null}
           {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
           {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
           {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
@@ -754,6 +812,56 @@ function FilterPill({
         </span>
       ) : null}
     </button>
+  );
+}
+
+type SkillPreviewState = {
+  path: string | null;
+  status: "idle" | "loading" | "loaded" | "error";
+  text: string | null;
+  error: string | null;
+};
+
+function SkillPreviewBlock({
+  preview,
+  fallbackDescription,
+}: {
+  preview: SkillPreviewState;
+  fallbackDescription?: string;
+}) {
+  // Rendered the file content as styled markdown. On error (e.g. the path is
+  // outside the previewable roots) fall back to the scanned description so the
+  // inspector never goes blank.
+  if (preview.status === "error") {
+    return fallbackDescription ? (
+      <InspectorBlock label="Detail" value={fallbackDescription} />
+    ) : (
+      <div>
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
+        <p className="rounded-md bg-muted px-2 py-1.5 text-[11px] leading-5 text-muted-foreground">
+          Preview unavailable for this file.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
+      <div className="max-h-[440px] overflow-y-auto rounded-md border border-border bg-background px-3 py-2">
+        {preview.status === "loaded" && preview.text ? (
+          <MarkdownBlock text={preview.text} className="text-[12px]" />
+        ) : preview.status === "loaded" ? (
+          <p className="text-[11px] italic text-muted-foreground">This file is empty.</p>
+        ) : (
+          <div className="space-y-2 py-1" aria-hidden>
+            {["88%", "96%", "72%", "90%", "64%"].map((w, i) => (
+              <span key={i} className="block h-2.5 animate-pulse rounded bg-muted" style={{ width: w }} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
