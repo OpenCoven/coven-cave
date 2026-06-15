@@ -4,7 +4,6 @@ import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 
 export const MOBILE_INVITE_TTL_MS = 10 * 60 * 1000;
-export const MOBILE_APP_CONNECT_SCHEME = "opencoven";
 
 type TailscaleServeStatus = {
   Web?: Record<
@@ -155,12 +154,6 @@ export function buildInviteUrl({
   const url = new URL(baseUrl);
   url.searchParams.set("coven_access_token", mobileAccessToken);
   if (sidecarToken) url.searchParams.set("covenCaveToken", sidecarToken);
-  return url.toString();
-}
-
-export function buildAppConnectUrl(inviteUrl: string) {
-  const url = new URL(`${MOBILE_APP_CONNECT_SCHEME}://connect`);
-  url.searchParams.set("url", inviteUrl);
   return url.toString();
 }
 
