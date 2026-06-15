@@ -2337,7 +2337,10 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-scroll-bottom-button {
-    bottom: calc(244px + var(--sai-bottom));
+    /* Sit just above the composer dock. The mobile composer (action strip +
+       ~116px input + ~54px controls + padding) is ~210px tall; hug ~just above
+       it rather than floating high in the transcript. */
+    bottom: calc(208px + var(--sai-bottom));
     width: var(--touch-target);
     height: var(--touch-target);
     border-radius: 999px;
