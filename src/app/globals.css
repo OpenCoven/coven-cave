@@ -3834,6 +3834,113 @@ button:active > .edge-rail-chip {
   gap: 4px;
 }
 
+/* Active-familiar switcher box — shows the current familiar and opens a picker. */
+.top-bar__familiar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  max-width: 180px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.top-bar__familiar:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.top-bar__familiar:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.top-bar__familiar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Narrow viewports: keep just the avatar + caret to save room. */
+@media (max-width: 767px) {
+  .top-bar__familiar-name {
+    display: none;
+  }
+}
+
+.top-bar__familiar-popover {
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
+}
+
+.top-bar__familiar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.top-bar__familiar-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.top-bar__familiar-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.top-bar__familiar-option.is-active {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.top-bar__familiar-option:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}
+
+.top-bar__familiar-option-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.top-bar__familiar-option-meta {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .top-bar__account {
   display: grid;
   place-items: center;

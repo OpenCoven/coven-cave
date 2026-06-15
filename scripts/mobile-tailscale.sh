@@ -424,15 +424,20 @@ native_command() {
     exit 1
   fi
 
-  # Hand the persisted sidecar auth token to the webview via the query string.
-  # SidecarAuthBridge stores it (sessionStorage), strips it from the visible URL,
-  # and attaches it to every /api/ request (x-coven-cave-token header / EventSource
-  # covenCaveToken param) so the gated proxy authenticates them.
+  # Hand the persisted sidecar auth token to the webview via the URL HASH (not a
+  # query string). A query string on the dev document URL corrupts Turbopack dev
+  # chunk URLs inside the iOS WKWebView — chunk requests resolve to
+  # /?covenCaveToken=.../_next/... and the server returns HTML instead of JS, so
+  # the app never hydrates and shows a blank shell. The hash is excluded from
+  # chunk URL resolution, so it's safe. SidecarAuthBridge reads it from the hash,
+  # stores it (sessionStorage), strips it from the visible URL, and attaches it to
+  # every /api/ request (x-coven-cave-token header / EventSource covenCaveToken
+  # param) so the gated proxy authenticates them.
   CAVE_MOBILE_DEV_URL="$(
     node - "$CAVE_MOBILE_DEV_URL" "$SIDECAR_AUTH_TOKEN" <<'NODE'
 const [base, token] = process.argv.slice(2);
 const url = new URL(base);
-url.searchParams.set("covenCaveToken", token);
+url.hash = new URLSearchParams({ covenCaveToken: token }).toString();
 console.log(url.toString());
 NODE
   )"

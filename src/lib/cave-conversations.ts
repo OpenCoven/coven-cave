@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile, appendFile, readdir, stat, unlink } from "n
 import path from "node:path";
 import { homedir } from "node:os";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
+import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 
 const CONV_DIR = path.join(homedir(), ".coven", "cave-conversations");
 
@@ -40,6 +41,13 @@ export type ChatTurn = {
   voiceCallId?: string;
 };
 
+export type ConversationModelIntent = {
+  model: string;
+  source: Extract<ModelScope, "session">;
+  applicationState?: ModelApplicationState;
+  reason?: string;
+};
+
 export type ConversationFile = {
   /** Cave-owned conversation identity — stable for the life of the chat. */
   sessionId: string;
@@ -52,6 +60,7 @@ export type ConversationFile = {
   familiarId: string;
   harness: string;
   model?: string;
+  modelIntent?: ConversationModelIntent;
   runtime?: string;
   title?: string;
   createdAt: string;

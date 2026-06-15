@@ -63,6 +63,12 @@ assert.doesNotMatch(mobileScript, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH
 // The dev URL handed to the webview carries the token so SidecarAuthBridge
 // stores it and authenticates every /api/ request.
 assert.match(mobileScript, /covenCaveToken/);
+// The token MUST ride in the URL hash, not the query string: a query string on
+// the dev document URL corrupts Turbopack dev chunk URLs in the iOS WKWebView
+// (chunks resolve to /?covenCaveToken=.../_next/... → HTML → no hydration →
+// blank shell). The hash is excluded from chunk URL resolution.
+assert.match(mobileScript, /url\.hash = new URLSearchParams\(\{ covenCaveToken: token \}\)/);
+assert.doesNotMatch(mobileScript, /searchParams\.set\("covenCaveToken"/);
 // The mobile access secret stays unset in native mode (Tailscale Serve proxies
 // to loopback, so the host gate already passes without it).
 assert.match(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN;/);

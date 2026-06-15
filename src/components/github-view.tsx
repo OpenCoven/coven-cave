@@ -769,10 +769,11 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             type="button"
             onClick={() => setShowPatModal(true)}
             title={patStatus?.hasPat ? "Manage GitHub PAT" : "Connect GitHub PAT"}
-            className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+            aria-label={patStatus?.hasPat ? "GitHub PAT connected — manage" : "Connect GitHub PAT"}
+            className={`flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors ${patStatus?.hasPat ? "px-1.5" : "px-2"}`}
           >
             <Icon name="ph:key" width={11} />
-            {patStatus?.hasPat ? "PAT connected" : "Add PAT"}
+            {patStatus?.hasPat ? null : "Add PAT"}
           </button>
           <button
             type="button"

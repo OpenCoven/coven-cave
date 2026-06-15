@@ -332,7 +332,7 @@ export function ChatSurface({
             }}
           />
         ) : scope === "projects" ? (
-          <ProjectsView sessions={sessions} onNewChat={startProjectChat} />
+          <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} />
         ) : (
           <Group className="flex min-h-0 min-w-0 flex-1" orientation="horizontal">
             <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">

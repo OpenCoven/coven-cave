@@ -39,6 +39,12 @@ assert.match(
 
 assert.match(
   mobileTabs,
+  /{ id: "calls", label: "Calls", ariaLabel: "Delegations", iconName: "ph:graph" }/,
+  "Mobile bottom tabs should include the Delegations surface (short 'Calls' label, full 'Delegations' accessible name)",
+);
+
+assert.match(
+  mobileTabs,
   /aria-label=\{showBadge \? `\$\{tab\.ariaLabel\}, \$\{inboxBadgeCount\} unread` : tab\.ariaLabel\}/,
   "Mobile bottom tabs should expose per-tab accessible labels instead of relying on cramped visual text",
 );

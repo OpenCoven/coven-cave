@@ -50,4 +50,23 @@ assert.match(
   "Empty-state card must use py-6 padding instead of min-h",
 );
 
+// The memory list/cards render flat — the master-detail list drops its bordered
+// box wrapper (rows keep their divide-y hairlines) and the compact cards become
+// borderless divided rows instead of bordered card boxes.
+assert.doesNotMatch(
+  source,
+  /overflow-y-auto rounded-lg border border-\[var\(--border-hairline\)\] bg-\[var\(--bg-raised\)\]\/25/,
+  "Master-detail memory list should not be wrapped in a bordered rounded box",
+);
+assert.doesNotMatch(
+  source,
+  /rounded-lg border border-\[var\(--border-hairline\)\] bg-\[var\(--bg-raised\)\]\/35 p-3/,
+  "Compact memory cards should not be bordered rounded card boxes",
+);
+assert.match(
+  source,
+  /flex flex-col divide-y divide-\[var\(--border-hairline\)\] border-t border-\[var\(--border-hairline\)\]/,
+  "Compact memories render as a flat divided list",
+);
+
 console.log("familiars-memory-view-full-tab.test.ts: ok");

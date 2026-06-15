@@ -1,16 +1,33 @@
-const SIDECAR_AUTH_BRIDGE = `
+// Exported for the behavioral test; injected verbatim as an inline <script>.
+export const SIDECAR_AUTH_BRIDGE = `
 (() => {
   const tokenParam = "covenCaveToken";
   const tokenHeader = "x-coven-cave-token";
   const storageKey = "coven-cave:sidecar-auth-token";
+  // The token may arrive in the query string (legacy) OR the URL hash. Native
+  // iOS hands it via the hash because a query string on the dev document URL
+  // corrupts Turbopack dev chunk URLs in the iOS WKWebView (chunk requests
+  // resolve to /?covenCaveToken=.../_next/... and get HTML back, so the app
+  // never hydrates and shows a blank shell). The hash is excluded from chunk
+  // URL resolution, so it's safe. Read + strip from both, then keep the token
+  // only in sessionStorage.
   const params = new URLSearchParams(window.location.search);
-  const token = params.get(tokenParam) || window.sessionStorage.getItem(storageKey);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const token =
+    params.get(tokenParam) ||
+    hashParams.get(tokenParam) ||
+    window.sessionStorage.getItem(storageKey);
   if (!token) return;
   window.sessionStorage.setItem(storageKey, token);
-  if (params.has(tokenParam)) {
+  if (params.has(tokenParam) || hashParams.has(tokenParam)) {
     params.delete(tokenParam);
+    hashParams.delete(tokenParam);
     const nextSearch = params.toString();
-    const nextUrl = window.location.pathname + (nextSearch ? "?" + nextSearch : "") + window.location.hash;
+    const nextHash = hashParams.toString();
+    const nextUrl =
+      window.location.pathname +
+      (nextSearch ? "?" + nextSearch : "") +
+      (nextHash ? "#" + nextHash : "");
     window.history.replaceState(window.history.state, "", nextUrl);
   }
 

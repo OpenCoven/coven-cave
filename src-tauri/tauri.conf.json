@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "CovenCave",
-  "version": "0.0.86",
+  "version": "0.0.90",
   "identifier": "ai.opencoven.cave",
   "build": {
     "frontendDist": "../src-tauri/frontend-stub",

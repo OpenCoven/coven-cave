@@ -7,6 +7,34 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.90] - 2026-06-15
+
+Patch release: tidies the GitHub PAT button.
+
+### Changed
+- **GitHub** — when a PAT is connected, the toolbar button is now icon-only (key icon, no "PAT connected" text), with an aria-label for accessibility; the disconnected state keeps the "Add PAT" text (#688).
+
+## [0.0.89] - 2026-06-15
+
+Patch release: the top-bar familiar switcher is always available.
+
+### Fixed
+- **Top bar** — the familiar switcher box now shows even before a familiar is active (e.g. on Home), falling back to the first familiar, so it's always reachable to make a selection (#684).
+
+## [0.0.88] - 2026-06-15
+
+Patch release: a familiar switcher in the top bar.
+
+### Added
+- **Top bar** — a familiar switcher box showing the active familiar; click it to open a picker and switch familiars, on desktop and mobile (#679).
+
+## [0.0.87] - 2026-06-15
+
+Patch release: positions the mobile scroll-to-bottom button correctly.
+
+### Fixed
+- **Chat** — the mobile scroll-to-bottom button now hugs just above the composer instead of floating high in the transcript (its `bottom` offset was tuned to the composer's actual height) (#674).
+
 ## [0.0.86] - 2026-06-15
 
 Patch release: finishes repairing the auto-updater (the GitHub PAT no longer writes inside the signed bundle) and fixes the mobile scroll-to-bottom button.

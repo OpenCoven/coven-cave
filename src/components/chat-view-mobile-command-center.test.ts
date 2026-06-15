@@ -121,8 +121,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(244px \+ var\(--sai-bottom\)\)/,
-  "Mobile scroll-to-bottom FAB should sit above the taller composer",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(208px \+ var\(--sai-bottom\)\)/,
+  "Mobile scroll-to-bottom FAB should hug just above the composer dock",
 );
 
 // The FAB must NOT use `float` — float removes it from flow and breaks

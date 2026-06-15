@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
@@ -145,6 +145,24 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   const [fileLimit, setFileLimit] = useState(FILE_PAGE);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  // Collapse the masthead (title + description + stats) when the memory list is
+  // scrolled down, restoring it on scroll-up or at the top — frees vertical room
+  // for the list while keeping the search + group/sort controls always reachable.
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const lastListScrollTop = useRef(0);
+  const onListScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const top = event.currentTarget.scrollTop;
+    const prev = lastListScrollTop.current;
+    if (top <= 4) {
+      setHeaderCollapsed(false);
+    } else if (top > prev + 4) {
+      setHeaderCollapsed(true); // scrolling down
+    } else if (top < prev - 4) {
+      setHeaderCollapsed(false); // scrolling up
+    }
+    lastListScrollTop.current = top;
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -330,55 +348,60 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
     <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className={`shrink-0 border-b border-[var(--border-hairline)] ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
         {compact ? null : (
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
-                <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
-              </div>
-              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                Focused recall for one familiar at a time, with local memory files kept in the list surface.
-              </p>
-            </div>
-            <div className="flex items-center gap-2.5">
-              {lastLoadedAt ? (
-                <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${new Date(lastLoadedAt).toLocaleString()}`}>
-                  Updated {age(lastLoadedAt)}
-                </span>
-              ) : null}
-              <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
-                <Icon name="ph:arrows-clockwise" width={12} />
-                Refresh
-              </button>
-            </div>
-          </div>
-        )}
-
-        {compact ? null : (
           <div
-            data-testid="memory-stats-inline"
-            className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-[var(--text-secondary)]"
+            data-testid="memory-masthead"
+            data-collapsed={headerCollapsed ? "true" : "false"}
+            aria-hidden={headerCollapsed}
+            className={`overflow-hidden transition-all duration-200 ease-out ${headerCollapsed ? "max-h-0 opacity-0" : "max-h-48 opacity-100"}`}
           >
-            <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
-            <span aria-hidden className="text-[var(--border-strong)]">·</span>
-            <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Files</span>
-            <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
-            <SourceFilterChip label="External harnesses" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
-            <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
-            {sourceFilter !== "all" ? (
-              <button
-                type="button"
-                onClick={() => setSourceFilter("all")}
-                className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:x-bold" width={9} />
-                Clear filter
-              </button>
-            ) : null}
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Icon name="ph:brain-bold" width={15} className="text-[var(--accent-presence)]" />
+                  <h2 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiar Memory</h2>
+                </div>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                  Focused recall for one familiar at a time, with local memory files kept in the list surface.
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                {lastLoadedAt ? (
+                  <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${new Date(lastLoadedAt).toLocaleString()}`}>
+                    Updated {age(lastLoadedAt)}
+                  </span>
+                ) : null}
+                <button type="button" onClick={() => void load()} className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]">
+                  <Icon name="ph:arrows-clockwise" width={12} />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div
+              data-testid="memory-stats-inline"
+              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-[var(--text-secondary)]"
+            >
+              <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
+              <span aria-hidden className="text-[var(--border-strong)]">·</span>
+              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Files</span>
+              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
+              <SourceFilterChip label="External harnesses" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
+              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
+              {sourceFilter !== "all" ? (
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter("all")}
+                  className="focus-ring ml-0.5 inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  <Icon name="ph:x-bold" width={9} />
+                  Clear filter
+                </button>
+              ) : null}
+            </div>
           </div>
         )}
 
-        <div className={`${compact ? "" : "mt-3"} flex flex-wrap items-center gap-2`}>
+        <div className={`${compact ? "" : headerCollapsed ? "" : "mt-3"} flex flex-wrap items-center gap-2 transition-[margin] duration-200`}>
           <div className={`relative ${compact ? "min-w-0" : "min-w-[220px]"} flex-1`}>
             <Icon name="ph:magnifying-glass" width={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
@@ -484,7 +507,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   </span>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
+              <div onScroll={onListScroll} className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-hairline)]">
                 {unifiedRows.length === 0 ? (
                   <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
                     {loaded ? (error ? "Couldn't load memories. See the error above and try again." : "No memories match this view.") : "Loading memories…"}
@@ -546,13 +569,13 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
             </div>
           ) : (
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="flex flex-col divide-y divide-[var(--border-hairline)] border-t border-[var(--border-hairline)]">
               {visibleCoven.slice(0, effectiveLimit).map((entry) => {
                 const familiar = familiarById.get(entry.familiar_id);
                 return (
                   <article
                     key={entry.id}
-                    className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 transition-colors"
+                    className="px-1 py-3 transition-colors hover:bg-[var(--bg-raised)]/30"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">

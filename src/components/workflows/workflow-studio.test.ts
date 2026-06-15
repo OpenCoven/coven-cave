@@ -228,9 +228,24 @@ assert.match(attachments, /<select[\s\S]{0,220}aria-label="Familiar binding"/, "
 assert.doesNotMatch(attachments, /placeholder="Unassigned — saved into the manifest"[\s\S]{0,120}<input/, "Familiar attachment binding should no longer be free-text input");
 assert.match(attachments, /<option value="">Unassigned — saved into the manifest<\/option>/, "Familiar dropdown should keep an unassigned choice");
 assert.match(attachments, /familiarOptions\.map/, "Familiar dropdown should render discovered familiar options");
-assert.match(attachments, /aria-expanded=\{open\}/, "Attachment sections are collapsible");
-assert.match(attachments, /AttachmentSection/, "Attachments compose collapsible sections");
+assert.match(attachments, /AttachmentSection/, "Attachments compose sections");
+// Bind tab sections render flat — no per-section collapse framing, and the Bind
+// content is not gated behind an outer disclosure caret (the tab already gates it).
+assert.doesNotMatch(attachments, /aria-expanded=\{open\}/, "Attachment sections no longer collapse behind a caret");
+assert.doesNotMatch(attachments, /workflow-attachment-toggle/, "Attachment section headers are not disclosure toggles");
+assert.doesNotMatch(attachments, /workflow-section-caret-btn/, "Bind tab content is not behind an outer collapse caret");
+assert.match(attachments, /workflow-attachment-title/, "Attachment section headers are plain titles");
+assert.doesNotMatch(css, /\.workflow-attachment-row \{[^}]*border/, "Flat attachment sections drop the bordered framing");
 assert.match(css, /\.workflow-attachment-body > \* \{\n  width: 100%;/, "Attachment bodies span the full row width");
+
+// Inspect and Manifest tabs are flat too — content shows directly on tab-select,
+// not behind an outer disclosure caret (the tabs already gate visibility).
+assert.doesNotMatch(inspector, /workflow-section-caret-btn/, "Inspect tab content is not behind an outer collapse caret");
+assert.doesNotMatch(inspector, /aria-expanded=\{open\}/, "Inspect tab does not gate content behind a disclosure");
+assert.doesNotMatch(manifestPreview, /workflow-section-caret-btn/, "Manifest tab content is not behind an outer collapse caret");
+assert.doesNotMatch(manifestPreview, /aria-expanded=\{open\}/, "Manifest tab does not gate content behind a disclosure");
+// The caret control is fully retired across the workflow panels.
+assert.doesNotMatch(css, /\.workflow-section-caret-btn/, "Dead caret-button CSS is removed");
 assert.match(attachments, /workflow-role-emoji/, "Role rows reserve a fixed emoji slot so names align");
 assert.match(css, /grid-template-columns: auto 20px minmax\(0, 1fr\) auto/, "Role rows align as checkbox/emoji/name/familiar columns");
 assert.match(css, /scrollbar-width: thin/, "Studio scroll regions use thin themed scrollbars");

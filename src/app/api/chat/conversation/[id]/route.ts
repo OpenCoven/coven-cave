@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cleanModelId } from "@/lib/chat-model-state";
 import {
   isSafeConversationSessionId,
   deleteConversation,
@@ -25,6 +26,15 @@ type ConversationWriteBody = {
   updatedAt?: string;
   turn?: unknown;
   turns?: unknown[];
+};
+
+type ConversationPatchBody = {
+  modelIntent?: {
+    model?: unknown;
+    source?: unknown;
+    applicationState?: unknown;
+    reason?: unknown;
+  } | null;
 };
 
 function jsonError(error: string, status: number) {
@@ -104,8 +114,12 @@ function buildConversation(args: {
   const now = new Date().toISOString();
   return {
     sessionId: args.id,
+    ...(args.existing?.harnessSessionId ? { harnessSessionId: args.existing.harnessSessionId } : {}),
     familiarId,
     harness,
+    ...(args.existing?.model ? { model: args.existing.model } : {}),
+    ...(args.existing?.modelIntent ? { modelIntent: args.existing.modelIntent } : {}),
+    ...(args.existing?.runtime ? { runtime: args.existing.runtime } : {}),
     title: conversationTitle(args.id, args.body, args.existing),
     createdAt:
       typeof args.body.createdAt === "string" && args.body.createdAt.trim()
@@ -204,6 +218,57 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   await saveConversation(conversation);
   await recordSessionFamiliar(id, conversation.familiarId);
   return NextResponse.json({ ok: true, conversation });
+}
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!isSafeConversationSessionId(id)) {
+    return jsonError("invalid session id", 400);
+  }
+
+  let body: ConversationPatchBody;
+  try {
+    body = (await req.json()) as ConversationPatchBody;
+  } catch {
+    return jsonError("invalid json body", 400);
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return jsonError("invalid json body", 400);
+  }
+
+  const existing = await loadConversation(id);
+  if (!existing) return jsonError("not found", 404);
+
+  if (body.modelIntent === null) {
+    delete existing.modelIntent;
+    await saveConversation(existing);
+    return NextResponse.json({ ok: true, conversation: existing });
+  }
+
+  if (body.modelIntent !== undefined) {
+    if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
+      return jsonError("invalid model intent", 400);
+    }
+    const model = cleanModelId(body.modelIntent.model);
+    if (!model) return jsonError("invalid model", 400);
+    if (body.modelIntent.source !== "session") {
+      return jsonError("model intent source must be session", 400);
+    }
+    const reason =
+      typeof body.modelIntent.reason === "string" && body.modelIntent.reason.trim()
+        ? body.modelIntent.reason.trim()
+        : "Saved for this chat.";
+    existing.modelIntent = {
+      model,
+      source: "session",
+      applicationState: "saved",
+      reason,
+    };
+    await saveConversation(existing);
+    return NextResponse.json({ ok: true, conversation: existing });
+  }
+
+  return jsonError("nothing to patch", 400);
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
