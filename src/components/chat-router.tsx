@@ -312,6 +312,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         expandedKeys={expandedKeys}
         open={sidebarOpen}
         activeSessionId={view.kind === "chat" ? view.sessionId : null}
+        familiars={familiars}
+        activeFamiliarId={familiar?.id ?? null}
+        onSelectFamiliar={(id) => {
+          const next = selectFamiliarForChat(id);
+          setView({ kind: "chat", sessionId: null, familiarId: next?.id ?? id });
+        }}
         onSetOpen={setSidebarOpen}
         onSelect={setSelection}
         onToggleExpanded={(key) =>

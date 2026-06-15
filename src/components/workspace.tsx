@@ -253,6 +253,18 @@ export function Workspace() {
     return () => window.removeEventListener("cave:salem-open", openSalem);
   }, []);
 
+  // Cross-surface navigation bridge: surfaces that don't own setMode (e.g. the
+  // chat rail's nav block) announce a target mode and the Workspace switches to
+  // it. Keeps those surfaces decoupled from the mode state owner.
+  useEffect(() => {
+    const onNavigate = (e: Event) => {
+      const mode = (e as CustomEvent<{ mode?: WorkspaceMode }>).detail?.mode;
+      if (mode) setMode(mode);
+    };
+    window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
+    return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
+  }, []);
+
   useEffect(() => {
     if (railTab !== "salem") {
       window.dispatchEvent(new CustomEvent("cave:salem-undock"));

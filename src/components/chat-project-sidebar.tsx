@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import type { SessionRow } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import type { WorkspaceMode } from "@/lib/workspace-mode";
 import {
   PINNED_SESSIONS_KEY,
   isSessionPinned,
@@ -41,6 +44,15 @@ import { CSS } from "@dnd-kit/utilities";
 
 type ChatFilter = "all" | "active" | "tasks" | "pinned";
 
+// Jump rows in the rail's nav block. Each routes to a real top-level surface by
+// dispatching `cave:navigate-mode`, which the Workspace listens for and turns
+// into a setMode(). Mockup rows with no backing surface (e.g. "Messaging") are
+// intentionally omitted — we only wire destinations the cave actually has.
+const NAV_LINKS: Array<{ mode: WorkspaceMode; label: string; icon: IconName }> = [
+  { mode: "capabilities", label: "Skills & Tools", icon: "ph:lightning-bold" },
+  { mode: "library", label: "Artifacts", icon: "ph:books" },
+];
+
 // Advanced-operation launchers shown in the rail footer. Each dispatches a
 // window event the chat surface listens for, opening the matching right-side
 // panel. "Git" surfaces the working-tree diff for the active session — the
@@ -51,12 +63,22 @@ const ADVANCED_OPS: Array<{ event: string; label: string; title: string; icon: I
   { event: "cave:debug-open", label: "Debug", title: "Open the session debug panel", icon: "ph:bug-bold" },
 ];
 
+// Decoupled cross-surface navigation: the rail never holds setMode. It announces
+// intent and the Workspace (which owns the mode state) acts on it.
+function navigateToMode(mode: WorkspaceMode) {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+}
+
 type Props = {
   groups: ChatProjectGroup[];
   selection: ProjectSelection;
   expandedKeys: string[];
   open: boolean;
   activeSessionId?: string | null;
+  /** Familiars for the footer avatar strip (optional — omitted in compact embeds). */
+  familiars?: Familiar[];
+  activeFamiliarId?: string | null;
+  onSelectFamiliar?: (id: string) => void;
   onSetOpen: (open: boolean) => void;
   onSelect: (selection: ProjectSelection) => void;
   onToggleExpanded: (key: string) => void;
@@ -100,6 +122,78 @@ function AccentBar({ tall }: { tall?: boolean }) {
       aria-hidden
       className={`absolute left-0 top-1/2 w-[2px] -translate-y-1/2 rounded-r-full bg-[var(--accent-presence)] ${tall ? "h-5" : "h-4"}`}
     />
+  );
+}
+
+// Uppercase, letter-spaced section header — the rail's modern grouping primitive.
+// Reused for PINNED / SESSIONS / PROJECTS so every group reads the same way.
+function RailSection({ label, count, action }: { label: string; count?: number; action?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between px-3 pb-1 pt-2">
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+          {label}
+        </span>
+        {typeof count === "number" ? (
+          <span className="font-mono text-[10px] text-[var(--text-muted)] opacity-70">{count}</span>
+        ) : null}
+      </span>
+      {action}
+    </div>
+  );
+}
+
+// A nav-block row: a prominent primary action (New session) or a quiet jump link.
+function RailNavRow({
+  icon,
+  label,
+  kbd,
+  prominent,
+  title,
+  ariaLabel,
+  onClick,
+}: {
+  icon: IconName;
+  label: string;
+  kbd?: string;
+  prominent?: boolean;
+  title?: string;
+  ariaLabel?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title ?? label}
+      aria-label={ariaLabel ?? label}
+      className={[
+        "focus-ring flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-all",
+        prominent
+          ? "bg-[var(--accent-presence)] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] hover:opacity-90 active:scale-[0.99]"
+          : "font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]",
+      ].join(" ")}
+    >
+      <Icon
+        name={icon}
+        width={15}
+        aria-hidden
+        className={prominent ? "shrink-0" : "shrink-0 text-[var(--text-muted)]"}
+      />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {kbd ? (
+        <kbd
+          className={[
+            "shrink-0 rounded px-1 py-px font-mono text-[9px] font-medium",
+            prominent
+              ? "bg-white/20 text-white/90"
+              : "border border-[var(--border-hairline)] text-[var(--text-muted)]",
+          ].join(" ")}
+        >
+          {kbd}
+        </kbd>
+      ) : null}
+    </button>
   );
 }
 
@@ -267,12 +361,71 @@ function FolderChatRow({
   );
 }
 
+// Footer avatar strip — the rail's familiar switcher. Clicking starts a fresh
+// chat scoped to that familiar; the trailing chip jumps to the Familiars surface
+// to add or manage one. Mirrors the look of the standalone familiar-avatar-rail.
+function RailFamiliarStrip({
+  familiars,
+  activeFamiliarId,
+  onSelectFamiliar,
+}: {
+  familiars: Familiar[];
+  activeFamiliarId?: string | null;
+  onSelectFamiliar: (id: string) => void;
+}) {
+  const resolved = useResolvedFamiliars(familiars);
+  const MAX = 6;
+  const shown = resolved.slice(0, MAX);
+  const overflow = resolved.length - shown.length;
+  return (
+    <div className="flex shrink-0 items-center gap-1 border-t border-[var(--border-hairline)] px-2 py-1.5">
+      {shown.map((f) => {
+        const active = f.id === activeFamiliarId;
+        return (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => onSelectFamiliar(f.id)}
+            title={`New chat with ${f.display_name}`}
+            aria-label={`New chat with ${f.display_name}`}
+            aria-pressed={active}
+            style={{ ["--familiar-accent" as string]: f.color }}
+            className={[
+              "grid h-6 w-6 shrink-0 place-items-center rounded-full border bg-[var(--bg-raised)] transition-all hover:scale-105",
+              active
+                ? "border-[var(--familiar-accent,var(--accent-presence))] ring-1 ring-[var(--familiar-accent,var(--accent-presence))]"
+                : "border-transparent",
+            ].join(" ")}
+          >
+            <FamiliarAvatar familiar={f} size="sm" />
+          </button>
+        );
+      })}
+      {overflow > 0 ? (
+        <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">+{overflow}</span>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => navigateToMode("agents")}
+        title="Open familiars"
+        aria-label="Open familiars"
+        className="focus-ring ml-auto grid h-6 w-6 shrink-0 place-items-center rounded-full border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] hover:text-[var(--text-secondary)]"
+      >
+        <Icon name="ph:plus" width={11} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 export function ChatProjectSidebar({
   groups,
   selection,
   expandedKeys,
   open,
   activeSessionId,
+  familiars = [],
+  activeFamiliarId,
+  onSelectFamiliar,
   onSetOpen,
   onSelect,
   onToggleExpanded,
@@ -341,6 +494,26 @@ export function ChatProjectSidebar({
   }, [allSessions, filter, search, order, pinnedIds]);
 
   const displayIds = useMemo(() => display.map((s) => s.id), [display]);
+
+  // In the default "All" view the flat list reads as the mockup does: a PINNED
+  // section then a counted SESSIONS section. A non-"All" filter collapses to one
+  // counted section. Both sit inside the single SortableContext below so drag
+  // reorder keeps working across the headers.
+  const split = filter === "all";
+  const pinnedRows = useMemo(
+    () => (split ? display.filter((s) => isSessionPinned(pinnedIds, s.id)) : []),
+    [split, display, pinnedIds],
+  );
+  const restRows = useMemo(
+    () => (split ? display.filter((s) => !isSessionPinned(pinnedIds, s.id)) : display),
+    [split, display, pinnedIds],
+  );
+  const filterLabel: Record<ChatFilter, string> = {
+    all: "Sessions",
+    active: "Active",
+    tasks: "Tasks",
+    pinned: "Pinned",
+  };
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -439,35 +612,43 @@ export function ChatProjectSidebar({
 
   return (
     <aside className="chat-thread-rail hidden w-[230px] shrink-0 flex-col border-r border-[var(--border-hairline)] lg:flex">
-      {/* Header: collapse toggle + prominent New chat */}
-      <div className="flex shrink-0 items-center gap-1.5 px-2 py-2">
+      {/* Header: a slim collapse toggle — the nav block below carries the actions. */}
+      <div className="flex shrink-0 items-center justify-end px-2 pb-1 pt-2">
         <button
           type="button"
           onClick={() => onSetOpen(false)}
           title="Hide chats"
           aria-label="Hide chats"
           aria-expanded
-          className="focus-ring flex min-w-0 flex-1 items-center gap-1.5 rounded px-1.5 py-1 text-left transition-colors hover:bg-[var(--bg-raised)]/30"
+          className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/40 hover:text-[var(--text-primary)]"
         >
-          <Icon name="ph:sidebar-simple-fill" width={13} aria-hidden className="shrink-0 text-[var(--text-muted)]" />
-          <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">
-            Chats
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onNewChat(null)}
-          title="New chat"
-          aria-label="New chat"
-          className="focus-ring flex h-7 shrink-0 items-center gap-1 rounded-lg bg-[var(--accent-presence)] px-2.5 text-[11px] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] transition-all hover:opacity-90 active:scale-95"
-        >
-          <Icon name="ph:plus-bold" width={11} aria-hidden />
-          New
+          <Icon name="ph:sidebar-simple-fill" width={14} aria-hidden />
         </button>
       </div>
 
+      {/* Nav block — prominent New session + jump links to real surfaces. */}
+      <div className="flex shrink-0 flex-col gap-0.5 px-2 pb-2">
+        <RailNavRow
+          icon="ph:plus-bold"
+          prominent
+          kbd="⌘N"
+          title="New chat"
+          ariaLabel="New chat"
+          onClick={() => onNewChat(null)}
+          label="New session"
+        />
+        {NAV_LINKS.map((link) => (
+          <RailNavRow
+            key={link.mode}
+            icon={link.icon}
+            label={link.label}
+            onClick={() => navigateToMode(link.mode)}
+          />
+        ))}
+      </div>
+
       {/* Search */}
-      <div className="px-2 pb-2">
+      <div className="border-t border-[var(--border-hairline)] px-2 pb-2 pt-2">
         <label className="flex h-7 items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
           <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
           <input
@@ -518,7 +699,7 @@ export function ChatProjectSidebar({
       </div>
 
       <nav aria-label="Chats" className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {/* ── Flat, always-visible all-chats list ── */}
+        {/* ── Flat, always-visible all-chats list, grouped into sections ── */}
         {display.length === 0 ? (
           <p className="px-3 py-6 text-center text-[11px] text-[var(--text-muted)]">
             {search.trim()
@@ -530,18 +711,58 @@ export function ChatProjectSidebar({
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
-              <ul>
-                {display.map((session) => (
-                  <ThreadRow
-                    key={session.id}
-                    session={session}
-                    active={activeSessionId === session.id}
-                    pinned={isSessionPinned(pinnedIds, session.id)}
-                    onOpen={() => onOpenSession(session)}
-                    onTogglePin={() => togglePin(session.id)}
-                  />
-                ))}
-              </ul>
+              {split ? (
+                <ul>
+                  <li>
+                    <RailSection label="Pinned" />
+                  </li>
+                  {pinnedRows.length === 0 ? (
+                    <li className="px-3 pb-1 text-[11px] text-[var(--text-muted)]">
+                      Pin a chat to keep it here
+                    </li>
+                  ) : (
+                    pinnedRows.map((session) => (
+                      <ThreadRow
+                        key={session.id}
+                        session={session}
+                        active={activeSessionId === session.id}
+                        pinned
+                        onOpen={() => onOpenSession(session)}
+                        onTogglePin={() => togglePin(session.id)}
+                      />
+                    ))
+                  )}
+                  <li>
+                    <RailSection label="Sessions" count={restRows.length} />
+                  </li>
+                  {restRows.map((session) => (
+                    <ThreadRow
+                      key={session.id}
+                      session={session}
+                      active={activeSessionId === session.id}
+                      pinned={false}
+                      onOpen={() => onOpenSession(session)}
+                      onTogglePin={() => togglePin(session.id)}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <ul>
+                  <li>
+                    <RailSection label={filterLabel[filter]} count={display.length} />
+                  </li>
+                  {display.map((session) => (
+                    <ThreadRow
+                      key={session.id}
+                      session={session}
+                      active={activeSessionId === session.id}
+                      pinned={isSessionPinned(pinnedIds, session.id)}
+                      onOpen={() => onOpenSession(session)}
+                      onTogglePin={() => togglePin(session.id)}
+                    />
+                  ))}
+                </ul>
+              )}
             </SortableContext>
           </DndContext>
         )}
@@ -549,23 +770,25 @@ export function ChatProjectSidebar({
         {/* ── Projects — scope the list to one working directory ── */}
         {groups.length > 0 && (
           <>
-            <div className="mt-2 flex items-center justify-between border-t border-[var(--border-hairline)] px-3 pb-1 pt-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">
-                Projects
-              </span>
-              <button
-                type="button"
-                onClick={() => onSelect("all")}
-                aria-current={selection === "all" ? "true" : undefined}
-                className={[
-                  "rounded px-1.5 py-0.5 text-[10px] transition-colors",
-                  selection === "all"
-                    ? "text-[var(--accent-presence)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                ].join(" ")}
-              >
-                All chats
-              </button>
+            <div className="mt-1 border-t border-[var(--border-hairline)]">
+              <RailSection
+                label="Projects"
+                action={
+                  <button
+                    type="button"
+                    onClick={() => onSelect("all")}
+                    aria-current={selection === "all" ? "true" : undefined}
+                    className={[
+                      "rounded px-1.5 py-0.5 text-[10px] transition-colors",
+                      selection === "all"
+                        ? "text-[var(--accent-presence)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                    ].join(" ")}
+                  >
+                    All chats
+                  </button>
+                }
+              />
             </div>
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
@@ -664,6 +887,17 @@ export function ChatProjectSidebar({
           </button>
         ))}
       </div>
+
+      {/* ── Familiar switcher strip ── start a chat with any familiar, or jump
+            to the Familiars surface to add one. Only shown when wired with
+            familiars + a select handler (omitted in compact embeds). */}
+      {onSelectFamiliar && familiars.length > 0 ? (
+        <RailFamiliarStrip
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId}
+          onSelectFamiliar={onSelectFamiliar}
+        />
+      ) : null}
     </aside>
   );
 }

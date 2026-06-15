@@ -508,6 +508,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         expandedKeys={expandedKeys}
         open={sidebarOpen}
         activeSessionId={activeId}
+        familiars={familiars}
+        activeFamiliarId={familiar?.id ?? null}
+        onSelectFamiliar={(id) => onNewChat(undefined, id)}
         onSetOpen={setSidebarOpen}
         onSelect={setSelection}
         onToggleExpanded={(key) =>
