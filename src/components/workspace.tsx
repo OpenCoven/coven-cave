@@ -1446,7 +1446,9 @@ export function Workspace() {
             familiars={familiars}
             activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
             familiarOptions={resolvedFamiliars}
-            onSelectFamiliar={setActiveId}
+            onSelectFamiliar={selectFamiliarScope}
+            sessions={sessions}
+            responseNeeded={responseNeeded}
             inboxPrefs={inboxPrefs}
             inboxBadgeCount={inboxBadgeCount}
             onOpenInboxItem={(item) => {

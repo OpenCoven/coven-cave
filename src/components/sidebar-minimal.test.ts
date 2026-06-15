@@ -56,28 +56,25 @@ assert.doesNotMatch(
   "Familiars subpage should not appear as a Work navigation row",
 );
 
+// The horizontal dock is replaced by a single profile switcher. The sidebar
+// header mounts FamiliarSwitcher (the same control also renders in the mobile
+// top bar) wired to the nullable familiar scope.
+assert.doesNotMatch(source, /<FamiliarDock/, "the old horizontal familiar dock is gone");
 assert.match(
   source,
-  /activeFamiliarId\?: string \| null/,
-  "Sidebar receives the current familiar scope id",
+  /<FamiliarSwitcher[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onSelectFamiliar=\{onFamiliarScopeChange\}/,
+  "Sidebar header mounts the familiar profile switcher wired to scope",
 );
-
 assert.match(
   source,
   /onFamiliarScopeChange: \(id: string \| null\) => void/,
-  "Sidebar exposes a nullable familiar scope change callback for the generic Familiars option",
-);
-
-assert.match(
-  source,
-  /<FamiliarDock[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
-  "Sidebar top slot renders the familiar dock",
+  "Sidebar exposes a nullable familiar scope change callback",
 );
 
 assert.doesNotMatch(
   source,
-  /onOpenSearch|FamiliarSwitcher|sidebar-familiar-switcher|SelectedFamiliarInfo|sidebar-selected-familiar/,
-  "Sidebar no longer surfaces the old search, familiar switcher, or selected-familiar card",
+  /onOpenSearch|sidebar-familiar-switcher|SelectedFamiliarInfo|sidebar-selected-familiar/,
+  "Sidebar does not surface the old search or selected-familiar card",
 );
 
 assert.match(

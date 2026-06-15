@@ -14,7 +14,7 @@
 
 import React from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarDock } from "@/components/familiar-dock";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -234,15 +234,18 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </button>
       ) : null}
 
-      {/* Header actions: familiar scope + New chat */}
+      {/* Header actions: familiar profile switcher + New chat. The same switcher
+          also renders in the mobile top bar; on desktop this is its home. */}
       <div className="sidebar-actions sidebar-action-stack">
-        <FamiliarDock
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onFamiliarScopeChange={onFamiliarScopeChange}
-        />
+        <div className="sidebar-familiar-slot">
+          <FamiliarSwitcher
+            familiars={familiars}
+            activeFamiliarId={activeFamiliarId}
+            sessions={sessions}
+            responseNeeded={responseNeeded}
+            onSelectFamiliar={onFamiliarScopeChange}
+          />
+        </div>
         <ActionRow
           icon={<Icon name="ph:note-pencil" width={14} />}
           label="New chat"

@@ -1,11 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { NotificationBell } from "@/components/notification-bell";
-import { Popover } from "@/components/ui/popover";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import type { Familiar } from "@/lib/types";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import type { Familiar, SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -21,12 +19,18 @@ type Props = {
   inboxBadgeCount: number;
   onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged: () => void;
-  /** Active-familiar switcher box. When `onSelectFamiliar` + `activeFamiliar`
-   *  are provided, the top bar renders a box showing the current familiar that
-   *  opens a picker (desktop + mobile). Resolved familiars carry avatar glyphs. */
+  /** Active-familiar profile switcher. When `onSelectFamiliar` and at least one
+   *  `familiarOptions` entry are provided, the top bar renders an account-style
+   *  profile button that previews the active familiar and opens the switcher
+   *  menu (switch scope incl. "All", edit profile, create, manage, reorder).
+   *  `null` from `onSelectFamiliar` scopes to all familiars. */
   activeFamiliar?: ResolvedFamiliar | null;
   familiarOptions?: ResolvedFamiliar[];
-  onSelectFamiliar?: (id: string) => void;
+  onSelectFamiliar?: (id: string | null) => void;
+  /** Live session rows + reply-needed set drive the menu's presence dots and
+   *  reply badges (and the unread dot on the collapsed profile button). */
+  sessions?: SessionRow[];
+  responseNeeded?: Set<string>;
   /** Mobile-only drawer toggles. Visibility is gated by CSS at <768px
    *  (.top-bar__mobile-toggle is `display: none` on desktop). Omit any
    *  that aren't applicable to the current surface — e.g. two-pane modes
@@ -60,16 +64,14 @@ export function TopBar(props: Props) {
     activeFamiliar,
     familiarOptions,
     onSelectFamiliar,
+    sessions,
+    responseNeeded,
   } = props;
 
-  const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
-  const familiarBoxRef = useRef<HTMLButtonElement | null>(null);
-  // Show the switcher whenever there are familiars to pick — even before one is
-  // the global "active" familiar (e.g. the Home surface, where activeId is null).
-  // The box previews the active familiar, falling back to the first option, so
-  // it's always reachable to make a first selection.
-  const displayFamiliar = activeFamiliar ?? familiarOptions?.[0] ?? null;
-  const showFamiliarSwitcher = Boolean(onSelectFamiliar && displayFamiliar);
+  // Show the switcher whenever there are familiars to pick and a selection
+  // handler is wired (the menu offers "All", so it's reachable even before a
+  // familiar is the global-active one — e.g. the Home surface).
+  const showFamiliarSwitcher = Boolean(onSelectFamiliar && (familiarOptions?.length ?? 0) > 0);
 
   return (
     <header className="top-bar">
@@ -117,58 +119,15 @@ export function TopBar(props: Props) {
       </button>
 
       <div className="top-bar__actions">
-        {showFamiliarSwitcher && displayFamiliar ? (
-          <>
-            <button
-              ref={familiarBoxRef}
-              type="button"
-              className="top-bar__familiar"
-              onClick={() => setFamiliarPickerOpen((open) => !open)}
-              aria-haspopup="listbox"
-              aria-expanded={familiarPickerOpen}
-              aria-label={`Switch familiar — current: ${displayFamiliar.display_name}`}
-              title="Switch familiar"
-            >
-              <FamiliarAvatar familiar={displayFamiliar} size="sm" />
-              <span className="top-bar__familiar-name">{displayFamiliar.display_name}</span>
-              <Icon name="ph:caret-down" width={10} />
-            </button>
-            <Popover
-              open={familiarPickerOpen}
-              onOpenChange={setFamiliarPickerOpen}
-              anchorRef={familiarBoxRef}
-              placement="bottom-end"
-              minWidth={208}
-              className="top-bar__familiar-popover"
-            >
-              <ul className="top-bar__familiar-list" role="listbox" aria-label="Switch familiar">
-                {(familiarOptions ?? []).map((option) => {
-                  const isActive = option.id === activeFamiliar?.id;
-                  return (
-                    <li key={option.id}>
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={isActive}
-                        className={`top-bar__familiar-option${isActive ? " is-active" : ""}`}
-                        onClick={() => {
-                          onSelectFamiliar?.(option.id);
-                          setFamiliarPickerOpen(false);
-                        }}
-                      >
-                        <FamiliarAvatar familiar={option} size="sm" />
-                        <span className="top-bar__familiar-option-name">{option.display_name}</span>
-                        {option.harness ? (
-                          <span className="top-bar__familiar-option-meta">{option.harness}</span>
-                        ) : null}
-                        {isActive ? <Icon name="ph:check" width={12} /> : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Popover>
-          </>
+        {showFamiliarSwitcher && onSelectFamiliar ? (
+          <FamiliarSwitcher
+            familiars={familiarOptions ?? []}
+            activeFamiliarId={activeFamiliar?.id ?? null}
+            sessions={sessions ?? []}
+            responseNeeded={responseNeeded}
+            onSelectFamiliar={onSelectFamiliar}
+            placement="bottom-end"
+          />
         ) : null}
         <button
           type="button"

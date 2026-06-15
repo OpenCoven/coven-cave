@@ -3749,98 +3749,213 @@ button:active > .edge-rail-chip {
   gap: 4px;
 }
 
-/* Active-familiar switcher box — shows the current familiar and opens a picker. */
-.top-bar__familiar {
+/* ── Familiar profile switcher ──────────────────────────────────────────────
+   The single familiar control in the top bar: an account-style profile button
+   (the active familiar's avatar, a caret, and a reply dot) that opens a menu to
+   switch scope, edit a profile, create, manage, or reorder. */
+.familiar-switcher__trigger {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 26px;
-  max-width: 180px;
-  padding: 0 7px 0 5px;
+  padding: 0 6px 0 4px;
   border-radius: 999px;
   border: 1px solid var(--border-hairline);
   background: var(--bg-raised);
   color: var(--text-secondary);
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__trigger:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
+}
+
+.familiar-switcher__caret {
+  color: var(--text-muted);
+}
+
+/* Reply-needed dot on the collapsed trigger. */
+.familiar-switcher__unread {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-warning);
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+.familiar-switcher__popover {
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
+  overflow: hidden;
+}
+
+.familiar-switcher {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header: current scope + Edit profile. */
+.familiar-switcher__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 9px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--accent-presence) 5%, transparent);
+}
+
+.familiar-switcher__header-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.familiar-switcher__header-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.familiar-switcher__header-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-switcher__header-role {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.familiar-switcher__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
               background var(--duration-fast) var(--ease-standard);
 }
 
-.top-bar__familiar:hover {
+.familiar-switcher__edit:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.top-bar__familiar:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 2px;
-}
-
-.top-bar__familiar-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-/* Narrow viewports: keep just the avatar + caret to save room. */
-@media (max-width: 767px) {
-  .top-bar__familiar-name {
-    display: none;
-  }
-}
-
-.top-bar__familiar-popover {
-  padding: 4px;
-  border-radius: 10px;
+.familiar-switcher__search {
+  margin: 6px 6px 0;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
   border: 1px solid var(--border-hairline);
-  background: var(--bg-base);
-  box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-size: 12px;
 }
 
-.top-bar__familiar-list {
+.familiar-switcher__list {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: min(60vh, 420px);
+  max-height: min(60vh, 360px);
   overflow-y: auto;
   margin: 0;
-  padding: 0;
+  padding: 6px;
   list-style: none;
 }
 
-.top-bar__familiar-option {
+.familiar-switcher__row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+}
+
+.familiar-switcher__option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
-  padding: 6px 8px;
-  border-radius: 7px;
+  padding: 7px 8px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
 }
 
-.top-bar__familiar-option:hover {
+.familiar-switcher__option:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.top-bar__familiar-option.is-active {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+.familiar-switcher__option.is-active {
+  background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 14%, transparent);
   color: var(--text-primary);
 }
 
-.top-bar__familiar-option:focus-visible {
+.familiar-switcher__option:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: -2px;
 }
 
-.top-bar__familiar-option-name {
+.familiar-switcher__all-glyph {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+}
+
+.familiar-switcher__avatar {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* Presence dot (background color comes from the presence utility class). */
+.familiar-switcher__presence {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+.familiar-switcher__option-name {
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -3850,10 +3965,99 @@ button:active > .edge-rail-chip {
   font-weight: 500;
 }
 
-.top-bar__familiar-option-meta {
-  font-family: var(--font-mono, monospace);
+.familiar-switcher__option-meta {
+  flex-shrink: 0;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+.familiar-switcher__option-unread {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-warning);
+}
+
+/* Per-row gear → Studio. Hidden until row hover/focus to keep rows clean. */
+.familiar-switcher__gear {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__row:hover .familiar-switcher__gear,
+.familiar-switcher__row:focus-within .familiar-switcher__gear,
+.familiar-switcher__gear:focus-visible {
+  opacity: 1;
+}
+
+.familiar-switcher__gear:hover {
+  color: var(--text-primary);
+}
+
+.familiar-switcher__grip {
+  color: var(--text-muted);
+  cursor: grab;
+}
+
+.familiar-switcher__sortable[data-dragging] {
+  opacity: 0.6;
+}
+
+/* Footer actions. */
+.familiar-switcher__foot {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.familiar-switcher__foot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  padding: 6px 6px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__foot-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.familiar-switcher__foot-btn--pri {
+  color: var(--accent-presence);
+}
+
+/* In the sidebar header the switcher is the primary (desktop) home for the
+   control; give the trigger a touch of inset to match the action rows below. */
+.sidebar-familiar-slot {
+  display: flex;
+  padding: 2px 2px 4px;
 }
 
 .top-bar__account {
