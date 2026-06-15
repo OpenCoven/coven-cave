@@ -589,6 +589,27 @@ function wireCopyButtons(container: HTMLElement) {
   }
 }
 
+function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => void) {
+  if (!onOpenUrl) return;
+  for (const link of Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    if ((link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired) continue;
+    const href = link.href;
+    let parsed: URL;
+    try {
+      parsed = new URL(href);
+    } catch {
+      continue;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+    (link as HTMLAnchorElement & { _caveLinkWired?: boolean })._caveLinkWired = true;
+    link.addEventListener("click", (event) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      onOpenUrl(href);
+    });
+  }
+}
+
 /**
  * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
  * whenever the injected HTML changes. Every component that injects
@@ -596,11 +617,14 @@ function wireCopyButtons(container: HTMLElement) {
  * returned ref, otherwise its Copy buttons render but silently do nothing
  * (wireCopyButtons is idempotent per button via the `_wired` flag).
  */
-function useWireCopyButtons(html: string | null) {
+function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (html && containerRef.current) wireCopyButtons(containerRef.current);
-  }, [html]);
+    if (html && containerRef.current) {
+      wireCopyButtons(containerRef.current);
+      wireMarkdownLinks(containerRef.current, onOpenUrl);
+    }
+  }, [html, onOpenUrl]);
   return containerRef;
 }
 
@@ -609,9 +633,9 @@ function useWireCopyButtons(html: string | null) {
 // plain fallback only until the first render lands
 // ---------------------------------------------------------------------------
 
-function MarkdownContent({ text, pending }: { text: string; pending?: boolean }) {
+function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html);
+  const containerRef = useWireCopyButtons(html, onOpenUrl);
   // Out-of-order guard: mdToHtml is async and during streaming several
   // renders can be in flight at once. Every render takes a monotonically
   // increasing stamp, and a result only commits if it is newer than the
@@ -768,6 +792,7 @@ export type MessageBubbleProps = {
   /** CHAT-D6-02: regenerate — renders a Regenerate action in the assistant
    *  bubble's revealed action row. Caller gates it on !busy/!pending. */
   onRegenerate?: () => void;
+  onOpenUrl?: (url: string) => void;
   /** CHAT-D4-01: ordered segments — prose spans interleaved with tool blocks
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
@@ -777,7 +802,7 @@ export type MessageBubbleProps = {
   segments?: MessageBubbleSegment[];
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, segments }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onOpenUrl, segments }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -823,7 +848,7 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         onMouseLeave={handleMouseLeave}
       >
         <div className="cave-bubble-user">
-          <MarkdownContent text={content} pending={pending} />
+          <MarkdownContent text={content} pending={pending} onOpenUrl={onOpenUrl} />
         </div>
         {/* Action row sits BELOW the bubble (right-aligned via the items-end
             column) so it never overlays the message. Always in the DOM
@@ -870,13 +895,13 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
         {segments?.length ? (
           segments.map((seg, i) =>
             seg.kind === "text" ? (
-              <MarkdownContent key={`span-${i}`} text={seg.text} pending={pending && i === lastTextIdx} />
+              <MarkdownContent key={`span-${i}`} text={seg.text} pending={pending && i === lastTextIdx} onOpenUrl={onOpenUrl} />
             ) : (
               <div key={seg.key} className="my-2">{seg.node}</div>
             ),
           )
         ) : (
-          <MarkdownContent text={content} pending={pending} />
+          <MarkdownContent text={content} pending={pending} onOpenUrl={onOpenUrl} />
         )}
       </div>
       {/* Always in the DOM (CHAT-D6-04) — visibility is CSS-gated so the

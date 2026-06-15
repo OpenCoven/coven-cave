@@ -196,6 +196,26 @@ assert.match(
   /familiarPanelRail=\{showCompanionRail \? \(/,
   "Browser and Agents modes should suppress the desktop companion trigger rail unless a floating rail tab is selected",
 );
+assert.match(
+  workspace,
+  /const openUrlInCompanionBrowser = useCallback\(\(url: string\) => \{/,
+  "Workspace should provide a dedicated side-panel browser opener for chat links",
+);
+assert.match(
+  workspace,
+  /setRailTab\("browser"\)[\s\S]*requestAnimationFrame\(\(\) => shellRef\.current\?\.openFamiliar\(\)\)[\s\S]*requestAnimationFrame\(\(\) => companionBrowserPaneRef\.current\?\.navigateTo\(url\)\)/,
+  "Chat link opens should select Browser, open the right sidepanel, then navigate the companion browser pane",
+);
+assert.match(
+  workspace,
+  /onOpenUrl=\{openUrlInCompanionBrowser\}/,
+  "Workspace should thread the side-panel browser opener into ChatSurface",
+);
+assert.match(
+  workspace,
+  /openCompanionTab\(railTab === "browser" \? "browser" : "salem"\)/,
+  "Right sidepanel toggle should collapse the active Browser panel instead of switching to Salem",
+);
 
 assert.match(
   automationsView,

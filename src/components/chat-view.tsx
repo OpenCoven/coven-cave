@@ -127,6 +127,7 @@ type Props = {
    *  the Task chip in the context strip routes back to the board with the
    *  card focused. The link is bidirectional; this is the chat→task side. */
   onOpenTask?: (cardId: string) => void;
+  onOpenUrl?: (url: string) => void;
 };
 
 export type ChatViewHandle = {
@@ -1244,7 +1245,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask },
+  { familiar, sessionId, session, projectRoot, initialPrompt, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2845,6 +2846,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     found={foundTurnId === t.id}
                     onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
                     onRegenerate={regenerateFor(t)}
+                    onOpenUrl={onOpenUrl}
                   />
                 );
               }
@@ -2876,6 +2878,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         found={foundTurnId === t.id}
                         onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
                         onRegenerate={regenerateFor(t)}
+                        onOpenUrl={onOpenUrl}
                       />
                     );
                   })}
@@ -3220,6 +3223,7 @@ function TurnRow({
   found = false,
   onEdit,
   onRegenerate,
+  onOpenUrl,
 }: {
   turn: Turn;
   familiar: Familiar;
@@ -3231,6 +3235,7 @@ function TurnRow({
   onEdit?: () => void;
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
   onRegenerate?: () => void;
+  onOpenUrl?: (url: string) => void;
 }) {
   // CHAT-D13-01: tool activity stays visible while a turn streams (watching
   // tools run IS the live feedback), then hides once the response has fully
@@ -3261,6 +3266,7 @@ function TurnRow({
             showTimestamp={false}
             pending={turn.pending}
             onEdit={onEdit}
+            onOpenUrl={onOpenUrl}
           />
           {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
         </div>
@@ -3373,6 +3379,7 @@ function TurnRow({
                 isError={turn.error}
                 label={familiar.display_name}
                 onRegenerate={onRegenerate}
+                onOpenUrl={onOpenUrl}
                 // CHAT-D13-01: with tools hidden, fall back to plain content —
                 // the text segments concatenate to `visible` anyway, so prose
                 // renders identically with the tool blocks omitted.

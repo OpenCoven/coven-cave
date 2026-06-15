@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
@@ -18,6 +18,31 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
+
+// ── Layout persistence ─────────────────────────────────────────────────────────
+
+// Persists the chat thread / right-sidebar split width across reloads. Keyed by
+// the set of mounted panel ids, so the no-sidebar layout doesn't clobber the
+// with-sidebar one. localStorage-backed, fails soft under strict privacy modes.
+const CHAT_GROUP_ID = "cave.chat.widths.v1";
+const chatStorage = {
+  getItem(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string): void {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      /* ignore — strict privacy mode or storage quota */
+    }
+  },
+};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,6 +79,7 @@ type Props = {
   /** Forwarded to ChatRouter → ChatView so the Task chip in the chat header
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
+  onOpenUrl?: (url: string) => void;
 };
 
 // ── Right panel (inspector / chat) ────────────────────────────────────────────
@@ -169,6 +195,7 @@ export function ChatSurface({
   onInboxItemChanged,
   onSessionsChanged,
   onOpenTask,
+  onOpenUrl,
 }: Props) {
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
@@ -185,6 +212,15 @@ export function ChatSurface({
     if (onSetRightPanel) { onSetRightPanel(next); return; }
     onSetInspectorOpen(next === "inspector");
   }
+
+  // Persist the chat / right-sidebar split. panelIds tracks which panels are
+  // actually mounted so the with-sidebar and no-sidebar layouts persist separately.
+  const showRightSidebar = rightPanel !== null && !isMobile;
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: CHAT_GROUP_ID,
+    panelIds: showRightSidebar ? ["chat-main", "right-sidebar"] : ["chat-main"],
+    storage: chatStorage,
+  });
 
   const scopedFamiliars = useMemo(() => activeFamiliar ? [activeFamiliar] : familiars, [activeFamiliar, familiars]);
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
@@ -354,7 +390,12 @@ export function ChatSurface({
         ) : scope === "projects" ? (
           <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} />
         ) : (
-          <Group className="flex min-h-0 min-w-0 flex-1" orientation="horizontal">
+          <Group
+            className="flex min-h-0 min-w-0 flex-1"
+            orientation="horizontal"
+            defaultLayout={defaultLayout}
+            onLayoutChanged={onLayoutChanged}
+          >
             <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
               <div className="min-h-0 min-w-0 flex-1">
                 <ChatRouter
@@ -371,21 +412,25 @@ export function ChatSurface({
                   onOpenOnboarding={onOpenOnboarding}
                   pendingProjectRoot={pendingProjectRoot}
                   onOpenTask={onOpenTask}
+                  onOpenUrl={onOpenUrl}
                   syncUrlHash
                 />
               </div>
             </Panel>
             {rightPanel !== null && !isMobile && (
               <>
-                {/* Fixed-width mirror of the internal left rail (chat-thread-rail
-                    is w-[230px]). No resize handle — the panel's own border-l is
-                    the divider, matching the left rail's border-r. */}
+                {/* Defaults to 230px (mirrors the internal left rail, chat-thread-rail
+                    is w-[230px]) but is drag-resizable via the handle below, clamped
+                    to a sane band so the chat thread keeps its 45% minSize. */}
+                <Separator className="shell-separator hidden lg:flex">
+                  <SeparatorHandle orientation="col" />
+                </Separator>
                 <Panel
                   id="right-sidebar"
                   className="hidden min-h-0 min-w-0 lg:flex"
                   defaultSize="230px"
-                  minSize="230px"
-                  maxSize="230px"
+                  minSize="200px"
+                  maxSize="480px"
                 >
                   <RightPanel
                     panel={rightPanel}

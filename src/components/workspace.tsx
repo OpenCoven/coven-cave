@@ -129,6 +129,7 @@ export function Workspace() {
   // Pending Workflow Studio deep link (set when opening a workflow from Roles).
   const [workflowDeepLink, setWorkflowDeepLink] = useState<string | null>(null);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
+  const companionBrowserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   const [railTab, setRailTab] = useState<CompanionTab>(() => {
@@ -1187,6 +1188,12 @@ export function Workspace() {
     requestAnimationFrame(() => shellRef.current?.openFamiliar());
   }, [familiarPanelOpen, railTab]);
 
+  const openUrlInCompanionBrowser = useCallback((url: string) => {
+    setRailTab("browser");
+    requestAnimationFrame(() => shellRef.current?.openFamiliar());
+    requestAnimationFrame(() => companionBrowserPaneRef.current?.navigateTo(url));
+  }, []);
+
   const openProjectChat = useCallback((projectRoot: string) => {
     startFamiliarChat(activeId, projectRoot);
   }, [activeId, startFamiliarChat]);
@@ -1308,6 +1315,7 @@ export function Workspace() {
         onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        onOpenUrl={openUrlInCompanionBrowser}
       />
     ) : mode === "library" ? (
       <LibraryView
@@ -1465,7 +1473,7 @@ export function Workspace() {
             onToggleFamiliar={
               showCompanionRail
                 ? () => {
-                    openCompanionTab("salem");
+                    openCompanionTab(railTab === "browser" ? "browser" : "salem");
                   }
                 : undefined
             }
@@ -1476,9 +1484,9 @@ export function Workspace() {
             <button
               type="button"
               className="familiar-trigger-rail__toggle"
-              aria-label="Toggle Salem"
-              title="Toggle Salem (⌘J)"
-              onClick={() => openCompanionTab("salem")}
+              aria-label={railTab === "browser" ? "Toggle Browser" : "Toggle Salem"}
+              title={railTab === "browser" ? "Toggle Browser (⌘J)" : "Toggle Salem (⌘J)"}
+              onClick={() => openCompanionTab(railTab === "browser" ? "browser" : "salem")}
             >
               <span className="edge-rail-chip">
                 <Icon name="ph:cat" width={14} />
@@ -1523,7 +1531,7 @@ export function Workspace() {
                 />
               }
               browserSlot={
-                <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />
+                <BrowserPane ref={companionBrowserPaneRef} label="companion" activeFamiliarId={active?.id ?? null} />
               }
               salemSlot={<SalemChatPanel />}
             />

@@ -156,6 +156,22 @@ assert.match(
   "Streaming renders are marked transient (and auto-close a trailing unterminated fence)",
 );
 
+assert.match(
+  source,
+  /onOpenUrl\?: \(url: string\) => void/,
+  "MessageBubble should accept a link-open callback so chat links can route into the side-panel browser",
+);
+assert.match(
+  source,
+  /wireMarkdownLinks\(containerRef\.current, onOpenUrl\)/,
+  "MarkdownContent should wire rendered markdown links through the chat link-open callback",
+);
+assert.match(
+  source,
+  /event\.preventDefault\(\)[\s\S]*onOpenUrl\(href\)/,
+  "Markdown link clicks should prevent normal navigation and open in the provided browser target",
+);
+
 const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 assert.match(
   css,

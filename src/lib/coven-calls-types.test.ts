@@ -83,17 +83,35 @@ const inferred = inferDelegationTraces({
       created_at: "2026-06-06T01:09:00.000Z",
       updated_at: "2026-06-06T01:14:00.000Z",
     },
+    {
+      id: "session-cody-from-charm",
+      familiarId: "cody",
+      title: "Charm asked Cody to inspect Cave traces",
+      status: "running",
+      created_at: "2026-06-06T01:20:00.000Z",
+      updated_at: "2026-06-06T01:24:00.000Z",
+      initiator: { kind: "familiar", label: "Charm", agentId: "charm" },
+    },
+    {
+      id: "session-self-start",
+      familiarId: "cody",
+      title: "Cody started its own chat",
+      status: "running",
+      created_at: "2026-06-06T01:21:00.000Z",
+      updated_at: "2026-06-06T01:25:00.000Z",
+      initiator: { kind: "familiar", label: "Cody", agentId: "cody" },
+    },
   ],
 });
 
-assert.equal(inferred.length, 1);
+assert.equal(inferred.length, 2);
 assert.deepEqual(
   {
-    source: inferred[0].source,
-    callerFamiliarId: inferred[0].callerFamiliarId,
-    calleeFamiliarId: inferred[0].calleeFamiliarId,
-    linkedCardId: inferred[0].linkedCardId,
-    status: inferred[0].status,
+    source: inferred[1].source,
+    callerFamiliarId: inferred[1].callerFamiliarId,
+    calleeFamiliarId: inferred[1].calleeFamiliarId,
+    linkedCardId: inferred[1].linkedCardId,
+    status: inferred[1].status,
   },
   {
     source: "inferred",
@@ -102,6 +120,27 @@ assert.deepEqual(
     linkedCardId: "card-1",
     status: "running",
   },
+);
+assert.deepEqual(
+  {
+    source: inferred[0].source,
+    callerFamiliarId: inferred[0].callerFamiliarId,
+    calleeFamiliarId: inferred[0].calleeFamiliarId,
+    sessionId: inferred[0].sessionId,
+    status: inferred[0].status,
+  },
+  {
+    source: "inferred",
+    callerFamiliarId: "charm",
+    calleeFamiliarId: "cody",
+    sessionId: "session-cody-from-charm",
+    status: "running",
+  },
+);
+assert.equal(
+  inferred.some((trace) => trace.sessionId === "session-self-start"),
+  false,
+  "sessions started by their own familiar should not become delegation traces",
 );
 
 const graph = buildDelegationGraph({
@@ -128,6 +167,15 @@ assert.deepEqual(
       explicitCount: 2,
       inferredCount: 0,
       count: 2,
+      hasRunning: true,
+    },
+    {
+      caller: "charm",
+      callee: "cody",
+      source: "inferred",
+      explicitCount: 0,
+      inferredCount: 1,
+      count: 1,
       hasRunning: true,
     },
     {

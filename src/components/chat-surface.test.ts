@@ -160,6 +160,18 @@ assert.match(
   "ChatSurface should keep live chat available inside the Chat tab",
 );
 
+assert.match(
+  chatSurface,
+  /onOpenUrl\?: \(url: string\) => void/,
+  "ChatSurface should accept a URL opener for chat transcript links",
+);
+
+assert.match(
+  chatSurface,
+  /<ChatRouter[\s\S]*onOpenUrl=\{onOpenUrl\}/,
+  "ChatSurface should route ChatRouter link opens to Workspace instead of the default anchor target",
+);
+
 assert.doesNotMatch(
   chatSurface,
   /right-panel-tab[\s\S]*ph:chats[\s\S]*Chat[\s\S]*onSetPanel\("chat"\)/,
@@ -192,7 +204,7 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /scope === "memory" \? \([\s\S]*?\) : \(\s*<Group className="flex min-h-0 min-w-0 flex-1" orientation="horizontal">/,
+  /scope === "memory" \? \([\s\S]*?\) : \(\s*<Group\s+className="flex min-h-0 min-w-0 flex-1"\s+orientation="horizontal"/,
   "ChatSurface non-memory branch (conversation) should use remaining height below the tab bar instead of h-full",
 );
 

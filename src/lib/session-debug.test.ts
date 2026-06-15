@@ -245,7 +245,7 @@ assert.match(
 );
 assert.match(
   bubbleSource,
-  /<MarkdownContent text=\{content\} pending=\{pending\} \/>/,
+  /<MarkdownContent text=\{content\} pending=\{pending\} onOpenUrl=\{onOpenUrl\} \/>/,
   "CHAT-D4-01: segment-less bubbles keep the single MarkdownContent render",
 );
 

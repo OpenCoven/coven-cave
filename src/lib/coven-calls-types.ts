@@ -93,6 +93,11 @@ type InferenceSession = {
   familiarId?: string | null;
   created_at?: string;
   updated_at?: string;
+  initiator?: {
+    kind: "human" | "familiar" | "system" | "unknown";
+    label: string;
+    agentId?: string;
+  };
 };
 
 export function aggregateEdges(calls: CovenCall[]): CallEdge[] {
@@ -124,6 +129,15 @@ function statusFromCard(card: InferenceCard): CallStatus {
   if (card.lifecycle === "failed" || card.status === "blocked") return "failed";
   if (card.lifecycle === "cancelled") return "cancelled";
   if (card.lifecycle === "completed" || card.status === "done") return "completed";
+  return "running";
+}
+
+function statusFromSession(session: InferenceSession): CallStatus {
+  if (session.status === "failed" || session.status === "timeout") return "failed";
+  if (session.status === "cancelled" || session.status === "killed" || session.status === "stopped") {
+    return "cancelled";
+  }
+  if (session.status === "completed" || session.status === "done") return "completed";
   return "running";
 }
 
@@ -166,6 +180,34 @@ export function inferDelegationTraces({
       linkedCardId: card.id,
       inferenceReason:
         "A task card is assigned to one familiar while linked to a session owned by another familiar.",
+    });
+  }
+
+  for (const session of sessions) {
+    const callerFamiliarId = session.initiator?.kind === "familiar"
+      ? session.initiator.agentId
+      : undefined;
+    const calleeFamiliarId = session.familiarId ?? undefined;
+    if (!callerFamiliarId || !calleeFamiliarId) continue;
+    if (callerFamiliarId === calleeFamiliarId) continue;
+
+    const createdAt =
+      session.updated_at ??
+      session.created_at ??
+      new Date(0).toISOString();
+    const title = session.title?.trim() || session.id;
+
+    traces.push({
+      id: `inferred-session-${session.id}`,
+      callerFamiliarId,
+      calleeFamiliarId,
+      request: `Conversation inferred from session initiator: ${title}`,
+      status: statusFromSession(session),
+      createdAt,
+      sessionId: session.id,
+      source: "inferred",
+      inferenceReason:
+        "A session is owned by one familiar but was started by another familiar.",
     });
   }
 

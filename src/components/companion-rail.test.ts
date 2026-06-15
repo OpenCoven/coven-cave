@@ -30,3 +30,9 @@ assert.match(
   /hideChatTab \? null : \(/,
   "Rail should omit the Chat tab button when hideChatTab is set",
 );
+
+assert.match(
+  source,
+  /hideChatTab && requestedTab === "chat"[\s\S]*\? browserSlot \? "browser" : fallbackTab/,
+  "When the main chat surface hides the duplicate Chat tab, the companion rail should fall back to Browser before Salem",
+);

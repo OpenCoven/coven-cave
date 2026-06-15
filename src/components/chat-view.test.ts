@@ -42,6 +42,18 @@ assert.match(
 
 assert.match(
   source,
+  /onOpenUrl\?: \(url: string\) => void/,
+  "ChatView should accept a URL opener from Workspace so chat links can open in the side-panel browser",
+);
+
+assert.match(
+  source,
+  /<MessageBubble[\s\S]*onOpenUrl=\{onOpenUrl\}/,
+  "ChatView should pass the Workspace URL opener into chat message bubbles",
+);
+
+assert.match(
+  source,
   /useFamiliarImages/,
   "ChatView turn avatars should subscribe to uploaded familiar images",
 );

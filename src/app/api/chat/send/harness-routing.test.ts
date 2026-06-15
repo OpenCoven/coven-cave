@@ -179,6 +179,30 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /await resolveLocalRuntimeCwd\(body\.projectRoot \?\? resumeCwd\)/,
+  "Local Cave chat must fail closed on invalid project roots instead of downgrading to homedir",
+);
+
+assert.match(
+  chatRoute,
+  /error instanceof RuntimeScopeError[\s\S]*code: error\.code/,
+  "Runtime scope errors should return structured JSON before spawning a harness",
+);
+
+assert.match(
+  chatRoute,
+  /const runtimeScope: RuntimeScope = sshRuntime[\s\S]*kind: "ssh"[\s\S]*kind: "local"/,
+  "The prompt boundary should describe the actual local or SSH runtime root",
+);
+
+assert.match(
+  chatRoute,
+  /const harnessPrompt = buildPromptWithRuntimeScope\(/,
+  "Every chat harness prompt should carry the runtime filesystem boundary",
+);
+
+assert.match(
+  chatRoute,
   /\| \{ kind: "progress"; id\?: string; label: string; detail\?: string; status\?: "running" \| "done" \| "error"; durationMs\?: number \}/,
   "Native chat streams should expose progress SSE events for quiet phases",
 );

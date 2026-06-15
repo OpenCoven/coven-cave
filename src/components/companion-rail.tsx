@@ -54,9 +54,10 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     const requestedTab = activeTab ?? tab;
     const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "inspector";
     const selectedTab =
-      (hideChatTab && requestedTab === "chat")
-        || (requestedTab === "browser" && !browserSlot)
-        || (requestedTab === "salem" && !salemSlot)
+      hideChatTab && requestedTab === "chat"
+        ? browserSlot ? "browser" : fallbackTab
+        : (requestedTab === "browser" && !browserSlot)
+          || (requestedTab === "salem" && !salemSlot)
         ? fallbackTab
         : requestedTab;
 

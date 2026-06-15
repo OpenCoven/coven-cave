@@ -52,6 +52,12 @@ import {
   type ChatModelState,
 } from "@/lib/chat-model-state";
 import {
+  RuntimeScopeError,
+  buildPromptWithRuntimeScope,
+  resolveLocalRuntimeCwd,
+  type RuntimeScope,
+} from "@/lib/chat-runtime-scope";
+import {
   buildTaskAwarePrompt,
   taskContextForSession,
 } from "@/lib/task-chat-context";
@@ -125,50 +131,6 @@ const TOOL_HOOK_RE =
 
 async function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-/** Normalize a path so Node's fs functions don't EISDIR on bare Windows
- * drive letters. "C:" → "C:\\" on Windows; no-op elsewhere. */
-function normalizePath(p: string): string {
-  if (process.platform === "win32") {
-    // Bare drive letter with no trailing separator
-    if (/^[a-zA-Z]:$/.test(p)) return p + "\\";
-    // Forward slashes → backslashes
-    return p.replace(/\//g, "\\\\");
-  }
-  return p;
-}
-
-async function resolveCwd(requested?: string): Promise<string> {
-  const homeRoot = await realpath(homedir());
-  if (requested) {
-    try {
-      const normalized = normalizePath(requested);
-      const candidate = path.resolve(normalized);
-      const relToHome = path.relative(homeRoot, candidate);
-      if (
-        relToHome === ".." ||
-        relToHome.startsWith(".." + path.sep) ||
-        path.isAbsolute(relToHome) ||
-        relToHome.split(path.sep).includes("..")
-      ) {
-        return homeRoot;
-      }
-      const s = await stat(candidate);
-      if (s.isDirectory()) {
-        const resolved = await realpath(candidate);
-        if (
-          resolved === homeRoot ||
-          resolved.startsWith(homeRoot + path.sep)
-        ) {
-          return resolved;
-        }
-      }
-    } catch {
-      /* fall through to homedir */
-    }
-  }
-  return homeRoot;
 }
 
 /**
@@ -629,7 +591,7 @@ function openClawChatResponse(args: {
       const agentId = await resolveOpenClawAgentId(args.body.familiarId);
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", agentId);
       const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
-      const cwd = await resolveCwd(
+      const cwd = await resolveLocalRuntimeCwd(
         args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
       );
       const responseMetadata: ChatResponseMetadata = {
@@ -910,6 +872,61 @@ export async function POST(req: Request) {
       { status: 501, headers: { "content-type": "application/json" } },
     );
   }
+  // The saved conversation carries everything resume needs: the cwd it
+  // started in (harness session stores are cwd-scoped) and the harness's
+  // CURRENT session id (harnesses mint a new id on every resume, so the
+  // client-held conversation id quickly stops matching any harness session).
+  // Continued turns don't carry projectRoot — resume must run in the
+  // directory the conversation started in, not homedir or the familiar
+  // workspace, or `--continue <id>` misses (and the transparent retry forks
+  // the chat into a fresh session).
+  const resumeCwd =
+    !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
+      ? existingConversation.runtime.slice("local:".length).trim() || undefined
+      : undefined;
+  let cwd: string;
+  try {
+    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd);
+  } catch (error) {
+    if (error instanceof RuntimeScopeError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: error.message, code: error.code }),
+        { status: error.status, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw error;
+  }
+  const resolvedFamiliarWorkspace = !sshRuntime
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
+  // Resolve familiar workspace for identity context. When a project root is
+  // explicitly set, the harness boots there (and should have the familiar's
+  // AGENTS.md injected separately). When there's no project root, boot in the
+  // familiar's own workspace so the selected harness picks up AGENTS.md /
+  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
+  // generic CLI identity. A resumed conversation keeps its recorded cwd over
+  // the workspace for the same reason. SSH runtimes own their remote cwd, so
+  // never stat the local filesystem for a remote familiar.
+  const familiarCwd = !sshRuntime && !body.projectRoot && !resumeCwd
+    ? resolvedFamiliarWorkspace
+    : undefined;
+  const runtimeScope: RuntimeScope = sshRuntime
+    ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
+    : { kind: "local", root: familiarCwd ?? cwd };
+  const responseMetadata: ChatResponseMetadata = {
+    familiarId: body.familiarId,
+    harness: binding.harness,
+    model: desiredModel,
+    runtime: sshRuntime
+      ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
+      : `local:${familiarCwd ?? cwd}`,
+    desiredModel,
+    confirmedModel: undefined,
+    modelSource: modelState.source,
+    modelApplicationState: modelState.applicationState,
+    modelApplicationReason: modelState.reason,
+  };
+
   // Image delivery channel: only local coven-run harnesses can Read files on
   // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
   // prompts carry an explicit unsupported notice instead of a dead path.
@@ -917,9 +934,6 @@ export async function POST(req: Request) {
   const imageFilePaths = imagesSupported
     ? await writeImageAttachmentsToTemp(attachments)
     : new Map<number, string>();
-  const resolvedFamiliarWorkspace = !sshRuntime
-    ? await resolveFamiliarWorkspace(body.familiarId)
-    : undefined;
   // @-mentioned files share the image-delivery constraint: only local
   // coven-run harnesses can Read this machine's filesystem, so bridges and
   // SSH runtimes never get a block of unreachable absolute paths.
@@ -934,21 +948,24 @@ export async function POST(req: Request) {
   );
 
   const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildPromptWithCovenIdentityCanon(
-    buildTaskAwarePrompt(
-      buildPromptWithFamiliarStartupContext(
-        appendMentionedFilesBlock(
-          buildPromptWithAttachments(promptText, attachments, {
-            imagesSupported,
-            imageFilePaths,
-          }),
-          mentionedFiles,
+  const harnessPrompt = buildPromptWithRuntimeScope(
+    buildPromptWithCovenIdentityCanon(
+      buildTaskAwarePrompt(
+        buildPromptWithFamiliarStartupContext(
+          appendMentionedFilesBlock(
+            buildPromptWithAttachments(promptText, attachments, {
+              imagesSupported,
+              imageFilePaths,
+            }),
+            mentionedFiles,
+          ),
+          [dailyMemoryContext],
         ),
-        [dailyMemoryContext],
+        taskContext,
       ),
-      taskContext,
+      body.familiarId,
     ),
-    body.familiarId,
+    runtimeScope,
   );
 
   if (binding.harness === "openclaw" && !sshRuntime) {
@@ -962,44 +979,6 @@ export async function POST(req: Request) {
       modelState,
     });
   }
-
-  // The saved conversation carries everything resume needs: the cwd it
-  // started in (harness session stores are cwd-scoped) and the harness's
-  // CURRENT session id (harnesses mint a new id on every resume, so the
-  // client-held conversation id quickly stops matching any harness session).
-  // Continued turns don't carry projectRoot — resume must run in the
-  // directory the conversation started in, not homedir or the familiar
-  // workspace, or `--continue <id>` misses (and the transparent retry forks
-  // the chat into a fresh session).
-  const resumeCwd =
-    !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
-      ? existingConversation.runtime.slice("local:".length).trim() || undefined
-      : undefined;
-  const cwd = sshRuntime ? homedir() : await resolveCwd(body.projectRoot ?? resumeCwd);
-  // Resolve familiar workspace for identity context. When a project root is
-  // explicitly set, the harness boots there (and should have the familiar's
-  // AGENTS.md injected separately). When there's no project root, boot in the
-  // familiar's own workspace so the selected harness picks up AGENTS.md /
-  // SOUL.md / IDENTITY.md and responds as the familiar instead of as the
-  // generic CLI identity. A resumed conversation keeps its recorded cwd over
-  // the workspace for the same reason. SSH runtimes own their remote cwd, so
-  // never stat the local filesystem for a remote familiar.
-  const familiarCwd = !sshRuntime && !body.projectRoot && !resumeCwd
-    ? resolvedFamiliarWorkspace
-    : undefined;
-  const responseMetadata: ChatResponseMetadata = {
-    familiarId: body.familiarId,
-    harness: binding.harness,
-    model: desiredModel,
-    runtime: sshRuntime
-      ? `ssh:${sshRuntime.host}:${sshRuntime.cwd}`
-      : `local:${familiarCwd ?? cwd}`,
-    desiredModel,
-    confirmedModel: undefined,
-    modelSource: modelState.source,
-    modelApplicationState: modelState.applicationState,
-    modelApplicationReason: modelState.reason,
-  };
 
   // Build coven run argv.
   // Important: pass every flag BEFORE the prompt and add a `--` separator,
