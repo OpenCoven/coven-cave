@@ -453,13 +453,13 @@ export function CapabilitiesViewSurface({
                 <CapabilityMap
                   items={filteredItems}
                   selectedId={selectedItem?.id ?? null}
-                  onSelect={(item) => setSelectionId(item.id)}
+                  preview={preview}
+                  onSelect={(item) => setSelectionId((cur) => (cur === item.id ? null : item.id))}
                   onTypeFilter={(type) => applyTypeFilter(type)}
                 />
                 <CapabilityInspector
                   item={selectedItem}
                   harness={selectedHarness}
-                  preview={preview}
                   copiedKey={copiedKey}
                   onCopy={copyCapabilityDetail}
                   onOpenPath={openLocalPath}
@@ -480,11 +480,13 @@ export function CapabilitiesViewSurface({
 function CapabilityMap({
   items,
   selectedId,
+  preview,
   onSelect,
   onTypeFilter,
 }: {
   items: CapabilityMapItem[];
   selectedId: string | null;
+  preview: SkillPreviewState;
   onSelect: (item: CapabilityMapItem) => void;
   onTypeFilter: (type: CapabilityType) => void;
 }) {
@@ -532,6 +534,7 @@ function CapabilityMap({
                   key={item.id}
                   item={item}
                   active={selectedId === item.id}
+                  preview={preview}
                   onSelect={() => onSelect(item)}
                 />
               ))}
@@ -546,46 +549,75 @@ function CapabilityMap({
 function CapabilityMapRow({
   item,
   active,
+  preview,
   onSelect,
 }: {
   item: CapabilityMapItem;
   active: boolean;
+  preview: SkillPreviewState;
   onSelect: () => void;
 }) {
+  // Skills report their folder as the path; any .md instruction is previewable
+  // too. Previewable rows carry a caret and expand inline — clicking the row
+  // drops a section beneath it that renders the file as styled markdown.
+  const isPreviewable =
+    !!item.sourcePath && (item.type === "skill" || item.sourcePath.toLowerCase().endsWith(".md"));
+  const previewMatches = preview.path === item.sourcePath;
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`focus-ring flex min-w-0 w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
-        active ? "bg-muted" : "hover:bg-muted/60"
-      }`}
-    >
-      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${statusDotClass(item.status)}`} />
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="min-w-0 truncate text-[12px] font-medium text-foreground">{item.label}</span>
-          <span className="rounded bg-background px-1.5 py-px text-[9px] uppercase tracking-wide text-muted-foreground">
-            {item.harnessLabel}
+    <div>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-expanded={isPreviewable ? active : undefined}
+        className={`focus-ring flex min-w-0 w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
+          active ? "bg-muted" : "hover:bg-muted/60"
+        }`}
+      >
+        {isPreviewable ? (
+          <Icon
+            name={active ? "ph:caret-down" : "ph:caret-right"}
+            width={11}
+            className="mt-1 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        ) : (
+          <span className="mt-1 w-[11px] shrink-0" aria-hidden />
+        )}
+        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${statusDotClass(item.status)}`} />
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="min-w-0 truncate text-[12px] font-medium text-foreground">{item.label}</span>
+            <span className="rounded bg-background px-1.5 py-px text-[9px] uppercase tracking-wide text-muted-foreground">
+              {item.harnessLabel}
+            </span>
+            {item.version ? (
+              <span className="rounded bg-muted px-1.5 py-px text-[9px] text-muted-foreground">v{item.version}</span>
+            ) : null}
           </span>
-          {item.version ? (
-            <span className="rounded bg-muted px-1.5 py-px text-[9px] text-muted-foreground">v{item.version}</span>
-          ) : null}
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+            {item.warningMessage ?? item.description ?? item.sourcePath ?? item.command ?? item.id}
+          </span>
         </span>
-        <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-          {item.warningMessage ?? item.description ?? item.sourcePath ?? item.command ?? item.id}
+        <span className="shrink-0 rounded-full bg-background px-1.5 py-px text-[9px] text-muted-foreground">
+          {STATUS_LABEL[item.status]}
         </span>
-      </span>
-      <span className="shrink-0 rounded-full bg-background px-1.5 py-px text-[9px] text-muted-foreground">
-        {STATUS_LABEL[item.status]}
-      </span>
-    </button>
+      </button>
+      {isPreviewable && active ? (
+        <div className="border-t border-border bg-background/40 px-3 py-2.5">
+          <SkillPreviewBlock
+            preview={previewMatches ? preview : { path: item.sourcePath ?? null, status: "loading", text: null, error: null }}
+            fallbackDescription={item.description}
+            title={item.label}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function CapabilityInspector({
   item,
   harness,
-  preview,
   copiedKey,
   onCopy,
   onOpenPath,
@@ -593,15 +625,11 @@ function CapabilityInspector({
 }: {
   item: CapabilityMapItem | null;
   harness: CapabilityHarnessSummary | null;
-  preview: SkillPreviewState;
   copiedKey: string | null;
   onCopy: (key: string, value?: string) => void;
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
 }) {
-  const isMarkdown =
-    !!item?.sourcePath && (item.type === "skill" || item.sourcePath.toLowerCase().endsWith(".md"));
-  const previewMatches = preview.path === item?.sourcePath;
   return (
     <aside className="min-w-0 rounded-lg border border-border bg-card xl:sticky xl:top-4 xl:self-start">
       <div className="border-b border-border px-3 py-2">
@@ -627,15 +655,7 @@ function CapabilityInspector({
             </button>
           </div>
 
-          {isMarkdown ? (
-            <SkillPreviewBlock
-              preview={previewMatches ? preview : { path: item.sourcePath ?? null, status: "loading", text: null, error: null }}
-              fallbackDescription={item.description}
-              title={item.label}
-            />
-          ) : item.description ? (
-            <InspectorBlock label="Detail" value={item.description} />
-          ) : null}
+          {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
           {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
           {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
           {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
