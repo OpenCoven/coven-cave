@@ -1,14 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { computeDockInlineCount } from "@/lib/familiar-dock-overflow";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { Popover, PopoverBody, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
+import { setFamiliarOrder } from "@/lib/cave-familiar-order";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import {
+  DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, useSortable, arrayMove, sortableKeyboardCoordinates,
+  horizontalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
+
+type Presence = { label: string; dot: string };
 
 type Props = {
   familiars: ResolvedFamiliar[];
@@ -61,6 +74,33 @@ export function FamiliarDock({
   const overflowMatches = overflow.filter(matches);
   const inlineMatches = inline.filter(matches);
 
+  useRovingTabIndex({
+    containerRef: rowRef,
+    itemSelector: ".familiar-dock__avatar:not([disabled])",
+    orientation: "horizontal",
+  });
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const familiarIds = useMemo(() => familiars.map((f) => f.id), [familiars]);
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = familiarIds.indexOf(String(active.id));
+    const newIndex = familiarIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    setFamiliarOrder(arrayMove(familiarIds, oldIndex, newIndex));
+  }
+
+  const presenceFor = (f: ResolvedFamiliar, needsReply: boolean): Presence =>
+    computePresence({
+      familiar: f,
+      sessions,
+      needsReply,
+      isRemoteHarness: f.harness ? REMOTE_HARNESSES.has(f.harness) : false,
+    });
+
   return (
     <div className="familiar-dock" aria-label="Familiars">
       <div className="familiar-dock__row" ref={rowRef} role="toolbar" aria-label="Familiar scope">
@@ -75,34 +115,50 @@ export function FamiliarDock({
           <span>All</span>
         </button>
 
-        {inline.map((f) => {
-          const active = f.id === activeFamiliarId;
-          const needsReply = responseNeeded?.has(f.id) ?? false;
-          const presence = computePresence({
-            familiar: f,
-            sessions,
-            needsReply,
-            isRemoteHarness: f.harness ? REMOTE_HARNESSES.has(f.harness) : false,
-          });
-          return (
-            <button
-              key={f.id}
-              type="button"
-              data-id={f.id}
-              style={{ ["--familiar-accent" as string]: f.color }}
-              className={`familiar-dock__avatar${active ? " familiar-dock__avatar--active" : ""}`}
-              aria-pressed={active}
-              aria-label={`Filter by ${f.display_name}${needsReply ? " — reply needed" : ""}`}
-              title={`${f.display_name} · ${presence.label}`}
-              onClick={() => onFamiliarScopeChange(f.id)}
-              onContextMenu={(e) => { e.preventDefault(); openFamiliarStudio(f.id, "identity"); }}
-            >
-              <FamiliarAvatar familiar={f} size="sm" />
-              <span className={`familiar-dock__presence ${presence.dot}`} aria-hidden />
-              {needsReply ? <span className="familiar-dock__unread" aria-hidden /> : null}
-            </button>
-          );
-        })}
+        {reordering ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={inline.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
+              {inline.map((f) => {
+                const needsReply = responseNeeded?.has(f.id) ?? false;
+                return (
+                  <SortableDockAvatar
+                    key={f.id}
+                    familiar={f}
+                    active={f.id === activeFamiliarId}
+                    needsReply={needsReply}
+                    presence={presenceFor(f, needsReply)}
+                    onSelect={() => onFamiliarScopeChange(f.id)}
+                    onOpenStudio={() => openFamiliarStudio(f.id, "identity")}
+                  />
+                );
+              })}
+            </SortableContext>
+          </DndContext>
+        ) : (
+          inline.map((f) => {
+            const active = f.id === activeFamiliarId;
+            const needsReply = responseNeeded?.has(f.id) ?? false;
+            const presence = presenceFor(f, needsReply);
+            return (
+              <button
+                key={f.id}
+                type="button"
+                data-id={f.id}
+                style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
+                className={`familiar-dock__avatar${active ? " familiar-dock__avatar--active" : ""}`}
+                aria-pressed={active}
+                aria-label={`Filter by ${f.display_name}${needsReply ? " — reply needed" : ""}`}
+                title={`${f.display_name} · ${presence.label}`}
+                onClick={() => onFamiliarScopeChange(f.id)}
+                onContextMenu={(e) => { e.preventDefault(); openFamiliarStudio(f.id, "identity"); }}
+              >
+                <FamiliarAvatar familiar={f} size="sm" />
+                <span className={`familiar-dock__presence ${presence.dot}`} aria-hidden />
+                {needsReply ? <span className="familiar-dock__unread" aria-hidden /> : null}
+              </button>
+            );
+          })
+        )}
 
         {overflowCount > 0 ? (
           <button
@@ -128,6 +184,10 @@ export function FamiliarDock({
         >
           <Icon name="ph:plus-bold" width={12} aria-hidden />
         </button>
+
+        {reordering ? (
+          <button type="button" className="familiar-dock__done" onClick={() => setReordering(false)}>Done</button>
+        ) : null}
       </div>
 
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen} anchorRef={overflowBtnRef} placement="bottom-end" minWidth={280}>
@@ -184,13 +244,56 @@ export function FamiliarDock({
               </button>
               <button type="button" className="familiar-dock__pop-btn"
                 onClick={() => { setReordering(true); setPopoverOpen(false); }}>
-                <Icon name="ph:arrows-out-line-vertical" width={11} aria-hidden /> Reorder
+                <Icon name="ph:dots-six-vertical" width={11} aria-hidden /> Reorder
               </button>
             </div>
           </PopoverBody>
         </div>
       </Popover>
     </div>
+  );
+}
+
+function SortableDockAvatar({
+  familiar,
+  active,
+  needsReply,
+  presence,
+  onSelect,
+  onOpenStudio,
+}: {
+  familiar: ResolvedFamiliar;
+  active: boolean;
+  needsReply: boolean;
+  presence: Presence;
+  onSelect: () => void;
+  onOpenStudio: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: familiar.id });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    ["--familiar-accent" as string]: familiar.color,
+  } as CSSProperties;
+  return (
+    <span ref={setNodeRef} style={style} className="familiar-dock__sortable" data-dragging={undefined}>
+      <button
+        type="button"
+        data-id={familiar.id}
+        className={`familiar-dock__avatar${active ? " familiar-dock__avatar--active" : ""}`}
+        title={`${familiar.display_name} · ${presence.label}`}
+        onClick={onSelect}
+        onContextMenu={(e) => { e.preventDefault(); onOpenStudio(); }}
+        {...attributes}
+        {...listeners}
+        aria-pressed={active}
+        aria-label={`Reorder ${familiar.display_name}`}
+      >
+        <FamiliarAvatar familiar={familiar} size="sm" />
+        <span className={`familiar-dock__presence ${presence.dot}`} aria-hidden />
+        {needsReply ? <span className="familiar-dock__unread" aria-hidden /> : null}
+      </button>
+    </span>
   );
 }
 

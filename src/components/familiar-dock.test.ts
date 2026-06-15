@@ -33,4 +33,11 @@ assert.match(src, /Not shown in dock/, "popover groups overflow familiars");
 assert.match(src, /openFamiliarStudioListView\(\)/, "Manage opens the studio list");
 assert.match(src, /Reorder/, "footer exposes Reorder");
 
+// Task 6: drag-reorder + roving keyboard nav
+assert.match(src, /from "@dnd-kit\/core"/, "uses dnd-kit");
+assert.match(src, /horizontalListSortingStrategy/, "horizontal sorting strategy");
+assert.match(src, /setFamiliarOrder\(arrayMove/, "persists reorder via setFamiliarOrder");
+assert.match(src, /useRovingTabIndex/, "roving tabindex for keyboard nav");
+assert.match(src, /orientation: "horizontal"/, "roving nav is horizontal");
+
 console.log("familiar-dock.test.ts OK");
