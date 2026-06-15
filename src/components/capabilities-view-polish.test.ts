@@ -71,6 +71,39 @@ assert.match(
   "keydown handler skips when an input/textarea is focused",
 );
 
+// Full-size skill/instructions preview: inspector exposes an Expand control that
+// opens a reader-scale modal rendering the same markdown body.
+assert.match(
+  source,
+  /function CapabilityPreviewModal\(/,
+  "inspector should ship a full-size preview modal",
+);
+assert.match(
+  source,
+  /aria-label="Open full-size preview"/,
+  "skill preview should expose an Expand control with an accessible name",
+);
+assert.match(
+  source,
+  /ph:arrows-out-simple/,
+  "Expand control should use the expand affordance icon",
+);
+assert.match(
+  source,
+  /role="dialog"[\s\S]{0,120}aria-modal="true"/,
+  "full-size preview should be a modal dialog",
+);
+assert.match(
+  source,
+  /e\.key === "Escape"[\s\S]{0,40}onClose\(\)/,
+  "full-size preview should close on Escape",
+);
+assert.match(
+  source,
+  /<MarkdownBlock text=\{body\} className="cave-md--expanded"/,
+  "full-size preview should render markdown at reader scale",
+);
+
 assert.match(source, /capabilities-view/, "Capabilities surface should expose a mobile hit-area root hook");
 assert.match(
   globals,

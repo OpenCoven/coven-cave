@@ -680,6 +680,7 @@ function CapabilityInspector({
             <SkillPreviewBlock
               preview={previewMatches ? preview : { path: item.sourcePath ?? null, status: "loading", text: null, error: null }}
               fallbackDescription={item.description}
+              title={item.label}
             />
           ) : item.description ? (
             <InspectorBlock label="Detail" value={item.description} />
@@ -836,11 +837,15 @@ function stripFrontmatter(text: string): string {
 function SkillPreviewBlock({
   preview,
   fallbackDescription,
+  title,
 }: {
   preview: SkillPreviewState;
   fallbackDescription?: string;
+  title?: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const body = preview.text ? stripFrontmatter(preview.text) : "";
+  const canExpand = preview.status === "loaded" && !!body;
   // Rendered the file content as styled markdown. On error (e.g. the path is
   // outside the previewable roots) fall back to the scanned description so the
   // inspector never goes blank.
@@ -859,7 +864,21 @@ function SkillPreviewBlock({
 
   return (
     <div>
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Preview</p>
+        {canExpand ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            aria-label="Open full-size preview"
+            title="Open full-size preview"
+            className="focus-ring inline-flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Icon name="ph:arrows-out-simple" width={11} />
+            <span>Expand</span>
+          </button>
+        ) : null}
+      </div>
       <div className="max-h-[440px] overflow-y-auto rounded-md border border-border bg-background px-3 py-2">
         {preview.status === "loaded" && body ? (
           <MarkdownBlock text={body} className="text-[12px]" />
@@ -872,6 +891,75 @@ function SkillPreviewBlock({
             ))}
           </div>
         )}
+      </div>
+      {expanded ? (
+        <CapabilityPreviewModal
+          title={title}
+          path={preview.path}
+          body={body}
+          onClose={() => setExpanded(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Full-size reader for a capability's markdown. Mirrors the familiars memory
+// reader modal: a centered overlay with a wide, scrollable column rendering the
+// same MarkdownBlock at reader scale. The body is already loaded by the
+// inspector, so this is purely presentational — no extra fetch.
+function CapabilityPreviewModal({
+  title,
+  path,
+  body,
+  onClose,
+}: {
+  title?: string;
+  path: string | null;
+  body: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const heading = title ?? path?.split("/").pop() ?? "Preview";
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview: ${heading}`}
+    >
+      <div
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <Icon name="ph:book-open" width={13} className="shrink-0 text-muted-foreground" aria-hidden />
+          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]" title={path ?? undefined}>
+            {heading}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="focus-ring ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Close preview"
+          >
+            <Icon name="ph:x-bold" width={11} aria-hidden />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+          <div className="mx-auto w-full max-w-[820px]">
+            <MarkdownBlock text={body} className="cave-md--expanded" />
+          </div>
+        </div>
       </div>
     </div>
   );
