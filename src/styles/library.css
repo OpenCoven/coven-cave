@@ -2651,14 +2651,15 @@ h3:hover .library-heading-anchor,
   }
 
   .library-timeline-group-toggle {
-    height: var(--touch-target);
+    height: calc(var(--touch-target) + 8px);
     border-radius: 10px;
-    padding: 3px;
+    padding: 4px;
   }
 
   .library-timeline-group-toggle-option {
     border-radius: 7px;
     font-size: 13px;
+    min-height: var(--touch-target);
   }
 
   .library-doclist-search {

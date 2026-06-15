@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const view = await readFile(new URL("./board-view.tsx", import.meta.url), "utf8");
 const kanban = await readFile(new URL("./board-kanban.tsx", import.meta.url), "utf8");
+const styles = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
 
 // ───────── Loading state (no empty-CTA flash on open) ─────────
 assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "BoardView must track a hasLoaded flag");
@@ -36,5 +37,30 @@ assert.doesNotMatch(kanban, /aria-grabbed=\{isGrabbed\}/, "Deprecated aria-grabb
 // Keyboard DnD contract preserved.
 assert.match(kanban, /data-card-id=\{card\.id\}/, "Cards keep data-card-id for keyboard grab");
 assert.match(kanban, /board-kanban-card--grabbed/, "Grabbed visual affordance preserved");
+
+// ───────── Mobile board chrome ─────────
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-search-input\s*\{[\s\S]*height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile board search and toolbar controls should meet thumb-sized touch targets",
+);
+
+assert.match(
+  styles,
+  /\.board-card-stack__filters\s*\{[\s\S]*flex:\s*0 0 54px[\s\S]*min-height:\s*54px[\s\S]*overflow-y:\s*hidden/,
+  "Mobile BoardCardStack filters should reserve full touch-sized chip height instead of clipping to a scrollbar sliver",
+);
+
+assert.match(
+  styles,
+  /\.board-card-stack__chip\s*\{[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile BoardCardStack filter chips should meet the shared touch target",
+);
+
+assert.match(
+  styles,
+  /\.board-card-stack__section-add\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile BoardCardStack section add button should meet the shared touch target",
+);
 
 console.log("board-ux-polish.test.ts: ok");

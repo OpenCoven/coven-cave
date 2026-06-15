@@ -8,6 +8,7 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const notificationBell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
+const automationsView = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 assert.match(
@@ -133,4 +134,22 @@ assert.match(
   workspace,
   /familiarPanelRail=\{showCompanionRail \? \(/,
   "Browser and Agents modes should suppress the desktop companion trigger rail unless a floating rail tab is selected",
+);
+
+assert.match(
+  automationsView,
+  /automation-create-chat-btn/,
+  "Automations create-via-chat CTA should expose a stable mobile hit-area hook",
+);
+
+assert.match(
+  automationsView,
+  /automation-list-row/g,
+  "Automation rows should expose stable mobile row hooks",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.automation-create-chat-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)[\s\S]*\.automation-list-row\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Automations mobile CTA and list rows should meet the shared touch target",
 );

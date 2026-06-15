@@ -387,7 +387,7 @@ function Section({
               <button
                 type="button"
                 onClick={() => onSelect(item)}
-                className="group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+                className="automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
                 style={{
                   background: selected ? "rgba(255,255,255,0.05)" : "transparent",
                 }}
@@ -743,7 +743,7 @@ function CodexRow({
       <button
         type="button"
         onClick={() => onSelect(auto)}
-        className="group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        className="automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
         style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
         onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
         onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
@@ -1013,7 +1013,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
             <button
               type="button"
               onClick={onNewReminder}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
+              className="automation-create-chat-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
               style={{
                 background: "var(--bg-raised)",
                 border: "1px solid var(--border-hairline)",

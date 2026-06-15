@@ -4805,6 +4805,22 @@ button:active > .edge-rail-chip {
     min-height: 36px;
     padding-inline: 12px;
   }
+
+  .automation-create-chat-btn {
+    min-height: var(--touch-target);
+    padding-inline: 14px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .automation-list-row {
+    min-height: var(--touch-target);
+    padding-block: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .automation-list-row > span {
+    min-width: 0;
+  }
 }
 
 .chat-scope-tabs--minimal {

@@ -58,4 +58,16 @@ assert.match(
   "Library timeline search, filters, and segmented controls should meet the 44px mobile touch target",
 );
 
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-group-toggle\s*\{[\s\S]*height\s*:\s*calc\(var\(--touch-target\) \+ 8px\)/,
+  "Library timeline segmented control should leave enough room for 44px inner options on phones",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-group-toggle-option\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "Library timeline segmented control options should each meet the 44px mobile touch target",
+);
+
 console.log("library-mobile-command-center.test.ts: ok");
