@@ -77,10 +77,10 @@ assert.match(css, /\.workflow-studio-shell \{[\s\S]{0,700}padding:\s*16px 16px 1
   assert.ok(!/background/.test(collapsedLeft[0]), "Collapsed left rail should have no background fill");
 }
 assert.match(css, /@media \(max-width: 860px\)/, "workflow CSS should include mobile studio layout");
-assert.match(
+assert.doesNotMatch(
   css,
-  /\.workflow-canvas \.react-flow \{[\s\S]{0,300}zoom:\s*calc\(1 \/ var\(--cave-screen-scale\)\)[\s\S]{0,160}width:\s*calc\(100% \* var\(--cave-screen-scale\)\)[\s\S]{0,80}height:\s*calc\(100% \* var\(--cave-screen-scale\)\)/,
-  "Workflow canvas must cancel the app-wide screen-scale zoom inside React Flow — its handle measurement ignores ancestor CSS zoom, so at 110/125/150% edge arrows detach from their handles",
+  /\.workflow-canvas \.react-flow \{[\s\S]{0,300}zoom:\s*calc\(1 \/ var\(--cave-screen-scale\)\)/,
+  "Workflow canvas must NOT counter-zoom — screen magnification is rem-based (no app-wide CSS zoom), so a 1/scale counter-zoom here would shrink the canvas and re-detach edge arrows (the #482 bug)",
 );
 
 // --- Studio v2: visual builder, runs, assignments ---

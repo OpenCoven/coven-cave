@@ -249,8 +249,8 @@ assert.match(
 
 assert.match(
   globals,
-  /zoom: var\(--cave-screen-scale\)/,
-  "Global CSS should magnify the entire app surface via the screen scale token",
+  /font-size: calc\(16px \* var\(--cave-screen-scale\)\)/,
+  "Global CSS should magnify the app via rem-based root font scaling (not an app-wide zoom, which broke getBoundingClientRect math)",
 );
 
 assert.match(

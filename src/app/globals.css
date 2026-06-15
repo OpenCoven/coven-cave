@@ -361,16 +361,22 @@ html {
   background: transparent;
 }
 
+/* Magnification is rem-based: scaling the root font-size enlarges text and
+   em-sized icons and lets the layout reflow, rather than a generic full-window
+   `zoom` (which ballooned everything — including the embedded browser/canvas —
+   and broke getBoundingClientRect math). Anything sized in rem/em scales;
+   fixed-px sizes stay put. */
+html {
+  font-size: calc(16px * var(--cave-screen-scale));
+}
+
 body {
   font-family:
     var(--font-sans), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
-  width: calc(100dvw / var(--cave-screen-scale));
-  height: calc(100dvh / var(--cave-screen-scale));
-  zoom: var(--cave-screen-scale);
 }
 
 /* Mobile foundations — kill iOS focus-zoom on text entry. Any input/
@@ -5208,7 +5214,7 @@ button:active > .edge-rail-chip {
    their existing `flex-1 min-h-0`. */
 @supports (height: 100dvh) {
   .shell-frame {
-    height: calc(100dvh / var(--cave-screen-scale));
+    height: 100dvh;
   }
   .ui-modal-shell {
     max-height: calc(100dvh - 2 * var(--space-4));
