@@ -237,6 +237,15 @@ assert.doesNotMatch(attachments, /workflow-section-caret-btn/, "Bind tab content
 assert.match(attachments, /workflow-attachment-title/, "Attachment section headers are plain titles");
 assert.doesNotMatch(css, /\.workflow-attachment-row \{[^}]*border/, "Flat attachment sections drop the bordered framing");
 assert.match(css, /\.workflow-attachment-body > \* \{\n  width: 100%;/, "Attachment bodies span the full row width");
+
+// Inspect and Manifest tabs are flat too — content shows directly on tab-select,
+// not behind an outer disclosure caret (the tabs already gate visibility).
+assert.doesNotMatch(inspector, /workflow-section-caret-btn/, "Inspect tab content is not behind an outer collapse caret");
+assert.doesNotMatch(inspector, /aria-expanded=\{open\}/, "Inspect tab does not gate content behind a disclosure");
+assert.doesNotMatch(manifestPreview, /workflow-section-caret-btn/, "Manifest tab content is not behind an outer collapse caret");
+assert.doesNotMatch(manifestPreview, /aria-expanded=\{open\}/, "Manifest tab does not gate content behind a disclosure");
+// The caret control is fully retired across the workflow panels.
+assert.doesNotMatch(css, /\.workflow-section-caret-btn/, "Dead caret-button CSS is removed");
 assert.match(attachments, /workflow-role-emoji/, "Role rows reserve a fixed emoji slot so names align");
 assert.match(css, /grid-template-columns: auto 20px minmax\(0, 1fr\) auto/, "Role rows align as checkbox/emoji/name/familiar columns");
 assert.match(css, /scrollbar-width: thin/, "Studio scroll regions use thin themed scrollbars");

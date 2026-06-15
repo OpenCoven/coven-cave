@@ -263,11 +263,6 @@
   margin-bottom: 12px;
 }
 
-/* Collapsed sections trim the heading's bottom gap so headers stack tightly. */
-.workflow-panel:has(.workflow-section-caret-btn[aria-expanded="false"]) .workflow-panel-heading {
-  margin-bottom: 0;
-}
-
 /* Library actions toolbar — the panel header owns the title, so this is just
    a right-aligned row of create/refresh buttons. */
 .workflow-library-toolbar {
@@ -276,38 +271,12 @@
   margin-bottom: 8px;
 }
 
-/* Caret toggle + title group on the left of a collapsible section heading. */
+/* Title group on the left of a section heading. */
 .workflow-heading-lead {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.workflow-section-caret-btn {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  margin-top: 1px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-
-.workflow-section-caret-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.workflow-section-caret-btn:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 1px;
 }
 
 .workflow-panel-heading h2,
@@ -1681,16 +1650,14 @@
   .workflow-library-footer button,
   .workflow-field input,
   .workflow-field select,
-  .workflow-search,
-  .workflow-section-caret-btn {
+  .workflow-search {
     min-height: var(--touch-target);
     -webkit-tap-highlight-color: transparent;
   }
 
   .workflow-icon-button,
   .workflow-canvas-tool,
-  .workflow-canvas .react-flow__controls-button,
-  .workflow-section-caret-btn {
+  .workflow-canvas .react-flow__controls-button {
     width: var(--touch-target);
     height: var(--touch-target);
     min-width: var(--touch-target);
