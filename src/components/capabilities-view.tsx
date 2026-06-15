@@ -207,11 +207,10 @@ export function CapabilitiesViewSurface({
     [operatorView.items, selectionId],
   );
 
-  // Load the selected capability's markdown so the inspector can render a
-  // styled preview. Skills report their FOLDER as the path (the daemon doesn't
-  // point at the SKILL.md inside) so any skill is previewable and the route
-  // resolves the folder → SKILL.md; instructions report a CLAUDE.md/AGENTS.md
-  // file directly. Out-of-tree paths (403) fall back to the description.
+  // Load the selected capability file so the inspector can render a styled
+  // preview. Skills are normalized to their actual descriptor file;
+  // instructions report a CLAUDE.md/AGENTS.md file directly. Out-of-tree
+  // paths (403) fall back to the description.
   const previewPath = selectedItem?.sourcePath ?? null;
   const isPreviewable =
     !!previewPath && (selectedItem?.type === "skill" || previewPath.toLowerCase().endsWith(".md"));
@@ -568,9 +567,9 @@ function CapabilityMapRow({
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
 }) {
-  // Every row expands inline to reveal its inspector details. Skills report
-  // their folder as the path and any .md instruction is previewable too — those
-  // additionally render the file as styled markdown beneath the details.
+  // Every row expands inline to reveal its inspector details. Skill descriptors
+  // and any .md instruction additionally render a file preview beneath the
+  // details.
   const isPreviewable =
     !!item.sourcePath && (item.type === "skill" || item.sourcePath.toLowerCase().endsWith(".md"));
   const previewMatches = preview.path === item.sourcePath;
