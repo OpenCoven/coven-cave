@@ -7,6 +7,15 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.84] - 2026-06-15
+
+Patch release with capabilities, library, and iOS fixes on top of 0.0.83.
+
+### Fixed
+- **Capabilities** — the skill markdown preview now renders for real skills. The daemon reports a skill's folder path, so the preview resolves `<folder>/SKILL.md`, strips YAML frontmatter, and falls back to the description when no `SKILL.md` exists.
+- **Library** — reading list sections now order Want to Read → Reading → Done.
+- **iOS** — fixed the terminal reconnect hang and capability scoping (TestFlight).
+
 ## [0.0.83] - 2026-06-15
 
 Patch release carrying the latest `main` polish on top of the refreshed
