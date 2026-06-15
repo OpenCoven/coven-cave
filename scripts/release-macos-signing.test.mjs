@@ -7,6 +7,10 @@ const releaseScript = readFileSync(
   fileURLToPath(new URL("./release.sh", import.meta.url)),
   "utf8",
 );
+const releaseWorkflow = readFileSync(
+  fileURLToPath(new URL("../.github/workflows/release.yml", import.meta.url)),
+  "utf8",
+);
 const sidecarScript = readFileSync(
   fileURLToPath(new URL("./sidecar-bundle.sh", import.meta.url)),
   "utf8",
@@ -48,4 +52,9 @@ test("DMG packaging retries transient hdiutil resource-busy failures", () => {
     releaseScript.indexOf("create_dmg_with_retry") <
       releaseScript.indexOf('echo "==> Signing DMG container"'),
   );
+});
+
+test("Linux release job forces AppImage extract-and-run mode", () => {
+  assert.match(releaseWorkflow, /APPIMAGE_EXTRACT_AND_RUN:/);
+  assert.match(releaseWorkflow, /matrix\.platform == 'ubuntu-22\.04'/);
 });

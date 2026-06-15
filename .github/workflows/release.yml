@@ -222,6 +222,11 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GitHub-hosted Linux runners do not reliably expose FUSE to nested
+          # AppImages. linuxdeploy is itself an AppImage, so force its
+          # extract-and-run fallback instead of letting AppImage startup fail
+          # with Tauri's opaque "failed to run linuxdeploy" wrapper error.
+          APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.platform == 'ubuntu-22.04' && '1' || '' }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
