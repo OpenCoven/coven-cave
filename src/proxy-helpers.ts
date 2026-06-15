@@ -74,13 +74,8 @@ export function sameOrigin(value: string | null, expectedOrigin: string) {
   }
 }
 
-export function isAllowedRequestSource(
-  value: string | null,
-  expectedOrigin: string,
-  mobileAccessAuthenticated = false,
-  requestHost?: string | null,
-) {
-  return mobileAccessAuthenticated || sameOrigin(value, expectedOrigin);
+export function isAllowedRequestSource(value: string | null, expectedOrigin: string) {
+  return sameOrigin(value, expectedOrigin);
 }
 
 export function shouldRequireMobileAccessCredential(
