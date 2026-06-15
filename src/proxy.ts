@@ -150,6 +150,13 @@ export async function proxy(req: NextRequest) {
     return jsonError(415, "unsupported content-type");
   }
 
+  const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
+  const suppliedToken =
+    req.headers.get(TOKEN_HEADER) ??
+    req.nextUrl.searchParams.get(TOKEN_PARAM) ??
+    bearerFromReferer(req.headers.get("referer"), expectedOrigin);
+  const sidecarAuthenticated = Boolean(sidecarToken) && suppliedToken === sidecarToken;
+
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"
       ? jsonError(500, "missing sidecar auth token")
