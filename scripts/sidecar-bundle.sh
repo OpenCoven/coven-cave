@@ -25,29 +25,17 @@ DEST="$ROOT/src-tauri/resources/server"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 STATIC="$ROOT/.next/static"
 PUBLIC="$ROOT/public"
-NPM_STAGE="$ROOT/.next/sidecar-npm-stage"
-
-fix_node_pty_spawn_helpers() {
-  local base="$1"
-  local prebuilds="$base/node-pty/prebuilds"
-  local fixed=0
-
-  if [ ! -d "$prebuilds" ]; then
-    return 0
-  fi
-
-  while IFS= read -r -d '' helper; do
-    chmod 755 "$helper"
-    fixed=$((fixed + 1))
-  done < <(find "$prebuilds" -path "*/darwin-*/spawn-helper" -type f -print0)
-
-  if [ "$fixed" -gt 0 ]; then
-    echo "==> fixed node-pty spawn-helper mode in $base ($fixed)"
-  fi
-}
+PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
+trap 'rm -rf "$PNPM_STAGE"' EXIT
 
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
+
+STANDALONE="$ROOT/.next/standalone"
+if [ ! -f "$STANDALONE/server.js" ]; then
+  echo "ERROR: $STANDALONE/server.js missing after build" >&2
+  exit 1
+fi
 
 echo "==> staging Node runtime for bundled sidecar"
 if [ "${OS:-}" = "Windows_NT" ]; then
@@ -67,37 +55,31 @@ cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
 printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
-STANDALONE="$ROOT/.next/standalone"
-if [ ! -f "$STANDALONE/server.js" ]; then
-  echo "ERROR: $STANDALONE/server.js missing after build" >&2
-  exit 1
+# Next.js + pnpm leaves a node_modules full of pnpm-style symlinks
+# (.pnpm/* paths) that don't survive the copy into the .app bundle. Recreate
+# production deps from the committed pnpm lockfile in a staging dir, then copy
+# them with symlinks dereferenced so release bundles keep locked integrity data.
+echo "==> installing locked prod deps with pnpm in staging dir"
+cp "$ROOT/package.json" "$PNPM_STAGE/package.json"
+cp "$ROOT/pnpm-lock.yaml" "$PNPM_STAGE/pnpm-lock.yaml"
+if [ -f "$ROOT/.npmrc" ]; then
+  cp "$ROOT/.npmrc" "$PNPM_STAGE/.npmrc"
 fi
-
-# Next.js + pnpm leaves a node_modules full of pnpm-style broken symlinks
-# (.pnpm/* paths) that don't survive the copy into the .app bundle. Install
-# production deps cleanly via npm in a staging dir using the standalone's
-# package.json, then we'll splice that node_modules in.
-echo "==> installing prod deps with npm in staging dir"
-rm -rf "$NPM_STAGE"
-mkdir -p "$NPM_STAGE"
-cp "$STANDALONE/package.json" "$NPM_STAGE/package.json"
 (
-  cd "$NPM_STAGE" && npm install --omit=dev --no-audit --no-fund \
-    --no-package-lock --ignore-scripts
+  cd "$PNPM_STAGE" && pnpm install --prod --frozen-lockfile \
+    --config.node-linker=hoisted --ignore-scripts
 ) >&2
-fix_node_pty_spawn_helpers "$NPM_STAGE/node_modules"
 
 echo "==> copying standalone tree → $DEST"
 rm -rf "$DEST"
 mkdir -p "$DEST"
-printf "generated at release build time\n" > "$DEST/placeholder.txt"
 # Skip the standalone's broken pnpm-style node_modules; we'll bring in the
-# fresh npm one instead.
+# locked, dereferenced pnpm one instead.
 (cd "$STANDALONE" && find . -mindepth 1 -maxdepth 1 ! -name node_modules \
    -exec cp -a {} "$DEST/" \;)
 
-echo "==> grafting fresh node_modules → $DEST/node_modules"
-cp -a "$NPM_STAGE/node_modules" "$DEST/node_modules"
+echo "==> grafting locked node_modules → $DEST/node_modules"
+cp -aL "$PNPM_STAGE/node_modules" "$DEST/node_modules"
 fix_node_pty_spawn_helpers "$DEST/node_modules"
 
 # The standalone tree's server.js is Next's generated entrypoint — it serves
@@ -112,9 +94,9 @@ if [ ! -f "$ROOT/server.mjs" ]; then
 fi
 cp "$ROOT/server.mjs" "$DEST/server.mjs"
 
-# But Next.js's compiled server.js requires the standalone's own internal
-# next package layout. Merge any package the standalone shipped that npm
-# didn't reinstall (rare, but cheap to do).
+# But Next.js's compiled server.js can require the standalone's own internal
+# next package layout. Merge any package the standalone shipped that the
+# locked production install did not include (rare, but cheap to do).
 if [ -d "$STANDALONE/node_modules" ]; then
   echo "==> backfilling any pnpm-only packages from standalone"
   (cd "$STANDALONE/node_modules" && find . -maxdepth 2 -mindepth 1 -type d \
@@ -137,7 +119,7 @@ fi
 
 # Next.js + pnpm also drops symlinks under .next/node_modules/ that point at
 # ../../node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> (e.g. shiki,
-# oniguruma-to-es). After we swap in the npm-flat top-level node_modules
+# oniguruma-to-es). After we swap in the locked top-level node_modules
 # above, those symlinks dangle, and Tauri's resource glob rejects the bundle
 # with `resource path doesn't exist`. Resolve each into a real directory.
 if [ -d "$DEST/.next/node_modules" ]; then
@@ -150,8 +132,8 @@ if [ -d "$DEST/.next/node_modules" ]; then
     # Strip the trailing -<16hex> webpack-content-hash suffix
     pkg="$(basename "$link" | sed -E 's/-[a-f0-9]{16}$//')"
     src=""
-    if [ -d "$NPM_STAGE/node_modules/$pkg" ]; then
-      src="$NPM_STAGE/node_modules/$pkg"
+    if [ -d "$PNPM_STAGE/node_modules/$pkg" ]; then
+      src="$PNPM_STAGE/node_modules/$pkg"
     elif [ -d "$ROOT/node_modules/$pkg" ]; then
       src="$ROOT/node_modules/$pkg"
     fi
@@ -179,5 +161,4 @@ for must in node_modules/@next/env node_modules/@swc/helpers/_; do
   fi
 done
 
-rm -rf "$NPM_STAGE"
 echo "==> sidecar bundle ready ($(du -sh "$DEST" | cut -f1))"
