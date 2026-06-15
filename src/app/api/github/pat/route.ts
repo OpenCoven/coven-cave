@@ -14,30 +14,34 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { dirname } from "path";
 import { resolveSecret } from "@/lib/vault";
-import { upsertEnvContent } from "@/lib/env-file";
+import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ENV_PATH = join(process.cwd(), ".env.local");
 const PAT_KEY = "GITHUB_PAT";
 const LOGIN_KEY = "GITHUB_USERNAME";
 
 /** Apply key updates to .env.local in place. `null` deletes a key. Comments,
  *  blank lines, key ordering, and unrelated values are preserved (the old
- *  parse-to-map + full rewrite mangled all of those). */
+ *  parse-to-map + full rewrite mangled all of those). In packaged builds
+ *  envLocalPath() points outside the read-only bundle, so ensure its dir
+ *  exists before writing. */
 function applyEnvUpdates(updates: Record<string, string | null>): void {
-  const existing = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, "utf8") : "";
-  writeFileSync(ENV_PATH, upsertEnvContent(existing, updates), "utf8");
+  const envPath = envLocalPath();
+  mkdirSync(dirname(envPath), { recursive: true });
+  const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+  writeFileSync(envPath, upsertEnvContent(existing, updates), "utf8");
 }
 
 /** True when .env.local already declares <key> (constant keys only). */
 function envFileHasKey(key: string): boolean {
-  if (!existsSync(ENV_PATH)) return false;
-  return new RegExp(`^\\s*${key}\\s*=`, "m").test(readFileSync(ENV_PATH, "utf8"));
+  const envPath = envLocalPath();
+  if (!existsSync(envPath)) return false;
+  return new RegExp(`^\\s*${key}\\s*=`, "m").test(readFileSync(envPath, "utf8"));
 }
 
 async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null }> {
