@@ -166,6 +166,20 @@ assert.match(
   "Mobile bottom tabs should render an active indicator that can animate without shifting layout",
 );
 
+// The bottom tabs are the primary mobile destination switcher — each tap target
+// must meet the shared 44px hit-area, and its keyboard focus ring must use the
+// shared inset offset token (not an ad-hoc value) so it doesn't clip or drift.
+assert.match(
+  globals,
+  /\.mobile-bottom-tab\s*\{[\s\S]*?min-height:\s*var\(--touch-target\)/,
+  "Primary mobile bottom tabs should meet the shared touch target",
+);
+assert.match(
+  globals,
+  /\.mobile-bottom-tab:focus-visible\s*\{[\s\S]*?outline-offset:\s*var\(--ring-offset-inset\)/,
+  "Mobile bottom tab focus ring should use the shared inset offset token",
+);
+
 assert.match(
   workspace,
   /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,

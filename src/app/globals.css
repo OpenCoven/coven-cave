@@ -4677,7 +4677,7 @@ button:active > .edge-rail-chip {
 }
 .mobile-bottom-tab:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: -2px;
+  outline-offset: var(--ring-offset-inset);
   border-radius: var(--radius-control);
 }
 .mobile-bottom-tab__icon-wrap {
