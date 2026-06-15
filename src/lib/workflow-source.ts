@@ -1,4 +1,4 @@
-import { chmod, mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { covenHome } from "./coven-paths.ts";
@@ -27,12 +27,76 @@ type FoundWorkflow = WorkflowSummary & { storage: WorkflowStorageScope };
  *
  * Manifest directory resolution (first hit wins):
  *   1. `COVEN_WORKFLOWS_DIR` env var (absolute path)
- *   2. `<cwd>/workflows`
+ *   2. bundle mode (`COVEN_CAVE_BUNDLE=1`): `<covenHome>/cave/workflows` (writable)
+ *   3. `<cwd>/workflows`
+ *
+ * In packaged desktop builds the process runs with its cwd inside the
+ * read-only, code-signed `.app` bundle. Saving public workflows there (manifest
+ * `.yaml` + canvas-layout `.cave.json` sidecars) would mutate the bundle and
+ * break its signature seal — which makes Gatekeeper reject the app and stops
+ * the in-place auto-updater. So in bundle mode public workflows live in a
+ * writable per-user directory, seeded once from the bundle's shipped templates
+ * (see {@link seedPublicWorkflowsIfNeeded}).
  */
 export function workflowsDir(): string {
   const override = process.env.COVEN_WORKFLOWS_DIR?.trim();
   if (override) return override;
+  if (isBundle()) return path.join(covenHome(), "cave", "workflows");
   return path.join(process.cwd(), "workflows");
+}
+
+/** Read-only public workflow templates shipped inside the app bundle. In
+ *  bundle mode the sidecar's cwd is the bundle's server dir, so its `workflows/`
+ *  seeds live alongside. Used only to seed the writable dir on first run. */
+function bundledSeedWorkflowsDir(): string {
+  return path.join(process.cwd(), "workflows");
+}
+
+function isBundle(): boolean {
+  return process.env.COVEN_CAVE_BUNDLE === "1";
+}
+
+let publicSeedChecked = false;
+
+/**
+ * First-run seed for bundle mode: the writable public dir starts empty, so copy
+ * the bundle's shipped templates (manifests + their `.cave.json` layout
+ * sidecars) into it once. Existence of the writable dir is the "already seeded"
+ * marker, so user deletions are respected and we never re-copy on every read.
+ * No-op outside bundle mode or when `COVEN_WORKFLOWS_DIR` is set (dev/tests).
+ */
+async function seedPublicWorkflowsIfNeeded(): Promise<void> {
+  if (!isBundle()) return;
+  if (process.env.COVEN_WORKFLOWS_DIR?.trim()) return;
+  if (publicSeedChecked) return;
+  publicSeedChecked = true;
+
+  const dest = workflowsDir();
+  try {
+    await stat(dest);
+    return; // already present → seeded (or intentionally emptied) — leave it
+  } catch {
+    // not present → seed below
+  }
+
+  const seedDir = bundledSeedWorkflowsDir();
+  let names: string[];
+  try {
+    names = await readdir(seedDir);
+  } catch {
+    return; // no bundled seeds (e.g. seedDir === dest) → nothing to copy
+  }
+  if (path.resolve(seedDir) === path.resolve(dest)) return;
+
+  await mkdir(dest, { recursive: true });
+  for (const name of names) {
+    if (!/\.(ya?ml|cave\.json)$/i.test(name)) continue;
+    try {
+      await copyFile(path.join(seedDir, name), path.join(dest, name));
+    } catch {
+      // Best-effort: a failed copy just means that one template is unavailable.
+    }
+  }
 }
 
 export function personalWorkflowsDir(): string {
@@ -314,6 +378,7 @@ async function readManifestFilesInDir(dir: string, storage: WorkflowStorageScope
 }
 
 async function readManifestFiles(): Promise<ManifestFile[]> {
+  await seedPublicWorkflowsIfNeeded();
   return [
     ...(await readManifestFilesInDir(workflowsDir(), "public")),
     ...(await readManifestFilesInDir(personalWorkflowsDir(), "personal")),
@@ -438,6 +503,7 @@ function workflowDirForStorage(storage: WorkflowStorageScope): string {
 }
 
 async function ensureWorkflowDir(storage: WorkflowStorageScope): Promise<string> {
+  if (storage === "public") await seedPublicWorkflowsIfNeeded();
   const dir = workflowDirForStorage(storage);
   await mkdir(dir, { recursive: true, mode: storage === "personal" ? 0o700 : undefined });
   if (storage === "personal") {

@@ -43,6 +43,15 @@ const nextConfig: NextConfig = {
     // @iconify/react in particular has a flat icon-name surface that
     // can otherwise pull in 200KB+ of icon metadata for one icon.
     optimizePackageImports: ["@iconify/react", "shiki"],
+    // Keep the incremental/fetch data cache in memory instead of flushing it
+    // to `.next/cache` on disk. The packaged desktop build runs the Next
+    // server with its cwd INSIDE the read-only, code-signed `.app` bundle, so
+    // any write under `.next/cache` mutates the bundle and breaks its
+    // signature seal — which makes Gatekeeper reject the app and stops the
+    // in-place auto-updater from replacing it (`Failed to move the new app
+    // into place`). An in-memory cache is fine here: the sidecar server is
+    // restarted with the app, so there is nothing to persist across runs.
+    isrFlushToDisk: false,
   },
 };
 

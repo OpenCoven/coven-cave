@@ -14,9 +14,10 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { covenHome } from "./coven-paths.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,56 @@ export type VaultMappingStatus = {
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
-const VAULT_YAML = join(process.cwd(), "vault.yaml");
+function isBundle(): boolean {
+  return process.env.COVEN_CAVE_BUNDLE === "1";
+}
+
+/**
+ * Path to the vault reference-map file (no secrets — only `op://` refs).
+ *
+ * In packaged desktop builds the process runs with its cwd inside the
+ * read-only, code-signed `.app` bundle, so editing the map in the UI (which
+ * rewrites this file) must target a writable per-user location. Writing into
+ * the bundle breaks its signature seal → Gatekeeper rejects the app and the
+ * in-place auto-updater can no longer replace it. In bundle mode the file lives
+ * under `<covenHome>/cave/`, seeded once from the bundle's shipped map.
+ *
+ * Resolution (first hit wins): `COVEN_VAULT_FILE` → bundle path → `<cwd>/vault.yaml`.
+ */
+function vaultYamlPath(): string {
+  const override = process.env.COVEN_VAULT_FILE?.trim();
+  if (override) return override;
+  if (isBundle()) return join(covenHome(), "cave", "vault.yaml");
+  return join(process.cwd(), "vault.yaml");
+}
+
+/** Read-only vault map shipped inside the bundle (cwd at runtime). */
+function bundledSeedVaultPath(): string {
+  return join(process.cwd(), "vault.yaml");
+}
+
+let _vaultSeedChecked = false;
+
+/** First-run seed for bundle mode: copy the bundle's shipped reference map into
+ *  the writable location once. Existence is the "seeded" marker. No-op outside
+ *  bundle mode or when `COVEN_VAULT_FILE` is set. */
+function seedVaultIfNeeded(): void {
+  if (!isBundle()) return;
+  if (process.env.COVEN_VAULT_FILE?.trim()) return;
+  if (_vaultSeedChecked) return;
+  _vaultSeedChecked = true;
+  const dest = vaultYamlPath();
+  if (existsSync(dest)) return;
+  const seed = bundledSeedVaultPath();
+  if (resolve(seed) === resolve(dest)) return;
+  try {
+    if (!existsSync(seed)) return;
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(seed, dest);
+  } catch {
+    // Best-effort: a failed seed just means the map starts empty.
+  }
+}
 
 // ── Vault loader ──────────────────────────────────────────────────────────────
 
@@ -50,9 +100,11 @@ let _vaultMap: VaultMap | null = null;
 
 export function loadVaultMap(force = false): VaultMap {
   if (_vaultMap && !force) return _vaultMap;
-  if (!existsSync(VAULT_YAML)) { _vaultMap = {}; return {}; }
+  seedVaultIfNeeded();
+  const vaultYaml = vaultYamlPath();
+  if (!existsSync(vaultYaml)) { _vaultMap = {}; return {}; }
   try {
-    const raw = readFileSync(VAULT_YAML, "utf8");
+    const raw = readFileSync(vaultYaml, "utf8");
     const parsed = parseYaml(raw) as VaultMap | null;
     _vaultMap = parsed ?? {};
     return _vaultMap;
@@ -84,8 +136,9 @@ export function saveVaultMap(map: VaultMap): void {
     if (entry.required) lines.push(`  required: true`);
     lines.push("");
   }
-  const { writeFileSync } = require("node:fs") as typeof import("node:fs");
-  writeFileSync(VAULT_YAML, lines.join("\n"), "utf8");
+  const vaultYaml = vaultYamlPath();
+  mkdirSync(dirname(vaultYaml), { recursive: true });
+  writeFileSync(vaultYaml, lines.join("\n"), "utf8");
   _vaultMap = map; // bust cache
 }
 
