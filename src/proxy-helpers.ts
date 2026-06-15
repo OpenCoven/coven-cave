@@ -50,7 +50,7 @@ function isTailscaleServeHost(host: string | null) {
 }
 
 export function isAllowedApiHost(host: string | null, mobileAccessAuthenticated = false) {
-  return mobileAccessAuthenticated || isLoopbackHost(host) || isTailscaleServeHost(host);
+  return mobileAccessAuthenticated || isLoopbackHost(host);
 }
 
 export function sameOrigin(value: string | null, expectedOrigin: string) {
@@ -80,27 +80,13 @@ export function sameOrigin(value: string | null, expectedOrigin: string) {
   }
 }
 
-function sameTailscaleServeSource(value: string | null, host: string | null | undefined) {
-  if (!value || !host || !isTailscaleServeHost(host)) return false;
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.hostname === hostnameFromHost(host) &&
-      url.port === portFromHost(host)
-    );
-  } catch {
-    return false;
-  }
-}
-
 export function isAllowedRequestSource(
   value: string | null,
   expectedOrigin: string,
   mobileAccessAuthenticated = false,
   requestHost?: string | null,
 ) {
-  return mobileAccessAuthenticated || sameOrigin(value, expectedOrigin) || sameTailscaleServeSource(value, requestHost);
+  return mobileAccessAuthenticated || sameOrigin(value, expectedOrigin);
 }
 
 export function shouldRequireMobileAccessCredential(
