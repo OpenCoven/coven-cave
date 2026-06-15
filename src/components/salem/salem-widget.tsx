@@ -100,6 +100,21 @@ export function SalemChatPanel() {
     }
   };
 
+  // Record LOCAL pathfinder feedback (never egresses — see pathfinder-feedback).
+  const recordFeedback = (input: {
+    pathId: string;
+    mode: "setup" | "home";
+    helpful?: boolean;
+    savedToBoard?: boolean;
+    correctionNote?: string;
+  }) => {
+    void fetch("/api/salem/pathfinder/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }).catch(() => {});
+  };
+
   // Save a recommended path to the Board as a card + checklist (design §"Data
   // Flow" step 8). The card requires an explicit confirm before calling this.
   const saveCardToBoard = async (card: SalemPathfinderCardData): Promise<boolean> => {
@@ -122,7 +137,9 @@ export function SalemChatPanel() {
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
-      return res.ok && data.ok !== false;
+      const ok = res.ok && data.ok !== false;
+      if (ok) void recordFeedback({ pathId: card.recommendedPathId, mode: card.mode, savedToBoard: true });
+      return ok;
     } catch {
       return false;
     }
@@ -217,7 +234,18 @@ export function SalemChatPanel() {
         ))}
         {pathfinderCard ? (
           <div className="salem-msg salem-msg--salem">
-            <SalemPathfinderCard card={pathfinderCard} density="full" onSave={saveCardToBoard} />
+            <SalemPathfinderCard card={pathfinderCard}
+              density="full"
+              onSave={saveCardToBoard}
+              onFeedback={(fb) =>
+                recordFeedback({
+                  pathId: pathfinderCard.recommendedPathId,
+                  mode: pathfinderCard.mode,
+                  helpful: fb.helpful,
+                  correctionNote: fb.correctionNote,
+                })
+              }
+            />
           </div>
         ) : null}
         {(loading || pathfinding) && (

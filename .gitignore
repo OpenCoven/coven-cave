@@ -89,8 +89,9 @@ credentials/
 # npm lockfile — project uses pnpm
 package-lock.json
 /.superpowers
-/docs/superpowers
 /.playwright-cli
+/.playwright-mcp
 /.understand-anything
 /graphify-out
-/.playwright-mcp
+/artifacts
+/docs/superpowers

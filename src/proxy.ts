@@ -140,34 +140,22 @@ export async function proxy(req: NextRequest) {
   if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated)) {
     return jsonError(403, "forbidden host");
   }
+  if (!isAllowedRequestSource(req.headers.get("origin"), expectedOrigin)) {
+    return jsonError(403, "forbidden origin");
+  }
+  if (!isAllowedRequestSource(req.headers.get("referer"), expectedOrigin)) {
+    return jsonError(403, "forbidden referer");
+  }
+  if (!hasSafeContentType(req)) {
+    return jsonError(415, "unsupported content-type");
+  }
 
-  // A request that carries the sidecar auth token (custom x-coven-cave-token
-  // header / covenCaveToken param) is provably first-party: a browser cannot
-  // attach that header on a cross-origin request, so such a request can't be a
-  // CSRF / cross-site forgery regardless of its Origin. This is what makes
-  // Tailscale Serve work: Serve terminates TLS and proxies to loopback,
-  // forwarding `Host: 127.0.0.1`, so the real `https://<machine>.ts.net`
-  // identity survives only in the Origin header — which otherwise fails the
-  // same-origin gate and 403s every mutating request ("forbidden origin").
-  // Token-bearing requests are trusted for the CSRF gate just like
-  // mobile-access-authenticated ones; the token itself is still validated below.
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   const suppliedToken =
     req.headers.get(TOKEN_HEADER) ??
     req.nextUrl.searchParams.get(TOKEN_PARAM) ??
     bearerFromReferer(req.headers.get("referer"), expectedOrigin);
   const sidecarAuthenticated = Boolean(sidecarToken) && suppliedToken === sidecarToken;
-  const csrfTrusted = mobileAccessAuthenticated || sidecarAuthenticated;
-
-  if (!isAllowedRequestSource(req.headers.get("origin"), expectedOrigin, csrfTrusted, requestHost)) {
-    return jsonError(403, "forbidden origin");
-  }
-  if (!isAllowedRequestSource(req.headers.get("referer"), expectedOrigin, csrfTrusted, requestHost)) {
-    return jsonError(403, "forbidden referer");
-  }
-  if (!hasSafeContentType(req)) {
-    return jsonError(415, "unsupported content-type");
-  }
 
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"

@@ -31,6 +31,19 @@ test("mobile tailscale runner persists state for remote invite regeneration", ()
   assert.match(script, /chmod 600 "\$TOKEN_FILE"/);
 });
 
+test("mobile tailscale runner refuses untracked localhost listeners", () => {
+  assert.match(script, /recorded_server_is_running\(\)/);
+  assert.match(script, /require_recorded_server\(\)/);
+  assert.match(script, /Refusing to contact an untracked server/);
+  assert.match(script, /kill -0 "\$pid"/);
+});
+
+test("mobile tailscale invite flow does not send the raw persisted token", () => {
+  assert.match(script, /CONTROL_TOKEN_TTL_MS/);
+  assert.match(script, /createMobileAccessToken\(accessToken\)/);
+  assert.doesNotMatch(script, /Bearer \$\{accessToken\}/);
+});
+
 test("mobile tailscale runner keeps dev server alive after the wrapper exits", () => {
   assert.match(script, /tmux new-session -d/);
   assert.match(script, /nohup env COVEN_CAVE_ACCESS_TOKEN=/);

@@ -50,7 +50,7 @@ function isTailscaleServeHost(host: string | null) {
 }
 
 export function isAllowedApiHost(host: string | null, mobileAccessAuthenticated = false) {
-  return mobileAccessAuthenticated || isLoopbackHost(host) || isTailscaleServeHost(host);
+  return mobileAccessAuthenticated || isLoopbackHost(host);
 }
 
 export function sameOrigin(value: string | null, expectedOrigin: string) {
@@ -68,39 +68,14 @@ export function sameOrigin(value: string | null, expectedOrigin: string) {
       url.port === expected.port &&
       isLoopbackHost(url.host) &&
       isLoopbackHost(expected.host)
-    ) || (
-      url.protocol === "https:" &&
-      expected.protocol === "http:" &&
-      url.hostname === expected.hostname &&
-      url.port === expected.port &&
-      isTailscaleServeHost(expected.host)
     );
   } catch {
     return false;
   }
 }
 
-function sameTailscaleServeSource(value: string | null, host: string | null | undefined) {
-  if (!value || !host || !isTailscaleServeHost(host)) return false;
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.hostname === hostnameFromHost(host) &&
-      url.port === portFromHost(host)
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function isAllowedRequestSource(
-  value: string | null,
-  expectedOrigin: string,
-  mobileAccessAuthenticated = false,
-  requestHost?: string | null,
-) {
-  return mobileAccessAuthenticated || sameOrigin(value, expectedOrigin) || sameTailscaleServeSource(value, requestHost);
+export function isAllowedRequestSource(value: string | null, expectedOrigin: string) {
+  return sameOrigin(value, expectedOrigin);
 }
 
 export function shouldRequireMobileAccessCredential(

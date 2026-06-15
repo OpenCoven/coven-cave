@@ -173,12 +173,12 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /\["diff", "--binary", "HEAD", "--"\]/,
+  /gitDiff\(repoRoot, \["--binary", "HEAD", "--"\]\)/,
   "Checkpoint snapshots should capture binary-safe tracked diffs versus HEAD",
 );
 assert.match(
   changesRoute,
-  /status === "untracked"[\s\S]*?\["diff", "--no-index", "--", DEV_NULL, file\.path\]/,
+  /status === "untracked"[\s\S]*?gitDiff\(repoRoot, \["--no-index", "--", DEV_NULL, file\.path\]\)/,
   "Untracked checkpoint diffs use repo-relative paths so the snapshot can be git apply'd back",
 );
 assert.match(

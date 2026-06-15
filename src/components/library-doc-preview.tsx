@@ -716,9 +716,16 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
   useEffect(() => {
     if (!mdRef.current) return;
     const headings = Array.from(mdRef.current.querySelectorAll<HTMLElement>("h1,h2,h3")) as HTMLElement[];
+    // Two headings with the same text would slug to the same id, producing
+    // duplicate React keys and colliding DOM anchors (scroll/observer/copy-link
+    // would all resolve to the first). Suffix repeats (-2, -3, …) to keep ids unique.
+    const seen = new Map<string, number>();
     const items = headings.map((el) => {
       const text = el.textContent ?? "";
-      const id = "toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const base = "toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      const id = n === 1 ? base : `${base}-${n}`;
       el.id = id;
       return { id, text, level: parseInt(el.tagName[1]) };
     });
@@ -756,9 +763,14 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
   useEffect(() => {
     if (!readerOpen || !readerMdRef.current) return;
     const headings = Array.from(readerMdRef.current.querySelectorAll<HTMLElement>("h1,h2,h3")) as HTMLElement[];
+    // Suffix duplicate-text headings (see main-preview note) so ids/anchors stay unique.
+    const seen = new Map<string, number>();
     const items = headings.map((el) => {
       const text = el.textContent ?? "";
-      const id = "reader-toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const base = "reader-toc-" + text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      const id = n === 1 ? base : `${base}-${n}`;
       el.id = id;
       // Hover copy-link anchor: copies <path>#<slug>. DOM-appended (same
       // idiom as the id/aria-current mutations above) so RenderedMarkdown

@@ -1,7 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
-import { isIP } from "node:net";
 import { parse } from "node:url";
 
 import next from "next";
@@ -29,7 +28,9 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 }
 
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
-const ACCESS_COOKIE = "coven_access_token";
+const ACCESS_COOKIE = "coven_cave_access";
+const LEGACY_ACCESS_COOKIE = "coven_access_token";
+const ACCESS_QUERY_PARAM = "coven_access_token";
 
 type PtySession = {
   pty: import("node-pty").IPty;
@@ -45,79 +46,77 @@ type PtySession = {
 
 const sessions = new Map<string, PtySession>();
 
-/** Cap on replayed output per session (~enough to repaint a busy screen). */
-const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
-/** How long a PTY survives with no client before it is killed. Covers tab
- *  switches, page reloads, and brief network drops (laptop sleep is longer —
- *  the client reconnects as soon as it wakes, which lands well inside this
- *  window after resume). Killing on the FIRST close was the old behavior,
- *  and it destroyed the shell on every remount. */
-const DETACH_GRACE_MS = 60_000;
-
-function appendScrollback(session: PtySession, data: Buffer): void {
-  session.scrollback.push(data);
-  session.scrollbackBytes += data.length;
-  while (session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES && session.scrollback.length > 1) {
-    const dropped = session.scrollback.shift();
-    if (dropped) session.scrollbackBytes -= dropped.length;
-  }
-}
-
-function getTokenFromCookie(header: string | undefined): string {
-  if (!header) return "";
+function getTokensFromCookie(header: string | undefined): string[] {
+  if (!header) return [];
+  const tokens: string[] = [];
   for (const part of header.split(";")) {
     const [key, ...rest] = part.trim().split("=");
-    if (key === ACCESS_COOKIE) {
-      return decodeURIComponent(rest.join("=") ?? "");
+    if (key === ACCESS_COOKIE || key === LEGACY_ACCESS_COOKIE) {
+      tokens.push(decodeURIComponent(rest.join("=") ?? ""));
     }
   }
-  return "";
+  return tokens;
 }
 
-function isLoopbackRemoteAddress(address: string | undefined): boolean {
-  if (!address) return false;
-  if (address === "::1") return true;
+function timingSafeEqualString(a: string, b: string): boolean {
+  const aBytes = Buffer.from(a);
+  const bBytes = Buffer.from(b);
+  if (aBytes.length !== bBytes.length) return false;
 
-  const ipv4 = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
-  return isIP(ipv4) === 4 && ipv4.startsWith("127.");
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i += 1) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
 }
 
-function isAuthorized(req: IncomingMessage): boolean {
-  if (!ACCESS_TOKEN) return true;
+function isExpectedToken(value: string | undefined | null): boolean {
+  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+}
 
-  const cookie = getTokenFromCookie(req.headers.cookie);
+function bearerToken(req: IncomingMessage): string | null {
   const auth = req.headers.authorization ?? "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-  const supplied = cookie || bearer;
-  // A supplied credential is always verified, even on loopback.
-  if (supplied) return supplied === ACCESS_TOKEN;
-  // No credential: only a real loopback TCP peer is the local app itself.
-  // The Host header is client-controlled and must not grant the loopback
-  // exemption for remote clients that can reach an exposed server.
-  return isLoopbackRemoteAddress(req.socket.remoteAddress);
+  return auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : null;
 }
 
-function isLoopbackHostname(hostname: string): boolean {
+function isLoopbackHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const hostname = host.startsWith("[") ? host.slice(1, host.indexOf("]")) : host.split(":")[0];
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
 }
 
-// WebSocket upgrades are not subject to the browser same-origin policy, so a
-// page on any site could open ws://localhost:3000/api/pty-ws (and the browser
-// would attach the access cookie). Reject upgrades whose Origin is neither
-// loopback nor the host this socket was opened on; requests without an Origin
-// header come from non-browser clients, which the bind address and access
-// token already govern.
-function isAllowedUpgradeOrigin(req: IncomingMessage): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  let url: URL;
+function sameOrigin(value: string | undefined, expectedOrigin: string): boolean {
+  if (!value) return true;
   try {
-    url = new URL(origin);
+    const url = new URL(value);
+    if (url.origin === expectedOrigin) return true;
+
+    const expected = new URL(expectedOrigin);
+    return (
+      url.protocol === expected.protocol &&
+      url.port === expected.port &&
+      isLoopbackHost(url.host) &&
+      isLoopbackHost(expected.host)
+    );
   } catch {
     return false;
   }
-  if (isLoopbackHostname(url.hostname)) return true;
-  return url.host === (req.headers.host ?? "");
+}
+
+function isAllowedUpgradeSource(req: IncomingMessage): boolean {
+  const host = req.headers.host;
+  if (!isLoopbackHost(host)) return false;
+  return sameOrigin(req.headers.origin, `http://${host}`);
+}
+
+function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
+  if (!ACCESS_TOKEN) return false;
+
+  const queryToken = Array.isArray(query[ACCESS_QUERY_PARAM])
+    ? query[ACCESS_QUERY_PARAM][0]
+    : query[ACCESS_QUERY_PARAM];
+  const candidates = [bearerToken(req), queryToken, ...getTokensFromCookie(req.headers.cookie)];
+  return candidates.some(isExpectedToken);
 }
 
 function defaultShell(): string {
@@ -236,13 +235,8 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
   };
   sessions.set(threadId, session);
 
-  shell.onData((data) => {
-    appendScrollback(session, Buffer.from(data, "utf8"));
-    // Output keeps flowing into the ring while detached, so the client that
-    // reattaches sees what happened while it was away.
-    if (session.ws) sendPtyData(session.ws, data);
-  });
-  shell.onExit(({ exitCode }) => {
+  shell.onData((data: string) => sendPtyData(ws, data));
+  shell.onExit(({ exitCode }: { exitCode?: number | null }) => {
     const current = sessions.get(threadId);
     if (current?.pty === shell) {
       if (current.detachTimer) clearTimeout(current.detachTimer);
@@ -330,30 +324,21 @@ function handlePtyConnection(
     spawnPty(threadId, ws, cols, rows, cwd);
   }
 
-  ws.on("message", (data) => onWsMessage(threadId, data));
+  ws.on("message", (data: RawData) => onWsMessage(threadId, data));
   ws.on("close", () => {
     const session = sessions.get(threadId);
-    if (session?.ws !== ws) return;
-    // Detach, don't kill: give the client a grace window to come back
-    // (remounts, reloads, sleep/wake). The ring keeps collecting output;
-    // the timer reaps truly-abandoned shells.
-    session.ws = null;
-    if (session.detachTimer) clearTimeout(session.detachTimer);
-    session.detachTimer = setTimeout(() => {
-      const current = sessions.get(threadId);
-      if (current !== session || current.ws) return;
-      sessions.delete(threadId);
-      try {
-        session.pty.kill();
-      } catch {
-        // Already gone.
-      }
-    }, DETACH_GRACE_MS);
+    if (!session || session.ws !== ws) return;
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
+    }
   });
 }
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? (dev ? "127.0.0.1" : "0.0.0.0");
+const hostname = process.env.HOSTNAME ?? "127.0.0.1";
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 
 const app = next({ dev, hostname, port });
@@ -378,13 +363,13 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  if (!isAllowedUpgradeOrigin(req)) {
+  if (!isAllowedUpgradeSource(req)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
 
-  if (!isAuthorized(req)) {
+  if (!isAuthorized(req, query)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -409,7 +394,7 @@ server.on("upgrade", (req, socket, head) => {
   const cols = Number.parseInt(String(query.cols ?? "120"), 10);
   const rows = Number.parseInt(String(query.rows ?? "40"), 10);
 
-  wss.handleUpgrade(req, socket, head, (ws) => {
+  wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
     handlePtyConnection(ws, threadId, cols, rows, cwd);
   });
 });

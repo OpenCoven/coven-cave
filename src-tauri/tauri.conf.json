@@ -17,14 +17,6 @@
     }
   },
   "plugins": {
-    "deep-link": {
-      "mobile": [
-        {
-          "scheme": ["opencoven"],
-          "appLink": false
-        }
-      ]
-    },
     "updater": {
       "endpoints": [
         "https://github.com/OpenCoven/coven-cave/releases/latest/download/latest.json"

@@ -58,6 +58,28 @@ backend_url() {
   fi
 }
 
+recorded_server_is_running() {
+  if [ ! -s "$PID_FILE" ]; then
+    return 1
+  fi
+
+  pid="$(cat "$PID_FILE")"
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+
+  kill -0 "$pid" >/dev/null 2>&1
+}
+
+require_recorded_server() {
+  if recorded_server_is_running; then
+    return 0
+  fi
+
+  echo "Refusing to contact an untracked server on ${HOST}:${PORT}. Run: pnpm mobile:tailscale:stop && pnpm mobile:tailscale" >&2
+  exit 1
+}
+
 tailscale_cmd() {
   node - "$TAILSCALE_TIMEOUT_MS" "$@" <<'NODE'
 const { spawnSync } = require("node:child_process");
@@ -210,13 +232,10 @@ start_next_server() {
       echo "CovenCave native mobile server is already listening on ${HOST}:${PORT}."
       return 0
     fi
-    if [ -n "${COVEN_CAVE_ACCESS_TOKEN:-}" ] || [ -s "$TOKEN_FILE" ]; then
-      load_or_create_token
-      echo "CovenCave mobile server is already listening on ${HOST}:${PORT}."
-      return 0
-    fi
-    echo "Refusing to publish an already-running server on ${HOST}:${PORT} without a stored mobile token." >&2
-    exit 1
+    require_recorded_server
+    load_or_create_token
+    echo "CovenCave mobile server is already listening on ${HOST}:${PORT}."
+    return 0
   fi
 
   if [ "${CAVE_MOBILE_NATIVE:-0}" != "1" ]; then
@@ -340,9 +359,25 @@ create_invite() {
     echo "CovenCave mobile server is not listening on ${HOST}:${PORT}. Run: pnpm mobile:tailscale" >&2
     exit 1
   fi
+  require_recorded_server
 
   node - "$HOST" "$PORT" "$ACCESS_TOKEN" "$INVITE_FILE" "$EXPIRES_FILE" <<'NODE'
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+
+const CONTROL_TOKEN_TTL_MS = 2 * 60 * 1000;
+
+function base64Url(buffer) {
+  return Buffer.from(buffer).toString("base64url");
+}
+
+function createMobileAccessToken(secret) {
+  const expiresAt = Date.now() + CONTROL_TOKEN_TTL_MS;
+  const nonce = crypto.randomUUID();
+  const payload = `v1.${expiresAt}.${nonce}`;
+  const signature = crypto.createHmac("sha256", secret).update(payload).digest();
+  return `${payload}.${base64Url(signature)}`;
+}
 
 (async () => {
   const [host, port, accessToken, invitePath, expiresPath] = process.argv.slice(2);
@@ -353,7 +388,7 @@ const fs = require("node:fs");
   const res = await fetch(`${base}/api/mobile-handoff`, {
     method: "POST",
     headers: {
-      "authorization": `Bearer ${accessToken}`,
+      "authorization": `Bearer ${createMobileAccessToken(accessToken)}`,
       "content-type": "application/json",
     },
     body: JSON.stringify({ action: "start" }),

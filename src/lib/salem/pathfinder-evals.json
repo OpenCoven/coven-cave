@@ -1,0 +1,15 @@
+{
+  "note": "Sanitized regression fixtures for the deterministic pathfinder matcher. Each case is a user intent → the path it must recommend. Seed for a future eval set (design §\"Training Loop\").",
+  "cases": [
+    { "message": "i want a familiar on my machine", "mode": "home", "expected": "first-familiar-cave" },
+    { "message": "help me get started with cave", "mode": "home", "expected": "first-familiar-cave" },
+    { "message": "i want a desktop ai coding workspace", "mode": "home", "expected": "castcodes-workspace" },
+    { "message": "code with an agent in castcodes", "mode": "home", "expected": "castcodes-workspace" },
+    { "message": "i want a terminal agent", "mode": "home", "expected": "coven-code-terminal" },
+    { "message": "tui coding agent in the command line", "mode": "home", "expected": "coven-code-terminal" },
+    { "message": "i want to understand or build the runtime", "mode": "home", "expected": "coven-runtime-builder" },
+    { "message": "how does the coven runtime work", "mode": "home", "expected": "coven-runtime-builder" },
+    { "message": "i want to define a familiar properly", "mode": "home", "expected": "familiar-contract-spec" },
+    { "message": "familiar identity contract spec", "mode": "home", "expected": "familiar-contract-spec" }
+  ]
+}

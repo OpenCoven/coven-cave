@@ -8,8 +8,8 @@ type HandoffReady = {
   ok: true;
   backendUrl: string;
   serveUrl: string;
+  inviteUrl?: string;
   url: string;
-  appUrl: string;
   expiresAt: number;
   expiresAtIso: string;
   qrSvg: string;
@@ -44,7 +44,7 @@ export function MobileHandoffModal({ open, onClose }: Props) {
   const [handoff, setHandoff] = useState<HandoffReady | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState<"app" | "invite" | null>(null);
+  const [copied, setCopied] = useState<"invite" | null>(null);
 
   const start = useCallback(async () => {
     setLoading(true);
@@ -75,18 +75,18 @@ export function MobileHandoffModal({ open, onClose }: Props) {
     if (open) void start();
   }, [open, start]);
 
-  const copyUrl = useCallback(async (kind: "app" | "invite") => {
-    const url = kind === "app" ? handoff?.appUrl : handoff?.url;
+  const copyUrl = useCallback(async () => {
+    const url = handoff?.inviteUrl || handoff?.url;
     if (!url) return;
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(url);
-      setCopied(kind);
+      setCopied("invite");
     } catch (err) {
       setCopied(null);
       setError(err instanceof Error ? err.message : "Failed to copy URL.");
     }
-  }, [handoff?.appUrl, handoff?.url]);
+  }, [handoff?.inviteUrl, handoff?.url]);
 
   const resetServe = useCallback(async () => {
     setLoading(true);
@@ -120,11 +120,8 @@ export function MobileHandoffModal({ open, onClose }: Props) {
           <Button variant="secondary" onClick={() => void start()} loading={loading}>
             Refresh link
           </Button>
-          <Button variant="secondary" onClick={() => void copyUrl("invite")} disabled={!handoff?.url || loading}>
+          <Button variant="secondary" onClick={() => void copyUrl()} disabled={!(handoff?.inviteUrl || handoff?.url) || loading}>
             {copied === "invite" ? "Invite copied" : "Copy invite"}
-          </Button>
-          <Button variant="primary" onClick={() => void copyUrl("app")} disabled={!handoff?.appUrl || loading}>
-            {copied === "app" ? "App link copied" : "Copy app link"}
           </Button>
         </>
       }
@@ -153,7 +150,7 @@ export function MobileHandoffModal({ open, onClose }: Props) {
               </p>
               <p className="mobile-handoff__url">{handoff.serveUrl}</p>
               <p className="mobile-handoff__hint">
-                The QR uses the iOS app link. If iOS does not hand it to the app, copy the invite link instead.
+                Scan the short-lived Tailscale invite link, or copy it and paste it into the mobile app.
               </p>
             </>
           ) : error ? (
