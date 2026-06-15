@@ -24,6 +24,10 @@ assert.match(projectsView, /applyProjectOverrides\(sessions, projectOverrides\)/
 assert.match(projectsView, /setProjectOverride\(activeId, targetRoot\)/, "cross-project drop moves the chat via an override");
 assert.match(projectsView, /mergeVisibleOrder[\s\S]{0,120}writeSessionOrder/, "same-project drop reorders via the shared manual order");
 assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it via the agents-open-session event");
+// Long chat lists are capped with a Show all / Show less toggle.
+assert.match(projectsView, /const CHAT_CAP =/, "nested chat lists are capped");
+assert.match(projectsView, /chats\.slice\(0, CHAT_CAP\)/, "only the first CHAT_CAP chats render until expanded");
+assert.match(projectsView, /Show all \$\{chats\.length\} chats/, "a toggle reveals the rest");
 assert.match(projectsView, /import \{ EmptyState \} from "@\/components\/ui\/empty-state"/, "uses EmptyState primitive");
 assert.match(projectsView, /import \{ ErrorState \} from "@\/components\/ui\/error-state"/, "uses ErrorState primitive");
 assert.match(projectsView, /import \{ SkeletonRows \} from "@\/components\/ui\/skeleton"/, "uses SkeletonRows for first load");

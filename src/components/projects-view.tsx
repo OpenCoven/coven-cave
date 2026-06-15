@@ -38,6 +38,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
+// Cap nested chats per project card so a busy project doesn't bury the others;
+// a "Show all" toggle expands the rest.
+const CHAT_CAP = 8;
+
 function chatDotClass(status: string): string {
   if (status === "running") return "bg-[var(--accent-presence)]";
   if (status === "failed" || status === "error") return "bg-[var(--color-danger)]";
@@ -112,6 +116,8 @@ function ProjectRow({
   onOpenSession,
 }: ProjectRowProps) {
   const chatCount = chats.length;
+  const [showAllChats, setShowAllChats] = useState(false);
+  const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `pcard:${normalizeProjectRoot(project.root)}`,
   });
@@ -298,13 +304,25 @@ function ProjectRow({
       </div>
 
       {chats.length > 0 ? (
-        <SortableContext items={chats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-          <ul className="mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
-            {chats.map((session) => (
-              <ProjectChatRow key={session.id} session={session} onOpen={() => onOpenSession?.(session.id)} />
-            ))}
-          </ul>
-        </SortableContext>
+        <>
+          <SortableContext items={visibleChats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+            <ul className="mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
+              {visibleChats.map((session) => (
+                <ProjectChatRow key={session.id} session={session} onOpen={() => onOpenSession?.(session.id)} />
+              ))}
+            </ul>
+          </SortableContext>
+          {chats.length > CHAT_CAP ? (
+            <button
+              type="button"
+              onClick={() => setShowAllChats((value) => !value)}
+              aria-expanded={showAllChats}
+              className="focus-ring mt-1 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+            >
+              {showAllChats ? "Show less" : `Show all ${chats.length} chats`}
+            </button>
+          ) : null}
+        </>
       ) : (
         <p className="mt-2 border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-muted)]">
           No chats yet — drag one here or start a new chat.
