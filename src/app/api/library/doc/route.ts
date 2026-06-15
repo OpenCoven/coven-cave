@@ -8,9 +8,13 @@ const SAGE_ROOT = path.join(homedir(), ".openclaw", "workspace", "sage");
 const RESEARCH_ROOT = path.join(SAGE_ROOT, "research");
 const MAX_SIZE = 512 * 1024; // 512KB
 
+type ResearchPathResolution =
+  | { ok: true; path: string }
+  | { ok: false; reason: "forbidden" | "not_found" | "not_file" };
+
 // Security: must be within sage research dir
-function realpathOrResolve(value: string): string {
-  const resolved = path.resolve(value);
+function realpathOrResolveFromBase(base: string, value: string): string {
+  const resolved = path.resolve(base, value);
   try {
     return fs.realpathSync(resolved);
   } catch {
@@ -18,11 +22,78 @@ function realpathOrResolve(value: string): string {
   }
 }
 
-function resolveResearchPath(p: string): string | null {
-  const root = realpathOrResolve(RESEARCH_ROOT);
-  const resolved = realpathOrResolve(p);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
-  return resolved;
+function isWithinRoot(value: string, root: string): boolean {
+  return value === root || value.startsWith(root + path.sep);
+}
+
+function normalizeRelativeId(value: string): string | null {
+  if (!value || value.includes("\0") || path.isAbsolute(value)) return null;
+  const normalized = path.normalize(value);
+  if (normalized === "." || normalized === ".." || normalized.startsWith(`..${path.sep}`)) return null;
+  return normalized;
+}
+
+function normalizeAbsolutePath(value: string, root: string): string | null {
+  if (!value || value.includes("\0") || !path.isAbsolute(value)) return null;
+  const normalized = path.normalize(value);
+  if (!isWithinRoot(normalized, root)) return null;
+  return normalized;
+}
+
+function listResearchEntries(root: string): Array<{ path: string; relativeToSage: string; isFile: boolean }> {
+  const entries: Array<{ path: string; relativeToSage: string; isFile: boolean }> = [];
+  const sageRoot = realpathOrResolveFromBase("/", SAGE_ROOT);
+
+  function walk(dir: string) {
+    let dirents: fs.Dirent[];
+    try {
+      dirents = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const dirent of dirents) {
+      const fullPath = path.join(dir, dirent.name);
+      const realPath = realpathOrResolveFromBase("/", fullPath);
+      if (!isWithinRoot(realPath, root)) continue;
+      if (dirent.isDirectory()) {
+        entries.push({ path: realPath, relativeToSage: path.relative(sageRoot, realPath), isFile: false });
+        walk(realPath);
+        continue;
+      }
+      if (dirent.isFile()) {
+        entries.push({ path: realPath, relativeToSage: path.relative(sageRoot, realPath), isFile: true });
+      }
+    }
+  }
+
+  walk(root);
+  return entries;
+}
+
+function resolveResearchPath(input: string, isAbsolute: boolean): ResearchPathResolution {
+  const root = realpathOrResolveFromBase("/", RESEARCH_ROOT);
+  const requestedAbsolute = isAbsolute ? normalizeAbsolutePath(input, root) : null;
+  const requestedRelative = isAbsolute ? null : normalizeRelativeId(input);
+  if (isAbsolute ? !requestedAbsolute : !requestedRelative) {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  const match = listResearchEntries(root).find((entry) =>
+    isAbsolute
+      ? entry.path === requestedAbsolute
+      : entry.relativeToSage === requestedRelative,
+  );
+
+  if (!match) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  if (!match.isFile) {
+    return { ok: false, reason: "not_file" };
+  }
+
+  return { ok: true, path: match.path };
 }
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
@@ -73,22 +144,30 @@ function stripMarkdown(text: string): string {
 
 export async function GET(req: NextRequest) {
   // Accept either ?path= (absolute, legacy) or ?id= (relative to sage root)
-  let filePath = req.nextUrl.searchParams.get("path");
-  const docId   = req.nextUrl.searchParams.get("id");
+  const filePath = req.nextUrl.searchParams.get("path");
+  const docId = req.nextUrl.searchParams.get("id");
 
-  if (!filePath && docId) {
+  let resolution: ResearchPathResolution;
+  if (filePath) {
+    resolution = resolveResearchPath(filePath, true);
+  } else if (docId) {
     // id is relative to the sage workspace root (e.g. "research/synthesis/foo.md")
-    filePath = path.join(SAGE_ROOT, docId);
-  }
-
-  if (!filePath) {
+    resolution = resolveResearchPath(docId, false);
+  } else {
     return NextResponse.json({ ok: false, error: "missing path or id param" }, { status: 400 });
   }
 
-  const resolved = resolveResearchPath(filePath);
-  if (!resolved) {
+  if (!resolution.ok && resolution.reason === "forbidden") {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
+  if (!resolution.ok && resolution.reason === "not_file") {
+    return NextResponse.json({ ok: false, error: "not a file" }, { status: 400 });
+  }
+  if (!resolution.ok) {
+    return NextResponse.json({ ok: false, error: "file not found" }, { status: 404 });
+  }
+
+  const resolved = resolution.path;
 
   let stat: fs.Stats;
   try {
@@ -125,7 +204,7 @@ export async function GET(req: NextRequest) {
   const tags = extractTags(frontmatter);
   const excerpt = stripMarkdown(body).slice(0, 200);
 
-  const id = path.relative(realpathOrResolve(SAGE_ROOT), resolved);
+  const id = path.relative(realpathOrResolveFromBase("/", SAGE_ROOT), resolved);
 
   const doc: LibraryDocBody = {
     id,
