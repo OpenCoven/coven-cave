@@ -104,6 +104,8 @@ assert.match(studio, /rightPanelOpen,\s*setRightPanelOpen[\s\S]{0,80}useState\(t
 assert.match(studio, /type WorkflowSidePanelSection/, "Workflow right panel should model distinct selectable sections");
 assert.match(studio, /sidePanelSection,\s*setSidePanelSection[\s\S]{0,100}useState<WorkflowSidePanelSection>\("inspector"\)/, "Workflow right panel should default to the inspector section");
 assert.match(studio, /<Tabs<WorkflowSidePanelSection>[\s\S]{0,160}ariaLabel="Workflow detail sections"/, "Workflow right panel should expose section tabs (shared Vercel-style Tabs) instead of using selection as a close action");
+assert.match(studio, /<Tabs<WorkflowSidePanelSection>[\s\S]{0,180}size="sm"/, "Workflow right panel tabs should use compact density so Manifest fits in the sidepanel");
+assert.doesNotMatch(studio, /<Tabs<WorkflowSidePanelSection>[\s\S]{0,220}\n\s*fill\n/, "Workflow right panel tabs should not use equal-width fill tabs in the narrow sidepanel");
 assert.match(studio, /setSidePanelSection\(id\);[\s\S]{0,80}if \(!rightPanelOpen\) setRightPanelOpen\(true\);/, "Selecting a workflow side-panel tab should open or keep the panel open");
 assert.match(studio, /sidePanelSection === "inspector"[\s\S]{0,400}<WorkflowInspector/, "Workflow inspector should render only in the inspector tab panel");
 assert.match(studio, /sidePanelSection === "attachments"[\s\S]{0,500}<WorkflowAttachments/, "Workflow attachments should render only in the attachments tab panel");
@@ -126,6 +128,9 @@ assert.match(css, /\.workflow-side-panel-header/, "Workflow right side panel sho
 // `.workflow-side-panel-tab[aria-selected]` box rule no longer exists. The
 // tablist container class is still styled here for layout.
 assert.match(css, /\.workflow-side-panel-tabs\s*\{/, "Workflow right side panel tablist should keep its layout styles");
+assert.match(css, /\.workflow-side-panel-tabs\s*\{[\s\S]{0,120}flex:\s*0 1 auto/, "Workflow right side panel tabs should size to their labels, not spread into wide gutters");
+assert.match(css, /\.workflow-side-panel-tabs\s*\{[\s\S]{0,180}max-width:\s*calc\(100% - var\(--workflow-top-control-height\) - 4px\)/, "Workflow tabs reserve room for the collapse button without clipping Manifest");
+assert.match(css, /\.workflow-side-panel-header\s*\{[\s\S]{0,140}gap:\s*4px[\s\S]{0,120}margin:\s*0 0 4px/, "Workflow sidepanel header should keep tight spacing between tabs, toggle, and content");
 assert.match(css, /\.workflow-studio-library-panel,[\s\S]{0,140}flex-direction:\s*column/, "Workflow panel content should sit below the full-width trigger row");
 assert.match(css, /\.workflow-palette-item[\s\S]{0,160}min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
 assert.match(css, /is-left-collapsed[\s\S]{0,120}grid-template-columns:\s*36px/, "Collapsed left workflow panel should keep a visible toggle rail");

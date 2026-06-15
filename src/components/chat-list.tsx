@@ -2,7 +2,6 @@
 
 import { Fragment, useMemo, useState, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { WorkspaceMode } from "@/lib/workspace-mode";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
@@ -178,12 +177,6 @@ function SortableChatListItem({
   );
 }
 
-// Decoupled cross-surface navigation (matches the desktop rail): announce a
-// target mode; the Workspace owns setMode and switches surfaces.
-function navigateToMode(mode: WorkspaceMode) {
-  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
-}
-
 // Uppercase counted section header — mirrors the desktop rail's RailSection so
 // the phone list reads with the same grouping language (PINNED / SESSIONS).
 function ChatListSection({ label, count }: { label: string; count?: number }) {
@@ -196,57 +189,6 @@ function ChatListSection({ label, count }: { label: string; count?: number }) {
         <span className="font-mono text-[11px] text-[var(--text-muted)] opacity-70">{count}</span>
       ) : null}
     </li>
-  );
-}
-
-// Horizontal familiar-switcher strip for the phone chat list — the mobile analog
-// of the desktop rail's footer avatars. Tap starts a chat with that familiar;
-// the trailing chip jumps to the Familiars surface to add or manage one.
-function ChatListFamiliarStrip({
-  familiars,
-  activeFamiliarId,
-  onSelect,
-}: {
-  familiars: Familiar[];
-  activeFamiliarId?: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const resolved = useResolvedFamiliars(familiars);
-  if (resolved.length === 0) return null;
-  return (
-    <div className="chat-list-familiar-strip flex items-center gap-2 overflow-x-auto px-4 pb-1 pt-2.5">
-      {resolved.map((f) => {
-        const active = f.id === activeFamiliarId;
-        return (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => onSelect(f.id)}
-            title={`New chat with ${f.display_name}`}
-            aria-label={`New chat with ${f.display_name}`}
-            aria-pressed={active}
-            style={{ ["--familiar-accent" as string]: f.color }}
-            className={[
-              "grid h-10 w-10 shrink-0 place-items-center rounded-full border bg-[var(--bg-raised)] transition-all active:scale-95",
-              active
-                ? "border-[var(--familiar-accent,var(--accent-presence))] ring-1 ring-[var(--familiar-accent,var(--accent-presence))]"
-                : "border-transparent",
-            ].join(" ")}
-          >
-            <FamiliarAvatar familiar={f} size="md" />
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        onClick={() => navigateToMode("agents")}
-        title="Open familiars"
-        aria-label="Open familiars"
-        className="focus-ring grid h-10 w-10 shrink-0 place-items-center rounded-full border border-dashed border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors active:scale-95"
-      >
-        <Icon name="ph:plus" width={14} aria-hidden />
-      </button>
-    </div>
   );
 }
 
@@ -662,14 +604,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           </div>
         </div>
         )}
-
-        {/* Familiar switcher — horizontal strip mirroring the desktop rail's
-            footer avatars; tap starts a chat with that familiar. */}
-        <ChatListFamiliarStrip
-          familiars={familiars}
-          activeFamiliarId={familiar?.id ?? null}
-          onSelect={(id) => onNewChat(undefined, id)}
-        />
 
         {/* Stats removed for sidepanel optimization */}
 

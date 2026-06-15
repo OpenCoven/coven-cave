@@ -300,7 +300,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
             className="workflow-side-panel-tabs"
             ariaLabel="Workflow detail sections"
             idPrefix="workflow-side-panel"
-            fill
+            size="sm"
             value={sidePanelSection}
             onChange={(id) => {
               setSidePanelSection(id);

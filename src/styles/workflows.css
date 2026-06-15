@@ -158,18 +158,23 @@
 .workflow-side-panel-header {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
   width: 100%;
   min-height: var(--workflow-top-control-height);
-  margin: 0 0 6px;
+  margin: 0 0 4px;
 }
 
-/* Workflow detail tabs — Vercel-style underline tabs (components/ui/tabs.tsx).
-   The tablist fills the header row; the collapse toggle keeps its own box. */
+/* Workflow detail tabs — compact underline tabs (components/ui/tabs.tsx).
+   Natural-width tabs keep "Manifest" readable beside the collapse button. */
 .workflow-side-panel-tabs {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: calc(100% - var(--workflow-top-control-height) - 4px);
+}
+
+.workflow-studio-side-content .workflow-panel {
+  padding-top: 10px;
 }
 
 .workflow-panel-collapse-button {

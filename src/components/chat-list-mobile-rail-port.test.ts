@@ -5,28 +5,11 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-// ── Familiar switcher strip (mobile analog of the desktop rail footer) ───────
-assert.match(source, /function ChatListFamiliarStrip/, "ChatList gains a familiar-switcher strip");
-assert.match(source, /useResolvedFamiliars\(familiars\)/, "The strip resolves familiars for display");
-assert.match(source, /<FamiliarAvatar familiar=\{f\} size="md"/, "Each chip reuses FamiliarAvatar");
-assert.match(
-  source,
-  /className="chat-list-familiar-strip /,
-  "The strip exposes a mobile-targetable class for horizontal scroll styling",
-);
-// Tapping a familiar starts a chat with them; wired where the strip is rendered.
-assert.match(
-  source,
-  /<ChatListFamiliarStrip[\s\S]{0,160}onSelect=\{\(id\) => onNewChat\(undefined, id\)\}/,
-  "Tapping a familiar chip starts a new chat scoped to that familiar",
-);
-// The trailing chip jumps to the Familiars surface via the shared nav event.
-assert.match(
-  source,
-  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode \} \}\)/,
-  "The strip's + chip uses the decoupled cave:navigate-mode bridge",
-);
-assert.match(source, /navigateToMode\("agents"\)/, "The + chip opens the Familiars surface");
+// ── Familiar switching lives in the sidepanel selector ──────────────────────
+assert.doesNotMatch(source, /function ChatListFamiliarStrip/, "ChatList should not render a redundant circular familiar strip");
+assert.doesNotMatch(source, /chat-list-familiar-strip/, "ChatList should not keep the removed strip styling hook");
+assert.doesNotMatch(source, /<FamiliarAvatar familiar=\{f\} size="md"/, "ChatList should not map familiars into circular selector chips");
+assert.doesNotMatch(styles, /\.chat-list-familiar-strip/, "Removed familiar strip should not leave dead mobile CSS behind");
 
 // ── Counted PINNED / SESSIONS section headers ────────────────────────────────
 assert.match(source, /function ChatListSection/, "ChatList gains a counted section-header primitive");
@@ -53,13 +36,6 @@ assert.match(
   source,
   /projectRoot === null && idx === firstPinnedIdx/,
   "Sections only apply to the flat all-chats list",
-);
-
-// ── Strip CSS: horizontal momentum scroll without a visible bar ──────────────
-assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-familiar-strip\s*\{[\s\S]*scrollbar-width\s*:\s*none/,
-  "Mobile familiar strip scrolls horizontally without a visible scrollbar",
 );
 
 // ── Preserved: existing rows still sortable by session id ────────────────────
