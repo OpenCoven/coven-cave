@@ -26,7 +26,9 @@ const DEV_NULL = os.devNull;
  *
  * Security posture: every git invocation goes through execFile with an
  * argument array — no shell, so paths are never string-interpolated into a
- * command. File paths from the client are repo-relative and must pass a
+ * command. Diff commands additionally disable Git external diff helpers and
+ * textconv filters so repository-controlled config cannot spawn commands.
+ * File paths from the client are repo-relative and must pass a
  * resolve + prefix containment check (absolute paths and `..` segments are
  * rejected). Reverting an untracked file deletes it, so that path is gated
  * behind an explicit confirmUntracked flag; the blast radius of POST is one
@@ -49,6 +51,11 @@ function git(cwd: string, args: string[]): Promise<{ stdout: string; stderr: str
     timeout: GIT_TIMEOUT_MS,
     maxBuffer: MAX_GIT_BUFFER,
   });
+}
+
+/** Run `git diff` without repository-configured command hooks. */
+function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return git(cwd, ["diff", "--no-ext-diff", "--no-textconv", ...args]);
 }
 
 type RootResolution =
@@ -151,7 +158,7 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
   // without a first commit have no HEAD — skip counts rather than fail.
   try {
-    const { stdout: numstat } = await git(repoRoot, ["diff", "--numstat", "-z", "HEAD", "--"]);
+    const { stdout: numstat } = await gitDiff(repoRoot, ["--numstat", "-z", "HEAD", "--"]);
     const counts = parseNumstatZ(numstat);
     for (const file of files) {
       const c = counts.get(file.path);
@@ -172,16 +179,16 @@ async function diffFile(repoRoot: string, relPath: string, absPath: string): Pro
   if (await isTracked(repoRoot, relPath)) {
     try {
       // Diff vs HEAD so staged edits show up too (status lists them).
-      ({ stdout: diff } = await git(repoRoot, ["diff", "HEAD", "--", relPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["HEAD", "--", relPath]));
     } catch {
       // No HEAD yet (unborn branch) — fall back to worktree-vs-index.
-      ({ stdout: diff } = await git(repoRoot, ["diff", "--", relPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["--", relPath]));
     }
   } else {
     // Untracked: synthesize an all-additions diff. --no-index exits 1 when
     // the files differ, which execFile reports as an error — recover stdout.
     try {
-      ({ stdout: diff } = await git(repoRoot, ["diff", "--no-index", "--", DEV_NULL, absPath]));
+      ({ stdout: diff } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, absPath]));
     } catch (err) {
       const e = err as { code?: number; stdout?: string };
       if (e.code === 1 && typeof e.stdout === "string") diff = e.stdout;
@@ -274,9 +281,9 @@ async function checkpointChanges(repoRoot: string): Promise<string> {
   // creates new worktree changes.
   let patch = "";
   try {
-    ({ stdout: patch } = await git(repoRoot, ["diff", "--binary", "HEAD", "--"]));
+    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "HEAD", "--"]));
   } catch {
-    ({ stdout: patch } = await git(repoRoot, ["diff", "--binary", "--"]));
+    ({ stdout: patch } = await gitDiff(repoRoot, ["--binary", "--"]));
   }
 
   const { stdout: statusOut } = await git(repoRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
@@ -289,7 +296,7 @@ async function checkpointChanges(repoRoot: string): Promise<string> {
         // add-file diff carries `b/<relpath>` headers that `git apply` can
         // place back — absolute paths here would make the checkpoint
         // un-restorable for untracked files.
-        const { stdout } = await git(repoRoot, ["diff", "--no-index", "--", DEV_NULL, file.path]);
+        const { stdout } = await gitDiff(repoRoot, ["--no-index", "--", DEV_NULL, file.path]);
         patch += stdout;
       } catch (err) {
         const e = err as { code?: number; stdout?: string };
