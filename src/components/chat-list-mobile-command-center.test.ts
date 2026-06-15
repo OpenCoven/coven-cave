@@ -43,6 +43,12 @@ assert.match(
 
 assert.match(
   styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-search-control input\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "Mobile chat list search input should fill its touch-sized search control",
+);
+
+assert.match(
+  styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.chat-list-footer\s*\{[\s\S]*display\s*:\s*none/,
   "Mobile chat list should drop the desktop keyboard-shortcut footer",
 );

@@ -10,6 +10,10 @@ const workspace = readFileSync(
   new URL("./workspace.tsx", import.meta.url),
   "utf8",
 );
+const globals = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 // Keyboard hint footer (matches the inbox/calendar/library/home/browser pattern).
 assert.match(
@@ -29,6 +33,16 @@ assert.match(
   /title="New terminal \(⌘N\)"/,
   "tab-strip add button has tooltip with shortcut",
 );
+assert.match(
+  source,
+  /comux-terminal-tab-strip/,
+  "terminal tab strip exposes a stable mobile layout hook",
+);
+assert.match(
+  source,
+  /comux-terminal-toolbar-button[\s\S]*Split right[\s\S]*comux-terminal-toolbar-button[\s\S]*Split down[\s\S]*comux-terminal-add-button/,
+  "terminal toolbar actions expose stable mobile hit-area hooks",
+);
 
 // Empty-state copy + ⌘N kbd hint.
 assert.match(
@@ -45,6 +59,11 @@ assert.match(
   source,
   /<kbd[\s\S]{0,200}⌘N[\s\S]{0,20}<\/kbd>/,
   "empty state shows the ⌘N kbd hint",
+);
+assert.match(
+  source,
+  /comux-terminal-empty-add/,
+  "terminal empty-state add button exposes a stable mobile hit-area hook",
 );
 
 // ⌘N / ⌘W keydown handler is wired and respects modifier + contentEditable gate.
@@ -81,6 +100,11 @@ assert.match(
   workspace,
   /\{terminalDetail\}[\s\S]{0,80}\{mode === "terminal" \? null :/,
   "Workspace should always render the terminal subtree and hide other detail surfaces while Terminal is active",
+);
+assert.match(
+  workspace,
+  /: "pointer-events-none invisible absolute inset-0 opacity-0"/,
+  "Hidden terminal subtree should be invisible instead of only transparent",
 );
 assert.doesNotMatch(
   workspace,
@@ -145,6 +169,21 @@ assert.match(
   source,
   /onSplitTerminal\("vertical"\)[\s\S]*?Split down/,
   "toolbar exposes a split-down command",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.comux-terminal-tab-strip\s*\{[\s\S]*min-height:\s*calc\(var\(--touch-target\) \+ 8px\)/,
+  "mobile terminal tab strip should leave room for touch-sized actions",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.comux-terminal-toolbar-button,[\s\S]*\.comux-terminal-empty-add\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "mobile terminal toolbar buttons should meet the shared touch target",
+);
+assert.match(
+  globals,
+  /@media \(max-width: 767px\) \{[\s\S]*\.comux-terminal-add-button,[\s\S]*\.comux-terminal-tab-close,[\s\S]*\.comux-terminal-pane-action\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "mobile terminal icon and close buttons should meet the shared touch target",
 );
 
 // Projects view: the file/navigation side and preview side should share the

@@ -1210,7 +1210,7 @@ export function Workspace() {
         "h-full min-h-0 flex flex-col",
         mode === "terminal"
           ? "relative"
-          : "pointer-events-none absolute inset-0 opacity-0",
+          : "pointer-events-none invisible absolute inset-0 opacity-0",
       ].join(" ")}
       aria-hidden={mode !== "terminal"}
     >

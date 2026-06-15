@@ -172,7 +172,7 @@ function EmptyScheduleState({
         <button
           type="button"
           onClick={onAddEntry}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+          className="calendar-empty-action inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
         >
           <Icon name="ph:plus" width={12} />
           Add task or event
@@ -231,7 +231,7 @@ function AgendaView({
           <button
             type="button"
             onClick={() => setShowPast(true)}
-            className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             Show {pastCount} past item{pastCount !== 1 ? "s" : ""}
           </button>
@@ -240,7 +240,7 @@ function AgendaView({
           <button
             type="button"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:plus" width={11} />
             Add task or event
@@ -257,7 +257,7 @@ function AgendaView({
           <button
             type="button"
             onClick={() => setShowPast(false)}
-            className="focus-ring rounded-md px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action focus-ring rounded-md px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             Hide past
           </button>
@@ -1100,26 +1100,26 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
   return (
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
+      <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
         <div className="flex shrink-0 items-center gap-1">
           {/* Nav arrows */}
           <button
             onClick={() => navigate(-1)}
             aria-label="Previous"
-            className="focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-toolbar-icon focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-left-bold" width={12} />
           </button>
           <button
             onClick={() => setAnchor(new Date())}
-            className="focus-ring inline-flex h-7 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="calendar-toolbar-button focus-ring inline-flex h-7 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
           >
             Today
           </button>
           <button
             onClick={() => navigate(1)}
             aria-label="Next"
-            className="focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-toolbar-icon focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-right-bold" width={12} />
           </button>
@@ -1132,7 +1132,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             onClick={() => setPickerOpen((v) => !v)}
             aria-expanded={pickerOpen}
             aria-haspopup="dialog"
-            className="focus-ring truncate text-sm font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--accent-presence)]"
+            className="calendar-heading-button focus-ring truncate text-sm font-semibold text-[var(--text-primary)] transition-colors hover:text-[var(--accent-presence)]"
           >
             {headingLabel()}
           </button>
@@ -1173,7 +1173,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             type="button"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
             aria-label="Add event"
-            className="focus-ring inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-toolbar-button focus-ring inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:plus-bold" width={10} />
             Add event
