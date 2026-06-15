@@ -1,56 +1,10 @@
 import { NextResponse } from "next/server";
-<<<<<<< HEAD
 import { readFile } from "node:fs/promises";
-=======
-import { readFile, realpath } from "node:fs/promises";
-import path from "node:path";
-import { homedir } from "node:os";
->>>>>>> 902e207 (fix: canonicalize memory file paths)
 import { redact } from "@/lib/redact";
 import { resolveAllowedMemoryFilePath } from "@/lib/server/memory-file-paths";
 
 export const dynamic = "force-dynamic";
 
-<<<<<<< HEAD
-=======
-// Files outside these roots are never readable through this endpoint.
-const ALLOWED_ROOTS = [
-  path.join(homedir(), ".openclaw", "workspace", "memory"),
-  path.join(homedir(), ".coven", "memory"),
-  path.join(homedir(), ".openclaw", "workspace", "MEMORY.md"),
-];
-
-async function canonicalAllowedRoots(): Promise<string[]> {
-  const roots = await Promise.all(
-    ALLOWED_ROOTS.map(async (root) => {
-      try {
-        return await realpath(root);
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return roots.filter((root): root is string => root !== null);
-}
-
-async function allowedRealPath(fullPath: string): Promise<string | null> {
-  let resolved: string;
-  try {
-    resolved = await realpath(fullPath);
-  } catch {
-    return null;
-  }
-
-  const roots = await canonicalAllowedRoots();
-  const allowed = roots.some((root) => {
-    if (resolved === root) return true;
-    return resolved.startsWith(root + path.sep);
-  });
-
-  return allowed ? resolved : null;
-}
-
->>>>>>> 902e207 (fix: canonicalize memory file paths)
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const target = url.searchParams.get("path");
@@ -58,17 +12,13 @@ export async function GET(req: Request) {
   if (!target) {
     return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
   }
-<<<<<<< HEAD
-  if (!isAllowedMemoryFilePath(target)) {
-=======
-  const readablePath = await allowedRealPath(target);
-  if (!readablePath) {
->>>>>>> 902e207 (fix: canonicalize memory file paths)
+  const allowedPath = await resolveAllowedMemoryFilePath(target);
+  if (!allowedPath) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
   let raw: string;
   try {
-    raw = await readFile(readablePath, "utf8");
+    raw = await readFile(/* turbopackIgnore: true */ allowedPath, "utf8");
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "read failed" },
