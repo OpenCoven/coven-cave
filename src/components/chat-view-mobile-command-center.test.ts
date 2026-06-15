@@ -43,14 +43,20 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(156px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
-  "Mobile transcript should reserve bottom safe-area breathing room above the composer",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(320px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(336px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
+  "Mobile transcript should reserve bottom safe-area breathing room above the taller composer",
 );
 
 assert.match(
   styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-composer-dock\s*\{[\s\S]*bottom\s*:\s*0/,
   "Mobile composer should dock only inside the chat surface; the shell already reserves bottom-tab space",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-composer-dock\s*\{[\s\S]*linear-gradient\(to top, var\(--bg-base\) 0%, var\(--bg-base\) 74%, color-mix\(in oklch, var\(--bg-base\) 96%, var\(--bg-raised\)\) 100%\)[\s\S]*box-shadow:\s*0 -18px 32px var\(--bg-base\)[\s\S]*backdrop-filter:\s*blur\(18px\)/,
+  "Mobile composer dock should be opaque enough that transcript content does not ghost through behind controls",
 );
 
 assert.match(
@@ -74,13 +80,13 @@ assert.match(
 assert.match(
   source,
   /className="cave-composer-controls flex items-center justify-between/,
-  "Composer controls should expose a mobile overlay hook",
+  "Composer controls should expose a mobile layout hook",
 );
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*position\s*:\s*relative[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*absolute/,
-  "Mobile composer controls should overlay the composer panel instead of adding a second full row",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*min-height\s*:\s*54px/,
+  "Mobile composer controls should sit in a footer row so they never cover multiline text",
 );
 
 assert.match(
@@ -105,6 +111,18 @@ assert.match(
   styles,
   /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-icon-button\s*\{[\s\S]*width\s*:\s*var\(--touch-target\)[\s\S]*height\s*:\s*var\(--touch-target\)/,
   "Mobile composer icon buttons should meet the 44px touch target",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-input\s*\{[\s\S]*min-height\s*:\s*116px[\s\S]*max-height\s*:\s*min\(34dvh, 188px\)/,
+  "Mobile composer input should start tall and only scroll after roughly 6-8 rows",
+);
+
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(244px \+ var\(--sai-bottom\)\)/,
+  "Mobile scroll-to-bottom FAB should sit above the taller composer",
 );
 
 console.log("chat-view-mobile-command-center.test.ts: ok");

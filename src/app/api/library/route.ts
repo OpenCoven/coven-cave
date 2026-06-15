@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import type { LibraryDoc, LibraryCollection } from "@/lib/library-types";
 
 // ── Familiar registry ─────────────────────────────────────────────────────────
@@ -146,10 +145,19 @@ function buildCollections(familiar: typeof FAMILIAR_WORKSPACES[number]): Library
 }
 
 // ── Security helper ──────────────────────────────────────────────────────────
+function realpathOrResolve(value: string): string {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
 function resolveResearchPath(p: string, researchRoot: string): string | null {
-  const resolved = resolveAllowedProjectPath(p);
-  if (!resolved) return null;
-  if (resolved !== researchRoot && !resolved.startsWith(researchRoot + path.sep)) return null;
+  const root = realpathOrResolve(researchRoot);
+  const resolved = realpathOrResolve(p);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
   return resolved;
 }
 
@@ -203,6 +211,7 @@ export async function GET(req: NextRequest) {
 
   const familiar = FAMILIAR_WORKSPACES.find((f) => f.id === familiarId) ?? FAMILIAR_WORKSPACES[0];
   const researchRoot = path.join(familiar.root, "research");
+  const familiarRoot = realpathOrResolve(familiar.root);
   const collections = buildCollections(familiar);
 
   const col = collections.find((c) => c.id === collectionId) ?? collections[0];
@@ -225,7 +234,7 @@ export async function GET(req: NextRequest) {
       const content = fs.readFileSync(/* turbopackIgnore: true */ resolvedFile, "utf-8");
       const { frontmatter, body } = parseFrontmatter(content);
       docs.push({
-        id: path.relative(familiar.root, resolvedFile),
+        id: path.relative(familiarRoot, resolvedFile),
         title: frontmatter.title ?? extractTitle(body, file),
         familiar: familiar.id,
         collection: collectionId,

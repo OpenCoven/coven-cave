@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import type { LibraryDocBody } from "@/lib/library-types";
 
 const SAGE_ROOT = path.join(homedir(), ".openclaw", "workspace", "sage");
@@ -10,10 +9,19 @@ const RESEARCH_ROOT = path.join(SAGE_ROOT, "research");
 const MAX_SIZE = 512 * 1024; // 512KB
 
 // Security: must be within sage research dir
+function realpathOrResolve(value: string): string {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
 function resolveResearchPath(p: string): string | null {
-  const resolved = resolveAllowedProjectPath(p);
-  if (!resolved) return null;
-  if (resolved !== RESEARCH_ROOT && !resolved.startsWith(RESEARCH_ROOT + path.sep)) return null;
+  const root = realpathOrResolve(RESEARCH_ROOT);
+  const resolved = realpathOrResolve(p);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
   return resolved;
 }
 
@@ -117,7 +125,7 @@ export async function GET(req: NextRequest) {
   const tags = extractTags(frontmatter);
   const excerpt = stripMarkdown(body).slice(0, 200);
 
-  const id = path.relative(SAGE_ROOT, resolved);
+  const id = path.relative(realpathOrResolve(SAGE_ROOT), resolved);
 
   const doc: LibraryDocBody = {
     id,

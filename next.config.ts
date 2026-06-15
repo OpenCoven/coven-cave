@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The Next.js dev tools launcher renders in a portal at bottom-left by
+  // default, which intercepts taps on Cave's mobile bottom tabs in local dev.
+  devIndicators: false,
   // Mobile dev access goes through Tailscale Serve while Next stays bound to
   // loopback. Next 16 blocks cross-origin dev internals unless the browser
   // origin is explicitly allowlisted, so permit tailnet HTTPS hostnames here.

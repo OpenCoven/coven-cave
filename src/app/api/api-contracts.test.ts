@@ -163,6 +163,23 @@ for (const contract of contracts) {
     assert.match(source, /path not allowed|collection path not allowed/, `${contract.route} must preserve path-deny errors`);
     assert.match(source, /status:\s*403/, `${contract.route} path guard must preserve 403 response`);
   }
+  if (contract.route === "/library" || contract.route === "/library/doc") {
+    assert.match(
+      source,
+      /function realpathOrResolve\(value: string\)[\s\S]*fs\.realpathSync\(resolved\)/,
+      `${contract.route} should canonicalize familiar research roots through realpath`,
+    );
+    assert.match(
+      source,
+      /const root = realpathOrResolve\((?:researchRoot|RESEARCH_ROOT)\);[\s\S]*const resolved = realpathOrResolve\(p\);[\s\S]*resolved\.startsWith\(root \+ path\.sep\)/,
+      `${contract.route} should allow symlinked familiar research paths only within the real research root`,
+    );
+    assert.doesNotMatch(
+      source,
+      /resolveAllowedProjectPath/,
+      `${contract.route} should not reject symlinked familiar research dirs via the global project-root allowlist`,
+    );
+  }
   if (contract.localOriginGuard) {
     assert.match(source, /isLocalOrigin/, `${contract.route} must preserve local-origin guard`);
     assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);

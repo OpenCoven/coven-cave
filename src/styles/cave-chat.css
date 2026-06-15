@@ -2143,10 +2143,10 @@ details[open] > .cave-tool-summary::before {
 
   .cave-chat-linear .cave-chat-transcript {
     padding: 16px 12px 96px;
-    padding-bottom: calc(156px + var(--sai-bottom));
+    padding-bottom: calc(320px + var(--sai-bottom));
     overscroll-behavior: contain;
     scroll-padding-top: calc(var(--sai-top) + 64px);
-    scroll-padding-bottom: calc(172px + var(--sai-bottom));
+    scroll-padding-bottom: calc(336px + var(--sai-bottom));
     -webkit-overflow-scrolling: touch;
   }
 
@@ -2196,7 +2196,7 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-scroll-bottom-button {
-    bottom: calc(92px + var(--sai-bottom));
+    bottom: calc(244px + var(--sai-bottom));
     width: var(--touch-target);
     height: var(--touch-target);
     border-radius: 999px;
@@ -2211,8 +2211,10 @@ details[open] > .cave-tool-summary::before {
             8px
             clamp(12px, 3vw, 18px);
     background:
-      linear-gradient(to top, var(--bg-base) 68%, color-mix(in oklch, var(--bg-base) 86%, transparent));
+      linear-gradient(to top, var(--bg-base) 0%, var(--bg-base) 74%, color-mix(in oklch, var(--bg-base) 96%, var(--bg-raised)) 100%);
     border-top-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+    box-shadow: 0 -18px 32px var(--bg-base);
+    backdrop-filter: blur(18px);
     contain: layout paint style;
     transform: translateY(calc(-1 * var(--composer-kb-offset, 0px)));
     transition: transform var(--duration-fast) var(--ease-decelerate);
@@ -2229,6 +2231,8 @@ details[open] > .cave-tool-summary::before {
 
   .cave-composer-panel {
     position: relative;
+    display: flex;
+    flex-direction: column;
     border-radius: 9px;
   }
 
@@ -2244,22 +2248,16 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-composer-input {
-    min-height: 76px;
-    max-height: min(28vh, 140px);
-    padding: 11px 62px 12px 52px !important;
+    min-height: 116px;
+    max-height: min(34dvh, 188px);
+    padding: 12px 14px 8px !important;
     line-height: 1.45;
   }
 
   .cave-composer-controls {
-    pointer-events: none;
-    position: absolute;
-    inset-inline: 10px;
-    bottom: 10px;
-    padding: 0 !important;
-  }
-
-  .cave-composer-controls button {
-    pointer-events: auto;
+    position: static;
+    min-height: 54px;
+    padding: 0 10px 10px !important;
   }
 
   .cave-composer-icon-button {
