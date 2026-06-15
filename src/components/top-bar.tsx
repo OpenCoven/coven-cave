@@ -64,12 +64,7 @@ export function TopBar(props: Props) {
 
   const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
   const familiarBoxRef = useRef<HTMLButtonElement | null>(null);
-  // Show the switcher whenever there are familiars to pick — even before one is
-  // the global "active" familiar (e.g. the Home surface, where activeId is null).
-  // The box previews the active familiar, falling back to the first option, so
-  // it's always reachable to make a first selection.
-  const displayFamiliar = activeFamiliar ?? familiarOptions?.[0] ?? null;
-  const showFamiliarSwitcher = Boolean(onSelectFamiliar && displayFamiliar);
+  const showFamiliarSwitcher = Boolean(onSelectFamiliar && activeFamiliar);
 
   return (
     <header className="top-bar">
@@ -117,7 +112,7 @@ export function TopBar(props: Props) {
       </button>
 
       <div className="top-bar__actions">
-        {showFamiliarSwitcher && displayFamiliar ? (
+        {showFamiliarSwitcher && activeFamiliar ? (
           <>
             <button
               ref={familiarBoxRef}
@@ -126,11 +121,11 @@ export function TopBar(props: Props) {
               onClick={() => setFamiliarPickerOpen((open) => !open)}
               aria-haspopup="listbox"
               aria-expanded={familiarPickerOpen}
-              aria-label={`Switch familiar — current: ${displayFamiliar.display_name}`}
+              aria-label={`Switch familiar — current: ${activeFamiliar.display_name}`}
               title="Switch familiar"
             >
-              <FamiliarAvatar familiar={displayFamiliar} size="sm" />
-              <span className="top-bar__familiar-name">{displayFamiliar.display_name}</span>
+              <FamiliarAvatar familiar={activeFamiliar} size="sm" />
+              <span className="top-bar__familiar-name">{activeFamiliar.display_name}</span>
               <Icon name="ph:caret-down" width={10} />
             </button>
             <Popover
@@ -143,7 +138,7 @@ export function TopBar(props: Props) {
             >
               <ul className="top-bar__familiar-list" role="listbox" aria-label="Switch familiar">
                 {(familiarOptions ?? []).map((option) => {
-                  const isActive = option.id === activeFamiliar?.id;
+                  const isActive = option.id === activeFamiliar.id;
                   return (
                     <li key={option.id}>
                       <button

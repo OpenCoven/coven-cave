@@ -65,7 +65,7 @@ assert.match(
 );
 
 // Active-familiar switcher box: a button showing the current familiar that opens
-// a Popover picker (desktop + mobile). Gated on a display familiar (active, or first option as fallback).
+// a Popover picker (desktop + mobile). Gated on onSelectFamiliar + activeFamiliar.
 assert.match(
   source,
   /className="top-bar__familiar"[\s\S]*aria-haspopup="listbox"/,
@@ -73,7 +73,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<FamiliarAvatar familiar=\{displayFamiliar\}/,
+  /<FamiliarAvatar familiar=\{activeFamiliar\}/,
   "Switcher box shows the active familiar's avatar",
 );
 assert.match(
@@ -88,7 +88,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const showFamiliarSwitcher = Boolean\(onSelectFamiliar && displayFamiliar\)/,
+  /const showFamiliarSwitcher = Boolean\(onSelectFamiliar && activeFamiliar\)/,
   "Switcher only renders when wired with a selection handler + active familiar",
 );
 
