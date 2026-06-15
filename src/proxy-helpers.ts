@@ -104,10 +104,14 @@ export function isAllowedRequestSource(
 }
 
 export function shouldRequireMobileAccessCredential(
-  host: string | null,
-  hasSuppliedCredential: boolean,
+  _host: string | null,
+  _hasSuppliedCredential: boolean,
 ) {
-  return hasSuppliedCredential || !isLoopbackHost(host);
+  // The Host header is client-controlled, so it cannot prove that the actual
+  // TCP peer is loopback. When COVEN_CAVE_ACCESS_TOKEN is configured, require
+  // a valid mobile credential for every request unless a future caller can pass
+  // a non-spoofable remote socket address into this decision.
+  return true;
 }
 
 export function bearerFromReferer(value: string | null, expectedOrigin: string) {

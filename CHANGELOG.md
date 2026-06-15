@@ -238,7 +238,7 @@ Chats that persist and a workflow canvas you can rearrange by hand.
 - **Chat conversations no longer fork on resumed turns** — continued turns now resume in the conversation's original working directory (harness session stores are cwd-scoped) and keep a stable cave-owned conversation id while the harness's per-resume session id is tracked internally. Previously each continued turn could lose project context and spawn a new sidebar session.
 - **Workflow canvas edges render** — step nodes gained explicit connection handles (React Flow error #008), with a toggleable themed minimap.
 - **Machines without Node or Git are covered** — Node ships inside the app bundle (the release now refuses to build without it); Git became an advisory setup check with platform-aware install hints, missing-git API errors are actionable, and the README gains a dependency table.
-- **Friendly error when the coven CLI is missing**, and loopback requests skip the mobile-access gate.
+- **Friendly error when the coven CLI is missing**, and mobile-access token checks no longer trust spoofable `Host` headers.
 
 ### Changed
 - **Workflow studio polish** — role attach rows align as fixed columns with right-pinned familiar tags; all studio scroll regions use thin dark scrollbars.

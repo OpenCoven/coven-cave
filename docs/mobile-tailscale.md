@@ -56,7 +56,7 @@ pnpm mobile:tailscale:invite
 
 The agent should verify that the invite redirects, stores the cookie, and loads the app shell before reporting success. It should not paste the raw invite into chat by default. If a fresh invite expires while you are away from the laptop, ask the agent to run `pnpm mobile:tailscale:invite`; the command refreshes the invite without restarting the dev server.
 
-Do not open the Serve URL without the invite query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects non-loopback requests until a valid invite is supplied by query, cookie, bearer header, or the equivalent internal request path. Loopback browser requests still load so a local/new-install shell that inherits the token does not lock out the desktop app.
+Do not open the Serve URL without the invite query. When `COVEN_CAVE_ACCESS_TOKEN` is set, CovenCave rejects requests until a valid signed `coven_access_token` invite is supplied by query, cookie, bearer header, or the equivalent internal request path. A loopback-looking `Host` header is not treated as proof of a local connection because remote clients can spoof it.
 
 Independent of the mobile token, every `/api/*` request also has to satisfy loopback/same-origin/referer/content-type checks — those guards apply in plain browser dev too, not just in bundled mode. A valid mobile token lets Tailscale Serve satisfy the host/origin/referer gates while it proxies to the loopback dev server; anything else (LAN scanners, accidental `-H 0.0.0.0`, mismatched origins without the token) hits a 403 before any handler runs.
 

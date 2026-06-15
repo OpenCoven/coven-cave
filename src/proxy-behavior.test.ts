@@ -211,13 +211,13 @@ assert.equal(
 // ─── shouldRequireMobileAccessCredential ──────────────────────────────────
 assert.equal(
   shouldRequireMobileAccessCredential("localhost:3000", false),
-  false,
-  "loopback startup should not require a mobile invite just because a token exists",
+  true,
+  "Host headers are spoofable and must not exempt requests from the mobile gate",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("127.0.0.1:3000", false),
-  false,
-  "new local installs inheriting COVEN_CAVE_ACCESS_TOKEN must still load",
+  true,
+  "loopback-looking Host headers still require a valid invite",
 );
 assert.equal(
   shouldRequireMobileAccessCredential("cave.tailnet.example.ts.net", false),
