@@ -220,6 +220,11 @@
   flex: 1 1 auto;
   height: auto;
   margin-bottom: 0;
+  /* Expanded, the header aligns its underline tabs to the bottom (flex-end).
+     Collapsed, the header stretches full-height with only the toggle left, so
+     flip to flex-start to pin that toggle to the TOP — mirroring the left
+     library panel's collapsed tab instead of stranding it at the bottom. */
+  align-items: flex-start;
 }
 
 .workflow-studio-shell.is-right-collapsed .workflow-side-panel-tabs {
