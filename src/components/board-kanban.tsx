@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
+import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
@@ -29,6 +30,7 @@ const PRIORITIES: { id: CardPriority; label: string }[] = [
 type Props = {
   cards: Card[];
   familiars: Familiar[];
+  projects: CaveProject[];
   sessions: SessionRow[];
   groupBy: GroupBy;
   selectedCardId: string | null;
@@ -40,23 +42,37 @@ type Props = {
   chatLinkingId?: string | null;
 };
 
-function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: string; label: string; cards: Card[] }[] {
+const NO_PROJECT_KEY = "__noproject__";
+
+function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: CaveProject[]): { key: string; label: string; cards: Card[] }[] {
+  // Status grouping is the single full-height board (status → columns).
   if (by === "status") return [{ key: "all", label: "", cards }];
-  // by === "familiar"
+  // familiar / project grouping → one swimlane per group.
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = c.familiarId ?? "__unassigned__";
+    const key = by === "familiar" ? (c.familiarId ?? "__unassigned__") : (c.projectId ?? NO_PROJECT_KEY);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
-  return [...map.entries()].map(([key, grpCards]) => ({
+  const entries = [...map.entries()].map(([key, grpCards]) => ({
     key,
-    label: key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key),
+    label: by === "familiar"
+      ? (key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key))
+      : (key === NO_PROJECT_KEY ? "No project" : (projects.find((p) => p.id === key)?.name ?? key)),
     cards: grpCards,
   }));
+  if (by === "project") {
+    // Named projects alphabetically; the "No project" lane always last.
+    entries.sort((a, b) => {
+      if (a.key === NO_PROJECT_KEY) return 1;
+      if (b.key === NO_PROJECT_KEY) return -1;
+      return a.label.localeCompare(b.label);
+    });
+  }
+  return entries;
 }
 
-export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -159,7 +175,7 @@ export function BoardKanban({ cards, familiars, sessions, groupBy, selectedCardI
     return () => window.removeEventListener("keydown", onKey);
   }, [grabbedCardId, cards, columnIndex, onMoveStatus, announce]);
 
-  const groups = getGroups(cards, groupBy, familiars);
+  const groups = getGroups(cards, groupBy, familiars, projects);
   const showSwimlanes = true;
 
   const grouped = (gc: Card[]) => {

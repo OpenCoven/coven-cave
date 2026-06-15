@@ -44,7 +44,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   // Transient feedback when an optimistic mutation fails and is reverted.
   const [actionError, setActionError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
-  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar"]));
+  const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -135,8 +135,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     blocked: filtered.filter((c) => c.status === "blocked" || c.needsHuman).length,
   }), [filtered]);
 
-  const tableGroupBy: GroupBy = activeFamiliarId === null ? groupBy : "status";
-  const showTableGroupToggle = !isMobile && viewMode === "table" && activeFamiliarId === null;
+  // Familiar grouping is redundant once the board is scoped to a single
+  // familiar — fall back to status there. Status and project grouping stay
+  // meaningful regardless of the familiar scope.
+  const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" ? "status" : groupBy;
+  // Grouping applies to both the kanban (swimlanes) and table views; hidden on
+  // phones, where BoardCardStack replaces both surfaces.
+  const showGroupToggle = !isMobile;
 
   const selectedCard = useMemo(() => cards.find((c) => c.id === selectedCardId) ?? null, [cards, selectedCardId]);
 
@@ -299,25 +304,37 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           ) : null}
         </div>
         <div className="board-header-controls">
-          {/* Grouping only applies to the table view — kanban always uses
-              status columns, so the toggle would be noise there. */}
-          {showTableGroupToggle ? (
+          {/* Grouping drives status columns (kanban) / status rows (table) when
+              "Status", and swimlanes / grouped rows when "Familiar" or
+              "Project". The Familiar option is dropped while the board is
+              already scoped to one familiar, where it would be redundant. */}
+          {showGroupToggle ? (
             <div className="board-group-toggle" role="group" aria-label="Group tasks by">
             <button
               type="button"
-              className={`board-group-toggle-btn${groupBy === "status" ? " board-group-toggle-btn--active" : ""}`}
+              className={`board-group-toggle-btn${effectiveGroupBy === "status" ? " board-group-toggle-btn--active" : ""}`}
               onClick={() => setGroupBy("status")}
-              aria-pressed={groupBy === "status"}
+              aria-pressed={effectiveGroupBy === "status"}
             >
               Status
             </button>
+            {activeFamiliarId === null ? (
+              <button
+                type="button"
+                className={`board-group-toggle-btn${effectiveGroupBy === "familiar" ? " board-group-toggle-btn--active" : ""}`}
+                onClick={() => setGroupBy("familiar")}
+                aria-pressed={effectiveGroupBy === "familiar"}
+              >
+                Familiar
+              </button>
+            ) : null}
             <button
               type="button"
-              className={`board-group-toggle-btn${groupBy === "familiar" ? " board-group-toggle-btn--active" : ""}`}
-              onClick={() => setGroupBy("familiar")}
-              aria-pressed={groupBy === "familiar"}
+              className={`board-group-toggle-btn${effectiveGroupBy === "project" ? " board-group-toggle-btn--active" : ""}`}
+              onClick={() => setGroupBy("project")}
+              aria-pressed={effectiveGroupBy === "project"}
             >
-              Familiar
+              Project
             </button>
             </div>
           ) : null}
@@ -442,16 +459,16 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             onOpenTaskChat={onOpenTaskChat}
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "kanban" ? (
-          <BoardKanban cards={filtered} familiars={familiars} sessions={sessions}
-            groupBy="status" selectedCardId={selectedCardId}
+          <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
+            groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
             onJumpToSession={onJumpToSession}
             onOpenTaskChat={onOpenTaskChat}
             chatLinkingId={chatLinkingId} />
         ) : (
-          <BoardTable cards={filtered} familiars={familiars}
-            groupBy={tableGroupBy} selectedCardId={selectedCardId}
+          <BoardTable cards={filtered} familiars={familiars} projects={projects}
+            groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
             onPatch={patchCard} />
         )}

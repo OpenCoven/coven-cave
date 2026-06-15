@@ -3,13 +3,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
+import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 
-export type GroupBy = "status" | "familiar";
+export type GroupBy = "status" | "familiar" | "project";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "updatedAt";
 export type SortDir = "asc" | "desc";
 
@@ -32,20 +33,40 @@ function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familia
   });
 }
 
-function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[]): { key: string; label: string; cards: Card[] }[] {
+const NO_PROJECT_KEY = "__noproject__";
+
+function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects: CaveProject[]): { key: string; label: string; cards: Card[] }[] {
   const map = new Map<string, Card[]>();
   for (const c of cards) {
-    const key = by === "status" ? c.status : (c.familiarId ?? "__unassigned__");
+    const key = by === "status"
+      ? c.status
+      : by === "familiar"
+        ? (c.familiarId ?? "__unassigned__")
+        : (c.projectId ?? NO_PROJECT_KEY);
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(c);
   }
   const entries = [...map.entries()].map(([key, grpCards]) => {
-    const label = by === "familiar"
-      ? (key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key))
-      : key.charAt(0).toUpperCase() + key.slice(1);
+    let label: string;
+    if (by === "familiar") {
+      label = key === "__unassigned__" ? "Unassigned" : (familiars.find((f) => f.id === key)?.display_name ?? key);
+    } else if (by === "project") {
+      label = key === NO_PROJECT_KEY ? "No project" : (projects.find((p) => p.id === key)?.name ?? key);
+    } else {
+      label = key.charAt(0).toUpperCase() + key.slice(1);
+    }
     return { key, label, cards: grpCards };
   });
-  if (by === "status") entries.sort((a, b) => (STATUS_ORDER[a.key as CardStatus] ?? 9) - (STATUS_ORDER[b.key as CardStatus] ?? 9));
+  if (by === "status") {
+    entries.sort((a, b) => (STATUS_ORDER[a.key as CardStatus] ?? 9) - (STATUS_ORDER[b.key as CardStatus] ?? 9));
+  } else if (by === "project") {
+    // Named projects alphabetically; the "No project" bucket always last.
+    entries.sort((a, b) => {
+      if (a.key === NO_PROJECT_KEY) return 1;
+      if (b.key === NO_PROJECT_KEY) return -1;
+      return a.label.localeCompare(b.label);
+    });
+  }
   return entries;
 }
 
@@ -73,13 +94,14 @@ const COLS: ColDef[] = [
 type Props = {
   cards: Card[];
   familiars: Familiar[];
+  projects: CaveProject[];
   groupBy: GroupBy;
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   onPatch: (id: string, patch: Partial<Card>) => void;
 };
 
-export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect, onPatch }: Props) {
+export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, onPatch }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));
@@ -91,7 +113,7 @@ export function BoardTable({ cards, familiars, groupBy, selectedCardId, onSelect
   }, [resolvedFamiliars]);
 
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
-  const groups = useMemo(() => groupCards(sorted, groupBy, familiars), [sorted, groupBy, familiars]);
+  const groups = useMemo(() => groupCards(sorted, groupBy, familiars, projects), [sorted, groupBy, familiars, projects]);
 
   const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
   useRovingTabIndex({

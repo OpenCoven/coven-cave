@@ -34,14 +34,14 @@ assert.match(
 
 assert.match(
   source,
-  /const tableGroupBy: GroupBy = activeFamiliarId === null \? groupBy : "status";/,
-  "Scoped familiar table view should force status grouping instead of offering a redundant familiar/status switch",
+  /const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" \? "status" : groupBy;/,
+  "Scoping to one familiar should drop the redundant familiar grouping back to status (project grouping stays usable)",
 );
 
 assert.match(
   source,
-  /<BoardTable[\s\S]{0,180}groupBy=\{tableGroupBy\}/,
-  "BoardTable should receive the effective scoped table grouping",
+  /<BoardTable[\s\S]{0,180}groupBy=\{effectiveGroupBy\}/,
+  "BoardTable should receive the effective scoped grouping",
 );
 
 console.log("board-view-familiar-scope.test.ts: ok");
