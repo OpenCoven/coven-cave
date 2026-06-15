@@ -208,8 +208,10 @@ env \
   -u NOTARY_APPLE_ID \
   -u NOTARY_APPLE_PASSWORD \
   -u NOTARY_TEAM_ID \
+  -u TAURI_SIGNING_PRIVATE_KEY \
+  -u TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
   APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY" \
-  pnpm tauri build --bundles app
+  pnpm tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
 APP_PATH=$(find "$BUILD_DIR/macos" -name "${APP_NAME}.app" -type d -maxdepth 2 | head -n1)
 if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
