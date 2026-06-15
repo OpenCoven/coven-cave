@@ -40,38 +40,12 @@ assert.doesNotMatch(frontendStub, /Loading CovenCave/);
 
 const mobileScript = read("scripts/mobile-tailscale.sh");
 assert.match(mobileScript, /native_command\(\)/);
-assert.match(mobileScript, /HOME\/\.cargo\/bin/);
-assert.match(mobileScript, /ios\s+dev\s+--no-dev-server-wait/);
-assert.match(mobileScript, /--no-dev-server-wait/);
-assert.match(mobileScript, /beforeDevCommand/);
-assert.match(mobileScript, /const devUrl = process\.argv\[2\]/);
-assert.match(mobileScript, /"\$tauri_config"/);
-assert.match(mobileScript, /resolve_ios_device_name/);
-assert.match(mobileScript, /pnpm exec tauri "\$\{tauri_args\[@\]\}"/);
-assert.doesNotMatch(mobileScript, /tauri ios dev --device/);
-
-// Native mode uses a sidecar auth token (COVEN_CAVE_AUTH_TOKEN), persisted in the state dir,
-// to authenticate the in-app webview instead of running fully ungated. This satisfies the
-// in-app SidecarAuthMonitor and gates /api/ over Tailscale.
-assert.match(mobileScript, /SIDECAR_TOKEN_FILE=/);
-assert.match(mobileScript, /load_or_create_sidecar_token\(\)/);
-// The native server is now started WITH the sidecar auth token set (the old
-// behavior unset both token vars together).
-assert.match(mobileScript, /COVEN_CAVE_AUTH_TOKEN/);
-assert.doesNotMatch(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN/);
-assert.doesNotMatch(mobileScript, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN/);
-// The dev URL handed to the webview carries the token so SidecarAuthBridge
-// stores it and authenticates every /api/ request.
-assert.match(mobileScript, /covenCaveToken/);
-// The token MUST ride in the URL hash, not the query string: a query string on
-// the dev document URL corrupts Turbopack dev chunk URLs in the iOS WKWebView
-// (chunks resolve to /?covenCaveToken=.../_next/... → HTML → no hydration →
-// blank shell). The hash is excluded from chunk URL resolution.
-assert.match(mobileScript, /url\.hash = new URLSearchParams\(\{ covenCaveToken: token \}\)/);
-assert.doesNotMatch(mobileScript, /searchParams\.set\("covenCaveToken"/);
-// The mobile access secret stays unset in native mode (Tailscale Serve proxies
-// to loopback, so the host gate already passes without it).
-assert.match(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN;/);
+assert.match(mobileScript, /CAVE_MOBILE_NATIVE=1 start_next_server/);
+assert.match(mobileScript, /create_invite/);
+assert.match(mobileScript, /CAVE_MOBILE_DEV_URL="\$\(cat "\$INVITE_FILE"\)"/);
+assert.doesNotMatch(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN/);
+assert.doesNotMatch(mobileScript, /env -u COVEN_CAVE_ACCESS_TOKEN/);
+assert.match(mobileScript, /tauri ios dev/);
 
 assert.equal(
   packageJson.scripts["mobile:tailscale:native"],
