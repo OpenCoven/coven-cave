@@ -169,8 +169,10 @@ function ProjectRow({
       ref={setDropRef}
       data-drop-over={isOver ? "true" : undefined}
       className={[
-        "group rounded-lg border bg-[var(--bg-raised)] px-4 py-3 transition-colors",
-        isOver ? "border-[var(--accent-presence)]" : "border-[var(--border-hairline)] hover:border-[var(--border-strong)]",
+        "group border-b border-[var(--border-hairline)] px-2 py-3 transition-colors",
+        isOver
+          ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]"
+          : "hover:bg-[var(--bg-raised)]/40",
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -534,7 +536,7 @@ export function ProjectsView({ sessions = [], onNewChat }: ProjectsViewProps) {
             }
           />
         ) : (
-          <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-2">
+          <div className="mx-auto flex w-full max-w-[1100px] flex-col">
             {error ? (
               <div
                 role="alert"
