@@ -190,7 +190,7 @@ export function FamiliarDock({
         ) : null}
       </div>
 
-      <Popover open={popoverOpen} onOpenChange={setPopoverOpen} anchorRef={overflowBtnRef} placement="bottom-end" minWidth={280}>
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen} anchorRef={overflowBtnRef} placement="bottom-start" minWidth={280}>
         <div className="familiar-dock__pop">
           <input
             type="text"
