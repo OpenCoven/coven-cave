@@ -16,7 +16,8 @@ assert.match(source, /coven_skills/, "should surface daemon-owned coven skills")
 assert.match(source, /read-only/i, "should label itself as read-only — daemon is read-only by design");
 assert.match(source, /normalizeCapabilities/, "should derive an operator map view model from daemon manifests");
 assert.match(source, /CapabilityMap/, "should render the hybrid capability map");
-assert.match(source, /CapabilityInspector/, "should render a right-side inspector for selected harness or capability");
+assert.match(source, /CapabilityDetails/, "should render inspector details inline inside the expanded capability row");
+assert.doesNotMatch(source, /CapabilityInspector/, "the separate right-side inspector column is removed in favor of inline details");
 assert.match(source, /placeholder="Search skills, plugins, paths, commands"/, "should expose operator-grade search");
 assert.match(source, /copyCapabilityDetail/, "inspector should expose read-only copy actions");
 assert.doesNotMatch(source, /\bharnessLabel,\n/, "should not import unused harnessLabel into the view component");

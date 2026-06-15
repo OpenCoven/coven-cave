@@ -8,7 +8,6 @@ import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   filterCapabilityItems,
   normalizeCapabilities,
-  type CapabilityHarnessSummary,
   type CapabilityMapItem,
   type CapabilityStatus,
   type CapabilityType,
@@ -207,8 +206,6 @@ export function CapabilitiesViewSurface({
     () => operatorView.items.find((item) => item.id === selectionId) ?? null,
     [operatorView.items, selectionId],
   );
-  const selectedHarness =
-    operatorView.harnesses.find((h) => h.id === (selectedItem?.harnessId ?? harnessFilter)) ?? null;
 
   // Load the selected capability's markdown so the inspector can render a
   // styled preview. Skills report their FOLDER as the path (the daemon doesn't
@@ -449,23 +446,17 @@ export function CapabilitiesViewSurface({
                 </div>
               ) : null}
 
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                <CapabilityMap
-                  items={filteredItems}
-                  selectedId={selectedItem?.id ?? null}
-                  preview={preview}
-                  onSelect={(item) => setSelectionId((cur) => (cur === item.id ? null : item.id))}
-                  onTypeFilter={(type) => applyTypeFilter(type)}
-                />
-                <CapabilityInspector
-                  item={selectedItem}
-                  harness={selectedHarness}
-                  copiedKey={copiedKey}
-                  onCopy={copyCapabilityDetail}
-                  onOpenPath={openLocalPath}
-                  onSelectHarness={applyHarnessFilter}
-                />
-              </div>
+              <CapabilityMap
+                items={filteredItems}
+                selectedId={selectedItem?.id ?? null}
+                preview={preview}
+                copiedKey={copiedKey}
+                onSelect={(item) => setSelectionId((cur) => (cur === item.id ? null : item.id))}
+                onTypeFilter={(type) => applyTypeFilter(type)}
+                onCopy={copyCapabilityDetail}
+                onOpenPath={openLocalPath}
+                onSelectHarness={applyHarnessFilter}
+              />
             </>
           )}
         </div>
@@ -481,14 +472,22 @@ function CapabilityMap({
   items,
   selectedId,
   preview,
+  copiedKey,
   onSelect,
   onTypeFilter,
+  onCopy,
+  onOpenPath,
+  onSelectHarness,
 }: {
   items: CapabilityMapItem[];
   selectedId: string | null;
   preview: SkillPreviewState;
+  copiedKey: string | null;
   onSelect: (item: CapabilityMapItem) => void;
   onTypeFilter: (type: CapabilityType) => void;
+  onCopy: (key: string, value?: string) => void;
+  onOpenPath: (path?: string) => void;
+  onSelectHarness: (id: string | null) => void;
 }) {
   const grouped = useMemo(() => {
     const map = new Map<CapabilityType, CapabilityMapItem[]>();
@@ -535,7 +534,11 @@ function CapabilityMap({
                   item={item}
                   active={selectedId === item.id}
                   preview={preview}
+                  copiedKey={copiedKey}
                   onSelect={() => onSelect(item)}
+                  onCopy={onCopy}
+                  onOpenPath={onOpenPath}
+                  onSelectHarness={onSelectHarness}
                 />
               ))}
             </div>
@@ -550,16 +553,24 @@ function CapabilityMapRow({
   item,
   active,
   preview,
+  copiedKey,
   onSelect,
+  onCopy,
+  onOpenPath,
+  onSelectHarness,
 }: {
   item: CapabilityMapItem;
   active: boolean;
   preview: SkillPreviewState;
+  copiedKey: string | null;
   onSelect: () => void;
+  onCopy: (key: string, value?: string) => void;
+  onOpenPath: (path?: string) => void;
+  onSelectHarness: (id: string | null) => void;
 }) {
-  // Skills report their folder as the path; any .md instruction is previewable
-  // too. Previewable rows carry a caret and expand inline — clicking the row
-  // drops a section beneath it that renders the file as styled markdown.
+  // Every row expands inline to reveal its inspector details. Skills report
+  // their folder as the path and any .md instruction is previewable too — those
+  // additionally render the file as styled markdown beneath the details.
   const isPreviewable =
     !!item.sourcePath && (item.type === "skill" || item.sourcePath.toLowerCase().endsWith(".md"));
   const previewMatches = preview.path === item.sourcePath;
@@ -568,21 +579,17 @@ function CapabilityMapRow({
       <button
         type="button"
         onClick={onSelect}
-        aria-expanded={isPreviewable ? active : undefined}
+        aria-expanded={active}
         className={`focus-ring flex min-w-0 w-full items-start gap-2 px-3 py-2 text-left transition-colors ${
           active ? "bg-muted" : "hover:bg-muted/60"
         }`}
       >
-        {isPreviewable ? (
-          <Icon
-            name={active ? "ph:caret-down" : "ph:caret-right"}
-            width={11}
-            className="mt-1 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-        ) : (
-          <span className="mt-1 w-[11px] shrink-0" aria-hidden />
-        )}
+        <Icon
+          name={active ? "ph:caret-down" : "ph:caret-right"}
+          width={11}
+          className="mt-1 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
         <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${statusDotClass(item.status)}`} />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -602,123 +609,94 @@ function CapabilityMapRow({
           {STATUS_LABEL[item.status]}
         </span>
       </button>
-      {isPreviewable && active ? (
-        <div className="border-t border-border bg-background/40 px-3 py-2.5">
-          <SkillPreviewBlock
-            preview={previewMatches ? preview : { path: item.sourcePath ?? null, status: "loading", text: null, error: null }}
-            fallbackDescription={item.description}
-            title={item.label}
+      {active ? (
+        <div className="space-y-3 border-t border-border bg-background/40 px-3 py-3">
+          <CapabilityDetails
+            item={item}
+            copiedKey={copiedKey}
+            onCopy={onCopy}
+            onOpenPath={onOpenPath}
+            onSelectHarness={onSelectHarness}
           />
+          {isPreviewable ? (
+            <SkillPreviewBlock
+              preview={previewMatches ? preview : { path: item.sourcePath ?? null, status: "loading", text: null, error: null }}
+              fallbackDescription={item.description}
+              title={item.label}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-function CapabilityInspector({
+// Inspector details rendered inline inside an expanded capability row: chips,
+// provenance blocks, and the read-only copy/open actions. This previously lived
+// in a separate right-hand column; it now travels with the row it describes.
+function CapabilityDetails({
   item,
-  harness,
   copiedKey,
   onCopy,
   onOpenPath,
   onSelectHarness,
 }: {
-  item: CapabilityMapItem | null;
-  harness: CapabilityHarnessSummary | null;
+  item: CapabilityMapItem;
   copiedKey: string | null;
   onCopy: (key: string, value?: string) => void;
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
 }) {
   return (
-    <aside className="min-w-0 rounded-lg border border-border bg-card xl:sticky xl:top-4 xl:self-start">
-      <div className="border-b border-border px-3 py-2">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-          Inspector
-        </p>
-        <h3 className="mt-1 truncate text-[14px] font-semibold text-foreground">
-          {item?.label ?? harness?.label ?? "Select a capability"}
-        </h3>
+    <div className="space-y-3">
+      <div className="capability-chips flex flex-wrap items-center gap-1.5">
+        <Badge>{TYPE_LABEL[item.type]}</Badge>
+        <Badge tone={item.status}>{STATUS_LABEL[item.status]}</Badge>
+        <button
+          type="button"
+          onClick={() => onSelectHarness(item.harnessId === "coven" ? null : item.harnessId)}
+          className="focus-ring inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {item.harnessLabel}
+        </button>
       </div>
 
-      {item ? (
-        <div className="space-y-3 p-3">
-          <div className="capability-chips flex flex-wrap items-center gap-1.5">
-            <Badge>{TYPE_LABEL[item.type]}</Badge>
-            <Badge tone={item.status}>{STATUS_LABEL[item.status]}</Badge>
-            <button
-              type="button"
-              onClick={() => onSelectHarness(item.harnessId === "coven" ? null : item.harnessId)}
-              className="focus-ring inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {item.harnessLabel}
-            </button>
-          </div>
+      {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
+      {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
+      {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
+      {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
+      {item.tags?.length ? <InspectorBlock label="Tags" value={item.tags.join(", ")} /> : null}
+      {item.scannedAt ? <InspectorBlock label="Scanned" value={new Date(item.scannedAt).toLocaleString()} /> : null}
 
-          {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
-          {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
-          {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
-          {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
-          {item.tags?.length ? <InspectorBlock label="Tags" value={item.tags.join(", ")} /> : null}
-          {item.scannedAt ? <InspectorBlock label="Scanned" value={new Date(item.scannedAt).toLocaleString()} /> : null}
-
-          <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
+      <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
+        <InspectorAction
+          icon={copiedKey === "id" ? "ph:check" : "ph:copy"}
+          label={copiedKey === "id" ? "Copied id" : "Copy id"}
+          onClick={() => void onCopy("id", item.id)}
+        />
+        {item.sourcePath ? (
+          <>
             <InspectorAction
-              icon={copiedKey === "id" ? "ph:check" : "ph:copy"}
-              label={copiedKey === "id" ? "Copied id" : "Copy id"}
-              onClick={() => void onCopy("id", item.id)}
-            />
-            {item.sourcePath ? (
-              <>
-                <InspectorAction
-                  icon={copiedKey === "path" ? "ph:check" : "ph:copy"}
-                  label={copiedKey === "path" ? "Copied path" : "Copy path"}
-                  onClick={() => void onCopy("path", item.sourcePath)}
-                />
-                <InspectorAction
-                  icon="ph:file-text"
-                  label="Open file"
-                  onClick={() => onOpenPath(item.sourcePath)}
-                />
-              </>
-            ) : null}
-            {item.command ? (
-              <InspectorAction
-                icon={copiedKey === "command" ? "ph:check" : "ph:copy"}
-                label={copiedKey === "command" ? "Copied command" : "Copy command"}
-                onClick={() => void onCopy("command", item.command)}
-              />
-            ) : null}
-          </div>
-        </div>
-      ) : harness ? (
-        <div className="space-y-3 p-3">
-          <div className="grid grid-cols-3 gap-2">
-            <MiniMetric label="Items" value={harness.itemCount} />
-            <MiniMetric label="Issues" value={harness.warningCount + harness.disabledCount} />
-            <MiniMetric label="Warnings" value={harness.warningCount} />
-          </div>
-          <InspectorBlock label="Harness" value={harness.id} />
-          <InspectorBlock label="Last scan" value={new Date(harness.scannedAt).toLocaleString()} />
-          <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
-            <InspectorAction
-              icon={copiedKey === "harness" ? "ph:check" : "ph:copy"}
-              label={copiedKey === "harness" ? "Copied harness" : "Copy harness id"}
-              onClick={() => void onCopy("harness", harness.id)}
+              icon={copiedKey === "path" ? "ph:check" : "ph:copy"}
+              label={copiedKey === "path" ? "Copied path" : "Copy path"}
+              onClick={() => void onCopy("path", item.sourcePath)}
             />
             <InspectorAction
-              icon="ph:funnel"
-              label="Focus harness"
-              onClick={() => onSelectHarness(harness.id)}
+              icon="ph:file-text"
+              label="Open file"
+              onClick={() => onOpenPath(item.sourcePath)}
             />
-          </div>
-        </div>
-      ) : (
-        <p className="p-3 text-[12px] leading-5 text-muted-foreground">
-          Select a capability or harness to inspect provenance, status, paths, commands, and read-only actions.
-        </p>
-      )}
-    </aside>
+          </>
+        ) : null}
+        {item.command ? (
+          <InspectorAction
+            icon={copiedKey === "command" ? "ph:check" : "ph:copy"}
+            label={copiedKey === "command" ? "Copied command" : "Copy command"}
+            onClick={() => void onCopy("command", item.command)}
+          />
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -992,30 +970,15 @@ function Badge({
   );
 }
 
-function MiniMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-background px-2 py-1.5">
-      <p className="text-[15px] font-semibold tabular-nums text-foreground">{value}</p>
-      <p className="text-[9px] uppercase tracking-widest text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
 function CapabilitiesSkeleton() {
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="space-y-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-lg border border-border bg-card p-3">
-            <span className="block h-3 w-32 animate-pulse rounded bg-muted" />
-            <span className="mt-3 block h-12 animate-pulse rounded bg-muted" />
-          </div>
-        ))}
-      </div>
-      <div className="rounded-lg border border-border bg-card p-3">
-        <span className="block h-3 w-20 animate-pulse rounded bg-muted" />
-        <span className="mt-3 block h-28 animate-pulse rounded bg-muted" />
-      </div>
+    <div className="space-y-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="rounded-lg border border-border bg-card p-3">
+          <span className="block h-3 w-32 animate-pulse rounded bg-muted" />
+          <span className="mt-3 block h-12 animate-pulse rounded bg-muted" />
+        </div>
+      ))}
     </div>
   );
 }
