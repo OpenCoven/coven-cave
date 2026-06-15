@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 import path from "node:path";
-import { isAllowedSkillFilePath } from "@/lib/server/skill-file-paths";
+import { isAllowedSkillFilePath, MAX_SKILL_FILE_PREVIEW_BYTES } from "@/lib/server/skill-file-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +25,21 @@ export async function GET(req: Request) {
   const candidate = target.toLowerCase().endsWith(".md")
     ? target
     : path.join(target, "SKILL.md");
-  if (!isAllowedSkillFilePath(candidate)) {
+  if (!(await isAllowedSkillFilePath(candidate))) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
   let text: string;
   try {
-    text = await readFile(candidate, "utf8");
+    const file = await open(candidate, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const targetStat = await file.stat();
+      if (targetStat.size > MAX_SKILL_FILE_PREVIEW_BYTES) {
+        return NextResponse.json({ ok: false, error: "file too large" }, { status: 413 });
+      }
+      text = await file.readFile("utf8");
+    } finally {
+      await file.close();
+    }
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "read failed" },
