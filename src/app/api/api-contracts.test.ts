@@ -164,7 +164,7 @@ for (const contract of contracts) {
     assert.match(source, /path not allowed|collection path not allowed/, `${contract.route} must preserve path-deny errors`);
     assert.match(source, /status:\s*403/, `${contract.route} path guard must preserve 403 response`);
   }
-  if (contract.route === "/library" || contract.route === "/library/doc") {
+  if (contract.route === "/library") {
     assert.match(
       source,
       /function realpathOrResolve\(value: string\)[\s\S]*fs\.realpathSync\(resolved\)/,
@@ -174,6 +174,23 @@ for (const contract of contracts) {
       source,
       /const root = realpathOrResolve\((?:researchRoot|RESEARCH_ROOT)\);[\s\S]*const resolved = realpathOrResolve\(p\);[\s\S]*resolved\.startsWith\(root \+ path\.sep\)/,
       `${contract.route} should allow symlinked familiar research paths only within the real research root`,
+    );
+    assert.doesNotMatch(
+      source,
+      /resolveAllowedProjectPath/,
+      `${contract.route} should not reject symlinked familiar research dirs via the global project-root allowlist`,
+    );
+  }
+  if (contract.route === "/library/doc") {
+    assert.match(
+      source,
+      /function realpathOrResolveFromBase\(base: string, value: string\)[\s\S]*path\.resolve\(base, value\)[\s\S]*fs\.realpathSync\(resolved\)/,
+      `${contract.route} should canonicalize candidate document paths from a trusted base`,
+    );
+    assert.match(
+      source,
+      /const root = realpathOrResolveFromBase\("\/", RESEARCH_ROOT\);[\s\S]*if \(isAbsolute\)[\s\S]*path\.isAbsolute\(input\)[\s\S]*realpathOrResolveFromBase\("\/", input\)[\s\S]*realpathOrResolveFromBase\(SAGE_ROOT, input\)[\s\S]*candidate\.startsWith\(root \+ path\.sep\)/,
+      `${contract.route} should validate legacy absolute paths and relative ids under the real research root`,
     );
     assert.doesNotMatch(
       source,

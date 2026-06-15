@@ -9,8 +9,8 @@ const RESEARCH_ROOT = path.join(SAGE_ROOT, "research");
 const MAX_SIZE = 512 * 1024; // 512KB
 
 // Security: must be within sage research dir
-function realpathOrResolve(value: string): string {
-  const resolved = path.resolve(value);
+function realpathOrResolveFromBase(base: string, value: string): string {
+  const resolved = path.resolve(base, value);
   try {
     return fs.realpathSync(resolved);
   } catch {
@@ -18,11 +18,19 @@ function realpathOrResolve(value: string): string {
   }
 }
 
-function resolveResearchPath(p: string): string | null {
-  const root = realpathOrResolve(RESEARCH_ROOT);
-  const resolved = realpathOrResolve(p);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
-  return resolved;
+function resolveResearchPath(input: string, isAbsolute: boolean): string | null {
+  const root = realpathOrResolveFromBase("/", RESEARCH_ROOT);
+
+  let candidate: string;
+  if (isAbsolute) {
+    if (!path.isAbsolute(input)) return null;
+    candidate = realpathOrResolveFromBase("/", input);
+  } else {
+    candidate = realpathOrResolveFromBase(SAGE_ROOT, input);
+  }
+
+  if (candidate !== root && !candidate.startsWith(root + path.sep)) return null;
+  return candidate;
 }
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
@@ -73,19 +81,19 @@ function stripMarkdown(text: string): string {
 
 export async function GET(req: NextRequest) {
   // Accept either ?path= (absolute, legacy) or ?id= (relative to sage root)
-  let filePath = req.nextUrl.searchParams.get("path");
-  const docId   = req.nextUrl.searchParams.get("id");
+  const filePath = req.nextUrl.searchParams.get("path");
+  const docId = req.nextUrl.searchParams.get("id");
 
-  if (!filePath && docId) {
+  let resolved: string | null = null;
+  if (filePath) {
+    resolved = resolveResearchPath(filePath, true);
+  } else if (docId) {
     // id is relative to the sage workspace root (e.g. "research/synthesis/foo.md")
-    filePath = path.join(SAGE_ROOT, docId);
-  }
-
-  if (!filePath) {
+    resolved = resolveResearchPath(docId, false);
+  } else {
     return NextResponse.json({ ok: false, error: "missing path or id param" }, { status: 400 });
   }
 
-  const resolved = resolveResearchPath(filePath);
   if (!resolved) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
@@ -125,7 +133,7 @@ export async function GET(req: NextRequest) {
   const tags = extractTags(frontmatter);
   const excerpt = stripMarkdown(body).slice(0, 200);
 
-  const id = path.relative(realpathOrResolve(SAGE_ROOT), resolved);
+  const id = path.relative(realpathOrResolveFromBase("/", SAGE_ROOT), resolved);
 
   const doc: LibraryDocBody = {
     id,
