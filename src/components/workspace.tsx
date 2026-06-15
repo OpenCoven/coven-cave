@@ -1214,6 +1214,7 @@ export function Workspace() {
       familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
       onFamiliarScopeChange={selectFamiliarScope}
+      responseNeeded={responseNeeded}
       notificationBadgeCount={inboxBadgeCount}
       onOpenInbox={() => setMode("inbox")}
       onOpenInboxItem={(item) => {

@@ -14,6 +14,7 @@
 
 import React from "react";
 import { Icon } from "@/lib/icon";
+import { FamiliarDock } from "@/components/familiar-dock";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -58,6 +59,7 @@ export type SidebarMinimalProps = {
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
   onFamiliarScopeChange: (id: string | null) => void;
+  responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
   onOpenInboxItem?: (item: InboxItem) => void;
@@ -114,38 +116,6 @@ function SidebarSection({
   );
 }
 
-function FamiliarScopeSelect({
-  familiars,
-  activeFamiliarId,
-  onFamiliarScopeChange,
-}: {
-  familiars: ResolvedFamiliar[];
-  activeFamiliarId?: string | null;
-  onFamiliarScopeChange: (id: string | null) => void;
-}) {
-  return (
-    <label className="sidebar-familiar-filter">
-      <span className="sidebar-familiar-filter__label">Familiar</span>
-      <span className="sidebar-familiar-filter__control">
-        <Icon name="ph:sparkle" width={14} className="sidebar-familiar-filter__icon" aria-hidden />
-        <select
-          aria-label="Filter workspace by familiar"
-          value={activeFamiliarId ?? ""}
-          onChange={(e) => onFamiliarScopeChange(e.currentTarget.value || null)}
-          className="sidebar-familiar-filter__select"
-        >
-          <option value="">Familiars</option>
-          {familiars.map((familiar) => (
-            <option key={familiar.id} value={familiar.id}>
-              {familiar.display_name}
-            </option>
-          ))}
-        </select>
-        <Icon name="ph:caret-up-down-bold" width={11} className="sidebar-familiar-filter__chevron" aria-hidden />
-      </span>
-    </label>
-  );
-}
 
 function ActionRow({
   icon,
@@ -216,6 +186,7 @@ function FolderRow({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
+    sessions,
     onNewChat,
     onOpenSettings,
     onModeChange,
@@ -224,6 +195,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     familiars,
     activeFamiliarId,
     onFamiliarScopeChange,
+    responseNeeded,
   } = props;
 
   // Projects lives only inside the Chat surface's Projects tab now (and ⌘9 /
@@ -264,9 +236,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
       {/* Header actions: familiar scope + New chat */}
       <div className="sidebar-actions sidebar-action-stack">
-        <FamiliarScopeSelect
+        <FamiliarDock
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
           onFamiliarScopeChange={onFamiliarScopeChange}
         />
         <ActionRow
