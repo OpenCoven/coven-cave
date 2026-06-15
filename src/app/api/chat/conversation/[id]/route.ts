@@ -114,8 +114,12 @@ function buildConversation(args: {
   const now = new Date().toISOString();
   return {
     sessionId: args.id,
+    ...(args.existing?.harnessSessionId ? { harnessSessionId: args.existing.harnessSessionId } : {}),
     familiarId,
     harness,
+    ...(args.existing?.model ? { model: args.existing.model } : {}),
+    ...(args.existing?.modelIntent ? { modelIntent: args.existing.modelIntent } : {}),
+    ...(args.existing?.runtime ? { runtime: args.existing.runtime } : {}),
     title: conversationTitle(args.id, args.body, args.existing),
     createdAt:
       typeof args.body.createdAt === "string" && args.body.createdAt.trim()
@@ -228,6 +232,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   } catch {
     return jsonError("invalid json body", 400);
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return jsonError("invalid json body", 400);
+  }
 
   const existing = await loadConversation(id);
   if (!existing) return jsonError("not found", 404);
@@ -239,6 +246,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   if (body.modelIntent !== undefined) {
+    if (!body.modelIntent || typeof body.modelIntent !== "object" || Array.isArray(body.modelIntent)) {
+      return jsonError("invalid model intent", 400);
+    }
     const model = cleanModelId(body.modelIntent.model);
     if (!model) return jsonError("invalid model", 400);
     if (body.modelIntent.source !== "session") {

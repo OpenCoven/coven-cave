@@ -203,6 +203,23 @@ for (const contract of contracts) {
       `${contract.route} should not reject symlinked familiar research dirs via the global project-root allowlist`,
     );
   }
+  if (contract.route === "/chat/conversation/[id]") {
+    assert.match(
+      source,
+      /\.\.\.\(args\.existing\?\.modelIntent \? \{ modelIntent: args\.existing\.modelIntent \} : \{\}\)/,
+      `${contract.route} must preserve session model intent when POST/PUT rebuilds a conversation`,
+    );
+    assert.match(
+      source,
+      /if \(!body \|\| typeof body !== "object" \|\| Array\.isArray\(body\)\) \{[\s\S]*?invalid json body/,
+      `${contract.route} PATCH must reject valid non-object JSON bodies before reading modelIntent`,
+    );
+    assert.match(
+      source,
+      /if \(!body\.modelIntent \|\| typeof body\.modelIntent !== "object" \|\| Array\.isArray\(body\.modelIntent\)\) \{[\s\S]*?invalid model intent/,
+      `${contract.route} PATCH must reject malformed modelIntent shapes before validating fields`,
+    );
+  }
   if (contract.localOriginGuard) {
     assert.match(source, /isLocalOrigin/, `${contract.route} must preserve local-origin guard`);
     assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
