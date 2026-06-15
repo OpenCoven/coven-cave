@@ -55,7 +55,26 @@ function statusForLifecycle(lifecycle: CardLifecycle, currentStatus: CardStatus)
 }
 
 function normalizeList(values: string[] | undefined): string[] {
-  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))];
+  return [...new Set(toStringList(values).map((value) => value.trim()).filter(Boolean))];
+}
+
+// Defensive coercion for `links`. The Card type declares `links: string[]`, but
+// older/hand-edited boards (and agent writes) have stored entries as
+// `{ label, url }` objects — the same shape as the GitHub link list. A raw
+// `.trim()` on such an object throws, and because loadBoard() maps every card
+// inside one try, a single malformed entry zeroed the ENTIRE board. Pull the
+// `url` out of object entries so legacy data is salvaged instead of fatal.
+function toStringList(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => {
+      if (typeof value === "string") return value;
+      if (value && typeof value === "object" && typeof (value as { url?: unknown }).url === "string") {
+        return (value as { url: string }).url;
+      }
+      return "";
+    })
+    .filter((value): value is string => value.length > 0);
 }
 
 function normalizeLinks(values: string[] | undefined): string[] {
@@ -67,7 +86,7 @@ function normalizeGitHubLinks(values: CardGitHubLink[] | undefined): CardGitHubL
 }
 
 function gitHubLinksFromLinks(values: string[] | undefined): CardGitHubLink[] {
-  return (values ?? [])
+  return toStringList(values)
     .map((url) => taskGitHubLinkFromUrl(url))
     .filter((item): item is CardGitHubLink => item !== null);
 }
@@ -126,18 +145,33 @@ async function ensureDir() {
 }
 
 export async function loadBoard(): Promise<BoardFile> {
+  let parsed: Partial<BoardFile>;
   try {
     const raw = await readFile(BOARD_PATH, "utf8");
-    const parsed = JSON.parse(raw) as Partial<BoardFile>;
-    const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
-    const projects = await loadProjects();
-    return {
-      version: parsed.version ?? 1,
-      cards: rawCards.map((c) => migrateProjectId(backfillCard(c as Card), projects)),
-    };
+    parsed = JSON.parse(raw) as Partial<BoardFile>;
   } catch {
+    // Missing file or torn/invalid JSON — nothing recoverable.
     return EMPTY;
   }
+
+  const rawCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+  const projects = await loadProjects();
+  // Normalize each card in isolation. A single malformed card (e.g. `links`
+  // stored as objects instead of strings) must never throw out of the whole
+  // map and collapse the board to empty — that made every task, including all
+  // familiar-scoped ones, silently vanish. Drop only the unrecoverable card.
+  const cards: Card[] = [];
+  for (const raw of rawCards) {
+    try {
+      cards.push(migrateProjectId(backfillCard(raw as Card), projects));
+    } catch (err) {
+      console.error(
+        `cave-board: skipping unreadable card ${(raw as { id?: unknown })?.id ?? "<unknown>"}:`,
+        err,
+      );
+    }
+  }
+  return { version: parsed.version ?? 1, cards };
 }
 
 // Serialize board mutations. Each mutator does load → modify → save; without

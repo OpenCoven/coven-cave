@@ -60,7 +60,70 @@ await Promise.all([
 ]);
 assert.equal(tornReads, 0, "no torn reads (empty board) during concurrent writes");
 
+// 5. A single malformed card must NOT zero the whole board. Regression: a card
+//    whose `links` were stored as `{label,url}` objects (instead of string[])
+//    made backfillCard().normalizeList() throw `value.trim is not a function`;
+//    because loadBoard() mapped every card inside one try, that one poison card
+//    collapsed the entire board to empty — every task, including all
+//    familiar-scoped ones, silently vanished. loadBoard() must now salvage the
+//    object-form links (pull out `url`) and isolate per-card failures.
+const poisonId = "poison-links-card";
+const goodId = "good-sibling-card";
+await board.saveBoard({
+  version: 1,
+  cards: [
+    {
+      id: poisonId,
+      title: "card with object links",
+      // Deliberately the wrong shape (objects, not strings) — the real bug.
+      links: [
+        { label: "PR", url: "https://github.com/OpenCoven/coven-cave/pull/647" },
+        { label: "worktree", url: "/tmp/wt" },
+      ],
+      status: "queued",
+      priority: "medium",
+      familiarId: "nova",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      updatedAt: "2026-06-15T00:00:00.000Z",
+    },
+    {
+      id: goodId,
+      title: "well-formed sibling",
+      links: ["https://example.com"],
+      status: "queued",
+      priority: "medium",
+      familiarId: "sage",
+      createdAt: "2026-06-15T00:00:00.000Z",
+      updatedAt: "2026-06-15T00:00:00.000Z",
+    },
+  ] as unknown as Parameters<typeof board.saveBoard>[0]["cards"],
+});
+
+const recovered = await board.loadBoard();
+assert.equal(
+  recovered.cards.length,
+  2,
+  "malformed card does not collapse the board — both cards survive",
+);
+const poison = recovered.cards.find((c) => c.id === poisonId);
+assert.ok(poison, "the poison card itself is salvaged, not dropped");
+assert.deepEqual(
+  poison!.links,
+  ["https://github.com/OpenCoven/coven-cave/pull/647", "/tmp/wt"],
+  "object-form links are coerced to their url strings",
+);
+assert.equal(
+  poison!.github.length,
+  1,
+  "github links are still derived from the salvaged urls",
+);
+assert.ok(
+  recovered.cards.some((c) => c.id === goodId),
+  "the well-formed sibling still loads",
+);
+
 // cleanup
 await rm(tmpHome, { recursive: true, force: true });
 
 console.log("ok - cave-board atomic write + write lock: no lost updates, no torn reads");
+console.log("ok - cave-board: malformed card links salvaged, board not zeroed");
