@@ -4429,6 +4429,43 @@ button:active > .edge-rail-chip {
     border-radius: var(--radius-control);
     background: transparent;
   }
+  .top-bar__actions .notification-bell {
+    position: static;
+  }
+  .notification-bell__popover {
+    position: fixed;
+    left: calc(8px + var(--sai-left));
+    right: calc(8px + var(--sai-right));
+    top: calc(52px + var(--sai-top));
+    width: auto;
+    max-height: calc(100dvh - 64px - var(--sai-top) - var(--sai-bottom));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .notification-bell__header {
+    min-height: var(--touch-target);
+    padding: 0 8px 0 12px;
+  }
+  .notification-bell__settings-btn,
+  .notification-bell__open-inbox {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+  .notification-bell__settings-btn {
+    width: var(--touch-target);
+    height: var(--touch-target);
+    opacity: 1;
+  }
+  .notification-bell__open-inbox {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
+  }
+  .notification-bell__list {
+    max-height: none;
+    flex: 1 1 auto;
+  }
   .top-bar__search {
     min-width: 0;
     width: 100%;

@@ -116,7 +116,7 @@ export function NotificationBell({
   }, []);
 
   return (
-    <div ref={wrapRef} className="relative">
+    <div ref={wrapRef} className="notification-bell relative">
       <button
         onClick={() => setOpen((v) => !v)}
         className={`notification-bell__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
@@ -140,15 +140,15 @@ export function NotificationBell({
       </button>
 
       {open ? (
-        <div className="group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl">
-          <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
+        <div className="notification-bell__popover group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl">
+          <div className="notification-bell__header flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
             <span className="text-[11px] font-medium text-[var(--text-primary)]">
               Notifications
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="notification-bell__header-actions flex items-center gap-1.5">
               <button
                 onClick={() => setSettingsOpen((v) => !v)}
-                className="touch-always-visible focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
+                className="notification-bell__settings-btn touch-always-visible focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
                 title="Notification settings"
                 aria-label="Notification settings"
               >
@@ -159,7 +159,7 @@ export function NotificationBell({
                   setOpen(false);
                   onOpenInbox();
                 }}
-                className="focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+                className="notification-bell__open-inbox focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
               >
                 Open Automations →
               </button>
@@ -231,7 +231,7 @@ export function NotificationBell({
               </ul>
             </div>
           ) : null}
-          <ul className="max-h-[420px] overflow-y-auto p-2 text-xs">
+          <ul className="notification-bell__list max-h-[420px] overflow-y-auto p-2 text-xs">
             {recent.length === 0 ? (
               <li className="px-2 py-6 text-center text-[11px] text-[var(--text-muted)]">
                 No notifications.

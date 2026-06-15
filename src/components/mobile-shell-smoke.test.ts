@@ -89,9 +89,27 @@ assert.match(
 );
 
 assert.match(
+  notificationBell,
+  /notification-bell__popover[\s\S]*notification-bell__settings-btn[\s\S]*notification-bell__open-inbox[\s\S]*notification-bell__list/,
+  "Notification bell should expose stable hooks for mobile popover layout and actions",
+);
+
+assert.match(
   globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.notification-bell__trigger,[\s\S]*\.top-bar__account\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile top-bar notification and account buttons should meet the 44px touch target",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.notification-bell__popover\s*\{[\s\S]*position:\s*fixed;[\s\S]*left:\s*calc\(8px \+ var\(--sai-left\)\);[\s\S]*right:\s*calc\(8px \+ var\(--sai-right\)\);[\s\S]*width:\s*auto;/,
+  "Mobile notification popover should be fixed to the safe viewport instead of overflowing from the trigger",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.notification-bell__settings-btn,[\s\S]*\.notification-bell__open-inbox\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile notification popover header actions should meet the 44px touch target",
 );
 
 assert.match(
