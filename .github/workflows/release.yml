@@ -82,11 +82,11 @@ jobs:
             arch_suffix: aarch64
           - platform: ubuntu-22.04
             label: Linux (AppImage)
-            args: "--bundles appimage"
+            args: '--bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
             arch_suffix: ""
           - platform: windows-latest
             label: Windows (MSI)
-            args: "--bundles msi"
+            args: '--bundles msi --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
             arch_suffix: ""
 
     runs-on: ${{ matrix.platform }}
@@ -221,11 +221,6 @@ jobs:
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Sign the updater artifacts (createUpdaterArtifacts in tauri.conf.json).
-          # Linux/Windows .sig files are uploaded next to the AppImage/MSI; the
-          # latest.json aggregation job composes the manifest from them.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
@@ -236,6 +231,34 @@ jobs:
           # here would clobber the manifest with a single platform.
           includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+      - name: Sign Linux/Windows updater artifact
+        if: >-
+          (
+            matrix.platform == 'ubuntu-22.04' &&
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+          ) ||
+          (
+            matrix.platform == 'windows-latest' &&
+            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+          )
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mapfile -t artifacts < <(find src-tauri/target/release/bundle -type f \( -name '*.AppImage' -o -name '*.msi' -o -name '*.msi.zip' -o -name '*.nsis.zip' -o -name '*-setup.exe' \) | sort)
+          if [ "${#artifacts[@]}" -eq 0 ]; then
+            echo "::error::No Linux/Windows updater artifact found to sign"
+            exit 1
+          fi
+          for artifact in "${artifacts[@]}"; do
+            echo "Signing updater artifact: $artifact"
+            pnpm exec tauri signer sign "$artifact"
+            gh release upload "$RELEASE_TAG" "${artifact}.sig" --clobber
+          done
 
       - name: Build macOS DMG with custom release script
         if: >-
