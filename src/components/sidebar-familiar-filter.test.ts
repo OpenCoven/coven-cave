@@ -26,26 +26,26 @@ assert.doesNotMatch(
 
 assert.match(
   sidebar,
-  /function FamiliarScopeSelect/,
-  "Sidebar should replace search with a familiar scope selector component",
+  /<FamiliarDock/,
+  "sidebar mounts the FamiliarDock",
 );
 
 assert.match(
   sidebar,
-  /<span className="sidebar-familiar-filter__label">Familiar<\/span>[\s\S]*aria-label="Filter workspace by familiar"[\s\S]*<option value="">Familiars<\/option>/,
-  "Familiar selector should expose Familiars as the generic no-filter agent option",
+  /onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
+  "dock is wired to the scope change handler",
+);
+
+assert.doesNotMatch(
+  sidebar,
+  /function FamiliarScopeSelect/,
+  "the scope dropdown is removed",
 );
 
 assert.doesNotMatch(
   sidebar,
   /Coven \(all\)/,
   "Selector should use Familiars, not Coven (all), for the generic no-filter option",
-);
-
-assert.match(
-  sidebar,
-  /onFamiliarScopeChange\(e\.currentTarget\.value \|\| null\)/,
-  "Selector should send null when Familiars is selected",
 );
 
 assert.match(

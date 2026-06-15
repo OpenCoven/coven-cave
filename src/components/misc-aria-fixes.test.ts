@@ -35,12 +35,10 @@ function read(file: string) {
 
 // 3. Sidebar collapse toggle has aria-expanded.
 {
-  // Try both candidate files.
   const a = read("sidebar-minimal.tsx");
-  const b = read("familiar-avatar-rail.tsx");
   assert.ok(
-    /aria-expanded=\{/.test(a) || /aria-expanded=\{/.test(b),
-    "sidebar collapse toggle exposes aria-expanded (in sidebar-minimal.tsx or familiar-avatar-rail.tsx)",
+    /aria-expanded/.test(a),
+    "sidebar collapse toggle exposes aria-expanded (in sidebar-minimal.tsx)",
   );
 }
 

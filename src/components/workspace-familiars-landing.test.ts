@@ -86,8 +86,8 @@ assert.doesNotMatch(
 
 assert.match(
   sidebar,
-  /function FamiliarScopeSelect/,
-  "Sidebar top slot renders the familiar scope selector in place of search",
+  /<FamiliarDock/,
+  "Sidebar top slot renders the familiar dock in place of search",
 );
 
 assert.match(
