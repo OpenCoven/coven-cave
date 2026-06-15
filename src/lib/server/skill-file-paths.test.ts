@@ -15,12 +15,14 @@ async function touch(relativePath: string, contents = "# preview\n") {
 
 const claudeSkill = await touch(path.join(".claude", "skills", "deep-research", "SKILL.md"));
 const covenSkill = await touch(path.join(".coven", "skills", "foo", "SKILL.md"));
-const agentsSkill = await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
+const codexAutomation = await touch(path.join(".codex", "automations", "daily-check", "automation.toml"), "id = \"daily-check\"\n");
+await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
 const claudeSkillSymlink = path.join(home, ".claude", "skills", "brainstorming");
 await symlink(path.join(home, ".agents", "skills", "brainstorming"), claudeSkillSymlink);
 const claudeInstructions = await touch(path.join(".claude", "CLAUDE.md"));
 const codexInstructions = await touch(path.join(".codex", "AGENTS.md"));
 const nonMarkdown = await touch(path.join(".claude", "skills", "x", "run.sh"));
+const arbitraryToml = await touch(path.join(".codex", "config.toml"), "model = \"test\"\n");
 const privateMarkdown = await touch(path.join(".claude", "private-not-a-skill.md"));
 const outsideMarkdown = await touch(path.join("secrets", "notes.md"));
 const prefixSibling = await touch(path.join(".claude-evil", "SKILL.md"));
@@ -39,6 +41,11 @@ assert.equal(
   await isAllowedSkillFilePath(covenSkill, home),
   true,
   "a SKILL.md under ~/.coven/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(codexAutomation, home),
+  true,
+  "a Codex automation.toml under ~/.codex/automations is allowed",
 );
 assert.equal(
   await isAllowedSkillFilePath(path.join(claudeSkillSymlink, "SKILL.md"), home),
@@ -63,6 +70,11 @@ assert.equal(
   await isAllowedSkillFilePath(nonMarkdown, home),
   false,
   "non-markdown files are rejected",
+);
+assert.equal(
+  await isAllowedSkillFilePath(arbitraryToml, home),
+  false,
+  "arbitrary TOML under a harness root is rejected",
 );
 assert.equal(
   await isAllowedSkillFilePath(privateMarkdown, home),

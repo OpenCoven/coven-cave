@@ -11,20 +11,27 @@ export const dynamic = "force-dynamic";
  * inspector preview. The `path` param is constrained to the well-known harness
  * roots under $HOME by isAllowedSkillFilePath — out-of-tree paths get 403.
  *
- * The daemon reports a skill's `path` as its directory (e.g.
- * `~/.claude/skills/brainstorming`), not the SKILL.md inside it, so a
- * non-markdown path is treated as a skill folder and resolved to its SKILL.md
- * before the allow-list check.
+ * The daemon can report a capability's `path` as its directory (e.g.
+ * `~/.claude/skills/brainstorming` or `~/.codex/automations/foo`), not the
+ * actual descriptor file inside it, so directory-looking paths are resolved to
+ * their concrete capability file before the allow-list check.
  */
+function resolveCapabilityFilePath(target: string): string {
+  const lowerTarget = target.toLowerCase();
+  if (lowerTarget.endsWith(".md") || lowerTarget.endsWith(".toml")) return target;
+  if (target.includes(`${path.sep}.codex${path.sep}automations${path.sep}`) || target.includes("/.codex/automations/")) {
+    return path.join(target, "automation.toml");
+  }
+  return path.join(target, "SKILL.md");
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const target = url.searchParams.get("path");
   if (!target) {
     return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
   }
-  const candidate = target.toLowerCase().endsWith(".md")
-    ? target
-    : path.join(target, "SKILL.md");
+  const candidate = resolveCapabilityFilePath(target);
   if (!(await isAllowedSkillFilePath(candidate))) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }

@@ -79,7 +79,7 @@ function skillSourcePath(skillPath?: string): string | undefined {
   const cleanPath = skillPath.replace(/\/+$/, "");
   const lowerPath = cleanPath.toLowerCase();
   if (lowerPath.endsWith(".md") || lowerPath.endsWith(".toml")) return cleanPath;
-  if (lowerPath.includes("/.codex/automations/")) return cleanPath;
+  if (lowerPath.includes("/.codex/automations/")) return `${cleanPath}/automation.toml`;
   return `${cleanPath}/SKILL.md`;
 }
 
