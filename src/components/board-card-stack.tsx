@@ -7,6 +7,7 @@ import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 // Order mirrors BoardKanban's COLUMNS so users get a consistent left-to-
@@ -65,6 +66,14 @@ export function BoardCardStack({
     return acc;
   }, [cards]);
 
+  const filterTabs = useMemo<TabItem<FilterValue>[]>(
+    () => [
+      { id: "all", label: "All", count: cards.length },
+      ...SECTIONS.map((s) => ({ id: s.id, label: s.label, count: counts[s.id] })),
+    ],
+    [cards.length, counts],
+  );
+
   const sections = useMemo(() => {
     const grouped = new Map<CardStatus, Card[]>();
     for (const s of SECTIONS) grouped.set(s.id, []);
@@ -76,25 +85,16 @@ export function BoardCardStack({
 
   return (
     <div className="board-card-stack">
-      {/* Status filter chips. Horizontally scrollable so 7 chips ("All"
-          + 6 statuses) fit on a 360px screen without wrapping. */}
-      <div className="board-card-stack__filters" role="tablist" aria-label="Filter by status">
-        <FilterChip
-          label="All"
-          active={filter === "all"}
-          count={cards.length}
-          onClick={() => setFilter("all")}
-        />
-        {SECTIONS.map((s) => (
-          <FilterChip
-            key={s.id}
-            label={s.label}
-            active={filter === s.id}
-            count={counts[s.id]}
-            onClick={() => setFilter(s.id)}
-          />
-        ))}
-      </div>
+      {/* Status filter tabs — Vercel-style underline tabs. Horizontally
+          scrollable so 7 tabs ("All" + 6 statuses) fit on a 360px screen
+          without wrapping. */}
+      <Tabs<FilterValue>
+        className="board-card-stack__filters"
+        ariaLabel="Filter by status"
+        value={filter}
+        onChange={setFilter}
+        items={filterTabs}
+      />
 
       {sections.map(({ id, label, cards: sectionCards }) => (
         <section key={id} className="board-card-stack__section">
@@ -134,31 +134,6 @@ export function BoardCardStack({
         </section>
       ))}
     </div>
-  );
-}
-
-function FilterChip({
-  label,
-  active,
-  count,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      className={`board-card-stack__chip${active ? " board-card-stack__chip--active" : ""}`}
-      onClick={onClick}
-    >
-      <span>{label}</span>
-      <span className="board-card-stack__chip-count">{count}</span>
-    </button>
   );
 }
 

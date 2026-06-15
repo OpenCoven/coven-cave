@@ -10,6 +10,7 @@ import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 import { VaultPanel } from "@/components/vault-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
+import { Tabs } from "@/components/ui/tabs";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
@@ -707,34 +708,21 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
   return (
     <div className="inspector-memory-tab-surface flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
       <div className="flex items-end gap-0.5 border-b border-[var(--border-hairline)] px-2">
-        <div role="tablist" aria-label="Memory mode" className="flex items-end gap-0.5">
-          {(["inspector", "coven", "files"] as const).map((m) => {
-            const isActive = mode === m;
-            const label = m === "inspector" ? "Inspect" : m === "coven" ? "Coven" : "Files";
-            return (
-              <button
-                key={m}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => {
-                  setQuery("");
-                  setMode(m);
-                }}
-                className={[
-                  "relative px-2.5 py-1.5 text-[11px] font-medium transition-colors outline-none",
-                  "after:absolute after:bottom-0 after:left-2.5 after:right-2.5 after:h-[2px] after:rounded-full after:transition-colors",
-                  isActive
-                    ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] after:bg-transparent hover:after:bg-[color-mix(in_oklch,var(--text-muted)_45%,transparent)]",
-                  "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-t-sm",
-                ].join(" ")}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        <Tabs<"inspector" | "coven" | "files">
+          bordered={false}
+          size="sm"
+          ariaLabel="Memory mode"
+          value={mode}
+          onChange={(m) => {
+            setQuery("");
+            setMode(m);
+          }}
+          items={[
+            { id: "inspector", label: "Inspect" },
+            { id: "coven", label: "Coven" },
+            { id: "files", label: "Files" },
+          ]}
+        />
         <span className="ml-auto pb-1.5 text-[10px] text-[var(--text-muted)]">
           {mode === "inspector" ? "read-only" : mode === "coven" ? covenFiltered.length : filtered.length}
         </span>
