@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { DEMO_FAMILIARS } from "@/lib/demo-seed";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
@@ -17,6 +20,7 @@ import { FontSettings } from "./settings-fonts";
 import {
   DEMO_MODE_EVENT,
   clearDemoModeData,
+  demoModeFetchHeaders,
   isDemoModeEnabled,
   setDemoModeEnabled,
 } from "@/lib/demo-mode";
@@ -485,15 +489,77 @@ function AddonsSection() {
 
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
+const EMPTY_RESPONSE_NEEDED: Set<string> = new Set();
+
 function FamiliarsSection() {
-  // Settings doesn't yet have workspace context — familiars/sessions/responseNeeded
-  // are stubbed as empty until a follow-up spec threads real data through SettingsShell.
-  // Same compromise as PluginsSection above.
+  // Settings is a standalone route with no workspace context, so this panel
+  // sources its own data: the familiar roster (resolved with cave overrides)
+  // plus live sessions for presence/counts. `responseNeeded` is a live-triage
+  // concern owned by the workspace inbox, not a configuration view — so the
+  // reply badge is intentionally omitted here (empty set).
+  const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const familiars = useResolvedFamiliars(rawFamiliars);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFamiliars = async () => {
+      try {
+        const res = await fetch("/api/familiars", {
+          cache: "no-store",
+          headers: demoModeFetchHeaders(),
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok) {
+          setRawFamiliars((json.familiars ?? []) as Familiar[]);
+        } else if (isDemoModeEnabled()) {
+          // Daemon offline but demo mode on (the toggle lives on this page) —
+          // show sample familiars so the panel is never blank in demo.
+          setRawFamiliars(DEMO_FAMILIARS);
+        }
+      } catch {
+        /* transient — keep last good list */
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    };
+    const loadSessions = async () => {
+      try {
+        const res = await fetch("/api/sessions/list", { cache: "no-store" });
+        const json = await res.json();
+        if (!cancelled && json.ok) {
+          setSessions((json.sessions ?? []) as SessionRow[]);
+        }
+      } catch {
+        /* transient */
+      }
+    };
+    void loadFamiliars();
+    void loadSessions();
+    const t = setInterval(loadSessions, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  // Hold the panel until the first fetch settles so the "No familiars
+  // configured" empty state never flashes before the roster loads.
+  if (!loaded) {
+    return (
+      <div className="settings-familiars-panel" role="status" aria-busy="true">
+        <p className="settings-familiars-panel__empty">Loading familiars…</p>
+      </div>
+    );
+  }
+
   return (
     <SettingsFamiliarsPanel
-      familiars={[]}
-      sessions={[]}
-      responseNeeded={new Set()}
+      familiars={familiars}
+      sessions={sessions}
+      responseNeeded={EMPTY_RESPONSE_NEEDED}
     />
   );
 }
