@@ -40,6 +40,18 @@ assert.match(
   "ChatView should send the active familiar id to /api/chat/send",
 );
 
+assert.match(
+  source,
+  /useFamiliarImages/,
+  "ChatView turn avatars should subscribe to uploaded familiar images",
+);
+
+assert.match(
+  source,
+  /<FamiliarAvatar familiar=\{resolved\} size=\{size\} \/>/,
+  "ChatView turn avatars should render uploaded images through FamiliarAvatar before glyph fallback",
+);
+
 assert.doesNotMatch(
   source,
   /native Cave chat only supports Codex, Claude Code, and Hermes right now/,

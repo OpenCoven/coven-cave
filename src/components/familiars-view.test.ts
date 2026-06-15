@@ -8,6 +8,24 @@ assert.match(source, /export function FamiliarsView/, "FamiliarsView must be exp
 
 assert.match(
   source,
+  /useResolvedFamiliars\(familiars, \{ includeArchived: true \}\)/,
+  "FamiliarsView should resolve local avatar images before rendering roster/detail surfaces",
+);
+
+assert.match(
+  source,
+  /<FamiliarAvatar familiar=\{familiar\} size="sm" \/>/,
+  "FamiliarsView detail header/card should render FamiliarAvatar instead of raw daemon icons",
+);
+
+assert.match(
+  source,
+  /<FamiliarAvatar familiar=\{f\} size="sm" \/>/,
+  "FamiliarsView rail should render uploaded avatar images via FamiliarAvatar",
+);
+
+assert.match(
+  source,
   /const LAST_SELECTED_KEY = "cave:agents\.lastSelected"/,
   "Selection persistence uses cave:agents.lastSelected localStorage key",
 );
@@ -56,8 +74,8 @@ assert.match(
 
 assert.match(
   source,
-  /const memoryFamiliar = selectedFamiliar \?\? activeFamiliar \?\? null/,
-  "Familiar memory scope falls back to the workspace-selected familiar",
+  /const memoryFamiliar = selectedFamiliar \?\? resolvedActiveFamiliar \?\? null/,
+  "Familiar memory scope falls back to the resolved workspace-selected familiar",
 );
 
 assert.match(

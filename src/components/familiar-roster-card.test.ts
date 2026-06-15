@@ -11,8 +11,8 @@ assert.match(card, /aria-label=\{`Open \$\{familiar\.display_name\}`\}/, "Card h
 
 assert.match(
   card,
-  /Icon name=\{glyph\}/,
-  "Card renders the familiar glyph (familiar.icon, with circle-half-tilt fallback)",
+  /<FamiliarAvatar familiar=\{familiar\} size="sm" \/>/,
+  "Card renders the shared FamiliarAvatar so uploaded images win over glyph fallback",
 );
 
 assert.match(card, /familiar\.display_name/, "Card shows display name");

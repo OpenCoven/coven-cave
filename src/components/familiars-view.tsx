@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry } from "@/components/familiars-memory-view";
 import {
@@ -10,6 +11,7 @@ import {
   type FamiliarCardStats,
   type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }
@@ -121,17 +123,22 @@ export function FamiliarsView({
     () => buildFamiliarCardStats({ familiars, sessions, covenEntries }),
     [familiars, sessions, covenEntries],
   );
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
   const visibleFamiliars = useMemo(
-    () => familiars.filter((f) => familiarMatches(f, query)),
-    [familiars, query],
+    () => resolvedFamiliars.filter((f) => familiarMatches(f, query)),
+    [resolvedFamiliars, query],
   );
 
   const selectedFamiliar = useMemo(
-    () => familiars.find((f) => f.id === selectedFamiliarId) ?? null,
-    [familiars, selectedFamiliarId],
+    () => resolvedFamiliars.find((f) => f.id === selectedFamiliarId) ?? null,
+    [resolvedFamiliars, selectedFamiliarId],
   );
-  const memoryFamiliar = selectedFamiliar ?? activeFamiliar ?? null;
+  const resolvedActiveFamiliar = useMemo(
+    () => (activeFamiliar ? resolvedFamiliars.find((f) => f.id === activeFamiliar.id) ?? null : null),
+    [activeFamiliar, resolvedFamiliars],
+  );
+  const memoryFamiliar = selectedFamiliar ?? resolvedActiveFamiliar ?? null;
 
   useEffect(() => {
     if (selectedFamiliarId && !selectedFamiliar) {
@@ -222,14 +229,14 @@ export function FamiliarsView({
         ) : viewMode === "detail" && selectedFamiliar ? (
           <div className="familiars-view__detail flex h-full min-h-0">
             <FamiliarDetailRail
-              familiars={familiars}
+              familiars={resolvedFamiliars}
               selectedId={selectedFamiliar.id}
               onSelect={enterDetail}
               onBack={backToRoster}
             />
             <FamiliarDetailPanel
               familiar={selectedFamiliar}
-              familiars={familiars}
+              familiars={resolvedFamiliars}
               sessions={sessions}
               fileEntries={fileEntries}
               memoryError={memoryError}
@@ -260,7 +267,7 @@ export function FamiliarsView({
       </div>
       {viewMode === "agent-memory" && memoryFamiliar ? (
         <FamiliarMemoryOverlay
-          familiars={familiars}
+          familiars={resolvedFamiliars}
           familiar={memoryFamiliar}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
@@ -303,7 +310,7 @@ function FamiliarsEmptyState({ onOpenOnboarding }: { onOpenOnboarding: () => voi
 type MemoryStatus = "loading" | "error" | "ready";
 
 type AgentRosterCardProps = {
-  familiar: Familiar;
+  familiar: ResolvedFamiliar;
   stats: FamiliarCardStats;
   daemonRunning: boolean;
   responseNeeded: boolean;
@@ -319,7 +326,6 @@ function FamiliarRosterCard({
   memoryStatus,
   onSelect,
 }: AgentRosterCardProps) {
-  const glyph = (familiar.icon ?? "ph:circle-half-tilt") as IconName;
   const lastSessionLabel = stats.lastSessionAt
     ? `Last session ${age(stats.lastSessionAt)}`
     : "No sessions yet";
@@ -333,7 +339,7 @@ function FamiliarRosterCard({
       aria-label={`Open ${familiar.display_name}`}
     >
       <div className="flex items-center gap-2">
-        <Icon name={glyph} width={18} className="text-[var(--accent-presence)]" />
+        <FamiliarAvatar familiar={familiar} size="sm" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
             {familiar.display_name}
@@ -396,8 +402,8 @@ function FamiliarRosterCard({
 // ────────────────────────────────────────────────────────────────────────────
 
 type AgentMemoryOverlayProps = {
-  familiars: Familiar[];
-  familiar: Familiar;
+  familiars: ResolvedFamiliar[];
+  familiar: ResolvedFamiliar;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
@@ -451,7 +457,7 @@ function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile 
 // ────────────────────────────────────────────────────────────────────────────
 
 type AgentDetailRailProps = {
-  familiars: Familiar[];
+  familiars: ResolvedFamiliar[];
   selectedId: string;
   onSelect: (id: string) => void;
   onBack: () => void;
@@ -487,7 +493,7 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDe
                 aria-label={f.display_name}
                 aria-current={active ? "true" : undefined}
               >
-                <Icon name={(f.icon ?? "ph:circle-half-tilt") as IconName} width={14} />
+                <FamiliarAvatar familiar={f} size="sm" />
               </button>
             </li>
           );
@@ -504,8 +510,8 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDe
 type DetailTab = "memory" | "files" | "sessions";
 
 type AgentDetailPanelProps = {
-  familiar: Familiar;
-  familiars: Familiar[];
+  familiar: ResolvedFamiliar;
+  familiars: ResolvedFamiliar[];
   sessions: SessionRow[];
   fileEntries: FileMemoryEntry[];
   memoryError: string | null;
@@ -548,7 +554,7 @@ function FamiliarDetailPanel({
     <section className="familiars-view__panel flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <header className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-3">
         <div className="flex items-center gap-2">
-          <Icon name={(familiar.icon ?? "ph:circle-half-tilt") as IconName} width={18} className="text-[var(--accent-presence)]" />
+          <FamiliarAvatar familiar={familiar} size="sm" />
           <div className="min-w-0">
             <h2 className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
               {familiar.display_name}

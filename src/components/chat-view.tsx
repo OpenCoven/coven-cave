@@ -10,9 +10,11 @@ import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
-import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
-import { resolveFamiliarGlyph } from "@/lib/familiar-glyph";
+import { useFamiliarImages } from "@/lib/cave-familiar-images";
+import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
+import { resolveFamiliar } from "@/lib/familiar-resolve";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
   MAX_ATTACHMENT_IMAGE_BYTES,
@@ -3200,8 +3202,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
 function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" }) {
   const overrides = useGlyphOverrides();
-  const glyph = resolveFamiliarGlyph(familiar, overrides);
-  return <FamiliarGlyph glyph={glyph} size={size} />;
+  const images = useFamiliarImages();
+  const familiarOverrides = useFamiliarOverrides();
+  const resolved = resolveFamiliar(familiar, {
+    override: familiarOverrides[familiar.id],
+    image: images[familiar.id],
+    glyphOverride: overrides[familiar.id],
+    archived: false,
+  });
+  return <FamiliarAvatar familiar={resolved} size={size} />;
 }
 
 function TurnRow({
