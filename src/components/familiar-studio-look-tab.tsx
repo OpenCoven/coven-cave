@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
 import {
+  MAX_FAMILIAR_IMAGE_DATAURL_BYTES,
   setFamiliarImage,
   clearFamiliarImage,
   useFamiliarImages,
@@ -120,9 +121,17 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
 
   async function onFile(file: File) {
     setToast(null);
-    const dataUrl = await fileToDataUrl(file);
-    const res = setFamiliarImage(familiar.id, { dataUrl, mime: file.type });
-    if (!res.ok) setToast(res.reason);
+    try {
+      const prepared = await prepareFamiliarImage(file);
+      const res = setFamiliarImage(familiar.id, prepared);
+      if (!res.ok) {
+        setToast(res.reason);
+        return;
+      }
+      if (prepared.downsized) setToast("Image was downsized for Cave.");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Could not read image.");
+    }
   }
 
   return (
@@ -227,7 +236,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
             </>
           ) : (
             <span className="familiar-studio-look__hint">
-              Drop a PNG, JPEG, WebP, or SVG (max 2MB), or
+              Drop a PNG, JPEG, WebP, or SVG. Large raster images are downsized automatically, or
             </span>
           )}
           <label className="familiar-studio-look__upload">
@@ -253,7 +262,81 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
 // (it does its own resolve). The shape overlap means we can pass it through;
 // TypeScript will widen as needed.
 
-function fileToDataUrl(file: File): Promise<string> {
+type PreparedFamiliarImage = {
+  dataUrl: string;
+  mime: string;
+  downsized?: boolean;
+};
+
+const DOWNSIZABLE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const DOWNSIZE_DIMENSIONS = [1024, 768, 512, 384, 256];
+const DOWNSIZE_QUALITIES = [0.86, 0.76, 0.66];
+
+async function prepareFamiliarImage(file: File): Promise<PreparedFamiliarImage> {
+  const dataUrl = await fileToDataUrl(file);
+  if (dataUrl.length <= MAX_FAMILIAR_IMAGE_DATAURL_BYTES || !DOWNSIZABLE_MIMES.has(file.type)) {
+    return { dataUrl, mime: file.type };
+  }
+
+  const downsized = await downsizeFamiliarImage(file);
+  return { ...downsized, downsized: true };
+}
+
+async function downsizeFamiliarImage(file: File): Promise<{ dataUrl: string; mime: string }> {
+  const image = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not resize image in this browser.");
+
+  let smallest: { dataUrl: string; mime: string } | null = null;
+  const outputMimes = file.type === "image/jpeg"
+    ? ["image/jpeg", "image/webp"]
+    : ["image/webp", "image/jpeg"];
+
+  for (const maxSide of DOWNSIZE_DIMENSIONS) {
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    for (const mime of outputMimes) {
+      for (const quality of DOWNSIZE_QUALITIES) {
+        const blob = await canvasToBlob(canvas, mime, quality);
+        if (!blob) continue;
+        const dataUrl = await blobToDataUrl(blob);
+        const candidate = { dataUrl, mime: blob.type || mime };
+        if (!smallest || dataUrl.length < smallest.dataUrl.length) smallest = candidate;
+        if (dataUrl.length <= MAX_FAMILIAR_IMAGE_DATAURL_BYTES) return candidate;
+      }
+    }
+  }
+
+  if (!smallest) throw new Error("Could not resize image in this browser.");
+  return smallest;
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not load image."));
+    };
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, mime, quality));
+}
+
+function fileToDataUrl(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -261,6 +344,8 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+const blobToDataUrl = fileToDataUrl;
 
 function colorInputValue(color: string | null): string {
   return color && /^#[0-9a-f]{6}$/i.test(color)

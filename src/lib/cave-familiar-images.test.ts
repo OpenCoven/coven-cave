@@ -14,6 +14,12 @@ globalThis.window = {
 
 const mod = await import("./cave-familiar-images.ts");
 
+assert.equal(
+  typeof mod.MAX_FAMILIAR_IMAGE_DATAURL_BYTES,
+  "number",
+  "store should expose the cap so upload UI can downsize before saving",
+);
+
 // Set + read
 {
   const dataUrl = "data:image/png;base64," + "A".repeat(1000);

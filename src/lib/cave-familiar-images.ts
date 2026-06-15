@@ -12,7 +12,7 @@
 import { useSyncExternalStore } from "react";
 
 const IMAGES_KEY = "cave:familiar-images:v1";
-const MAX_DATAURL_BYTES = Math.floor(2 * 1024 * 1024 * 4 / 3) + 100; // ~2.8MB
+export const MAX_FAMILIAR_IMAGE_DATAURL_BYTES = Math.floor(2 * 1024 * 1024 * 4 / 3) + 100; // ~2.8MB
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIMES = new Set([
   "image/png",
@@ -71,7 +71,7 @@ export function setFamiliarImage(id: string, image: { dataUrl: string; mime: str
   if (!ALLOWED_MIMES.has(image.mime)) {
     return { ok: false, reason: "Unsupported format. Use PNG, JPEG, WebP, or SVG." };
   }
-  if (image.dataUrl.length > MAX_DATAURL_BYTES) {
+  if (image.dataUrl.length > MAX_FAMILIAR_IMAGE_DATAURL_BYTES) {
     return { ok: false, reason: "Image too large (max 2MB)." };
   }
   const curr = getMap();
