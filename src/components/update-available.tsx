@@ -129,12 +129,15 @@ export function UpdateBannerTrigger() {
           onClick: () => {
             if (r.kind === "native") {
               pushBanner({ id: BANNER_ID, severity: "info", title: `Downloading update v${r.version}…` });
-              void installNativeUpdate(r.update, () => {}).catch(() => {
+              void installNativeUpdate(r.update, () => {}).catch((err) => {
+                const reason = err instanceof Error ? err.message : "";
                 pushBanner({
                   id: BANNER_ID,
                   severity: "warning",
-                  title: "Update failed — open the release page",
-                  cta: { label: "Open", onClick: () => void openExternalUrl(RELEASES_PAGE) },
+                  title: reason
+                    ? `Update failed (${reason}) — download manually`
+                    : "Update failed — download manually",
+                  cta: { label: "Download", onClick: () => void openExternalUrl(RELEASES_PAGE) },
                   onDismiss: () => markDismissed(r.version),
                 });
               });
@@ -157,9 +160,10 @@ export function UpdateBannerTrigger() {
 
 type RowState =
   | { phase: "checking" }
-  | { phase: "current"; error?: boolean }
+  | { phase: "current" }
   | { phase: "available"; r: Extract<Resolved, { kind: "native" | "fallback" }> }
   | { phase: "downloading"; version: string; pct: number }
+  | { phase: "failed"; version: string; message: string }
   | { phase: "ready"; version: string };
 
 /**
@@ -198,8 +202,13 @@ export function UpdateSettingsRow() {
       .then(() => {
         if (mounted.current) setState({ phase: "ready", version });
       })
-      .catch(() => {
-        if (mounted.current) setState({ phase: "current", error: true });
+      .catch((err) => {
+        if (mounted.current)
+          setState({
+            phase: "failed",
+            version,
+            message: err instanceof Error ? err.message : "Update failed",
+          });
       });
   };
 
@@ -231,12 +240,35 @@ export function UpdateSettingsRow() {
         )}
       </>
     );
+  } else if (state.phase === "failed") {
+    // The native install threw (e.g. unsigned/dev build, app translocation, or
+    // a network/verification error). Don't dead-end: surface the reason and a
+    // working manual download so the update is always reachable.
+    control = (
+      <>
+        <span
+          className="text-[12px] font-medium text-[var(--color-danger)]"
+          title={state.message}
+        >
+          Update failed
+        </span>
+        <button type="button" onClick={() => void openExternalUrl(RELEASES_PAGE)} className={accentBtn}>
+          <Icon name="ph:arrow-square-out" width={12} />
+          Download
+        </button>
+        <button
+          type="button"
+          onClick={check}
+          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        >
+          Retry
+        </button>
+      </>
+    );
   } else {
     control = (
       <>
-        <span className="text-[12px] text-[var(--text-muted)]">
-          {state.error ? "Update failed" : "Up to date"}
-        </span>
+        <span className="text-[12px] text-[var(--text-muted)]">Up to date</span>
         <button
           type="button"
           onClick={check}

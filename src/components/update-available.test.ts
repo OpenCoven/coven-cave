@@ -32,4 +32,12 @@ assert.match(src, /Install &amp; restart/, "native path offers install + restart
 assert.match(src, /Downloading…/, "shows download progress");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 
+// A failed native install must not dead-end: it captures the reason and offers
+// a working manual download (the release page) plus a retry, so the update is
+// always reachable even when downloadAndInstall/relaunch throws.
+assert.match(src, /phase: "failed"/, "tracks a dedicated failed state for a thrown install");
+assert.match(src, /message: err instanceof Error \? err\.message/, "captures the real failure reason instead of swallowing it");
+assert.match(src, /onClick=\{\(\) => void openExternalUrl\(RELEASES_PAGE\)\}/, "failed state offers a manual download to the release page");
+assert.match(src, />\s*Retry\s*</, "failed state offers a retry");
+
 console.log("update-available.test.ts: ok");
