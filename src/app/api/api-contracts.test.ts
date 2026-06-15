@@ -189,8 +189,13 @@ for (const contract of contracts) {
     );
     assert.match(
       source,
-      /const root = realpathOrResolveFromBase\("\/", RESEARCH_ROOT\);[\s\S]*if \(isAbsolute\)[\s\S]*path\.isAbsolute\(input\)[\s\S]*realpathOrResolveFromBase\("\/", input\)[\s\S]*realpathOrResolveFromBase\(SAGE_ROOT, input\)[\s\S]*candidate\.startsWith\(root \+ path\.sep\)/,
-      `${contract.route} should validate legacy absolute paths and relative ids under the real research root`,
+      /function listResearchEntries\(root: string\)[\s\S]*fs\.readdirSync\(dir, \{ withFileTypes: true \}\)[\s\S]*isWithinRoot\(realPath, root\)[\s\S]*relativeToSage/,
+      `${contract.route} should build an allowlist from trusted research-root entries`,
+    );
+    assert.match(
+      source,
+      /const requestedAbsolute = isAbsolute \? normalizeAbsolutePath\(input, root\) : null;[\s\S]*const requestedRelative = isAbsolute \? null : normalizeRelativeId\(input\);[\s\S]*listResearchEntries\(root\)\.find/,
+      `${contract.route} should use user input only to select from the trusted research allowlist`,
     );
     assert.doesNotMatch(
       source,
