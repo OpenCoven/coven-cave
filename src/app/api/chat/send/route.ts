@@ -55,6 +55,10 @@ import {
   buildTaskAwarePrompt,
   taskContextForSession,
 } from "@/lib/task-chat-context";
+import {
+  buildPromptWithFamiliarStartupContext,
+  readFamiliarDailyMemoryStartupContext,
+} from "@/lib/server/familiar-startup-context";
 import { extractLinks } from "@/lib/link-extractor";
 import { routeLinkHandler } from "@/app/api/library/route-link/route";
 import {
@@ -925,16 +929,22 @@ export async function POST(req: Request) {
         resolvedFamiliarWorkspace,
       )
     : [];
+  const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
+    resolvedFamiliarWorkspace,
+  );
 
   const taskContext = await taskContextForSession(body.sessionId);
   const harnessPrompt = buildPromptWithCovenIdentityCanon(
     buildTaskAwarePrompt(
-      appendMentionedFilesBlock(
-        buildPromptWithAttachments(promptText, attachments, {
-          imagesSupported,
-          imageFilePaths,
-        }),
-        mentionedFiles,
+      buildPromptWithFamiliarStartupContext(
+        appendMentionedFilesBlock(
+          buildPromptWithAttachments(promptText, attachments, {
+            imagesSupported,
+            imageFilePaths,
+          }),
+          mentionedFiles,
+        ),
+        [dailyMemoryContext],
       ),
       taskContext,
     ),

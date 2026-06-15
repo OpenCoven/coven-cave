@@ -274,6 +274,18 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /readFamiliarDailyMemoryStartupContext\(\s*resolvedFamiliarWorkspace,\s*\)/,
+  "Cave chat should load today's familiar daily memory file when a familiar workspace exists",
+);
+
+assert.match(
+  chatRoute,
+  /buildPromptWithFamiliarStartupContext\([\s\S]*appendMentionedFilesBlock[\s\S]*\[dailyMemoryContext\]/,
+  "The harness prompt should include the familiar startup context before task and identity wrappers",
+);
+
+assert.match(
+  chatRoute,
   /await writeFile\(filePath, payload, \{ mode: 0o600 \}\)/,
   "Saved image payloads should be private temp files (mode 0600)",
 );
