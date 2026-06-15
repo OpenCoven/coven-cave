@@ -1,4 +1,5 @@
 import path from "node:path";
+import { lstat, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 
 export type MemorySourceKind = "coven-origin" | "external-harness" | "runtime";
@@ -31,6 +32,33 @@ export type MemoryFileClassification = {
 
 function isWithinRoot(resolved: string, root: string): boolean {
   return resolved === root || resolved.startsWith(root + path.sep);
+}
+
+async function realpathIfPresent(targetPath: string): Promise<string | null> {
+  try {
+    return await realpath(/* turbopackIgnore: true */ targetPath);
+  } catch {
+    return null;
+  }
+}
+
+async function isRealPathWithinAllowedRoot(targetPath: string, allowedRoot: string): Promise<boolean> {
+  const [realTarget, realRoot] = await Promise.all([
+    realpathIfPresent(targetPath),
+    realpathIfPresent(allowedRoot),
+  ]);
+  if (realTarget === null || realRoot === null) return false;
+  return isWithinRoot(realTarget, realRoot) && isWithinRoot(realTarget, path.resolve(allowedRoot));
+}
+
+function familiarAllowedRootPath(fullPath: string, classification: MemoryFileClassification): string | null {
+  if (!classification.familiarId) return null;
+  const familiarRoot = classification.rootPath;
+  const rel = path.relative(familiarRoot, path.resolve(/* turbopackIgnore: true */ fullPath));
+  const parts = rel.split(path.sep);
+  if (parts.length === 1 && parts[0] === "MEMORY.md") return path.join(familiarRoot, "MEMORY.md");
+  if (parts.length >= 2 && parts[0] === "memory") return path.join(familiarRoot, "memory");
+  return null;
 }
 
 function displayId(id: string): string {
@@ -161,4 +189,25 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
 
 export function isMemoryFilePathAllowed(fullPath: string, home = homedir()): boolean {
   return classifyMemoryFilePath(fullPath, home) !== null;
+}
+
+export async function resolveAllowedMemoryFileReadPath(fullPath: string, home = homedir()): Promise<string | null> {
+  const classification = classifyMemoryFilePath(fullPath, home);
+  if (!classification) return null;
+
+  let fileStat;
+  try {
+    fileStat = await lstat(/* turbopackIgnore: true */ fullPath);
+  } catch {
+    return null;
+  }
+  if (!fileStat.isFile()) return null;
+
+  const allowedRoot = classification.familiarId
+    ? familiarAllowedRootPath(fullPath, classification)
+    : classification.rootPath;
+  if (!allowedRoot) return null;
+
+  if (!(await isRealPathWithinAllowedRoot(fullPath, allowedRoot))) return null;
+  return await realpath(/* turbopackIgnore: true */ fullPath);
 }

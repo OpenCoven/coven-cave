@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import { redact } from "@/lib/redact";
-import { isAllowedMemoryFilePath } from "@/lib/server/memory-file-paths";
+import { resolveAllowedMemoryFilePath } from "@/lib/server/memory-file-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +12,13 @@ export async function GET(req: Request) {
   if (!target) {
     return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
   }
-  if (!isAllowedMemoryFilePath(target)) {
+  const allowedPath = await resolveAllowedMemoryFilePath(target);
+  if (!allowedPath) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
   let raw: string;
   try {
-    raw = await readFile(target, "utf8");
+    raw = await readFile(/* turbopackIgnore: true */ allowedPath, "utf8");
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "read failed" },
