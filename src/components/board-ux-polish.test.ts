@@ -45,21 +45,16 @@ assert.match(
   "Mobile board search and toolbar controls should meet thumb-sized touch targets",
 );
 
-// The status filters are now Vercel-style underline tabs (shared
-// components/ui/tabs.tsx), not rounded pill chips. The filter row stays a
-// horizontally scrollable sticky strip; per-tab styling (padding, the 2px
-// underline) is owned by the shared Tabs component, so the old pill rules
-// (.board-card-stack__chip / fixed 54px height) are gone.
 assert.match(
   styles,
-  /\.board-card-stack__filters\s*\{[\s\S]*overflow-x:\s*auto[\s\S]*overflow-y:\s*hidden/,
-  "Mobile BoardCardStack filter tabs should stay a horizontally scrollable strip",
+  /\.board-card-stack__filters\s*\{[\s\S]*flex:\s*0 0 54px[\s\S]*min-height:\s*54px[\s\S]*overflow-y:\s*hidden/,
+  "Mobile BoardCardStack filters should reserve full touch-sized chip height instead of clipping to a scrollbar sliver",
 );
 
 assert.match(
   styles,
-  /\.board-card-stack__filters\s*>\s*\[role="tab"\]\s*\{\s*flex:\s*0 0 auto/,
-  "BoardCardStack filter tabs keep their natural width so each underline spans its label",
+  /\.board-card-stack__chip\s*\{[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile BoardCardStack filter chips should meet the shared touch target",
 );
 
 assert.match(
@@ -72,8 +67,8 @@ assert.match(
 // touch targets — the desktop-dense 24-28px close/action sizes must scale up.
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close,\s*\n\s*\.board-drawer-path-open\s*\{[\s\S]*min-width:\s*var\(--touch-target\)[\s\S]*min-height:\s*var\(--touch-target\)/,
-  "Mobile inspector close/open-path controls should meet the shared touch target via min-* (so the 44px hit area wins the cascade over the earlier-in-file base width/height)",
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close,\s*\n\s*\.board-drawer-path-open\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
+  "Mobile inspector close/open-path controls should meet the shared touch target",
 );
 assert.match(
   styles,
