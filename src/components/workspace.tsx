@@ -803,6 +803,22 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Bridge `cave:agents-new-chat` from surfaces that aren't the chat view.
+  // ChatSurface owns this event, but it only mounts when mode === "chat", so a
+  // dispatch from the Familiar Studio drawer (e.g. the Contract tab's
+  // rehabilitation button) or other non-chat surfaces would otherwise be lost.
+  // When already in chat, ChatSurface handles it directly — skip here to avoid
+  // opening the new chat twice.
+  useEffect(() => {
+    const onAgentsNewChat = (e: Event) => {
+      if (modeRef.current === "chat") return;
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null }>).detail;
+      startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null);
+    };
+    window.addEventListener("cave:agents-new-chat", onAgentsNewChat);
+    return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+  }, [startFamiliarChat]);
+
   useEffect(() => {
     const SURFACE_ORDER: WorkspaceMode[] = [
       "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",

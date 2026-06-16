@@ -219,3 +219,31 @@ assert.match(
   /onOpenInboxItem=\{\(item\) => \{[\s\S]*openFamiliarSession\(item\.sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
   "Workspace should keep notification-bell inbox routing intact for session and non-session items",
 );
+
+// The agents-new-chat bridge forwards an optional initialPrompt so callers
+// (e.g. the Contract tab's rehabilitation button) can seed the first message.
+assert.match(
+  chatSurface,
+  /onNewChat[\s\S]*initialPrompt\?: string \| null/,
+  "ChatSurface new-chat handler should accept an initialPrompt in the event detail",
+);
+assert.match(
+  chatSurface,
+  /newChat\(d\?\.projectRoot \?\? undefined, d\?\.initialPrompt \?\? undefined, d\?\.familiarId\)/,
+  "ChatSurface should forward the seeded initialPrompt into newChat",
+);
+
+// ChatSurface only mounts in chat mode, so the Workspace must bridge
+// cave:agents-new-chat dispatched from non-chat surfaces (e.g. the Contract
+// tab in the Familiar Studio drawer) into the chat surface — and skip when
+// already in chat so the new chat isn't opened twice.
+assert.match(
+  workspace,
+  /addEventListener\("cave:agents-new-chat"[\s\S]*startFamiliarChat\(/,
+  "Workspace bridges cave:agents-new-chat into the chat surface from non-chat modes",
+);
+assert.match(
+  workspace,
+  /onAgentsNewChat[\s\S]*modeRef\.current === "chat"[\s\S]*return/,
+  "Workspace skips the bridge when already in chat (ChatSurface owns it) to avoid double-open",
+);

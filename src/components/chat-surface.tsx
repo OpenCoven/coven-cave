@@ -310,10 +310,10 @@ export function ChatSurface({
   // Window events
   useEffect(() => {
     const onNewChat = (e: Event) => {
-      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null }>).detail;
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null }>).detail;
       if (d?.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, undefined, d?.familiarId), 0);
+      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, d?.initialPrompt ?? undefined, d?.familiarId), 0);
     };
     const onOpenSession = (e: Event) => {
       const d = (e as CustomEvent<{ sessionId?: string; familiarId?: string | null }>).detail;

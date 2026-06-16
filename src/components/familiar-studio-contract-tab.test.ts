@@ -45,4 +45,28 @@ assert.match(source, /MEMORY\.md/, "Tab lists MEMORY.md");
 // Root class for styling.
 assert.match(source, /familiar-studio-contract/, "Tab uses the contract BEM root class");
 
+// Rehabilitation affordance: when the contract fails the familiar is an agent;
+// the tab offers a button that opens a chat seeded with a remediation brief.
+assert.match(
+  source,
+  /buildRehabilitationBrief/,
+  "Tab builds a rehabilitation brief from the failing report",
+);
+assert.match(
+  source,
+  /!report\.pass\s*\?/,
+  "Rehabilitation button only renders when the contract is failing",
+);
+assert.match(
+  source,
+  /"cave:agents-new-chat"/,
+  "Rehab button opens a familiar-scoped chat via the agents-new-chat bridge",
+);
+assert.match(
+  source,
+  /initialPrompt:\s*buildRehabilitationBrief\(/,
+  "Rehab chat is seeded with the rehabilitation brief as its initial prompt",
+);
+assert.match(source, /familiar-studio-contract__rehab/, "Rehab button has its own BEM class");
+
 console.log("familiar-studio-contract-tab.test.ts: ok");

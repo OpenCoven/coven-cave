@@ -4708,6 +4708,13 @@ button:active > .edge-rail-chip {
 .familiar-studio-contract__verdict-text { display: flex; flex-direction: column; gap: 1px; }
 .familiar-studio-contract__verdict-text strong { font-size: 14px; }
 .familiar-studio-contract__verdict-text span { font-size: 11px; color: var(--text-muted); }
+.familiar-studio-contract__rehab {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  background: var(--accent); color: var(--bg-base);
+  border: 1px solid transparent; border-radius: var(--radius-control);
+  padding: 7px 12px; font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.familiar-studio-contract__rehab:hover { background: color-mix(in oklch, var(--accent) 88%, black); }
 .familiar-studio-contract__section { display: flex; flex-direction: column; gap: 8px; }
 .familiar-studio-contract__heading { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
 .familiar-studio-contract__properties { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
