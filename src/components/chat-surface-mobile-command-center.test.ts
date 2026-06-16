@@ -37,8 +37,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.chat-scope-tabs \[role="tab"\],[\s\S]*\.chat-scope-tabs__new\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
-  "Mobile chat scope tabs and New action should meet the shared touch target",
+  /@media \(max-width: 767px\) \{[\s\S]*\.chat-scope-tabs \[role="tab"\]\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  "Mobile chat scope tabs should meet the shared touch target",
 );
 
 assert.match(

@@ -5300,14 +5300,9 @@ button:active > .edge-rail-chip {
     -webkit-backdrop-filter: blur(14px) saturate(140%);
   }
 
-  .chat-scope-tabs [role="tab"],
-  .chat-scope-tabs__new {
+  .chat-scope-tabs [role="tab"] {
     min-height: var(--touch-target);
     -webkit-tap-highlight-color: transparent;
-  }
-
-  .chat-scope-tabs__new {
-    padding-inline: 12px;
   }
 
   .calendar-toolbar {
@@ -5587,16 +5582,6 @@ button:active > .edge-rail-chip {
 
 .chat-scope-tabs--minimal [role="tab"] {
   padding-block: 8px;
-}
-
-.chat-scope-tabs__new {
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding-inline: 6px;
-}
-
-.chat-scope-tabs__new:hover {
-  background: color-mix(in oklch, var(--bg-hover) 64%, transparent);
 }
 
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS
