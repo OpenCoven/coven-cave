@@ -87,12 +87,13 @@
   align-items: center;
   width: 100%;
   gap: 10px;
-  padding: 7px 9px;
-  border-radius: 6px;
+  padding: 8px 10px;
+  min-height: 36px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -244,8 +245,10 @@
   flex-direction: column;
   scrollbar-width: thin;
   scrollbar-color: var(--border-hairline) transparent;
-  gap: 11px;
-  padding: 0 4px 2px;
+  /* Sections are separated by whitespace alone (no rules) for a calmer,
+     Codex-style nav. */
+  gap: 16px;
+  padding: 2px 4px 2px;
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
@@ -315,9 +318,10 @@
 
 /* ── Folder mode rows ────────────────────────────────────────────────────── */
 .sidebar-folders {
-  padding: 0 0 10px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .sidebar-addins {
@@ -325,10 +329,10 @@
 }
 
 .sidebar-section-label {
-  padding: 0 10px 5px;
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
+  padding: 0 10px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-muted);
   user-select: none;
@@ -346,8 +350,9 @@
   align-items: center;
   width: 100%;
   gap: 10px;
-  padding: 6px 9px;
-  border-radius: 6px;
+  padding: 7px 10px;
+  min-height: 34px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
