@@ -12,7 +12,7 @@
      is no blank band between the two. Top/right/bottom keep their breathing room. */
   padding: 16px 16px 16px 0;
   color: var(--text-primary);
-  background: var(--background);
+  background: var(--bg-base);
 }
 
 .workflow-studio-shell.is-left-collapsed {
@@ -330,7 +330,7 @@
   min-height: 30px;
   border: 1px solid var(--border);
   border-radius: 7px;
-  background: var(--background);
+  background: var(--bg-base);
   color: var(--foreground);
   font-size: 12px;
   transition: background 120ms ease, opacity 120ms ease;
@@ -398,7 +398,7 @@
   gap: 4px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--background);
+  background: var(--bg-base);
   padding: 10px;
   text-align: left;
 }
@@ -500,7 +500,7 @@
   border-radius: 8px;
   background:
     linear-gradient(color-mix(in srgb, var(--muted) 45%, transparent), transparent),
-    var(--background);
+    var(--bg-base);
 }
 
 /* ── Mobile step list ────────────────────────────────────────────────────────
@@ -512,7 +512,7 @@
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--background);
+  background: var(--bg-base);
   -webkit-overflow-scrolling: touch;
 }
 .workflow-step-list-empty {
@@ -1280,7 +1280,7 @@
 
 .workflow-run-preview-mode.is-active {
   border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border));
-  background: var(--background);
+  background: var(--bg-base);
   color: var(--text-primary);
 }
 
@@ -1497,7 +1497,7 @@
   padding: 11px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in oklch, var(--background) 80%, transparent);
+  background: color-mix(in oklch, var(--bg-base) 80%, transparent);
   font-size: 12px;
   line-height: 1.55;
   overflow: auto;
