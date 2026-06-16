@@ -47,9 +47,6 @@ export type SidebarMinimalProps = {
   onNewChat: () => void;
   onOpenSettings: () => void;
   onModeChange: (mode: string) => void;
-  /* Collapse the sidebar. When provided, a Dia-style toggle button renders at
-   * the top of the panel; the left-edge rail reopens it once collapsed. */
-  onToggleSidebar?: () => void;
   onOpenSession: (id: string) => void;
   addons?: AddonsConfig;
   /* Notifications — when omitted, the bell is hidden. */
@@ -188,7 +185,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onNewChat,
     onOpenSettings,
     onModeChange,
-    onToggleSidebar,
     addons,
     familiars,
     activeFamiliarId,
@@ -214,23 +210,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   return (
     <nav className="sidebar-minimal">
-      {/* Dia-style panel toggle pinned to the top of the sidebar. Collapsing
-          hands off to the left-edge rail, which reopens the panel. */}
-      {onToggleSidebar ? (
-        <button
-          type="button"
-          className="sidebar-header"
-          onClick={onToggleSidebar}
-          aria-label="Hide sidebar (⌘B)"
-          title="Hide sidebar (⌘B)"
-          aria-expanded
-        >
-          <span className="sidebar-title">Coven Cave</span>
-          <span className="sidebar-toggle" aria-hidden>
-            <Icon name="ph:sidebar-simple-fill" width={16} />
-          </span>
-        </button>
-      ) : null}
+      {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
+          floating top-left toggle (and ⌘B), so the header is no longer a
+          button — it just leaves room for the float. */}
+      <div className="sidebar-header sidebar-header--static">
+        <span className="sidebar-title">Coven Cave</span>
+      </div>
 
       {/* Header actions: familiar profile switcher + New session. The same switcher
           also renders in the mobile top bar; on desktop this is its home. */}

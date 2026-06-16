@@ -127,11 +127,6 @@ function ShellInner({
   onFamiliarOpenChange,
   panelShortcutOverrides,
 }: {
-  /** @deprecated Side-panel toggles are now the floating corner controls
-   *  rendered by the shell itself; these edge-rail slots are no longer used.
-   *  Kept optional so existing call sites type-check during migration. */
-  familiarRail?: ReactNode;
-  familiarPanelRail?: ReactNode;
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
@@ -384,17 +379,11 @@ function ShellInner({
         togglePanel(bottomRef.current);
       }
     };
-    // In-panel collapse trigger inside CompanionRail dispatches this so the
-    // right panel can be hidden from its own header (mirror of the left rail),
-    // reusing the same collapse path as the ⌘⇧B shortcut.
-    const familiarPanelToggle = () => toggleFamiliarPanel();
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
-    window.addEventListener("cave:familiar-panel-toggle", familiarPanelToggle);
     return () => {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
-      window.removeEventListener("cave:familiar-panel-toggle", familiarPanelToggle);
     };
   }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
 

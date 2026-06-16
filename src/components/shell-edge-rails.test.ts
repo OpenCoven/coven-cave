@@ -107,17 +107,12 @@ assert.match(
   "edge-rail chip has a pressed state",
 );
 
-assert.match(
-  workspace,
-  /edge-rail-chip[\s\S]{0,80}ph:cat/,
-  "right agent rail toggle renders its icon inside the pressable chip",
-);
-// The right rail is Salem-only — the browser globe tab was retired; the
-// Browser surface is still reachable via the nav (⌘7).
+// The right edge-rail tab toggle was retired — the shell's floating top-right
+// toggle now owns showing/hiding the companion panel.
 assert.doesNotMatch(
   workspace,
-  /familiar-trigger-rail__toggle[\s\S]{0,160}ph:globe/,
-  "right agent rail no longer exposes the browser globe tab",
+  /familiarPanelRail=/,
+  "workspace no longer passes a right edge-rail tab toggle to the shell",
 );
 assert.match(
   css,
@@ -163,18 +158,13 @@ assert.doesNotMatch(
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
 assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
 
-// The CompanionRail's in-panel Hide button (mirror of the left rail) dispatches
-// cave:familiar-panel-toggle; the Shell listens for it and reuses the ⌘⇧B path.
-assert.match(
+// The CompanionRail's in-panel Hide button was removed along with its
+// cave:familiar-panel-toggle bridge — the floating top-right toggle (and ⌘⇧B)
+// own hiding the right panel now.
+assert.doesNotMatch(
   shell,
-  /addEventListener\("cave:familiar-panel-toggle", familiarPanelToggle\)/,
-  "Shell listens for the CompanionRail in-panel collapse event",
+  /cave:familiar-panel-toggle/,
+  "Shell no longer wires the retired in-panel collapse event",
 );
-assert.match(
-  shell,
-  /removeEventListener\("cave:familiar-panel-toggle", familiarPanelToggle\)/,
-  "Shell cleans up the familiar-panel-toggle listener",
-);
-assert.match(css, /\.companion-rail__collapse/, "globals.css styles the in-panel collapse button");
 
 console.log("shell-edge-rails.test.ts OK");

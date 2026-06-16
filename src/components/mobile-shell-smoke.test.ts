@@ -211,11 +211,6 @@ assert.match(
 );
 assert.match(
   workspace,
-  /familiarPanelRail=\{showCompanionRail \? \(/,
-  "Browser and Agents modes should suppress the desktop companion trigger rail unless a floating rail tab is selected",
-);
-assert.match(
-  workspace,
   /const openUrlInCompanionBrowser = useCallback\(\(url: string\) => \{/,
   "Workspace should provide a dedicated side-panel browser opener for chat links",
 );

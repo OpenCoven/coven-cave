@@ -3245,9 +3245,17 @@ button:active > .edge-rail-chip {
   position: relative;
 }
 
+/* Clear the floating top-left toggle so it doesn't sit on top of the sidebar
+   wordmark. Scoped to the desktop shell — the floats are desktop-only. */
+.shell-body--floats .sidebar-header--static {
+  padding-left: 40px;
+}
+
 .shell-panel-float {
   position: absolute;
-  top: 8px;
+  /* Vertically centered on the sidebar header row so the toggle reads as part
+     of that row rather than floating above it. */
+  top: 18px;
   z-index: 40;
   display: grid;
   place-items: center;

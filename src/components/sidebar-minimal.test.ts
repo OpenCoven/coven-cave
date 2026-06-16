@@ -201,27 +201,23 @@ assert.match(
 // + button, so the New Chat ActionRow is the sole new-chat affordance now —
 // no wrapper, no responsive hide.
 
-// Dia-style panel toggle: when onToggleSidebar is provided, the whole header
-// row is the collapse button (the left-edge rail handles reopening).
+// The sidebar header is a static wordmark — collapsing the panel is owned by
+// the shell's floating top-left toggle (and ⌘B), so the header is no longer a
+// button and the in-panel collapse toggle is gone.
 assert.match(
   source,
-  /onToggleSidebar\?: \(\) => void;/,
-  "SidebarMinimal accepts an onToggleSidebar collapse handler",
+  /className="sidebar-header sidebar-header--static"/,
+  "the sidebar header is a static wordmark, not a collapse button",
 );
 assert.match(
   source,
-  /className="sidebar-header"[\s\S]{0,160}onClick=\{onToggleSidebar\}/,
-  "the full header row is wired to onToggleSidebar",
+  /<span className="sidebar-title">Coven Cave<\/span>/,
+  "the static header keeps the Coven Cave wordmark",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /className="sidebar-toggle"[\s\S]{0,200}ph:sidebar-simple/,
-  "the sidebar toggle uses the panel (sidebar-simple) icon",
-);
-assert.match(
-  styles,
-  /\.sidebar-toggle \{/,
-  "the sidebar toggle button has dedicated styling",
+  /onToggleSidebar/,
+  "the in-panel sidebar collapse toggle is removed",
 );
 assert.match(
   styles,

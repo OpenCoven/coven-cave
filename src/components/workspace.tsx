@@ -1254,7 +1254,6 @@ export function Workspace() {
         startFamiliarChat(activeId);
         shellRef.current?.dismissNavMobile();
       }}
-      onToggleSidebar={() => shellRef.current?.toggleNav()}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
@@ -1523,21 +1522,6 @@ export function Workspace() {
             }
           />
         )}
-        familiarPanelRail={showCompanionRail ? (
-          <aside className="familiar-trigger-rail familiar-trigger-rail--stacked" aria-label="Right panel tabs">
-            <button
-              type="button"
-              className="familiar-trigger-rail__toggle"
-              aria-label={railTab === "browser" ? "Toggle Browser" : "Toggle Salem"}
-              title={railTab === "browser" ? "Toggle Browser (⌘⇧B)" : "Toggle Salem (⌘⇧B)"}
-              onClick={() => openCompanionTab(railTab === "browser" ? "browser" : "salem")}
-            >
-              <span className="edge-rail-chip">
-                <Icon name="ph:cat" width={14} />
-              </span>
-            </button>
-          </aside>
-        ) : undefined}
         nav={sidebar}
         list={list}
         detail={detail}
