@@ -24,6 +24,11 @@ assert.equal(cleanModelId("bad model with spaces"), null);
 assert.equal(cleanModelId("../escape"), null);
 assert.equal(cleanModelId(42), null);
 assert.equal(isSyntheticLocalModel("openclaw-local", "openclaw"), true);
+assert.equal(
+  isSyntheticLocalModel("openclaw-local", "claude"),
+  true,
+  "stale local-runtime placeholders are synthetic even after the familiar changes harness",
+);
 assert.equal(isSyntheticLocalModel("openai/gpt-5.5", "openclaw"), false);
 
 assert.deepEqual(resolveChatModelState({ ...base }), {
@@ -72,6 +77,25 @@ assert.deepEqual(
     reason: "Inherited from Cave defaults.",
   },
   "legacy synthetic runtime-local placeholders should not become the effective model",
+);
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "nova",
+    harness: "claude",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openclaw-local",
+    familiarModel: "openclaw-local",
+  }),
+  {
+    familiarId: "nova",
+    harness: "claude",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "openai/gpt-5.5",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Inherited from Cave defaults.",
+  },
+  "stale synthetic defaults should fall back to a real global model instead of being forwarded",
 );
 assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
