@@ -20,19 +20,12 @@ export type Familiar = {
    */
   icon?: string;
   /**
-   * Absolute filesystem path to the familiar's workspace avatar image
-   * (`~/.coven/workspaces/familiars/<id>/avatars/<img>`). Set by `/api/familiars`
-   * only when an avatar exists on disk; absent otherwise. The client links
-   * straight to this file through Tauri's asset protocol (`convertFileSrc`),
-   * falling back to the `GET /api/familiars/<id>/avatar` route when the asset
-   * link isn't usable (browser, or a workspace path outside the asset scope).
+   * URL of the familiar's workspace avatar image
+   * (`~/.coven/workspaces/familiars/<id>/avatars/<img>`), served by
+   * `GET /api/familiars/{id}/avatar` and cache-busted by file mtime. Set by
+   * `/api/familiars` only when an avatar exists on disk; absent otherwise.
    */
-  avatarPath?: string;
-  /**
-   * Avatar file mtime in ms — appended to the asset URL as `?v=` so an updated
-   * image busts the webview cache without a restart.
-   */
-  avatarVersion?: number;
+  avatarUrl?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
   model?: string;

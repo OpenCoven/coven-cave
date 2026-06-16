@@ -47,35 +47,6 @@ const base = {
   assert.equal(r.glyph.name, "ph:wand-fill");
 }
 
-// Workspace avatar path + version flow through to the resolved familiar
-{
-  const r = resolveFamiliar(
-    { ...base, avatarPath: "/Users/x/.coven/workspaces/familiars/cody/avatars/cody.png", avatarVersion: 1234 },
-    { archived: false },
-  );
-  assert.equal(r.avatarPath, "/Users/x/.coven/workspaces/familiars/cody/avatars/cody.png");
-  assert.equal(r.avatarVersion, 1234);
-}
-
-// Workspace avatar and a Cave-local upload coexist: both are exposed (the avatar
-// component prefers the workspace path), and a missing workspace avatar leaves
-// only the upload.
-{
-  const both = resolveFamiliar(
-    { ...base, avatarPath: "/ws/cody/avatars/cody.png", avatarVersion: 1 },
-    { image: { dataUrl: "data:image/png;base64,AAA", mime: "image/png", updatedAt: "2026-06-08T00:00:00Z" }, archived: false },
-  );
-  assert.equal(both.avatarPath, "/ws/cody/avatars/cody.png");
-  assert.equal(both.avatarImage, "data:image/png;base64,AAA");
-
-  const uploadOnly = resolveFamiliar(base, {
-    image: { dataUrl: "data:image/png;base64,BBB", mime: "image/png", updatedAt: "2026-06-08T00:00:00Z" },
-    archived: false,
-  });
-  assert.equal(uploadOnly.avatarPath, undefined);
-  assert.equal(uploadOnly.avatarImage, "data:image/png;base64,BBB");
-}
-
 // Glyph override wins
 {
   const r = resolveFamiliar(base, { glyphOverride: "ph:cat-fill", archived: false });
