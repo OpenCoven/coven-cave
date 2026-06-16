@@ -9,6 +9,7 @@ import { LibraryBookmarksList } from "@/components/library-bookmarks-list";
 import { LibraryReadingList } from "@/components/library-reading-list";
 import { LibraryGitHubList } from "@/components/library-github-list";
 import { LibraryDocPreview, type SelectedItem } from "@/components/library-doc-preview";
+import { LibraryQuickOpen, type LibraryQuickItem } from "@/components/library-quick-open";
 import { LibraryTimeline } from "@/components/library-timeline";
 import { ComuxView } from "@/components/comux-view";
 import type { TimelineEntry } from "@/app/api/library/all/route";
@@ -32,6 +33,41 @@ type LibraryViewProps = {
   onNewProjectChat?: (projectRoot: string) => void;
 };
 
+// Map a unified timeline entry (bookmark / reading / github) to a quick-open row.
+function entryToQuickItem(e: TimelineEntry): LibraryQuickItem {
+  if (e.list === "bookmarks") {
+    const b = e.item as LibraryBookmark;
+    return {
+      key: `bookmark:${b.id}`,
+      kind: "bookmark",
+      title: b.title || b.domain,
+      hint: b.domain,
+      icon: "ph:bookmark-simple",
+      entry: e,
+    };
+  }
+  if (e.list === "reading") {
+    const r = e.item as LibraryReadingItem;
+    return {
+      key: `reading:${r.id}`,
+      kind: "reading",
+      title: r.title,
+      hint: r.author ?? r.sourceType,
+      icon: "ph:book-open",
+      entry: e,
+    };
+  }
+  const g = e.item as LibraryGitHubItem;
+  return {
+    key: `github:${g.id}`,
+    kind: "github",
+    title: g.title,
+    hint: g.number ? `${g.repo}#${g.number}` : g.repo,
+    icon: "ph:github-logo",
+    entry: e,
+  };
+}
+
 export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: LibraryViewProps = {}) {
   const [activeSection, setActiveSection] = useState<LibrarySectionKind>("all");
   const [activeCollection, setActiveCollection] = useState("all");
@@ -50,6 +86,10 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const { projects } = useProjects();
   const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
   const [boardDraft, setBoardDraft] = useState<LibraryBookmark | null>(null);
+  // Quick-open ("/") palette: a unified search/jump across docs + captured links.
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickItems, setQuickItems] = useState<LibraryQuickItem[]>([]);
+  const [quickLoading, setQuickLoading] = useState(false);
 
   // ── Nav history (powers the rail's Back control) ─────────────────────────
   // A "location" is the section + collection + skill triple. We record the
@@ -127,6 +167,84 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
     } catch { /* no-op */ }
     finally { setPreviewLoading(false); }
   }, []);
+
+  // Open the quick-open palette and (re)fetch a global snapshot of everything
+  // searchable: all docs (across collections) + every captured link. Fetched on
+  // open so it reflects the latest library regardless of the current nav.
+  const openQuickOpen = useCallback(async () => {
+    setQuickOpen(true);
+    setQuickLoading(true);
+    try {
+      const [allRes, docsRes] = await Promise.all([
+        fetch("/api/library/all", { cache: "no-store" }),
+        fetch("/api/library?collection=all", { cache: "no-store" }),
+      ]);
+      const allJson = (await allRes.json()) as { ok: boolean; entries?: TimelineEntry[] };
+      const docsJson = (await docsRes.json()) as { ok: boolean; docs?: LibraryDoc[] };
+      const next: LibraryQuickItem[] = [];
+      if (docsJson.ok) {
+        for (const d of docsJson.docs ?? []) {
+          next.push({
+            key: `doc:${d.id}`,
+            kind: "doc",
+            title: d.title,
+            hint: d.collection,
+            icon: "ph:file-text",
+            doc: d,
+          });
+        }
+      }
+      if (allJson.ok) {
+        for (const e of allJson.entries ?? []) next.push(entryToQuickItem(e));
+      }
+      setQuickItems(next);
+    } catch {
+      setQuickItems([]);
+    } finally {
+      setQuickLoading(false);
+    }
+  }, []);
+
+  const handleQuickSelect = useCallback(
+    (item: LibraryQuickItem) => {
+      setQuickOpen(false);
+      if (item.kind === "doc" && item.doc) {
+        const doc = item.doc as LibraryDoc;
+        setActiveSection("docs");
+        setActiveCollection(doc.collection || "all");
+        void handleSelectDoc(doc);
+        return;
+      }
+      const entry = item.entry as TimelineEntry | undefined;
+      if (!entry) return;
+      setActiveSection(entry.list);
+      setTimelineSelectedId(entry.item.id);
+      if (entry.list === "bookmarks") {
+        setSelectedItem({ kind: "bookmark", item: entry.item as LibraryBookmark });
+      } else if (entry.list === "reading") {
+        setSelectedItem({ kind: "reading", item: entry.item as LibraryReadingItem });
+      } else {
+        setSelectedItem({ kind: "github", item: entry.item as LibraryGitHubItem });
+      }
+    },
+    [handleSelectDoc],
+  );
+
+  // "/" opens quick-open (when not typing). library-view only mounts on the
+  // Library surface, so this window listener is naturally scoped to it. (⌘K is
+  // the global command palette — distinct from this library-content search.)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      e.preventDefault();
+      void openQuickOpen();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [openQuickOpen]);
 
   function handleSectionChange(section: LibrarySectionKind) {
     setActiveSection(section);
@@ -267,6 +385,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         canGoBack={navHistory.length > 0}
         onBack={goBack}
         onRefresh={reloadLibrary}
+        onQuickOpen={() => void openQuickOpen()}
         refreshing={loading}
       />
       <div className="library-divider" />
@@ -364,6 +483,14 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
             }
             setBoardDraft(null);
           }}
+        />
+      )}
+      {quickOpen && (
+        <LibraryQuickOpen
+          items={quickItems}
+          loading={quickLoading}
+          onSelect={handleQuickSelect}
+          onClose={() => setQuickOpen(false)}
         />
       )}
     </div>

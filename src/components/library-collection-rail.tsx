@@ -44,6 +44,7 @@ type Props = {
   canGoBack?: boolean;
   onBack?: () => void;
   onRefresh?: () => void;
+  onQuickOpen?: () => void;
   refreshing?: boolean;
 };
 
@@ -61,6 +62,7 @@ export function LibraryCollectionRail({
   canGoBack = false,
   onBack,
   onRefresh,
+  onQuickOpen,
   refreshing = false,
 }: Props) {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -90,6 +92,17 @@ export function LibraryCollectionRail({
       <div className="library-rail-header library-rail-header--actions">
         <span className="library-rail-header-title">Library</span>
         <div className="library-rail-header-actions">
+          {onQuickOpen && (
+            <button
+              type="button"
+              className="library-rail-action"
+              onClick={() => onQuickOpen()}
+              title="Search the library ( / )"
+              aria-label="Search the library"
+            >
+              <Icon name="ph:magnifying-glass" width={13} />
+            </button>
+          )}
           <button
             type="button"
             className="library-rail-action"
