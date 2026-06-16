@@ -17,7 +17,7 @@ assert.match(workspace, /MobileHandoffModal/, "Workspace should mount the mobile
 assert.match(modal, /\/api\/mobile-handoff/, "Modal should call the mobile handoff API");
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");
 assert.match(modal, /expiresAtIso/, "Modal should display the invite expiry");
-assert.match(modal, /navigator\.clipboard\.writeText/, "Modal should support copying the authenticated URL");
+assert.match(modal, /copyText\(/, "Modal should support copying the authenticated URL");
 assert.match(modal, /Copy invite/, "Modal should make the invite link copyable");
 assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should prefer inviteUrl while supporting url fallback");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");

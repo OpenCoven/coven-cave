@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { MarkdownBlock } from "@/components/message-bubble";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
@@ -267,7 +268,7 @@ export function CapabilitiesViewSurface({
   const copyCapabilityDetail = useCallback(async (key: string, value?: string) => {
     if (!value) return;
     try {
-      await navigator.clipboard.writeText(value);
+      await copyText(value);
       setCopiedKey(key);
       window.setTimeout(() => setCopiedKey(null), 1200);
     } catch {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { copyText } from "@/lib/clipboard";
 
 type HandoffReady = {
   ok: true;
@@ -79,8 +80,7 @@ export function MobileHandoffModal({ open, onClose }: Props) {
     const url = handoff?.inviteUrl || handoff?.url;
     if (!url) return;
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(url);
+      if (!(await copyText(url))) throw new Error("Clipboard unavailable");
       setCopied("invite");
     } catch (err) {
       setCopied(null);

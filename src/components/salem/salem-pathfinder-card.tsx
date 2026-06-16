@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import type { IconName } from "@/lib/icon";
 import { sanitizeCard } from "@/lib/salem/pathfinder-card";
 import type { SalemPathfinderAction, SalemPathfinderCard } from "@/lib/salem/pathfinder-types";
@@ -46,7 +47,7 @@ function CommandBlock({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(command);
+      await copyText(command);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -103,7 +104,7 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
   const runAction = (a: SalemPathfinderAction) => {
     switch (a.kind) {
       case "copy-command":
-        if (a.target) navigator.clipboard?.writeText(a.target).catch(() => {});
+        if (a.target) void copyText(a.target);
         return;
       case "external-link":
         if (a.target) window.open(a.target, "_blank", "noopener,noreferrer");

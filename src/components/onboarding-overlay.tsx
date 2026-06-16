@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { setDemoModeEnabled } from "@/lib/demo-mode";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -452,16 +453,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
   const selectedHarness =
     chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
-
-  const copyText = async (text: string): Promise<boolean> => {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      /* clipboard may be blocked */
-      return false;
-    }
-  };
 
   // Header-button feedback: both actions were silent, so clicks felt dead.
   // Re-check spins its icon while the status fetch is in flight (held for a

@@ -11,7 +11,7 @@ assert.match(card, /density\?: "full" \| "slim"/, "supports full/slim density");
 assert.match(card, /sanitizeCard\(card\)/, "sanitizes the card before rendering");
 assert.match(card, /salem-pf__steps/, "renders the checklist");
 assert.match(card, /salem-pf__action--primary/, "renders a primary action");
-assert.match(card, /navigator\.clipboard/, "copies commands to the clipboard");
+assert.match(card, /copyText\(/, "copies commands to the clipboard");
 // Honest UI: setup-only / board actions are hidden unless their handler is wired.
 assert.match(card, /a\.kind !== "save-board-checklist" \|\| !!onSave/, "save action hidden without onSave handler");
 assert.match(card, /a\.kind !== "run-doctor" \|\| !!onRunDoctor/, "doctor action hidden without onRunDoctor handler");

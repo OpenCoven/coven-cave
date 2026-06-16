@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
 import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
@@ -89,7 +90,7 @@ function CopyButton({ text, label, compact }: { text: string; label: string; com
       type="button"
       className={`library-preview-action-btn${compact ? " library-preview-action-btn--compact" : ""}`}
       onClick={() => {
-        navigator.clipboard.writeText(text)
+        copyText(text)
           .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
           .catch(() => undefined);
       }}
@@ -166,7 +167,7 @@ function TranslateButton({
       void openUrl(googleTranslateUrl(source.url));
       return;
     }
-    navigator.clipboard.writeText(buildTranslationPrompt(source))
+    copyText(buildTranslationPrompt(source))
       .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
       .catch(() => undefined);
   };
@@ -784,7 +785,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
         anchor.setAttribute("aria-label", `Copy link to section ${text}`);
         anchor.textContent = "⌗";
         anchor.addEventListener("click", () => {
-          void navigator.clipboard.writeText(`${doc.absolutePath ?? doc.id}#${slug}`);
+          void copyText(`${doc.absolutePath ?? doc.id}#${slug}`);
           anchor.textContent = "✓";
           window.setTimeout(() => { anchor.textContent = "⌗"; }, 1200);
         });
