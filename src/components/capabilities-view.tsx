@@ -960,7 +960,7 @@ function ClampedValue({ value, tone }: { value: string; tone?: "warning" }) {
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="focus-ring mt-0.5 text-[10px] font-medium text-[var(--accent-presence)] transition-colors hover:underline"
+          className="focus-ring mt-0.5 text-[9px] font-medium text-[var(--accent-presence)] transition-colors hover:underline"
         >
           {expanded ? "Show less" : "Show more"}
         </button>
