@@ -424,6 +424,19 @@ export function ChatSurface({
     return () => window.removeEventListener("keydown", onKey);
   }, [rightExpanded]);
 
+  // While the right panel is expanded it covers the chat surface, but the
+  // shell's right edge-rail float (.shell-panel-float--right, z-40) sits above
+  // the overlay's trapped z-index and intercepts clicks on the panel's
+  // top-right Close button. Flag the expanded state on the document root so CSS
+  // can hide that float while expanded (it's redundant under a full-surface
+  // panel anyway). Restore/Esc clear it; the cleanup guards against unmount.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (rightExpanded) root.setAttribute("data-right-panel-expanded", "");
+    else root.removeAttribute("data-right-panel-expanded");
+    return () => root.removeAttribute("data-right-panel-expanded");
+  }, [rightExpanded]);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
