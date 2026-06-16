@@ -3297,6 +3297,13 @@ button:active > .edge-rail-chip {
   background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
 }
 
+/* When the chat right panel is expanded it covers the whole chat surface; the
+   right edge-rail float would otherwise float above it (z-40) and intercept the
+   panel's top-right Close button. Hide it while expanded. */
+:root[data-right-panel-expanded] .shell-panel-float--right {
+  display: none;
+}
+
 /* ────────────────────────────────────────────────
    Companion rail — right-side per-familiar pane
    (Phase 2, shell-ia-redesign)

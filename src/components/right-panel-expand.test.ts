@@ -16,4 +16,8 @@ assert.match(src, /onSetPanel\("changes"\)/, "Changes is selectable as a tab whe
 assert.match(src, /rightExpanded/, "ChatSurface tracks rightExpanded");
 assert.match(src, /chat-right-expanded/, "expanded overlay container");
 
+// While expanded, the shell's right edge-rail float is hidden (via a root data
+// attribute + CSS) so it can't intercept clicks on the top-right Close button.
+assert.match(src, /data-right-panel-expanded/, "flags expanded state on the document root");
+
 console.log("right-panel-expand.test.ts: ok");
