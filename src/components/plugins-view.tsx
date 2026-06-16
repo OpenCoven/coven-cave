@@ -415,20 +415,20 @@ function RolesTab({
         return (
           <article
             key={key}
-            className="plugins-role-card rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4"
+            className="plugins-role-card flex flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4"
           >
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[16px] font-semibold text-[var(--text-primary)]">
                 {role.emoji || role.name.slice(0, 1).toUpperCase()}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">{role.name}</h3>
-                  <span className="rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
+                <div className="flex min-w-0 items-center gap-2">
+                  <h3 className="min-w-0 truncate text-[14px] font-semibold text-[var(--text-primary)]">{role.name}</h3>
+                  <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
                     {role.familiar}
                   </span>
                   {role.active ? (
-                    <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] text-[var(--accent-text)]">
+                    <span className="shrink-0 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] text-[var(--accent-text)]">
                       Active
                     </span>
                   ) : null}
@@ -454,11 +454,11 @@ function RolesTab({
               <RoleMeta label="Workflows" value={itemList(role.workflows)} />
             </dl>
 
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
               <button
                 type="button"
                 onClick={onOpenChat}
-                className="focus-ring rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-[12px] text-[var(--bg-base)]"
+                className="focus-ring w-full truncate rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-center text-[12px] text-[var(--bg-base)]"
               >
                 Open chat
               </button>
@@ -467,7 +467,8 @@ function RolesTab({
                   key={workflowId}
                   type="button"
                   onClick={() => onOpenWorkflow?.(workflowId)}
-                  className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                  title={`Open ${workflowId}`}
+                  className="focus-ring w-full truncate rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-center text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                 >
                   Open {workflowId}
                 </button>
