@@ -65,8 +65,13 @@ assert.match(
 );
 assert.match(
   source,
-  /isSelected \? "font-semibold text-\[var\(--accent-presence\)\]" : ""/,
+  /isSelected \? "text-\[var\(--accent-presence\)\]" : "text-\[var\(--text-primary\)\]"/,
   "The selected project name should use the primary accent color so it stands out in the rail",
+);
+assert.match(
+  source,
+  /min-w-0 flex-1 truncate font-bold/,
+  "Project folder headers read as headers: the label is bold",
 );
 
 // ── Pin toggle is Cave-local (shared localStorage key with the chat list) ────
@@ -157,7 +162,7 @@ assert.match(
 );
 assert.match(
   source,
-  /className=\{\[\s*"group relative flex w-full items-center transition-colors"/,
+  /className=\{\[\s*\/\/[\s\S]*?"group relative flex w-full items-center border-b border-\[var\(--border-hairline\)\] transition-colors"/,
   "Project folder rows should span the rail's full width instead of reserving side gutters",
 );
 assert.match(

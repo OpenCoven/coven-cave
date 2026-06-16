@@ -556,8 +556,15 @@ export function ChatProjectSidebar({
                   <FolderDroppable key={key} id={`folder:${key}`}>
                     <div
                       className={[
-                        "group relative flex w-full items-center transition-colors",
-                        isSelected ? "bg-[var(--bg-raised)]" : "hover:bg-[var(--bg-raised)]/50",
+                        // Project folders are task-section headers: a mode-aware
+                        // fill (darker than the page in light mode, lighter in
+                        // dark — the ramp inverts per mode) + a hairline divider
+                        // so each group reads clearly as a header, matching the
+                        // RailSection treatment. Selected keeps an accent tint.
+                        "group relative flex w-full items-center border-b border-[var(--border-hairline)] transition-colors",
+                        isSelected
+                          ? "bg-[color-mix(in_oklch,var(--bg-base)_80%,var(--accent-presence)_20%)]"
+                          : "bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] hover:bg-[color-mix(in_oklch,var(--bg-base)_80%,var(--foreground)_20%)]",
                       ].join(" ")}
                     >
                     {isSelected ? <AccentBar tall /> : null}
@@ -586,13 +593,13 @@ export function ChatProjectSidebar({
                       />
                       <span
                         className={[
-                          "min-w-0 flex-1 truncate",
-                          isSelected ? "font-semibold text-[var(--accent-presence)]" : "",
+                          "min-w-0 flex-1 truncate font-bold",
+                          isSelected ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]",
                         ].join(" ")}
                       >
                         {label}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
+                      <span className="shrink-0 font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
                         {group.sessions.length}
                       </span>
                     </button>
