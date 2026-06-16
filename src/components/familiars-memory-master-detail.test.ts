@@ -29,4 +29,17 @@ assert.match(source, /value=\{groupMode\}/, "Group control is bound to groupMode
 assert.match(source, /groupMemoryRows\(pagedRows, groupMode\)/, "grouped mode wraps the paged rows");
 assert.match(source, /groupMode === "none" \?/, "flat list renders only when group mode is none");
 
+// Shared (global-pool) memory is separated from the familiar's own memory by a
+// labelled divider, so a selected familiar's view is clearly isolated.
+assert.match(
+  source,
+  /Coven-wide memory/,
+  "Memory list separates shared/global pools under a 'Coven-wide memory' divider",
+);
+assert.match(
+  source,
+  /ownership === "shared"/,
+  "Flat list detects the owned->shared boundary to place the divider",
+);
+
 console.log("familiars-memory-master-detail: all assertions passed");
