@@ -30,6 +30,14 @@ function realpathOrResolve(value: string): string {
   }
 }
 
+function realpathStrict(value: string): string | null {
+  try {
+    return fs.realpathSync(path.resolve(value));
+  } catch {
+    return null;
+  }
+}
+
 function isWithinRoot(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);
 }
@@ -59,9 +67,12 @@ export async function daemonSessionRoots(): Promise<string[]> {
  * `roots` list, so it can be unit-tested without a live daemon.
  */
 export function resolveWithinSessionRoots(value: string, roots: string[]): string | null {
-  const candidate = realpathOrResolve(value);
+  const candidate = realpathStrict(value);
+  if (!candidate) return null;
   for (const root of roots) {
-    if (isWithinRoot(candidate, root)) return candidate;
+    const canonicalRoot = realpathStrict(root);
+    if (!canonicalRoot) continue;
+    if (isWithinRoot(candidate, canonicalRoot)) return candidate;
   }
   return null;
 }

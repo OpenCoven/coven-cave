@@ -89,6 +89,10 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
   let stat: fs.Stats;
   try {
     real = fs.realpathSync(path.resolve(allowedRoot));
+    const allowedCanonical = fs.realpathSync(path.resolve(allowedRoot));
+    if (!(real === allowedCanonical || real.startsWith(allowedCanonical + path.sep))) {
+      return { ok: false, status: 403, error: "path not allowed" };
+    }
     stat = fs.statSync(real);
   } catch {
     return { ok: false, status: 404, error: "projectRoot does not exist" };
