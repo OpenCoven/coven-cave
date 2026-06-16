@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -156,8 +157,12 @@ function PatSetupModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
+  // so the username input's focus effect above keeps the initial focus.
+  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
 
   async function save() {
     const trimmedPat = pat.trim();
@@ -194,16 +199,29 @@ function PatSetupModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-6 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="github-pat-modal-title"
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-md rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-6 shadow-2xl"
+      >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Icon name="ph:github-logo" width={18} className="text-[var(--text-secondary)]" />
-            <h3 className="text-[15px] font-semibold">Connect GitHub</h3>
+            <h3 id="github-pat-modal-title" className="text-[15px] font-semibold">Connect GitHub</h3>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
           >
             <Icon name="ph:x" width={14} />
