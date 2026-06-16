@@ -110,7 +110,7 @@ assert.match(css, /h2:hover \.library-heading-anchor/, "Anchor reveals on headin
 // ── Translation handoff ──
 assert.match(src, /function TranslateButton/, "Reader exposes a shared Translate action helper");
 assert.match(src, /translate\.google\.com\/translate/, "URL-backed articles and papers open through Google Translate");
-assert.match(src, /navigator\.clipboard\.writeText\(buildTranslationPrompt/, "Local docs and files copy a translation prompt");
+assert.match(src, /copyText\(buildTranslationPrompt/, "Local docs and files copy a translation prompt");
 assert.match(
   src,
   /<TranslateButton[\s\S]{0,240}source=\{\{ kind: "text", title: doc\.title, text: renderBody \}\}/,

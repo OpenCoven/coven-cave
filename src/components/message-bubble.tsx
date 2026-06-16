@@ -34,6 +34,7 @@ import type { Block } from "@create-markdown/core";
 import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
@@ -565,14 +566,16 @@ function wireCopyButtons(container: HTMLElement) {
     (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     btn.addEventListener("click", () => {
-      navigator.clipboard.writeText(codeTextFromWrap(btn)).catch(() => undefined);
-      btn.textContent = "Copied";
-      btn.classList.add("cave-copy-btn--confirmed");
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        btn.textContent = "Copy";
-        btn.classList.remove("cave-copy-btn--confirmed");
-      }, 2000);
+      void copyText(codeTextFromWrap(btn)).then((ok) => {
+        if (!ok) return;
+        btn.textContent = "Copied";
+        btn.classList.add("cave-copy-btn--confirmed");
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          btn.textContent = "Copy";
+          btn.classList.remove("cave-copy-btn--confirmed");
+        }, 2000);
+      });
     });
   }
   // Show more / Show less footer on height-clamped blocks (CHAT-D7-03).
@@ -747,7 +750,7 @@ function CopyBubble({ text }: { text: string }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copy = useCallback(async () => {
-    await navigator.clipboard.writeText(text).catch(() => undefined);
+    if (!(await copyText(text))) return;
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 2000);
@@ -976,7 +979,7 @@ function MarkdownExpandModal({
   useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
 
   const copy = useCallback(async () => {
-    await navigator.clipboard.writeText(text).catch(() => undefined);
+    if (!(await copyText(text))) return;
     setCopied(true);
     if (copyTimer.current) clearTimeout(copyTimer.current);
     copyTimer.current = setTimeout(() => setCopied(false), 2000);

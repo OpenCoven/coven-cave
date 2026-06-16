@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import type { MemoryRow } from "@/lib/memory-rows";
@@ -50,7 +51,7 @@ export function MemoryReaderPane({
   }
 
   const copyPath = () => {
-    void navigator.clipboard.writeText(row.path).then(() => {
+    void copyText(row.path).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     });

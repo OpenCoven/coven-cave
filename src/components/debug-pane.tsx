@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
@@ -45,8 +46,7 @@ function CopyButton({ getText, label }: { getText: () => string; label?: string 
       title={label ?? "Copy"}
       aria-label={label ?? "Copy"}
       onClick={() => {
-        navigator.clipboard
-          .writeText(getText())
+        copyText(getText())
           .then(() => {
             setCopied(true);
             window.setTimeout(() => setCopied(false), 1500);

@@ -4,6 +4,7 @@ import React from "react";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import type { IconName } from "@/lib/icon";
 import { PluginCard } from "@/components/plugin-card";
 import { SkillCard } from "@/components/skill-card";
@@ -964,7 +965,7 @@ async function openRoleFile(p: string) {
     }
   }
   if (typeof window !== "undefined") {
-    const write = navigator.clipboard?.writeText(p);
+    const write = copyText(p);
     void write?.catch(() => undefined);
   }
 }
@@ -1281,7 +1282,7 @@ function RoleActionsRow({ role, onOpenChat }: { role: RoleEntry; onOpenChat: () 
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(role.id);
+      await copyText(role.id);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

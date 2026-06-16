@@ -24,7 +24,7 @@ assert.match(source, /row\?\.contentPath \?\? null/, "fetchPath is the row's con
 assert.match(source, /hasFile \? text \?\? "" : row\.excerpt/, "no contentPath → excerpt fallback");
 
 // Copy-path + empty state + open-file + expand.
-assert.match(source, /navigator\.clipboard\.writeText/, "copy-path button must copy the path");
+assert.match(source, /copyText\(/, "copy-path button must copy the path");
 assert.match(source, /Select a memory to read/, "empty state when no row selected");
 assert.match(source, /onOpenFile/, "reader exposes an open-file callback");
 assert.match(source, /onExpand/, "reader exposes an expand callback");

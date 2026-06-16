@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { resolveLangLabel } from "@/lib/code-lang";
@@ -509,7 +510,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
 
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;
-    void navigator.clipboard.writeText(preview.content).then(() => {
+    void copyText(preview.content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
