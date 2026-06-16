@@ -741,28 +741,46 @@
   color: white;
 }
 
+/* Stack the action row over the hint/feedback line. The old side-by-side
+   layout let the hint text claim half the width and squeezed the buttons
+   into 2–3 cramped wrapped rows; giving the actions the full width keeps
+   them on one tidy row (wrapping only when genuinely narrow). */
 .workflow-run-strip {
   grid-area: strip;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 10px;
 }
 
 .workflow-run-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
+/* Every action button shares one height + radius so the row reads as a
+   single, even control strip regardless of label length. */
 .workflow-run-actions button {
-  padding: 0 10px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Play is the terminal/execute action — pin it to the right edge of the row
+   so it's visually separated from Validate/Dry-run. */
+.workflow-play-button {
+  margin-left: auto;
 }
 
 .workflow-run-feedback {
   margin: 0;
-  text-align: right;
+  text-align: left;
 }
 
 .workflow-detail-list {
@@ -1320,10 +1338,16 @@
 
 .workflow-run-chip {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Uniform width so every run's status pill is the same size and the kind /
+     detail / time columns line up vertically down the list. */
+  min-width: 68px;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid var(--border);
 }
@@ -1337,6 +1361,7 @@
 
 .workflow-run-kind {
   flex: none;
+  min-width: 50px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
@@ -1356,7 +1381,8 @@
 }
 
 .workflow-history-button {
-  padding: 4px 7px;
+  width: 32px;
+  padding: 0;
 }
 
 .workflow-primary-button {
