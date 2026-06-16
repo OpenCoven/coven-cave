@@ -6,6 +6,7 @@ import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
+import { sessionRailTitle } from "@/lib/session-rail-title";
 import {
   PINNED_SESSIONS_KEY,
   isSessionPinned,
@@ -92,23 +93,6 @@ function repoLabel(group: ChatProjectGroup): string {
   );
 }
 
-function sessionRailTitle(session: SessionRow): string {
-  const baseTitle = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
-  const context: string[] = [];
-
-  if (session.pullRequest?.number != null) {
-    const state = session.pullRequest?.state ? ` ${session.pullRequest.state}` : "";
-    context.push(`PR #${session.pullRequest.number}${state}`);
-  } else if (session.pullRequest?.state) {
-    context.push(`PR ${session.pullRequest.state}`);
-  }
-
-  const branch = session.pullRequest?.branch ?? session.git?.branch;
-  if (branch) context.push(branch);
-  if (session.git?.isWorktree) context.push("worktree");
-
-  return context.length > 0 ? `${baseTitle} - ${context.join(" - ")}` : baseTitle;
-}
 
 function AccentBar({ tall }: { tall?: boolean }) {
   return (
