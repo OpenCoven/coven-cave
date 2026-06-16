@@ -5,6 +5,7 @@ import fs, { writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
+import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
 
 export const dynamic = "force-dynamic";
@@ -68,7 +69,19 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
   if (!path.isAbsolute(projectRoot)) {
     return { ok: false, status: 400, error: "projectRoot must be an absolute path" };
   }
-  const allowedRoot = resolveAllowedProjectPath(projectRoot);
+  // A path is allowed if it's under the static workspace allow-list OR under a
+  // directory the daemon has an active session for (the daemon already spawned
+  // a harness there, so it's user-sanctioned). The session-root list is fetched
+  // once and reused for the post-`rev-parse` repo-toplevel re-check below.
+  let sessionRoots: string[] | null = null;
+  const isAllowed = async (candidate: string): Promise<string | null> => {
+    const staticAllowed = resolveAllowedProjectPath(candidate);
+    if (staticAllowed) return staticAllowed;
+    if (sessionRoots === null) sessionRoots = await daemonSessionRoots();
+    return resolveWithinSessionRoots(candidate, sessionRoots);
+  };
+
+  const allowedRoot = await isAllowed(projectRoot);
   if (!allowedRoot) {
     return { ok: false, status: 403, error: "path not allowed" };
   }
@@ -88,7 +101,7 @@ async function resolveRepoRoot(projectRoot: string): Promise<RootResolution> {
     const top = stdout.trim();
     if (!top) return { ok: false, status: 422, error: "not a git repository", notARepo: true };
     const repoRoot = fs.realpathSync(top);
-    if (!resolveAllowedProjectPath(repoRoot)) {
+    if (!(await isAllowed(repoRoot))) {
       return { ok: false, status: 403, error: "path not allowed" };
     }
     return { ok: true, repoRoot };
