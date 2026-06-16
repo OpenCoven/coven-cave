@@ -49,6 +49,7 @@ import {
 import {
   cleanModelId,
   modelApplicationForHarness,
+  modelApplicationFromRun,
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
@@ -1461,12 +1462,19 @@ export async function POST(req: Request) {
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
       const harnessSessionId = sessionId;
-      // Model parity: if the harness echoed its resolved model, promote the
-      // application state from `pending` to `applied` and record what actually
-      // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
-      if (confirmedModel) {
-        const application = modelApplicationForHarness({ supported: true, confirmed: true });
-        responseMetadata.confirmedModel = confirmedModel;
+      // Model parity: coven echoes the requested model in `system.init` BEFORE
+      // the harness runs, so an echo confirms forwarding — not a successful run.
+      // Resolve the honest state from BOTH the echo and the run outcome:
+      // succeeded ⇒ applied, errored on the model ⇒ failed, errored otherwise ⇒
+      // pending. No echo ⇒ leave the pre-run `pending`/`unsupported` untouched.
+      if (confirmedModel) responseMetadata.confirmedModel = confirmedModel;
+      const modelSignal = modelApplicationFromRun({
+        confirmedModel,
+        isError: result.is_error === true,
+        errorText: (stderrTail.length ? stderrTail : stdoutErrTail).join("\n"),
+      });
+      if (modelSignal) {
+        const application = modelApplicationForHarness(modelSignal);
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = application.reason;
         modelState.applicationState = application.state;
