@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { slugifyWorkflowId } from "@/lib/workflow-edit";
 import type {
   WorkflowPattern,
@@ -31,10 +32,16 @@ export function WorkflowCreateDialog({ onClose, onCreate }: WorkflowCreateDialog
   const [pattern, setPattern] = useState<WorkflowPattern>("sequential");
   const [familiar, setFamiliar] = useState("");
   const id = slugifyWorkflowId(name);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
+  // so the Name input's autoFocus keeps the initial focus.
+  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
 
   return (
     <div className="workflow-dialog-backdrop" role="presentation" onClick={onClose}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="workflow-dialog"
         role="dialog"
         aria-modal="true"
@@ -132,6 +139,10 @@ export function WorkflowScheduleDialog({ workflow, onClose, onSchedule }: Workfl
   const [cadence, setCadence] = useState<Cadence>("once");
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [intervalHours, setIntervalHours] = useState(24);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
+  // so the "First reminder" input's autoFocus keeps the initial focus.
+  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
 
   const submit = () => {
     const fireDate = new Date(fireAtLocal);
@@ -153,6 +164,8 @@ export function WorkflowScheduleDialog({ workflow, onClose, onSchedule }: Workfl
   return (
     <div className="workflow-dialog-backdrop" role="presentation" onClick={onClose}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="workflow-dialog"
         role="dialog"
         aria-modal="true"
@@ -173,6 +186,7 @@ export function WorkflowScheduleDialog({ workflow, onClose, onSchedule }: Workfl
           <input
             type="datetime-local"
             value={fireAtLocal}
+            autoFocus
             onChange={(event) => setFireAtLocal(event.target.value)}
           />
         </label>
