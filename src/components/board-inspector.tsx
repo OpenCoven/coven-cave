@@ -829,6 +829,11 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<CardLifecycle | null>(null);
   const [lifecycleErr, setLifecycleErr] = useState<string | null>(null);
+  // The Lifecycle section (state machine moves + created/updated stamps) is
+  // power-user/debug info that confuses most people, so it's collapsed by
+  // default — the badge summary still shows in the header chip; expand only
+  // when you actually need to dispatch/cancel or read the timestamps.
+  const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [cwdOpenErr, setCwdOpenErr] = useState<string | null>(null);
   const [newLabel, setNewLabel] = useState("");
 
@@ -1103,35 +1108,54 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           </div>
 
           <div className="board-drawer-field">
-            <div className="board-drawer-field-label">Lifecycle</div>
-            <div className="board-drawer-lifecycle-card">
-              <div className="board-drawer-lifecycle-row">
-                <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
-                {card.lifecycle === "running" && <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />}
-              </div>
-              {moves.length > 0 && (
-                <div className="board-drawer-lifecycle-actions">
-                  {moves.map((m) => (
-                    <button
-                      key={`${m.to}-${m.retry}`}
-                      type="button"
-                      className={`board-drawer-lifecycle-action${m.retry ? " board-drawer-lifecycle-action--retry" : ""}${m.to === "cancelled" ? " board-drawer-lifecycle-action--danger" : ""}`}
-                      disabled={lifecycleBusy !== null}
-                      onClick={() => void doLifecycle(m.to, m.retry)}
-                    >
-                      {lifecycleBusy === m.to ? "…" : m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {lifecycleErr && <p className="board-drawer-lifecycle-error">{lifecycleErr}</p>}
+            <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                Lifecycle
+              </span>
+              <button
+                type="button"
+                className="board-toolbar-btn"
+                onClick={() => setLifecycleOpen((v) => !v)}
+                aria-expanded={lifecycleOpen}
+                title={lifecycleOpen ? "Hide lifecycle details" : "Show lifecycle details"}
+                style={{ fontSize: 10, padding: "2px 8px" }}
+              >
+                <Icon name={lifecycleOpen ? "ph:caret-up" : "ph:caret-down"} width={11} />
+                {lifecycleOpen ? "Hide" : "Show"}
+              </button>
             </div>
-          </div>
+            {lifecycleOpen && (
+              <>
+                <div className="board-drawer-lifecycle-card">
+                  <div className="board-drawer-lifecycle-row">
+                    <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+                    {card.lifecycle === "running" && <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />}
+                  </div>
+                  {moves.length > 0 && (
+                    <div className="board-drawer-lifecycle-actions">
+                      {moves.map((m) => (
+                        <button
+                          key={`${m.to}-${m.retry}`}
+                          type="button"
+                          className={`board-drawer-lifecycle-action${m.retry ? " board-drawer-lifecycle-action--retry" : ""}${m.to === "cancelled" ? " board-drawer-lifecycle-action--danger" : ""}`}
+                          disabled={lifecycleBusy !== null}
+                          onClick={() => void doLifecycle(m.to, m.retry)}
+                        >
+                          {lifecycleBusy === m.to ? "…" : m.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {lifecycleErr && <p className="board-drawer-lifecycle-error">{lifecycleErr}</p>}
+                </div>
 
-          <div className="board-drawer-stamps">
-            <span><span className="board-drawer-stamp-label">Created</span> {new Date(card.createdAt).toLocaleString()}</span>
-            <span className="board-drawer-stamp-sep">·</span>
-            <span><span className="board-drawer-stamp-label">Updated</span> {new Date(card.updatedAt).toLocaleString()}</span>
+                <div className="board-drawer-stamps">
+                  <span><span className="board-drawer-stamp-label">Created</span> {new Date(card.createdAt).toLocaleString()}</span>
+                  <span className="board-drawer-stamp-sep">·</span>
+                  <span><span className="board-drawer-stamp-label">Updated</span> {new Date(card.updatedAt).toLocaleString()}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
