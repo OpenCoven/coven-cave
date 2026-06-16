@@ -3223,6 +3223,69 @@ button:active > .edge-rail-chip {
 }
 
 /* ────────────────────────────────────────────────
+   Floating panel toggles (Codex-style)
+   Always-visible rounded buttons pinned to the shell's top corners that
+   show/hide the side panels — left toggles the nav sidebar, right toggles
+   the active companion/side panel. They float above the panels (z-index)
+   so a single persistent control owns each panel in any open/closed state.
+   ──────────────────────────────────────────────── */
+.shell-body--floats {
+  position: relative;
+}
+
+.shell-panel-float {
+  position: absolute;
+  top: 8px;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
+  background: color-mix(in oklch, var(--bg-raised) 86%, var(--bg-elevated));
+  color: color-mix(in oklch, var(--text-secondary) 86%, var(--text-primary));
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--text-primary) 10%, transparent),
+    0 6px 16px color-mix(in oklch, black 22%, transparent);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
+}
+
+.shell-panel-float--left {
+  left: 8px;
+}
+
+.shell-panel-float--right {
+  right: 8px;
+}
+
+/* The Phosphor sidebar glyph points at a left panel; mirror it on the right
+   toggle so it reads as a right-edge panel. */
+.shell-panel-float--right svg {
+  transform: scaleX(-1);
+}
+
+.shell-panel-float:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--text-muted) 48%, transparent);
+}
+
+.shell-panel-float:active {
+  transform: scale(0.94);
+}
+
+/* Open state: accent-tinted, matching the edge-rail "expanded" treatment. */
+.shell-panel-float--active {
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
+}
+
+/* ────────────────────────────────────────────────
    Companion rail — right-side per-familiar pane
    (Phase 2, shell-ia-redesign)
    ──────────────────────────────────────────────── */

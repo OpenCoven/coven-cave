@@ -116,8 +116,6 @@ type ShellMobileChromeState = {
 type ShellTopBar = ReactNode | ((state: ShellMobileChromeState) => ReactNode);
 
 function ShellInner({
-  familiarRail,
-  familiarPanelRail,
   nav,
   list,
   detail,
@@ -129,9 +127,10 @@ function ShellInner({
   onFamiliarOpenChange,
   panelShortcutOverrides,
 }: {
+  /** @deprecated Side-panel toggles are now the floating corner controls
+   *  rendered by the shell itself; these edge-rail slots are no longer used.
+   *  Kept optional so existing call sites type-check during migration. */
   familiarRail?: ReactNode;
-  /** Mirror of familiarRail on the right edge — typically a thin column with
-   *  a toggle for the agent panel. Rendered after the panel group. */
   familiarPanelRail?: ReactNode;
   nav: ReactNode;
   list?: ReactNode;
@@ -404,7 +403,6 @@ function ShellInner({
       <div className="shell-frame flex h-full w-full flex-col">
         {renderedTopBar}
         <div className="shell-body flex flex-1 min-h-0">
-          {familiarRail}
           <div className="shell-root flex-1 min-h-0" />
         </div>
       </div>
@@ -502,34 +500,51 @@ function ShellInner({
     "--shell-right-gap-px": `${detailGaps.right}px`,
     "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
-  // Floating reopen affordance — once the sidebar is collapsed (via its own
-  // top toggle, ⌘B, or a drag), this left-edge rail is how it comes back. It
-  // stays hidden while the nav is open so the in-panel toggle owns collapsing.
-  const navRail =
-    !isMobile && !navOpen ? (
-      <aside className="familiar-trigger-rail familiar-trigger-rail--left" aria-label="Navigation toggle">
+  // Codex-style floating panel toggles. Two always-visible rounded buttons
+  // pinned to the shell's top corners that show/hide the side panels: the
+  // left one toggles the navigation sidebar, the right one toggles whichever
+  // right panel is active (the companion/inspector/browser slot). They replace
+  // the old collapsed-only edge rails and the in-panel collapse toggles, so a
+  // single persistent control owns each panel regardless of its open state.
+  const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
+  const toggleNavPanel = () => {
+    const panel = navRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
+    else { panel.collapse(); setNavOpen(false); }
+  };
+  const toggleRightPanel = () => {
+    const panel = familiarRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
+    else { panel.collapse(); setFamiliarOpen(false); }
+  };
+  const panelFloats = !isMobile ? (
+    <>
+      <button
+        type="button"
+        className={`shell-panel-float shell-panel-float--left focus-ring${navOpen ? " shell-panel-float--active" : ""}`}
+        aria-label={navOpen ? "Hide navigation" : "Show navigation"}
+        aria-expanded={navOpen}
+        title={navOpen ? `Hide navigation (${leftPanelShortcutLabel})` : `Show navigation (${leftPanelShortcutLabel})`}
+        onClick={toggleNavPanel}
+      >
+        <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+      </button>
+      {hasFamiliar ? (
         <button
           type="button"
-          className="familiar-trigger-rail__toggle"
-          aria-label={navOpen ? "Hide navigation" : "Show navigation"}
-          aria-expanded={navOpen}
-          title={navOpen ? `Hide navigation (${leftPanelShortcutLabel})` : `Show navigation (${leftPanelShortcutLabel})`}
-          onClick={() => {
-            if (navOpen) {
-              navRef.current?.collapse();
-              setNavOpen(false);
-            } else {
-              navRef.current?.expand();
-              setNavOpen(true);
-            }
-          }}
+          className={`shell-panel-float shell-panel-float--right focus-ring${familiarOpen ? " shell-panel-float--active" : ""}`}
+          aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
+          aria-expanded={familiarOpen}
+          title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
+          onClick={toggleRightPanel}
         >
-          <span className="edge-rail-chip">
-            <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} />
-          </span>
+          <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
         </button>
-      </aside>
-    ) : null;
+      ) : null}
+    </>
+  ) : null;
 
   return (
     <div
@@ -538,9 +553,8 @@ function ShellInner({
       data-settled={settled ? "" : undefined}
     >
       {renderedTopBar}
-      <div className="shell-body flex flex-1 min-h-0">
-        {familiarRail}
-        {navRail}
+      <div className="shell-body shell-body--floats flex flex-1 min-h-0">
+        {panelFloats}
         {hasBottom ? (
           <Group
             className="flex-1 min-h-0"
@@ -567,7 +581,6 @@ function ShellInner({
         ) : (
           horizontalGroup
         )}
-        {familiarPanelRail}
       </div>
       {isMobile && mobileTabs ? mobileTabs : null}
       <MobileDrawer
