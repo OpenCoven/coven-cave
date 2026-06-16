@@ -28,7 +28,6 @@ export async function GET(
         error: res.error ?? `daemon http ${res.status}`,
         state: null,
       },
-      { status: 503 },
     );
   }
 

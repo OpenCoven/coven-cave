@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   RUNTIME_MODEL_CATALOG,
   catalogForRuntime,
+  defaultModelForRuntime,
   isModelInCatalog,
 } from "./runtime-models.ts";
 
@@ -38,6 +39,9 @@ const openclaw = catalogForRuntime("openclaw");
 assert.equal(openclaw.provider, null);
 assert.equal(openclaw.models.length, 0, "openclaw renders free-text only");
 assert.equal(openclaw.allowCustom, true, "free-text must stay allowed when there is no menu");
+assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.5");
+assert.equal(defaultModelForRuntime("hermes"), "nous/hermes-4");
+assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.5", "OpenClaw should inherit a real global default, not openclaw-local");
 
 // Unknown runtimes have no catalog.
 assert.equal(catalogForRuntime("nonexistent"), null);

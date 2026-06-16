@@ -86,7 +86,7 @@ export function ChatModelControl({ state, onSelectModel, busy }: Props) {
           {canPick ? (
             <div className="cave-chat-model-popover__picker">
               <p className="cave-chat-model-popover__heading">
-                Model for {state.harness}
+                Model for {state.harness} runtime
               </p>
               {options.length > 0 ? (
                 <ul className="cave-chat-model-popover__options">
@@ -146,7 +146,7 @@ export function ChatModelControl({ state, onSelectModel, busy }: Props) {
             </div>
           ) : null}
           <div className="cave-chat-model-popover__row">
-            <span>Harness</span>
+            <span>Runtime</span>
             <strong>{state.harness}</strong>
           </div>
           <div className="cave-chat-model-popover__row">

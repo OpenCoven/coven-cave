@@ -19,7 +19,7 @@
  */
 export const CORNER_RADIUS_KEY = "cave:corner-radius";
 
-export const CORNER_RADIUS_OPTIONS = ["sharp", "default", "round", "pill"] as const;
+export const CORNER_RADIUS_OPTIONS = ["sharp", "default", "round"] as const;
 
 export type CornerRadius = (typeof CORNER_RADIUS_OPTIONS)[number];
 
@@ -31,7 +31,6 @@ export const CORNER_RADIUS_LABELS: Record<CornerRadius, string> = {
   sharp: "Sharp",
   default: "Default",
   round: "Round",
-  pill: "Pill",
 };
 
 /** Per-level token values. `default` is intentionally absent — see {@link CORNER_RADIUS_VALUES}. */
@@ -45,9 +44,6 @@ type RadiusVars = { base: string; control: string; card: string };
 export const CORNER_RADIUS_VALUES: Record<Exclude<CornerRadius, "default">, RadiusVars> = {
   sharp: { base: "0.125rem", control: "2px", card: "4px" },
   round: { base: "0.875rem", control: "12px", card: "16px" },
-  // control is fully round, but cap card at 20px so large panels stay legible
-  // (a 999px card radius reads as an oversized blob, not a stadium).
-  pill: { base: "999px", control: "999px", card: "20px" },
 };
 
 export function normalizeCornerRadius(value: unknown): CornerRadius {

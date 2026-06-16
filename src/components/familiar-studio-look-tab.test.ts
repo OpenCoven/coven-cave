@@ -47,8 +47,8 @@ assert.match(
   /setFamiliarOverride\(target\.id, \{ color \}\)/,
   "Color scope application should write the selected color to every target familiar",
 );
-assert.match(source, /Same harness/, "Look tab should expose same-harness color assignment");
+assert.match(source, /Same runtime/, "Look tab should expose same-runtime color assignment");
 assert.match(source, /Palette by familiar/, "Look tab should expose per-familiar palette distribution");
-assert.match(source, /Palette by harness/, "Look tab should expose per-harness palette distribution");
+assert.match(source, /Palette by runtime/, "Look tab should expose per-runtime palette distribution");
 
 console.log("familiar-studio-look-tab.test.ts: ok");

@@ -579,7 +579,7 @@ function PluginsTab({
 }) {
   if (!loaded) return <ListSkeleton />;
   if (plugins.length === 0) {
-    return <EmptyPanel title="No harness plugins found" body="Run a capabilities scan or add harness extensions to populate this list." actionLabel="Open Capabilities" onAction={onCreatePlugin} />;
+    return <EmptyPanel title="No runtime plugins found" body="Run a capabilities scan or add runtime extensions to populate this list." actionLabel="Open Capabilities" onAction={onCreatePlugin} />;
   }
 
   return (

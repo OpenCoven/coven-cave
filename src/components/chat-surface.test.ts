@@ -138,8 +138,8 @@ assert.match(
 
 assert.match(
   agentsMemoryView,
-  /Familiar memories[\s\S]*Coven origin[\s\S]*External harnesses[\s\S]*Runtime memory/,
-  "Agents memory view should summarize native Coven, external harness, and runtime memory sources",
+  /Familiar memories[\s\S]*Coven origin[\s\S]*External runtimes[\s\S]*Runtime memory/,
+  "Agents memory view should summarize native Coven, external runtime, and runtime memory sources",
 );
 
 assert.match(

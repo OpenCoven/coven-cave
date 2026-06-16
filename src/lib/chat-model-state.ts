@@ -42,7 +42,7 @@ export type ResolveChatModelStateInput = {
 };
 
 const UNSUPPORTED_REASON =
-  "Saved in Cave. Runtime model application is not confirmed by this harness path yet.";
+  "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
 
 const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
@@ -55,6 +55,12 @@ export function cleanModelId(value: unknown): string | null {
   if (!MODEL_ID_RE.test(trimmed)) return null;
 
   return trimmed;
+}
+
+export function isSyntheticLocalModel(model: unknown, harness: unknown): boolean {
+  const cleanModel = cleanModelId(model);
+  const cleanHarness = cleanModelId(harness);
+  return !!cleanModel && !!cleanHarness && cleanModel === `${cleanHarness}-local`;
 }
 
 export function modelApplicationForHarness(input?: ModelApplicationInput): ModelApplicationResult {
@@ -128,7 +134,9 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const sessionModel = cleanModelId(input.sessionModel);
+  const sessionModel = isSyntheticLocalModel(input.sessionModel, input.harness)
+    ? null
+    : cleanModelId(input.sessionModel);
   if (sessionModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
@@ -139,7 +147,9 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const familiarModel = cleanModelId(input.familiarModel);
+  const familiarModel = isSyntheticLocalModel(input.familiarModel, input.harness)
+    ? null
+    : cleanModelId(input.familiarModel);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {

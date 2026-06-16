@@ -321,11 +321,11 @@ export function CapabilitiesViewSurface({
             <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div className="min-w-0">
                 <h2 className="text-[18px] font-semibold text-[var(--text-primary)]">
-                  Harness capabilities
+                  Runtime capabilities
                 </h2>
                 <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
                   Read-only operator map of skills, plugins, MCP servers, global instructions,
-                  warnings, and Coven daemon skills discovered across connected harnesses.
+                  warnings, and Coven daemon skills discovered across connected runtimes.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
@@ -400,7 +400,7 @@ export function CapabilitiesViewSurface({
                 />
                 <SummaryTile
                   icon="ph:cube-bold"
-                  label="Harnesses"
+                  label="Runtimes"
                   value={operatorView.summary.harnesses.toString()}
                   active={harnessFilter === null && typeFilter === "all" && statusFilter === "all"}
                   onClick={() => {
@@ -448,7 +448,7 @@ export function CapabilitiesViewSurface({
               {operatorView.harnesses.length > 1 ? (
                 <div className="mb-4 flex flex-wrap items-center gap-1.5">
                   <FilterPill
-                    label="All harnesses"
+                    label="All runtimes"
                     count={operatorView.harnesses.length}
                     active={harnessFilter === null}
                     onClick={() => applyHarnessFilter(null)}
@@ -1006,7 +1006,7 @@ function CapabilitiesError({ error, onRefresh }: { error: string; onRefresh: () 
     <div className="rounded-lg border border-border bg-card px-4 py-6 sm:px-5">
       <p className="mb-3 text-[13px] text-muted-foreground">
         {error === "daemon offline"
-          ? "Coven daemon is offline — harness capabilities require a running daemon."
+          ? "Coven daemon is offline — runtime capabilities require a running daemon."
           : `Could not load capabilities: ${error}`}
       </p>
       <button
@@ -1023,7 +1023,7 @@ function CapabilitiesEmpty({ onRefresh }: { onRefresh: () => void }) {
   return (
     <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
       <p className="text-[13px] text-muted-foreground">
-        No harness capabilities found. Start the daemon or add a local harness to see its instructions, skills, and plugins.
+        No runtime capabilities found. Start the daemon or add a local runtime to see its instructions, skills, and plugins.
       </p>
       <button
         type="button"

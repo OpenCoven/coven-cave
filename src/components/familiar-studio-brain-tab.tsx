@@ -138,7 +138,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   return (
     <div className="familiar-studio-brain">
       <label className="familiar-studio-brain__row">
-        <span className="familiar-studio-brain__label">Harness</span>
+        <span className="familiar-studio-brain__label">Runtime</span>
         <div className="familiar-studio-brain__control">
           <select
             value={draftHarness}

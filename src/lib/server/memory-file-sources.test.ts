@@ -29,7 +29,7 @@ assert.deepEqual(
     {
       id: "openclaw-workspace",
       kind: "external-harness",
-      label: "OpenClaw harness memory",
+      label: "OpenClaw runtime memory",
       rootPath: path.join(home, ".openclaw", "workspace", "memory"),
     },
     {
@@ -45,7 +45,7 @@ assert.deepEqual(
       rootPath: path.join(home, ".codex", "memories"),
     },
   ],
-  "memory file sources should separate native Coven origin memory from external harness and runtime roots",
+  "memory file sources should separate native Coven origin memory from external runtime and runtime roots",
 );
 
 const native = classifyMemoryFilePath(path.join(home, ".coven", "memory", "nova.md"), home);
@@ -62,7 +62,7 @@ assert.equal(familiar?.kind, "external-harness");
 assert.equal(familiar?.harnessId, "openclaw");
 assert.equal(familiar?.familiarId, "echo");
 assert.equal(familiar?.root, "familiar:echo");
-assert.equal(familiar?.rootLabel, "Echo harness memory");
+assert.equal(familiar?.rootLabel, "Echo runtime memory");
 
 const runtime = classifyMemoryFilePath(path.join(home, ".codex", "memories", "MEMORY.md"), home);
 assert.equal(runtime?.kind, "runtime");

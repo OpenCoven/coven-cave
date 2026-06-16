@@ -23,6 +23,9 @@ assert.match(source, /menuitemradio/, "Curated options render as selectable radi
 assert.match(source, /allowCustom/, "A custom model field appears when the runtime allows it");
 assert.match(css, /\.cave-chat-model-popover__option/, "Option rows have styling");
 assert.match(css, /\.cave-chat-model-popover__custom-input/, "Custom model input has styling");
+assert.match(source, /Model for \{state\.harness\} runtime/, "Picker copy should call the backend a runtime");
+assert.match(source, /<span>Runtime<\/span>/, "Popover metadata should label the backend as Runtime");
+assert.doesNotMatch(source, /<span>Harness<\/span>/, "Popover should not use harness as the visible product label");
 
 // chat-view wires selection through the existing model-state PATCH channel.
 assert.match(chatView, /onSelectModel=\{handleSelectModel\}/, "Chat view passes a select handler");

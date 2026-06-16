@@ -32,7 +32,7 @@ function setupDom() {
 }
 
 test("normalize falls back to default for junk/unknown", () => {
-  assert.equal(normalizeCornerRadius("pill"), "pill");
+  assert.equal(normalizeCornerRadius("pill"), DEFAULT_CORNER_RADIUS);
   assert.equal(normalizeCornerRadius("squircle"), DEFAULT_CORNER_RADIUS);
   assert.equal(normalizeCornerRadius(undefined), DEFAULT_CORNER_RADIUS);
 });
@@ -45,13 +45,6 @@ test("apply(non-default) overrides all three radius tokens and persists", () => 
   assert.equal(props.get("--radius-card"), CORNER_RADIUS_VALUES.round.card);
   assert.equal(store.get(CORNER_RADIUS_KEY), "round");
   assert.equal(readCornerRadius(), "round");
-});
-
-test("apply(pill) makes controls fully round but caps card radius at 20px", () => {
-  const { props } = setupDom();
-  applyCornerRadius("pill");
-  assert.equal(props.get("--radius-control"), "999px");
-  assert.equal(props.get("--radius-card"), "20px");
 });
 
 test("apply(default) removes the overrides so :root token values apply", () => {

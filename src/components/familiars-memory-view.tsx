@@ -385,7 +385,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
               <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Files</span>
               <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
-              <SourceFilterChip label="External harnesses" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
+              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
               <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
               {sourceFilter !== "all" ? (
                 <button
@@ -899,7 +899,7 @@ export function MemoryFilesList({
                   {(entry.harnessId || entry.runtimeId || entry.origin || (entry.familiarId && entry.familiarId !== activeFamiliarId)) ? (
                     <span className="mt-1 flex flex-wrap gap-1 text-[10px] text-[var(--text-muted)]">
                       {entry.origin ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">origin:{entry.origin}</span> : null}
-                      {entry.harnessId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">harness:{entry.harnessId}</span> : null}
+                      {entry.harnessId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.harnessId}</span> : null}
                       {entry.runtimeId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">runtime:{entry.runtimeId}</span> : null}
                       {entry.familiarId && entry.familiarId !== activeFamiliarId ? <span className="rounded bg-[var(--bg-elevated)] px-1 py-0.5">familiar:{entry.familiarId}</span> : null}
                     </span>

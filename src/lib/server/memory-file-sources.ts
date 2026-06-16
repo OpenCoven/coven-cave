@@ -78,7 +78,7 @@ function displayId(id: string): string {
 
 function sourceKindLabel(kind: MemorySourceKind): string {
   if (kind === "coven-origin") return "Coven origin";
-  if (kind === "external-harness") return "External harness";
+  if (kind === "external-harness") return "External runtime";
   return "Runtime";
 }
 
@@ -97,10 +97,10 @@ export function memoryFileSourcesForHome(home = homedir()): MemoryFileSource[] {
     {
       id: "openclaw-workspace",
       kind: "external-harness",
-      label: "OpenClaw harness memory",
+      label: "OpenClaw runtime memory",
       rootPath: path.join(openclawWorkspace, "memory"),
       root: "workspace",
-      rootLabel: "OpenClaw harness memory",
+      rootLabel: "OpenClaw runtime memory",
       harnessId: "openclaw",
     },
     {
@@ -157,10 +157,10 @@ export function classifyMemoryFilePath(fullPath: string, home = homedir()): Memo
         return {
           sourceId: "openclaw-familiar",
           sourceKind: "external-harness",
-          sourceKindLabel: "External harness",
+          sourceKindLabel: "External runtime",
           kind: "external-harness",
           root: `familiar:${familiarId}`,
-          rootLabel: `${displayId(familiarId)} harness memory`,
+          rootLabel: `${displayId(familiarId)} runtime memory`,
           rootPath: path.join(openclawWorkspace, familiarId),
           harnessId: "openclaw",
           familiarId,

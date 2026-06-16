@@ -52,7 +52,7 @@ import { useProjects } from "@/lib/use-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolInputAsDiff } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
-import type { ChatModelState } from "@/lib/chat-model-state";
+import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 
 type ToolEvent = {
   id: string;
@@ -790,7 +790,7 @@ function ChatTitleEditable({
 }
 
 function ResponseMetadataText({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const model = metadata?.model?.trim() || null;
+  const model = responseMetadataModel(metadata);
   const dir = formatRuntime(metadata?.runtime);
   if (!model && !dir) return null;
   return (
@@ -807,6 +807,21 @@ function ResponseMetadataText({ metadata }: { metadata?: ChatResponseMetadata })
         </span>
       ) : null}
     </span>
+  );
+}
+
+function visibleModelId(model: string | null | undefined, harness: string | null | undefined): string | null {
+  const trimmed = model?.trim();
+  if (!trimmed || isSyntheticLocalModel(trimmed, harness)) return null;
+  return trimmed;
+}
+
+function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
+  const confirmed = metadata?.confirmedModel?.trim();
+  const requested = metadata?.model?.trim();
+  return (
+    visibleModelId(confirmed, metadata?.harness) ??
+    visibleModelId(requested, metadata?.harness)
   );
 }
 
@@ -1065,7 +1080,11 @@ function MetaLine({
     state,
     lifecycle,
     harness: familiar.harness ?? undefined,
-    model: responseMetadata?.model ?? session?.model ?? familiar.model ?? undefined,
+    model:
+      responseMetadataModel(responseMetadata) ??
+      visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
+      visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined) ??
+      undefined,
     runtime: responseMetadata?.runtime ?? session?.runtime,
     projectRoot: session?.project_root ?? projectRoot,
     durationMs,
@@ -1229,7 +1248,7 @@ function MobileChatContextMenu({
   const repo = repoName(session?.project_root ?? projectRoot);
   const runtime = [
     familiar.harness,
-    familiar.model,
+    visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined),
     repo,
   ].filter(Boolean).join(" · ");
 
@@ -2782,7 +2801,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <div className="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
               <div className="truncate font-mono text-[10px] leading-tight text-[var(--text-muted)]">
                 {familiar.harness ?? "cave"}
-                {familiar.model ? ` · ${familiar.model}` : ""}
+                {visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)
+                  ? ` · ${visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined)}`
+                  : ""}
               </div>
             </div>
           </div>
@@ -3502,6 +3523,7 @@ function TurnRow({
             ) : null}
             {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
             <ResponseMetadataText metadata={turn.responseMetadata} />
+            <DurationText durationMs={turn.durationMs} />
             <UsageText usage={turn.usage} costUsd={turn.costUsd} />
             {/* CHAT-D13-01: settled turns hide tool activity by default —
                 this chip is the only way back to it, so it must not be

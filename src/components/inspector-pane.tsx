@@ -1024,7 +1024,7 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
       <InspectorEmpty
         icon="ph:sparkle"
         title="No familiar selected"
-        hint="Pick a familiar to see its roles, skills, and harness capabilities."
+        hint="Pick a familiar to see its roles, skills, and runtime capabilities."
       />
     );
   }
@@ -1296,9 +1296,9 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
         )}
       </CapSection>
 
-      {/* ── Section 4: Harness ───────────────────────────────────────────── */}
+      {/* ── Section 4: Runtime ───────────────────────────────────────────── */}
       <CapSection
-        title="Harness"
+        title="Runtime"
         scope={
           harnessReport
             ? `${harnessReport.label} ${harnessReport.version ?? ""}`.trim()
@@ -1306,7 +1306,7 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
         }
       >
         <ul className="space-y-1">
-          <CapRow label="harness" value={harnessId} />
+          <CapRow label="runtime" value={harnessId} />
           <CapRow label="binary" value={harnessReport?.binary ?? "—"} />
           <CapRow label="path" value={harnessReport?.path ?? "—"} mono />
           <CapRow label="version" value={harnessReport?.version ?? "—"} />

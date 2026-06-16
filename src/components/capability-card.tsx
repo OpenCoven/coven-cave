@@ -64,7 +64,7 @@ export function CapabilitiesView({
       <div className="rounded-lg border border-border bg-card px-4 py-6 sm:px-5">
         <p className="mb-3 text-[13px] text-muted-foreground">
           {error === "daemon offline"
-            ? "Coven daemon is offline — harness capabilities require a running daemon."
+            ? "Coven daemon is offline — runtime capabilities require a running daemon."
             : `Could not load capabilities: ${error}`}
         </p>
         <button
@@ -80,7 +80,7 @@ export function CapabilitiesView({
   if (items.length === 0) {
     return (
       <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
-        No harness capabilities found. Start the daemon or add a local harness to see its instructions, skills, and plugins.
+        No runtime capabilities found. Start the daemon or add a local runtime to see its instructions, skills, and plugins.
       </p>
     );
   }
