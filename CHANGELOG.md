@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.96] - 2026-06-16
+
+Patch release: GitHub org/repo filtering improvements, Codex-style floating panel toggles, an expanding chat right-panel, Agent Completion Reports, and theme/header fixes after 0.0.95.
+
+### Added
+- **GitHub** — selecting a repo now locks the Org filter to that repo's org, and grouping is a `None · Org · Repo` segmented toggle (#831).
+- **Shell** — Codex-style floating panel toggles in the top corners.
+- **Chat** — the right side panel can expand to cover the chat surface (#829).
+- **Reports** — an Agent Completion Report schema + markdown generator.
+
+### Fixed
+- **Appearance** — imported tweakcn themes map onto Cave's semantic tokens.
+- **Headers** — per-familiar role group headers use the shared clear-header treatment.
+
 ## [0.0.95] - 2026-06-16
 
 Patch release: reminders gain links and editing, the Companion panel gets an in-panel collapse trigger, a new Familiar Studio Contract tab, workspace-sourced avatars, and more header/polish fixes after 0.0.94.
