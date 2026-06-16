@@ -5199,6 +5199,30 @@ button:active > .edge-rail-chip {
   justify-content: center;
 }
 
+/* The chat list renders both full-width (the chat surface rail) and narrow
+   (the per-familiar Companion Rail, ~440-480px). In the narrow case the row
+   meta's tags (familiar name + origin/initiator chips) and the right-aligned
+   date/time can't share one line — the chips overflow their shrunk box and
+   collide with the date. Make the surface a query container and stack the meta
+   (date below the tags) when the container is narrow, regardless of viewport. */
+.chat-list-surface {
+  container-type: inline-size;
+  container-name: chatlist;
+}
+@container chatlist (max-width: 520px) {
+  .chat-list-row-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .chat-list-row-tags {
+    max-width: 100%;
+  }
+  .chat-list-row-time {
+    width: auto;
+  }
+}
+
 /* Touch / coarse-pointer surface. On devices with no hover capability,
    controls that the desktop hides behind `opacity-0 group-hover:opacity-100`
    become permanently visible — opt in with `.touch-always-visible`. */
