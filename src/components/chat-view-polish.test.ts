@@ -220,10 +220,10 @@ assert.doesNotMatch(
   "ChatLifecycleStatus bar should be folded into the header meta line",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /className="cave-chat-icon-button cave-chat-back-button/,
-  "Open chat back control should use the shared minimal icon-button treatment",
+  /cave-chat-back-button/,
+  "the in-chat back-to-chats control is removed",
 );
 
 assert.match(

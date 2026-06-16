@@ -3189,6 +3189,7 @@ button:active > .edge-rail-chip {
 .shell-panel-float::before {
   content: "";
   position: absolute;
+  z-index: 1;
   /* Vertically centered on the side-panel header row — the 38px Inspector/Debug/
      Changes tab strip that sits directly below the ~45px chat scope-tabs header.
      The trigger + expand toggle read as part of that header rather than floating
@@ -3207,19 +3208,58 @@ button:active > .edge-rail-chip {
   box-shadow:
     inset 0 1px 0 color-mix(in oklch, var(--text-primary) 10%, transparent),
     0 6px 16px color-mix(in oklch, black 22%, transparent);
-  opacity: 0;
+  /* Fades in by cursor proximity (--float-prox, set per-float in shell.tsx);
+     :hover/:focus-visible below force it fully visible for direct interaction. */
+  opacity: var(--float-prox, 0);
   transform: translateX(-50%);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, transform 80ms ease;
 }
 
+/* Pulsing accent halo behind the chip — gated by --float-prox so it only shows
+   (and pulses) as the cursor approaches the toggle. */
+.shell-panel-float::after {
+  content: "";
+  position: absolute;
+  top: var(--shell-float-top, 50px);
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 60%, transparent), transparent 70%);
+  opacity: 0;
+  transform: translateX(-50%) scale(1);
+  animation: shell-float-pulse 1800ms ease-in-out infinite;
+}
+
+@keyframes shell-float-pulse {
+  0%,
+  100% {
+    opacity: calc(var(--float-prox, 0) * 0.35);
+    transform: translateX(-50%) scale(1);
+  }
+  50% {
+    opacity: calc(var(--float-prox, 0) * 0.75);
+    transform: translateX(-50%) scale(1.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-panel-float::after {
+    animation: none;
+    opacity: calc(var(--float-prox, 0) * 0.4);
+  }
+}
+
 .shell-panel-float > svg {
   position: absolute;
   top: calc(var(--shell-float-top, 50px) + 6.5px);
   left: 50%;
-  z-index: 1;
-  opacity: 0;
+  z-index: 2;
+  opacity: var(--float-prox, 0);
   pointer-events: none;
   transform: translateX(-50%);
   transition: opacity 120ms ease, color 120ms ease, transform 80ms ease;

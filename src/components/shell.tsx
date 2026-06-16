@@ -325,6 +325,40 @@ function ShellInner({
     return () => window.clearTimeout(t);
   }, [mounted]);
 
+  // Proximity glow: as the cursor moves toward a floating panel toggle, fade in
+  // (and pulse) its chip. Each float gets a `--float-prox` (0→1) driven by the
+  // cursor's distance to the chip; the CSS uses it for opacity + the pulse.
+  useEffect(() => {
+    if (!mounted || isMobile) return;
+    const RANGE = 200; // px — how far out the glow starts responding
+    let raf = 0;
+    const onMove = (e: MouseEvent) => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const floatTop =
+          parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue("--shell-float-top"),
+          ) || 50;
+        for (const el of document.querySelectorAll<HTMLElement>(".shell-panel-float")) {
+          const r = el.getBoundingClientRect();
+          // Chip center: horizontally centered in the 44px column, vertically at
+          // the float band (top + ~14px to the 28px chip's center).
+          const cx = r.left + r.width / 2;
+          const cy = r.top + floatTop + 14;
+          const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
+          const prox = Math.max(0, Math.min(1, 1 - dist / RANGE));
+          el.style.setProperty("--float-prox", prox.toFixed(3));
+        }
+      });
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [mounted, isMobile]);
+
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);

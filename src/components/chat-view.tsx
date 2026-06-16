@@ -1098,19 +1098,6 @@ function ChatFindBar({
   );
 }
 
-function ChatBackButton({ onBack }: { onBack: () => void }) {
-  return (
-    <button
-      type="button"
-      className="cave-chat-icon-button cave-chat-back-button focus-ring"
-      aria-label="Back to chats"
-      onClick={onBack}
-    >
-      <Icon name="ph:arrow-left-bold" width={12} aria-hidden />
-    </button>
-  );
-}
-
 /** CHAT-D3-06: compact ticking elapsed for the streaming/tooling meta line,
  *  so the wall-clock counter survives past the first token (ThinkingIndicator
  *  swaps to text and takes its counter with it). Same 1s interval pattern as
@@ -1197,7 +1184,6 @@ function MetaLine({
   return (
     <div className={`cave-chat-meta-line cave-chat-meta-line--${state}`} role="status" aria-live="polite" data-lifecycle={state}>
       {state !== "complete" ? <span className="cave-chat-meta-line__dot" aria-hidden /> : null}
-      {onBack ? <ChatBackButton onBack={onBack} /> : null}
       {session ? (
         <ChatTitleEditable
           session={session}
@@ -2928,8 +2914,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <header className="cave-chat-linear-header">
         <div className="cave-mobile-header-identity">
           <div className="cave-mobile-header-familiar">
-            {onBack ? <ChatBackButton onBack={onBack} /> : null}
-            <FamiliarIcon familiar={familiar} size="sm" />
+                  <FamiliarIcon familiar={familiar} size="sm" />
             <div className="min-w-0">
               <div className="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]">{familiar.display_name}</div>
               <div className="truncate font-mono text-[10px] leading-tight text-[var(--text-muted)]">

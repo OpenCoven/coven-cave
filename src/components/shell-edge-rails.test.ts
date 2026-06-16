@@ -161,4 +161,24 @@ assert.doesNotMatch(
   "Shell no longer wires the retired in-panel collapse event",
 );
 
+// Proximity glow: floats fade in (and pulse) as the cursor approaches. shell.tsx
+// tracks mousemove distance and sets --float-prox per float; the CSS drives the
+// chip opacity + the pulse halo from it.
+assert.match(shell, /addEventListener\("mousemove"/, "shell listens for mousemove to track cursor proximity");
+assert.match(
+  shell,
+  /setProperty\("--float-prox"/,
+  "shell sets a per-float --float-prox from cursor distance",
+);
+assert.match(
+  css,
+  /\.shell-panel-float::before \{[\s\S]*?opacity: var\(--float-prox, 0\)/,
+  "the float chip fades in by cursor proximity",
+);
+assert.match(
+  css,
+  /@keyframes shell-float-pulse \{[\s\S]*?var\(--float-prox, 0\)/,
+  "the proximity halo pulses with intensity gated by --float-prox",
+);
+
 console.log("shell-edge-rails.test.ts OK");
