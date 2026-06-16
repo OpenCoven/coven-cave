@@ -3157,9 +3157,13 @@ button:active > .edge-rail-chip {
 }
 
 /* Clear the floating top-left toggle so it doesn't sit on top of the sidebar
-   wordmark. Scoped to the desktop shell — the floats are desktop-only. */
+   wordmark, while keeping the wordmark's left edge aligned with the nav-card
+   content column below it (Salem / New session / Home). The left float is 28px
+   wide at left:8 (right edge 36); 15px lands the wordmark just clear of it, at
+   the same indent as the card icons. Scoped to the desktop shell — the floats
+   are desktop-only. */
 .shell-body--floats .sidebar-header--static {
-  padding-left: 40px;
+  padding-left: 15px;
 }
 
 .shell-panel-float {
