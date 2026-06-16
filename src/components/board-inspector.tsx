@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-board-types";
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
+import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import type { CardStep } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -37,6 +38,7 @@ type Props = {
   card: Card;
   familiars: Familiar[];
   sessions: SessionRow[];
+  projects: CaveProject[];
   onClose: () => void;
   onPatch: (id: string, patch: Partial<Card>) => void;
   onMoveStatus: (id: string, status: CardStatus) => void;
@@ -822,7 +824,7 @@ function StepsSection({
   );
 }
 
-export function BoardInspector({ card, familiars, sessions, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError }: Props) {
+export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError }: Props) {
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<CardLifecycle | null>(null);
@@ -954,6 +956,24 @@ export function BoardInspector({ card, familiars, sessions, onClose, onPatch, on
                 >
                   <option value="">Unassigned</option>
                   {familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>)}
+                </select>
+                <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+              </div>
+            </div>
+
+            <div className="board-drawer-field">
+              <div className="board-drawer-field-label">Project</div>
+              <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
+                <span className="board-drawer-project-icon" aria-hidden>
+                  <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
+                </span>
+                <select
+                  className="board-drawer-field-select board-drawer-field-select--styled"
+                  value={card.projectId ?? ""}
+                  onChange={(e) => onPatch(card.id, { projectId: e.target.value || null })}
+                >
+                  <option value="">No project</option>
+                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>

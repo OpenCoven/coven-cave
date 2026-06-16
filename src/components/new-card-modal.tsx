@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { CaveProject } from "@/lib/cave-projects";
 import { Modal } from "@/components/ui/modal";
 import { PropertyPill } from "@/components/ui/property-pill";
 import {
@@ -19,6 +20,7 @@ export type NewCardDraft = {
   priority: CardPriority;
   familiarId: string | null;
   sessionId: string | null;
+  projectId: string | null;
   cwd: string | null;
   links: string[];
   labels: string[];
@@ -30,6 +32,7 @@ type Props = {
   onClose: () => void;
   familiars: Familiar[];
   sessions: SessionRow[];
+  projects: CaveProject[];
   defaultStatus?: CardStatus;
   defaultFamiliarId?: string | null;
   defaultTitle?: string;
@@ -44,6 +47,7 @@ export function NewCardModal({
   onClose,
   familiars,
   sessions,
+  projects,
   defaultStatus = "inbox",
   defaultFamiliarId = null,
   defaultTitle,
@@ -58,6 +62,7 @@ export function NewCardModal({
   const [priority, setPriority] = useState<CardPriority>("medium");
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [cwd, setCwd] = useState("");
   const [links, setLinks] = useState("");
   const [labels, setLabels] = useState("");
@@ -73,6 +78,7 @@ export function NewCardModal({
     setPriority("medium");
     setFamiliarId(defaultFamiliarId);
     setSessionId(null);
+    setProjectId(null);
     setCwd("");
     setLinks(defaultLinks ? defaultLinks.join("\n") : "");
     setLabels(defaultLabels ? defaultLabels.join(", ") : "");
@@ -95,6 +101,7 @@ export function NewCardModal({
         priority,
         familiarId,
         sessionId,
+        projectId,
         cwd: cwd.trim() || null,
         links: parseDelimited(links),
         labels: parseDelimited(labels),
@@ -112,6 +119,8 @@ export function NewCardModal({
     familiars.find((f) => f.id === familiarId)?.display_name ?? "Default familiar";
   const sessionLabel =
     sessions.find((s) => s.id === sessionId)?.title ?? null;
+  const projectLabel =
+    projects.find((p) => p.id === projectId)?.name ?? null;
 
   return (
     <Modal
@@ -140,6 +149,9 @@ export function NewCardModal({
           />
           {sessionLabel ? (
             <PropertyPill icon="ph:chat-circle-dots" label={sessionLabel} filled />
+          ) : null}
+          {projectLabel ? (
+            <PropertyPill icon="ph:folder" label={projectLabel} filled />
           ) : null}
         </>
       }
@@ -223,6 +235,17 @@ export function NewCardModal({
                 value: s.id,
                 label: `${s.title || "(untitled)"} · ${s.harness}`,
               })),
+            ]}
+          />
+        </Field>
+
+        <Field label="Project">
+          <Select
+            value={projectId ?? ""}
+            onChange={(v) => setProjectId(v || null)}
+            options={[
+              { value: "", label: "No project" },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
         </Field>

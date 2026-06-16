@@ -23,6 +23,7 @@ import type {
   LibrarySectionKind,
 } from "@/lib/library-types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
+import { useProjects } from "@/lib/use-projects";
 
 type LibraryViewProps = {
   onOpenUrl?: (url: string) => void;
@@ -46,6 +47,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const listExpanded = listPinned || listHover;
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const { projects } = useProjects();
   const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
   const [boardDraft, setBoardDraft] = useState<LibraryBookmark | null>(null);
 
@@ -334,6 +336,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           onClose={() => setBoardDraft(null)}
           familiars={familiars}
           sessions={sessions ?? []}
+          projects={projects}
           defaultStatus="inbox"
           defaultTitle={boardDraft.title || boardDraft.domain || ""}
           defaultLinks={[boardDraft.url]}
@@ -348,6 +351,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
                 notes: draft.notes,
                 status: draft.status,
                 priority: draft.priority,
+                projectId: draft.projectId,
                 links: draft.links,
                 labels: draft.labels,
               }),
