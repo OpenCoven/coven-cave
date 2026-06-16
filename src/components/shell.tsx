@@ -94,6 +94,11 @@ export type ShellHandle = {
   openList: () => void;
   closeList: () => void;
   toggleList: () => void;
+  /** Dismiss the nav/list ONLY on mobile (where it's an overlay drawer over the
+   *  content). On desktop these are persistent side panels, so selecting an
+   *  option inside them must NOT collapse them — these are no-ops there. */
+  dismissNavMobile: () => void;
+  dismissListMobile: () => void;
 };
 
 type ShellMobileChromeState = {
@@ -196,6 +201,9 @@ function ShellInner({
         navRef.current?.collapse();
         setNavOpen(false);
       },
+      dismissNavMobile: () => {
+        if (isMobile) setMobileDrawer((c) => (c === "nav" ? null : c));
+      },
       toggleNav: () => {
         if (isMobile) { toggleDrawer("nav"); return; }
         const panel = navRef.current;
@@ -210,6 +218,9 @@ function ShellInner({
       closeList: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "list" ? null : c)); return; }
         listRef.current?.collapse();
+      },
+      dismissListMobile: () => {
+        if (isMobile) setMobileDrawer((c) => (c === "list" ? null : c));
       },
       toggleList: () => {
         if (isMobile) { toggleDrawer("list"); return; }

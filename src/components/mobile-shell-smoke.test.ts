@@ -67,15 +67,33 @@ assert.match(
   "Mobile nav toggle should announce whether the navigation drawer is open",
 );
 
+// Selecting a destination dismisses the mobile OVERLAY drawer, but must use
+// the mobile-only `dismissNavMobile`/`dismissListMobile` — NOT `closeNav`/
+// `closeList`, which also collapse the persistent DESKTOP side panel. On
+// desktop the left panel must stay open when an option is selected.
 assert.match(
   workspace,
-  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.closeNav\(\);[\s\S]*setMode\(m as WorkspaceMode\);[\s\S]*shellRef\.current\?\.closeNav\(\);[\s\S]*\}\}/,
-  "Mobile sidebar destination taps should close the nav drawer after changing surfaces",
+  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as WorkspaceMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
 assert.match(
   workspace,
-  /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.closeList\(\);[\s\S]*\}\}/,
-  "Mobile list drawer session taps should close the list drawer after opening a session",
+  /onOpenSession=\{\(id\) => \{[\s\S]*openFamiliarSession\(id\);[\s\S]*shellRef\.current\?\.dismissListMobile\(\);[\s\S]*\}\}/,
+  "Mobile list drawer session taps should dismiss the list drawer (mobile-only) without collapsing the desktop list",
+);
+
+// The mobile-only dismissers must be gated on isMobile and must NOT call the
+// panel collapse() that closeNav/closeList use — that's what keeps the desktop
+// side panel open when an option is selected. (`shell` is read above.)
+assert.match(
+  shell,
+  /dismissNavMobile:\s*\(\)\s*=>\s*\{\s*if \(isMobile\) setMobileDrawer\(\(c\) => \(c === "nav" \? null : c\)\);\s*\}/,
+  "dismissNavMobile must only dismiss the mobile drawer (no desktop collapse)",
+);
+assert.match(
+  shell,
+  /dismissListMobile:\s*\(\)\s*=>\s*\{\s*if \(isMobile\) setMobileDrawer\(\(c\) => \(c === "list" \? null : c\)\);\s*\}/,
+  "dismissListMobile must only dismiss the mobile drawer (no desktop collapse)",
 );
 
 assert.match(
