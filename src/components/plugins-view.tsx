@@ -207,10 +207,12 @@ export function PluginsView({
         body: JSON.stringify({ id: role.id, familiar: role.familiar, active: next }),
       });
       if (!res.ok) throw new Error('save failed');
-    } catch {
-      // Rollback on error
+    } catch (err) {
+      // Rollback on error, then re-raise so the toggle control can surface the
+      // failure instead of silently bouncing the switch back with no explanation.
       setRoles(prev => prev.map(r => r.id === role.id && r.familiar === role.familiar ? { ...r, active: role.active } : r));
       setSelectedRole(prev => prev && prev.id === role.id && prev.familiar === role.familiar ? role : prev);
+      throw err;
     }
   };
   const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
@@ -979,6 +981,13 @@ function RoleCard({
   onToggle: (role: RoleEntry) => Promise<void>;
 }) {
   const [toggling, setToggling] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  // Auto-clear the failure hint so it doesn't linger after the user moves on.
+  React.useEffect(() => {
+    if (!failed) return;
+    const timer = setTimeout(() => setFailed(false), 4000);
+    return () => clearTimeout(timer);
+  }, [failed]);
 
   type ChipEntry = { key: string; icon: Parameters<typeof Icon>[0]["name"]; label: string };
   const chips: ChipEntry[] = ([
@@ -991,8 +1000,15 @@ function RoleCard({
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (toggling) return;
+    setFailed(false);
     setToggling(true);
-    try { await onToggle(role); } finally { setToggling(false); }
+    try {
+      await onToggle(role);
+    } catch {
+      setFailed(true);
+    } finally {
+      setToggling(false);
+    }
   };
 
   return (
@@ -1061,6 +1077,19 @@ function RoleCard({
             </span>
           ))}
         </div>
+      )}
+
+      {/* Failure hint — shown when the activate/deactivate save fails so the
+          switch doesn't just bounce back silently. */}
+      {failed && (
+        <span
+          role="status"
+          aria-label="Couldn't update role — try again"
+          title="Couldn't update — check the daemon and try again"
+          className="shrink-0 text-[var(--color-danger)]"
+        >
+          <Icon name="ph:warning-circle" width={14} aria-hidden />
+        </span>
       )}
 
       {/* Toggle */}
