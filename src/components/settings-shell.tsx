@@ -31,6 +31,7 @@ import {
   isDemoModeEnabled,
   setDemoModeEnabled,
 } from "@/lib/demo-mode";
+import { readableTextColor } from "@/lib/readable-text-color";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -168,14 +169,14 @@ export function SettingsShell() {
                     : "gap-2 py-[6px] text-[12px]"
                 } ${
                   section === s.id && !showPicker
-                    ? "bg-[var(--accent-presence)] text-white"
+                    ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                     : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                 }`}
               >
                 <Icon
                   name={s.icon as Parameters<typeof Icon>[0]["name"]}
                   width={showPicker ? 18 : 13}
-                  className={section === s.id && !showPicker ? "text-white/70" : "text-[var(--text-muted)]"}
+                  className={section === s.id && !showPicker ? "text-[var(--accent-presence-foreground)] opacity-70" : "text-[var(--text-muted)]"}
                 />
                 <span className="flex-1">{s.label}</span>
                 {showPicker ? (
@@ -349,7 +350,7 @@ function DaemonSection() {
               type="button"
               onClick={startDaemon}
               disabled={starting}
-              className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+              className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
               title="coven daemon start"
             >
               <Icon name="ph:rocket-launch-bold" width={12} />
@@ -667,6 +668,8 @@ function tweakcnSemanticVars(
   const out: Record<string, string> = {};
   if (accent) {
     out["--accent-presence"] = accent;
+    out["--accent-presence-foreground"] =
+      pick("primary-foreground") || pick("accent-foreground") || readableTextColor(accent);
     out["--accent-presence-soft"] = `color-mix(in oklch, ${accent} 78%, transparent)`;
     out["--accent-faint"] = `color-mix(in oklch, ${accent} 14%, transparent)`;
   }
@@ -787,7 +790,7 @@ function ThemePresetCard({
       </div>
 
       {active && (
-        <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-white">
+        <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]">
           <Icon name="ph:check-bold" width={11} />
         </span>
       )}
@@ -967,7 +970,7 @@ function AppearanceSection() {
                   onClick={() => handleSetCornerRadius(option)}
                   className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                     active
-                      ? "bg-[var(--accent-presence)] text-white"
+                      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                   }`}
                 >
@@ -984,8 +987,8 @@ function AppearanceSection() {
         {/* Custom theme chip */}
         {activeTheme === "custom" && customData && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-hairline)]">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-3 py-0.5 text-[11px] font-medium text-[var(--accent-presence)]">
-              <Icon name="ph:sparkle" width={11} />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-3 py-0.5 text-[11px] font-medium text-[var(--text-primary)]">
+              <Icon name="ph:sparkle" width={11} className="text-[var(--accent-presence)]" />
               Custom: {customData.name}
               <button
                 type="button"
@@ -1073,7 +1076,7 @@ function AppearanceSection() {
               type="button"
               onClick={() => void handleImport()}
               disabled={importing || !importUrl.trim()}
-              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-4 py-2 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-4 py-2 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {importing ? (
                 <>

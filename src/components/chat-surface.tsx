@@ -310,10 +310,10 @@ export function ChatSurface({
   // Window events
   useEffect(() => {
     const onNewChat = (e: Event) => {
-      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null }>).detail;
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null }>).detail;
       if (d?.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, undefined, d?.familiarId), 0);
+      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, d?.initialPrompt ?? undefined, d?.familiarId), 0);
     };
     const onOpenSession = (e: Event) => {
       const d = (e as CustomEvent<{ sessionId?: string; familiarId?: string | null }>).detail;
@@ -394,12 +394,6 @@ export function ChatSurface({
     onPendingChatActionHandled();
   }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
 
-  function startConversation(familiarId?: string | null) {
-    if (familiarId) onSetActiveFamiliar(familiarId);
-    setScope("conversation");
-    window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, familiarId), 0);
-  }
-
   function startProjectChat(projectRoot: string) {
     setScope("conversation");
     window.setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
@@ -423,6 +417,77 @@ export function ChatSurface({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [rightExpanded]);
+
+  // The expand affordance lives in the shell's floating toggle cluster
+  // (.shell-panel-float--expand), a different subtree, so it reaches the expand
+  // state through a window event — the same bridge pattern as cave:inspector-open.
+  // The reset effect above clears rightExpanded if the panel closes, so this is
+  // safe to fire unconditionally.
+  useEffect(() => {
+    const onExpand = () => setRightExpanded(true);
+    window.addEventListener("cave:right-panel-expand", onExpand);
+    return () => window.removeEventListener("cave:right-panel-expand", onExpand);
+  }, []);
+
+  // Flag right-panel-open on the document root so the shell's floating expand
+  // toggle (in shell.tsx, outside this subtree) shows only when there's actually
+  // a panel to expand. Mirrors the desktop placement: conversation scope only.
+  useEffect(() => {
+    const root = document.documentElement;
+    const open = rightPanel !== null && !isMobile && scope === "conversation";
+    if (open) root.setAttribute("data-right-panel-open", "");
+    else root.removeAttribute("data-right-panel-open");
+    return () => root.removeAttribute("data-right-panel-open");
+  }, [rightPanel, isMobile, scope]);
+
+  // Keep the shell's floating toggles (left nav, expand, side-panel trigger)
+  // vertically centered on the LIVE side-panel header. Its top can shift while
+  // the layout settles after load (e.g. transient chrome above the panel), so a
+  // fixed CSS offset flashes out of alignment. Publish the header's centered top
+  // as a root CSS var the floats consume (--shell-float-top), and track it via a
+  // short rAF loop that runs only until the value holds steady, plus a resize
+  // re-arm. Falls back to the CSS default when there's no panel to align to.
+  useEffect(() => {
+    if (isMobile || scope !== "conversation" || rightPanel === null || rightExpanded) return;
+    const root = document.documentElement;
+    const FLOAT_H = 28;
+    let raf = 0;
+    let steady = 0;
+    let last = Number.NaN;
+    const measure = () => {
+      const header = document.querySelector(".right-panel-tabs");
+      if (header) {
+        const r = header.getBoundingClientRect();
+        const top = Math.round(r.top + (r.height - FLOAT_H) / 2);
+        if (top !== last) {
+          root.style.setProperty("--shell-float-top", `${top}px`);
+          last = top;
+          steady = 0;
+        } else {
+          steady += 1;
+        }
+      }
+    };
+    const loop = () => {
+      measure();
+      // Stop once the measurement holds for ~6 frames — covers the post-load
+      // settle without polling forever.
+      if (steady < 6) raf = requestAnimationFrame(loop);
+    };
+    loop();
+    const rearm = () => {
+      steady = 0;
+      last = Number.NaN;
+      cancelAnimationFrame(raf);
+      loop();
+    };
+    window.addEventListener("resize", rearm);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", rearm);
+      root.style.removeProperty("--shell-float-top");
+    };
+  }, [isMobile, scope, rightPanel, rightExpanded]);
 
   // While the right panel is expanded it covers the chat surface, but the
   // shell's right edge-rail float (.shell-panel-float--right, z-40) sits above
@@ -478,19 +543,6 @@ export function ChatSurface({
                 { id: "projects", label: "Projects" },
               ]}
             />
-          </div>
-
-          {/* Actions flush right — chromeless */}
-          <div className="flex items-center gap-2 py-1.5">
-            <button
-              type="button"
-              onClick={() => startConversation(activeFamiliarId)}
-              title="New session"
-              className="chat-scope-tabs__new inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-            >
-              <Icon name="ph:plus-bold" width={11} />
-              New
-            </button>
           </div>
         </div>
 
@@ -559,9 +611,7 @@ export function ChatSurface({
                       onCreateReminder={onCreateReminder}
                       onOpenInboxItem={onOpenInboxItem}
                       onInboxItemChanged={onInboxItemChanged}
-                      allowExpand
                       expanded={false}
-                      onToggleExpand={() => setRightExpanded(true)}
                     />
                   )}
                 </Panel>

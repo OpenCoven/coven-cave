@@ -10,9 +10,12 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it, beforeEach } from "node:test";
+import { readFileSync } from "node:fs";
+import { describe, it } from "node:test";
 import { getSwatches, THEME_META } from "../lib/theme-palettes.ts";
 import type { ThemeId } from "../lib/theme-palettes.ts";
+
+const source = readFileSync(new URL("./theme-color-editor.tsx", import.meta.url), "utf8");
 
 // ─── Swatch seeding ──────────────────────────────────────────────────────────
 
@@ -58,6 +61,34 @@ describe("border auto-derives from accent", () => {
     const hex = accent.replace(/^#/, "");
     const derived = hex.length === 6 ? `#${hex}66` : accent;
     assert.equal(derived, accent);
+  });
+});
+
+// ─── Contrast safety ─────────────────────────────────────────────────────────
+
+describe("filled accent contrast", () => {
+  it("persists a readable foreground token for custom accents", () => {
+    assert.match(
+      source,
+      /"--accent-presence-foreground":\s*readableTextColor\(accent\)/,
+      "custom themes should persist a readable accent foreground",
+    );
+  });
+
+  it("does not assume white text on custom accent buttons", () => {
+    assert.doesNotMatch(
+      source,
+      /bg-\[var\(--accent-presence\)\][^"`]*text-white/,
+      "accent-filled editor controls should use --accent-presence-foreground",
+    );
+  });
+
+  it("does not render preview label text directly in the picked accent", () => {
+    assert.doesNotMatch(
+      source,
+      /color:\s*colors\.accent/,
+      "preview label text should remain readable when accent and background are similar",
+    );
   });
 });
 

@@ -33,7 +33,7 @@ export function SessionInitiatorChip({ initiator, iconOnly, className }: Props) 
       {iconOnly ? (
         <span className="sr-only">{tooltip}</span>
       ) : (
-        <span className="ui-initiator-chip-label">Started by {label}</span>
+        <span className="ui-initiator-chip-label">{label}</span>
       )}
     </span>
   );

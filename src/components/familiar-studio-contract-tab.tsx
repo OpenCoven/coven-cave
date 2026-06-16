@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { ContractReport, ContractFile } from "@/lib/familiar-contract";
+import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -116,6 +117,29 @@ export function FamiliarStudioContractTab({ familiar }: Props) {
               </span>
             </div>
           </div>
+
+          {/* Rehabilitation: when failing, the familiar is operating as an
+              agent. This opens a chat seeded with a brief that instructs it to
+              work with its human to close the gaps and cross to familiar. */}
+          {!report.pass ? (
+            <button
+              type="button"
+              className="familiar-studio-contract__rehab"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("cave:agents-new-chat", {
+                    detail: {
+                      familiarId: familiar.id,
+                      initialPrompt: buildRehabilitationBrief(familiar.display_name, report),
+                    },
+                  }),
+                )
+              }
+            >
+              <Icon name="ph:sparkle" width={14} aria-hidden />
+              Work with {familiar.display_name} to fix this
+            </button>
+          ) : null}
 
           {/* Five-property coverage */}
           <section className="familiar-studio-contract__section">

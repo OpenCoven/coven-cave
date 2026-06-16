@@ -36,7 +36,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
 import { ChatModelControl } from "@/components/chat-model-control";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
-import { VoiceCallButton } from "./voice-call-button";
+import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
@@ -591,35 +591,134 @@ function ChatEmptyState({
   );
 }
 
-function InlineProjectField({
+/** Codex/ChatGPT-style overflow menu. Collapses the session's secondary
+ *  controls — project switch, voice call, debug, delete — into a single kebab
+ *  so the header reads as title + quiet metadata instead of a row of competing
+ *  icons. Find stays inline (one-click, frequently used); everything else lives
+ *  one click away here. */
+function SessionOverflowMenu({
+  projects,
   projectId,
   onProjectChange,
-  projects,
+  familiar,
+  voiceActive,
+  onOpenVoice,
+  onOpenDebug,
+  onDelete,
+  deleting,
+  confirmDelete,
+  onConfirmDeleteChange,
 }: {
+  projects: CaveProject[];
   projectId: string | null;
   onProjectChange: (value: string) => void;
-  projects: CaveProject[];
+  familiar: Familiar;
+  voiceActive: boolean;
+  onOpenVoice: () => void;
+  onOpenDebug: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+  confirmDelete: boolean;
+  onConfirmDeleteChange: (next: boolean) => void;
 }) {
-  const project = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
-  if (!project) return null;
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const activeProject = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+  const voiceConfigured = Boolean(familiar.voiceProvider);
+
+  const close = () => {
+    setOpen(false);
+    onConfirmDeleteChange(false);
+  };
+
   return (
-    <div className="cave-chat-cwd-pair" title={project.root}>
-      <label className="cave-chat-cwd-inline focus-within:border-[var(--border-strong)]">
-        <Icon name="ph:folder-open" width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-        <select
-          value={project.id}
-          onChange={(e) => onProjectChange(e.target.value)}
-          aria-label="Project for this chat"
-          className="min-w-0 flex-1 bg-transparent outline-none"
-        >
-          {projects.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.name}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="focus-ring"
+        aria-label="Session options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Session options"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={(next) => (next ? setOpen(true) : close())}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={216}
+      >
+        <PopoverBody>
+          <PopoverItem
+            icon="ph:pencil-simple"
+            onSelect={() => {
+              window.dispatchEvent(new Event("cave:chat-rename"));
+              close();
+            }}
+          >
+            Rename chat
+          </PopoverItem>
+          <PopoverSeparator />
+          {projects.length > 1 ? (
+            <>
+              <PopoverLabel>Project</PopoverLabel>
+              {projects.map((entry) => (
+                <PopoverItem
+                  key={entry.id}
+                  icon={entry.id === activeProject?.id ? "ph:check" : "ph:folder"}
+                  active={entry.id === activeProject?.id}
+                  onSelect={() => {
+                    onProjectChange(entry.id);
+                    close();
+                  }}
+                >
+                  {entry.name}
+                </PopoverItem>
+              ))}
+              <PopoverSeparator />
+            </>
+          ) : null}
+          <PopoverItem
+            icon="ph:phone"
+            disabled={!voiceConfigured || voiceActive}
+            onSelect={() => {
+              onOpenVoice();
+              close();
+            }}
+          >
+            {voiceConfigured ? `Call ${familiar.display_name}` : "Voice — set up in Studio"}
+          </PopoverItem>
+          <PopoverItem
+            icon="ph:bug-bold"
+            onSelect={() => {
+              onOpenDebug();
+              close();
+            }}
+          >
+            Debug session
+          </PopoverItem>
+          <PopoverSeparator />
+          {confirmDelete ? (
+            <>
+              <PopoverItem icon="ph:x" onSelect={() => onConfirmDeleteChange(false)}>
+                Cancel
+              </PopoverItem>
+              <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
+                {deleting ? "Deleting…" : "Confirm delete"}
+              </PopoverItem>
+            </>
+          ) : (
+            <PopoverItem icon="ph:trash" danger onSelect={() => onConfirmDeleteChange(true)}>
+              Delete chat
+            </PopoverItem>
+          )}
+        </PopoverBody>
+      </Popover>
+    </>
   );
 }
 
@@ -699,6 +798,15 @@ function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
+  // The rename affordance now lives in the session overflow menu (Codex/ChatGPT
+  // idiom — a clean title, secondary actions one click away). The menu fires
+  // this event; clicking the title itself still enters edit mode directly.
+  useEffect(() => {
+    const onRename = () => setEditing(true);
+    window.addEventListener("cave:chat-rename", onRename);
+    return () => window.removeEventListener("cave:chat-rename", onRename);
+  }, []);
+
   const display = baseTitle || session.id;
 
   const submit = async () => {
@@ -761,33 +869,17 @@ function ChatTitleEditable({
   }
 
   return (
-    <span className={headline ? "flex w-full min-w-0 items-center gap-1.5" : "flex min-w-0 flex-1 items-center gap-1"}>
-      <button
-        type="button"
-        className={buttonClassName}
-        title={`${display} — click to rename`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-      >
-        {display}
-      </button>
-      {/* Explicit rename affordance — the click-to-rename title alone is
-          invisible; the pencil makes renaming discoverable. */}
-      <button
-        type="button"
-        title="Rename chat"
-        aria-label="Rename chat"
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
-      >
-        <Icon name="ph:pencil-simple" width={11} aria-hidden />
-      </button>
-    </span>
+    <button
+      type="button"
+      className={buttonClassName}
+      title={`${display} — click to rename`}
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+    >
+      {display}
+    </button>
   );
 }
 
@@ -876,8 +968,10 @@ function metaLineSegments(args: {
     // itself so the ticking elapsed can live in an aria-hidden span — keeping
     // the per-second rewrite out of the role="status" live region.
   } else {
-    if (args.harness) segs.push(args.harness);
+    // Lead with the model (ChatGPT idiom) — the harness name is redundant with
+    // it, so it only appears as a fallback when no model id is resolved.
     if (args.model) segs.push(args.model);
+    else if (args.harness) segs.push(args.harness);
     if (runtime) segs.push({ dir: runtime });
     const dur = fmtDuration(args.durationMs);
     if (dur) segs.push(dur);
@@ -2900,57 +2994,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             ) : null}
             {sessionId && (
-              <>
-                <InlineProjectField
-                  projectId={projectIdDraft}
-                  onProjectChange={setProjectIdDraft}
-                  projects={projects}
-                />
-                <VoiceCallButton
-                  familiar={familiar}
-                  callActive={voiceCallOpen}
-                  onOpen={() => setVoiceCallOpen(true)}
-                />
-                <button
-                  type="button"
-                  className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
-                  title="Debug session"
-                  aria-label="Debug session"
-                  onClick={openDebug}
-                >
-                  <Icon name="ph:bug-bold" width={12} aria-hidden />
-                </button>
-                {confirmDelete ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[10px]">
-                    <button
-                      type="button"
-                      className="focus-ring rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
-                      onClick={() => setConfirmDelete(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Confirm delete chat"
-                      className="focus-ring rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] px-1.5 py-0.5 text-[var(--color-danger)] transition-colors disabled:opacity-40"
-                      onClick={() => void deleteChat()}
-                      disabled={deleting}
-                    >
-                      {deleting ? "Deleting…" : "Delete"}
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="focus-ring inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition-colors hover:text-[var(--color-danger)]"
-                    title="Delete chat"
-                    aria-label="Delete chat"
-                    onClick={() => setConfirmDelete(true)}
-                  >
-                    <Icon name="ph:trash" width={12} aria-hidden />
-                  </button>
-                )}
-              </>
+              <SessionOverflowMenu
+                projects={projects}
+                projectId={projectIdDraft}
+                onProjectChange={setProjectIdDraft}
+                familiar={familiar}
+                voiceActive={voiceCallOpen}
+                onOpenVoice={() => setVoiceCallOpen(true)}
+                onOpenDebug={openDebug}
+                onDelete={() => void deleteChat()}
+                deleting={deleting}
+                confirmDelete={confirmDelete}
+                onConfirmDeleteChange={setConfirmDelete}
+              />
             )}
           </div>
         </MetaLine>

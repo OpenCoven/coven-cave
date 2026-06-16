@@ -423,8 +423,13 @@
 }
 .hc-dest-pill:focus-visible,
 .hc-send-btn:focus-visible,
-.hc-suggestion:focus-visible,
-.hc-familiar-select:focus-visible {
+.hc-suggestion:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+/* The familiar selector is a pill (glyph + borderless native <select>). Ring the
+   whole pill when the select is focused, not just the inner rectangular control. */
+.hc-familiar-selector:focus-within {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
 }

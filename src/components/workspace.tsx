@@ -803,6 +803,22 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  // Bridge `cave:agents-new-chat` from surfaces that aren't the chat view.
+  // ChatSurface owns this event, but it only mounts when mode === "chat", so a
+  // dispatch from the Familiar Studio drawer (e.g. the Contract tab's
+  // rehabilitation button) or other non-chat surfaces would otherwise be lost.
+  // When already in chat, ChatSurface handles it directly — skip here to avoid
+  // opening the new chat twice.
+  useEffect(() => {
+    const onAgentsNewChat = (e: Event) => {
+      if (modeRef.current === "chat") return;
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null }>).detail;
+      startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null);
+    };
+    window.addEventListener("cave:agents-new-chat", onAgentsNewChat);
+    return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+  }, [startFamiliarChat]);
+
   useEffect(() => {
     const SURFACE_ORDER: WorkspaceMode[] = [
       "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",
@@ -1254,7 +1270,6 @@ export function Workspace() {
         startFamiliarChat(activeId);
         shellRef.current?.dismissNavMobile();
       }}
-      onToggleSidebar={() => shellRef.current?.toggleNav()}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();
         nextRouter.push("/settings");
@@ -1523,21 +1538,6 @@ export function Workspace() {
             }
           />
         )}
-        familiarPanelRail={showCompanionRail ? (
-          <aside className="familiar-trigger-rail familiar-trigger-rail--stacked" aria-label="Right panel tabs">
-            <button
-              type="button"
-              className="familiar-trigger-rail__toggle"
-              aria-label={railTab === "browser" ? "Toggle Browser" : "Toggle Salem"}
-              title={railTab === "browser" ? "Toggle Browser (⌘⇧B)" : "Toggle Salem (⌘⇧B)"}
-              onClick={() => openCompanionTab(railTab === "browser" ? "browser" : "salem")}
-            >
-              <span className="edge-rail-chip">
-                <Icon name="ph:cat" width={14} />
-              </span>
-            </button>
-          </aside>
-        ) : undefined}
         nav={sidebar}
         list={list}
         detail={detail}

@@ -58,17 +58,13 @@ assert.doesNotMatch(route, /🐱|😅/, "Salem API replies must stay emoji-free 
 assert.match(widget, /preload/, "widget must load Salem preload metadata");
 assert.doesNotMatch(widget, /salem-panel__preload/, "preload count pills stay removed from the Salem header");
 
-// 6. Workspace exposes Salem via a right-edge familiarPanelRail toggle that mirrors
-//    the left-edge sidebar-trigger-rail. The standalone perch in layout.tsx
-//    has been retired in favour of the rail-based affordance.
+// 6. Workspace exposes Salem via the shared companion tab opener, which expands
+//    the right panel. The right edge-rail toggle was retired in favour of the
+//    shell's floating top-right panel toggle.
 const workspace = await readFile(path.join(root, "src/components/workspace.tsx"), "utf8");
-const shell = await readFile(path.join(root, "src/components/shell.tsx"), "utf8");
 const companionRail = await readFile(path.join(root, "src/components/companion-rail.tsx"), "utf8");
-assert.match(shell, /familiarPanelRail\?:\s*ReactNode/, "Shell must declare an familiarPanelRail slot mirroring familiarRail");
-assert.match(workspace, /familiarPanelRail=\{/, "workspace must pass an familiarPanelRail to Shell");
-assert.match(workspace, /familiar-trigger-rail--stacked/, "familiarPanelRail must use the stacked right tab opener");
-assert.match(workspace, /const openCompanionTab = useCallback/, "familiarPanelRail tabs must use the shared companion tab opener");
-assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "familiarPanelRail tab opener must expand the right panel");
+assert.match(workspace, /const openCompanionTab = useCallback/, "Salem opens through the shared companion tab opener");
+assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "the companion tab opener expands the right panel");
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
 assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher must expand the right panel");
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");

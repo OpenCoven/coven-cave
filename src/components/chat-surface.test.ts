@@ -20,20 +20,16 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /New/,
-  "ChatSurface should expose the primary chat launch action without a separate composer block",
-);
-
-assert.match(
-  chatSurface,
   /className="chat-scope-tabs chat-scope-tabs--minimal/,
   "ChatSurface should use the compact tab strip treatment on open chat sessions",
 );
 
-assert.match(
+// The redundant "+ New" action was removed from the scope-tab strip — the
+// chat list rail's "New Session" button is the single new-chat launch point.
+assert.doesNotMatch(
   chatSurface,
   /className="chat-scope-tabs__new/,
-  "ChatSurface new-chat action should use the minimal tab-strip action styling",
+  "ChatSurface should not render a redundant New action in the scope-tab strip",
 );
 
 assert.doesNotMatch(
@@ -218,4 +214,32 @@ assert.match(
   workspace,
   /onOpenInboxItem=\{\(item\) => \{[\s\S]*openFamiliarSession\(item\.sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
   "Workspace should keep notification-bell inbox routing intact for session and non-session items",
+);
+
+// The agents-new-chat bridge forwards an optional initialPrompt so callers
+// (e.g. the Contract tab's rehabilitation button) can seed the first message.
+assert.match(
+  chatSurface,
+  /onNewChat[\s\S]*initialPrompt\?: string \| null/,
+  "ChatSurface new-chat handler should accept an initialPrompt in the event detail",
+);
+assert.match(
+  chatSurface,
+  /newChat\(d\?\.projectRoot \?\? undefined, d\?\.initialPrompt \?\? undefined, d\?\.familiarId\)/,
+  "ChatSurface should forward the seeded initialPrompt into newChat",
+);
+
+// ChatSurface only mounts in chat mode, so the Workspace must bridge
+// cave:agents-new-chat dispatched from non-chat surfaces (e.g. the Contract
+// tab in the Familiar Studio drawer) into the chat surface — and skip when
+// already in chat so the new chat isn't opened twice.
+assert.match(
+  workspace,
+  /addEventListener\("cave:agents-new-chat"[\s\S]*startFamiliarChat\(/,
+  "Workspace bridges cave:agents-new-chat into the chat surface from non-chat modes",
+);
+assert.match(
+  workspace,
+  /onAgentsNewChat[\s\S]*modeRef\.current === "chat"[\s\S]*return/,
+  "Workspace skips the bridge when already in chat (ChatSurface owns it) to avoid double-open",
 );

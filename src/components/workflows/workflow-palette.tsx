@@ -19,8 +19,7 @@ const PALETTE: Array<{ kind: WorkflowStepKind; label: string; icon: IconName; to
 /** Node palette: one click appends a step of the given CWF-01 kind. */
 export function WorkflowPalette({ workflow, onAddStep }: WorkflowPaletteProps) {
   return (
-    <div className="workflow-palette" role="toolbar" aria-label="Step palette">
-      <span className="workflow-palette-label">Add step</span>
+    <div className="workflow-palette" role="toolbar" aria-label="Add step">
       {PALETTE.map((entry) => (
         <button
           key={entry.kind}

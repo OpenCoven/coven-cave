@@ -127,11 +127,6 @@ function ShellInner({
   onFamiliarOpenChange,
   panelShortcutOverrides,
 }: {
-  /** @deprecated Side-panel toggles are now the floating corner controls
-   *  rendered by the shell itself; these edge-rail slots are no longer used.
-   *  Kept optional so existing call sites type-check during migration. */
-  familiarRail?: ReactNode;
-  familiarPanelRail?: ReactNode;
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
@@ -384,17 +379,11 @@ function ShellInner({
         togglePanel(bottomRef.current);
       }
     };
-    // In-panel collapse trigger inside CompanionRail dispatches this so the
-    // right panel can be hidden from its own header (mirror of the left rail),
-    // reusing the same collapse path as the ⌘⇧B shortcut.
-    const familiarPanelToggle = () => toggleFamiliarPanel();
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
-    window.addEventListener("cave:familiar-panel-toggle", familiarPanelToggle);
     return () => {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
-      window.removeEventListener("cave:familiar-panel-toggle", familiarPanelToggle);
     };
   }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
 
@@ -532,16 +521,31 @@ function ShellInner({
         <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
       </button>
       {hasFamiliar ? (
-        <button
-          type="button"
-          className={`shell-panel-float shell-panel-float--right focus-ring${familiarOpen ? " shell-panel-float--active" : ""}`}
-          aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
-          aria-expanded={familiarOpen}
-          title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
-          onClick={toggleRightPanel}
-        >
-          <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
-        </button>
+        <>
+          {/* Expand-to-cover toggle, pinned just left of the side-panel trigger.
+              CSS keeps it hidden until a chat right panel is actually open
+              (:root[data-right-panel-open]) and re-hides it while expanded. It
+              reaches the chat surface's expand state via a window event. */}
+          <button
+            type="button"
+            className="shell-panel-float shell-panel-float--expand focus-ring"
+            aria-label="Expand side panel"
+            title="Expand side panel"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:right-panel-expand"))}
+          >
+            <Icon name="ph:arrows-out-simple" width={14} />
+          </button>
+          <button
+            type="button"
+            className={`shell-panel-float shell-panel-float--right focus-ring${familiarOpen ? " shell-panel-float--active" : ""}`}
+            aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
+            aria-expanded={familiarOpen}
+            title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
+            onClick={toggleRightPanel}
+          >
+            <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+          </button>
+        </>
       ) : null}
     </>
   ) : null;

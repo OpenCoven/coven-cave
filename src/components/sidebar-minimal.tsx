@@ -47,9 +47,6 @@ export type SidebarMinimalProps = {
   onNewChat: () => void;
   onOpenSettings: () => void;
   onModeChange: (mode: string) => void;
-  /* Collapse the sidebar. When provided, a Dia-style toggle button renders at
-   * the top of the panel; the left-edge rail reopens it once collapsed. */
-  onToggleSidebar?: () => void;
   onOpenSession: (id: string) => void;
   addons?: AddonsConfig;
   /* Notifications — when omitted, the bell is hidden. */
@@ -188,13 +185,16 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onNewChat,
     onOpenSettings,
     onModeChange,
-    onToggleSidebar,
     addons,
     familiars,
     activeFamiliarId,
     onFamiliarScopeChange,
     responseNeeded,
+    notificationBadgeCount,
+    onOpenInbox,
   } = props;
+
+  const unreadCount = notificationBadgeCount ?? 0;
 
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
@@ -214,23 +214,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   return (
     <nav className="sidebar-minimal">
-      {/* Dia-style panel toggle pinned to the top of the sidebar. Collapsing
-          hands off to the left-edge rail, which reopens the panel. */}
-      {onToggleSidebar ? (
-        <button
-          type="button"
-          className="sidebar-header"
-          onClick={onToggleSidebar}
-          aria-label="Hide sidebar (⌘B)"
-          title="Hide sidebar (⌘B)"
-          aria-expanded
-        >
-          <span className="sidebar-title">Coven Cave</span>
-          <span className="sidebar-toggle" aria-hidden>
-            <Icon name="ph:sidebar-simple-fill" width={16} />
-          </span>
-        </button>
-      ) : null}
+      {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
+          floating top-left toggle (and ⌘B), so the header is no longer a
+          button — it just leaves room for the float. */}
+      <div className="sidebar-header sidebar-header--static">
+        <span className="sidebar-title">Coven Cave</span>
+      </div>
 
       {/* Header actions: familiar profile switcher + New session. The same switcher
           also renders in the mobile top bar; on desktop this is its home. */}
@@ -302,8 +291,31 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </SidebarSection>
       </div>
 
-      {/* Bottom: Settings */}
+      {/* Bottom: Notifications + Settings */}
       <div className="sidebar-foot">
+        {onOpenInbox ? (
+          <button
+            type="button"
+            className="sidebar-foot-btn"
+            onClick={onOpenInbox}
+            aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+          >
+            <span className="sidebar-foot-icon-cell" aria-hidden="true">
+              <Icon
+                name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
+                width={14}
+                className="sidebar-foot-icon"
+              />
+            </span>
+            <span className="sidebar-foot-label">Notifications</span>
+            {unreadCount > 0 ? (
+              <span className="sidebar-foot-badge" aria-hidden="true">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         <button
           type="button"
           className="sidebar-foot-btn"

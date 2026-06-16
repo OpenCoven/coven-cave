@@ -73,7 +73,7 @@ export function MemoryReaderPane({
               type="button"
               onClick={onBack}
               aria-label="Back to list"
-              className="focus-ring mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] xl:hidden"
+              className="focus-ring mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] @min-[1024px]/memview:hidden"
             >
               <Icon name="ph:arrow-left" width={13} aria-hidden />
             </button>

@@ -168,6 +168,34 @@ assert.match(
   "Footer rows should align labels from matching icon cells",
 );
 
+// Notifications footer row: a dedicated bell + unread count that opens the
+// inbox, sitting above Settings.
+assert.match(
+  source,
+  /onClick=\{onOpenInbox\}[\s\S]{0,700}sidebar-foot-label">Notifications/,
+  "footer renders a Notifications row wired to onOpenInbox",
+);
+assert.match(
+  source,
+  /unreadCount > 0 \? "ph:bell-fill" : "ph:bell"/,
+  "the notifications icon fills when there are unread items",
+);
+assert.match(
+  source,
+  /sidebar-foot-badge[\s\S]{0,80}unreadCount > 99 \? "99\+" : unreadCount/,
+  "the notifications row shows the unread count badge (capped at 99+)",
+);
+assert.match(
+  source,
+  /aria-label=\{unreadCount > 0 \? `Notifications, \$\{unreadCount\} unread` : "Notifications"\}/,
+  "the notifications row exposes the unread count to assistive tech",
+);
+assert.match(
+  styles,
+  /\.sidebar-foot-badge \{[^}]*background: var\(--color-danger\)/,
+  "the unread count badge uses the danger treatment",
+);
+
 // Tools-group entries include browser, terminal, roles, workflows, and capabilities.
 assert.match(
   source,
@@ -201,27 +229,23 @@ assert.match(
 // + button, so the New Chat ActionRow is the sole new-chat affordance now —
 // no wrapper, no responsive hide.
 
-// Dia-style panel toggle: when onToggleSidebar is provided, the whole header
-// row is the collapse button (the left-edge rail handles reopening).
+// The sidebar header is a static wordmark — collapsing the panel is owned by
+// the shell's floating top-left toggle (and ⌘B), so the header is no longer a
+// button and the in-panel collapse toggle is gone.
 assert.match(
   source,
-  /onToggleSidebar\?: \(\) => void;/,
-  "SidebarMinimal accepts an onToggleSidebar collapse handler",
+  /className="sidebar-header sidebar-header--static"/,
+  "the sidebar header is a static wordmark, not a collapse button",
 );
 assert.match(
   source,
-  /className="sidebar-header"[\s\S]{0,160}onClick=\{onToggleSidebar\}/,
-  "the full header row is wired to onToggleSidebar",
+  /<span className="sidebar-title">Coven Cave<\/span>/,
+  "the static header keeps the Coven Cave wordmark",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /className="sidebar-toggle"[\s\S]{0,200}ph:sidebar-simple/,
-  "the sidebar toggle uses the panel (sidebar-simple) icon",
-);
-assert.match(
-  styles,
-  /\.sidebar-toggle \{/,
-  "the sidebar toggle button has dedicated styling",
+  /onToggleSidebar/,
+  "the in-panel sidebar collapse toggle is removed",
 );
 assert.match(
   styles,

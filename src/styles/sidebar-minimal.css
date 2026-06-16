@@ -50,6 +50,19 @@
   outline-offset: 1px;
 }
 
+/* Static wordmark variant — the header is no longer a collapse button (the
+   shell's floating top-left toggle owns that now), so drop the pressable
+   affordances. Left clearance for the float lives in globals.css, scoped to
+   the desktop shell (.shell-body--floats). */
+.sidebar-header--static {
+  cursor: default;
+}
+
+.sidebar-header--static:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
 .sidebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -304,6 +317,24 @@
   font-size: 13px;
   min-width: 0;
   color: inherit;
+}
+
+/* Unread notification count pill, right-aligned in the Notifications footer
+   row (mirrors the bell badge's danger treatment). */
+.sidebar-foot-badge {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* NotificationBell renders an absolutely-positioned popover anchored at the

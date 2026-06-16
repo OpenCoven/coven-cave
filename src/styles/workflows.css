@@ -956,16 +956,6 @@
   overflow-x: auto;
 }
 
-.workflow-palette-label {
-  flex-shrink: 0;
-  white-space: nowrap;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted-foreground);
-  margin-right: 4px;
-}
-
 .workflow-palette-item {
   display: inline-flex;
   align-items: center;
