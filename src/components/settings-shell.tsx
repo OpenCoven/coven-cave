@@ -1043,10 +1043,14 @@ function AboutSection() {
         <OpenCovenToolsUpdate />
       </SettingsGroup>
       <SettingsGroup label="Links">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 px-4 py-3">
           {[
-            { label: "GitHub", href: "https://github.com/OpenCoven/coven-cave" },
-            { label: "Docs",   href: "https://docs.openclaw.ai" },
+            { label: "GitHub",   href: "https://github.com/OpenCoven/coven-cave", icon: "ph:github-logo" as const },
+            { label: "Docs",     href: "https://docs.openclaw.ai",                icon: "ph:file-text" as const },
+            { label: "X",        href: "https://x.com/OpenCvn",                   icon: "ph:x-logo-bold" as const },
+            { label: "Discord",  href: "https://discord.gg/opencoven",            icon: "ph:discord-logo" as const },
+            { label: "Grimoire", href: "https://mind.opencoven.ai",               icon: "ph:book-open" as const },
+            { label: "Podcast",  href: "https://pod.opencoven.ai",                icon: "ph:waveform-bold" as const },
           ].map((l) => (
             <a
               key={l.href}
@@ -1055,7 +1059,7 @@ function AboutSection() {
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
             >
-              <Icon name="ph:arrow-square-out" width={12} />
+              <Icon name={l.icon} width={12} />
               {l.label}
             </a>
           ))}
