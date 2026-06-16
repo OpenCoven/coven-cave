@@ -47,7 +47,7 @@ import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
-import type { InboxItem } from "@/lib/cave-inbox";
+import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
@@ -188,6 +188,7 @@ export function Workspace() {
     title: string;
     whenText: string;
   }>({ fireAt: "", title: "", whenText: "" });
+  const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
@@ -762,6 +763,19 @@ export function Workspace() {
     });
     setMode("chat");
   }, []);
+
+  const openReminderLink = useCallback((link: LinkRef) => {
+    if (link.kind === "url") {
+      if (!link.ref) return;
+      setMode("browser");
+      requestAnimationFrame(() => browserPaneRef.current?.navigateTo(link.ref));
+    } else if (link.kind === "card") {
+      setMode("board");
+      window.location.hash = `card-${link.ref}`;
+    } else if (link.kind === "session") {
+      openFamiliarSession(link.ref);
+    }
+  }, [openFamiliarSession]);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
     const sessionId =
@@ -1394,6 +1408,11 @@ export function Workspace() {
         onOpenSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);
         }}
+        onEditReminder={(item) => {
+          setEditingReminder(item);
+          setReminderModalOpen(true);
+        }}
+        onOpenLink={openReminderLink}
       />
     ) : mode === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
@@ -1585,12 +1604,39 @@ export function Workspace() {
 
       <NewReminderModal
         open={reminderModalOpen}
-        onClose={() => setReminderModalOpen(false)}
+        onClose={() => {
+          setReminderModalOpen(false);
+          setEditingReminder(null);
+        }}
         familiars={familiars}
         defaultFamiliarId={activeId}
         defaultFireAt={reminderModalDefaults.fireAt}
         defaultWhenText={reminderModalDefaults.whenText}
         defaultTitle={reminderModalDefaults.title}
+        editing={
+          editingReminder
+            ? {
+                id: editingReminder.id,
+                title: editingReminder.title,
+                fireAt: editingReminder.fireAt ?? new Date().toISOString(),
+                recurrence: editingReminder.recurrence,
+                link: editingReminder.link ?? null,
+              }
+            : undefined
+        }
+        onUpdate={async (id, draft) => {
+          await fetch(`/api/inbox/${id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: draft.title,
+              fireAt: draft.fireAt,
+              recurrence: draft.recurrence ?? { type: "none" },
+              link: draft.link ?? null,
+            }),
+          });
+          // SSE `updated` event refreshes the row; mirror the create path.
+        }}
         onCreate={async (draft) => {
           await fetch("/api/inbox", {
             method: "POST",
@@ -1602,6 +1648,7 @@ export function Workspace() {
               fireAt: draft.fireAt,
               familiarId: draft.familiarId,
               recurrence: draft.recurrence ?? { type: "none" },
+              link: draft.link ?? null,
               source: "user",
             }),
           });

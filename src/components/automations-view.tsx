@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
-import type { InboxItem } from "@/lib/cave-inbox";
+import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
 import type {
   AutomationStatus,
@@ -23,7 +23,16 @@ type Props = {
   familiars: Familiar[];
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   onNewReminder?: () => void;
+  onEdit?: (item: InboxItem) => void;
+  onOpenLink?: (link: LinkRef) => void;
 };
+
+function linkLabel(link: LinkRef): string {
+  if (link.kind === "url") return link.ref;
+  if (link.kind === "card") return "Card";
+  if (link.kind === "session") return "Session";
+  return "Memory";
+}
 
 type ScheduleTab = "reminders" | "automations";
 
@@ -232,6 +241,8 @@ function DetailPanel({
   togglePaused,
   stopRecurrence,
   removeItem,
+  onEdit,
+  onOpenLink,
 }: {
   item: InboxItem;
   familiarLabel: (fid?: string | null) => string | null;
@@ -241,6 +252,8 @@ function DetailPanel({
   togglePaused: (item: InboxItem) => void;
   stopRecurrence: (id: string) => void;
   removeItem: (id: string) => void;
+  onEdit?: (item: InboxItem) => void;
+  onOpenLink?: (link: LinkRef) => void;
 }) {
   const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
   const isRecurring = item.recurrence && item.recurrence.type !== "none";
@@ -319,11 +332,35 @@ function DetailPanel({
             </span>
           </div>
         )}
+
+        {item.link && (
+          <div>
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
+              style={{ color: "var(--text-muted)" }}>Link</p>
+            <button
+              type="button"
+              onClick={() => item.link && onOpenLink?.(item.link)}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
+              style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
+            >
+              <Icon name="ph:link" width={12} className="shrink-0" />
+              <span className="truncate">{linkLabel(item.link)}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="border-t px-5 py-4 space-y-2"
         style={{ borderColor: "var(--border-hairline)" }}>
+        {onEdit && (
+          <button type="button" disabled={busy} onClick={() => onEdit(item)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
+            <Icon name="ph:pencil-simple" width={13} />
+            Edit
+          </button>
+        )}
         <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
           className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
           style={{ background: "var(--accent-presence)" }}>
@@ -888,7 +925,7 @@ function AutomationsPanel({
 }
 
 // ── Root ──────────────────────────────────────────────────────────────────────
-export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Props) {
+export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink }: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1219,6 +1256,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
               togglePaused={togglePaused}
               stopRecurrence={stopRecurrence}
               removeItem={removeItem}
+              onEdit={onEdit}
+              onOpenLink={onOpenLink}
             />
           )}
           {selectedCodex && (

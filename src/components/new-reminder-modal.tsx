@@ -8,6 +8,8 @@ import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
 import { Icon } from "@/lib/icon";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { ReminderLinkField } from "@/components/reminder-link-field";
+import type { LinkRef } from "@/lib/cave-inbox";
 
 export type NewReminderDraft = {
   title: string;
@@ -15,6 +17,7 @@ export type NewReminderDraft = {
   fireAt: string;
   familiarId: string | null;
   recurrence?: Recurrence;
+  link?: LinkRef | null;
 };
 
 type RecurPreset =
@@ -55,6 +58,15 @@ function recurrenceFor(
   return { type: "weekly", days: [0, 6], hour, minute };
 }
 
+export type ReminderEdit = {
+  id: string;
+  title: string;
+  whenText?: string;
+  fireAt: string;
+  recurrence?: Recurrence;
+  link?: LinkRef | null;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -64,7 +76,31 @@ type Props = {
   defaultWhenText?: string;
   defaultTitle?: string;
   onCreate: (draft: NewReminderDraft) => Promise<void> | void;
+  editing?: ReminderEdit;
+  onUpdate?: (id: string, draft: NewReminderDraft) => Promise<void> | void;
 };
+
+// Mirror of the parsed-recurrence → preset effect, used to map an existing
+// reminder's stored recurrence back onto the picker when editing.
+function presetForRecurrence(rec: Recurrence | undefined): {
+  preset: RecurPreset;
+  cronExpr?: string;
+} {
+  if (!rec || rec.type === "none") return { preset: "none" };
+  if (rec.type === "interval" && rec.everyMs === 30 * 60_000)
+    return { preset: "every-30m" };
+  if (rec.type === "interval" && rec.everyMs === 60 * 60_000)
+    return { preset: "every-1h" };
+  if (rec.type === "daily") return { preset: "every-day" };
+  if (rec.type === "weekly") {
+    const days = rec.days.slice().sort().join(",");
+    if (days === "1,2,3,4,5") return { preset: "every-weekday" };
+    if (days === "0,6") return { preset: "every-weekend" };
+    return { preset: "none" };
+  }
+  if (rec.type === "cron") return { preset: "cron", cronExpr: rec.expr };
+  return { preset: "none" };
+}
 
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
@@ -83,6 +119,8 @@ export function NewReminderModal({
   defaultWhenText = "",
   defaultTitle = "",
   onCreate,
+  editing,
+  onUpdate,
 }: Props) {
   const [title, setTitle] = useState(defaultTitle);
   const [whenText, setWhenText] = useState(defaultWhenText);
@@ -90,20 +128,36 @@ export function NewReminderModal({
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [recurPreset, setRecurPreset] = useState<RecurPreset>("none");
   const [cronExpr, setCronExpr] = useState<string>("*/15 * * * *");
+  const [link, setLink] = useState<LinkRef | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
+  const isEditing = !!editing;
 
   useEffect(() => {
     if (!open) return;
+    if (editing) {
+      // Edit mode: prefill from the existing reminder.
+      setTitle(editing.title);
+      setWhenText(editing.whenText ?? "");
+      setManualFireAt(editing.whenText ? "" : toLocalInput(editing.fireAt));
+      setFamiliarId(defaultFamiliarId);
+      const { preset, cronExpr: cron } = presetForRecurrence(editing.recurrence);
+      setRecurPreset(preset);
+      setCronExpr(cron ?? "*/15 * * * *");
+      setLink(editing.link ?? null);
+      setError(null);
+      return;
+    }
     setTitle(defaultTitle);
     setWhenText(defaultWhenText);
     setManualFireAt(defaultFireAt ? toLocalInput(defaultFireAt) : "");
     setFamiliarId(defaultFamiliarId);
     setRecurPreset("none");
     setCronExpr("*/15 * * * *");
+    setLink(null);
     setError(null);
-  }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle]);
+  }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle, editing]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,6 +177,7 @@ export function NewReminderModal({
   // If the natural-language phrase implies a recurrence, reflect it in the
   // picker — user sees what was inferred and can override.
   useEffect(() => {
+    if (isEditing) return;
     if (!parsed) return;
     const r = parsed.recurrence;
     if (r.type === "none") {
@@ -141,7 +196,7 @@ export function NewReminderModal({
       setRecurPreset("cron");
       setCronExpr(r.expr);
     }
-  }, [parsed]);
+  }, [parsed, isEditing]);
 
   const cronFields = useMemo(() => {
     if (recurPreset !== "cron") return null;
@@ -178,12 +233,18 @@ export function NewReminderModal({
     setBusy(true);
     setError(null);
     try {
-      await onCreate({
+      const draft: NewReminderDraft = {
         title: title.trim(),
         fireAt: resolvedFireAt,
         familiarId,
         recurrence: recurrenceFor(recurPreset, resolvedFireAt, cronExpr),
-      });
+        link,
+      };
+      if (editing && onUpdate) {
+        await onUpdate(editing.id, draft);
+      } else {
+        await onCreate(draft);
+      }
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "create failed");
@@ -213,7 +274,9 @@ export function NewReminderModal({
       >
         <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">New reminder</h2>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+              {isEditing ? "Edit reminder" : "New reminder"}
+            </h2>
             <p className="text-[12px] text-[var(--text-muted)]">
               Type a natural phrase like “in 30m” or pick a date.
             </p>
@@ -326,6 +389,10 @@ export function NewReminderModal({
           </Field>
         ) : null}
 
+        <Field label="Link (optional)">
+          <ReminderLinkField value={link} onChange={setLink} />
+        </Field>
+
         {error ? (
           <div className="mb-3 rounded border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-3 py-1.5 text-xs text-[var(--color-warning)]">
             {error}
@@ -338,7 +405,15 @@ export function NewReminderModal({
             disabled={!title.trim() || !resolvedFireAt || busy}
             className="rounded-md bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[var(--color-danger)] disabled:opacity-50"
           >
-            {busy ? "Creating…" : previewLabel ? `Remind ${previewLabel}` : "Create"}
+            {isEditing
+              ? busy
+                ? "Saving…"
+                : "Save"
+              : busy
+              ? "Creating…"
+              : previewLabel
+              ? `Remind ${previewLabel}`
+              : "Create"}
           </button>
           <button
             onClick={onClose}

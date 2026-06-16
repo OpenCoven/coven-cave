@@ -60,3 +60,40 @@ assert.doesNotMatch(
   /className="w-full resize-y rounded-md border px-2 py-2/,
   "Automation detail textareas should not use one-off control classes",
 );
+
+// ── Reminder detail panel: edit + link affordances ───────────────────────────
+assert.match(
+  source,
+  /onEdit\?: \(item: InboxItem\) => void;/,
+  "Reminder detail panel should accept an onEdit handler",
+);
+assert.match(
+  source,
+  /onOpenLink\?: \(link: LinkRef\) => void;/,
+  "Reminder detail panel should accept an onOpenLink handler",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => onEdit\(item\)\}/,
+  "Reminder detail panel should render an Edit button wired to onEdit",
+);
+assert.match(
+  source,
+  /<Icon name="ph:pencil-simple"/,
+  "Edit button should use a pencil icon",
+);
+assert.match(
+  source,
+  /\{item\.link && \(/,
+  "Reminder detail panel should render a link chip when item.link is set",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => item\.link && onOpenLink\?\.\(item\.link\)\}/,
+  "Link chip should call onOpenLink with the item's link",
+);
+assert.match(
+  source,
+  /function linkLabel/,
+  "Should derive a sensible label per link kind",
+);
