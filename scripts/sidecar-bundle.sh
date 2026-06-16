@@ -47,6 +47,96 @@ fix_node_pty_spawn_helpers() {
   fi
 }
 
+prune_foreign_native_packages() {
+  local base="$1"
+  if [ ! -d "$base" ]; then
+    return 0
+  fi
+
+  local platform arch libc target next_pkg sharp_pkg sharp_vips_pkg node_pty_prebuild
+  platform="$(node -p "process.platform")"
+  arch="$(node -p "process.arch")"
+  libc=""
+  if [ "$platform" = "linux" ]; then
+    libc="$(node -p "process.report?.getReport?.().header?.glibcVersionRuntime ? 'gnu' : 'musl'")"
+  fi
+
+  case "$platform" in
+    darwin)
+      target="darwin-$arch"
+      next_pkg="@next/swc-$target"
+      sharp_pkg="@img/sharp-$target"
+      sharp_vips_pkg="@img/sharp-libvips-$target"
+      node_pty_prebuild="$target"
+      ;;
+    linux)
+      target="linux-$arch"
+      next_pkg="@next/swc-$target-$libc"
+      sharp_pkg="@img/sharp-$target"
+      sharp_vips_pkg="@img/sharp-libvips-$target"
+      if [ "$libc" = "musl" ]; then
+        sharp_pkg="@img/sharp-linuxmusl-$arch"
+        sharp_vips_pkg="@img/sharp-libvips-linuxmusl-$arch"
+      fi
+      node_pty_prebuild="$target"
+      ;;
+    win32)
+      target="win32-$arch"
+      next_pkg="@next/swc-$target-msvc"
+      sharp_pkg="@img/sharp-$target"
+      sharp_vips_pkg=""
+      node_pty_prebuild="$target"
+      ;;
+    *)
+      echo "==> sidecar native prune: unsupported platform $platform/$arch; leaving native packages intact"
+      return 0
+      ;;
+  esac
+
+  echo "==> pruning sidecar native packages for $platform/$arch${libc:+/$libc}"
+
+  local dir pkg
+  for dir in "$base"/@next/swc-*; do
+    [ -e "$dir" ] || continue
+    pkg="@next/$(basename "$dir")"
+    if [ "$pkg" != "$next_pkg" ]; then
+      rm -rf "$dir"
+    fi
+  done
+
+  for dir in "$base"/@img/sharp-*; do
+    [ -e "$dir" ] || continue
+    pkg="@img/$(basename "$dir")"
+    if [ "$pkg" != "$sharp_pkg" ] && [ "$pkg" != "$sharp_vips_pkg" ]; then
+      rm -rf "$dir"
+    fi
+  done
+
+  if [ "$platform" != "darwin" ]; then
+    rm -rf "$base/fsevents"
+  fi
+
+  if [ -d "$base/node-pty/prebuilds" ]; then
+    for dir in "$base"/node-pty/prebuilds/*; do
+      [ -e "$dir" ] || continue
+      if [ "$(basename "$dir")" != "$node_pty_prebuild" ]; then
+        rm -rf "$dir"
+      fi
+    done
+  fi
+
+  if [ "$platform" != "win32" ]; then
+    rm -rf "$base/node-pty/third_party/conpty"
+  elif [ -d "$base/node-pty/third_party/conpty" ]; then
+    for dir in "$base"/node-pty/third_party/conpty/*/win10-*; do
+      [ -e "$dir" ] || continue
+      if [ "$(basename "$dir")" != "win10-$arch" ]; then
+        rm -rf "$dir"
+      fi
+    done
+  fi
+}
+
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
 
@@ -88,6 +178,7 @@ fi
   cd "$PNPM_STAGE" && pnpm install --prod --frozen-lockfile \
     --config.node-linker=hoisted --ignore-scripts
 ) >&2
+prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 
 echo "==> copying standalone tree → $DEST"

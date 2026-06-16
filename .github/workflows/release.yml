@@ -82,7 +82,7 @@ jobs:
             arch_suffix: aarch64
           - platform: ubuntu-22.04
             label: Linux (AppImage)
-            args: '--bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
+            args: '-vv --bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
             arch_suffix: ""
           - platform: windows-latest
             label: Windows (MSI)
