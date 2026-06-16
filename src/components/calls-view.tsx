@@ -19,25 +19,7 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import { CovenFloor } from "@/components/coven-floor";
 import { TraceGraphFallback } from "@/components/trace-graph-fallback";
-import { WebGLErrorBoundary } from "@/components/webgl-error-boundary";
-import { useIsMobile } from "@/lib/use-viewport";
-import dynamic from "next/dynamic";
 import { Icon } from "@/lib/icon";
-
-// Dynamic-import the Three.js trace graph so the calls route doesn't
-// drag Three (~600KB raw / ~150KB gz) into its initial bundle when the
-// user lands on the Floor tab. SSR is off — WebGL needs a real canvas.
-const TraceGraph3D = dynamic(
-  () => import("@/components/trace-graph-3d").then((m) => m.TraceGraph3D),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full min-h-[320px] items-center justify-center text-[11px] text-[var(--text-muted)]">
-        Loading 3D delegation graph…
-      </div>
-    ),
-  },
-);
 
 export type CallsViewTab = "floor" | "delegations";
 type TimeWindow = "24h" | "7d" | "all";
@@ -57,7 +39,6 @@ type Props = {
 
 type CallsResponse = { ok: true; calls: CovenCall[] } | { ok: false; error?: string };
 type BoardResponse = { ok: true; cards: Card[] } | { ok: false; error?: string };
-type CovenMemoryResponse = { ok: boolean; entries?: Array<{ familiar_id: string }> };
 type CallsMetrics = {
   explicit: number;
   inferred: number;
@@ -143,10 +124,6 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<Selection>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
-  const [memoryCounts, setMemoryCounts] = useState<Map<string, number>>(new Map());
-  // Below the shell breakpoint a pan/zoom WebGL graph is impractical (and Three
-  // is heavy), so we render the 2D delegation list instead of the 3D scene.
-  const isMobile = useIsMobile();
 
   const load = useCallback(async () => {
     try {
@@ -165,22 +142,6 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
       if (boardJson.ok) setCards(boardJson.cards ?? []);
       setError(boardJson.ok ? null : boardJson.error ?? "task context load failed");
       setLastLoadedAt(new Date().toISOString());
-
-      try {
-        const memRes = await fetch("/api/coven-memory", { cache: "no-store" });
-        const memJson = (await memRes.json()) as CovenMemoryResponse;
-        if (memJson.ok && memJson.entries) {
-          const counts = new Map<string, number>();
-          for (const entry of memJson.entries) {
-            counts.set(entry.familiar_id, (counts.get(entry.familiar_id) ?? 0) + 1);
-          }
-          setMemoryCounts(counts);
-        } else {
-          setMemoryCounts(new Map());
-        }
-      } catch {
-        setMemoryCounts(new Map());
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "fetch failed");
     }
@@ -300,38 +261,13 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
 
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden px-5 py-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="flex min-w-0 flex-col gap-3 overflow-hidden">
-              {isMobile ? (
-                <TraceGraphFallback
-                  graph={graph}
-                  familiars={famById}
-                  selection={selection}
-                  onSelect={setSelection}
-                  edgeKey={edgeKey}
-                  reason="mobile"
-                />
-              ) : (
-                <WebGLErrorBoundary
-                  resetKey={graph}
-                  fallback={
-                    <TraceGraphFallback
-                      graph={graph}
-                      familiars={famById}
-                      selection={selection}
-                      onSelect={setSelection}
-                      edgeKey={edgeKey}
-                      reason="webgl"
-                    />
-                  }
-                >
-                  <TraceGraph3D
-                    graph={graph}
-                    familiars={famById}
-                    selection={selection}
-                    onSelect={setSelection}
-                    memoryCounts={memoryCounts}
-                  />
-                </WebGLErrorBoundary>
-              )}
+              <TraceGraphFallback
+                graph={graph}
+                familiars={famById}
+                selection={selection}
+                onSelect={setSelection}
+                edgeKey={edgeKey}
+              />
               <TraceTimeline traces={graph.traces} familiars={famById} selectedTraceId={selection?.kind === "trace" ? selection.id : null} onSelect={(trace) => setSelection({ kind: "trace", id: trace.id })} />
             </section>
             <TraceInspector

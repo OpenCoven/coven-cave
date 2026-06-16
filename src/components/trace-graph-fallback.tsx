@@ -18,8 +18,9 @@ type Props = {
   onSelect: (selection: Selection) => void;
   /** Mirrors calls-view's local edgeKey so selection round-trips identically. */
   edgeKey: (edge: DelegationGraphEdge) => string;
-  /** Why the 2D list is showing — drives the header copy. */
-  reason: "mobile" | "webgl";
+  /** Optional context for the header copy. Omitted for the default delegation
+   *  view; "webgl" is reserved for environments that can't paint a canvas. */
+  reason?: "mobile" | "webgl";
 };
 
 function familiarName(familiars: Map<string, Familiar>, id: string): string {
@@ -27,11 +28,9 @@ function familiarName(familiars: Map<string, Familiar>, id: string): string {
 }
 
 /**
- * 2D, dependency-free alternative to the Three.js delegation graph. Used on
- * mobile (where a pan/zoom 3D canvas is impractical and Three is heavy) and as
- * the WebGLErrorBoundary fallback when the GPU canvas can't initialize. Renders
- * the same edges the graph would, as a selectable caller → callee list, so no
- * delegation data is lost when the 3D view is unavailable.
+ * The delegation graph view: a 2D, dependency-free, selectable caller → callee
+ * list of the same edges. (Formerly the fallback for a Three.js 3D scene, which
+ * was removed to drop the heavy WebGL dependency.)
  */
 export function TraceGraphFallback({ graph, familiars, selection, onSelect, edgeKey, reason }: Props) {
   const edges = useMemo(

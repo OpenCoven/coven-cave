@@ -7,20 +7,21 @@ import path from "node:path";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(dir, "../../..");
 
-// 1. SalemCat3D exists and uses Three.js
-const cat3d = await readFile(path.join(root, "src/components/salem/salem-cat-3d.tsx"), "utf8");
-assert.match(cat3d, /from "three"/, "salem-cat-3d must import Three.js");
-assert.match(cat3d, /SalemCat3D/, "must export SalemCat3D");
-assert.match(cat3d, /SphereGeometry/, "must build a sphere (head/body)");
-assert.match(cat3d, /ConeGeometry/, "must build cones (ears)");
-assert.match(cat3d, /TubeGeometry/, "must build a tube (tail)");
-assert.match(cat3d, /idle.*happy.*thinking.*listening/s, "must handle all four moods");
-assert.match(cat3d, /color:\s*0x171520/, "black cat material must retain visible contrast on dark Cave chrome");
-assert.match(cat3d, /rimLight.*1\.15/s, "cat must keep a visible purple rim light");
+// 1. Salem's 2D cat avatar (the heavy Three.js scene was removed to drop the
+//    `three` dependency). It must stay a flat, dependency-free avatar that
+//    still reads as a black cat on dark chrome and handles all four moods.
+const cat = await readFile(path.join(root, "src/components/salem/salem-cat.tsx"), "utf8");
+assert.match(cat, /export function SalemCat\b/, "must export the 2D SalemCat");
+assert.doesNotMatch(cat, /from "three"/, "2D cat must NOT import Three.js");
+assert.doesNotMatch(cat, /canvas|WebGL|SphereGeometry/i, "2D cat must not use a WebGL canvas");
+assert.match(cat, /"ph:cat"/, "2D cat must render the Phosphor cat glyph");
+assert.match(cat, /idle[\s\S]*thinking[\s\S]*happy[\s\S]*listening/, "must handle all four moods");
+assert.match(cat, /rim|accent-presence/i, "black cat must keep a colored rim for contrast on dark chrome");
 
 // 2. SalemWidget launches the right panel; SalemChatPanel wires chat + API
 const widget = await readFile(path.join(root, "src/components/salem/salem-widget.tsx"), "utf8");
-assert.match(widget, /SalemCat3D/, "widget must embed SalemCat3D");
+assert.match(widget, /<SalemCat\b/, "widget must embed the 2D SalemCat");
+assert.doesNotMatch(widget, /SalemCat3D|from "three"/, "widget must not reference the removed 3D cat or three");
 assert.match(widget, /SalemChatPanel/, "must export SalemChatPanel for the right rail");
 assert.match(widget, /cave:salem-open/, "launcher must request the shell right panel");
 assert.match(widget, /\/api\/salem/, "widget must call /api/salem");
