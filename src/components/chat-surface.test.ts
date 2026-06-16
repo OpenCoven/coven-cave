@@ -20,20 +20,16 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /New/,
-  "ChatSurface should expose the primary chat launch action without a separate composer block",
-);
-
-assert.match(
-  chatSurface,
   /className="chat-scope-tabs chat-scope-tabs--minimal/,
   "ChatSurface should use the compact tab strip treatment on open chat sessions",
 );
 
-assert.match(
+// The redundant "+ New" action was removed from the scope-tab strip — the
+// chat list rail's "New Session" button is the single new-chat launch point.
+assert.doesNotMatch(
   chatSurface,
   /className="chat-scope-tabs__new/,
-  "ChatSurface new-chat action should use the minimal tab-strip action styling",
+  "ChatSurface should not render a redundant New action in the scope-tab strip",
 );
 
 assert.doesNotMatch(
