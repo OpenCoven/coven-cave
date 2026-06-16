@@ -90,4 +90,23 @@ assert.match(
   "Role activation toggles should be square-enough touch targets on mobile",
 );
 
+// A failed activate/deactivate must surface to the user, not silently revert.
+// The optimistic handler re-raises after rollback, and the toggle control
+// catches it to show a transient failure hint.
+assert.match(
+  source,
+  /catch \(err\)[\s\S]{0,600}throw err;/,
+  "handleRoleToggle re-raises after rolling back so the failure can surface",
+);
+assert.match(
+  source,
+  /catch \{\s*setFailed\(true\);/,
+  "the role toggle control catches a failed save and flags it",
+);
+assert.match(
+  source,
+  /failed && \([\s\S]{0,400}role="status"[\s\S]{0,400}ph:warning-circle/,
+  "a failure hint (status icon) renders when the role toggle save fails",
+);
+
 console.log("plugins-view-polish.test.ts OK");

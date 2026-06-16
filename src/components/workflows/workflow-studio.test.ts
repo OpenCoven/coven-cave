@@ -113,7 +113,7 @@ assert.match(studio, /sidePanelSection === "manifest"[\s\S]{0,300}<WorkflowManif
 assert.match(studio, /aria-label=\{leftPanelOpen \? "Hide workflow library" : "Show workflow library"\}/, "Studio should expose an accessible left-panel toggle");
 assert.match(studio, /aria-label=\{rightPanelOpen \? "Hide workflow details" : "Show workflow details"\}/, "Studio should expose an accessible right-panel toggle");
 assert.match(studio, /workflow-studio-library-panel[\s\S]{0,500}workflow-panel-tab workflow-panel-tab-left[\s\S]{0,700}<WorkflowLibrary/, "Left workflow panel toggle should live at the panel top edge");
-assert.match(studio, /workflow-studio-side[\s\S]{0,700}workflow-side-panel-tabs/, "Right workflow panel should render section tabs at the panel top edge");
+assert.match(studio, /workflow-side-panel-header[\s\S]{0,400}workflow-panel-collapse-button workflow-panel-tab-right[\s\S]{0,720}workflow-side-panel-tabs/, "Right workflow panel header should put the collapse toggle leftmost (mirroring the left panel), then the section tabs");
 assert.match(studio, /workflow-panel-collapse-button workflow-panel-tab-right/, "Right workflow panel collapse should stay separate from section selection");
 assert.match(studio, /leftPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Left workflow panel toggle should use the sidebar tab icon");
 assert.match(studio, /rightPanelOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/, "Right workflow panel toggle should use the sidebar tab icon");

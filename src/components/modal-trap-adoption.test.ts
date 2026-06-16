@@ -9,6 +9,7 @@ const FILES = [
   "library-github-list.tsx",
   "onboarding-overlay.tsx",
   "workflows/workflow-create-dialog.tsx",
+  "github-view.tsx",
 ];
 
 for (const file of FILES) {

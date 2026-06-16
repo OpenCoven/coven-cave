@@ -476,7 +476,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
       {/* Inspector drawer */}
       {selectedCard && (
-        <BoardInspector card={selectedCard} familiars={familiars} sessions={sessions}
+        <BoardInspector card={selectedCard} familiars={familiars} sessions={sessions} projects={projects}
           onClose={() => setSelectedCardId(null)}
           onPatch={patchCard}
           onMoveStatus={moveCardToStatus}
@@ -491,7 +491,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}
-        familiars={familiars} sessions={sessions}
+        familiars={familiars} sessions={sessions} projects={projects}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
 

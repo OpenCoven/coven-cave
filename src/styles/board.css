@@ -375,6 +375,7 @@
 
 .board-drawer-familiar-avatar { position:absolute; left:7px; top:50%; transform:translateY(-50%); display:flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--border-hairline); color:var(--text-primary); font-size:11px; font-weight:600; line-height:1; pointer-events:none; overflow:hidden; }
 .board-drawer-familiar-avatar > * { display:flex; }
+.board-drawer-project-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); display:flex; align-items:center; justify-content:center; pointer-events:none; }
 
 /* Chat card */
 .board-drawer-chat-card { display:flex; align-items:center; gap:8px; width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border-hairline); background:var(--bg-base); text-align:left; cursor:pointer; transition:background .12s,border-color .12s,box-shadow .12s; font:inherit; color:inherit; }
