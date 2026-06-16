@@ -70,21 +70,9 @@ assert.doesNotMatch(
   "the old collapsed-only left edge rail is removed from the shell",
 );
 
-assert.match(
-  css,
-  /\.familiar-trigger-rail--left \{[^}]*border-right: 1px solid var\(--border-hairline\)/,
-  "left rail variant flips the hairline to its right edge",
-);
-assert.match(
-  css,
-  /\.familiar-trigger-rail \{[^}]*width: 26px;[^}]*flex: 0 0 26px;/,
-  "edge trigger rails should be wide enough to read as intentional controls",
-);
-assert.match(
-  css,
-  /\.familiar-trigger-rail::before \{[^}]*width: 1px;[^}]*background: color-mix\(in oklch, var\(--accent\) 52%, transparent\)/,
-  "edge trigger rails should carry a subtle accent guide line",
-);
+// The edge-rail chip survives — the collapsed chat-projects strip still uses it
+// for its reopen tab. The familiar trigger-rail CSS that used to share it was
+// pruned along with the rails themselves.
 assert.match(css, /\.edge-rail-chip \{/, "edge-rail chip class exists");
 assert.match(
   css,
@@ -93,18 +81,13 @@ assert.match(
 );
 assert.match(
   css,
-  /\.familiar-trigger-rail__toggle\[aria-expanded="true"\] > \.edge-rail-chip/,
-  "expanded side-panel triggers should have an active chip treatment",
+  /button:active > \.edge-rail-chip/,
+  "edge-rail chip has a pressed state",
 );
 assert.doesNotMatch(
   css,
-  /\.familiar-trigger-rail__toggle \{[^}]*opacity: 0/,
-  "edge-rail toggles must be visible without hovering",
-);
-assert.match(
-  css,
-  /button:active > \.edge-rail-chip/,
-  "edge-rail chip has a pressed state",
+  /familiar-trigger-rail/,
+  "the dead familiar trigger-rail CSS is pruned",
 );
 
 // The right edge-rail tab toggle was retired — the shell's floating top-right
@@ -113,16 +96,6 @@ assert.doesNotMatch(
   workspace,
   /familiarPanelRail=/,
   "workspace no longer passes a right edge-rail tab toggle to the shell",
-);
-assert.match(
-  css,
-  /\.familiar-trigger-rail--stacked \{[^}]*justify-content: stretch;/,
-  "right edge stacked tabs stretch to fill the rail height",
-);
-assert.match(
-  css,
-  /\.familiar-trigger-rail--stacked \.familiar-trigger-rail__toggle \{[^}]*flex: 1 1 0;/,
-  "stacked rail toggles each fill half the rail (50/50 split)",
 );
 assert.match(
   projectSidebar,
