@@ -138,7 +138,7 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
         importResult ? (
           <button
             onClick={onClose}
-            className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-card)]"
+            className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
           >
             Done
           </button>
@@ -146,14 +146,14 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
           <>
             <button
               onClick={onClose}
-              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-card)] px-3 py-1.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleImport()}
               disabled={importing || targetList === "unknown"}
-              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-card)] disabled:opacity-50"
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
             >
               {importing ? "Importing\u2026" : `Import ${parsed.rows.length} item${parsed.rows.length !== 1 ? "s" : ""}`}
             </button>
@@ -181,7 +181,7 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
             <Icon name="ph:file-text" width={14} className="shrink-0 text-[var(--text-muted)]" />
             <span>{parsed.rows.length} rows \u00b7 {parsed.headers.length} columns</span>
             {detected !== "unknown" && (
-              <span className="ml-auto rounded bg-[var(--bg-card)] px-1.5 py-0.5 text-[var(--text-muted)]">
+              <span className="ml-auto rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-muted)]">
                 Detected: {TARGET_LIST_LABELS[detected]}
               </span>
             )}
@@ -278,7 +278,7 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
           </div>
 
           {importError && (
-            <div className="mt-3 rounded border border-[var(--border-hairline)] bg-[var(--bg-card)] px-3 py-2 text-xs text-red-400">
+            <div className="mt-3 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-red-400">
               {importError}
             </div>
           )}

@@ -323,7 +323,7 @@ function DaemonSection() {
   return (
     <SettingsPage title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
       <SettingsGroup label="Status">
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-card)] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
             loading ? "animate-pulse bg-[var(--text-muted)]"
             : status?.running ? "bg-[var(--color-success)]"
@@ -1030,7 +1030,7 @@ function SettingsGroup({ label, children }: { label: string; children: React.Rea
   return (
     <div>
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">{label}</p>
-      <div className="divide-y divide-[var(--border-hairline)] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-card)] overflow-hidden">
+      <div className="divide-y divide-[var(--border-hairline)] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] overflow-hidden">
         {children}
       </div>
     </div>

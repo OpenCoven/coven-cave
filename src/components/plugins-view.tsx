@@ -504,9 +504,9 @@ export function PluginsView({
           : "Loading roles";
 
   return (
-    <div className="plugins-view flex h-full min-w-0 flex-col bg-background text-foreground">
+    <div className="plugins-view flex h-full min-w-0 flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* ── Top bar: tabs left, controls right ─────────────────────────── */}
-      <header className="shrink-0 border-b border-border px-4 sm:px-8">
+      <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 sm:px-8">
         <div className="flex h-12 items-center justify-between gap-4">
           {/* Tabs flush left — underline style */}
           <nav className="flex h-full items-end gap-1 overflow-x-auto" aria-label="View tabs">
@@ -517,8 +517,8 @@ export function PluginsView({
                 onClick={() => handleTabChange(t)}
                 className={`focus-ring relative flex h-full shrink-0 items-center px-3 text-[13px] font-medium transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:rounded-full after:transition-colors ${
                   tab === t
-                    ? "text-foreground after:bg-foreground"
-                    : "text-muted-foreground hover:text-foreground after:bg-transparent"
+                    ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)] after:bg-transparent"
                 }`}
               >
                 {TAB_LABEL[t]}
@@ -533,22 +533,22 @@ export function PluginsView({
                 disabled
                 aria-disabled="true"
                 title="Coming soon"
-                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Icon name="ph:sliders-horizontal" className="text-muted-foreground" width="0.8rem" />
+                <Icon name="ph:sliders-horizontal" className="text-[var(--text-muted)]" width="0.8rem" />
                 <span>Manage</span>
               </button>
 
             <div ref={createRef} className="relative">
               <button
                 type="button"
-                className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-foreground transition-colors hover:bg-muted"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
                 onClick={() => setCreateOpen((v) => !v)}
               >
                 <span>Create</span>
                 <Icon
                   name="ph:caret-down-bold"
-                  className={`text-[10px] text-muted-foreground transition-transform duration-150 ${
+                  className={`text-[10px] text-[var(--text-muted)] transition-transform duration-150 ${
                     createOpen ? "rotate-180" : ""
                   }`}
                 />
@@ -579,15 +579,15 @@ export function PluginsView({
                   {HERO_HEADLINE[tab]}
                 </h1>
                 {tab === "plugins" && marketplaceLoaded && marketplacePlugins.length === 0 ? (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
+                  <p className="mt-1 text-[12px] text-[var(--text-secondary)]">
                     No marketplace packages are available yet.
                   </p>
                 ) : tab === "plugins" && marketplaceLoaded ? (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
+                  <p className="mt-1 text-[12px] text-[var(--text-secondary)]">
                     {marketplacePlugins.length} packages seeded for MCP, Skills, and familiar role affinity
                   </p>
                 ) : (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
+                  <p className="mt-1 text-[12px] text-[var(--text-secondary)]">
                     {pageMeta}
                   </p>
                 )}
@@ -596,7 +596,7 @@ export function PluginsView({
                 type="button"
                 onClick={onOpenChat}
                 title="Open chat"
-                className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-card px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
+                className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
               >
                 <Icon name="ph:chat-circle-dots-bold" width={12} />
                 <span>Open</span>
@@ -606,7 +606,7 @@ export function PluginsView({
             <div className="relative max-w-[560px]">
               <Icon
                 name="ph:magnifying-glass-bold"
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
                 width="0.9rem"
                 height="0.9rem"
               />
@@ -616,7 +616,7 @@ export function PluginsView({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={HERO_SEARCH_PLACEHOLDER[tab]}
-                className="focus-ring h-10 w-full rounded-lg border border-border bg-card pl-9 pr-4 text-[13px] text-foreground transition-colors placeholder:text-muted-foreground focus:border-border-strong"
+                className="focus-ring h-10 w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] pl-9 pr-4 text-[13px] text-[var(--text-primary)] transition-colors placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
               />
             </div>
           </div>
@@ -668,7 +668,7 @@ export function PluginsView({
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
+      <footer className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
         / focus search · click a role to manage · toggle the eye to activate
       </footer>
 
@@ -699,14 +699,14 @@ function PluginGrid({
   }
   if (error) {
     return (
-      <p className="rounded-lg border border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-secondary)]">
         Marketplace unavailable: {error}
       </p>
     );
   }
   if (items.length === 0) {
     return (
-      <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] px-4 py-6 text-center text-[13px] text-[var(--text-secondary)]">
         No plugins match.
       </p>
     );
@@ -758,14 +758,14 @@ function SkillGrid({
   }
   if (error) {
     return (
-      <p className="rounded-lg border border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-secondary)]">
         Skills unavailable: {error}
       </p>
     );
   }
   if (items.length === 0) {
     return (
-      <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] px-4 py-6 text-center text-[13px] text-[var(--text-secondary)]">
         No skills installed yet.
       </p>
     );
@@ -811,19 +811,19 @@ function RoleGrid({
   if (!loaded) return <GridSkeleton />;
   if (error) {
     return (
-      <p className="rounded-lg border border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-secondary)]">
         Roles unavailable: {error}
       </p>
     );
   }
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-10 text-center">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-          <Icon name="ph:mask-happy" width={18} className="text-muted-foreground" />
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-[var(--border-hairline)] py-10 text-center">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--bg-elevated)]">
+          <Icon name="ph:mask-happy" width={18} className="text-[var(--text-muted)]" />
         </span>
-        <p className="text-[13px] font-medium text-foreground">No roles installed</p>
-        <p className="text-[12px] text-muted-foreground">Add a ROLE.md to a familiar&apos;s workspace to get started.</p>
+        <p className="text-[13px] font-medium text-[var(--text-primary)]">No roles installed</p>
+        <p className="text-[12px] text-[var(--text-secondary)]">Add a ROLE.md to a familiar&apos;s workspace to get started.</p>
       </div>
     );
   }
@@ -859,7 +859,7 @@ function RoleGrid({
               <Icon
                 name="ph:caret-right-bold"
                 width={11}
-                className={`shrink-0 text-muted-foreground transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`}
+                className={`shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`}
               />
               <span className="text-[11px] font-semibold capitalize tracking-wide text-[var(--text-secondary)]">
                 {fam}
@@ -1029,7 +1029,7 @@ function RoleCard({
           ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/10"
           : role.active
             ? "border-[color-mix(in_oklch,var(--color-success)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_5%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)]"
-            : "border-[var(--border-hairline)] bg-[var(--bg-card)] hover:bg-[var(--bg-raised)]",
+            : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 hover:bg-[var(--bg-raised)]/60",
       ].join(" ")}
     >
       {/* Glyph */}
@@ -1229,7 +1229,7 @@ function RoleOverview({
   ];
 
   return (
-    <div className="grid gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-card)]/70 p-3 md:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)]">
+    <div className="grid gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/70 p-3 md:grid-cols-[minmax(0,1fr)_minmax(280px,0.75fr)]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 truncate text-[14px] font-semibold text-[var(--text-primary)]">{role.name}</h3>
@@ -1368,7 +1368,7 @@ function RoleRelationSection({
   items: { id: string; title: string; detail: string; status: string }[];
 }) {
   return (
-    <section className="min-w-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-card)]/50 p-3">
+    <section className="min-w-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 p-3">
       <div className="mb-1.5 flex items-center gap-1.5">
         <Icon name={icon} width={11} className="text-[var(--text-muted)]" />
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">{title}</h4>
@@ -1398,7 +1398,7 @@ function RoleCapabilitySection({
 }) {
   const total = [...groups.values()].reduce((sum, items) => sum + items.length, 0);
   return (
-    <section className="min-w-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-card)]/50 p-3">
+    <section className="min-w-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 p-3">
       <div className="mb-1.5 flex items-center gap-1.5">
         <Icon name="ph:lightning-bold" width={11} className="text-[var(--text-muted)]" />
         <h4 className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Capabilities</h4>
@@ -1465,14 +1465,14 @@ function WorkflowGrid({
   if (!loaded) return <GridSkeleton />;
   if (error) {
     return (
-      <p className="rounded-lg border border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-secondary)]">
         Workflows unavailable: {error}
       </p>
     );
   }
   if (items.length === 0) {
     return (
-      <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
+      <p className="rounded-lg border border-[var(--border-hairline)] px-4 py-6 text-center text-[13px] text-[var(--text-secondary)]">
         No workflows yet — none declared by a role or saved in the Workflow Studio.
       </p>
     );
@@ -1506,7 +1506,7 @@ function WorkflowGrid({
           <div
             key={wf.id}
             className={`rounded-lg border bg-[var(--bg-panel)] transition-colors ${
-              isOpen ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,var(--border-hairline))]" : "border-border hover:bg-[var(--bg-elevated)]"
+              isOpen ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,var(--border-hairline))]" : "border-[var(--border-hairline)] hover:bg-[var(--bg-elevated)]"
             }`}
           >
             <div className="flex items-stretch">
@@ -1635,12 +1635,12 @@ function GridSkeleton() {
           key={i}
           className="flex min-w-0 items-center gap-4 px-0 py-3 border-b border-[var(--border-hairline)] last:border-b-0"
         >
-          <span className="h-9 w-9 shrink-0 animate-pulse rounded-lg bg-muted" />
+          <span className="h-9 w-9 shrink-0 animate-pulse rounded-lg bg-[var(--bg-elevated)]" />
           <span className="flex-1 space-y-1.5">
-            <span className="block h-3 w-1/3 animate-pulse rounded bg-muted" />
-            <span className="block h-2.5 w-1/2 animate-pulse rounded bg-muted" />
+            <span className="block h-3 w-1/3 animate-pulse rounded bg-[var(--bg-elevated)]" />
+            <span className="block h-2.5 w-1/2 animate-pulse rounded bg-[var(--bg-elevated)]" />
           </span>
-          <span className="h-4 w-14 animate-pulse rounded bg-muted" />
+          <span className="h-4 w-14 animate-pulse rounded bg-[var(--bg-elevated)]" />
         </div>
       ))}
     </div>
@@ -1702,27 +1702,27 @@ function CreateDropdown({
 
   return (
     <div
-      className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+      className="absolute right-0 top-[calc(100%+6px)] z-50 w-52 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] shadow-lg"
       role="menu"
     >
       {CREATE_ITEMS.map((item, i) => (
         <button
           key={item.id}
           role="menuitem"
-          className={`focus-ring flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-muted ${
-            i < CREATE_ITEMS.length - 1 ? "border-b border-border" : ""
+          className={`focus-ring flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-[var(--bg-hover)] ${
+            i < CREATE_ITEMS.length - 1 ? "border-b border-[var(--border-hairline)]" : ""
           }`}
           onClick={() => {
             handlers[item.id]?.();
             onClose();
           }}
         >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
             <Icon name={item.icon} className="text-[13px]" />
           </span>
           <span className="flex min-w-0 flex-col">
-            <span className="font-medium text-foreground">{item.label}</span>
-            <span className="text-[10px] text-muted-foreground">{item.desc}</span>
+            <span className="font-medium text-[var(--text-primary)]">{item.label}</span>
+            <span className="text-[10px] text-[var(--text-secondary)]">{item.desc}</span>
           </span>
         </button>
       ))}

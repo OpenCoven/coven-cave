@@ -274,7 +274,7 @@ export function ThemeColorEditor({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border border-[var(--accent-presence)] bg-[var(--bg-card)] p-4 ring-1 ring-[var(--accent-presence)]/30">
+    <div className="space-y-3 rounded-xl border border-[var(--accent-presence)] bg-[var(--bg-raised)] p-4 ring-1 ring-[var(--accent-presence)]/30">
       {/* Header */}
       <div className="flex items-center gap-2">
         <Icon name="ph:paint-brush" width={14} className="text-[var(--accent-presence)]" />
