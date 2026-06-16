@@ -394,12 +394,6 @@ export function ChatSurface({
     onPendingChatActionHandled();
   }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
 
-  function startConversation(familiarId?: string | null) {
-    if (familiarId) onSetActiveFamiliar(familiarId);
-    setScope("conversation");
-    window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, familiarId), 0);
-  }
-
   function startProjectChat(projectRoot: string) {
     setScope("conversation");
     window.setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
@@ -500,19 +494,6 @@ export function ChatSurface({
                 { id: "projects", label: "Projects" },
               ]}
             />
-          </div>
-
-          {/* Actions flush right — chromeless */}
-          <div className="flex items-center gap-2 py-1.5">
-            <button
-              type="button"
-              onClick={() => startConversation(activeFamiliarId)}
-              title="New session"
-              className="chat-scope-tabs__new inline-flex h-7 items-center gap-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-            >
-              <Icon name="ph:plus-bold" width={11} />
-              New
-            </button>
           </div>
         </div>
 
