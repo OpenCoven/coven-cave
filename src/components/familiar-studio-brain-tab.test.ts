@@ -25,6 +25,11 @@ assert.match(
   /allowCustomModel/,
   "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
+assert.match(
+  source,
+  /type="text"[\s\S]{0,320}autoCapitalize="none"[\s\S]{0,80}autoCorrect="off"[\s\S]{0,80}spellCheck=\{false\}/,
+  "Brain tab custom model input should not auto-capitalize, autocorrect, or spellcheck model ids",
+);
 assert.match(source, /note/);
 assert.match(source, /\/api\/harnesses/);
 assert.match(source, /\/api\/config/);

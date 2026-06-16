@@ -193,6 +193,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               onChange={(e) => setDraftModel(e.target.value)}
               onBlur={() => save({ model: draftModel.trim() || undefined })}
               placeholder="provider/model"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="familiar-studio-brain__input"
             />
           ) : null}
