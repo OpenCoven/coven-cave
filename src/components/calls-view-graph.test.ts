@@ -161,3 +161,23 @@ assert.match(
   /"three":/,
   "Cave should declare Three.js as a dependency for the 3D trace graph",
 );
+
+// ── Trace timeline: honest count + no silent truncation ──────────────────────
+// The list caps rendered rows for perf; the header badge and a footer note must
+// stay honest about traces beyond the cap rather than claiming "N visible" while
+// silently dropping the rest.
+assert.match(source, /const MAX_VISIBLE_TRACES = \d+/, "trace list cap is a named constant");
+assert.match(source, /const shown = traces\.slice\(0, MAX_VISIBLE_TRACES\)/, "renders the capped slice via `shown`");
+// The list must render `shown`, never the full set, so the badge/footer counts
+// can't drift from what's actually on screen.
+assert.doesNotMatch(source, /traces\.slice\(0, 30\)/, "no inline magic-number slice (use MAX_VISIBLE_TRACES)");
+assert.match(
+  source,
+  /hiddenCount > 0 \? `\$\{shown\.length\} of \$\{traces\.length\}`/,
+  'header badge shows "<shown> of <total>" when traces are hidden',
+);
+assert.match(
+  source,
+  /hiddenCount > 0 &&[\s\S]{0,200}Showing the newest \{shown\.length\} of \{traces\.length\}/,
+  "a footer note discloses how many older traces are hidden",
+);

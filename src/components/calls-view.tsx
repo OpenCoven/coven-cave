@@ -532,6 +532,11 @@ function Metric({ label, value, tone }: { label: string; value: number; tone: st
   );
 }
 
+// Cap rendered rows for perf; the scroll container handles overflow within the
+// cap. The header count + footer note stay honest about anything beyond it
+// instead of silently dropping older traces under a wrong "N visible" badge.
+const MAX_VISIBLE_TRACES = 30;
+
 function TraceTimeline({
   traces,
   familiars,
@@ -543,6 +548,8 @@ function TraceTimeline({
   selectedTraceId: string | null;
   onSelect: (trace: DelegationTrace) => void;
 }) {
+  const shown = traces.slice(0, MAX_VISIBLE_TRACES);
+  const hiddenCount = traces.length - shown.length;
   return (
     <div className="min-h-[190px] overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/20">
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-3 py-2">
@@ -550,7 +557,9 @@ function TraceTimeline({
           <h2 className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Trace timeline</h2>
           <p className="mt-0.5 truncate text-[10px] text-[var(--text-muted)]">Newest delegation events first</p>
         </div>
-        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">{traces.length} visible</span>
+        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
+          {hiddenCount > 0 ? `${shown.length} of ${traces.length}` : `${traces.length} visible`}
+        </span>
       </div>
       {traces.length === 0 ? (
         <div className="grid min-h-[130px] place-items-center px-4 text-center text-sm text-[var(--text-muted)]">
@@ -558,7 +567,7 @@ function TraceTimeline({
         </div>
       ) : (
         <div className="max-h-[240px] overflow-y-auto">
-          {traces.slice(0, 30).map((trace) => (
+          {shown.map((trace) => (
             <button
               key={trace.id}
               type="button"
@@ -584,6 +593,11 @@ function TraceTimeline({
               </span>
             </button>
           ))}
+          {hiddenCount > 0 && (
+            <p className="border-t border-[var(--border-hairline)] px-3 py-2 text-center text-[10px] text-[var(--text-muted)]">
+              Showing the newest {shown.length} of {traces.length} — narrow the time window or filters to see older traces.
+            </p>
+          )}
         </div>
       )}
     </div>
