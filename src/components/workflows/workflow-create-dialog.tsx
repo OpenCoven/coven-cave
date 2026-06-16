@@ -233,7 +233,7 @@ export function WorkflowScheduleDialog({ workflow, onClose, onSchedule }: Workfl
           </label>
         )}
         <p className="workflow-muted">
-          Creates a reminder on the Automations surface that links back to this workflow. Execution
+          Creates a reminder on the Schedules surface that links back to this workflow. Execution
           scheduling arrives with the daemon engine.
         </p>
         <div className="workflow-dialog-actions">

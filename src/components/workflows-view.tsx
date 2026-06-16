@@ -548,7 +548,7 @@ export function WorkflowsView({
     const result = await scheduleWorkflow({ workflow: draft, fireAt, recurrence });
     showNotice(
       result.ok
-        ? "Scheduled — the reminder lives on the Automations surface."
+        ? "Scheduled — the reminder lives on the Schedules surface."
         : result.error ?? "schedule failed",
     );
   };

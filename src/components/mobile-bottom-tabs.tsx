@@ -25,7 +25,7 @@ const TABS: TabDef[] = [
   { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
   { id: "chat", label: "Familiars", ariaLabel: "Familiars", iconName: "ph:chats" },
   { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
-  { id: "inbox", label: "Inbox", ariaLabel: "Inbox and automations", iconName: "ph:tray" },
+  { id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" },
   { id: "library", label: "Library", ariaLabel: "Library", iconName: "ph:books" },
   // Short visible label ("keep labels short" — see the Inbox/Automations split):
   // "Delegations" truncates to "Delegati…" in a 6-tab bar, so use the surface's

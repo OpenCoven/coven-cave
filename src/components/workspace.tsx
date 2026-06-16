@@ -74,7 +74,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Familiars",
   board: "Board",
   calendar: "Calendar",
-  inbox: "Automations",
+  inbox: "Schedules",
   library: "Library",
   browser: "Browser",
   terminal: "Terminal",

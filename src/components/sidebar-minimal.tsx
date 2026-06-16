@@ -6,7 +6,7 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
- *      Work  (Home / Familiars / Board / Calendar / Automations)
+ *      Work  (Home / Familiars / Board / Calendar / Schedules)
  *      Knowledge (Library)
  *      Tools (Browser / Terminal / Roles / Workflows / Capabilities / GitHub)
  *   3. Footer: Settings
@@ -83,7 +83,7 @@ const FOLDER_MODES: Array<{
   { id: "chat", label: "Familiars", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
   { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
-  { id: "inbox", label: "Automations", iconName: "ph:tray", group: "work", kbd: "⌘5", description: "Scheduled runs and items needing attention" },
+  { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations" },
   // Knowledge
   { id: "library", label: "Library", iconName: "ph:books", group: "knowledge", kbd: "⌘6", description: "Saved docs, links, and reading" },
   // Tools

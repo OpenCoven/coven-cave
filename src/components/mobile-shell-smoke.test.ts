@@ -33,8 +33,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Inbox", ariaLabel: "Inbox and automations", iconName: "ph:tray" }/,
-  "Mobile bottom tabs should keep labels short while preserving the full Inbox/Automations accessible name",
+  /{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" }/,
+  "Mobile bottom tabs should keep the Schedules label short while preserving the full accessible name",
 );
 
 assert.match(
@@ -238,19 +238,19 @@ assert.match(
 assert.match(
   automationsView,
   /automation-create-chat-btn/,
-  "Automations create-via-chat CTA should expose a stable mobile hit-area hook",
+  "Schedules create-via-chat CTA should expose a stable mobile hit-area hook",
 );
 
 assert.match(
   automationsView,
   /automation-list-row/g,
-  "Automation rows should expose stable mobile row hooks",
+  "Schedule rows should expose stable mobile row hooks",
 );
 
 assert.match(
   globals,
   /@media \(max-width: 767px\) \{[\s\S]*\.automation-create-chat-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)[\s\S]*\.automation-list-row\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
-  "Automations mobile CTA and list rows should meet the shared touch target",
+  "Schedules mobile CTA and list rows should meet the shared touch target",
 );
 
 assert.match(

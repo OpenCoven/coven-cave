@@ -53,6 +53,12 @@
   overflow-y: auto;
 }
 
+.workflow-studio-side-content > [role="tabpanel"] {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .workflow-studio-shell.is-left-collapsed > .workflow-studio-library-panel {
   border-right: 1px solid var(--border-hairline);
 }
@@ -1474,6 +1480,28 @@
      viewport; the side panel still scrolls past it on short screens. */
   max-height: min(620px, 58vh);
   white-space: pre;
+}
+
+.workflow-manifest-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-manifest-preview .workflow-panel-heading,
+.workflow-manifest-preview > .workflow-muted:last-child {
+  flex-shrink: 0;
+}
+
+.workflow-manifest-preview .workflow-manifest-yaml {
+  flex: 1 1 auto;
+  min-height: 260px;
+  max-height: none;
+}
+
+.workflow-manifest-preview > .workflow-muted:last-child {
+  margin: 8px 0 0;
 }
 
 /* ---- Studio final touch: legible edges + dark React Flow chrome ---- */

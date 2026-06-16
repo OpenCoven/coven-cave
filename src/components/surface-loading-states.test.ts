@@ -14,8 +14,8 @@ assert.match(
 );
 assert.match(
   inbox,
-  /\{!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : isEmpty \? \(/,
-  "Inbox/automations shows a skeleton before first load, ahead of the empty state",
+  /\{!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : activeTab === "reminders" && remindersEmpty \? \(/,
+  "Schedules shows a skeleton before first load, ahead of the Reminders empty state",
 );
 
 const chatList = read("./chat-list.tsx");

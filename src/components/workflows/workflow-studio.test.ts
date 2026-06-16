@@ -66,6 +66,21 @@ assert.match(
   /Cave-only layout stays in WORKFLOW\.cave\.json/,
   "WorkflowManifestPreview should keep the sidecar boundary visible",
 );
+assert.match(
+  css,
+  /\.workflow-studio-side-content > \[role="tabpanel"\]\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
+  "Workflow detail tab panels should fill the side panel instead of shrinking around their contents",
+);
+assert.match(
+  css,
+  /\.workflow-manifest-preview\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
+  "Workflow manifest preview should use a vertical flex layout",
+);
+assert.match(
+  css,
+  /\.workflow-manifest-preview \.workflow-manifest-yaml\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*max-height:\s*none;/,
+  "Workflow manifest YAML should expand like an editor surface inside the side panel",
+);
 assert.match(css, /\.workflow-studio-shell/, "workflow CSS should style the studio shell");
 assert.match(css, /\.workflow-studio-shell \{[\s\S]{0,700}padding:\s*16px 16px 16px 0/, "Studio shell drops left padding so the library hugs the app nav (no blank band)");
 {

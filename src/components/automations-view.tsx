@@ -12,9 +12,9 @@ import type {
 } from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
 
-// AutomationsView — redesigned June 2026
+// AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
-//   • No tabs — items grouped by status section (Current / Paused / Pending / History)
+//   • Reminders and Automations split into tabs with dedicated row/section components
 //   • Minimal rows: name · workspace badge · schedule string, action icons on hover
 //   • Click any row → dedicated detail panel slides in
 //   • "Create via chat" CTA top-right
@@ -24,6 +24,8 @@ type Props = {
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   onNewReminder?: () => void;
 };
+
+type ScheduleTab = "reminders" | "automations";
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -251,7 +253,7 @@ function DetailPanel({
       <div className="flex items-center justify-between border-b px-5 py-3"
         style={{ borderColor: "var(--border-hairline)" }}>
         <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          Automation details
+          Reminder details
         </h2>
         <button type="button" onClick={onClose}
           className="rounded p-1 transition-colors hover:bg-white/5"
@@ -349,8 +351,60 @@ function DetailPanel({
   );
 }
 
-// ── Section ───────────────────────────────────────────────────────────────────
-function Section({
+function ReminderTaskRow({
+  item,
+  selected,
+  familiarLabel,
+  onSelect,
+}: {
+  item: InboxItem;
+  selected: boolean;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  const workspace = familiarLabel(item.familiarId);
+  const schedule = item.recurrence?.type !== "none"
+    ? humanSchedule(item.recurrence)
+    : item.fireAt
+    ? relTime(item.fireAt)
+    : "Paused";
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(item)}
+        className="automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        style={{
+          background: selected ? "rgba(255,255,255,0.05)" : "transparent",
+        }}
+        onMouseEnter={(e) => {
+          if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
+        }}
+        onMouseLeave={(e) => {
+          if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+        }}
+      >
+        <StatusIcon item={item} />
+        <span className="flex-1 min-w-0 flex items-baseline gap-2">
+          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+            {item.title}
+          </span>
+          {workspace && (
+            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {workspace}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {schedule}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function ReminderTaskSection({
   title,
   items,
   selectedId,
@@ -373,51 +427,50 @@ function Section({
         </span>
       </div>
       <ul>
-        {items.map((item) => {
-          const workspace = familiarLabel(item.familiarId);
-          const schedule = item.recurrence?.type !== "none"
-            ? humanSchedule(item.recurrence)
-            : item.fireAt
-            ? relTime(item.fireAt)
-            : "Paused";
-          const selected = selectedId === item.id;
-
-          return (
-            <li key={item.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(item)}
-                className="automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-                style={{
-                  background: selected ? "rgba(255,255,255,0.05)" : "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                }}
-              >
-                <StatusIcon item={item} />
-                <span className="flex-1 min-w-0 flex items-baseline gap-2">
-                  <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
-                    {item.title}
-                  </span>
-                  {workspace && (
-                    <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      {workspace}
-                    </span>
-                  )}
-                </span>
-                <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                  {schedule}
-                </span>
-              </button>
-            </li>
-          );
-        })}
+        {items.map((item) => (
+          <ReminderTaskRow
+            key={item.id}
+            item={item}
+            selected={selectedId === item.id}
+            familiarLabel={familiarLabel}
+            onSelect={onSelect}
+          />
+        ))}
       </ul>
     </div>
+  );
+}
+
+function ReminderTaskList({
+  current,
+  paused,
+  oneShots,
+  history,
+  selectedId,
+  familiarLabel,
+  onSelect,
+}: {
+  current: InboxItem[];
+  paused: InboxItem[];
+  oneShots: InboxItem[];
+  history: InboxItem[];
+  selectedId: string | null;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  return (
+    <>
+      <ReminderTaskSection title="Repeating" items={current} selectedId={selectedId}
+        familiarLabel={familiarLabel} onSelect={onSelect} />
+      <ReminderTaskSection title="Paused" items={paused} selectedId={selectedId}
+        familiarLabel={familiarLabel} onSelect={onSelect} />
+      <ReminderTaskSection title="One-time" items={oneShots} selectedId={selectedId}
+        familiarLabel={familiarLabel} onSelect={onSelect} />
+      {history.length > 0 && (
+        <ReminderTaskSection title="History" items={history} selectedId={selectedId}
+          familiarLabel={familiarLabel} onSelect={onSelect} />
+      )}
+    </>
   );
 }
 
@@ -727,8 +780,7 @@ function CodexDetailPanel({
   );
 }
 
-// ── Codex automation row ──────────────────────────────────────────────────────
-function CodexRow({
+function AutomationScheduleRow({
   auto,
   selected,
   onSelect,
@@ -774,8 +826,7 @@ function CodexRow({
   );
 }
 
-// ── Codex Section ─────────────────────────────────────────────────────────────
-function CodexSection({
+function AutomationScheduleSection({
   title,
   items,
   selectedId,
@@ -801,7 +852,7 @@ function CodexSection({
       </div>
       <ul>
         {items.map((auto) => (
-          <CodexRow
+          <AutomationScheduleRow
             key={auto.id}
             auto={auto}
             selected={selectedId === auto.id}
@@ -813,6 +864,29 @@ function CodexSection({
   );
 }
 
+function AutomationsPanel({
+  active,
+  paused,
+  selectedId,
+  onSelect,
+}: {
+  active: CodexAutomation[];
+  paused: CodexAutomation[];
+  selectedId: string | null;
+  onSelect: (auto: CodexAutomation) => void;
+}) {
+  return (
+    <>
+      <AutomationScheduleSection title="Active" items={active}
+        selectedId={selectedId}
+        onSelect={onSelect} />
+      <AutomationScheduleSection title="Paused" items={paused}
+        selectedId={selectedId}
+        onSelect={onSelect} />
+    </>
+  );
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -820,6 +894,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ScheduleTab>("reminders");
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
@@ -960,33 +1035,37 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
   }, [load]);
 
   // ── Sections ──────────────────────────────────────────────────────────────
+  const reminderItems = useMemo(() =>
+    items.filter((it) => it.kind === "reminder"),
+    [items]);
+
   const current = useMemo(() =>
-    items.filter((it) =>
+    reminderItems.filter((it) =>
       (it.status === "pending" || it.status === "fired") &&
       it.recurrence && it.recurrence.type !== "none"
     ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [items]);
+    [reminderItems]);
 
   const paused = useMemo(() =>
-    items.filter((it) =>
+    reminderItems.filter((it) =>
       it.status === "dismissed" && it.recurrence && it.recurrence.type !== "none"
     ).sort((a, b) => (a.title).localeCompare(b.title)),
-    [items]);
+    [reminderItems]);
 
   const oneShots = useMemo(() =>
-    items.filter((it) =>
+    reminderItems.filter((it) =>
       (!it.recurrence || it.recurrence.type === "none") &&
       (it.status === "pending" || it.status === "snoozed")
     ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [items]);
+    [reminderItems]);
 
   const history = useMemo(() =>
-    items.filter((it) =>
+    reminderItems.filter((it) =>
       it.status === "fired" || it.status === "done" ||
       (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none"))
     ).sort((a, b) => (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt))
       .slice(0, 20),
-    [items]);
+    [reminderItems]);
 
   const codexActive = useMemo(
     () => codexAutos.filter((a) => a.status === "ACTIVE"),
@@ -997,8 +1076,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
     [codexAutos],
   );
 
-  const isEmpty =
-    current.length + paused.length + oneShots.length + codexAutos.length === 0;
+  const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
+  const automationsEmpty = codexAutos.length === 0;
+  const selectedReminderId = selectedItem?.id ?? null;
+  const selectedAutomationId = selectedCodex?.id ?? null;
+
+  const selectTab = (tab: ScheduleTab) => {
+    setActiveTab(tab);
+    if (tab === "reminders") setSelectedCodex(null);
+    else setSelectedItem(null);
+  };
 
   return (
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
@@ -1007,7 +1094,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
         {/* Page header */}
         <div className="flex items-center justify-between px-8 pt-8 pb-5">
           <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
-            Automations
+            Schedules
           </h1>
           {onNewReminder && (
             <button
@@ -1024,6 +1111,31 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
               <span style={{ color: "var(--text-muted)", display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
             </button>
           )}
+        </div>
+
+        <div className="px-8 pb-4">
+          <div className="inline-flex rounded-lg border p-1"
+            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}>
+            {([
+              ["reminders", "Reminders", reminderItems.length],
+              ["automations", "Automations", codexAutos.length],
+            ] as const).map(([id, label, count]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => selectTab(id)}
+                aria-pressed={activeTab === id}
+                className="rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors"
+                style={{
+                  background: activeTab === id ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: activeTab === id ? "var(--text-primary)" : "var(--text-muted)",
+                }}
+              >
+                {label}
+                <span className="ml-2 text-[10px]" style={{ color: "var(--text-muted)" }}>{count}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -1054,9 +1166,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
                 />
               ))}
             </div>
-          ) : isEmpty ? (
+          ) : activeTab === "reminders" && remindersEmpty ? (
             <div className="mt-12 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
-              No automations yet.{" "}
+              No reminders yet.{" "}
               {onNewReminder && (
                 <button type="button" onClick={onNewReminder}
                   className="underline underline-offset-2 hover:opacity-80"
@@ -1065,23 +1177,29 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder }: Pro
                 </button>
               )}
             </div>
+          ) : activeTab === "automations" && automationsEmpty ? (
+            <div className="mt-12 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
+              No automations configured.
+            </div>
           ) : (
             <>
-              <Section title="Current" items={current} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
-              <CodexSection title="Active Schedules" items={codexActive}
-                selectedId={selectedCodex?.id ?? null}
-                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }} />
-              <Section title="Paused" items={paused} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
-              <CodexSection title="Paused Schedules" items={codexPaused}
-                selectedId={selectedCodex?.id ?? null}
-                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }} />
-              <Section title="Pending" items={oneShots} selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
-              {history.length > 0 && (
-                <Section title="History" items={history} selectedId={selectedItem?.id ?? null}
-                  familiarLabel={familiarLabel} onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }} />
+              {activeTab === "reminders" ? (
+                <ReminderTaskList
+                  current={current}
+                  paused={paused}
+                  oneShots={oneShots}
+                  history={history}
+                  selectedId={selectedReminderId}
+                  familiarLabel={familiarLabel}
+                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                />
+              ) : (
+                <AutomationsPanel
+                  active={codexActive}
+                  paused={codexPaused}
+                  selectedId={selectedAutomationId}
+                  onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
+                />
               )}
             </>
           )}

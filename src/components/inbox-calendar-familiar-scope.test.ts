@@ -17,13 +17,13 @@ assert.match(
 assert.match(
   inbox,
   /<AutomationsView[\s\S]*familiars=\{familiars \?\? \[\]\}[\s\S]*onNewReminder=\{onNewReminder \?\? \(\(\) => \{\}\)\}[\s\S]*onOpenSession=\{onOpenSession\}/,
-  "InboxEscalationsView should render only the Automations schedule surface",
+  "InboxEscalationsView should render only the Schedules surface",
 );
 
 assert.doesNotMatch(
   inbox,
   />Escalations<|inbox-view__tabs|setTab\(/,
-  "Hidden inbox/escalations UI should not render inside the Automations surface",
+  "Hidden inbox/escalations UI should not render inside the Schedules surface",
 );
 
 // ───────── Calendar ─────────
