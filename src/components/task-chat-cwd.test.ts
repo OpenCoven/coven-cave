@@ -46,12 +46,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /function InlineProjectField[\s\S]*aria-label="Project for this chat"/,
-  "Active chats expose a compact project selector in the header",
+  /function SessionOverflowMenu[\s\S]*projects\.map\(\(entry\) => \([\s\S]*onSelect=\{\(\) => \{\s*onProjectChange\(entry\.id\)/,
+  "Active chats expose project switching through the session overflow menu",
 );
 assert.match(
   chatView,
-  /sessionId && \(\s*<>\s*<InlineProjectField[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
+  /sessionId && \(\s*<SessionOverflowMenu[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
   "The active-chat project selector shares the same draft used by send",
 );
 assert.match(

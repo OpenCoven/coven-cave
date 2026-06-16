@@ -228,8 +228,13 @@ assert.match(
 
 assert.match(
   source,
-  /<div className="cave-chat-session-actions">[\s\S]*<ChatFindBar[\s\S]*<InlineProjectField[\s\S]*<VoiceCallButton[\s\S]*Debug session[\s\S]*Delete chat/,
-  "Open chat header actions should sit in one compact session action cluster",
+  /<div className="cave-chat-session-actions">[\s\S]*<ChatFindBar[\s\S]*<SessionOverflowMenu/,
+  "Open chat header actions collapse to a find bar plus a single overflow menu",
+);
+assert.match(
+  source,
+  /function SessionOverflowMenu[\s\S]*Debug session[\s\S]*Delete chat/,
+  "Secondary session actions (project, voice, debug, delete) live in the overflow menu",
 );
 
 assert.match(

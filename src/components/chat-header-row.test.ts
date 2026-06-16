@@ -90,19 +90,19 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-meta-line__meta\s*\{[\s\S]*?font-size:\s*12\.5px/,
-  "Header meta should read at the chat title size (12.5px), not fine print",
+  /\.cave-chat-meta-line__meta\s*\{[\s\S]*?font-size:\s*11\.5px/,
+  "Header meta is the demoted context line — a notch under the title, not fine print",
+);
+assert.doesNotMatch(
+  styles,
+  /\.cave-chat-meta-line__meta\s*\{[^}]*font-family/,
+  "Header meta reads in the chrome font (Codex/ChatGPT vocabulary), not monospace",
 );
 
-assert.match(
+assert.doesNotMatch(
   styles,
-  /\.cave-chat-cwd-pair\s*\{[\s\S]*?display:\s*inline-flex[\s\S]*?gap:\s*4px/,
-  "Header ROOT/CWD editor pair should stay compact inside the meta row",
-);
-assert.match(
-  styles,
-  /\.cave-chat-cwd-inline\s*\{[\s\S]*?width:\s*clamp\(100px,\s*12vw,\s*168px\)/,
-  "Each header ROOT/CWD editor should stay narrow inside the meta row",
+  /\.cave-chat-cwd-inline\b/,
+  "The inline project-chip picker is folded into the session overflow menu",
 );
 
 assert.doesNotMatch(
@@ -116,12 +116,12 @@ assert.doesNotMatch(
 // success refreshes the session list and navigates back.
 assert.match(
   source,
-  /aria-label="Delete chat"[\s\S]*?onClick=\{\(\) => setConfirmDelete\(true\)\}/,
-  "Header trash button only arms the confirmation — it must not delete",
+  /danger onSelect=\{\(\) => onConfirmDeleteChange\(true\)\}>\s*Delete chat/,
+  "Overflow-menu Delete only arms the confirmation — it must not delete",
 );
 assert.match(
   source,
-  /confirmDelete \?[\s\S]*?Cancel[\s\S]*?Confirm delete chat/,
+  /confirmDelete \?[\s\S]*?Cancel[\s\S]*?Confirm delete/,
   "Armed state offers explicit Cancel and Delete actions",
 );
 assert.match(
