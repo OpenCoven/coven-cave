@@ -170,7 +170,7 @@
 .board-table td { padding:8px 10px; vertical-align:middle; }
 .board-table-title { display:inline-block; max-width:300px; vertical-align:middle; font-weight:500; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .board-table-muted { color:var(--text-muted); font-size:11px; }
-.board-table-group-row td { padding:8px 10px 7px; font-size:11px; font-weight:600; color:var(--text-secondary); letter-spacing:.04em; text-transform:uppercase; background:var(--bg-raised); border-top:1px solid var(--border-strong); border-bottom:1px solid var(--border-strong); cursor:pointer; user-select:none; }
+.board-table-group-row td { padding:8px 10px 7px; font-size:12px; font-weight:700; color:var(--text-primary); letter-spacing:.04em; text-transform:uppercase; background:color-mix(in oklch,var(--bg-base) 82%,var(--foreground) 18%); border-top:1px solid var(--border-strong); border-bottom:1px solid var(--border-strong); cursor:pointer; user-select:none; }
 .board-table-group-row:first-child td { border-top:none; }
 .board-table-group-row:hover td { background:var(--bg-hover); color:var(--text-primary); }
 .board-table-group-caret { display:inline-flex; align-items:center; margin-right:4px; vertical-align:middle; }
@@ -228,7 +228,7 @@
 .board-kanban-column { display:flex; flex-direction:column; flex-shrink:0; width:288px; height:100%; border-radius:12px; border:1px solid var(--border-hairline); background:color-mix(in oklch,var(--bg-base) 55%,var(--bg-raised)); transition:background .15s,border-color .15s,box-shadow .15s; }
 .board-kanban-column--drop { border-color:color-mix(in oklch,var(--accent-presence) 60%,transparent); background:color-mix(in oklch,var(--accent-presence) 10%,var(--bg-raised)); box-shadow:0 0 0 3px color-mix(in oklch,var(--accent-presence) 18%,transparent); }
 
-.board-kanban-column-header { display:flex; align-items:center; gap:8px; padding:10px 11px 10px 13px; border-bottom:1px solid var(--border-hairline); }
+.board-kanban-column-header { display:flex; align-items:center; gap:8px; padding:10px 11px 10px 13px; border-bottom:1px solid var(--border-hairline); border-radius:11px 11px 0 0; background:color-mix(in oklch,var(--bg-base) 82%,var(--foreground) 18%); }
 .board-kanban-column-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 3px color-mix(in oklch,currentColor 14%,transparent); }
 .board-kanban-column-dot--backlog { background:var(--text-muted); color:var(--text-muted); }
 .board-kanban-column-dot--inbox { background:var(--accent-presence); color:var(--accent-presence); }
@@ -236,7 +236,7 @@
 .board-kanban-column-dot--review { background:var(--accent-presence-soft); color:var(--accent-presence-soft); }
 .board-kanban-column-dot--blocked { background:var(--color-danger); color:var(--color-danger); }
 .board-kanban-column-dot--done { background:var(--color-success); color:var(--color-success); }
-.board-kanban-column-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; color:var(--text-primary); letter-spacing:.01em; }
+.board-kanban-column-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:700; color:var(--text-primary); letter-spacing:.01em; }
 .board-kanban-column-count { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:16px; padding:0 5px; border-radius:8px; background:var(--bg-raised); border:1px solid var(--border-hairline); color:var(--text-secondary); font-size:10px; font-weight:600; }
 .board-kanban-column-add { display:grid; place-items:center; width:22px; height:22px; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:background .12s,color .12s; }
 .board-kanban-column-add:hover { background:var(--bg-hover); color:var(--text-primary); }
@@ -853,15 +853,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 2px 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
   border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 82%, var(--foreground) 18%);
 }
 .board-card-stack__section-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 .board-card-stack__section-count {
   font-size: 11px;
