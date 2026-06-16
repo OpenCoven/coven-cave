@@ -4,10 +4,13 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./workflows-view.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/workflows.ts", import.meta.url), "utf8");
+const css = readFileSync(new URL("../styles/workflows.css", import.meta.url), "utf8");
 
 assert.match(source, /export function WorkflowsView/, "Cave should expose a first-class Workflows view");
 assert.match(source, /import\s+\{\s*WorkflowStudio/, "Workflows view should import WorkflowStudio");
 assert.match(source, /<WorkflowStudio\b/, "Workflows view should render WorkflowStudio as the container");
+assert.match(css, /\.workflow-studio-shell \{[\s\S]*background:\s*var\(--bg-base\);/, "Workflows shell should inherit the app shell background token");
+assert.doesNotMatch(css, /var\(--background\)/, "Workflow surfaces should not paint the lower-level background token directly");
 
 assert.match(source, /selectedWorkflowId/, "Workflows view should track selected workflow ID state");
 assert.match(source, /selectedNodeId/, "Workflows view should track selected graph node ID state");

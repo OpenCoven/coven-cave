@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
+import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type Health = {
   ok: boolean;
@@ -22,10 +24,17 @@ export async function GET() {
       projectRoot: root,
     });
   }
+  const installedVersion =
+    !res.data.covenVersion || res.data.covenVersion === "0.0.0"
+      ? await installedCovenVersion()
+      : null;
   return NextResponse.json({
     running: true,
     apiVersion: res.data.apiVersion,
-    covenVersion: res.data.covenVersion,
+    covenVersion: displayCovenVersion({
+      daemonVersion: res.data.covenVersion,
+      installedVersion,
+    }),
     daemon: res.data.daemon,
     workspacePath: root,
     projectRoot: root,

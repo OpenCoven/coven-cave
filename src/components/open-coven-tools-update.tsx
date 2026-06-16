@@ -216,7 +216,9 @@ export function OpenCovenToolsUpdate() {
               <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
                 {tool.installed
-                  ? `${tool.current ?? "unknown"}${tool.latest ? ` -> ${tool.latest}` : ""}`
+                  ? tool.outdated
+                    ? `${tool.current ?? "unknown"} -> ${tool.latest}`
+                    : (tool.current ?? "unknown")
                   : "Not installed"}
               </p>
               {result ? (
