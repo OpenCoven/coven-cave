@@ -697,9 +697,9 @@
 }
 
 .cave-chat-empty-shell {
-  width: min(760px, 100%);
+  width: min(680px, 100%);
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .cave-chat-empty-familiar {
@@ -740,6 +740,7 @@
 .cave-chat-empty-meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   margin: 5px 0 0;
   color: var(--text-muted);
@@ -755,20 +756,32 @@
   white-space: nowrap;
 }
 
+.cave-chat-empty-meta span + span::before {
+  content: "·";
+  margin-right: 6px;
+  color: color-mix(in oklch, var(--text-muted) 70%, transparent);
+}
+
 .cave-chat-empty-project {
-  display: grid;
-  grid-template-columns: auto auto minmax(96px, 0.45fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
   border: 1px solid var(--border-panel);
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-elevated) 78%, transparent);
-  padding: 0 10px;
+  padding: 8px 11px;
   color: var(--text-muted);
   box-shadow:
     0 4px 16px oklch(0 0 0 / 14%),
     inset 0 1px 0 oklch(1 0 0 / 5%);
+}
+
+.cave-chat-empty-project-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .cave-chat-empty-project-label {
@@ -782,13 +795,15 @@
 
 .cave-chat-empty-project-select {
   min-width: 0;
-  width: 100%;
+  max-width: 100%;
+  width: auto;
   border: 0;
   background: transparent;
   color: var(--text-primary);
   font: inherit;
   font-size: 14px;
   font-weight: 520;
+  cursor: pointer;
   outline: none;
 }
 
@@ -799,6 +814,8 @@
 
 .cave-chat-empty-project-root {
   min-width: 0;
+  max-width: 100%;
+  padding-left: 22px;
   overflow: hidden;
   color: var(--text-muted);
   font-family: "SF Mono", "JetBrains Mono", "Roboto Mono", monospace;
@@ -896,20 +913,11 @@
   }
 
   .cave-chat-empty-project {
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    gap: 5px 10px;
-    min-height: 0;
     padding: 9px 12px;
   }
 
   .cave-chat-empty-project-label {
     display: none;
-  }
-
-  .cave-chat-empty-project-select,
-  .cave-chat-empty-project-root {
-    grid-column: 2;
   }
 
   .cave-chat-empty-project-select {
@@ -3017,3 +3025,88 @@ details[open] > .cave-tool-summary::before {
   cursor: grabbing;
   opacity: 1;
 }
+
+/* ── Familiar inline card (avatar click → in-thread expand) ──────────────── */
+.cave-linear-turn-avatar { position: relative; }
+
+.cave-linear-turn-avatar-btn {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.cave-linear-turn-avatar-btn:focus-visible {
+  outline: 2px solid var(--accent, #7c93ff);
+  outline-offset: 2px;
+}
+
+.familiar-inline-card {
+  position: relative;
+  margin-top: 8px;
+  width: min(320px, 78vw);
+  padding: 12px;
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: 12px;
+  background: var(--bg-elevated, #161616);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform-origin: top left;
+  animation: familiar-card-grow 140ms ease-out;
+}
+@keyframes familiar-card-grow {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .familiar-inline-card { animation: none; }
+}
+
+.familiar-inline-card__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 6px;
+}
+.familiar-inline-card__close:hover { color: var(--text-primary, #fff); }
+
+.familiar-inline-card__identity { display: flex; gap: 10px; align-items: flex-start; }
+.familiar-inline-card__name { font-weight: 600; font-size: 14px; color: var(--text-primary, #fff); }
+.familiar-inline-card__role { font-size: 12px; color: var(--text-secondary, #aaa); }
+.familiar-inline-card__desc { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: var(--text-secondary, #bbb); }
+
+.familiar-inline-card__status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary, #ddd); flex-wrap: wrap; }
+.familiar-inline-card__status-muted { color: var(--text-secondary, #888); }
+.familiar-inline-card__dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.familiar-inline-card__dot[data-pulse="1"] { animation: familiar-card-pulse 1.6s ease-in-out infinite; }
+@keyframes familiar-card-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) {
+  .familiar-inline-card__dot[data-pulse="1"] { animation: none; }
+}
+
+.familiar-inline-card__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.familiar-inline-card__actions button {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; padding: 4px 8px;
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: 8px; background: var(--bg-base, #111);
+  color: var(--text-primary, #eee); cursor: pointer;
+}
+.familiar-inline-card__actions button:hover { background: var(--bg-hover, #1c1c1c); }
+
+.familiar-inline-card__memory-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__view-all { border: 0; background: transparent; color: var(--accent, #7c93ff); cursor: pointer; font-size: 12px; }
+.familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary, #888); }
+.familiar-inline-card__memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.familiar-inline-card__memory-item { display: flex; flex-direction: column; gap: 1px; }
+.familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary, #ddd); }
+.familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }

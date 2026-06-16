@@ -854,14 +854,14 @@ function RoleGrid({
             <button
               type="button"
               onClick={() => toggleCollapse(fam)}
-              className="focus-ring mb-2 flex w-full items-center gap-2 rounded text-left"
+              className="focus-ring mb-2 flex w-full items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5 text-left"
             >
               <Icon
                 name="ph:caret-right-bold"
                 width={11}
                 className={`shrink-0 text-[var(--text-muted)] transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`}
               />
-              <span className="text-[11px] font-semibold capitalize tracking-wide text-[var(--text-secondary)]">
+              <span className="text-[12px] font-bold capitalize tracking-wide text-[var(--text-primary)]">
                 {fam}
               </span>
               <span className="rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[10px] text-[var(--text-muted)]">

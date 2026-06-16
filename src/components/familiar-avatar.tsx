@@ -3,9 +3,9 @@
 import { FamiliarGlyph } from "./familiar-glyph";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "lg" | "xl";
 
-const PX: Record<Size, number> = { sm: 16, md: 22, lg: 36 };
+const PX: Record<Size, number> = { sm: 16, md: 22, lg: 36, xl: 48 };
 
 type Props = {
   familiar: ResolvedFamiliar;

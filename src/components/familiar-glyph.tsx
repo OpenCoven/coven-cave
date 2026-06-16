@@ -27,12 +27,13 @@ function ensureRegistered() {
   registered = true;
 }
 
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "lg" | "xl";
 
 const SIZE_PX: Record<Size, number> = {
   sm: 16,
   md: 22,
   lg: 36,
+  xl: 48,
 };
 
 type Props = {

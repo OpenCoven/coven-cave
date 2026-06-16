@@ -558,9 +558,9 @@
 
 /* Group header rows in the GitHub table */
 .gh-table tbody tr.gh-group-row,
-.gh-table tbody tr.gh-group-row:hover { background:color-mix(in oklab,var(--bg-raised) 60%,var(--bg-base)); }
+.gh-table tbody tr.gh-group-row:hover { background:color-mix(in oklch,var(--bg-base) 82%,var(--foreground) 18%); }
 .gh-group-row td { padding:5px 12px; border-top:1px solid var(--border-hairline); }
-.gh-group-label { display:inline-flex; align-items:center; gap:7px; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:11px; font-weight:600; color:var(--text-secondary); }
+.gh-group-label { display:inline-flex; align-items:center; gap:7px; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:12px; font-weight:700; color:var(--text-primary); }
 .gh-group-count { display:inline-flex; align-items:center; min-width:16px; height:15px; padding:0 5px; border-radius:9999px; background:var(--bg-base); color:var(--text-muted); font-size:9.5px; font-weight:600; }
 
 .gh-actions { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }

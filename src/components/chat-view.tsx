@@ -5,6 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { segmentTurn } from "@/lib/turn-segments";
+import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
@@ -15,6 +16,7 @@ import { useFamiliarImages } from "@/lib/cave-familiar-images";
 import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
 import { resolveFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
   MAX_ATTACHMENT_IMAGE_BYTES,
@@ -543,20 +545,22 @@ function ChatEmptyState({
 
         {onProjectChange && project && (
           <label className="cave-chat-empty-project">
-            <Icon name="ph:folder-open" width={14} aria-hidden />
-            <span className="cave-chat-empty-project-label">Project</span>
-            <select
-              value={project.id}
-              onChange={(e) => onProjectChange(e.target.value)}
-              aria-label="Project for this chat"
-              className="cave-chat-empty-project-select"
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <span className="cave-chat-empty-project-head">
+              <Icon name="ph:folder-open" width={14} aria-hidden />
+              <span className="cave-chat-empty-project-label">Project</span>
+              <select
+                value={project.id}
+                onChange={(e) => onProjectChange(e.target.value)}
+                aria-label="Project for this chat"
+                className="cave-chat-empty-project-select"
+              >
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </span>
             <span className="cave-chat-empty-project-root">
               {project.root}
             </span>
@@ -1367,10 +1371,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [inputHistoryIdx, setInputHistoryIdx] = useState<number>(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  // Reply to Chat: the turn the next message quotes, shown as a composer chip
+  // and prepended as a markdown blockquote to the outgoing prompt at send time.
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
+  const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
+  const expandedAvatarTurnIdRef = useRef<string | null>(null);
+  expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
   // Two-step delete, matching the Chats-page rows: the trash icon only ARMS
   // the inline Cancel/Delete confirm; only the explicit Delete commits.
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1631,6 +1641,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         // the user is finding inside this chat.
         e.stopPropagation();
         openFind();
+      }
+      if (e.key === "Escape" && expandedAvatarTurnIdRef.current) {
+        setExpandedAvatarTurnId(null);
       }
     },
     [openFind],
@@ -2318,6 +2331,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   }
 
+  // Reply to Chat: stage a turn as the quoted target for the next message. The
+  // quote rides INTO the outgoing prompt (buildQuotedPrompt) at send time so
+  // the model sees what's being replied to and it persists across reload — the
+  // composer just shows a dismissible chip until then. Assistant turns quote
+  // only the visible prose (not hidden reasoning); the draft is never touched.
+  function replyToTurn(turn: Turn) {
+    const author =
+      turn.role === "assistant" ? familiar.display_name : turn.role === "system" ? "System" : "You";
+    const source = turn.role === "assistant" ? splitReasoning(turn.text).visible : turn.text;
+    const snippet = buildReplySnippet(source);
+    if (!snippet) return;
+    setReplyTarget({ turnId: turn.id, author, snippet });
+    inputRef.current?.focus();
+  }
+
+  /** Build the Reply action for a settled, non-empty turn (undefined hides it). */
+  function replyFor(turn: Turn): (() => void) | undefined {
+    if (turn.pending) return undefined;
+    const source = turn.role === "assistant" ? splitReasoning(turn.text).visible : turn.text;
+    if (!source.trim()) return undefined;
+    return () => replyToTurn(turn);
+  }
+
   // CHAT-D6-02: regenerate. Re-sends the PRECEDING user turn (text +
   // attachments) through the normal guarded sendRaw path as a new turn pair.
   // Returns undefined (action hidden) while busy, on pending turns, and on
@@ -2352,13 +2388,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const outgoingMentions = mentionedFiles
       .filter((p) => text.includes(`@${p}`))
       .slice(0, MAX_FILE_MENTIONS);
-    // CHAT-D11-04: Add to input history
+    // CHAT-D11-04: Add to input history (the raw draft, without the quote
+    // prefix — ↑ recall should restore what the user typed, not the blockquote).
     setInputHistory((prev) => [...prev, text]);
     setInputHistoryIdx(-1);
+    // Reply to Chat: fold the quoted target into the outgoing prompt so the
+    // model sees it and it persists in the transcript; pass-through when unset.
+    const outgoingText = buildQuotedPrompt(replyTarget, text);
+    setReplyTarget(null);
     setInput("");
     setAttachments([]);
     setMentionedFiles([]);
-    await sendRaw(text, outgoingAttachments, outgoingMentions);
+    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions);
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -2981,7 +3022,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     found={foundTurnId === t.id}
                     onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
                     onRegenerate={regenerateFor(t)}
+                    onReply={replyFor(t)}
                     onOpenUrl={onOpenUrl}
+                    expanded={expandedAvatarTurnId === t.id}
+                    onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
                   />
                 );
               }
@@ -3013,7 +3057,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         found={foundTurnId === t.id}
                         onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
                         onRegenerate={regenerateFor(t)}
+                        onReply={replyFor(t)}
                         onOpenUrl={onOpenUrl}
+                        expanded={expandedAvatarTurnId === t.id}
+                        onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
                       />
                     );
                   })}
@@ -3212,6 +3259,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 ))}
               </div>
             ) : null}
+            {replyTarget ? (
+              <div className="cave-composer-reply flex items-center gap-2 border-b border-[var(--border-hairline)]/70 bg-[var(--bg-raised)] px-3 py-1.5">
+                <Icon name="ph:arrow-bend-up-left" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[11px]">
+                  <span className="shrink-0 font-medium text-[var(--text-secondary)]">Replying to {replyTarget.author}</span>
+                  <span className="truncate text-[var(--text-muted)]">{replyTarget.snippet}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReplyTarget(null)}
+                  className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)]"
+                  title="Cancel reply"
+                  aria-label="Cancel reply"
+                >
+                  <Icon name="ph:x-bold" width={9} aria-hidden />
+                </button>
+              </div>
+            ) : null}
             <textarea
               ref={inputRef}
               value={input}
@@ -3376,7 +3441,10 @@ function TurnRow({
   found = false,
   onEdit,
   onRegenerate,
+  onReply,
   onOpenUrl,
+  expanded = false,
+  onToggleAvatar,
 }: {
   turn: Turn;
   familiar: Familiar;
@@ -3388,7 +3456,12 @@ function TurnRow({
   onEdit?: () => void;
   /** CHAT-D6-02: present only on settled assistant turns with a preceding user turn. */
   onRegenerate?: () => void;
+  /** Reply to Chat: present on settled, non-empty turns of either role —
+   *  stages this turn as the composer's quoted reply target. */
+  onReply?: () => void;
   onOpenUrl?: (url: string) => void;
+  expanded?: boolean;
+  onToggleAvatar?: () => void;
 }) {
   // CHAT-D13-01: tool activity stays visible while a turn streams (watching
   // tools run IS the live feedback), then hides once the response has fully
@@ -3397,6 +3470,37 @@ function TurnRow({
   // collapses tools on its own because the settled default is hidden.
   const [showToolsOverride, setShowToolsOverride] = useState<boolean | null>(null);
   const showTools = turn.pending ? true : (showToolsOverride ?? false);
+
+  // Click-away dismissal for the inline familiar card. Hooks are placed here
+  // (before any early return) so React's rules-of-hooks are never violated.
+  const avatarWrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const onDown = (e: PointerEvent) => {
+      if (avatarWrapRef.current && !avatarWrapRef.current.contains(e.target as Node)) {
+        onToggleAvatar?.();
+      }
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [expanded, onToggleAvatar]);
+
+  // Focus management for the inline familiar card.
+  // When the card opens, move focus to its close button; when it closes,
+  // return focus to the avatar button that triggered it.
+  const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
+  const wasAvatarExpandedRef = useRef(false);
+  useEffect(() => {
+    if (expanded && !wasAvatarExpandedRef.current) {
+      // opened → focus the card's first focusable (close button)
+      const closeBtn = avatarWrapRef.current?.querySelector<HTMLElement>(".familiar-inline-card__close");
+      closeBtn?.focus();
+    } else if (!expanded && wasAvatarExpandedRef.current) {
+      // closed → return focus to the avatar button
+      avatarBtnRef.current?.focus();
+    }
+    wasAvatarExpandedRef.current = expanded;
+  }, [expanded]);
 
   if (turn.role === "system" || turn.role === "user") {
     return (
@@ -3419,6 +3523,7 @@ function TurnRow({
             showTimestamp={false}
             pending={turn.pending}
             onEdit={onEdit}
+            onReply={onReply}
             onOpenUrl={onOpenUrl}
           />
           {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
@@ -3470,9 +3575,26 @@ function TurnRow({
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
     >
       <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
-        {/* Avatar + right column */}
-        <div className="cave-linear-turn-avatar" aria-hidden>
-          <FamiliarIcon familiar={familiar} size="lg" />
+        {/* Avatar (interactive) + right column */}
+        <div className="cave-linear-turn-avatar" ref={avatarWrapRef}>
+          <button
+            ref={avatarBtnRef}
+            type="button"
+            className="cave-linear-turn-avatar-btn"
+            aria-expanded={expanded}
+            aria-controls={`familiar-card-${turn.id}`}
+            aria-label={`Show ${familiar.display_name}'s details`}
+            onClick={onToggleAvatar}
+          >
+            <FamiliarIcon familiar={familiar} size="lg" />
+          </button>
+          {expanded ? (
+            <FamiliarInlineCard
+              familiar={familiar}
+              cardId={`familiar-card-${turn.id}`}
+              onClose={() => onToggleAvatar?.()}
+            />
+          ) : null}
         </div>
         <div className="cave-linear-turn-right">
           <div className="cave-linear-turn-meta">
@@ -3532,6 +3654,7 @@ function TurnRow({
                 isError={turn.error}
                 label={familiar.display_name}
                 onRegenerate={onRegenerate}
+                onReply={onReply}
                 onOpenUrl={onOpenUrl}
                 // CHAT-D13-01: with tools hidden, fall back to plain content —
                 // the text segments concatenate to `visible` anyway, so prose

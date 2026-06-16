@@ -265,18 +265,17 @@ function AgendaView({
       ) : null}
       {groups.map(({ date, items: groupItems }) => (
         <div key={date.toISOString()}>
-          <div className="mb-2 flex items-center gap-3">
+          <div className="mb-2 flex items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
             <span
-              className={`text-[11px] font-semibold uppercase tracking-wider ${
+              className={`text-[12px] font-bold uppercase tracking-wider ${
                 isSameDay(date, new Date())
                   ? "text-[var(--accent-presence)]"
-                  : "text-[var(--text-muted)]"
+                  : "text-[var(--text-primary)]"
               }`}
             >
               {isSameDay(date, new Date()) ? "Today" : fmtDateHeading(date)}
             </span>
-            <div className="flex-1 h-px bg-[var(--border-hairline)]" />
-            <span className="text-[10px] text-[var(--text-muted)]">
+            <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
               {groupItems.length} item{groupItems.length !== 1 ? "s" : ""}
             </span>
           </div>

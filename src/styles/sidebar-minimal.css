@@ -721,7 +721,7 @@
 .sidebar-action-stack .sidebar-action-row {
   min-height: 38px;
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
   padding: 0 11px;
   font-size: 13px;
@@ -745,7 +745,7 @@
 .sidebar-actions--footer .sidebar-action-row {
   gap: 7px;
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 0 8px;
   color: var(--text-secondary);
 }

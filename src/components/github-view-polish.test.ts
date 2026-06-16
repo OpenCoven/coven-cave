@@ -104,4 +104,32 @@ assert.match(
   "detail panel uses the glass panel styling hook",
 );
 
+// Selecting a repo pins the org to that repo's org and locks the Org select.
+assert.match(
+  source,
+  /if \(repoFilter === "all"\) return;[\s\S]*?const org = orgOf\(repoFilter\);[\s\S]*?setOrgFilter\(org\)/,
+  "a selected repo pins the Org filter to that repo's org",
+);
+assert.match(
+  source,
+  /disabled=\{orgOptions\.length === 0 \|\| repoFilter !== "all"\}/,
+  "the Org select is disabled (locked) while a repo is selected",
+);
+// Grouping is a none/org/repo segmented toggle, not a dropdown.
+assert.match(
+  source,
+  /\(\["none", "org", "repo"\] as GroupBy\[\]\)\.map/,
+  "grouping renders as a none/org/repo toggle",
+);
+assert.match(
+  source,
+  /aria-pressed=\{isActive\}/,
+  "grouping toggle buttons expose pressed state",
+);
+assert.doesNotMatch(
+  source,
+  /<option value="none">No grouping<\/option>/,
+  "the old grouping dropdown is gone",
+);
+
 console.log("github-view-polish.test.ts OK");

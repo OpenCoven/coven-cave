@@ -14,35 +14,60 @@ const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 
+// Codex-style floating panel toggles: two always-visible rounded buttons
+// pinned to the shell's top corners (left = nav sidebar, right = active side
+// panel) replace the old collapsed-only left edge rail.
 assert.match(
   shell,
-  /familiar-trigger-rail familiar-trigger-rail--left/,
-  "shell renders a left edge rail mirroring the right agent rail",
+  /const panelFloats = !isMobile/,
+  "shell builds the floating panel toggles on desktop only",
 );
 assert.match(
   shell,
-  /!isMobile && !navOpen \? \([\s\S]*?familiar-trigger-rail--left/,
-  "left edge rail appears on desktop once the nav is collapsed",
+  /shell-panel-float shell-panel-float--left/,
+  "shell renders a floating left toggle for the nav sidebar",
 );
 assert.match(
   shell,
-  /familiar-trigger-rail--left[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
-  "left edge rail toggle label reflects nav state",
+  /shell-panel-float--right/,
+  "shell renders a floating right toggle for the active side panel",
 );
 assert.match(
   shell,
-  /familiar-trigger-rail--left[\s\S]*?aria-expanded=\{navOpen\}/,
-  "left edge rail exposes nav expanded state",
+  /shell-panel-float--left[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
+  "left float label reflects nav state",
 );
 assert.match(
   shell,
-  /familiar-trigger-rail--left[\s\S]*?navRef\.current\?\.collapse\(\)[\s\S]*?navRef\.current\?\.expand\(\)/,
-  "left edge rail toggle collapses and expands the nav panel",
+  /shell-panel-float--left[\s\S]*?aria-expanded=\{navOpen\}/,
+  "left float exposes nav expanded state",
 );
 assert.match(
   shell,
-  /familiar-trigger-rail--left[\s\S]*?navOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/,
-  "left edge rail icon reflects nav state",
+  /shell-panel-float--left[\s\S]*?navOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/,
+  "left float icon reflects nav state",
+);
+assert.match(
+  shell,
+  /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
+  "left float collapses and expands the nav panel",
+);
+assert.match(
+  shell,
+  /shell-panel-float--right[\s\S]*?aria-expanded=\{familiarOpen\}/,
+  "right float exposes the active side-panel state",
+);
+assert.match(
+  shell,
+  /const toggleRightPanel = \(\) => \{[\s\S]*?familiarRef\.current[\s\S]*?setFamiliarOpen/,
+  "right float toggles the active right panel via familiarRef",
+);
+// Floats are always visible (open or closed) — the old collapsed-only left
+// edge rail is gone.
+assert.doesNotMatch(
+  shell,
+  /familiar-trigger-rail--left/,
+  "the old collapsed-only left edge rail is removed from the shell",
 );
 
 assert.match(
@@ -137,5 +162,19 @@ assert.doesNotMatch(
 );
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
 assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
+
+// The CompanionRail's in-panel Hide button (mirror of the left rail) dispatches
+// cave:familiar-panel-toggle; the Shell listens for it and reuses the ⌘⇧B path.
+assert.match(
+  shell,
+  /addEventListener\("cave:familiar-panel-toggle", familiarPanelToggle\)/,
+  "Shell listens for the CompanionRail in-panel collapse event",
+);
+assert.match(
+  shell,
+  /removeEventListener\("cave:familiar-panel-toggle", familiarPanelToggle\)/,
+  "Shell cleans up the familiar-panel-toggle listener",
+);
+assert.match(css, /\.companion-rail__collapse/, "globals.css styles the in-panel collapse button");
 
 console.log("shell-edge-rails.test.ts OK");

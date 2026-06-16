@@ -812,6 +812,10 @@ export type MessageBubbleProps = {
   /** CHAT-D6-02: regenerate — renders a Regenerate action in the assistant
    *  bubble's revealed action row. Caller gates it on !busy/!pending. */
   onRegenerate?: () => void;
+  /** Reply to Chat — renders a Reply action in the revealed action row of
+   *  either role. Loads this turn as a quoted reply target in the composer;
+   *  caller gates it on settled (non-pending) turns with text. */
+  onReply?: () => void;
   onOpenUrl?: (url: string) => void;
   /** CHAT-D4-01: ordered segments — prose spans interleaved with tool blocks
    *  at their chronological position. Assistant role only; when present they
@@ -822,7 +826,7 @@ export type MessageBubbleProps = {
   segments?: MessageBubbleSegment[];
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onOpenUrl, segments }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, segments }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -876,6 +880,17 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             by keyboard (Tab), screen readers, and touch. */}
         {!pending ? (
           <div className="cave-bubble-actions">
+            {onReply ? (
+              <button
+                type="button"
+                aria-label="Reply to message"
+                title="Reply"
+                onClick={onReply}
+                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              >
+                <Icon name="ph:arrow-bend-up-left" width={11} aria-hidden />
+              </button>
+            ) : null}
             {onEdit ? (
               <button
                 type="button"
@@ -928,6 +943,17 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
           actions are reachable by keyboard (Tab), screen readers, and touch. */}
       {!pending && content ? (
         <div className="cave-bubble-actions">
+          {onReply ? (
+            <button
+              type="button"
+              aria-label="Reply to message"
+              title="Reply"
+              onClick={onReply}
+              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+            >
+              <Icon name="ph:arrow-bend-up-left" width={11} aria-hidden />
+            </button>
+          ) : null}
           {onRegenerate ? (
             <button
               type="button"

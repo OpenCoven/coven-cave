@@ -19,6 +19,13 @@ export type Familiar = {
    * while it has a value, but its writes flow back into this field.
    */
   icon?: string;
+  /**
+   * URL of the familiar's workspace avatar image
+   * (`~/.coven/workspaces/familiars/<id>/avatars/<img>`), served by
+   * `GET /api/familiars/{id}/avatar` and cache-busted by file mtime. Set by
+   * `/api/familiars` only when an avatar exists on disk; absent otherwise.
+   */
+  avatarUrl?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
   model?: string;
