@@ -224,6 +224,16 @@ assert.match(
 );
 assert.match(
   styles,
+  /\.sidebar-action-stack \.sidebar-action-row\s*\{[^}]*border-radius:\s*var\(--radius-control\);/,
+  "Sidebar action rows should follow the shared control radius setting",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*border-radius:\s*var\(--radius-control\);/,
+  "Sidebar folder/footer rows should follow the shared control radius setting",
+);
+assert.match(
+  styles,
   /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-action-row,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile sidebar drawer rows and familiar select should meet the shared touch target",
 );
