@@ -28,34 +28,18 @@ assert.match(
   "ChatView renders MetaLine for the title + status banner",
 );
 
-assert.match(
-  source,
-  /onBack &&[\s\S]*aria-label="Back to chats"[\s\S]*onClick=\{onBack\}/,
-  "ChatView should expose a normal back button in the chat header",
-);
-
-assert.match(
-  source,
-  /function ChatBackButton\(\{ onBack \}[\s\S]*aria-label="Back to chats"[\s\S]*onClick=\{onBack\}[\s\S]*<Icon name="ph:arrow-left-bold"[\s\S]*<\/button>/,
-  "ChatView back button should be a reusable icon-only control",
-);
-
-assert.match(
-  source,
-  /<div className=\{`cave-chat-meta-line[\s\S]*\{onBack \? <ChatBackButton onBack=\{onBack\} \/> : null\}[\s\S]*<ChatTitleEditable/,
-  "ChatView back button should sit inline before the desktop chat title",
-);
-
-assert.match(
-  source,
-  /<div className="cave-mobile-header-familiar">\s*\{onBack \? <ChatBackButton onBack=\{onBack\} \/> : null\}\s*<FamiliarIcon/,
-  "ChatView mobile header should reuse the icon-only back control next to the chat name",
-);
-
+// The in-chat "back to chats" chevron was removed — the chat header stays
+// minimal and navigation back to the list is via the sidebar/list. (onBack is
+// still used to navigate away after a delete.)
 assert.doesNotMatch(
   source,
-  /aria-label="Back to chats"[\s\S]*>\s*<Icon name="ph:arrow-left-bold"[\s\S]*>\s*Back\s*<\/button>/,
-  "ChatView back button should not render a separate text label",
+  /ChatBackButton/,
+  "the ChatBackButton component and its renders are removed",
+);
+assert.doesNotMatch(
+  source,
+  /aria-label="Back to chats"/,
+  "the back-to-chats control is gone from the chat header",
 );
 
 assert.match(

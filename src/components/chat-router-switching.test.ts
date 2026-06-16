@@ -286,7 +286,7 @@ assert.equal(
 //    closing find never reaches the composer's Esc handling, and Enter /
 //    Shift+Enter cycle next/prev.
 const findBarComponent =
-  chatViewSource.match(/function ChatFindBar\(\{[\s\S]*?\nfunction ChatBackButton/)?.[0] ?? "";
+  chatViewSource.match(/function ChatFindBar\(\{[\s\S]*?\nfunction MetaLineElapsed/)?.[0] ?? "";
 
 assert.match(
   findBarComponent,
