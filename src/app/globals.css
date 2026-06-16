@@ -4651,6 +4651,55 @@ button:active > .edge-rail-chip {
 .familiar-studio-lifecycle__row-action:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-base); }
 .familiar-studio-lifecycle__row-action:disabled { opacity: 0.25; cursor: not-allowed; }
 
+/* Familiar Contract adherence tab. */
+.familiar-studio-contract { display: flex; flex-direction: column; gap: 18px; }
+.familiar-studio-contract__intro { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
+.familiar-studio-contract__lede { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); flex: 1; }
+.familiar-studio-contract__link { color: var(--accent-presence); text-decoration: underline; }
+.familiar-studio-contract__rerun {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  background: var(--bg-raised); border: 1px solid var(--border-hairline); border-radius: var(--radius-control);
+  padding: 6px 10px; color: var(--text-primary); font-size: 12px; cursor: pointer;
+}
+.familiar-studio-contract__rerun:hover:not(:disabled) { background: color-mix(in oklch, var(--text-primary) 8%, var(--bg-raised)); }
+.familiar-studio-contract__rerun:disabled { opacity: 0.5; cursor: progress; }
+.familiar-studio-contract__status { margin: 0; font-size: 12px; color: var(--text-muted); }
+.familiar-studio-contract__status--error { color: var(--color-warning); }
+.familiar-studio-contract__verdict {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border-hairline); border-radius: 8px; padding: 12px 14px;
+}
+.familiar-studio-contract__verdict--pass { border-color: color-mix(in oklch, var(--color-success, #3fb950) 50%, transparent); color: var(--color-success, #3fb950); }
+.familiar-studio-contract__verdict--fail { border-color: color-mix(in oklch, var(--color-danger) 45%, transparent); color: var(--color-danger); }
+.familiar-studio-contract__verdict-text { display: flex; flex-direction: column; gap: 1px; }
+.familiar-studio-contract__verdict-text strong { font-size: 14px; }
+.familiar-studio-contract__verdict-text span { font-size: 11px; color: var(--text-muted); }
+.familiar-studio-contract__section { display: flex; flex-direction: column; gap: 8px; }
+.familiar-studio-contract__heading { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
+.familiar-studio-contract__properties { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.familiar-studio-contract__property { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-primary); }
+.familiar-studio-contract__property--pass { color: var(--color-success, #3fb950); }
+.familiar-studio-contract__property--pass span { color: var(--text-primary); }
+.familiar-studio-contract__property--fail { color: var(--color-danger); }
+.familiar-studio-contract__property--fail span { color: var(--text-primary); }
+.familiar-studio-contract__files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.familiar-studio-contract__file { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.familiar-studio-contract__file code { color: var(--text-primary); font-size: 12px; }
+.familiar-studio-contract__file-tag { margin-left: auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.familiar-studio-contract__file--present .familiar-studio-contract__file-tag { color: var(--color-success, #3fb950); }
+.familiar-studio-contract__file--absent { color: var(--text-muted); }
+.familiar-studio-contract__file--absent .familiar-studio-contract__file-tag { color: var(--text-muted); }
+.familiar-studio-contract__workspace { margin: 2px 0 0; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, monospace); word-break: break-all; }
+.familiar-studio-contract__findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.familiar-studio-contract__finding {
+  display: flex; flex-direction: column; gap: 2px;
+  border-left: 2px solid var(--color-danger); padding: 2px 0 2px 10px;
+}
+.familiar-studio-contract__finding--warn { border-left-color: var(--color-warning); }
+.familiar-studio-contract__finding-loc { font-size: 12px; color: var(--text-primary); }
+.familiar-studio-contract__finding-loc code { font-size: 12px; }
+.familiar-studio-contract__finding-msg { font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+
 /* Focus-visible rings for every interactive control in the studio drawer.
    Keyboard Tab landed invisibly across the modal before this. */
 .familiar-studio__tab:focus-visible,

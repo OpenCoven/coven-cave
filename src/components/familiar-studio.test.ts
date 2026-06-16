@@ -47,4 +47,12 @@ assert.match(
   "Clicking the header avatar opens a hidden file picker",
 );
 
+// The Contract tab (Familiar Contract adherence check) is registered and mounted.
+assert.match(source, /id: "contract"/, "Studio registers the Contract tab in TABS");
+assert.match(
+  source,
+  /activeTab === "contract" && familiar \? \(\s*<FamiliarStudioContractTab familiar=\{familiar\} \/>/,
+  "Studio mounts the Contract tab body for the active familiar",
+);
+
 console.log("familiar-studio.test.ts: ok");
