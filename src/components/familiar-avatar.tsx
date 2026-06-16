@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { avatarAssetUrl, canResolveWorkspaceAvatar } from "@/lib/familiar-avatar-src";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -47,17 +48,15 @@ function useAvatarCandidates(familiar: ResolvedFamiliar): string[] {
   useEffect(() => {
     setAssetUrl(undefined);
     if (!familiar.avatarPath) return;
-    // convertFileSrc needs the Tauri webview runtime; skip it elsewhere (browser,
-    // SSR) and rely on the route candidate below.
-    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
+    if (!canResolveWorkspaceAvatar()) return;
     let cancelled = false;
     void (async () => {
       try {
         const { convertFileSrc } = await import("@tauri-apps/api/core");
-        const base = convertFileSrc(familiar.avatarPath!);
-        if (!cancelled) setAssetUrl(familiar.avatarVersion ? `${base}?v=${familiar.avatarVersion}` : base);
+        const url = avatarAssetUrl(convertFileSrc(familiar.avatarPath!), familiar.avatarVersion);
+        if (!cancelled) setAssetUrl(url);
       } catch {
-        // Leave assetUrl unset — the route candidate covers it.
+        // Leave assetUrl unset - the route candidate covers it.
       }
     })();
     return () => {
