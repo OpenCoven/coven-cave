@@ -59,4 +59,22 @@ assert.match(
   "expand float is hidden again while the panel is expanded",
 );
 
+// The floats track the live side-panel header position via a measured CSS var so
+// they stay aligned through the post-load layout settle (no fixed-offset flash).
+assert.match(
+  css,
+  /\.shell-panel-float\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\)/,
+  "floats consume the measured --shell-float-top (with a 50px fallback)",
+);
+assert.match(
+  src,
+  /setProperty\("--shell-float-top"/,
+  "ChatSurface publishes the live header center to --shell-float-top",
+);
+assert.match(
+  src,
+  /querySelector\("\.right-panel-tabs"\)[\s\S]*getBoundingClientRect/,
+  "the float position is derived from the measured side-panel header rect",
+);
+
 console.log("right-panel-expand.test.ts: ok");

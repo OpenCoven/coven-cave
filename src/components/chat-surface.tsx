@@ -446,6 +446,55 @@ export function ChatSurface({
     return () => root.removeAttribute("data-right-panel-open");
   }, [rightPanel, isMobile, scope]);
 
+  // Keep the shell's floating toggles (left nav, expand, side-panel trigger)
+  // vertically centered on the LIVE side-panel header. Its top can shift while
+  // the layout settles after load (e.g. transient chrome above the panel), so a
+  // fixed CSS offset flashes out of alignment. Publish the header's centered top
+  // as a root CSS var the floats consume (--shell-float-top), and track it via a
+  // short rAF loop that runs only until the value holds steady, plus a resize
+  // re-arm. Falls back to the CSS default when there's no panel to align to.
+  useEffect(() => {
+    if (isMobile || scope !== "conversation" || rightPanel === null || rightExpanded) return;
+    const root = document.documentElement;
+    const FLOAT_H = 28;
+    let raf = 0;
+    let steady = 0;
+    let last = Number.NaN;
+    const measure = () => {
+      const header = document.querySelector(".right-panel-tabs");
+      if (header) {
+        const r = header.getBoundingClientRect();
+        const top = Math.round(r.top + (r.height - FLOAT_H) / 2);
+        if (top !== last) {
+          root.style.setProperty("--shell-float-top", `${top}px`);
+          last = top;
+          steady = 0;
+        } else {
+          steady += 1;
+        }
+      }
+    };
+    const loop = () => {
+      measure();
+      // Stop once the measurement holds for ~6 frames — covers the post-load
+      // settle without polling forever.
+      if (steady < 6) raf = requestAnimationFrame(loop);
+    };
+    loop();
+    const rearm = () => {
+      steady = 0;
+      last = Number.NaN;
+      cancelAnimationFrame(raf);
+      loop();
+    };
+    window.addEventListener("resize", rearm);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", rearm);
+      root.style.removeProperty("--shell-float-top");
+    };
+  }, [isMobile, scope, rightPanel, rightExpanded]);
+
   // While the right panel is expanded it covers the chat surface, but the
   // shell's right edge-rail float (.shell-panel-float--right, z-40) sits above
   // the overlay's trapped z-index and intercepts clicks on the panel's

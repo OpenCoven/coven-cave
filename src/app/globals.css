@@ -3167,8 +3167,11 @@ button:active > .edge-rail-chip {
   /* Vertically centered on the side-panel header row — the 38px Inspector/Debug/
      Changes tab strip that sits directly below the ~45px chat scope-tabs header.
      The trigger + expand toggle read as part of that header rather than floating
-     above it; the left nav toggle is moved to the same row to stay level. */
-  top: 50px;
+     above it; the left nav toggle is moved to the same row to stay level.
+     ChatSurface measures the live header and publishes --shell-float-top so the
+     floats track it through the post-load settle (no fixed-offset flash); the
+     50px fallback matches the settled position when no panel is open. */
+  top: var(--shell-float-top, 50px);
   z-index: 40;
   display: grid;
   place-items: center;
