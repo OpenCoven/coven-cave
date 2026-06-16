@@ -30,6 +30,7 @@ export const ICON_NAMES = [
   "ph:arrow-up",
   "ph:arrow-up-bold",
   "ph:arrow-bend-up-right",
+  "ph:arrow-bend-up-left",
   "ph:arrows-clockwise-bold",
   "ph:arrows-in-simple",
   "ph:arrows-out-simple",

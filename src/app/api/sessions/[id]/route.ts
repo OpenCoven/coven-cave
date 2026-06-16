@@ -6,6 +6,7 @@ import {
   setSessionTitle,
   summonSessionLocal,
 } from "@/lib/cave-config";
+import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
 
 /** Validate session ID: only alphanum, hyphens, colons, dots — no path traversal. */
 function isValidSessionId(id: string): boolean {
@@ -54,6 +55,8 @@ export async function PATCH(
   if (typeof body.archived === "boolean") {
     if (body.archived) {
       result.archivedAt = await archiveSessionLocal(id);
+      // Clear any "ready to archive" nudge now that the user has archived it.
+      await resolveArchiveNudges(id);
     } else {
       await summonSessionLocal(id);
       result.archivedAt = null;

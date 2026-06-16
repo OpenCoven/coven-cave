@@ -86,11 +86,11 @@ assert.match(
 );
 
 // ── Session context in visible titles ────────────────────────────────────────
-assert.match(source, /function sessionRailTitle\(session: SessionRow\): string/, "Rail owns a single formatter for thread titles");
-assert.match(source, /session\.pullRequest\?\.number/, "Thread titles can include the linked pull request number");
-assert.match(source, /session\.pullRequest\?\.state/, "Thread titles can include the linked pull request state");
-assert.match(source, /session\.pullRequest\?\.branch \?\? session\.git\?\.branch/, "Thread titles can fall back to git branch context");
-assert.match(source, /session\.git\?\.isWorktree/, "Thread titles can mark worktree-backed chats");
+assert.match(
+  source,
+  /import \{ sessionRailTitle \} from "@\/lib\/session-rail-title"/,
+  "Rail uses the shared, unit-tested session title formatter (git/PR/worktree behavior lives in session-rail-title.test.ts)",
+);
 assert.match(source, /const title = sessionRailTitle\(session\)/, "Flat search rows use the shared session title formatter");
 
 // ── Advanced operations: Git / Inspector / Debug launchers ───────────────────
