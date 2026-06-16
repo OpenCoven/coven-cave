@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
@@ -16,54 +16,68 @@ type Props = {
 };
 
 /**
- * Resolve the `<img src>` for a familiar avatar.
- *
- * A workspace avatar is an absolute `.coven` path (`avatarPath`); we link to the
- * file directly through Tauri's asset protocol (`convertFileSrc`) instead of
- * proxying bytes through an API route. That only works inside the Tauri webview,
- * so it's computed after mount — server render and any non-Tauri context fall
- * back to the Cave-local upload (`avatarImage`) if present, else the glyph.
+ * The `/api/familiars/<id>/avatar` route reads the same workspace file and
+ * downscales it. It works in any context (browser or the Tauri webview, both
+ * served by the local server), so it's the reliable fallback when the direct
+ * asset link isn't usable.
  */
-function useAvatarSrc(familiar: ResolvedFamiliar): string | undefined {
-  // `avatarImage` (a data URL) is SSR-safe and usable as the initial value; a
-  // workspace `avatarPath` resolves only client-side, so start without it.
-  const [src, setSrc] = useState<string | undefined>(
-    familiar.avatarPath ? undefined : familiar.avatarImage,
-  );
+function avatarRouteUrl(familiar: ResolvedFamiliar): string | undefined {
+  if (!familiar.avatarPath) return undefined;
+  const v = familiar.avatarVersion ? `?v=${familiar.avatarVersion}` : "";
+  return `/api/familiars/${encodeURIComponent(familiar.id)}/avatar${v}`;
+}
+
+/**
+ * Ordered `<img src>` candidates for a familiar avatar, best first. The avatar
+ * component renders the first that hasn't errored and advances on load failure:
+ *
+ *   1. Direct `.coven` file via Tauri's asset protocol (`convertFileSrc`) — the
+ *      "link straight to the path" case. Only resolvable inside the Tauri webview
+ *      and only for paths inside the asset-protocol scope, so it's computed after
+ *      mount and may be absent.
+ *   2. The `/api/familiars/<id>/avatar` route — downscales and works everywhere
+ *      (browser, or a workspace path outside the asset scope). Reliable baseline.
+ *   3. A Cave-local uploaded data URL.
+ *
+ * When all are exhausted (or none exist) the glyph renders instead.
+ */
+function useAvatarCandidates(familiar: ResolvedFamiliar): string[] {
+  const [assetUrl, setAssetUrl] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!familiar.avatarPath) {
-      setSrc(familiar.avatarImage);
-      return;
-    }
+    setAssetUrl(undefined);
+    if (!familiar.avatarPath) return;
+    // convertFileSrc needs the Tauri webview runtime; skip it elsewhere (browser,
+    // SSR) and rely on the route candidate below.
+    if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
     let cancelled = false;
     void (async () => {
       try {
-        // convertFileSrc needs the Tauri webview runtime; outside it (browser,
-        // SSR) the file isn't loadable, so degrade to the upload / glyph.
-        if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
-          if (!cancelled) setSrc(familiar.avatarImage);
-          return;
-        }
         const { convertFileSrc } = await import("@tauri-apps/api/core");
         const base = convertFileSrc(familiar.avatarPath!);
-        const url = familiar.avatarVersion ? `${base}?v=${familiar.avatarVersion}` : base;
-        if (!cancelled) setSrc(url);
+        if (!cancelled) setAssetUrl(familiar.avatarVersion ? `${base}?v=${familiar.avatarVersion}` : base);
       } catch {
-        if (!cancelled) setSrc(familiar.avatarImage);
+        // Leave assetUrl unset — the route candidate covers it.
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [familiar.avatarPath, familiar.avatarVersion, familiar.avatarImage]);
+  }, [familiar.avatarPath, familiar.avatarVersion]);
 
-  return src;
+  return useMemo(
+    () => [assetUrl, avatarRouteUrl(familiar), familiar.avatarImage].filter((s): s is string => !!s),
+    [assetUrl, familiar],
+  );
 }
 
 export function FamiliarAvatar({ familiar, size = "md", className, title }: Props) {
   const px = PX[size];
-  const src = useAvatarSrc(familiar);
+  const candidates = useAvatarCandidates(familiar);
+  // Track srcs that failed to load so an onError advances to the next candidate.
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const src = candidates.find((c) => !failed.has(c));
+
   if (src) {
     return (
       <img
@@ -73,6 +87,13 @@ export function FamiliarAvatar({ familiar, size = "md", className, title }: Prop
         height={px}
         className={className ?? "inline-block rounded-sm object-cover"}
         title={title}
+        onError={() =>
+          setFailed((prev) => {
+            const next = new Set(prev);
+            next.add(src);
+            return next;
+          })
+        }
       />
     );
   }

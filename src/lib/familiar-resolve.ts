@@ -17,7 +17,8 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
   /**
    * Absolute path to the familiar's workspace avatar
    * (`~/.coven/workspaces/familiars/<id>/avatars/<img>`) when present. The avatar
-   * component links to it through Tauri's asset protocol. Wins over `avatarImage`.
+   * component links to it through Tauri's asset protocol, falling back to the
+   * `/api/familiars/<id>/avatar` route. Wins over `avatarImage`.
    */
   avatarPath?: string;
   /** Avatar file mtime (ms) used to cache-bust the asset URL; pairs with `avatarPath`. */
