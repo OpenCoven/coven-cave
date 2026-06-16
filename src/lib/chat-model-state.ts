@@ -43,6 +43,13 @@ export type ResolveChatModelStateInput = {
 
 const UNSUPPORTED_REASON =
   "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.";
+const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.5";
+const SYNTHETIC_LOCAL_MODELS = new Set([
+  "codex-local",
+  "claude-local",
+  "hermes-local",
+  "openclaw-local",
+]);
 
 const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
@@ -60,7 +67,17 @@ export function cleanModelId(value: unknown): string | null {
 export function isSyntheticLocalModel(model: unknown, harness: unknown): boolean {
   const cleanModel = cleanModelId(model);
   const cleanHarness = cleanModelId(harness);
-  return !!cleanModel && !!cleanHarness && cleanModel === `${cleanHarness}-local`;
+  return (
+    !!cleanModel &&
+    (SYNTHETIC_LOCAL_MODELS.has(cleanModel) ||
+      (!!cleanHarness && cleanModel === `${cleanHarness}-local`))
+  );
+}
+
+function cleanEffectiveModelId(model: unknown, harness: unknown): string | null {
+  const cleanModel = cleanModelId(model);
+  if (!cleanModel || isSyntheticLocalModel(cleanModel, harness)) return null;
+  return cleanModel;
 }
 
 export function modelApplicationForHarness(input?: ModelApplicationInput): ModelApplicationResult {
@@ -124,7 +141,7 @@ export function modelApplicationFromRun(input: {
 }
 
 export function resolveChatModelState(input: ResolveChatModelStateInput): ChatModelState {
-  const nextMessageModel = cleanModelId(input.nextMessageModel);
+  const nextMessageModel = cleanEffectiveModelId(input.nextMessageModel, input.harness);
   if (nextMessageModel) {
     return chatModelState(input, {
       effectiveModel: nextMessageModel,
@@ -134,9 +151,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const sessionModel = isSyntheticLocalModel(input.sessionModel, input.harness)
-    ? null
-    : cleanModelId(input.sessionModel);
+  const sessionModel = cleanEffectiveModelId(input.sessionModel, input.harness);
   if (sessionModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
@@ -147,9 +162,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
     });
   }
 
-  const familiarModel = isSyntheticLocalModel(input.familiarModel, input.harness)
-    ? null
-    : cleanModelId(input.familiarModel);
+  const familiarModel = cleanEffectiveModelId(input.familiarModel, input.harness);
   if (familiarModel) {
     const application = input.application ? modelApplicationForHarness(input.application) : null;
     return chatModelState(input, {
@@ -161,7 +174,7 @@ export function resolveChatModelState(input: ResolveChatModelStateInput): ChatMo
   }
 
   return chatModelState(input, {
-    effectiveModel: cleanModelId(input.globalDefaultModel) ?? "unknown",
+    effectiveModel: cleanEffectiveModelId(input.globalDefaultModel, input.harness) ?? GLOBAL_DEFAULT_MODEL,
     source: "global-default",
     applicationState: "saved",
     reason: "Inherited from Cave defaults.",
