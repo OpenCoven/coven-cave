@@ -61,6 +61,8 @@ export type SessionRow = {
   initiator?: SessionInitiator;
   git?: SessionGitContext | null;
   pullRequest?: SessionPullRequestContext | null;
+  /** Working-tree change size vs HEAD, for the Recent Activity roll-up's `+N -N`. */
+  diff?: { additions: number; deletions: number } | null;
 };
 
 export type SessionGitContext = {

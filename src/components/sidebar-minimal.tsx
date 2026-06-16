@@ -15,6 +15,7 @@
 import React from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -289,6 +290,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             />
           ))}
         </SidebarSection>
+
+        <RecentActivityRollup />
       </div>
 
       {/* Bottom: Notifications + Settings */}

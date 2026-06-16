@@ -853,3 +853,29 @@
     -webkit-tap-highlight-color: transparent;
   }
 }
+
+/* ── Recent activity roll-up ─────────────────────────────────────────────────
+   Collapsible "Recent Activity" list in the left panel, styled after the
+   Superconductor activity sidebar: stacked cards with title · project · model ·
+   +N -N diff · relative time, the active session marked by a left accent bar. */
+.recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0 2px; }
+.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 2px 6px; border: 0; background: transparent; cursor: pointer; color: var(--text-muted); }
+.recent-activity__label { font-size: 10px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+.recent-activity__chevron { transition: transform 140ms ease; }
+.recent-activity__chevron--collapsed { transform: rotate(-90deg); }
+.recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.recent-activity__card { position: relative; display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 8px 10px 8px 12px; border: 1px solid transparent; border-radius: 10px; background: color-mix(in oklch, var(--bg-raised) 70%, transparent); text-align: left; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease; }
+.recent-activity__card:hover { background: var(--bg-raised); border-color: var(--border-hairline); }
+.recent-activity__card--active { background: var(--bg-raised); }
+.recent-activity__card--active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-presence); }
+.recent-activity__row1, .recent-activity__row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.recent-activity__title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 550; color: var(--text-primary); }
+.recent-activity__project { flex-shrink: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.recent-activity__model { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--text-secondary); }
+.recent-activity__model-icon { flex-shrink: 0; opacity: 0.85; }
+.recent-activity__model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+.recent-activity__meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.recent-activity__diff { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; }
+.recent-activity__add { color: color-mix(in oklch, #3fb950 80%, var(--text-secondary)); }
+.recent-activity__del { color: color-mix(in oklch, #f85149 80%, var(--text-secondary)); }
+.recent-activity__time { font-size: 10.5px; color: var(--text-muted); }
