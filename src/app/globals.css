@@ -4391,6 +4391,121 @@ button:active > .edge-rail-chip {
 .familiar-studio__autosave::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--color-success, var(--accent-presence)); opacity: 0.7; }
 .familiar-studio__sync-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--color-warning); }
 .familiar-studio__empty { padding: var(--space-8) var(--space-4); text-align: center; color: var(--text-muted); }
+
+/* Inline Familiar Studio — Settings → Familiars master-detail (non-modal).
+   Reuses the drawer's tab-body, __body and __footer styles; only the shell,
+   roster rail and horizontal tabstrip are new here. */
+.familiar-studio-inline {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  min-height: 540px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-base);
+  overflow: hidden;
+}
+.familiar-studio-inline__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  overflow-y: auto;
+  border-right: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 50%, transparent);
+}
+.familiar-studio-inline__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.familiar-studio-inline__item:hover:not(.familiar-studio-inline__item--active) {
+  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+  color: var(--text-primary);
+}
+.familiar-studio-inline__item--active {
+  background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 14%, transparent);
+  color: var(--text-primary);
+}
+.familiar-studio-inline__item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring-focus); }
+.familiar-studio-inline__item-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.familiar-studio-inline__item-name {
+  font-size: var(--text-sm); font-weight: 500; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.familiar-studio-inline__item-role {
+  font-size: var(--text-2xs); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.familiar-studio-inline__item-live {
+  flex-shrink: 0;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-grid; place-items: center;
+  border-radius: 999px;
+  font-size: var(--text-2xs); font-weight: 600;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+}
+.familiar-studio-inline__detail {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+  min-height: 0;
+}
+.familiar-studio-inline__tabs {
+  display: flex;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3) 0;
+  border-bottom: 1px solid var(--border-hairline);
+  overflow-x: auto;
+}
+.familiar-studio-inline__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.familiar-studio-inline__tab:hover:not(.familiar-studio-inline__tab--active) { color: var(--text-secondary); }
+.familiar-studio-inline__tab--active {
+  color: var(--familiar-accent, var(--accent-presence));
+  border-bottom-color: var(--familiar-accent, var(--accent-presence));
+}
+.familiar-studio-inline__tab:focus-visible {
+  outline: none; box-shadow: 0 0 0 2px var(--ring-focus); border-radius: var(--radius-sm);
+}
+.familiar-studio-inline__body { max-height: 62vh; }
+
+@media (max-width: 640px) {
+  .familiar-studio-inline { grid-template-columns: 1fr; min-height: 0; }
+  .familiar-studio-inline__list {
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid var(--border-hairline);
+    overflow-x: auto;
+  }
+  .familiar-studio-inline__item { width: auto; flex-shrink: 0; max-width: 180px; }
+  .familiar-studio-inline__body { max-height: none; }
+}
 .familiar-studio-identity { display: flex; flex-direction: column; gap: var(--space-4); }
 .familiar-studio-identity__row { display: flex; flex-direction: column; gap: 6px; }
 .familiar-studio-identity__label { font-size: var(--text-2xs); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }

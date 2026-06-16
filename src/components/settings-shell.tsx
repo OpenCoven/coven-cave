@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
-import { SettingsFamiliarsPanel } from "@/components/settings-familiars-panel";
+import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { DEMO_FAMILIARS } from "@/lib/demo-seed";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -496,8 +496,6 @@ function AddonsSection() {
 
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
-const EMPTY_RESPONSE_NEEDED: Set<string> = new Set();
-
 function FamiliarsSection() {
   // Settings is a standalone route with no workspace context, so this panel
   // sources its own data: the familiar roster (resolved with cave overrides)
@@ -563,10 +561,10 @@ function FamiliarsSection() {
   }
 
   return (
-    <SettingsFamiliarsPanel
-      familiars={familiars}
+    <FamiliarStudioInlinePanel
+      familiars={rawFamiliars}
+      resolved={familiars}
       sessions={sessions}
-      responseNeeded={EMPTY_RESPONSE_NEEDED}
     />
   );
 }
