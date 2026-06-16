@@ -63,7 +63,7 @@ test("cave-chat.css modernizes the new-chat launch surface responsively", () => 
   const src = read("../styles/cave-chat.css");
   assert.match(
     src,
-    /\.cave-chat-empty-shell\s*\{[\s\S]*?width:\s*min\(760px,\s*100%\);[\s\S]*?display:\s*grid;/,
+    /\.cave-chat-empty-shell\s*\{[\s\S]*?width:\s*min\(680px,\s*100%\);[\s\S]*?display:\s*grid;/,
     "launch shell is constrained and grid-based",
   );
   assert.match(

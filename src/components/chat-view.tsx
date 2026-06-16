@@ -543,20 +543,22 @@ function ChatEmptyState({
 
         {onProjectChange && project && (
           <label className="cave-chat-empty-project">
-            <Icon name="ph:folder-open" width={14} aria-hidden />
-            <span className="cave-chat-empty-project-label">Project</span>
-            <select
-              value={project.id}
-              onChange={(e) => onProjectChange(e.target.value)}
-              aria-label="Project for this chat"
-              className="cave-chat-empty-project-select"
-            >
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <span className="cave-chat-empty-project-head">
+              <Icon name="ph:folder-open" width={14} aria-hidden />
+              <span className="cave-chat-empty-project-label">Project</span>
+              <select
+                value={project.id}
+                onChange={(e) => onProjectChange(e.target.value)}
+                aria-label="Project for this chat"
+                className="cave-chat-empty-project-select"
+              >
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </span>
             <span className="cave-chat-empty-project-root">
               {project.root}
             </span>
