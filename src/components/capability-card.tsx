@@ -15,15 +15,6 @@ export type HarnessCapSkill = {
   path: string;
 };
 
-export type HarnessCapPlugin = {
-  id: string;
-  name: string;
-  kind: string;
-  enabled: boolean;
-  command?: string;
-  args?: string[];
-};
-
 export type CapWarning = {
   kind: string;
   path: string;
@@ -35,7 +26,6 @@ export type HarnessCapabilityManifest = {
   scanned_at: string;
   global_instructions: GlobalInstructions;
   skills: HarnessCapSkill[];
-  plugins: HarnessCapPlugin[];
   warnings: CapWarning[];
 };
 
@@ -126,8 +116,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
   const initial = label[0]?.toUpperCase() ?? "?";
   const totalItems =
     (manifest.global_instructions.present ? 1 : 0) +
-    manifest.skills.length +
-    manifest.plugins.length;
+    manifest.skills.length;
 
   return (
     <div className="min-w-0 rounded-xl border border-border bg-card">
@@ -193,38 +182,16 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
           </div>
         ) : null}
 
-        {manifest.plugins.length > 0 ? (
-          <div className="px-4 py-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]">
-              Plugins · {manifest.plugins.length}
+        {manifest.skills && manifest.skills.length > 0 && (
+          <div className="px-4 py-2">
+            <p className="text-[11px] text-muted-foreground">
+              Skills · {manifest.skills.length}
+              {" — "}
+              {manifest.skills.slice(0, 3).map((s) => s.name).join(", ")}
+              {manifest.skills.length > 3 ? ` +${manifest.skills.length - 3} more` : ""}
             </p>
-            <ul className="space-y-1.5">
-              {manifest.plugins.map((plugin) => (
-                <li key={plugin.id} className="flex items-start gap-2">
-                  <Icon name="ph:plug" className="mt-0.5 shrink-0 text-muted-foreground" width="0.75rem" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="min-w-0 break-words text-[12px] text-foreground">{plugin.name}</p>
-                      <span className="rounded-full bg-muted px-1.5 py-px text-[9px] uppercase tracking-wide text-muted-foreground">
-                        {plugin.kind}
-                      </span>
-                      {!plugin.enabled && (
-                        <span className="rounded-full bg-muted px-1.5 py-px text-[9px] text-muted-foreground">
-                          disabled
-                        </span>
-                      )}
-                    </div>
-                    {plugin.command && (
-                      <p className="break-all font-mono text-[11px] text-muted-foreground sm:truncate">
-                        {plugin.command} {plugin.args?.join(" ")}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
           </div>
-        ) : null}
+        )}
 
         {manifest.warnings.length > 0 ? (
           <div className="px-4 py-3">
