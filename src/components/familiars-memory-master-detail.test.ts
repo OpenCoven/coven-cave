@@ -13,14 +13,16 @@ assert.match(source, /Delete \{bulkDeletable\.length\} cleanable/, "bulk-delete 
 assert.ok(!/memory-list-drawer/.test(source), "old grid drawer removed");
 assert.match(source, /MemoryReaderModal path=\{expandRow\.contentPath \?\? expandRow\.path\}/, "fullscreen expand uses the resolved content path");
 
-// Responsive: panes gate on selection below xl; reader has a Back button.
-assert.match(source, /selectedRowId \? "hidden xl:flex" : "flex"/, "list pane hides below xl when a row is selected");
-assert.match(source, /selectedRowId \? "flex" : "hidden xl:flex"/, "reader wrapper hides below xl when nothing is selected");
+// Responsive: panes gate on selection below the container breakpoint; reader has a Back button.
+// Layout keys off the view's own container width (@container/memview), not the viewport,
+// so the master-detail collapses to one pane inside narrow surfaces like the Studio drawer.
+assert.match(source, /selectedRowId \? "hidden @min-\[1024px\]\/memview:flex" : "flex"/, "list pane hides below the container breakpoint when a row is selected");
+assert.match(source, /selectedRowId \? "flex" : "hidden @min-\[1024px\]\/memview:flex"/, "reader wrapper hides below the container breakpoint when nothing is selected");
 assert.match(source, /onBack=\{\(\) => setSelectedRowId\(null\)\}/, "reader receives a back-to-list handler");
 
 const reader = await readFile(new URL("./familiars-memory-reader.tsx", import.meta.url), "utf8");
 assert.match(reader, /aria-label="Back to list"/, "reader renders a Back button");
-assert.match(reader, /xl:hidden/, "Back button is hidden at xl and above");
+assert.match(reader, /@min-\[1024px\]\/memview:hidden/, "Back button is hidden at/above the container breakpoint");
 
 // Grouping: a Group control drives groupMemoryRows over the paged rows.
 assert.match(source, /value=\{groupMode\}/, "Group control is bound to groupMode");

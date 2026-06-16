@@ -57,8 +57,8 @@ assert.match(
 
 assert.match(
   source,
-  /xl:grid-cols-\[minmax\(0,1fr\)_minmax\(420px,560px\)\]/,
-  "List-mode container (non-compact) must use an asymmetric list/reader grid",
+  /@min-\[1024px\]\/memview:grid-cols-\[minmax\(0,1fr\)_minmax\(420px,560px\)\]/,
+  "List-mode container (non-compact) must use an asymmetric list/reader grid, gated on the view's own container width",
 );
 
 assert.doesNotMatch(

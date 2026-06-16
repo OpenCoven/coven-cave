@@ -342,10 +342,10 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
   const contentClass = compact
     ? "flex flex-col gap-4 overflow-y-auto p-4"
-    : "grid min-h-0 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]";
+    : "grid min-h-0 gap-4 p-4 @min-[1024px]/memview:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
+    <div className="@container/memview flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className={`shrink-0 border-b border-[var(--border-hairline)] ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
         {compact ? null : (
           <div
@@ -488,7 +488,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
           !compact ? (
           <>
             {/* LIST PANE */}
-            <section className={`min-h-0 flex-col ${selectedRowId ? "hidden xl:flex" : "flex"}`}>
+            <section className={`min-h-0 flex-col ${selectedRowId ? "hidden @min-[1024px]/memview:flex" : "flex"}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Memories</h3>
                 <div className="flex items-center gap-2">
@@ -545,7 +545,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             </section>
 
             {/* READER PANE */}
-            <div className={`min-h-0 flex-col ${selectedRowId ? "flex" : "hidden xl:flex"}`}>
+            <div className={`min-h-0 flex-col ${selectedRowId ? "flex" : "hidden @min-[1024px]/memview:flex"}`}>
               <MemoryReaderPane
                 row={selectedRow}
                 age={selectedRow ? age(selectedRow.sortTime) : ""}
