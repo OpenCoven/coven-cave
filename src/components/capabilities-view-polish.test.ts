@@ -138,4 +138,11 @@ assert.match(
   "mobile chip-row buttons should reset the blanket min-height to stay compact pills",
 );
 
+// Long prose values (Detail/Warning) clamp to 3 lines with a Show more/less toggle.
+assert.match(source, /function ClampedValue/, "inspector should have a ClampedValue component");
+assert.match(source, /line-clamp-3/, "clamped value collapses to 3 lines via line-clamp-3");
+assert.match(source, /expanded \? "block" : "line-clamp-3"/, "display must toggle (block when expanded) so the clamp actually applies");
+assert.match(source, /Show more|Show less/, "clamp exposes a Show more/Show less toggle");
+assert.match(source, /label="Detail" value=\{item\.description\} clamp/, "the Detail (description) row is clamped");
+
 console.log("capabilities-view-polish.test.ts OK");

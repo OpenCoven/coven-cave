@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
@@ -680,8 +680,8 @@ function CapabilityDetails({
       </div>
 
       <div className="divide-y divide-[var(--border-hairline)] border-t border-[var(--border-hairline)]">
-        {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
-        {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
+        {item.description ? <InspectorBlock label="Detail" value={item.description} clamp /> : null}
+        {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" clamp /> : null}
         {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
         {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
         {item.tags?.length ? <InspectorBlock label="Tags" value={item.tags.join(", ")} /> : null}
@@ -820,7 +820,7 @@ function SkillPreviewBlock({
   // inspector never goes blank.
   if (preview.status === "error") {
     return fallbackDescription ? (
-      <InspectorBlock label="Detail" value={fallbackDescription} />
+      <InspectorBlock label="Detail" value={fallbackDescription} clamp />
     ) : (
       <div>
         <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Markdown preview</p>
@@ -934,27 +934,68 @@ function CapabilityPreviewModal({
   );
 }
 
-function InspectorBlock({
-  label,
-  value,
-  mono,
-  tone,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  tone?: "warning";
-}) {
+// Long prose values (a skill's Detail/description, a Warning) are clamped to
+// three lines with a Show more/less toggle so the inspector stays compact.
+function ClampedValue({ value, tone }: { value: string; tone?: "warning" }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || expanded) return;
+    setOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [value, expanded]);
   return (
-    <div className="grid grid-cols-[4.25rem_1fr] items-baseline gap-x-3 py-[7px]">
-      <span className="text-[9.5px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+    <div className="min-w-0">
       <span
-        className={`min-w-0 break-words text-[11px] leading-5 ${mono ? "font-mono text-[10.5px]" : ""} ${
+        ref={ref}
+        className={`break-words text-[11px] leading-5 ${expanded ? "block" : "line-clamp-3"} ${
           tone === "warning" ? "text-[var(--color-warning)]" : "text-[var(--text-secondary)]"
         }`}
       >
         {value}
       </span>
+      {overflowing || expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="focus-ring mt-0.5 text-[10px] font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function InspectorBlock({
+  label,
+  value,
+  mono,
+  tone,
+  clamp,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  tone?: "warning";
+  clamp?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[4.25rem_1fr] items-baseline gap-x-3 py-[7px]">
+      <span className="text-[9.5px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+      {clamp ? (
+        <ClampedValue value={value} tone={tone} />
+      ) : (
+        <span
+          className={`min-w-0 break-words text-[11px] leading-5 ${mono ? "font-mono text-[10.5px]" : ""} ${
+            tone === "warning" ? "text-[var(--color-warning)]" : "text-[var(--text-secondary)]"
+          }`}
+        >
+          {value}
+        </span>
+      )}
     </div>
   );
 }
