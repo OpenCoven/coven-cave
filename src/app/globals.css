@@ -3189,6 +3189,10 @@ button:active > .edge-rail-chip {
 
 .shell-panel-float--left {
   left: 8px;
+  /* The left nav toggle belongs beside the "Coven Cave" wordmark row at the top
+     of the sidebar, not level with the right panel's lower tab strip. Override
+     the shared `top` so it rides up next to the wordmark. */
+  top: 20px;
 }
 
 .shell-panel-float--right {
