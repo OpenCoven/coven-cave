@@ -3253,9 +3253,11 @@ button:active > .edge-rail-chip {
 
 .shell-panel-float {
   position: absolute;
-  /* Vertically centered on the sidebar header row so the toggle reads as part
-     of that row rather than floating above it. */
-  top: 18px;
+  /* Vertically centered on the side-panel header row — the 38px Inspector/Debug/
+     Changes tab strip that sits directly below the ~45px chat scope-tabs header.
+     The trigger + expand toggle read as part of that header rather than floating
+     above it; the left nav toggle is moved to the same row to stay level. */
+  top: 50px;
   z-index: 40;
   display: grid;
   place-items: center;
@@ -3280,6 +3282,20 @@ button:active > .edge-rail-chip {
 
 .shell-panel-float--right {
   right: 8px;
+}
+
+/* Expand-to-cover toggle: pinned one button-width + gap to the left of the
+   side-panel trigger (8 + 28 + 8). Hidden until a chat right panel is actually
+   open, and re-hidden while expanded (the in-panel Restore button takes over). */
+.shell-panel-float--expand {
+  right: 44px;
+  display: none;
+}
+:root[data-right-panel-open] .shell-panel-float--expand {
+  display: grid;
+}
+:root[data-right-panel-expanded] .shell-panel-float--expand {
+  display: none;
 }
 
 /* The Phosphor sidebar glyph points at a left panel; mirror it on the right
