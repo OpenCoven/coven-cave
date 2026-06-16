@@ -10,7 +10,11 @@
  * icon.
  */
 
-import phCollection from "@iconify-json/ph/icons.json";
+// Trimmed Phosphor catalog — the one-variant-per-base set the picker offers
+// (built by scripts/generate-icon-subset.mjs using the same prefer-`-fill`
+// dedup as below, so this stays a no-op pass over an already-deduped set).
+// Avoids importing the full ~9k-icon, 4.25 MB "@iconify-json/ph/icons.json".
+import phCollection from "./ph-glyph-catalog.json";
 
 export type GlyphCatalogEntry = {
   /** Storage representation: `ph:...` icon name. */

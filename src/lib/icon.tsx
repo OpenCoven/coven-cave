@@ -1,12 +1,17 @@
 "use client";
 
 import { Icon as IconifyIcon, addCollection } from "@iconify/react";
-import phCollection from "@iconify-json/ph/icons.json";
+// Trimmed Phosphor collection — only the icons in ICON_NAMES below, generated
+// by scripts/generate-icon-subset.mjs. Importing the full
+// "@iconify-json/ph/icons.json" (~4.5 MB / 9000+ icons) shipped the entire
+// set in the client bundle because a static JSON import can't be tree-shaken.
+// Keep the two in sync: src/lib/icon-subset.test.ts fails if this drifts.
+import phSubset from "./ph-icons-subset.json";
 
 let registered = false;
 function ensureRegistered() {
   if (registered) return;
-  addCollection(phCollection as Parameters<typeof addCollection>[0]);
+  addCollection(phSubset as Parameters<typeof addCollection>[0]);
   registered = true;
 }
 
@@ -79,7 +84,6 @@ export const ICON_NAMES = [
   "ph:vault",
   "ph:check-circle",
   "ph:key",
-  "ph:issue-opened",
   "ph:chat-teardrop-dots-bold",
   "ph:dots-three-bold",
   "ph:sliders-bold",
