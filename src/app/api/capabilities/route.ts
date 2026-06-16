@@ -69,6 +69,18 @@ async function supplementClaudeSkills(manifest: HarnessCapabilityManifest): Prom
   try {
     const userSkills = await scanClaudeUserSkills();
     if (userSkills.length === 0) return manifest;
+    const byId = new Map(userSkills.map((s) => [s.id, s]));
+    // The daemon's manifest skills carry no usable description (its scanner
+    // either omits it or, for a `description: |` block scalar, reports the bare
+    // "|"/">" indicator), so the inspector's Detail row was blank. Backfill it
+    // (and tags) from our own SKILL.md frontmatter scan in those cases.
+    const enriched = manifest.skills.map((s) => {
+      const current = s.description?.trim();
+      if (current && current !== "|" && current !== ">") return s;
+      const local = byId.get(s.id);
+      if (!local?.description) return s;
+      return { ...s, description: local.description, tags: s.tags?.length ? s.tags : local.tags };
+    });
     const seen = new Set(manifest.skills.map((s) => s.id));
     const supplemental: HarnessSkill[] = userSkills
       .filter((s) => !seen.has(s.id))
@@ -82,7 +94,7 @@ async function supplementClaudeSkills(manifest: HarnessCapabilityManifest): Prom
         version: s.version,
         tags: s.tags,
       }));
-    return { ...manifest, skills: [...manifest.skills, ...supplemental] };
+    return { ...manifest, skills: [...enriched, ...supplemental] };
   } catch {
     return manifest;
   }

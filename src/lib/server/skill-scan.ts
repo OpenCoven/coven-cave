@@ -19,12 +19,41 @@ export type LocalSkillEntry = {
   familiar: string;   // "global" for shared workspace skills, "user" for ~/.claude
 };
 
-function parseFrontmatter(text: string): Record<string, string> {
+export function parseFrontmatter(text: string): Record<string, string> {
   const fm: Record<string, string> = {};
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return fm;
-  for (const line of match[1].split("\n")) {
-    const m = line.match(/^(\w[\w-]*):\s+"?([^"]*)"?\s*$/);
+  const lines = match[1].split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // YAML block scalar — `key: |` (literal) or `key: >` (folded), with the
+    // value on the following indented lines. Skill `description:` is almost
+    // always written this way; the old single-line regex captured just "|".
+    const block = line.match(/^(\w[\w-]*):[ \t]*([|>])[+-]?[ \t]*$/);
+    if (block) {
+      const key = block[1];
+      const folded = block[2] === ">";
+      const body: string[] = [];
+      let baseIndent: number | null = null;
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const l = lines[j];
+        if (l.trim() === "") { body.push(""); continue; }
+        const indent = l.match(/^[ \t]*/)?.[0].length ?? 0;
+        if (baseIndent === null) {
+          if (indent === 0) break; // no indented body → empty block
+          baseIndent = indent;
+        } else if (indent < baseIndent) {
+          break; // dedent → next key
+        }
+        body.push(l.slice(baseIndent));
+      }
+      while (body.length && body[body.length - 1] === "") body.pop();
+      fm[key] = (folded ? body.join(" ") : body.join("\n")).trim();
+      i = j - 1;
+      continue;
+    }
+    const m = line.match(/^(\w[\w-]*):\s+"?([^"]*?)"?\s*$/);
     if (m) fm[m[1]] = m[2];
   }
   return fm;
