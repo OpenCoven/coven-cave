@@ -89,28 +89,33 @@ assert.match(
 );
 assert.match(
   boardInspector,
-  /<div className="board-drawer-field-label"><Icon name="ph:folder" width=\{11\} \/> CWD<\/div>[\s\S]{0,1200}aria-label="Project root for this task CWD"/,
-  "The task CWD field should set the runtime root through a project picker in the inspector",
+  /<div className="board-drawer-field-label">Project<\/div>[\s\S]{0,900}onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
+  "The task Project field should set the runtime root for chat starts",
 );
 assert.match(
   boardInspector,
   /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
-  "Changing the task CWD project should persist both projectId and cwd",
+  "Changing the task project should persist both projectId and cwd",
 );
 assert.match(
   boardInspector,
-  /projects\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>[\s\S]*?\{project\.name\}/,
-  "The task CWD project picker should render the persisted project registry",
+  /projects\.map\(\(project\) =>[\s\S]{0,120}<option key=\{project\.id\} value=\{project\.id\}>[\s\S]{0,120}\{project\.name\}/,
+  "The task project picker should render the persisted project registry",
+);
+assert.doesNotMatch(
+  boardInspector,
+  /<div className="board-drawer-field-label"><Icon name="ph:folder" width=\{11\} \/> CWD<\/div>|aria-label="Project root for this task CWD"|board-drawer-path-preview/,
+  "The inspector should not expose a separate CWD field below Chat",
 );
 assert.match(
   boardView,
-  /Set a project in CWD before starting chat\./,
-  "CWD-less task chat starts should direct the user to the inline CWD project field",
+  /Set a project before starting chat\./,
+  "CWD-less task chat starts should direct the user to the task Project field",
 );
 assert.match(
   boardView,
   /if \("cwd" in patch \|\| "projectId" in patch\) setChatLinkError\(null\);/,
-  "Changing the task CWD project should clear the inline start-chat error",
+  "Changing the task project should clear the inline start-chat error",
 );
 assert.doesNotMatch(
   boardView,

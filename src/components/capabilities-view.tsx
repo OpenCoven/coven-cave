@@ -27,6 +27,8 @@ const TYPE_LABEL: Record<CapabilityType, string> = {
   instructions: "Instructions",
   skill: "Skills",
   plugin: "Plugins",
+  workflow: "Workflows",
+  role: "Roles",
   mcp: "MCP Servers",
   warning: "Warnings",
 };
@@ -35,6 +37,8 @@ const TYPE_ICON: Record<CapabilityType, Parameters<typeof Icon>[0]["name"]> = {
   instructions: "ph:note-pencil",
   skill: "ph:sparkle",
   plugin: "ph:plug",
+  workflow: "ph:graph",
+  role: "ph:mask-happy",
   mcp: "ph:plug-bold",
   warning: "ph:warning-fill",
 };

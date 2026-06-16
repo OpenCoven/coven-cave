@@ -11,8 +11,24 @@ export type GlobalInstructions = {
 export type HarnessCapSkill = {
   id: string;
   name: string;
+  source?: string;
+  harness_id?: string;
   description?: string;
+  version?: string;
+  tags?: string[];
   path: string;
+};
+
+export type HarnessPlugin = {
+  id: string;
+  name: string;
+  source?: string;
+  harness_id?: string;
+  kind: string;
+  enabled: boolean;
+  transport?: string;
+  command?: string;
+  args?: string[];
 };
 
 export type CapWarning = {
@@ -26,6 +42,7 @@ export type HarnessCapabilityManifest = {
   scanned_at: string;
   global_instructions: GlobalInstructions;
   skills: HarnessCapSkill[];
+  plugins: HarnessPlugin[];
   warnings: CapWarning[];
 };
 

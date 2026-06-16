@@ -33,12 +33,18 @@ type LibraryViewProps = {
   onNewProjectChat?: (projectRoot: string) => void;
 };
 
+function entryQuickKey(entry: TimelineEntry, index: number): string {
+  const item = entry.item as TimelineEntry["item"] & { id?: string; url?: string; title?: string };
+  if (item.id) return `${entry.list}:${item.id}`;
+  return `${entry.list}:legacy:${item.url ?? item.title ?? "untitled"}:${entry.capturedAt ?? "unknown"}:${index}`;
+}
+
 // Map a unified timeline entry (bookmark / reading / github) to a quick-open row.
-function entryToQuickItem(e: TimelineEntry): LibraryQuickItem {
+function entryToQuickItem(e: TimelineEntry, index: number): LibraryQuickItem {
   if (e.list === "bookmarks") {
     const b = e.item as LibraryBookmark;
     return {
-      key: `bookmark:${b.id}`,
+      key: entryQuickKey(e, index),
       kind: "bookmark",
       title: b.title || b.domain,
       hint: b.domain,
@@ -49,7 +55,7 @@ function entryToQuickItem(e: TimelineEntry): LibraryQuickItem {
   if (e.list === "reading") {
     const r = e.item as LibraryReadingItem;
     return {
-      key: `reading:${r.id}`,
+      key: entryQuickKey(e, index),
       kind: "reading",
       title: r.title,
       hint: r.author ?? r.sourceType,
@@ -59,7 +65,7 @@ function entryToQuickItem(e: TimelineEntry): LibraryQuickItem {
   }
   const g = e.item as LibraryGitHubItem;
   return {
-    key: `github:${g.id}`,
+    key: entryQuickKey(e, index),
     kind: "github",
     title: g.title,
     hint: g.number ? `${g.repo}#${g.number}` : g.repo,
@@ -195,7 +201,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         }
       }
       if (allJson.ok) {
-        for (const e of allJson.entries ?? []) next.push(entryToQuickItem(e));
+        for (const [index, e] of (allJson.entries ?? []).entries()) next.push(entryToQuickItem(e, index));
       }
       setQuickItems(next);
     } catch {
