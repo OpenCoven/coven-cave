@@ -25,7 +25,7 @@ log = "0.4"
 # tray-icon moved to the desktop-only target block below — mobile (iOS/
 # Android) doesn't have a tray and trying to enable the feature there
 # breaks the build.
-tauri = { version = "2.11.2", features = ["unstable"] }
+tauri = { version = "2.11.2", features = ["protocol-asset", "unstable"] }
 tauri-plugin-log = "2"
 # tauri-plugin-notification supports iOS and Android out of the box, so
 # this stays cross-platform; the JS-side `native-notify` wrapper handles
@@ -47,7 +47,7 @@ tauri-plugin-os = "2"
 # Spelling it as "not(ios) and not(android)" is equivalent to
 # `cfg(desktop)` for the platforms we care about.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-tauri = { version = "2.11.2", features = ["tray-icon"] }
+tauri = { version = "2.11.2", features = ["protocol-asset", "tray-icon"] }
 portable-pty = "0.8"
 # Desktop auto-update: the updater plugin checks/downloads/installs signed
 # release artifacts; process gives us relaunch() after an install. Both are

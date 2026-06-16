@@ -15,10 +15,17 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
   /** Always non-empty; falls back to var(--accent-presence). */
   color: string;
   /**
-   * Avatar image source: the familiar's workspace avatar URL (`base.avatarUrl`,
-   * served from `~/.coven/workspaces/familiars/<id>/avatars/`) when present,
-   * else a Cave-local uploaded data URL as fallback. Undefined when neither
-   * exists — the glyph renders instead.
+   * Absolute path to the familiar's workspace avatar
+   * (`~/.coven/workspaces/familiars/<id>/avatars/<img>`) when present. The avatar
+   * component links to it through Tauri's asset protocol. Wins over `avatarImage`.
+   */
+  avatarPath?: string;
+  /** Avatar file mtime (ms) used to cache-bust the asset URL; pairs with `avatarPath`. */
+  avatarVersion?: number;
+  /**
+   * Cave-local uploaded data URL — the fallback avatar source when the familiar
+   * has no workspace avatar on disk. Undefined when neither exists, in which case
+   * the glyph renders instead.
    */
   avatarImage?: string;
   /** Resolved glyph for fallback rendering when no image is set. */
@@ -44,9 +51,11 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     description: ov.description ?? base.description,
     color: ov.color ?? "var(--accent-presence)",
     // The familiar's workspace avatar (.../familiars/<id>/avatars/<img>) is the
-    // source of truth and always wins; a Cave-local upload is only the fallback
-    // when the familiar has no workspace avatar on disk.
-    avatarImage: base.avatarUrl ?? ctx.image?.dataUrl,
+    // source of truth and always wins; a Cave-local upload (`avatarImage`) is
+    // only the fallback when the familiar has no workspace avatar on disk.
+    avatarPath: base.avatarPath,
+    avatarVersion: base.avatarVersion,
+    avatarImage: ctx.image?.dataUrl,
     glyph: resolveFamiliarGlyph(
       { id: base.id, icon: base.icon, emoji: base.emoji, role: ov.role ?? base.role },
       glyphOverrides,
