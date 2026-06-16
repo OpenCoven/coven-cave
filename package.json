@@ -38,6 +38,7 @@
   "dependencies": {
     "@create-markdown/core": "2.0.3",
     "@create-markdown/preview": "2.0.3",
+    "@create-markdown/preview-mermaid": "2.0.3",
     "@create-markdown/react": "2.0.3",
     "@dnd-kit/core": "6.3.1",
     "@dnd-kit/sortable": "10.0.0",
@@ -54,6 +55,7 @@
     "@xterm/addon-web-links": "0.12.0",
     "@xterm/xterm": "6.0.0",
     "@xyflow/react": "12.11.0",
+    "mermaid": "11.15.0",
     "next": "16.2.6",
     "node-pty": "1.1.0",
     "qrcode": "1.5.4",
