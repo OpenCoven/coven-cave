@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
@@ -514,7 +514,20 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   </div>
                 ) : groupMode === "none" ? (
                   <ul className="divide-y divide-[var(--border-hairline)]">
-                    {pagedRows.map(renderRow)}
+                    {pagedRows.map((row, i) => {
+                      const prev = pagedRows[i - 1];
+                      const startsShared = row.ownership === "shared" && (!prev || prev.ownership === "owned");
+                      return (
+                        <Fragment key={row.rowId}>
+                          {startsShared ? (
+                            <li className="memory-shared-divider sticky top-0 z-[1] border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] backdrop-blur">
+                              Coven-wide memory · shared across all familiars
+                            </li>
+                          ) : null}
+                          {renderRow(row)}
+                        </Fragment>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <div>
