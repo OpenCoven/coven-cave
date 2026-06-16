@@ -293,7 +293,7 @@ export function PluginsView({
           : capabilitiesError;
 
   return (
-    <section className="plugins-view flex min-h-0 flex-1 flex-col bg-[var(--bg-main)]">
+    <section className="plugins-view flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className="border-b border-[var(--border-hairline)] px-4 py-3 sm:px-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -326,7 +326,7 @@ export function PluginsView({
               }}
               className={`focus-ring flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] transition-colors ${
                 tab === nextTab
-                  ? "bg-[var(--text-primary)] text-[var(--bg-main)]"
+                  ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
                   : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
               }`}
             >
@@ -458,7 +458,7 @@ function RolesTab({
               <button
                 type="button"
                 onClick={onOpenChat}
-                className="focus-ring rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-[12px] text-[var(--bg-main)]"
+                className="focus-ring rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-[12px] text-[var(--bg-base)]"
               >
                 Open chat
               </button>
