@@ -9,17 +9,11 @@
  * whitespace-pre-wrap fallback. Once hydrated, the async Shiki
  * render fires and swaps in the highlighted HTML.
  *
- * API path: shiki `createHighlighter` → custom mood-c-dark theme JSON,
- * then renderAsync(parse(md), { plugins: [shikiPlugin()] }) from
- * @create-markdown/preview.  The shikiPlugin uses its own createHighlighter
- * internally; we pass `theme: "mood-c-dark"` which we register on the
- * same highlighter instance via a loader shim.
- *
- * Because shikiPlugin's internal highlighter can't accept custom theme
- * objects via options alone, we use shiki's `codeToHtml` directly for
- * fenced code blocks and fall back to renderAsync (without the shiki
- * plugin) for the prose/structure, then post-process to inject highlighted
- * code where Shiki returned null.
+ * API path: @create-markdown/core `parse(md)` →
+ * @create-markdown/preview `renderAsync(blocks, { customRenderers })`.
+ * Chat keeps Cave's Shiki-powered code chrome/table-cell fixes as scoped
+ * custom renderers, but the preview package owns the markdown document
+ * structure and final HTML wrapper.
  */
 
 import {
@@ -466,8 +460,6 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   const cached = renderCacheGet(markdown);
   if (cached !== undefined) return cached;
 
-  // We render ourselves: use @create-markdown/core to parse, then manually
-  // serialize to HTML so we can inject our custom Shiki code blocks.
   const { renderAsync } = await import("@create-markdown/preview");
 
   // @create-markdown/core's fenced-code parser rejects any info string that
@@ -481,10 +473,7 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
 
   const blocks: Block[] = parse(normalized);
 
-  // First pass: renderAsync without shiki (gives us structural HTML fast)
-  const proseHtml = await renderAsync(blocks);
-
-  // Second pass: render each code block with Shiki. Index-keyed (not pushed)
+  // Precompute each async code renderer result. Index-keyed (not pushed)
   // so codeReplacements[i] corresponds to the i-th code block in parse order
   // regardless of Promise.all resolution order.
   const codeBlocks = blocks.filter((b) => b.type === "codeBlock");
@@ -517,48 +506,25 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
     }),
   );
 
-  // renderAsync wraps each code block in <pre>...</pre>. Walk the prose HTML
-  // and substitute the N-th <pre> with the N-th replacement positionally.
-  // Content-matching with a lazy regex (the previous approach) misfires when
-  // multiple code blocks exist: the regex anchors on the FIRST <pre> and the
-  // lazy quantifier extends across block boundaries to find the placeholder
-  // text, replacing across two blocks and nesting one inside the other.
-  const preRe = /<pre[^>]*>[\s\S]*?<\/pre>/g;
-  let html = "";
-  let lastIdx = 0;
-  let replaceIdx = 0;
-  let match: RegExpExecArray | null;
-  while ((match = preRe.exec(proseHtml)) !== null) {
-    html += proseHtml.slice(lastIdx, match.index);
-    html += codeReplacements[replaceIdx] ?? match[0];
-    lastIdx = preRe.lastIndex;
-    replaceIdx += 1;
-  }
-  html += proseHtml.slice(lastIdx);
-
-  // Same positional substitution for tables: the i-th rendered <table> in the
-  // prose corresponds to the i-th table block in parse order.
   const tableBlocks = blocks.filter((b): b is Block & TableBlock => b.type === "table");
-  if (tableBlocks.length > 0) {
-    const tableReplacements = await Promise.all(
-      tableBlocks.map((block) => renderTableBlock(block, renderAsync)),
-    );
-    const tableRe = /<table[^>]*>[\s\S]*?<\/table>/g;
-    let tableHtml = "";
-    let tableLastIdx = 0;
-    let tableIdx = 0;
-    let tableMatch: RegExpExecArray | null;
-    while ((tableMatch = tableRe.exec(html)) !== null) {
-      tableHtml += html.slice(tableLastIdx, tableMatch.index);
+  const tableReplacements = await Promise.all(
+    tableBlocks.map(async (block) => {
       // CHAT-D7-08: wide tables scroll horizontally inside this wrapper
       // instead of word-shattering under .cave-md's overflow-wrap: anywhere.
-      tableHtml += `<div class="cave-table-scroll">${tableReplacements[tableIdx] ?? tableMatch[0]}</div>`;
-      tableLastIdx = tableRe.lastIndex;
-      tableIdx += 1;
-    }
-    tableHtml += html.slice(tableLastIdx);
-    html = tableHtml;
-  }
+      return `<div class="cave-table-scroll">${await renderTableBlock(block, renderAsync)}</div>`;
+    }),
+  );
+
+  let codeRenderIdx = 0;
+  let tableRenderIdx = 0;
+  const html = await renderAsync(blocks, {
+    linkTarget: "_self",
+    sanitize: sanitizeHtml,
+    customRenderers: {
+      codeBlock: () => codeReplacements[codeRenderIdx++] ?? "",
+      table: () => tableReplacements[tableRenderIdx++] ?? "",
+    },
+  });
 
   let sanitizedHtml = sanitizeHtml(html);
   // Render mermaid diagrams AFTER sanitize: the SVG (and the <style> mermaid
