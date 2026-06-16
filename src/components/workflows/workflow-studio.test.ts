@@ -147,7 +147,13 @@ assert.match(css, /\.workflow-side-panel-tabs\s*\{[\s\S]{0,120}flex:\s*0 1 auto/
 assert.match(css, /\.workflow-side-panel-tabs\s*\{[\s\S]{0,180}max-width:\s*calc\(100% - var\(--workflow-top-control-height\) - 4px\)/, "Workflow tabs reserve room for the collapse button without clipping Manifest");
 assert.match(css, /\.workflow-side-panel-header\s*\{[\s\S]{0,140}gap:\s*4px[\s\S]{0,120}margin:\s*0 0 4px/, "Workflow sidepanel header should keep tight spacing between tabs, toggle, and content");
 assert.match(css, /\.workflow-studio-library-panel,[\s\S]{0,140}flex-direction:\s*column/, "Workflow panel content should sit below the full-width trigger row");
-assert.match(css, /\.workflow-palette-item[\s\S]{0,160}min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
+const paletteItemRule = css.match(/\.workflow-palette-item\s*\{[\s\S]*?\}/)?.[0] ?? "";
+assert.match(paletteItemRule, /min-height:\s*var\(--workflow-top-control-height\)/, "Workflow palette buttons should use the same height as the side-panel triggers");
+assert.match(paletteItemRule, /height:\s*var\(--workflow-top-control-height\)/, "Workflow palette toggle tabs should use a fixed shared height so their top and bottom edges align");
+assert.match(paletteItemRule, /box-sizing:\s*border-box/, "Workflow palette toggle tabs should include tone borders in the fixed control box");
+assert.match(paletteItemRule, /justify-content:\s*center/, "Workflow palette toggle tab content should be centered inside the shared box");
+assert.match(paletteItemRule, /line-height:\s*1/, "Workflow palette toggle tab text should not add vertical baseline slack");
+assert.match(css, /\.workflow-palette-item svg\s*\{[\s\S]{0,120}display:\s*block/, "Workflow palette toggle icons should not participate in text baseline alignment");
 assert.match(css, /is-left-collapsed[\s\S]{0,120}grid-template-columns:\s*36px/, "Collapsed left workflow panel should keep a visible toggle rail");
 assert.match(css, /is-right-collapsed[\s\S]{0,160}36px;/, "Collapsed right workflow panel should keep a visible toggle rail");
 assert.match(studio, /<span className="workflow-panel-tab__title">/, "Panel tabs render a header title");

@@ -959,16 +959,25 @@
 .workflow-palette-item {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   gap: 5px;
+  box-sizing: border-box;
   white-space: nowrap;
+  height: var(--workflow-top-control-height);
   min-height: var(--workflow-top-control-height);
+  line-height: 1;
   font-size: 12px;
   padding: 4px 9px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--card);
   color: var(--text-primary, inherit);
+}
+
+.workflow-palette-item svg {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .workflow-palette-item:hover:not(:disabled) {

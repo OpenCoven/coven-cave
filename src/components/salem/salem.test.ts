@@ -22,10 +22,14 @@ assert.match(cat3d, /rimLight.*1\.15/s, "cat must keep a visible purple rim ligh
 const widget = await readFile(path.join(root, "src/components/salem/salem-widget.tsx"), "utf8");
 assert.match(widget, /SalemCat3D/, "widget must embed SalemCat3D");
 assert.match(widget, /SalemChatPanel/, "must export SalemChatPanel for the right rail");
+assert.match(widget, /type SalemWidgetProps = \{[\s\S]*retreat\?: boolean[\s\S]*\}/, "floating Salem must accept a screen-driven retreat prop");
 assert.match(widget, /cave:salem-open/, "launcher must request the shell right panel");
 assert.match(widget, /\/api\/salem/, "widget must call /api/salem");
 assert.match(widget, /salem-panel--rail/, "chat must render in the shell right panel");
 assert.match(widget, /size=\{88\}/, "perch cat must be large enough to read on dark backgrounds");
+assert.match(widget, /clientX >= window\.innerWidth - 2/, "floating Salem must retreat when the pointer leaves through the right edge");
+assert.match(widget, /clientX < window\.innerWidth - 96/, "floating Salem must return when the pointer moves back from the right edge");
+assert.match(widget, /salem-perch--retreating/, "floating Salem must expose a retreating class");
 assert.doesNotMatch(widget, /salem-msg__glyph|🐱|😅/, "open Salem chat must not render emoji glyphs");
 
 // 3. Salem preload context exists
@@ -68,6 +72,9 @@ assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "the companion 
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
 assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher must expand the right panel");
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
+assert.match(workspace, /import \{ SalemChatPanel, SalemWidget \}/, "workspace must import both Salem surfaces");
+assert.match(workspace, /const salemRetreating = mode === "chat" \|\| mode === "workflows" \|\| mode === "browser" \|\| mode === "terminal"/, "workspace must retreat floating Salem on crowded surfaces");
+assert.match(workspace, /<SalemWidget retreat=\{salemRetreating\} \/>/, "workspace must render floating Salem with screen-driven retreat state");
 assert.match(workspace, /salemSlot=\{<SalemChatPanel \/>\}/, "workspace must render Salem in the companion rail");
 assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
 
@@ -80,7 +87,10 @@ assert.match(css, /\.salem-msg/, "must have .salem-msg CSS");
 assert.doesNotMatch(css, /\.salem-panel__preload/, "preload pill CSS removed with the pills — no dead rules");
 assert.match(css, /--background:\s*oklch\([^)]+\);/, "default dark app background must be lifted for black-cat contrast");
 assert.match(css, /\.salem-perch::before/, "Salem perch must include a visibility halo");
+assert.match(css, /\.salem-perch--retreating/, "Salem perch must have an offscreen retreat state");
+assert.match(css, /translate3d\(calc\(100% \+ 36px\), 10px, 0\)/, "Salem retreat should slide fully off the right edge");
+assert.match(css, /prefers-reduced-motion: reduce[\s\S]*\.salem-perch--retreating/, "Salem retreat must respect reduced motion");
 assert.doesNotMatch(css, /\.salem-msg__glyph/, "open Salem chat must not keep unused emoji glyph CSS");
 assert.match(css, /position:\s*fixed/, "salem perch must be position fixed");
 
-console.log("✅  Salem guard tests passed (7 sections, 37 assertions)");
+console.log("✅  Salem guard tests passed");

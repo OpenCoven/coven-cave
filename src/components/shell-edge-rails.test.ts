@@ -90,6 +90,26 @@ assert.match(
 );
 assert.match(css, /\.shell-panel-float--left\s*\{[\s\S]*?left:\s*0;/, "left strip is pinned to the left edge");
 assert.match(css, /\.shell-panel-float--right\s*\{[\s\S]*?right:\s*0;/, "right strip is pinned to the right edge");
+assert.match(
+  css,
+  /\.shell-panel-float--left::before,[\s\S]*?\.shell-panel-float--right::before\s*\{[\s\S]*?width:\s*35px;[\s\S]*?height:\s*35px;/,
+  "corner side-panel tabs should be 25% larger than the base 28px chip",
+);
+assert.match(
+  css,
+  /\.shell-panel-float--left > svg,[\s\S]*?\.shell-panel-float--right > svg\s*\{[\s\S]*?top:\s*10px;/,
+  "corner side-panel tab icons should stay centered in the larger 35px chip",
+);
+assert.match(
+  css,
+  /\.shell-panel-float--left::after,[\s\S]*?\.shell-panel-float--right::after\s*\{[\s\S]*?top:\s*0;[\s\S]*?width:\s*52px;[\s\S]*?height:\s*52px;/,
+  "corner side-panel glows should be pinned to the actual corner tab locations",
+);
+assert.match(
+  css,
+  /@keyframes shell-float-pulse \{[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 0\.6\);[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 1\);/,
+  "corner side-panel glow should be more prominent as the cursor approaches",
+);
 
 // The edge-rail chip survives — the collapsed chat-projects strip still uses it
 // for its reopen tab. The familiar trigger-rail CSS that used to share it was

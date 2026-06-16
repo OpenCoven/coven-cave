@@ -25,6 +25,9 @@ const SalemCat3D = dynamic(
 type Message = { role: "user" | "salem"; text: string };
 
 type SalemMood = "idle" | "thinking" | "happy" | "listening";
+type SalemWidgetProps = {
+  retreat?: boolean;
+};
 
 const GREETING = "I'm Salem, your Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
@@ -32,9 +35,10 @@ function openSalemPanel() {
   window.dispatchEvent(new CustomEvent("cave:salem-open"));
 }
 
-export function SalemWidget() {
+export function SalemWidget({ retreat = false }: SalemWidgetProps) {
   const [mood, setMood] = useState<SalemMood>("idle");
   const [docked, setDocked] = useState(false);
+  const [edgeRetreat, setEdgeRetreat] = useState(false);
 
   useEffect(() => {
     const dock = () => setDocked(true);
@@ -47,6 +51,25 @@ export function SalemWidget() {
     };
   }, []);
 
+  useEffect(() => {
+    const onPointerMove = ({ clientX }: PointerEvent) => {
+      if (clientX >= window.innerWidth - 2) {
+        setEdgeRetreat(true);
+      } else if (clientX < window.innerWidth - 96) {
+        setEdgeRetreat(false);
+      }
+    };
+    const onPointerLeave = ({ clientX }: PointerEvent) => {
+      if (clientX >= window.innerWidth - 2) setEdgeRetreat(true);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerleave", onPointerLeave);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerleave", onPointerLeave);
+    };
+  }, []);
+
   const open = () => {
     setDocked(true);
     openSalemPanel();
@@ -56,8 +79,17 @@ export function SalemWidget() {
 
   if (docked) return null;
 
+  const retreating = retreat || edgeRetreat;
+
   return (
-    <button type="button" className="salem-perch" onClick={open} aria-label="Open Salem docs familiar">
+    <button
+      type="button"
+      className={`salem-perch${retreating ? " salem-perch--retreating" : ""}`}
+      onClick={open}
+      aria-label="Open Salem docs familiar"
+      aria-hidden={retreating ? true : undefined}
+      tabIndex={retreating ? -1 : undefined}
+    >
       <SalemCat3D mood={mood} size={88} />
       <span className="salem-perch__label">Salem</span>
     </button>

@@ -42,7 +42,7 @@ import { WorkflowsView } from "@/components/workflows-view";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
-import { SalemChatPanel } from "@/components/salem/salem-widget";
+import { SalemChatPanel, SalemWidget } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
@@ -1493,6 +1493,7 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
+  const salemRetreating = mode === "chat" || mode === "workflows" || mode === "browser" || mode === "terminal";
 
   return (
     <FamiliarStudioProvider>
@@ -1575,6 +1576,7 @@ export function Workspace() {
           ) : undefined
         }
       />
+      <SalemWidget retreat={salemRetreating} />
 
       <CommandPalette
         open={paletteOpen}

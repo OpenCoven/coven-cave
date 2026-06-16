@@ -3238,12 +3238,24 @@ button:active > .edge-rail-chip {
 @keyframes shell-float-pulse {
   0%,
   100% {
-    opacity: calc(var(--float-prox, 0) * 0.35);
+    opacity: calc(var(--float-prox, 0) * 0.6);
     transform: translateX(-50%) scale(1);
   }
   50% {
-    opacity: calc(var(--float-prox, 0) * 0.75);
+    opacity: calc(var(--float-prox, 0) * 1);
     transform: translateX(-50%) scale(1.55);
+  }
+}
+
+@keyframes shell-corner-float-pulse {
+  0%,
+  100% {
+    opacity: calc(var(--float-prox, 0) * 0.6);
+    transform: translate(var(--shell-float-glow-x), -8px) scale(1);
+  }
+  50% {
+    opacity: calc(var(--float-prox, 0) * 1);
+    transform: translate(var(--shell-float-glow-x), -8px) scale(1.55);
   }
 }
 
@@ -5638,7 +5650,12 @@ button:active > .edge-rail-chip {
   filter:
     drop-shadow(0 7px 18px rgba(0, 0, 0, 0.38))
     drop-shadow(0 0 16px color-mix(in oklch, var(--accent-presence) 45%, transparent));
-  transition: transform 0.18s ease, filter 0.18s ease;
+  transform: translate3d(0, 0, 0);
+  transform-origin: 50% 80%;
+  transition:
+    transform 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease,
+    filter 0.18s ease;
 }
 .salem-perch::before {
   content: "";
@@ -5666,6 +5683,15 @@ button:active > .edge-rail-chip {
     drop-shadow(0 10px 22px rgba(0, 0, 0, 0.42))
     drop-shadow(0 0 24px color-mix(in oklch, var(--accent-presence) 62%, transparent));
 }
+.salem-perch--retreating,
+.salem-perch--retreating:hover {
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(calc(100% + 36px), 10px, 0) rotate(5deg) scale(0.96);
+  filter:
+    drop-shadow(0 5px 12px rgba(0, 0, 0, 0.24))
+    drop-shadow(0 0 10px color-mix(in oklch, var(--accent-presence) 28%, transparent));
+}
 .salem-perch__label {
   font-size: 10px;
   font-weight: 600;
@@ -5673,6 +5699,19 @@ button:active > .edge-rail-chip {
   color: var(--text-primary);
   text-shadow: 0 0 10px color-mix(in oklch, var(--accent-presence) 35%, transparent);
   text-transform: uppercase;
+}
+.salem-perch--retreating .salem-perch__label {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .salem-perch {
+    transition: opacity 0.12s ease, filter 0.12s ease;
+  }
+  .salem-perch--retreating,
+  .salem-perch--retreating:hover {
+    transform: translate3d(calc(100% + 36px), 10px, 0);
+  }
 }
 
 .salem-panel {
@@ -6107,14 +6146,24 @@ button:active > .edge-rail-chip {
 .shell-panel-float--left::before,
 .shell-panel-float--right::before {
   top: 0;
+  width: 35px;
+  height: 35px;
   opacity: 1;
   border: none;
 }
 .shell-panel-float--left > svg,
 .shell-panel-float--right > svg {
-  top: 7px;
+  top: 10px;
   opacity: 1;
   pointer-events: none;
+}
+.shell-panel-float--left::after,
+.shell-panel-float--right::after {
+  top: 0;
+  width: 52px;
+  height: 52px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 82%, transparent), transparent 68%);
+  animation-name: shell-corner-float-pulse;
 }
 .shell-panel-float--left::before {
   left: 0;
@@ -6125,8 +6174,13 @@ button:active > .edge-rail-chip {
   box-shadow: 3px 3px 12px color-mix(in oklch, black 22%, transparent);
 }
 .shell-panel-float--left > svg {
-  left: 7px;
+  left: 10px;
   transform: none;
+}
+.shell-panel-float--left::after {
+  left: 0;
+  --shell-float-glow-x: -8px;
+  transform: translate(-8px, -8px) scale(1);
 }
 .shell-panel-float--right::before {
   left: auto;
@@ -6139,6 +6193,12 @@ button:active > .edge-rail-chip {
 }
 .shell-panel-float--right > svg {
   left: auto;
-  right: 7px;
+  right: 10px;
   transform: none;
+}
+.shell-panel-float--right::after {
+  left: auto;
+  right: 0;
+  --shell-float-glow-x: 8px;
+  transform: translate(8px, -8px) scale(1);
 }
