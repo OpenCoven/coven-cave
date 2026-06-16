@@ -540,7 +540,7 @@ function LinksSection({
                     {link}
                   </span>
                 )}
-                <span style={{ opacity: 0, display: "flex", alignItems: "center", gap: 2 }} className="step-actions">
+                <span style={{ display: "flex", alignItems: "center", gap: 2 }} className="step-actions">
                   {saveState === "error" ? (
                     <span style={{ fontSize: 10, color: "var(--color-danger)" }} title="Save failed">
                       err
@@ -605,7 +605,7 @@ function LinksSection({
       </div>
 
       {/* CSS for hover reveal on link actions */}
-      <style>{".link-item-anchor:hover { text-decoration: underline; } li:hover .step-actions { opacity: 1; }"}</style>
+      <style>{".link-item-anchor:hover { text-decoration: underline; } .step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions, li:focus-within .step-actions { opacity: 1; }"}</style>
     </div>
   );
 }
@@ -762,7 +762,7 @@ function StepsSection({
               </span>
 
               {/* Actions */}
-              <span style={{ display: "flex", gap: 2, flexShrink: 0, opacity: 0 }} className="step-actions">
+              <span style={{ display: "flex", gap: 2, flexShrink: 0 }} className="step-actions">
                 {i > 0 && (
                   <button type="button" className="board-toolbar-btn" style={{ padding: "1px 4px" }}
                     onClick={() => reorderStep(step.id, -1)} title="Move up">
@@ -817,7 +817,7 @@ function StepsSection({
       </div>
 
       {/* CSS for hover reveal on step actions */}
-      <style>{".step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions { opacity: 1; }"}</style>
+      <style>{".step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions, li:focus-within .step-actions { opacity: 1; }"}</style>
     </div>
   );
 }
