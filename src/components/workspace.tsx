@@ -50,6 +50,7 @@ import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import type { Familiar, SessionRow } from "@/lib/types";
+import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { DEMO_FAMILIARS } from "@/lib/demo-seed";
 import {
@@ -104,6 +105,37 @@ function clearChatHash() {
   if (typeof window === "undefined") return;
   if (!window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
+}
+
+function taskCanAnnotateSession(task: GitHubTask): boolean {
+  return Boolean(task.sessionId && (task.prNumber != null || task.prUrl));
+}
+
+function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): SessionRow[] {
+  const taskBySessionId = new Map<string, GitHubTask>();
+  for (const task of normalizeGitHubTasks(data)) {
+    if (!taskCanAnnotateSession(task) || !task.sessionId) continue;
+    if (!taskBySessionId.has(task.sessionId)) taskBySessionId.set(task.sessionId, task);
+  }
+  if (taskBySessionId.size === 0) return sessions;
+
+  return sessions.map((session) => {
+    const task = taskBySessionId.get(session.id);
+    if (!task) return session;
+    return {
+      ...session,
+      git: task.branch
+        ? { ...(session.git ?? {}), branch: task.branch }
+        : session.git,
+      pullRequest: {
+        repo: task.repo,
+        number: task.prNumber,
+        url: task.prUrl,
+        state: task.status,
+        branch: task.branch,
+      },
+    };
+  });
 }
 
 export function Workspace() {
@@ -368,15 +400,25 @@ export function Workspace() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const res = await fetch("/api/sessions/list", { cache: "no-store" });
-      const json = await res.json();
-      if (json.ok) setSessions((json.sessions ?? []) as SessionRow[]);
+      const [sessionsResult, githubTasksResult] = await Promise.allSettled([
+        fetch("/api/sessions/list", { cache: "no-store" }),
+        addons.github ? fetch("/api/github/tasks", { cache: "no-store" }) : Promise.resolve(null),
+      ]);
+      if (sessionsResult.status !== "fulfilled") return;
+      const json = await sessionsResult.value.json();
+      if (!json.ok) return;
+      let nextSessions = (json.sessions ?? []) as SessionRow[];
+      if (githubTasksResult.status === "fulfilled" && githubTasksResult.value?.ok) {
+        const githubTasksJson = await githubTasksResult.value.json().catch(() => null);
+        nextSessions = attachGitHubTaskContext(nextSessions, githubTasksJson);
+      }
+      setSessions(nextSessions);
     } catch {
       /* transient */
     } finally {
       setSessionsLoaded(true);
     }
-  }, []);
+  }, [addons.github]);
 
   useEffect(() => {
     loadFamiliars();
@@ -885,14 +927,7 @@ export function Workspace() {
   }, [openFamiliarSession]);
 
   const toggleFamiliarPanel = useCallback(() => {
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "j",
-        code: "KeyJ",
-        metaKey: true,
-        bubbles: true,
-      }),
-    );
+    shellRef.current?.toggleFamiliar();
   }, []);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
@@ -1488,7 +1523,7 @@ export function Workspace() {
               type="button"
               className="familiar-trigger-rail__toggle"
               aria-label={railTab === "browser" ? "Toggle Browser" : "Toggle Salem"}
-              title={railTab === "browser" ? "Toggle Browser (⌘J)" : "Toggle Salem (⌘J)"}
+              title={railTab === "browser" ? "Toggle Browser (⌘⇧B)" : "Toggle Salem (⌘⇧B)"}
               onClick={() => openCompanionTab(railTab === "browser" ? "browser" : "salem")}
             >
               <span className="edge-rail-chip">

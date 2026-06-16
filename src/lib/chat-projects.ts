@@ -48,6 +48,18 @@ function sessionTimestamp(session: SessionRow): string {
   return session.updated_at || session.created_at;
 }
 
+function projectLeafName(projectRoot: string | null): string | null {
+  if (!projectRoot) return null;
+  const parts = projectRoot.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.at(-1) ?? projectRoot;
+}
+
+function projectNameWithParent(projectRoot: string): string {
+  const parts = projectRoot.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length >= 2) return `${parts.at(-2)}/${parts.at(-1)}`;
+  return parts[0] ?? projectRoot;
+}
+
 export function filterVisibleChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
@@ -64,10 +76,6 @@ export function deriveChatProjectGroups(
 ): ChatProjectGroup[] {
   const groups = new Map<string | null, SessionRow[]>();
 
-  for (const project of projects) {
-    groups.set(normalizeChatProjectRoot(project.root), []);
-  }
-
   for (const session of sessions) {
     const project = projectForRoot(session.project_root, projects);
     const projectRoot = project?.root
@@ -77,6 +85,13 @@ export function deriveChatProjectGroups(
     groups.set(projectRoot, group);
   }
 
+  const rootEntries = Array.from(groups.keys()).filter((root): root is string => root !== null);
+  const leafCounts = new Map<string, number>();
+  for (const root of rootEntries) {
+    const leaf = projectLeafName(root);
+    if (leaf) leafCounts.set(leaf, (leafCounts.get(leaf) ?? 0) + 1);
+  }
+
   return Array.from(groups.entries())
     .map(([projectRoot, rows]) => {
       const sorted = [...rows].sort((a, b) =>
@@ -84,10 +99,15 @@ export function deriveChatProjectGroups(
       );
       const latest = sorted[0] ?? null;
       const project = projectForRoot(projectRoot, projects);
+      const leaf = projectLeafName(projectRoot);
+      const inferredProjectName =
+        projectRoot && !project && leaf && (leafCounts.get(leaf) ?? 0) > 1
+          ? projectNameWithParent(projectRoot)
+          : null;
       return {
         projectId: project?.id ?? null,
         projectRoot,
-        projectName: project?.name ?? null,
+        projectName: project?.name ?? inferredProjectName,
         sessions: sorted,
         defaultFamiliarId: latest?.familiarId ?? null,
         updatedAt: latest ? sessionTimestamp(latest) : null,

@@ -280,6 +280,33 @@ for (const contract of contracts) {
     /function isKnownProjectOrValidDir\(projectRoot: string\): boolean \{[\s\S]*?projectForRoot\(projectRoot, projects\)[\s\S]*?isTrueProjectCwd\(projectRoot\)/,
     "/sessions/list: registered projects should pass validation before falling back to disk",
   );
+  assert.match(
+    sessionsListSource,
+    /execFileSync\("git"/,
+    "/sessions/list: sessions should be enriched from local git context",
+  );
+  assert.match(
+    sessionsListSource,
+    /"branch", "--show-current"[\s\S]*"rev-parse", "--short", "HEAD"/,
+    "/sessions/list: git context should expose branch or detached head",
+  );
+  assert.match(
+    sessionsListSource,
+    /"rev-parse", "--show-toplevel"[\s\S]*"rev-parse", "--git-common-dir"/,
+    "/sessions/list: git context should detect worktree-backed roots",
+  );
+}
+
+{
+  const githubTasksSource = readFileSync(
+    path.join(apiRoot, "github", "tasks", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    githubTasksSource,
+    /if \(!endpoint\) \{[\s\S]*?return NextResponse\.json\(\{[\s\S]*?ok: false,[\s\S]*?tasks: \[\],[\s\S]*?\}\);/,
+    "/github/tasks: missing optional task endpoint should be a quiet ok:false payload, not a browser-console 503",
+  );
 }
 
 {

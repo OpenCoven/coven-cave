@@ -79,19 +79,22 @@ assert.equal(chatProjectName("", projects), "No project");
 
 const knownOnlyGroups = deriveChatProjectGroups([], projects);
 assert.deepEqual(
-  knownOnlyGroups.map((group) => ({
-    id: group.projectId,
-    root: group.projectRoot,
-    label: chatProjectName(group.projectRoot, projects),
-    sessionCount: group.sessions.length,
-  })),
-  projects.map((project) => ({
-    id: project.id,
-    root: project.root,
-    label: project.name,
-    sessionCount: 0,
-  })),
-  "predetermined projects should appear even before they have chat sessions",
+  knownOnlyGroups,
+  [],
+  "empty projects should stay out of the chat rail until they have sessions",
+);
+
+const worktreeGroups = deriveChatProjectGroups(
+  [
+    session("feature-a", "/Users/val/worktrees/feature-a/coven-cave", "2026-06-06T00:00:00.000Z", "cody"),
+    session("feature-b", "/Users/val/worktrees/feature-b/coven-cave", "2026-06-07T00:00:00.000Z", "cody"),
+  ],
+  [],
+);
+assert.deepEqual(
+  worktreeGroups.map((group) => group.projectName),
+  ["feature-b/coven-cave", "feature-a/coven-cave"],
+  "duplicate worktree repo names should include the parent directory so branches are distinguishable",
 );
 
 console.log("chat-projects.test.ts: ok");

@@ -34,8 +34,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /⌘R refresh · click a row to open in GitHub/,
-  "footer carries the keyboard hint",
+  /⌘R refresh · click a row to inspect · open icon launches GitHub/,
+  "footer carries the inspect/open row hint",
 );
 
 // ⌘R keydown handler wired.
@@ -76,6 +76,32 @@ assert.match(
   source,
   /\{patStatus\?\.hasPat \? null : "Add PAT"\}/,
   "Disconnected state still shows the 'Add PAT' call to action",
+);
+
+assert.match(
+  source,
+  /function GitHubItemGlassPanel/,
+  "selected GitHub item detail panel is present",
+);
+assert.match(
+  source,
+  /<span>PRs<\/span>[\s\S]*<span>Reviews<\/span>[\s\S]*<span>Issues<\/span>/,
+  "detail panel summarizes PRs, Reviews, and Issues",
+);
+assert.match(
+  source,
+  /className=\{`gh-row\$\{selectedItem\?\.id === item\.id \? " is-selected" : ""\}`\}/,
+  "GitHub rows expose selected state",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => setSelectedItemId\(item\.id\)\}/,
+  "clicking a GitHub row selects it for inspection",
+);
+assert.match(
+  source,
+  /className="gh-glass-panel"/,
+  "detail panel uses the glass panel styling hook",
 );
 
 console.log("github-view-polish.test.ts OK");

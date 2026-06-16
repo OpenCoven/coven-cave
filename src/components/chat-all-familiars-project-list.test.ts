@@ -6,6 +6,7 @@ const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url),
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const chatList = readFileSync(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 assert.match(
   chatSurface,
@@ -65,6 +66,22 @@ assert.match(
   chatProjectSidebar,
   /onClick=\{\(\) => \{[\s\S]*onSelect\(key\);[\s\S]*onToggleExpanded\(key\);[\s\S]*\}\}[\s\S]*aria-expanded=\{expanded\}[\s\S]*className=\{\[[\s\S]*flex min-w-0 flex-1 items-center/,
   "Project rows should make the full label/count area the collapse trigger instead of only the caret",
+);
+
+assert.match(
+  workspace,
+  /normalizeGitHubTasks/,
+  "Workspace should normalize GitHub task context when refreshing sessions",
+);
+assert.match(
+  workspace,
+  /pullRequest: \{[\s\S]*number: task\.prNumber[\s\S]*state: task\.status/,
+  "Workspace should attach linked PR number and state to chat sessions",
+);
+assert.match(
+  workspace,
+  /addons\.github \? fetch\("\/api\/github\/tasks"/,
+  "Workspace should only poll GitHub task context when the GitHub addon is enabled",
 );
 
 console.log("chat-all-familiars-project-list.test.ts: ok");

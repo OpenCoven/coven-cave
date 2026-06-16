@@ -51,6 +51,23 @@ export type SessionRow = {
   familiarId?: string | null;
   origin?: SessionOrigin;
   initiator?: SessionInitiator;
+  git?: SessionGitContext | null;
+  pullRequest?: SessionPullRequestContext | null;
+};
+
+export type SessionGitContext = {
+  branch?: string | null;
+  worktreeRoot?: string | null;
+  isWorktree?: boolean;
+};
+
+export type SessionPullRequestContext = {
+  repo: string;
+  number?: number;
+  url?: string;
+  state?: string;
+  branch?: string;
+  draft?: boolean;
 };
 
 export type SessionOrigin =

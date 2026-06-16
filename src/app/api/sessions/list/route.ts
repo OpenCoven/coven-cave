@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
@@ -8,7 +10,7 @@ import {
   mergeSessionRows,
 } from "@/lib/session-list-merge";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
-import type { SessionInitiator } from "@/lib/types";
+import type { SessionGitContext, SessionInitiator, SessionRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +37,55 @@ function isTrueProjectCwd(projectRoot: string): boolean {
   }
 }
 
+function git(projectRoot: string, args: string[]): string | null {
+  try {
+    const output = execFileSync("git", args, {
+      cwd: projectRoot,
+      encoding: "utf8",
+      timeout: 1000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const value = output.trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveGitPath(projectRoot: string, value: string | null): string | null {
+  if (!value) return null;
+  return path.resolve(path.isAbsolute(value) ? value : path.join(projectRoot, value));
+}
+
+function readGitContext(projectRoot: string): SessionGitContext | null {
+  const trimmed = projectRoot.trim();
+  if (!isTrueProjectCwd(trimmed)) return null;
+
+  const branch =
+    git(trimmed, ["branch", "--show-current"]) ??
+    git(trimmed, ["rev-parse", "--short", "HEAD"]);
+  const worktreeRoot = git(trimmed, ["rev-parse", "--show-toplevel"]);
+  const gitDir = resolveGitPath(trimmed, git(trimmed, ["rev-parse", "--git-dir"]));
+  const commonDir = resolveGitPath(trimmed, git(trimmed, ["rev-parse", "--git-common-dir"]));
+  const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
+
+  if (!branch && !worktreeRoot && !isWorktree) return null;
+  return { branch, worktreeRoot, isWorktree };
+}
+
+function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
+  const gitContextByRoot = new Map<string, SessionGitContext | null>();
+  return sessions.map((session) => {
+    const root = session.project_root?.trim();
+    if (!root) return session;
+    if (!gitContextByRoot.has(root)) {
+      gitContextByRoot.set(root, readGitContext(root));
+    }
+    const gitContext = gitContextByRoot.get(root) ?? null;
+    return gitContext ? { ...session, git: gitContext } : session;
+  });
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
@@ -52,7 +103,7 @@ export async function GET(req: Request) {
         ok: true,
         degraded: true,
         error: res.error ?? `daemon http ${res.status}`,
-        sessions: localSessions,
+        sessions: enrichSessionsWithGitContext(localSessions),
       });
     }
     return NextResponse.json(
@@ -74,5 +125,5 @@ export async function GET(req: Request) {
     isValidDaemonProjectRoot: isKnownProjectOrValidDir,
   });
 
-  return NextResponse.json({ ok: true, sessions });
+  return NextResponse.json({ ok: true, sessions: enrichSessionsWithGitContext(sessions) });
 }

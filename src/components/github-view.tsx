@@ -7,7 +7,7 @@ import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   GitHubActionPopover,
   type PopoverMode,
@@ -104,6 +104,13 @@ const KIND_LABEL: Record<string, string> = {
   issue: "Issue",
   review_request: "Review",
   notification: "Notif",
+};
+
+const KIND_DETAIL_LABEL: Record<string, string> = {
+  pr: "Pull request",
+  issue: "Issue",
+  review_request: "Review request",
+  notification: "Notification",
 };
 
 const KIND_COLOR: Record<string, string> = {
@@ -542,6 +549,181 @@ function AddToBoardAction({
   );
 }
 
+// ── Selected item detail ─────────────────────────────────────────────────────
+
+function GitHubItemGlassPanel({
+  item,
+  linkedCards,
+  familiars,
+  resolvedById,
+  cards,
+  counts,
+  onJumpToSession,
+  onFocusCard,
+  onAfterLink,
+}: {
+  item: GitHubItem | null;
+  linkedCards: Card[];
+  familiars: Familiar[];
+  resolvedById: Map<string, ResolvedFamiliar>;
+  cards: Card[];
+  counts: Record<Filter, number>;
+  onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
+  onFocusCard?: (cardId: string) => void;
+  onAfterLink: () => void;
+}) {
+  if (!item) {
+    return (
+      <aside className="gh-glass-panel gh-glass-panel--empty" aria-label="GitHub item details">
+        <Icon name="ph:git-pull-request" width={24} />
+        <p>Select a GitHub item to inspect its key details.</p>
+      </aside>
+    );
+  }
+
+  const rowFamiliars = Array.from(
+    new Set(
+      linkedCards
+        .map((card) => card.familiarId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const kindColor = KIND_COLOR[item.kind] ?? "var(--text-muted)";
+  const detailLabel = KIND_DETAIL_LABEL[item.kind] ?? item.kind;
+
+  return (
+    <aside className="gh-glass-panel" aria-label={`${detailLabel} details`}>
+      <div className="gh-glass-aura" aria-hidden />
+
+      <div className="gh-glass-stat-grid" aria-label="GitHub activity counts">
+        <div className="gh-glass-stat">
+          <span>PRs</span>
+          <strong>{counts.pr}</strong>
+        </div>
+        <div className="gh-glass-stat">
+          <span>Reviews</span>
+          <strong>{counts.review_request}</strong>
+        </div>
+        <div className="gh-glass-stat">
+          <span>Issues</span>
+          <strong>{counts.issue}</strong>
+        </div>
+      </div>
+
+      <div className="gh-glass-hero">
+        <span className="gh-glass-kind" style={{ color: kindColor }}>
+          <Icon name={KIND_ICON[item.kind] ?? "ph:github-logo"} width={15} />
+          {detailLabel}
+        </span>
+        <h3>{item.title}</h3>
+        <div className="gh-glass-meta">
+          <span>{item.repo}</span>
+          {item.number != null && <span>#{item.number}</span>}
+          <span>{item.state ?? "open"}</span>
+          <span>{relTime(item.updatedAt)} ago</span>
+        </div>
+      </div>
+
+      <div className="gh-glass-section">
+        <div className="gh-glass-section-title">Key information</div>
+        <dl className="gh-glass-facts">
+          <div>
+            <dt>Repository</dt>
+            <dd>{item.repo}</dd>
+          </div>
+          <div>
+            <dt>Number</dt>
+            <dd>{item.number != null ? `#${item.number}` : "Unnumbered"}</dd>
+          </div>
+          <div>
+            <dt>State</dt>
+            <dd>{item.draft ? "Draft" : item.state ?? "Open"}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{new Date(item.updatedAt).toLocaleString()}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="gh-glass-section">
+        <div className="gh-glass-section-title">Labels</div>
+        {item.labels && item.labels.length > 0 ? (
+          <div className="gh-glass-labels">
+            {item.labels.slice(0, 6).map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+        ) : (
+          <p className="gh-glass-muted">No labels on this item.</p>
+        )}
+      </div>
+
+      <div className="gh-glass-section">
+        <div className="gh-glass-section-title">Linked work</div>
+        {linkedCards.length > 0 ? (
+          <div className="gh-glass-linked">
+            {linkedCards.slice(0, 4).map((card) => (
+              <LinkedTaskChip
+                key={card.id}
+                card={card}
+                familiar={
+                  card.familiarId
+                    ? familiars.find((familiar) => familiar.id === card.familiarId) ?? null
+                    : null
+                }
+                onFocusCard={onFocusCard}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="gh-glass-muted">No Cave tasks linked yet.</p>
+        )}
+
+        {rowFamiliars.length > 0 && (
+          <div className="gh-glass-familiars" aria-label="Linked familiars">
+            {rowFamiliars.slice(0, 5).map((familiarId) => {
+              const familiar = resolvedById.get(familiarId);
+              if (!familiar) return null;
+              return (
+                <span key={familiarId} title={familiar.display_name}>
+                  <FamiliarAvatar familiar={familiar} size="sm" />
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="gh-glass-actions">
+        <OpenChatAction
+          item={item}
+          linkedCards={linkedCards}
+          familiars={familiars}
+          cards={cards}
+          onJumpToSession={onJumpToSession}
+          onAfterLink={onAfterLink}
+        />
+        <AddToBoardAction
+          item={item}
+          familiars={familiars}
+          cards={cards}
+          onAfterLink={onAfterLink}
+        />
+        <a
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          className="gh-action-btn"
+        >
+          <Icon name="ph:arrow-square-out" width={12} />
+          <span className="gh-action-btn-label">GitHub</span>
+        </a>
+      </div>
+    </aside>
+  );
+}
+
 // ── Sortable header ───────────────────────────────────────────────────────────
 
 type ColDef = { key: SortKey | null; label: string; width?: string; align?: "left" | "right" };
@@ -569,6 +751,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [showPatModal, setShowPatModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
 
   const familiars = useFamiliars();
@@ -736,13 +919,29 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     issue: items.filter((i) => i.kind === "issue").length,
   };
 
+  useEffect(() => {
+    if (sorted.length === 0) {
+      if (selectedItemId !== null) setSelectedItemId(null);
+      return;
+    }
+    if (!selectedItemId || !sorted.some((item) => item.id === selectedItemId)) {
+      setSelectedItemId(sorted[0].id);
+    }
+  }, [sorted, selectedItemId]);
+
+  const selectedItem = useMemo(
+    () => sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
+    [sorted, selectedItemId],
+  );
+  const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
+
   function handleSortClick(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir(key === "updatedAt" || key === "tasks" ? "desc" : "asc"); }
   }
 
   return (
-    <section className="flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <section className="github-surface flex h-full flex-col text-[var(--text-primary)]">
 
       {showPatModal && (
         <PatSetupModal
@@ -758,7 +957,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       )}
 
       {/* ── Header ── */}
-      <header className="flex items-center gap-3 border-b border-[var(--border-hairline)] px-5 py-2">
+      <header className="github-surface-header flex items-center gap-3 px-5 py-2">
         <div className="flex items-center gap-2">
           {activity?.login && (
             <span className="text-[12px] text-[var(--text-secondary)]">@{activity.login}</span>
@@ -809,7 +1008,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       </header>
 
       {/* ── Filter tabs ── */}
-      <div className="flex items-center gap-1 border-b border-[var(--border-hairline)] px-4 py-2">
+      <div className="github-surface-controls flex items-center gap-1 px-4 py-2">
         {(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => {
           const labels: Record<Filter, string> = { all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" };
           const isActive = filter === f;
@@ -929,36 +1128,37 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           </div>
 
         ) : (
-          <div className="board-table-wrap">
-            <table className="board-table gh-table">
-              <thead>
-                <tr>
-                  {COLS.map((col, i) => (
-                    <th
-                      key={`${col.label}-${i}`}
-                      style={{
-                        width: col.width,
-                        textAlign: col.align ?? "left",
-                        cursor: col.key ? "pointer" : "default",
-                      }}
-                      className={col.key && sortKey === col.key ? "sorted" : ""}
-                      onClick={() => col.key && handleSortClick(col.key)}
-                    >
-                      {col.label}
-                      {col.key && (
-                        <span className="board-table-sort-icon">
-                          {sortKey === col.key
-                            ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
-                            : <Icon name="ph:caret-up-down" width={9} />}
-                        </span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const renderRow = (item: GitHubItem) => {
+          <div className="gh-workspace">
+            <div className="board-table-wrap gh-list-panel">
+              <table className="board-table gh-table">
+                <thead>
+                  <tr>
+                    {COLS.map((col, i) => (
+                      <th
+                        key={`${col.label}-${i}`}
+                        style={{
+                          width: col.width,
+                          textAlign: col.align ?? "left",
+                          cursor: col.key ? "pointer" : "default",
+                        }}
+                        className={col.key && sortKey === col.key ? "sorted" : ""}
+                        onClick={() => col.key && handleSortClick(col.key)}
+                      >
+                        {col.label}
+                        {col.key && (
+                          <span className="board-table-sort-icon">
+                            {sortKey === col.key
+                              ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
+                              : <Icon name="ph:caret-up-down" width={9} />}
+                          </span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const renderRow = (item: GitHubItem) => {
                   const linked = linkedMap.get(item.id) ?? [];
                   const familiarsForRow = Array.from(
                     new Set(
@@ -968,7 +1168,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                     ),
                   );
                   return (
-                    <tr key={item.id} className="gh-row">
+                    <tr
+                      key={item.id}
+                      className={`gh-row${selectedItem?.id === item.id ? " is-selected" : ""}`}
+                      onClick={() => setSelectedItemId(item.id)}
+                      aria-selected={selectedItem?.id === item.id}
+                    >
                       <td>
                         <span className="gh-kind" style={{ color: KIND_COLOR[item.kind] }}>
                           <Icon
@@ -1083,33 +1288,45 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                     </tr>
                   );
                   };
-                  return grouped
-                    ? grouped.flatMap(([key, rows]) => [
-                        <tr key={`grp:${key}`} className="gh-group-row">
-                          <td colSpan={COLS.length}>
-                            <span className="gh-group-label">
-                              <Icon
-                                name={groupBy === "org" ? "ph:folders-bold" : "ph:git-branch-bold"}
-                                width={11}
-                              />
-                              <span className="gh-group-name">{key}</span>
-                              <span className="gh-group-count">{rows.length}</span>
-                            </span>
-                          </td>
-                        </tr>,
-                        ...rows.map(renderRow),
-                      ])
-                    : sorted.map(renderRow);
-                })()}
-              </tbody>
-            </table>
+                    return grouped
+                      ? grouped.flatMap(([key, rows]) => [
+                          <tr key={`grp:${key}`} className="gh-group-row">
+                            <td colSpan={COLS.length}>
+                              <span className="gh-group-label">
+                                <Icon
+                                  name={groupBy === "org" ? "ph:folders-bold" : "ph:git-branch-bold"}
+                                  width={11}
+                                />
+                                <span className="gh-group-name">{key}</span>
+                                <span className="gh-group-count">{rows.length}</span>
+                              </span>
+                            </td>
+                          </tr>,
+                          ...rows.map(renderRow),
+                        ])
+                      : sorted.map(renderRow);
+                  })()}
+                </tbody>
+              </table>
+            </div>
+            <GitHubItemGlassPanel
+              item={selectedItem}
+              linkedCards={selectedLinkedCards}
+              familiars={familiars}
+              resolvedById={resolvedById}
+              cards={cards}
+              counts={counts}
+              onJumpToSession={onJumpToSession}
+              onFocusCard={onFocusCard}
+              onAfterLink={reloadCards}
+            />
           </div>
         )}
       </div>
 
       {/* ── Footer ── */}
-      <footer className="shrink-0 border-t border-[var(--border-hairline)] px-5 py-1.5 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-3">
-        <span>⌘R refresh · click a row to open in GitHub</span>
+      <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-3">
+        <span>⌘R refresh · click a row to inspect · open icon launches GitHub</span>
         <span className="inline-flex items-center gap-3">
           {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
             <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">

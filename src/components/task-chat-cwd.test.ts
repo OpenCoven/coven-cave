@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const boardView = readFileSync(new URL("./board-view.tsx", import.meta.url), "utf8");
+const boardInspector = readFileSync(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 const taskChatRoute = readFileSync(
   new URL("../app/api/board/[id]/chat/route.ts", import.meta.url),
   "utf8",
@@ -20,13 +21,18 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const selectedProject = projectIdDraft\s*\?\s*chatProjectById\(projectIdDraft, projects\) \?\? firstProject\s*:\s*firstProject/,
-  "ChatView resolves the selected project through the persisted project registry",
+  /const resolvedProjectId = projectIdDraft \?\? projectIdForRoot\(session\?\.project_root \?\? projectRoot, projects\);[\s\S]*const selectedProject = resolvedProjectId\s*\?\s*chatProjectById\(resolvedProjectId, projects\) \?\? firstProject\s*:\s*firstProject/,
+  "ChatView resolves the selected project from the session/root before falling back to the first persisted project",
 );
 assert.match(
   chatView,
   /const activeProjectRoot = selectedProject\?\.root \?\? session\?\.project_root \?\? projectRoot \?\? ""/,
   "ChatView sends the selected project's configured root",
+);
+assert.match(
+  chatView,
+  /onProjectRootChange\?\.\(activeProjectRoot \|\| null\)/,
+  "ChatView reports the same active project root used by send so the rail can stay in sync",
 );
 assert.match(
   chatView,
@@ -78,33 +84,38 @@ assert.match(
 );
 assert.match(
   boardView,
-  /if \(card && !card\.sessionId && !card\.cwd\) \{\s*\n\s*setCwdPromptCardId\(id\);/,
-  "Starting a task chat for a CWD-less card prompts for project selection instead of POSTing immediately",
+  /const project = card\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,180}await startTaskChat\(id, project\.root\);/,
+  "Starting a task chat for a card with only a projectId should use the project's root without a follow-up dialog",
+);
+assert.match(
+  boardInspector,
+  /<div className="board-drawer-field-label"><Icon name="ph:folder" width=\{11\} \/> CWD<\/div>[\s\S]{0,1200}aria-label="Project root for this task CWD"/,
+  "The task CWD field should set the runtime root through a project picker in the inspector",
+);
+assert.match(
+  boardInspector,
+  /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
+  "Changing the task CWD project should persist both projectId and cwd",
+);
+assert.match(
+  boardInspector,
+  /projects\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>[\s\S]*?\{project\.name\}/,
+  "The task CWD project picker should render the persisted project registry",
 );
 assert.match(
   boardView,
-  /projects\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>/,
-  "The task chat prompt should render the persisted project registry, not a free-form path input",
+  /Set a project in CWD before starting chat\./,
+  "CWD-less task chat starts should direct the user to the inline CWD project field",
 );
 assert.match(
   boardView,
-  /const selectedProject = projectId \? chatProjectById\(projectId, projects\) \?\? firstProject : firstProject/,
-  "The selected task-chat project should resolve through the shared project registry",
-);
-assert.match(
-  boardView,
-  /onStart\(selectedProject\.root\)/,
-  "Starting from the prompt should pass the selected project root",
-);
-assert.match(
-  boardView,
-  /aria-label="Project for this task chat"/,
-  "The task chat prompt should expose a labeled project selector",
+  /if \("cwd" in patch \|\| "projectId" in patch\) setChatLinkError\(null\);/,
+  "Changing the task CWD project should clear the inline start-chat error",
 );
 assert.doesNotMatch(
   boardView,
-  /Set a working directory|Working directory for this task chat|\/path\/to\/project|Set &amp; start/,
-  "The task chat prompt should not expose working-directory copy or a free-form path action",
+  /TaskChatCwdPrompt|setCwdPromptCardId|aria-label="Select a project for this task chat"/,
+  "Task chat project selection should live in the task CWD field, not a follow-up dialog",
 );
 
 console.log("task-chat-cwd.test.ts: ok");

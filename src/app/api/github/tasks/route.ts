@@ -6,14 +6,11 @@ export const runtime = "nodejs";
 export async function GET() {
   const endpoint = githubTasksEndpoint();
   if (!endpoint) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "coven-github task endpoint is not configured",
-        tasks: [],
-      },
-      { status: 503 },
-    );
+    return NextResponse.json({
+      ok: false,
+      error: "coven-github task endpoint is not configured",
+      tasks: [],
+    });
   }
 
   try {

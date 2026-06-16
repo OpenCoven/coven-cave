@@ -842,11 +842,13 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
+  const cwdProject = projects.find((project) => project.root === card.cwd) ?? (card.projectId ? projects.find((project) => project.id === card.projectId) ?? null : null);
+  const cwdSelectValue = cwdProject?.id ?? (card.cwd ? "__custom__" : "");
+  const activeCwd = cwdProject?.root ?? card.cwd ?? "";
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const cwdInputRef = useRef<HTMLInputElement | null>(null);
   useFocusTrap(!closing, dialogRef, { onEscape: close });
 
   useEffect(() => {
@@ -1033,31 +1035,41 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
 
           <div className="board-drawer-field">
             <div className="board-drawer-field-label"><Icon name="ph:folder" width={11} /> CWD</div>
-            <div className="board-drawer-path-shell">
+            <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
               <button
                 type="button"
                 className="board-drawer-path-open"
                 aria-label="Open CWD in directory explorer"
                 title="Open CWD in directory explorer"
                 onClick={async () => {
-                  const err = await openCwdInExplorer(cwdInputRef.current?.value ?? card.cwd ?? "");
+                  const err = await openCwdInExplorer(activeCwd);
                   setCwdOpenErr(err);
                 }}
               >
                 <Icon name="ph:folder" width={12} />
               </button>
-              <input
-                ref={cwdInputRef}
-                className="board-drawer-field-input board-drawer-path-input"
-                defaultValue={card.cwd ?? ""}
-                placeholder="/path/to/working/directory"
-                spellCheck={false}
-                onBlur={(e) => {
-                  const next = e.target.value.trim() || null;
-                  if (next !== card.cwd) onPatch(card.id, { cwd: next });
+              <select
+                className="board-drawer-field-select board-drawer-field-select--styled board-drawer-path-input"
+                value={cwdSelectValue}
+                aria-label="Project root for this task CWD"
+                onChange={(e) => {
+                  const selectedProject = projects.find((project) => project.id === e.target.value) ?? null;
+                  onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
                   setCwdOpenErr(null);
                 }}
-              />
+              >
+                <option value="">No project</option>
+                {card.cwd && !cwdProject ? <option value="__custom__">Current path: {card.cwd}</option> : null}
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
+            </div>
+            <div className="board-drawer-path-preview" title={activeCwd}>
+              {activeCwd || "Select a project before starting chat"}
             </div>
             {cwdOpenErr ? <p className="board-drawer-field-error">{cwdOpenErr}</p> : null}
           </div>

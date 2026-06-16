@@ -398,6 +398,7 @@
 .board-drawer-path-open:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-drawer-path-open:focus-visible { outline:2px solid color-mix(in oklch,var(--accent-presence) 65%,transparent); outline-offset:1px; }
 .board-drawer-path-input { padding-left:32px; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:12px; letter-spacing:-.01em; }
+.board-drawer-path-preview { min-height:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:1px solid var(--border-hairline); border-radius:6px; background:var(--bg-raised); padding:4px 7px; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:10.5px; line-height:1.2; color:var(--text-muted); }
 .board-drawer-field-error { margin:6px 0 0; color:var(--color-danger); font-size:10.5px; line-height:1.35; }
 
 /* Lifecycle card */
@@ -469,8 +470,61 @@
 .board-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; padding:48px 24px; color:var(--text-muted); font-size:13px; }
 
 /* ── GitHub surface table ──────────────────────────────────────────────── */
-.gh-table tbody tr.gh-row { cursor:default; }
+.github-surface {
+  position:relative;
+  overflow:hidden;
+  background:
+    linear-gradient(145deg,
+      color-mix(in oklab,var(--bg-base) 88%,#101824) 0%,
+      var(--bg-base) 38%,
+      color-mix(in oklab,var(--bg-base) 86%,#16241e) 100%);
+}
+.github-surface::before {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(105deg,transparent 0 52%,color-mix(in oklab,var(--accent-presence) 8%,transparent) 52% 53%,transparent 53%),
+    radial-gradient(900px 260px at 82% 0%,color-mix(in oklab,var(--accent-presence) 12%,transparent),transparent 68%);
+  opacity:.72;
+}
+.github-surface-header,
+.github-surface-controls,
+.github-surface-footer {
+  position:relative;
+  z-index:1;
+  border-color:color-mix(in oklab,var(--border-hairline) 72%,transparent);
+  background:color-mix(in oklab,var(--bg-base) 78%,transparent);
+  backdrop-filter:blur(18px) saturate(1.25);
+}
+.github-surface-header,
+.github-surface-controls { border-bottom:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
+.github-surface-footer { border-top:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
+
+.gh-workspace {
+  position:relative;
+  z-index:1;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(300px,360px);
+  gap:14px;
+  min-height:100%;
+  padding:14px;
+}
+.gh-list-panel {
+  min-width:0;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 76%,transparent);
+  border-radius:8px;
+  background:color-mix(in oklab,var(--bg-raised) 62%,transparent);
+  box-shadow:0 18px 60px rgba(0,0,0,.12);
+  backdrop-filter:blur(16px) saturate(1.2);
+}
+.gh-table tbody tr.gh-row { cursor:pointer; }
 .gh-table tbody tr.gh-row:hover { background:var(--bg-hover); }
+.gh-table tbody tr.gh-row.is-selected {
+  background:color-mix(in oklab,var(--accent-presence) 12%,var(--bg-hover));
+  box-shadow:inset 2px 0 0 var(--accent-presence);
+}
 
 .gh-kind { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500; }
 .gh-repo { display:inline-flex; align-items:baseline; gap:5px; max-width:170px; font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace); font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -526,6 +580,200 @@
 .gh-action-popover-item:disabled { opacity:.55; cursor:wait; }
 .gh-action-popover-item-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gh-action-popover-item-familiar { color:var(--text-muted); font-size:10.5px; }
+
+.gh-glass-panel {
+  position:sticky;
+  top:14px;
+  align-self:start;
+  min-width:0;
+  overflow:hidden;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 70%,transparent);
+  border-radius:8px;
+  background:
+    linear-gradient(155deg,
+      color-mix(in oklab,var(--bg-elevated) 74%,transparent),
+      color-mix(in oklab,var(--bg-raised) 58%,transparent));
+  box-shadow:0 24px 80px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter:blur(24px) saturate(1.28);
+  padding:14px;
+}
+.gh-glass-panel--empty {
+  min-height:260px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  color:var(--text-muted);
+  text-align:center;
+  font-size:12px;
+}
+.gh-glass-aura {
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(120deg,rgba(255,255,255,.075),transparent 24%),
+    radial-gradient(420px 180px at 20% 0%,color-mix(in oklab,var(--accent-presence) 16%,transparent),transparent 72%);
+}
+.gh-glass-stat-grid {
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+}
+.gh-glass-stat {
+  min-width:0;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 68%,transparent);
+  border-radius:7px;
+  background:color-mix(in oklab,var(--bg-base) 48%,transparent);
+  padding:8px;
+}
+.gh-glass-stat span {
+  display:block;
+  color:var(--text-muted);
+  font-size:10px;
+  line-height:1.1;
+}
+.gh-glass-stat strong {
+  display:block;
+  margin-top:4px;
+  color:var(--text-primary);
+  font-size:18px;
+  line-height:1;
+  font-weight:650;
+  font-variant-numeric:tabular-nums;
+}
+.gh-glass-hero,
+.gh-glass-section,
+.gh-glass-actions { position:relative; }
+.gh-glass-hero { padding:18px 1px 14px; }
+.gh-glass-kind {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-bottom:9px;
+  font-size:11px;
+  font-weight:650;
+}
+.gh-glass-hero h3 {
+  margin:0;
+  color:var(--text-primary);
+  font-size:20px;
+  line-height:1.18;
+  font-weight:680;
+  letter-spacing:0;
+}
+.gh-glass-meta {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:12px;
+}
+.gh-glass-meta span,
+.gh-glass-labels span {
+  display:inline-flex;
+  align-items:center;
+  max-width:100%;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 70%,transparent);
+  border-radius:999px;
+  background:color-mix(in oklab,var(--bg-base) 54%,transparent);
+  padding:3px 8px;
+  color:var(--text-secondary);
+  font-size:10.5px;
+  line-height:1.2;
+}
+.gh-glass-section {
+  border-top:1px solid color-mix(in oklab,var(--border-hairline) 68%,transparent);
+  padding:12px 0;
+}
+.gh-glass-section-title {
+  margin-bottom:9px;
+  color:var(--text-muted);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.gh-glass-facts {
+  display:grid;
+  gap:8px;
+  margin:0;
+}
+.gh-glass-facts div {
+  display:grid;
+  grid-template-columns:82px minmax(0,1fr);
+  gap:10px;
+}
+.gh-glass-facts dt {
+  color:var(--text-muted);
+  font-size:10.5px;
+}
+.gh-glass-facts dd {
+  min-width:0;
+  margin:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--text-secondary);
+  font-size:11.5px;
+}
+.gh-glass-labels,
+.gh-glass-linked {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.gh-glass-muted {
+  margin:0;
+  color:var(--text-muted);
+  font-size:11.5px;
+}
+.gh-glass-familiars {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  margin-top:10px;
+}
+.gh-glass-familiars span {
+  display:inline-flex;
+  width:20px;
+  height:20px;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent);
+  border-radius:7px;
+  background:color-mix(in oklab,var(--bg-base) 55%,transparent);
+}
+.gh-glass-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  padding-top:2px;
+}
+
+@media (max-width: 1040px) {
+  .gh-workspace { grid-template-columns:1fr; }
+  .gh-glass-panel { position:relative; top:auto; order:-1; }
+}
+
+@media (max-width: 760px) {
+  .github-surface-controls {
+    flex-wrap:wrap;
+    align-items:flex-start;
+  }
+  .github-surface-controls > .ml-auto {
+    width:100%;
+    margin-left:0;
+    overflow-x:auto;
+    padding-top:4px;
+  }
+  .gh-workspace { padding:10px; gap:10px; }
+  .gh-glass-panel { padding:12px; }
+  .gh-glass-hero h3 { font-size:17px; }
+  .gh-list-panel { overflow-x:auto; }
+}
 
 /* ────────────────────────────────────────────────────────────────────
    BoardCardStack — mobile-first board view.

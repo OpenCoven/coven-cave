@@ -21,6 +21,7 @@ import { useProjects } from "@/lib/use-projects";
 import {
   applyProjectScope,
   normalizeSelection,
+  projectSelectionKeys,
   readPersisted,
   PROJECT_SIDEBAR_KEYS,
   type ProjectSelection,
@@ -224,6 +225,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
+  const sidebarPrefsLoadedRef = useRef(false);
+  const sidebarDefaultExpandedRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
   const isMobile = useIsMobile();
@@ -243,6 +246,54 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // ── Data: filter ──────────────────────────────────────────────────────────
+
+  const mine = useMemo(() => {
+    let rows = sessions;
+    if (showArchived && archivedRows.length > 0) {
+      const seen = new Set(sessions.map((s) => s.id));
+      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
+    }
+    return filterVisibleChatSessions(rows, familiar?.id ?? null);
+  }, [sessions, showArchived, archivedRows, familiar?.id]);
+
+  const filtered = useMemo(() => {
+    let rows = mine;
+    if (unreadsOnly) rows = rows.filter((s) => s.status === "running");
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      rows = rows.filter(
+        (s) =>
+          (s.title ?? "").toLowerCase().includes(q) ||
+          (s.project_root ?? "").toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [mine, search, unreadsOnly]);
+
+  const hasAny = mine.length > 0;
+
+  // ── Grouped by project_root ──────────────────────────────────────────────
+
+  const grouped = useMemo(() => {
+    return deriveChatProjectGroups(applyProjectOverrides(filtered, projectOverrides), projects);
+  }, [filtered, projects, projectOverrides]);
+
+  // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
+  // so it stays stable while typing. The persisted selection is normalized
+  // every render: stale projects degrade to "all" silently. Below lg the
+  // sidebar is hidden, so a persisted project selection must not scope the
+  // list there — no affordance would exist to unscope it.
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(mine, projectOverrides), projects), [mine, projects, projectOverrides]);
+  const effectiveSelection = useMemo(
+    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
+    [isMobile, selection, sidebarGroups],
+  );
+  const scopedGroups = useMemo(
+    () => applyProjectScope(grouped, effectiveSelection),
+    [grouped, effectiveSelection],
+  );
+
   // Focus search on Cmd+F / Ctrl+F
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -258,19 +309,29 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // Sidebar state loads after mount (not in initializers) so SSR markup and
   // first client render agree; persistence is gated until that load lands.
   useEffect(() => {
+    if (sidebarPrefsLoadedRef.current) return;
+    if (sessionsLoaded === false) return;
+    sidebarPrefsLoadedRef.current = true;
     setSidebarOpen(readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.open, true) !== false);
-    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, []);
+    const hasStoredExpanded =
+      typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
+    sidebarDefaultExpandedRef.current = !hasStoredExpanded;
+    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
     setExpandedKeys(
       Array.isArray(storedExpanded)
         ? storedExpanded.filter((k): k is string => typeof k === "string")
-        : [],
+        : projectSelectionKeys(sidebarGroups),
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setPinnedIds(readPinnedSessions());
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
-  }, []);
+  }, [sessionsLoaded, sidebarGroups]);
+  useEffect(() => {
+    if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
+    setExpandedKeys(projectSelectionKeys(sidebarGroups));
+  }, [sidebarHydrated, sidebarGroups]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.open, JSON.stringify(sidebarOpen));
   }, [sidebarHydrated, sidebarOpen]);
@@ -341,53 +402,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     };
   }, [search]);
 
-  // ── Data: filter ──────────────────────────────────────────────────────────
-
-  const mine = useMemo(() => {
-    let rows = sessions;
-    if (showArchived && archivedRows.length > 0) {
-      const seen = new Set(sessions.map((s) => s.id));
-      rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
-    }
-    return filterVisibleChatSessions(rows, familiar?.id ?? null);
-  }, [sessions, showArchived, archivedRows, familiar?.id]);
-
-  const filtered = useMemo(() => {
-    let rows = mine;
-    if (unreadsOnly) rows = rows.filter((s) => s.status === "running");
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (s) =>
-          (s.title ?? "").toLowerCase().includes(q) ||
-          (s.project_root ?? "").toLowerCase().includes(q)
-      );
-    }
-    return rows;
-  }, [mine, search, unreadsOnly]);
-
-  const hasAny = mine.length > 0;
-
-  // ── Grouped by project_root ──────────────────────────────────────────────
-
-  const grouped = useMemo(() => {
-    return deriveChatProjectGroups(applyProjectOverrides(filtered, projectOverrides), projects);
-  }, [filtered, projects, projectOverrides]);
-
-  // Sidebar tree builds from familiar-scoped sessions BEFORE search/unreads,
-  // so it stays stable while typing. The persisted selection is normalized
-  // every render: stale projects degrade to "all" silently. Below lg the
-  // sidebar is hidden, so a persisted project selection must not scope the
-  // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(mine, projectOverrides), projects), [mine, projects, projectOverrides]);
-  const effectiveSelection = useMemo(
-    () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
-    [isMobile, selection, sidebarGroups],
-  );
-  const scopedGroups = useMemo(
-    () => applyProjectScope(grouped, effectiveSelection),
-    [grouped, effectiveSelection],
-  );
   const displayGroups = useMemo(() => {
     if (effectiveSelection === "all") {
       let rows = scopedGroups.flatMap((group) => group.sessions);
@@ -525,11 +539,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         activeSessionId={activeId}
         onSetOpen={setSidebarOpen}
         onSelect={setSelection}
-        onToggleExpanded={(key) =>
+        onToggleExpanded={(key) => {
+          sidebarDefaultExpandedRef.current = false;
           setExpandedKeys((prev) =>
             prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-          )
-        }
+          );
+        }}
         onOpenSession={(s) => {
           setActiveId(s.id);
           onOpen(s.id, s.familiarId);

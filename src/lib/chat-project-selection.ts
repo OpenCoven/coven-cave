@@ -17,6 +17,10 @@ export function selectionKey(projectId: string | null, projectRoot?: string | nu
   return "none";
 }
 
+export function projectSelectionKeys(groups: ChatProjectGroup[]): string[] {
+  return groups.map((group) => selectionKey(group.projectId, group.projectRoot));
+}
+
 /** "all" → groups unchanged (same reference, lets memoized consumers bail);
  *  otherwise the single matching group, or [] when the selection is stale. */
 export function applyProjectScope(

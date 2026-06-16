@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView } from "@/components/chat-view";
@@ -10,14 +10,17 @@ import { useIsMobile } from "@/lib/use-viewport";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
+  normalizeChatProjectRoot,
 } from "@/lib/chat-projects";
 import { applyProjectOverrides } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import {
   normalizeSelection,
+  projectSelectionKeys,
   readPersisted,
   PROJECT_SIDEBAR_KEYS,
+  selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -66,6 +69,13 @@ type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
+function selectionForProjectRoot(projectRoot: string | null | undefined, groups: ReturnType<typeof deriveChatProjectGroups>): ProjectSelection {
+  if (!projectRoot?.trim()) return "all";
+  const normalized = normalizeChatProjectRoot(projectRoot);
+  const group = groups.find((entry) => entry.projectRoot && normalizeChatProjectRoot(entry.projectRoot) === normalized);
+  return group ? selectionKey(group.projectId, group.projectRoot) : "all";
+}
+
 export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRouter(
   {
     familiar,
@@ -89,6 +99,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const [view, setView] = useState<View>({ kind: "list" });
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
+  const sidebarPrefsLoadedRef = useRef(false);
+  const sidebarDefaultExpandedRef = useRef(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selection, setSelection] = useState<ProjectSelection>("all");
@@ -121,19 +133,36 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
   );
+  const syncSidebarProjectRoot = useCallback((nextProjectRoot: string | null) => {
+    const nextSelection = selectionForProjectRoot(nextProjectRoot, sidebarGroups);
+    setSelection(nextSelection);
+    if (nextSelection !== "all") {
+      setExpandedKeys((prev) => (prev.includes(nextSelection) ? prev : [...prev, nextSelection]));
+    }
+  }, [sidebarGroups]);
 
   useEffect(() => {
+    if (sidebarPrefsLoadedRef.current) return;
+    if (sessionsLoaded === false) return;
+    sidebarPrefsLoadedRef.current = true;
     setSidebarOpen(readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.open, true) !== false);
-    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, []);
+    const hasStoredExpanded =
+      typeof window !== "undefined" && window.localStorage.getItem(PROJECT_SIDEBAR_KEYS.expanded) !== null;
+    sidebarDefaultExpandedRef.current = !hasStoredExpanded;
+    const storedExpanded = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.expanded, null);
     setExpandedKeys(
       Array.isArray(storedExpanded)
         ? storedExpanded.filter((k): k is string => typeof k === "string")
-        : [],
+        : projectSelectionKeys(sidebarGroups),
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
     setSidebarHydrated(true);
-  }, []);
+  }, [sessionsLoaded, sidebarGroups]);
+  useEffect(() => {
+    if (!sidebarHydrated || !sidebarDefaultExpandedRef.current) return;
+    setExpandedKeys(projectSelectionKeys(sidebarGroups));
+  }, [sidebarHydrated, sidebarGroups]);
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.open, JSON.stringify(sidebarOpen));
   }, [sidebarHydrated, sidebarOpen]);
@@ -318,11 +347,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         activeSessionId={view.kind === "chat" ? view.sessionId : null}
         onSetOpen={setSidebarOpen}
         onSelect={setSelection}
-        onToggleExpanded={(key) =>
+        onToggleExpanded={(key) => {
+          sidebarDefaultExpandedRef.current = false;
           setExpandedKeys((prev) =>
             prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-          )
-        }
+          );
+        }}
         onOpenSession={(s) => {
           const next = selectFamiliarForChat(s.familiarId);
           setView({ kind: "chat", sessionId: s.id, familiarId: next?.id ?? s.familiarId ?? null });
@@ -370,6 +400,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             onOpenOnboarding={onOpenOnboarding}
             onOpenTask={onOpenTask}
             onOpenUrl={onOpenUrl}
+            onProjectRootChange={syncSidebarProjectRoot}
           />
         )}
       </div>

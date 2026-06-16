@@ -6,38 +6,29 @@ const source = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.ur
 const router = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
-// ── Nav block: prominent New session + jump links to real surfaces ───────────
-assert.match(
+// ── Simplified rail chrome: no redundant top action cluster ─────────────────
+assert.doesNotMatch(
   source,
   /label="New session"/,
-  "Nav block leads with a New session action (mockup vibe)",
+  "The global New session action stays out of this project rail",
 );
-assert.match(
-  source,
-  /\{ mode: "capabilities", label: "Skills & Tools"/,
-  "Skills & Tools jumps to the Capabilities surface",
-);
-assert.match(
-  source,
-  /\{ mode: "library", label: "Artifacts"/,
-  "Artifacts jumps to the Library surface",
-);
+assert.doesNotMatch(source, /Skills & Tools/, "Skills & Tools no longer occupies the project rail");
+assert.doesNotMatch(source, /Artifacts/, "Artifacts no longer occupies the project rail");
+assert.doesNotMatch(source, /function RailNavRow/, "The removed top action cluster leaves no nav-row component");
 assert.doesNotMatch(
   source,
   /label: "Messaging"/,
   "Messaging is omitted — the cave has no messaging surface to route to",
 );
-
-// ── Decoupled cross-surface navigation via a window event ────────────────────
-assert.match(
+assert.doesNotMatch(
   source,
-  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode \} \}\)/,
-  "Nav rows announce intent through cave:navigate-mode instead of holding setMode",
+  /cave:navigate-mode/,
+  "Cross-surface shortcuts are not part of the project rail chrome",
 );
 assert.match(
   workspace,
   /addEventListener\("cave:navigate-mode", onNavigate/,
-  "Workspace listens for cave:navigate-mode and switches the active surface",
+  "Workspace still supports cave:navigate-mode for surfaces that own those shortcuts",
 );
 assert.match(
   workspace,
@@ -45,25 +36,26 @@ assert.match(
   "The navigate listener calls setMode with the requested mode",
 );
 
-// ── Uppercase counted section headers (PINNED / SESSIONS / PROJECTS) ──────────
+// ── Uppercase counted section headers (RESULTS) + compact Projects header ────
 assert.match(source, /function RailSection/, "Rail uses a shared section-header primitive");
 assert.match(
   source,
   /uppercase tracking-\[0\.12em\]/,
   "Section headers are uppercase + letter-spaced for the modern grouping look",
 );
-assert.match(source, /<RailSection label="Pinned" \/>/, "A PINNED section header is rendered");
 assert.match(
   source,
-  /<RailSection label="Sessions" count=\{restRows\.length\}/,
-  "A counted SESSIONS section header is rendered",
+  /<RailSection label="Results" count=\{display\.length\}/,
+  "Search results use a counted RESULTS section only when needed",
 );
-assert.match(source, /label="Projects"/, "Projects keep a section header");
 assert.match(
   source,
-  /Pin a session to keep it here/,
-  "Empty PINNED section shows a hint, like the mockup",
+  /aria-label="Chat projects header"[\s\S]*Projects[\s\S]*aria-label="Hide sessions"/,
+  "Projects lives in the same top row as the collapse toggle",
 );
+assert.doesNotMatch(source, /<RailSection\s+label="Projects"/, "Projects is not repeated as a separate section row");
+assert.doesNotMatch(source, /Pin a session to keep it here/, "Pinned hints are gone with the permanent flat list");
+assert.doesNotMatch(source, /chat-thread-filters/, "All/Active/Tasks/Pinned tabs are removed");
 
 // ── Familiar selection lives in the page header, not this rail ───────────────
 assert.doesNotMatch(source, /function RailFamiliarStrip/, "Rail no longer carries a duplicate familiar-avatar strip");

@@ -15,7 +15,6 @@ import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
-import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
 
 type ViewMode = "kanban" | "table";
@@ -51,9 +50,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
-  // Card awaiting a project selection before its task chat starts — only set
-  // for cards with no persisted project root and no session yet.
-  const [cwdPromptCardId, setCwdPromptCardId] = useState<string | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const { projects } = useProjects();
@@ -158,6 +154,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   };
 
   const patchCard = async (id: string, patch: Partial<Card>) => {
+    if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
     try {
       const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
@@ -224,10 +221,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
 
   const onOpenTaskChat = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
-    // Task chats run in the task's project root. When the card doesn't have one
-    // yet (and there's no session to reattach to), ask which known project to use.
     if (card && !card.sessionId && !card.cwd) {
-      setCwdPromptCardId(id);
+      const project = card.projectId ? chatProjectById(card.projectId, projects) : null;
+      if (project) {
+        await startTaskChat(id, project.root);
+        return;
+      }
+      setChatLinkError("Set a project in CWD before starting chat.");
       return;
     }
     await startTaskChat(id);
@@ -494,116 +494,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         familiars={familiars} sessions={sessions} projects={projects}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
-
-      {cwdPromptCardId && (
-        <TaskChatCwdPrompt
-          cardTitle={cards.find((c) => c.id === cwdPromptCardId)?.title ?? ""}
-          projects={projects}
-          onCancel={() => setCwdPromptCardId(null)}
-          onStart={(projectRoot) => {
-            const id = cwdPromptCardId;
-            setCwdPromptCardId(null);
-            void startTaskChat(id, projectRoot);
-          }}
-        />
-      )}
     </section>
-  );
-}
-
-// ── TaskChatCwdPrompt ─────────────────────────────────────────────────────────
-// Shown when a task chat is started for a card with no project root: lets the
-// user choose a known project, which is persisted onto the card as its cwd.
-
-function TaskChatCwdPrompt({
-  cardTitle,
-  projects,
-  onCancel,
-  onStart,
-}: {
-  cardTitle: string;
-  projects: CaveProject[];
-  onCancel: () => void;
-  onStart: (projectRoot?: string) => void;
-}) {
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const firstProject = projects[0] ?? null;
-  const selectedProject = projectId ? chatProjectById(projectId, projects) ?? firstProject : firstProject;
-
-  useEffect(() => {
-    setProjectId((current) => current ?? firstProject?.id ?? null);
-  }, [firstProject?.id]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
-  const submit = () => {
-    if (selectedProject) onStart(selectedProject.root);
-  };
-
-  return (
-    <div
-      // Above the board inspector drawer (z-index 301 in board.css), which can
-      // be open underneath when the chat starts from the drawer's CTA.
-      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Select a project for this task chat"
-    >
-      <div
-        className="w-[480px] max-w-[92vw] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold text-[var(--text-primary)]">
-          <Icon name="ph:folder-open" width={14} aria-hidden />
-          Select a project
-        </div>
-        <p className="mb-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
-          {cardTitle ? <>“{cardTitle}” has</> : <>This task has</>} no project yet.
-          Pick the project this task belongs to; the selected project is saved on the task and used for the chat session.
-        </p>
-        <label className="focus-within:border-[var(--border-strong)] mb-2 flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-2">
-          <span className="shrink-0 font-mono text-[10px] font-semibold uppercase text-[var(--text-muted)]">Project</span>
-          <select
-            autoFocus
-            value={selectedProject?.id ?? ""}
-            onChange={(e) => setProjectId(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-            aria-label="Project for this task chat"
-            className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-[var(--text-primary)] outline-none"
-          >
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="mb-4 truncate rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 px-2.5 py-1.5 font-mono text-[11px] text-[var(--text-muted)]">
-          {selectedProject?.root ?? "No projects available"}
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!selectedProject}
-            className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-40"
-          >
-            Start chat
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

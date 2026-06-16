@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   selectionKey,
+  projectSelectionKeys,
   applyProjectScope,
   normalizeSelection,
   readPersisted,
@@ -24,6 +25,7 @@ assert.equal(selectionKey(null, "/orphan/root"), "root:/orphan/root");
 
 // applyProjectScope: "all" passes groups through untouched (same reference)
 const groups = [group("a", "/a"), group("b", "/b", 2), group(null, "/orphan/root"), group(null, null)];
+assert.deepEqual(projectSelectionKeys(groups), ["a", "b", "root:/orphan/root", "none"]);
 assert.equal(applyProjectScope(groups, "all"), groups);
 
 // specific project id → single matching group

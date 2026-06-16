@@ -6,7 +6,6 @@ import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
-import type { WorkspaceMode } from "@/lib/workspace-mode";
 import {
   PINNED_SESSIONS_KEY,
   isSessionPinned,
@@ -40,17 +39,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-type ChatFilter = "all" | "active" | "tasks" | "pinned";
-
-// Jump rows in the rail's nav block. Each routes to a real top-level surface by
-// dispatching `cave:navigate-mode`, which the Workspace listens for and turns
-// into a setMode(). Mockup rows with no backing surface (e.g. "Messaging") are
-// intentionally omitted — we only wire destinations the cave actually has.
-const NAV_LINKS: Array<{ mode: WorkspaceMode; label: string; icon: IconName }> = [
-  { mode: "capabilities", label: "Skills & Tools", icon: "ph:lightning-bold" },
-  { mode: "library", label: "Artifacts", icon: "ph:books" },
-];
-
 // Advanced-operation launchers shown in the rail footer. Each dispatches a
 // window event the chat surface listens for, opening the matching right-side
 // panel. "Git" surfaces the working-tree diff for the active session — the
@@ -60,12 +48,6 @@ const ADVANCED_OPS: Array<{ event: string; label: string; title: string; icon: I
   { event: "cave:inspector-open", label: "Inspect", title: "Open the familiar inspector", icon: "ph:brain-bold" },
   { event: "cave:debug-open", label: "Debug", title: "Open the session debug panel", icon: "ph:bug-bold" },
 ];
-
-// Decoupled cross-surface navigation: the rail never holds setMode. It announces
-// intent and the Workspace (which owns the mode state) acts on it.
-function navigateToMode(mode: WorkspaceMode) {
-  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
-}
 
 type Props = {
   groups: ChatProjectGroup[];
@@ -110,6 +92,24 @@ function repoLabel(group: ChatProjectGroup): string {
   );
 }
 
+function sessionRailTitle(session: SessionRow): string {
+  const baseTitle = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  const context: string[] = [];
+
+  if (session.pullRequest?.number != null) {
+    const state = session.pullRequest?.state ? ` ${session.pullRequest.state}` : "";
+    context.push(`PR #${session.pullRequest.number}${state}`);
+  } else if (session.pullRequest?.state) {
+    context.push(`PR ${session.pullRequest.state}`);
+  }
+
+  const branch = session.pullRequest?.branch ?? session.git?.branch;
+  if (branch) context.push(branch);
+  if (session.git?.isWorktree) context.push("worktree");
+
+  return context.length > 0 ? `${baseTitle} - ${context.join(" - ")}` : baseTitle;
+}
+
 function AccentBar({ tall }: { tall?: boolean }) {
   return (
     <span
@@ -120,7 +120,7 @@ function AccentBar({ tall }: { tall?: boolean }) {
 }
 
 // Uppercase, letter-spaced section header — the rail's modern grouping primitive.
-// Reused for PINNED / SESSIONS / PROJECTS so every group reads the same way.
+// Reused for RESULTS / PROJECTS so every group reads the same way.
 function RailSection({ label, count, action }: { label: string; count?: number; action?: ReactNode }) {
   return (
     <div className="flex items-center justify-between px-3 pb-1 pt-2">
@@ -137,61 +137,7 @@ function RailSection({ label, count, action }: { label: string; count?: number; 
   );
 }
 
-// A nav-block row: a prominent primary action (New session) or a quiet jump link.
-function RailNavRow({
-  icon,
-  label,
-  kbd,
-  prominent,
-  title,
-  ariaLabel,
-  onClick,
-}: {
-  icon: IconName;
-  label: string;
-  kbd?: string;
-  prominent?: boolean;
-  title?: string;
-  ariaLabel?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title ?? label}
-      aria-label={ariaLabel ?? label}
-      className={[
-        "focus-ring flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-all",
-        prominent
-          ? "bg-[var(--accent-presence)] font-semibold text-white shadow-[0_1px_8px_color-mix(in_oklch,var(--accent-presence)_35%,transparent)] hover:opacity-90 active:scale-[0.99]"
-          : "font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/60 hover:text-[var(--text-primary)]",
-      ].join(" ")}
-    >
-      <Icon
-        name={icon}
-        width={15}
-        aria-hidden
-        className={prominent ? "shrink-0" : "shrink-0 text-[var(--text-muted)]"}
-      />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {kbd ? (
-        <kbd
-          className={[
-            "shrink-0 rounded px-1 py-px font-mono text-[9px] font-medium",
-            prominent
-              ? "bg-white/20 text-white/90"
-              : "border border-[var(--border-hairline)] text-[var(--text-muted)]",
-          ].join(" ")}
-        >
-          {kbd}
-        </kbd>
-      ) : null}
-    </button>
-  );
-}
-
-// ── Sortable thread row (flat all-chats list) ──────────────────────────────────
+// ── Sortable thread row (flat search results) ─────────────────────────────────
 // Mirrors the familiar-avatar-rail dnd idiom: PointerSensor activation distance
 // keeps a quick click an "open", and only deliberate drag (>=5px) reorders.
 
@@ -215,7 +161,7 @@ function ThreadRow({
     transform: CSS.Translate.toString(transform),
     transition,
   };
-  const title = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  const title = sessionRailTitle(session);
   return (
     <li
       ref={setNodeRef}
@@ -232,7 +178,7 @@ function ThreadRow({
         }}
         aria-current={active ? "true" : undefined}
         className={[
-          "focus-ring-inset relative flex w-full items-center gap-2 py-1.5 pl-3 pr-1.5 text-left text-[12px] transition-colors",
+          "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-2 py-2 pl-3 pr-1.5 text-left text-[12px] transition-colors",
           active
             ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
@@ -318,7 +264,7 @@ function FolderChatRow({
     id: session.id,
   });
   const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
-  const title = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  const title = sessionRailTitle(session);
   return (
     <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/row relative">
       <div
@@ -330,7 +276,7 @@ function FolderChatRow({
         }}
         aria-current={active ? "true" : undefined}
         className={[
-          "relative flex w-full items-center gap-2 py-1 pl-3 pr-2 text-left text-[11px] transition-colors",
+          "relative flex min-h-[34px] w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[12px] transition-colors",
           active
             ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
@@ -368,7 +314,6 @@ export function ChatProjectSidebar({
   onNewChat,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<ChatFilter>("all");
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [order, setOrder] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -389,8 +334,8 @@ export function ChatProjectSidebar({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Flatten every group's sessions into one global, recency-sorted list — the
-  // always-visible "all chats" view that the project folders below only hint at.
+  // Flatten every group's sessions for cross-project search results and order
+  // pruning. The project tree remains the default navigation surface.
   const allSessions = useMemo(() => {
     const flat = groups.flatMap((g) => g.sessions);
     return [...flat].sort((a, b) =>
@@ -398,57 +343,24 @@ export function ChatProjectSidebar({
     );
   }, [groups]);
 
-  const counts = useMemo(() => {
-    const present = new Set(allSessions.map((s) => s.id));
-    return {
-      all: allSessions.length,
-      active: allSessions.filter((s) => s.status === "running").length,
-      tasks: allSessions.filter((s) => s.origin === "board").length,
-      pinned: pinnedIds.filter((id) => present.has(id)).length,
-    };
-  }, [allSessions, pinnedIds]);
-
   const display = useMemo(() => {
     const q = search.trim().toLowerCase();
+    if (!q) return [];
     let rows = allSessions;
-    if (filter === "active") rows = rows.filter((s) => s.status === "running");
-    else if (filter === "tasks") rows = rows.filter((s) => s.origin === "board");
-    else if (filter === "pinned") rows = rows.filter((s) => isSessionPinned(pinnedIds, s.id));
-    if (q) {
-      rows = rows.filter(
-        (s) =>
-          (s.title ?? "").toLowerCase().includes(q) ||
-          (s.project_root ?? "").toLowerCase().includes(q),
-      );
-    }
+    rows = rows.filter(
+      (s) =>
+        (s.title ?? "").toLowerCase().includes(q) ||
+        (s.project_root ?? "").toLowerCase().includes(q),
+    );
     rows = applyManualOrder(rows, order);
     // Default view floats pinned to the top; once the user has dragged a manual
     // order, that intent wins and pins stay put (no tug-of-war on drop).
     if (order.length === 0) rows = partitionPinnedFirst(rows, pinnedIds);
     return rows;
-  }, [allSessions, filter, search, order, pinnedIds]);
+  }, [allSessions, search, order, pinnedIds]);
 
   const displayIds = useMemo(() => display.map((s) => s.id), [display]);
-
-  // In the default "All" view the flat list reads as the mockup does: a PINNED
-  // section then a counted SESSIONS section. A non-"All" filter collapses to one
-  // counted section. Both sit inside the single SortableContext below so drag
-  // reorder keeps working across the headers.
-  const split = filter === "all";
-  const pinnedRows = useMemo(
-    () => (split ? display.filter((s) => isSessionPinned(pinnedIds, s.id)) : []),
-    [split, display, pinnedIds],
-  );
-  const restRows = useMemo(
-    () => (split ? display.filter((s) => !isSessionPinned(pinnedIds, s.id)) : display),
-    [split, display, pinnedIds],
-  );
-  const filterLabel: Record<ChatFilter, string> = {
-    all: "Sessions",
-    active: "Active",
-    tasks: "Tasks",
-    pinned: "Pinned",
-  };
+  const hasSearch = search.trim().length > 0;
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -519,13 +431,6 @@ export function ChatProjectSidebar({
     setProjectOverride(activeId, target.projectRoot ?? "");
   }
 
-  const FILTERS: Array<{ key: ChatFilter; label: string; count: number }> = [
-    { key: "all", label: "All", count: counts.all },
-    { key: "active", label: "Active", count: counts.active },
-    { key: "tasks", label: "Tasks", count: counts.tasks },
-    { key: "pinned", label: "Pinned", count: counts.pinned },
-  ];
-
   if (!open) {
     return (
       <aside className="hidden shrink-0 border-r border-[var(--border-hairline)] lg:flex">
@@ -547,8 +452,26 @@ export function ChatProjectSidebar({
 
   return (
     <aside className="chat-thread-rail hidden w-[230px] shrink-0 flex-col border-r border-[var(--border-hairline)] lg:flex">
-      {/* Header: a slim collapse toggle — the nav block below carries the actions. */}
-      <div className="flex shrink-0 items-center justify-end px-2 pb-1 pt-2">
+      <div
+        className="flex shrink-0 items-center gap-2 px-3 pb-1 pt-2"
+        aria-label="Chat projects header"
+      >
+        <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+          Projects
+        </span>
+        <button
+          type="button"
+          onClick={() => onSelect("all")}
+          aria-current={selection === "all" ? "true" : undefined}
+          className={[
+            "shrink-0 rounded px-1.5 py-0.5 text-[10px] transition-colors",
+            selection === "all"
+              ? "text-[var(--accent-presence)]"
+              : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+          ].join(" ")}
+        >
+          All sessions
+        </button>
         <button
           type="button"
           onClick={() => onSetOpen(false)}
@@ -561,29 +484,8 @@ export function ChatProjectSidebar({
         </button>
       </div>
 
-      {/* Nav block — prominent New session + jump links to real surfaces. */}
-      <div className="flex shrink-0 flex-col gap-0.5 px-2 pb-2">
-        <RailNavRow
-          icon="ph:plus-bold"
-          prominent
-          kbd="⌘N"
-          title="New session"
-          ariaLabel="New session"
-          onClick={() => onNewChat(null)}
-          label="New session"
-        />
-        {NAV_LINKS.map((link) => (
-          <RailNavRow
-            key={link.mode}
-            icon={link.icon}
-            label={link.label}
-            onClick={() => navigateToMode(link.mode)}
-          />
-        ))}
-      </div>
-
       {/* Search */}
-      <div className="border-t border-[var(--border-hairline)] px-2 pb-2 pt-2">
+      <div className="px-2 pb-2 pt-0 border-b border-[var(--border-hairline)]">
         <label className="flex h-7 items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
           <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
           <input
@@ -607,84 +509,19 @@ export function ChatProjectSidebar({
         </label>
       </div>
 
-      {/* Filter chips — All · Active · Tasks · Pinned */}
-      <div className="chat-thread-filters flex shrink-0 items-center gap-1 px-2 pb-2" role="tablist" aria-label="Session filters">
-        {FILTERS.map((f) => {
-          const isActive = filter === f.key;
-          return (
-            <button
-              key={f.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setFilter(f.key)}
-              title={`${f.label} (${f.count})`}
-              className={[
-                "focus-ring flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md border px-1 py-1 text-[10px] font-medium transition-colors",
-                isActive
-                  ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--accent-presence)]"
-                  : "border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-secondary)]",
-              ].join(" ")}
-            >
-              <span className="truncate">{f.label}</span>
-              {f.count > 0 ? <span className="font-mono opacity-70">{f.count}</span> : null}
-            </button>
-          );
-        })}
-      </div>
-
       <nav aria-label="Familiar sessions" className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {/* ── Flat, always-visible all-sessions list, grouped into sections ── */}
-        {display.length === 0 ? (
-          <p className="px-3 py-6 text-center text-[11px] text-[var(--text-muted)]">
-            {search.trim()
-              ? "No sessions match your search"
-              : filter === "all"
-                ? "No sessions yet"
-                : `No ${filter} sessions`}
-          </p>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
-              {split ? (
+        {/* ── Flat results appear only while searching; projects stay primary. ── */}
+        {hasSearch ? (
+          display.length === 0 ? (
+            <p className="px-3 pb-3 pt-1 text-center text-[11px] text-[var(--text-muted)]">
+              No sessions match your search
+            </p>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
                 <ul>
                   <li>
-                    <RailSection label="Pinned" />
-                  </li>
-                  {pinnedRows.length === 0 ? (
-                    <li className="px-3 pb-1 text-[11px] text-[var(--text-muted)]">
-                      Pin a session to keep it here
-                    </li>
-                  ) : (
-                    pinnedRows.map((session) => (
-                      <ThreadRow
-                        key={session.id}
-                        session={session}
-                        active={activeSessionId === session.id}
-                        pinned
-                        onOpen={() => onOpenSession(session)}
-                        onTogglePin={() => togglePin(session.id)}
-                      />
-                    ))
-                  )}
-                  <li>
-                    <RailSection label="Sessions" count={restRows.length} />
-                  </li>
-                  {restRows.map((session) => (
-                    <ThreadRow
-                      key={session.id}
-                      session={session}
-                      active={activeSessionId === session.id}
-                      pinned={false}
-                      onOpen={() => onOpenSession(session)}
-                      onTogglePin={() => togglePin(session.id)}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <ul>
-                  <li>
-                    <RailSection label={filterLabel[filter]} count={display.length} />
+                    <RailSection label="Results" count={display.length} />
                   </li>
                   {display.map((session) => (
                     <ThreadRow
@@ -697,51 +534,32 @@ export function ChatProjectSidebar({
                     />
                   ))}
                 </ul>
-              )}
-            </SortableContext>
-          </DndContext>
-        )}
+              </SortableContext>
+            </DndContext>
+          )
+        ) : null}
 
         {/* ── Projects — scope the list to one working directory ── */}
         {groups.length > 0 && (
           <>
-            <div className="mt-1 border-t border-[var(--border-hairline)]">
-              <RailSection
-                label="Projects"
-                action={
-                  <button
-                    type="button"
-                    onClick={() => onSelect("all")}
-                    aria-current={selection === "all" ? "true" : undefined}
-                    className={[
-                      "rounded px-1.5 py-0.5 text-[10px] transition-colors",
-                      selection === "all"
-                        ? "text-[var(--accent-presence)]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                    ].join(" ")}
-                  >
-                    All sessions
-                  </button>
-                }
-              />
-            </div>
+            {hasSearch ? <div className="mt-1 border-t border-[var(--border-hairline)]" /> : null}
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
-            {groups.map((group) => {
-              const key = selectionKey(group.projectId, group.projectRoot);
-              const expanded = expandedKeys.includes(key);
-              const isSelected = selection === key;
-              const label = repoLabel(group);
-              const orderedSessions = applyManualOrder(group.sessions, order);
-              const orderedIds = orderedSessions.map((s) => s.id);
-              return (
-                <FolderDroppable key={key} id={`folder:${key}`}>
-                  <div
-                    className={[
-                      "group relative flex w-full items-center gap-1 pr-2 transition-colors",
-                      isSelected ? "bg-[var(--bg-raised)]" : "hover:bg-[var(--bg-raised)]/50",
-                    ].join(" ")}
-                  >
+              {groups.map((group) => {
+                const key = selectionKey(group.projectId, group.projectRoot);
+                const expanded = expandedKeys.includes(key);
+                const isSelected = selection === key;
+                const label = repoLabel(group);
+                const orderedSessions = applyManualOrder(group.sessions, order);
+                const orderedIds = orderedSessions.map((s) => s.id);
+                return (
+                  <FolderDroppable key={key} id={`folder:${key}`}>
+                    <div
+                      className={[
+                        "group relative flex w-full items-center transition-colors",
+                        isSelected ? "bg-[var(--bg-raised)]" : "hover:bg-[var(--bg-raised)]/50",
+                      ].join(" ")}
+                    >
                     {isSelected ? <AccentBar tall /> : null}
                     <button
                       type="button"
@@ -753,7 +571,7 @@ export function ChatProjectSidebar({
                       aria-label={`${expanded ? "Collapse" : "Expand"} ${label} sessions`}
                       aria-current={isSelected ? "true" : undefined}
                       className={[
-                        "focus-ring ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded py-1.5 text-left text-[12px] transition-colors",
+                        "focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-1.5 pr-2 text-left text-[12px] transition-colors",
                         isSelected
                           ? "text-[var(--text-primary)]"
                           : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
@@ -766,7 +584,14 @@ export function ChatProjectSidebar({
                         aria-hidden
                         className="shrink-0 text-[var(--text-muted)]"
                       />
-                      <span className="min-w-0 flex-1 truncate">{label}</span>
+                      <span
+                        className={[
+                          "min-w-0 flex-1 truncate",
+                          isSelected ? "font-semibold text-[var(--accent-presence)]" : "",
+                        ].join(" ")}
+                      >
+                        {label}
+                      </span>
                       <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
                         {group.sessions.length}
                       </span>
@@ -776,7 +601,7 @@ export function ChatProjectSidebar({
                       onClick={() => onNewChat(group.projectRoot)}
                       title={`New session in ${label}`}
                       aria-label={`New session in ${label}`}
-                      className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
+                      className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
                     >
                       <Icon name="ph:plus" width={11} aria-hidden />
                     </button>
