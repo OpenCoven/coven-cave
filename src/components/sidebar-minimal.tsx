@@ -190,7 +190,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     activeFamiliarId,
     onFamiliarScopeChange,
     responseNeeded,
+    notificationBadgeCount,
+    onOpenInbox,
   } = props;
+
+  const unreadCount = notificationBadgeCount ?? 0;
 
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
@@ -287,8 +291,31 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </SidebarSection>
       </div>
 
-      {/* Bottom: Settings */}
+      {/* Bottom: Notifications + Settings */}
       <div className="sidebar-foot">
+        {onOpenInbox ? (
+          <button
+            type="button"
+            className="sidebar-foot-btn"
+            onClick={onOpenInbox}
+            aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+          >
+            <span className="sidebar-foot-icon-cell" aria-hidden="true">
+              <Icon
+                name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
+                width={14}
+                className="sidebar-foot-icon"
+              />
+            </span>
+            <span className="sidebar-foot-label">Notifications</span>
+            {unreadCount > 0 ? (
+              <span className="sidebar-foot-badge" aria-hidden="true">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         <button
           type="button"
           className="sidebar-foot-btn"

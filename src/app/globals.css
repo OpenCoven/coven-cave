@@ -3171,8 +3171,11 @@ button:active > .edge-rail-chip {
   /* Vertically centered on the side-panel header row — the 38px Inspector/Debug/
      Changes tab strip that sits directly below the ~45px chat scope-tabs header.
      The trigger + expand toggle read as part of that header rather than floating
-     above it; the left nav toggle is moved to the same row to stay level. */
-  top: 50px;
+     above it; the left nav toggle is moved to the same row to stay level.
+     ChatSurface measures the live header and publishes --shell-float-top so the
+     floats track it through the post-load settle (no fixed-offset flash); the
+     50px fallback matches the settled position when no panel is open. */
+  top: var(--shell-float-top, 50px);
   z-index: 40;
   display: grid;
   place-items: center;
@@ -3191,14 +3194,12 @@ button:active > .edge-rail-chip {
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
 }
 
-/* The left toggle owns the nav panel, whose header is the "Coven Cave" wordmark
-   row (center ≈ 35px from the shell top) — not the side-panel header the base
-   `top: 50px` targets. Center it on its own panel's header: 21px + 14px
-   half-height = 35px. It intentionally no longer sits level with the right
-   side-panel toggle; each toggle reads as part of the panel it controls. */
 .shell-panel-float--left {
   left: 8px;
-  top: 21px;
+  /* The left nav toggle belongs beside the "Coven Cave" wordmark row at the top
+     of the sidebar, not level with the right panel's lower tab strip. Override
+     the shared `top` so it rides up next to the wordmark. */
+  top: 20px;
 }
 
 .shell-panel-float--right {

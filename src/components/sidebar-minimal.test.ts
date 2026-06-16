@@ -168,6 +168,34 @@ assert.match(
   "Footer rows should align labels from matching icon cells",
 );
 
+// Notifications footer row: a dedicated bell + unread count that opens the
+// inbox, sitting above Settings.
+assert.match(
+  source,
+  /onClick=\{onOpenInbox\}[\s\S]{0,700}sidebar-foot-label">Notifications/,
+  "footer renders a Notifications row wired to onOpenInbox",
+);
+assert.match(
+  source,
+  /unreadCount > 0 \? "ph:bell-fill" : "ph:bell"/,
+  "the notifications icon fills when there are unread items",
+);
+assert.match(
+  source,
+  /sidebar-foot-badge[\s\S]{0,80}unreadCount > 99 \? "99\+" : unreadCount/,
+  "the notifications row shows the unread count badge (capped at 99+)",
+);
+assert.match(
+  source,
+  /aria-label=\{unreadCount > 0 \? `Notifications, \$\{unreadCount\} unread` : "Notifications"\}/,
+  "the notifications row exposes the unread count to assistive tech",
+);
+assert.match(
+  styles,
+  /\.sidebar-foot-badge \{[^}]*background: var\(--color-danger\)/,
+  "the unread count badge uses the danger treatment",
+);
+
 // Tools-group entries include browser, terminal, roles, workflows, and capabilities.
 assert.match(
   source,

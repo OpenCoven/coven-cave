@@ -319,6 +319,24 @@
   color: inherit;
 }
 
+/* Unread notification count pill, right-aligned in the Notifications footer
+   row (mirrors the bell badge's danger treatment). */
+.sidebar-foot-badge {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* NotificationBell renders an absolutely-positioned popover anchored at the
  * top-right of its trigger. In the sidebar foot that pushes the popover off
  * the bottom of the viewport, so flip it to open upward to the right. */
