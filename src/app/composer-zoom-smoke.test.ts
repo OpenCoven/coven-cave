@@ -48,8 +48,35 @@ assert.match(
 // selector. If a rule sets `font-size: <Npx>` where N < 16, fail.
 const PROBLEMATIC = /font-size\s*:\s*(\d+(?:\.\d+)?)px/g;
 
+// iOS Safari focus-zoom only affects touch (coarse-pointer) devices, so a
+// <16px size scoped to `@media (pointer: fine)` is desktop-only and safe.
+// Strip those blocks (brace-balanced) before scanning so legitimate desktop
+// sizing doesn't false-positive. Every other context — including mobile
+// `@media (max-width: …)` — is still scanned and enforced.
+function stripDesktopOnlyMedia(css) {
+  const marker = "@media (pointer: fine)";
+  let out = "";
+  let i = 0;
+  while (i < css.length) {
+    const idx = css.indexOf(marker, i);
+    if (idx === -1) { out += css.slice(i); break; }
+    out += css.slice(i, idx);
+    let j = css.indexOf("{", idx);
+    if (j === -1) { out += css.slice(idx); break; }
+    let depth = 1;
+    j++;
+    while (j < css.length && depth > 0) {
+      if (css[j] === "{") depth++;
+      else if (css[j] === "}") depth--;
+      j++;
+    }
+    i = j;
+  }
+  return out;
+}
+
 for (const [label, url] of files) {
-  const css = readFileSync(url, "utf8");
+  const css = stripDesktopOnlyMedia(readFileSync(url, "utf8"));
   // Walk top-level rule blocks. Naive splitter — close enough for the
   // hand-authored CSS in this repo (no nested rules outside of @media).
   const ruleRegex = /([^{}]+)\{([^{}]*)\}/g;
