@@ -47,10 +47,11 @@ test("apply(non-default) overrides all three radius tokens and persists", () => 
   assert.equal(readCornerRadius(), "round");
 });
 
-test("apply(pill) drives the tokens fully round", () => {
+test("apply(pill) makes controls fully round but caps card radius at 20px", () => {
   const { props } = setupDom();
   applyCornerRadius("pill");
   assert.equal(props.get("--radius-control"), "999px");
+  assert.equal(props.get("--radius-card"), "20px");
 });
 
 test("apply(default) removes the overrides so :root token values apply", () => {

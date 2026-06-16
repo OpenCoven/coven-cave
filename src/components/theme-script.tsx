@@ -87,7 +87,7 @@ const THEME_SCRIPT = `
     // roundedness. Inlined from src/lib/appearance-corner-radius.ts (key +
     // level → [base, control, card] values) — keep in sync. "default" is absent
     // so it falls back to the :root token values.
-    var RADII = { sharp: ["0.125rem","2px","4px"], round: ["0.875rem","12px","16px"], pill: ["999px","999px","999px"] };
+    var RADII = { sharp: ["0.125rem","2px","4px"], round: ["0.875rem","12px","16px"], pill: ["999px","999px","20px"] };
     var radiusLevel = localStorage.getItem("cave:corner-radius");
     if (radiusLevel && RADII[radiusLevel]) {
       try {

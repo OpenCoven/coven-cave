@@ -45,7 +45,9 @@ type RadiusVars = { base: string; control: string; card: string };
 export const CORNER_RADIUS_VALUES: Record<Exclude<CornerRadius, "default">, RadiusVars> = {
   sharp: { base: "0.125rem", control: "2px", card: "4px" },
   round: { base: "0.875rem", control: "12px", card: "16px" },
-  pill: { base: "999px", control: "999px", card: "999px" },
+  // control is fully round, but cap card at 20px so large panels stay legible
+  // (a 999px card radius reads as an oversized blob, not a stadium).
+  pill: { base: "999px", control: "999px", card: "20px" },
 };
 
 export function normalizeCornerRadius(value: unknown): CornerRadius {
