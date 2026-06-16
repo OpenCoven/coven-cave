@@ -15,9 +15,9 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
   /** Always non-empty; falls back to var(--accent-presence). */
   color: string;
   /**
-   * Avatar image source: a Cave-local uploaded data URL when the user set one,
-   * otherwise the familiar's workspace avatar URL (`base.avatarUrl`, served from
-   * `~/.coven/workspaces/familiars/<id>/avatars/`). Undefined when neither
+   * Avatar image source: the familiar's workspace avatar URL (`base.avatarUrl`,
+   * served from `~/.coven/workspaces/familiars/<id>/avatars/`) when present,
+   * else a Cave-local uploaded data URL as fallback. Undefined when neither
    * exists — the glyph renders instead.
    */
   avatarImage?: string;
@@ -43,9 +43,10 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     pronouns: ov.pronouns ?? base.pronouns,
     description: ov.description ?? base.description,
     color: ov.color ?? "var(--accent-presence)",
-    // A Cave-local upload is an explicit user choice, so it wins; otherwise use
-    // the familiar's workspace avatar (.../familiars/<id>/avatars/<img>).
-    avatarImage: ctx.image?.dataUrl ?? base.avatarUrl,
+    // The familiar's workspace avatar (.../familiars/<id>/avatars/<img>) is the
+    // source of truth and always wins; a Cave-local upload is only the fallback
+    // when the familiar has no workspace avatar on disk.
+    avatarImage: base.avatarUrl ?? ctx.image?.dataUrl,
     glyph: resolveFamiliarGlyph(
       { id: base.id, icon: base.icon, emoji: base.emoji, role: ov.role ?? base.role },
       glyphOverrides,
