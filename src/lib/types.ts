@@ -5,6 +5,7 @@ export type Familiar = {
   role: string;
   description?: string;
   pronouns?: string;
+  color?: string;
   status?: string;
   last_seen?: string;
   active_sessions?: number;

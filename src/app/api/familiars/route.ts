@@ -44,6 +44,11 @@ export async function GET() {
       const avatar = await resolveFamiliarAvatar(f.id);
       return {
         ...f,
+        display_name: binding.display_name ?? f.display_name,
+        role: binding.role ?? f.role,
+        pronouns: binding.pronouns ?? f.pronouns,
+        description: binding.description ?? f.description,
+        color: binding.color,
         harness: binding.harness,
         model: binding.model,
         note: binding.note,

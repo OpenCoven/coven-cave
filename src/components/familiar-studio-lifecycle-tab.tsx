@@ -99,7 +99,7 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
     void fetch("/api/config", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ familiars: { [familiar!.id]: {} } }),
+      body: JSON.stringify({ familiars: { [familiar!.id]: null } }),
     });
     setConfirmReset(false);
   }

@@ -50,11 +50,25 @@ function defaultState(): CaveState {
 export type FamiliarBinding = {
   harness: string;
   model: string;
+  display_name?: string;
+  role?: string;
+  pronouns?: string;
+  description?: string;
+  color?: string;
   note?: string;
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
   runtime?: FamiliarRuntime;
+};
+
+type FamiliarBindingPatch = {
+  [K in keyof FamiliarBinding]?: FamiliarBinding[K] | null;
+};
+
+type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars"> & {
+  defaults?: Partial<FamiliarBinding>;
+  familiars?: Record<string, FamiliarBindingPatch | null>;
 };
 
 export type RoleConfigEntry = {
@@ -119,7 +133,36 @@ export async function loadConfig(): Promise<CaveConfig> {
   }
 }
 
-export async function saveConfig(patch: Partial<CaveConfig>): Promise<CaveConfig> {
+function mergeFamiliarConfigs(
+  current: CaveConfig["familiars"],
+  patch: CaveConfigPatch["familiars"],
+): CaveConfig["familiars"] {
+  if (patch === undefined) return current;
+  const updated: CaveConfig["familiars"] = { ...current };
+  for (const [id, entry] of Object.entries(patch)) {
+    if (entry === null) {
+      delete updated[id];
+      continue;
+    }
+    const next: Partial<FamiliarBinding> = { ...(updated[id] ?? {}) };
+    for (const [key, value] of Object.entries(entry)) {
+      if (
+        value === null ||
+        value === undefined ||
+        (typeof value === "string" && value.trim() === "")
+      ) {
+        delete next[key as keyof FamiliarBinding];
+      } else {
+        (next as Record<string, unknown>)[key] = value;
+      }
+    }
+    if (Object.keys(next).length === 0) delete updated[id];
+    else updated[id] = next;
+  }
+  return updated;
+}
+
+export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   const current = await loadConfig();
   const updated: CaveConfig = {
     ...current,
@@ -140,10 +183,7 @@ export async function saveConfig(patch: Partial<CaveConfig>): Promise<CaveConfig
       ...current.defaults,
       ...(patch.defaults ?? {}),
     },
-    // Shallow-merge familiars
-    familiars: patch.familiars !== undefined
-      ? { ...current.familiars, ...patch.familiars }
-      : current.familiars,
+    familiars: mergeFamiliarConfigs(current.familiars, patch.familiars),
     // Replace roles if provided
     roles: patch.roles !== undefined ? patch.roles : current.roles,
   };
@@ -190,6 +230,11 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
   return {
     harness: f.harness ?? config.defaults.harness,
     model: f.model ?? config.defaults.model,
+    display_name: f.display_name,
+    role: f.role,
+    pronouns: f.pronouns,
+    description: f.description,
+    color: f.color,
     note: f.note,
     voiceProvider: f.voiceProvider,
     voiceModel: f.voiceModel,

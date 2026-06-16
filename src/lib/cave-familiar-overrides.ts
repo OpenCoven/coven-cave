@@ -27,6 +27,7 @@ export type FamiliarOverride = {
 };
 
 type OverrideMap = Record<string, FamiliarOverride>;
+type ConfigPatch = Partial<Record<keyof FamiliarOverride, string | null>>;
 
 let cached: OverrideMap | null = null;
 const listeners = new Set<() => void>();
@@ -63,6 +64,36 @@ function writeMap(next: OverrideMap) {
   notify();
 }
 
+async function syncToConfig(id: string, patch: ConfigPatch | null): Promise<void> {
+  if (typeof window === "undefined") return;
+  const { reportDaemonSyncFailure, reportDaemonSyncSuccess } = await import(
+    "./daemon-sync-status.ts"
+  );
+  try {
+    const res = await fetch("/api/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiars: { [id]: patch } }),
+    });
+    if (res.ok) reportDaemonSyncSuccess();
+    else reportDaemonSyncFailure(`cave-config write: HTTP ${res.status}`);
+  } catch (err) {
+    reportDaemonSyncFailure(`cave-config write: ${(err as Error).message}`);
+  }
+}
+
+function configPatchForOverridePatch(patch: Partial<FamiliarOverride>): ConfigPatch {
+  const configPatch: ConfigPatch = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (typeof value === "string" && value.trim() === "") {
+      configPatch[key as keyof FamiliarOverride] = null;
+    } else if (value !== undefined) {
+      configPatch[key as keyof FamiliarOverride] = value;
+    }
+  }
+  return configPatch;
+}
+
 /** Merge a partial override patch for one familiar. Empty-string values are dropped. */
 export function setFamiliarOverride(
   id: string,
@@ -84,6 +115,8 @@ export function setFamiliarOverride(
   if (isEmpty) delete updated[id];
   else updated[id] = next;
   writeMap(updated);
+  const configPatch = configPatchForOverridePatch(patch);
+  if (Object.keys(configPatch).length > 0) void syncToConfig(id, configPatch);
 }
 
 /** Clear a single override field; drops the id entry entirely if it becomes empty. */
@@ -99,6 +132,7 @@ export function clearFamiliarOverrideField(
   if (Object.keys(nextEntry).length === 0) delete updated[id];
   else updated[id] = nextEntry;
   writeMap(updated);
+  void syncToConfig(id, { [field]: null });
 }
 
 /** Drop every override field for a familiar. */
@@ -108,6 +142,7 @@ export function clearAllFamiliarOverrides(id: string): void {
   const updated = { ...curr };
   delete updated[id];
   writeMap(updated);
+  void syncToConfig(id, null);
 }
 
 if (typeof window !== "undefined") {

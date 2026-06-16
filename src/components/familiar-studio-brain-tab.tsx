@@ -144,7 +144,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             value={draftHarness}
             onChange={(e) => {
               setDraftHarness(e.target.value);
-              void save({ harness: e.target.value || undefined });
+              void save({ harness: e.target.value || null });
             }}
             className="familiar-studio-brain__input"
           >
@@ -172,7 +172,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                   return;
                 }
                 setDraftModel(value);
-                void save({ model: value || undefined });
+                void save({ model: value || null });
               }}
               className="familiar-studio-brain__input"
             >
@@ -190,7 +190,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               type="text"
               value={draftModel}
               onChange={(e) => setDraftModel(e.target.value)}
-              onBlur={() => save({ model: draftModel.trim() || undefined })}
+              onBlur={() => save({ model: draftModel.trim() || null })}
               placeholder="provider/model"
               autoCapitalize="none"
               autoCorrect="off"
@@ -208,7 +208,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             rows={5}
             value={draftNote}
             onChange={(e) => setDraftNote(e.target.value)}
-            onBlur={() => save({ note: draftNote.trim() || undefined })}
+            onBlur={() => save({ note: draftNote.trim() || null })}
             placeholder="Plain text instructions to seed this familiar's behavior."
             className="familiar-studio-brain__input"
           />
@@ -222,7 +222,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             value={draftVoiceProvider}
             onChange={(e) => {
               setDraftVoiceProvider(e.target.value);
-              void save({ voiceProvider: e.target.value || undefined });
+              void save({ voiceProvider: e.target.value || null });
             }}
             className="familiar-studio-brain__input"
           >
@@ -242,7 +242,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 type="text"
                 value={draftVoiceModel}
                 onChange={(e) => setDraftVoiceModel(e.target.value)}
-                onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || undefined })}
+                onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || null })}
                 placeholder="gpt-4o-realtime-preview"
                 className="familiar-studio-brain__input"
               />
@@ -256,7 +256,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 value={draftVoiceName}
                 onChange={(e) => {
                   setDraftVoiceName(e.target.value);
-                  void save({ voiceName: e.target.value || undefined });
+                  void save({ voiceName: e.target.value || null });
                 }}
                 className="familiar-studio-brain__input"
               >

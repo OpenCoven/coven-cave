@@ -36,6 +36,12 @@ const base = {
   assert.equal(r.color, "#ff6600");
 }
 
+// Saved Cave config color wins over the default when no local override is present
+{
+  const r = resolveFamiliar({ ...base, color: "#123456" }, { archived: false });
+  assert.equal(r.color, "#123456");
+}
+
 // Image present
 {
   const r = resolveFamiliar(base, {

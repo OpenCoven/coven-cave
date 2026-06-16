@@ -42,7 +42,7 @@ export function resolveFamiliar(base: Familiar, ctx: ResolveContext): ResolvedFa
     role: ov.role ?? base.role,
     pronouns: ov.pronouns ?? base.pronouns,
     description: ov.description ?? base.description,
-    color: ov.color ?? "var(--accent-presence)",
+    color: ov.color ?? base.color ?? "var(--accent-presence)",
     // The familiar's workspace avatar (.../familiars/<id>/avatars/<img>) is the
     // source of truth and always wins; a Cave-local upload is only the fallback
     // when the familiar has no workspace avatar on disk.

@@ -14,6 +14,7 @@ globalThis.window = {
 };
 
 const mod = await import("./cave-familiar-overrides.ts");
+const flushAsync = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // setFamiliarOverride writes a partial patch
 {
@@ -59,6 +60,39 @@ const mod = await import("./cave-familiar-overrides.ts");
   mod.setFamiliarOverride("ember", { display_name: "" });
   const snap = mod.readFamiliarOverridesSnapshot();
   assert.deepEqual(snap, {});
+}
+
+// Browser-side overrides also sync into Cave config so server-side familiar
+// settings (voice calls, chat identity hydration, /api/familiars reloads) see them.
+{
+  const calls: Array<{ input: string; init: { method?: string; body?: string } }> = [];
+  globalThis.fetch = async (input, init = {}) => {
+    calls.push({ input: String(input), init });
+    return { ok: true, status: 200 };
+  };
+
+  mod.setFamiliarOverride("milo", { display_name: "Milo Prime", color: "#123456" });
+  await flushAsync();
+  assert.equal(calls.at(-1)?.input, "/api/config");
+  assert.equal(calls.at(-1)?.init.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls.at(-1)?.init.body ?? "{}"), {
+    familiars: {
+      milo: {
+        display_name: "Milo Prime",
+        color: "#123456",
+      },
+    },
+  });
+
+  mod.clearFamiliarOverrideField("milo", "display_name");
+  await flushAsync();
+  assert.deepEqual(JSON.parse(calls.at(-1)?.init.body ?? "{}"), {
+    familiars: {
+      milo: {
+        display_name: null,
+      },
+    },
+  });
 }
 
 console.log("cave-familiar-overrides.test.ts: ok");

@@ -62,6 +62,55 @@ try {
   await config.uninstallMarketplacePlugin("github");
   cfg = await config.loadConfig();
   assert.deepEqual(cfg.marketplace.installed, {});
+
+  await config.saveConfig({
+    familiars: {
+      nova: {
+        harness: "claude",
+        model: "anthropic/claude-sonnet-4-6",
+        voiceProvider: "openai",
+      },
+    },
+  });
+  await config.saveConfig({
+    familiars: {
+      nova: {
+        display_name: "Nova Prime",
+        role: "review familiar",
+      },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(cfg.familiars.nova, {
+    harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    voiceProvider: "openai",
+    display_name: "Nova Prime",
+    role: "review familiar",
+  });
+
+  const novaBinding = config.bindingFor(cfg, "nova");
+  assert.equal(novaBinding.display_name, "Nova Prime");
+  assert.equal(novaBinding.role, "review familiar");
+
+  await config.saveConfig({
+    familiars: {
+      nova: {
+        voiceProvider: null,
+      },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(cfg.familiars.nova, {
+    harness: "claude",
+    model: "anthropic/claude-sonnet-4-6",
+    display_name: "Nova Prime",
+    role: "review familiar",
+  });
+
+  await config.saveConfig({ familiars: { nova: null } });
+  cfg = await config.loadConfig();
+  assert.equal(cfg.familiars.nova, undefined);
 } finally {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;
