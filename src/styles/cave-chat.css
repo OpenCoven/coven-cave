@@ -1597,6 +1597,17 @@ details[open] > .cave-tool-summary::before {
   padding: 4px 10px 5px;
 }
 
+/* The right floating panel toggle (.shell-panel-float--right — right:8px, 28px
+   wide) overlays the top-right corner. With no right panel open the chat header
+   runs full-width to the viewport edge, so its right-edge actions (in-transcript
+   find + the ⋮ session menu) land under the toggle and become unclickable.
+   Reserve a gutter (8px edge + 28px button + 8px gap = 44px) so they clear it.
+   A panel open stops the header at the panel edge with the toggle over the
+   panel, so the base padding is correct there — hence the :not() guard. */
+:root:not([data-right-panel-open]) .cave-chat-linear-header {
+  padding-right: 44px;
+}
+
 .cave-mobile-header-identity,
 .cave-mobile-header-task,
 .cave-mobile-action-strip,

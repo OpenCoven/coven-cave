@@ -105,6 +105,16 @@ assert.doesNotMatch(
   "The inline project-chip picker is folded into the session overflow menu",
 );
 
+// The right floating panel toggle (.shell-panel-float--right) overlays the
+// top-right corner; with no right panel open the header runs full-width and its
+// actions (find + ⋮ menu) would land under the toggle. A guarded gutter clears
+// them — without it the session overflow menu is unclickable.
+assert.match(
+  styles,
+  /:root:not\(\[data-right-panel-open\]\)\s*\.cave-chat-linear-header\s*\{[^}]*padding-right:\s*44px/,
+  "Chat header reserves a right gutter (panel-closed) so its actions clear the floating panel toggle",
+);
+
 assert.doesNotMatch(
   styles,
   /\.cave-chat-lifecycle-status/,
