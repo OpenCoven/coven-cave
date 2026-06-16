@@ -626,6 +626,85 @@ function applyCustomVars(cssVars: CustomThemeData["cssVars"], mode: Mode) {
   apply(modeGroup);
 }
 
+/**
+ * Translate a tweakcn (shadcn) mode group into the Cave's richer semantic
+ * vocabulary.
+ *
+ * tweakcn ships only shadcn's base tokens — `background`, `foreground`,
+ * `primary`, `card`, `popover`, `border`, … The Cave UI, however, is driven
+ * mostly by Issue #14 surface/accent tokens. Some of those alias from the base
+ * in globals.css and so update for free (`--bg-base: var(--background)`,
+ * `--bg-raised: var(--card)`, `--border-hairline: var(--border)`,
+ * `--text-primary: var(--foreground)`, `--text-secondary: var(--muted-foreground)`).
+ * But the most visible ones are HARDCODED per theme and do NOT alias from the
+ * base, so a raw tweakcn import never touches them:
+ *   --accent-presence  → every button, focus ring, active state, scrollbar,
+ *                        --brand, --ring-focus and --color-info derive from it
+ *   --bg-panel         → app shell / sidebar floor
+ *   --bg-elevated      → dropdowns / popovers
+ *   --bg-hover         → hover state
+ *   --border-strong    → emphasised borders
+ * Derive those here so an imported theme recolors the whole app, not just the
+ * canvas and body text. Mix direction is mode-aware: in dark mode the panel
+ * floor sits darker than the canvas and hovers lift lighter; light mode is the
+ * inverse.
+ */
+function tweakcnSemanticVars(
+  group: Record<string, string>,
+  modeName: Mode,
+): Record<string, string> {
+  const pick = (key: string) => group[key] ?? group[`--${key}`];
+  const accent = pick("primary") || pick("ring") || pick("accent");
+  const bg = pick("background");
+  const card = pick("card");
+  const popover = pick("popover");
+  const border = pick("border");
+  // Panel = deepest floor (darker in dark mode, lighter in light mode).
+  // Hover = lifted surface (lighter in dark mode, darker in light mode).
+  const deepen = modeName === "light" ? "white" : "black";
+  const lift = modeName === "light" ? "black" : "white";
+
+  const out: Record<string, string> = {};
+  if (accent) {
+    out["--accent-presence"] = accent;
+    out["--accent-presence-soft"] = `color-mix(in oklch, ${accent} 78%, transparent)`;
+    out["--accent-faint"] = `color-mix(in oklch, ${accent} 14%, transparent)`;
+  }
+  if (bg) {
+    out["--bg-panel"] = `color-mix(in oklch, ${bg} 92%, ${deepen})`;
+    out["--bg-hover"] = `color-mix(in oklch, ${bg} 84%, ${lift})`;
+  }
+  const elevated = popover || card;
+  if (elevated) out["--bg-elevated"] = elevated;
+  if (border) {
+    out["--border-strong"] = accent
+      ? `color-mix(in oklch, ${border} 62%, ${accent} 38%)`
+      : border;
+  }
+  return out;
+}
+
+/**
+ * Enrich an imported tweakcn theme with the derived Cave semantic tokens
+ * (see tweakcnSemanticVars). The extra tokens are baked into each mode group so
+ * BOTH the live apply path (applyCustomVars) and the flash-free boot script
+ * (theme-script.tsx) replay identical data with no further logic. Raw tweakcn
+ * keys are preserved (and win on the unlikely collision) by spreading last.
+ */
+function enrichTweakcnTheme(data: CustomThemeData): CustomThemeData {
+  const enrich = (group: Record<string, string> | undefined, modeName: Mode) =>
+    group ? { ...tweakcnSemanticVars(group, modeName), ...group } : group;
+  const { theme, light, dark } = data.cssVars;
+  return {
+    name: data.name,
+    cssVars: {
+      ...(theme ? { theme } : {}),
+      ...(light ? { light: enrich(light, "light") } : {}),
+      ...(dark ? { dark: enrich(dark, "dark") } : {}),
+    },
+  };
+}
+
 function clearCustomTheme() {
   document.documentElement.setAttribute("data-theme", "coven");
   document.documentElement.removeAttribute("style");
@@ -828,10 +907,14 @@ function AppearanceSection() {
         throw new Error("Response missing cssVars — not a valid tweakcn theme JSON.");
       }
 
-      const data: CustomThemeData = {
+      const raw: CustomThemeData = {
         name: (json.name as string) || canonical.split("/").pop() || "custom",
         cssVars: cssVars as CustomThemeData["cssVars"],
       };
+      // Translate shadcn base tokens into the Cave's semantic vocabulary so the
+      // import recolors the accent, sidebar, popovers and hover states — not
+      // just the canvas (see enrichTweakcnTheme / tweakcnSemanticVars).
+      const data = enrichTweakcnTheme(raw);
 
       applyCustomVars(data.cssVars, mode);
       localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
