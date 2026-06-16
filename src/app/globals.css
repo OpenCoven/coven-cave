@@ -6187,3 +6187,29 @@ button:active > .edge-rail-chip {
   --shell-float-glow-x: 14px;
   transform: translate(14px, -14px) scale(1);
 }
+
+/* ── Magic cast: open the sidepanel from a distance ──────────────────────────
+   When MagicTriggers fires the corner toggle (cursor close enough that the glow
+   has gone purple), flash a one-shot purple sparkle by overriding the proximity
+   halo (::after) with an expanding bright-purple burst — a small "spell cast"
+   pulse. Purple is fixed (not theme accent) so the magic always reads violet. */
+.shell-panel-float.magic-cast::after {
+  background: radial-gradient(circle, color-mix(in oklch, #a855f7 95%, transparent), transparent 70%) !important;
+  opacity: 1 !important;
+  animation: magic-cast-sparkle 650ms ease-out !important;
+}
+@keyframes magic-cast-sparkle {
+  0% {
+    opacity: 1;
+    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(0.5);
+    filter: brightness(1.4);
+  }
+  60% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(2.9);
+    filter: brightness(1);
+  }
+}
