@@ -322,18 +322,19 @@ export function CommandPalette({
 
     const shortcutRows: Row[] = [];
     const toggleLabel = "Toggle Familiar Chat";
-    if (!scoped && (!q || toggleLabel.toLowerCase().includes(q) || "⌘j".includes(q))) {
+    if (!scoped && (!q || toggleLabel.toLowerCase().includes(q) || "⌘⇧b".includes(q))) {
       shortcutRows.push({
         id: "shortcut:toggle-agent",
         kind: "shortcut",
         label: toggleLabel,
-        shortcut: "⌘J",
+        shortcut: "⌘⇧B",
         action: () => {
           window.dispatchEvent(
             new KeyboardEvent("keydown", {
-              key: "j",
-              code: "KeyJ",
+              key: "B",
+              code: "KeyB",
               metaKey: true,
+              shiftKey: true,
               bubbles: true,
             }),
           );

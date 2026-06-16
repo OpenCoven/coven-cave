@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -15,6 +15,12 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
+import {
+  getPanelShortcutBindings,
+  labelPanelShortcut,
+  matchesPanelShortcut,
+  type PanelShortcutBindings,
+} from "@/lib/panel-shortcuts";
 
 // Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
@@ -22,7 +28,7 @@ import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer"
 // Keyboard:
 //   ⌘B   toggle nav
 //   ⌘\   toggle list
-//   ⌘J   toggle agent
+//   ⌘⇧B  toggle agent
 //   ⌃`   toggle bottom terminal
 
 const SHELL_GROUP_ID = "cave.shell.widths.v1";
@@ -121,6 +127,7 @@ function ShellInner({
   mobileTabs,
   onNavOpenChange,
   onFamiliarOpenChange,
+  panelShortcutOverrides,
 }: {
   familiarRail?: ReactNode;
   /** Mirror of familiarRail on the right edge — typically a thin column with
@@ -138,6 +145,7 @@ function ShellInner({
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
   onFamiliarOpenChange?: (open: boolean) => void;
+  panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
@@ -168,6 +176,11 @@ function ShellInner({
     familiarDrawerOpen: isMobile && mobileDrawer === "agent",
   };
   const renderedTopBar = typeof topBar === "function" ? topBar(mobileChromeState) : topBar;
+  const panelShortcuts = useMemo(
+    () => getPanelShortcutBindings(panelShortcutOverrides),
+    [panelShortcutOverrides],
+  );
+  const leftPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleLeftPanel);
 
   useImperativeHandle(ref, () => {
     const toggleDrawer = (slot: NonNullable<MobileDrawerSlot>) => {
@@ -330,33 +343,37 @@ function ShellInner({
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
+    const toggleFamiliarPanel = () => {
+      if (isMobile) {
+        toggleDrawerSlot("agent");
+        return;
+      }
+      const panel = familiarRef.current;
+      if (!panel) return;
+      if (panel.isCollapsed()) {
+        panel.expand();
+        setFamiliarOpen(true);
+      } else {
+        panel.collapse();
+        setFamiliarOpen(false);
+      }
+    };
     const handler = (e: KeyboardEvent) => {
-      const meta = e.metaKey || e.ctrlKey;
-      if (!meta) return;
-      const key = e.key.toLowerCase();
-      if (key === "b") {
+      if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
         else togglePanel(navRef.current);
-      } else if (key === "\\" && !twoPane) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && key === "\\" && !twoPane) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("list");
         else togglePanel(listRef.current);
-      } else if (key === "j" && hasFamiliar) {
+      } else if (matchesPanelShortcut(e, panelShortcuts.toggleRightPanel) && hasFamiliar) {
         e.preventDefault();
-        if (isMobile) {
-          toggleDrawerSlot("agent");
-        } else {
-          const panel = familiarRef.current;
-          if (!panel) return;
-          if (panel.isCollapsed()) {
-            panel.expand();
-            setFamiliarOpen(true);
-          } else {
-            panel.collapse();
-            setFamiliarOpen(false);
-          }
-        }
+        toggleFamiliarPanel();
       }
     };
     const bottomToggle = (e: KeyboardEvent) => {
@@ -374,7 +391,7 @@ function ShellInner({
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
     };
-  }, [twoPane, hasFamiliar, hasBottom, isMobile]);
+  }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
 
   if (!mounted) {
     return (
@@ -490,7 +507,7 @@ function ShellInner({
           className="familiar-trigger-rail__toggle"
           aria-label={navOpen ? "Hide navigation" : "Show navigation"}
           aria-expanded={navOpen}
-          title={navOpen ? "Hide navigation (⌘B)" : "Show navigation (⌘B)"}
+          title={navOpen ? `Hide navigation (${leftPanelShortcutLabel})` : `Show navigation (${leftPanelShortcutLabel})`}
           onClick={() => {
             if (navOpen) {
               navRef.current?.collapse();

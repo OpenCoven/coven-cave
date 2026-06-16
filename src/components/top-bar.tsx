@@ -164,7 +164,7 @@ export function TopBar(props: Props) {
             type="button"
             className="top-bar__mobile-toggle"
             onClick={onToggleFamiliar}
-            aria-label={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel (⌘J)"}
+            aria-label={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel (⌘⇧B)"}
             aria-expanded={Boolean(familiarDrawerOpen)}
             aria-pressed={Boolean(familiarDrawerOpen)}
             aria-controls="agent"

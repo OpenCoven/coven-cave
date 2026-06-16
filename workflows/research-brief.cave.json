@@ -1,23 +1,27 @@
 {
   "version": 1,
   "positions": {
-    "intake": {
+    "scope-question": {
       "x": 80,
       "y": 80
     },
-    "read-pass": {
+    "gather-primary": {
       "x": 80,
       "y": 220
     },
-    "annotate-claims": {
+    "gather-local": {
+      "x": 320,
+      "y": 220
+    },
+    "map-claims": {
       "x": 80,
       "y": 360
     },
-    "verify-citations": {
+    "synthesize": {
       "x": 80,
       "y": 500
     },
-    "save-notes": {
+    "deliver": {
       "x": 80,
       "y": 640
     }

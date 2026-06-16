@@ -12,6 +12,7 @@ const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 
 assert.match(
   shell,
@@ -108,5 +109,33 @@ assert.match(
   /edge-rail-chip[\s\S]{0,120}ph:sidebar-simple/,
   "collapsed projects sidebar reopen tab uses the pressable chip",
 );
+
+assert.match(
+  shell,
+  /import \{[\s\S]*getPanelShortcutBindings[\s\S]*matchesPanelShortcut[\s\S]*\} from "@\/lib\/panel-shortcuts"/,
+  "shell uses the shared, overrideable panel shortcut matcher",
+);
+assert.match(
+  shell,
+  /panelShortcutOverrides\?: Partial<PanelShortcutBindings>/,
+  "Shell accepts shortcut overrides instead of hard-coding panel chords",
+);
+assert.match(
+  shell,
+  /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
+  "left panel toggles from the resolved left-panel shortcut",
+);
+assert.match(
+  shell,
+  /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)[\s\S]*hasFamiliar[\s\S]*toggleFamiliarPanel\(\)/,
+  "right panel toggles from the resolved right-panel shortcut",
+);
+assert.doesNotMatch(
+  shell,
+  /key === "b"[\s\S]{0,120}togglePanel\(navRef\.current\)/,
+  "Shift+B must not fall through to the left sidebar toggle",
+);
+assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
+assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
 
 console.log("shell-edge-rails.test.ts OK");

@@ -35,8 +35,29 @@ assert.match(
 );
 assert.match(
   source,
+  /table:\s*\(\) => tableReplacements\[tableRenderIdx\+\+\] \?\? ""/,
+  "Rendered tables are supplied through @create-markdown/preview customRenderers",
+);
+
+assert.match(
+  source,
+  /renderAsync\(blocks,\s*\{[\s\S]*customRenderers:/,
+  "Chat markdown should use @create-markdown/preview renderAsync with scoped custom renderers",
+);
+assert.match(
+  source,
+  /sanitize:\s*sanitizeHtml/,
+  "Chat markdown should pass the shared sanitizer through @create-markdown/preview",
+);
+assert.doesNotMatch(
+  source,
+  /const preRe = \/<pre\[\^>\]\*>\[\\s\\S\]\*\?<\\\/pre>\/g/,
+  "Chat markdown should not post-process preview-rendered <pre> blocks with regex replacement",
+);
+assert.doesNotMatch(
+  source,
   /const tableRe = \/<table\[\^>\]\*>\[\\s\\S\]\*\?<\\\/table>\/g/,
-  "Rendered tables substitute positionally for the renderer's own <table> output",
+  "Chat markdown should not post-process preview-rendered <table> blocks with regex replacement",
 );
 
 // ── CHAT-D7-08: wide tables scroll, they don't word-shatter ───────────────
@@ -46,8 +67,8 @@ assert.match(
 // of shattering mid-word.
 assert.match(
   source,
-  /<div class="cave-table-scroll">\$\{tableReplacements\[tableIdx\] \?\? tableMatch\[0\]\}<\/div>/,
-  "mdToHtml wraps each rendered table (including the positional fallback) in .cave-table-scroll",
+  /return `<div class="cave-table-scroll">\$\{await renderTableBlock\(block, renderAsync\)\}<\/div>`;/,
+  "mdToHtml wraps each preview custom-rendered table in .cave-table-scroll",
 );
 
 // ── CHAT-D6-04: per-message actions must be keyboard/touch reachable ──────
