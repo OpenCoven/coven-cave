@@ -83,6 +83,41 @@ assert.match(
   "applyCustomVars should accept tweakcn's bare-name keys by prefixing -- when missing",
 );
 
+// tweakcn ships only shadcn base tokens; the Cave UI is driven by --accent-presence,
+// --bg-panel, --bg-elevated and --bg-hover, which are hardcoded per theme and do NOT
+// alias from the base. The import must translate the base tokens into those so an
+// imported theme recolors the accent/sidebar/popovers, not just the canvas.
+assert.match(
+  settings,
+  /function tweakcnSemanticVars\(/,
+  "Imports must translate tweakcn base tokens into the Cave's semantic vocabulary",
+);
+assert.match(
+  settings,
+  /tweakcnSemanticVars[\s\S]*"--accent-presence"\] = accent/,
+  "tweakcn import should drive --accent-presence from the theme's primary/ring/accent",
+);
+assert.match(
+  settings,
+  /pick\("primary"\) \|\| pick\("ring"\) \|\| pick\("accent"\)/,
+  "Accent should resolve from primary, then ring, then accent",
+);
+assert.match(
+  settings,
+  /"--bg-panel"\][\s\S]*"--bg-hover"\][\s\S]*"--bg-elevated"\]/,
+  "tweakcn import should derive the surface ramp (panel/hover/elevated) the app uses",
+);
+assert.match(
+  settings,
+  /const data = enrichTweakcnTheme\(raw\)/,
+  "handleImport should enrich the raw tweakcn theme before applying and persisting it",
+);
+assert.match(
+  settings,
+  /enrichTweakcnTheme[\s\S]*\{ \.\.\.tweakcnSemanticVars\(group, modeName\), \.\.\.group \}/,
+  "Enrichment must preserve raw tweakcn keys (spread last) while adding derived Cave tokens",
+);
+
 assert.match(
   settings,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
