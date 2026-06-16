@@ -126,6 +126,15 @@ export function covenHelpSupportsAdapterList(helpText: string): boolean {
   return /^\s+adapters?\s+.*\badapters?\b/im.test(helpText);
 }
 
+// Capability probe for the model-parity passthrough. `coven run` rejects unknown
+// flags, so Cave must never emit `--model` before the installed CLI advertises
+// it. This parses `coven run --help` output for a `--model` option so forwarding
+// can be gated to a no-op until the companion CLI change lands.
+export function covenRunSupportsModelFlag(helpText: string): boolean {
+  if (typeof helpText !== "string" || !helpText) return false;
+  return /(^|\s)--model(?![\w-])/m.test(helpText);
+}
+
 export function mergeAdapterReports(
   localReports: Array<
     Partial<AdapterReport> & {

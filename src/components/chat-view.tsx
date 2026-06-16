@@ -1326,23 +1326,61 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshModelState = useCallback(async (): Promise<ChatModelState | null> => {
     const params = new URLSearchParams({ familiarId: familiar.id });
     if (sessionId) params.set("sessionId", sessionId);
+    try {
+      const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+      const next = json.ok && json.state ? json.state : null;
+      setModelState(next);
+      return next;
+    } catch {
+      setModelState(null);
+      return null;
+    }
+  }, [familiar.id, sessionId]);
+
+  useEffect(() => {
+    let cancelled = false;
     void (async () => {
-      try {
-        const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-        if (!cancelled) setModelState(json.ok && json.state ? json.state : null);
-      } catch {
-        if (!cancelled) setModelState(null);
-      }
+      const next = await refreshModelState();
+      // refreshModelState already set state; guard only against a stale familiar
+      // swap landing after unmount/re-fetch.
+      if (cancelled && next) return;
     })();
     return () => {
       cancelled = true;
     };
-  }, [familiar.id, sessionId]);
+  }, [refreshModelState]);
+
+  // Persist a model choice through the existing channels: session scope when a
+  // chat exists (writes the conversation's modelIntent), else familiar-default.
+  // No new persistence path — the picker reuses /api/chat/model-state.
+  const handleSelectModel = useCallback(
+    (modelId: string) => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/chat/model-state", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              familiarId: familiar.id,
+              sessionId: sessionId ?? undefined,
+              model: modelId,
+              scope: sessionId ? "session" : "familiar-default",
+            }),
+          });
+          const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+          if (json.ok && json.state) setModelState(json.state);
+          else await refreshModelState();
+        } catch {
+          await refreshModelState();
+        }
+      })();
+    },
+    [familiar.id, sessionId, refreshModelState],
+  );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -2686,7 +2724,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           onBack={onBack}
         >
-          <ChatModelControl state={modelState} />
+          <ChatModelControl state={modelState} onSelectModel={handleSelectModel} busy={busy} />
           <div className="cave-chat-session-actions">
             {turns.length > 0 ? (
               <ChatFindBar

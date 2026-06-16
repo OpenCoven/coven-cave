@@ -39,7 +39,7 @@ import {
   familiarWorkspacesRoot,
   readFamiliarWorkspaces,
 } from "@/lib/coven-paths";
-import { isTrustedChatHarness } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, covenRunSupportsModelFlag } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
@@ -48,6 +48,7 @@ import {
 } from "@/lib/cave-conversations";
 import {
   cleanModelId,
+  modelApplicationForHarness,
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
@@ -347,11 +348,63 @@ function sse(event: StreamEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+// Model parity: probe once per process whether the installed `coven run`
+// advertises `--model`. `coven run` rejects unknown flags, so forwarding must be
+// a no-op until the companion CLI change ships. Cached; failures resolve false.
+let covenRunModelFlagProbe: Promise<boolean> | null = null;
+function covenRunSupportsModel(): Promise<boolean> {
+  if (!covenRunModelFlagProbe) {
+    covenRunModelFlagProbe = new Promise<boolean>((resolve) => {
+      let out = "";
+      let settled = false;
+      const done = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        const child = spawn(covenBin(), ["run", "--help"], {
+          env: covenSpawnEnv(),
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        child.stdout.on("data", (d) => (out += d.toString()));
+        child.stderr.on("data", (d) => (out += d.toString()));
+        const t = setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+          done(false);
+        }, 2500);
+        child.on("close", () => {
+          clearTimeout(t);
+          done(covenRunSupportsModelFlag(out));
+        });
+        child.on("error", () => {
+          clearTimeout(t);
+          done(false);
+        });
+      } catch {
+        done(false);
+      }
+    });
+  }
+  return covenRunModelFlagProbe;
+}
+
 function resolveSendModelMetadata(args: {
   body: SendBody;
   config: CaveConfig;
   binding: FamiliarBinding;
   existingConversation: ConversationFile | null;
+  /**
+   * Whether `coven run --model` will actually be forwarded for this turn. When
+   * true the application state reads `pending` (saved, awaiting confirmation)
+   * instead of `unsupported`; the stream's init event later promotes it to
+   * `applied`.
+   */
+  modelForwardingEnabled: boolean;
 }): { desiredModel: string; modelState: ChatModelState } {
   const requestedModel = cleanModelId(args.body.modelOverride);
   const sessionModel =
@@ -366,6 +419,7 @@ function resolveSendModelMetadata(args: {
     familiarModel: args.config.familiars[args.body.familiarId]?.model ?? null,
     sessionModel,
     nextMessageModel: args.body.modelOverrideScope === "next-message" ? requestedModel : null,
+    application: { supported: args.modelForwardingEnabled },
   });
   const desiredModel = modelState.effectiveModel === "unknown" ? args.binding.model : modelState.effectiveModel;
   return { desiredModel, modelState };
@@ -832,11 +886,17 @@ export async function POST(req: Request) {
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  // OpenClaw runs through its own agent bridge (no `coven run`), so it never
+  // forwards `--model`; every other bundled harness gates on the capability
+  // probe so this stays a no-op until the companion CLI ships the flag.
+  const modelForwardingEnabled =
+    binding.harness !== "openclaw" && (await covenRunSupportsModel());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
     binding,
     existingConversation,
+    modelForwardingEnabled,
   });
 
   // Native Cave chat can drive Coven harnesses that resolve through
@@ -984,6 +1044,11 @@ export async function POST(req: Request) {
   // Important: pass every flag BEFORE the prompt and add a `--` separator,
   // because `<PROMPT>...` is a variadic positional in coven's clap definition
   // and otherwise swallows trailing flags like `--stream-json` as raw text.
+  // Model parity: forward the resolved model only when forwarding is enabled
+  // (the installed `coven run` advertises `--model`) and the id is well-formed.
+  // Emitted BEFORE the `--` separator for the same reason every other flag is.
+  const forwardModel =
+    modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
   const buildArgs = (resumeSessionId: string | null): string[] => {
     if (sshRuntime) {
       return buildSshSpawnArgs({
@@ -992,10 +1057,12 @@ export async function POST(req: Request) {
         familiarId: body.familiarId,
         prompt: harnessPrompt,
         sessionId: resumeSessionId,
+        model: forwardModel,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
+    if (forwardModel) a.push("--model", forwardModel);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
@@ -1087,6 +1154,12 @@ export async function POST(req: Request) {
       // miss). Triggers a single transparent retry without --continue.
       let resumeFailed = false;
 
+      // Model parity: the harness echoes its resolved model on the init/system
+      // stream event. Capturing it lets the application state render honestly as
+      // `applied` instead of staying `pending`. Null until the init event with a
+      // model field arrives (older CLIs omit it → honest `pending`).
+      let confirmedModel: string | null = null;
+
       const handleLine = (line: string) => {
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
@@ -1097,6 +1170,7 @@ export async function POST(req: Request) {
               type: string;
               subtype?: string;
               session_id?: string;
+              model?: string;
               duration_ms?: number;
               is_error?: boolean;
               total_cost_usd?: number;
@@ -1116,6 +1190,12 @@ export async function POST(req: Request) {
                 }>;
               };
             };
+            // The init/system event echoes the harness's resolved model. Record
+            // the first one seen so the turn can report `applied` honestly.
+            if (!confirmedModel && (ev.type === "system" || ev.subtype === "init")) {
+              const echoed = cleanModelId(ev.model);
+              if (echoed) confirmedModel = echoed;
+            }
             if (ev.session_id && !sessionId) {
               sessionId = ev.session_id;
               // The client tracks the STABLE conversation id — on resumed
@@ -1381,6 +1461,17 @@ export async function POST(req: Request) {
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
       const harnessSessionId = sessionId;
+      // Model parity: if the harness echoed its resolved model, promote the
+      // application state from `pending` to `applied` and record what actually
+      // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
+      if (confirmedModel) {
+        const application = modelApplicationForHarness({ supported: true, confirmed: true });
+        responseMetadata.confirmedModel = confirmedModel;
+        responseMetadata.modelApplicationState = application.state;
+        responseMetadata.modelApplicationReason = application.reason;
+        modelState.applicationState = application.state;
+        modelState.reason = application.reason;
+      }
       const finalSessionId = body.sessionId ?? sessionId;
       if (finalSessionId) {
         pushProgress("save-transcript", "Saving transcript", "running");

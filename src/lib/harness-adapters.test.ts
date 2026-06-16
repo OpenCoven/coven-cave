@@ -7,10 +7,44 @@ import {
   runtimeSourceSetupState,
   adapterManifestScaffoldForHarness,
   covenHelpSupportsAdapterList,
+  covenRunSupportsModelFlag,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
   openClawAdapterReport,
 } from "./harness-adapters.ts";
+
+// Model-parity gating probe: forwarding `--model` must stay off until the
+// installed `coven run` advertises the flag.
+assert.equal(
+  covenRunSupportsModelFlag(`Usage: coven run [OPTIONS] <HARNESS> [PROMPT]...
+
+Options:
+      --stream-json  Emit stream-json events
+      --model <MODEL>  Model id to pass through to the harness
+      --continue <ID>  Resume a session
+`),
+  true,
+  "Help text advertising --model should enable forwarding",
+);
+
+assert.equal(
+  covenRunSupportsModelFlag(`Usage: coven run [OPTIONS] <HARNESS> [PROMPT]...
+
+Options:
+      --stream-json  Emit stream-json events
+      --continue <ID>  Resume a session
+`),
+  false,
+  "Help text without --model should keep forwarding off",
+);
+
+assert.equal(covenRunSupportsModelFlag(""), false, "Empty help text never enables forwarding");
+assert.equal(covenRunSupportsModelFlag(undefined), false, "Non-string help text never enables forwarding");
+assert.equal(
+  covenRunSupportsModelFlag("see also --model-context-protocol for MCP"),
+  false,
+  "A substring like --model-context-protocol must not be mistaken for --model",
+);
 
 assert.deepEqual(
   COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),

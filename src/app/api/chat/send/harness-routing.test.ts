@@ -114,10 +114,14 @@ assert.doesNotMatch(
   /"--session-id"/,
   "OpenClaw bridge no longer passes raw session ids — keys are the resume contract",
 );
+// Model parity superseded the old "never emit --model" guard: --model is now
+// forwarded, but ONLY behind the coven run capability probe (see the gated
+// forwarding assertions at the end of this file). Guard against an UNGATED
+// emission sneaking back in.
 assert.doesNotMatch(
   chatRoute,
-  /"--model"/,
-  "Cave chat must not pass a guessed --model flag until coven run exposes that contract",
+  /a\.push\("--model"\)(?!.*forwardModel)/,
+  "Cave chat must never emit --model except behind the forwardModel gate",
 );
 assert.match(
   chatRoute,
@@ -844,5 +848,59 @@ assert.match(
   );
 }
 console.log("tool persistence tracker tests passed");
+
+// ── Model parity (gated --model passthrough) ───────────────────────────────
+assert.match(
+  chatRoute,
+  /covenRunSupportsModelFlag/,
+  "Model forwarding must gate on the coven run --model capability probe",
+);
+
+assert.match(
+  chatRoute,
+  /binding\.harness !== "openclaw" && \(await covenRunSupportsModel\(\)\)/,
+  "OpenClaw never forwards --model; every other harness gates on the probe",
+);
+
+assert.match(
+  chatRoute,
+  /const forwardModel =\s*\n?\s*modelForwardingEnabled && cleanModelId\(desiredModel\) \? desiredModel : null;/,
+  "forwardModel must require both an enabled probe and a clean model id",
+);
+
+assert.match(
+  chatRoute,
+  /if \(forwardModel\) a\.push\("--model", forwardModel\);/,
+  "Local argv should push --model before the -- prompt separator when forwarding",
+);
+
+assert.match(
+  chatRoute,
+  /buildSshSpawnArgs\(\{[\s\S]*?model: forwardModel,[\s\S]*?\}\)/,
+  "SSH spawn args should forward the same gated model",
+);
+
+// --model is emitted before the `--` separator, never after (the prompt is a
+// variadic positional that would otherwise swallow it).
+const localArgvBlock = chatRoute.match(/const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*?a\.push\("--", harnessPrompt\);/);
+assert.ok(localArgvBlock, "local argv builder block should be present");
+assert.ok(
+  localArgvBlock[0].indexOf('a.push("--model"') < localArgvBlock[0].indexOf('a.push("--", harnessPrompt)'),
+  "--model must be pushed before the -- prompt separator",
+);
+
+assert.match(
+  chatRoute,
+  /responseMetadata\.confirmedModel = confirmedModel;/,
+  "A harness-echoed model should be recorded as the confirmed model",
+);
+
+assert.match(
+  chatRoute,
+  /modelApplicationForHarness\(\{ supported: true, confirmed: true \}\)/,
+  "Confirming an echoed model should promote the application state to applied",
+);
+
+console.log("model parity routing tests passed");
 
 console.log("harness-routing tests passed");

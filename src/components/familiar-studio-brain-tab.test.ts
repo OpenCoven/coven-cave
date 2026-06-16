@@ -12,8 +12,18 @@ assert.match(source, /harness/);
 assert.match(source, /model/);
 assert.match(
   source,
-  /anthropic\/claude-fable-5/,
-  "Brain tab model suggestions should include Claude Fable 5",
+  /catalogForRuntime/,
+  "Brain tab model menu should source options from the runtime → provider catalog",
+);
+assert.match(
+  source,
+  /modelOptions\.map/,
+  "Brain tab should render a model select from the catalog options",
+);
+assert.match(
+  source,
+  /allowCustomModel/,
+  "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
 assert.match(source, /note/);
 assert.match(source, /\/api\/harnesses/);
