@@ -420,9 +420,9 @@ function ReminderTaskSection({
   if (items.length === 0) return null;
   return (
     <div className="mb-6">
-      <div className="flex items-center gap-3 mb-1 pb-2"
-        style={{ borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
+        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
+        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
           {title}
         </span>
       </div>
@@ -840,9 +840,9 @@ function AutomationScheduleSection({
   if (items.length === 0) return null;
   return (
     <div className="mb-6">
-      <div className="flex items-center gap-3 mb-1 pb-2"
-        style={{ borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-semibold" style={{ color: "var(--text-secondary)" }}>
+      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
+        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
+        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
           {title}
         </span>
         <span className="text-[10px] px-1.5 py-0.5 rounded"
