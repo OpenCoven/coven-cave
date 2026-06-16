@@ -280,8 +280,8 @@ const usageTurnRow =
 assert.ok(usageTurnRow, "TurnRow body should be extractable (CHAT-D12-02)");
 assert.match(
   usageTurnRow,
-  /fmtTime\(turn\.createdAt\)[\s\S]{0,120}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
-  "Assistant turn meta row appends the muted usage/cost readout after the timestamp (CHAT-D12-02)",
+  /fmtTime\(turn\.createdAt\)[\s\S]{0,180}?<DurationText durationMs=\{turn\.durationMs\} \/>[\s\S]{0,180}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
+  "Assistant turn meta row appends duration and the muted usage/cost readout after the timestamp (CHAT-D12-02)",
 );
 
 // ── CHAT-D9-04: find highlight timer cleanup ──

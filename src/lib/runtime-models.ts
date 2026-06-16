@@ -58,8 +58,14 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   },
 };
 
+const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.5";
+
 export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
   return RUNTIME_MODEL_CATALOG[runtime] ?? null;
+}
+
+export function defaultModelForRuntime(runtime: string): string {
+  return catalogForRuntime(runtime)?.models[0]?.id ?? GLOBAL_DEFAULT_MODEL;
 }
 
 export function isModelInCatalog(runtime: string, modelId: string): boolean {

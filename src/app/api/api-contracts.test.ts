@@ -65,7 +65,6 @@ const contracts: RouteContract[] = [
   { route: "/library/reading", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true },
   { route: "/library/route-link", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/library", methods: ["GET"], kind: "json" },
-  { route: "/marketplace", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/memory/delete", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/memory/file", methods: ["GET"], kind: "json", pathGuard: true },

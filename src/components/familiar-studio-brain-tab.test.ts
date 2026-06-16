@@ -10,6 +10,8 @@ const source = readFileSync(
 assert.match(source, /export function FamiliarStudioBrainTab/);
 assert.match(source, /harness/);
 assert.match(source, /model/);
+assert.match(source, /familiar-studio-brain__label">Runtime<\/span>/, "Brain tab should label harness selection as Runtime");
+assert.doesNotMatch(source, /familiar-studio-brain__label">Harness<\/span>/, "Brain tab should not show Harness as the product label");
 assert.match(
   source,
   /catalogForRuntime/,

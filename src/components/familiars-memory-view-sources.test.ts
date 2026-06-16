@@ -18,8 +18,8 @@ assert.match(
 
 assert.match(
   source,
-  /External harnesses/,
-  "FamiliarsMemoryView should separately count external harness memory files",
+  /External runtimes/,
+  "FamiliarsMemoryView should separately count external runtime memory files",
 );
 
 assert.match(

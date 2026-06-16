@@ -37,10 +37,10 @@ assert.match(
   "Mobile bottom tabs should keep the Schedules label short while preserving the full accessible name",
 );
 
-assert.match(
+assert.doesNotMatch(
   mobileTabs,
   /{ id: "calls", label: "Calls", ariaLabel: "Delegations", iconName: "ph:graph" }/,
-  "Mobile bottom tabs should include the Delegations surface (short 'Calls' label, full 'Delegations' accessible name)",
+  "Mobile bottom tabs should not include the removed Delegations surface",
 );
 
 assert.match(

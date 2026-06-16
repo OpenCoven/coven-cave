@@ -9,6 +9,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
 
 // Guided onboarding: one numbered path from "nothing installed" to "chatting
 // with a familiar". Every step carries its own instructions, a one-click
@@ -851,7 +852,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                 : `Local ${selectedHarness.label} adapter on this machine.`),
             glyph: familiarGlyph,
             harness: selectedHarness.id,
-            model: `${selectedHarness.id}-local`,
+            model: defaultModelForRuntime(selectedHarness.id),
             ...(sshEnabled
               ? {
                   runtime: {

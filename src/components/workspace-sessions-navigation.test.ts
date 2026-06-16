@@ -26,6 +26,6 @@ assert.match(
 
 assert.match(
   slashCommands,
-  /name: "\/sessions"[\s\S]*description: "Open all sessions across familiars and harnesses\."/,
-  "Slash command help should describe Sessions as cross-familiar and cross-harness",
+  /name: "\/sessions"[\s\S]*description: "Open all sessions across familiars and runtimes\."/,
+  "Slash command help should describe Sessions as cross-familiar and cross-runtime",
 );

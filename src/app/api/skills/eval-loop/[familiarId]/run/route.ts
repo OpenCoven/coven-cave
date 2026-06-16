@@ -34,7 +34,6 @@ export async function POST(
   if (!res.ok) {
     return NextResponse.json(
       { ok: false, error: res.error ?? `daemon http ${res.status}` },
-      { status: 503 },
     );
   }
 

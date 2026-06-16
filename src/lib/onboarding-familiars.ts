@@ -4,6 +4,7 @@ import {
   normalizeFamiliarRuntime,
   type SshFamiliarRuntime,
 } from "./familiar-runtime.ts";
+import { defaultModelForRuntime } from "./runtime-models.ts";
 
 export type OnboardingFamiliarDraft = {
   id: string;
@@ -67,7 +68,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   if (!isTrustedOnboardingHarness(harness)) {
     throw new Error(`Unsupported harness: ${harness}.`);
   }
-  const model = cleanText(input.model) || openclawAgentId || id;
+  const model = cleanText(input.model) || defaultModelForRuntime(harness);
 
   // A runtime request is all-or-nothing: a partial/invalid SSH config must
   // fail loudly here instead of silently degrading to a local familiar the

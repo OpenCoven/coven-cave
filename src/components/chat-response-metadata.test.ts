@@ -123,6 +123,17 @@ assert.match(
 );
 
 assert.match(
+  chatView,
+  /metadata\?\.confirmedModel\?\.trim\(\)[\s\S]*metadata\?\.model\?\.trim\(\)/,
+  "Response metadata display should prefer the runtime-confirmed model over the requested model",
+);
+assert.doesNotMatch(
+  chatView,
+  /openclaw-local/,
+  "ChatView should not hardcode the old synthetic OpenClaw model placeholder",
+);
+
+assert.match(
   conversations,
   /model\?: string;[\s\S]*runtime\?: string;/,
   "Conversation files should persist session-level model and runtime metadata",

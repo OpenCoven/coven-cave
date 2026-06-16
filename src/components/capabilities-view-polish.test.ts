@@ -26,12 +26,12 @@ assert.doesNotMatch(
 // Hero <h2> slimmed from 20px to 18px.
 assert.match(
   source,
-  /text-\[18px\] font-semibold text-\[var\(--text-primary\)\][\s\S]{0,160}Harness capabilities/,
+  /text-\[18px\] font-semibold text-\[var\(--text-primary\)\][\s\S]{0,160}Runtime capabilities/,
   "hero headline uses text-[18px]",
 );
 assert.doesNotMatch(
   source,
-  /text-\[20px\] font-semibold text-\[var\(--text-primary\)\][\s\S]{0,160}Harness capabilities/,
+  /text-\[20px\] font-semibold text-\[var\(--text-primary\)\][\s\S]{0,160}Runtime capabilities/,
   "hero headline no longer uses text-[20px]",
 );
 

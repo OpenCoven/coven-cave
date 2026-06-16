@@ -22,7 +22,6 @@ import { FamiliarStudio } from "@/components/familiar-studio";
 import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { FamiliarsView } from "@/components/familiars-view";
-import { CallsView } from "@/components/calls-view";
 import {
   getActiveFamiliar,
   setActiveFamiliar,
@@ -82,7 +81,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   roles: "Roles",
   workflows: "Workflows",
   capabilities: "Capabilities",
-  calls: "Delegations",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -1031,10 +1029,6 @@ export function Workspace() {
       case "/board":
         setMode("board");
         return true;
-      case "/calls":
-      case "/delegations":
-        setMode("calls");
-        return true;
       case "/chats":
       case "/agents":
       case "/chat":
@@ -1438,13 +1432,6 @@ export function Workspace() {
       />
     ) : mode === "capabilities" ? (
       <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
-    ) : mode === "calls" ? (
-      <CallsView
-        familiars={familiars}
-        sessions={sessions}
-        onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
-        initialTab="delegations"
-      />
     ) : mode === "calendar" ? (
       <CalendarView
         items={inboxItems}

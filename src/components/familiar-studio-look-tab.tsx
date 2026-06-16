@@ -190,7 +190,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
             onClick={() => setColorScope("harness")}
             className={`familiar-studio-look__scope-btn${colorScope === "harness" ? " familiar-studio-look__scope-btn--active" : ""}`}
           >
-            Same harness
+            Same runtime
             <span>{harnessTargets.length}</span>
           </button>
         </div>
@@ -227,12 +227,12 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
             Palette by familiar
           </button>
           <button type="button" onClick={applyPaletteByHarness}>
-            Palette by harness
+            Palette by runtime
           </button>
         </div>
         <p className="familiar-studio-look__note">
-          Pastels follow the current theme accent. Use same-harness scope for a
-          whole harness set.
+          Pastels follow the current theme accent. Use same-runtime scope for a
+          whole runtime set.
         </p>
       </section>
 

@@ -3,7 +3,7 @@
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
  * viewports. Surfaces the most-used destinations (Home, Familiars, Board, Inbox,
- * Library, Delegations) as a tablist with icon + label and an active highlight.
+ * Library) as a tablist with icon + label and an active highlight.
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
  * responsible for that conditional render — this component itself doesn't
@@ -12,7 +12,7 @@
 
 import { Icon, type IconName } from "@/lib/icon";
 
-type TabId = "home" | "chat" | "board" | "inbox" | "library" | "calls";
+type TabId = "home" | "chat" | "board" | "inbox" | "library";
 
 type TabDef = {
   id: TabId;
@@ -27,11 +27,6 @@ const TABS: TabDef[] = [
   { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
   { id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" },
   { id: "library", label: "Library", ariaLabel: "Library", iconName: "ph:books" },
-  // Short visible label ("keep labels short" — see the Inbox/Automations split):
-  // "Delegations" truncates to "Delegati…" in a 6-tab bar, so use the surface's
-  // own header name ("Coven Calls"); the accessible name stays "Delegations" to
-  // match the sidebar Tools entry (mode "calls").
-  { id: "calls", label: "Calls", ariaLabel: "Delegations", iconName: "ph:graph" },
 ];
 
 export type MobileBottomTabsProps = {

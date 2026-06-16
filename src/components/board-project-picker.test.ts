@@ -20,13 +20,13 @@ assert.match(
 );
 assert.match(
   inspector,
-  /onPatch\(card\.id, \{ projectId: e\.target\.value \|\| null \}\)/,
-  "changing the inspector project picker patches projectId (or clears it to null)",
+  /onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
+  "changing the inspector project picker patches projectId and its persisted cwd",
 );
 assert.match(inspector, /<option value="">No project<\/option>/, "inspector offers a No-project option");
 assert.match(
   inspector,
-  /projects\.map\(\(p\) => <option key=\{p\.id\} value=\{p\.id\}>\{p\.name\}<\/option>\)/,
+  /projects\.map\(\(project\) => <option key=\{project\.id\} value=\{project\.id\}>\{project\.name\}<\/option>\)/,
   "inspector lists every known project by id/name",
 );
 

@@ -199,7 +199,7 @@ export function groupMemories(entries: ManagedMemoryEntry[], by: GroupBy, now = 
       const kindLabels: Record<string, string> = {
         "coven": "Coven",
         "coven-origin": "Coven origin",
-        "external-harness": "External harness",
+        "external-harness": "External runtime",
         "runtime": "Runtime",
       };
       label = kindLabels[e.kind] ?? e.kind;

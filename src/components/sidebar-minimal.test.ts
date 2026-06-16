@@ -6,19 +6,20 @@ const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
-// The Delegations (calls) surface is wired back into navigation: a Tools entry
-// in the sidebar + a render branch + a mode title in the workspace.
-assert.match(
+// Delegations/calls used to be a standalone page. It is removed from top-level
+// navigation and workspace routing.
+assert.doesNotMatch(
   source,
   /\{ id: "calls", label: "Delegations", iconName: "ph:graph", group: "tools", description:/,
-  "Delegations should appear as a Tools surface (CallsView wired back into nav)",
+  "Delegations should not appear as a Tools surface",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
   /mode === "calls" \?\s*\(\s*<CallsView/,
-  "workspace should render CallsView for the calls mode",
+  "workspace should not render CallsView for a calls mode",
 );
-assert.match(workspace, /calls: "Delegations"/, "calls mode has a Delegations title");
+assert.doesNotMatch(workspace, /calls: "Delegations"/, "calls mode should not have a Delegations title");
+assert.doesNotMatch(workspace, /case "\/delegations":|case "\/calls":|setMode\("calls"\)/, "slash commands should not route to a Delegations page");
 
 assert.match(
   source,

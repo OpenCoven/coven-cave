@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   cleanModelId,
+  isSyntheticLocalModel,
   modelApplicationForHarness,
   modelApplicationFromRun,
   modelRejectionInError,
@@ -22,6 +23,8 @@ assert.equal(cleanModelId(""), null);
 assert.equal(cleanModelId("bad model with spaces"), null);
 assert.equal(cleanModelId("../escape"), null);
 assert.equal(cleanModelId(42), null);
+assert.equal(isSyntheticLocalModel("openclaw-local", "openclaw"), true);
+assert.equal(isSyntheticLocalModel("openai/gpt-5.5", "openclaw"), false);
 
 assert.deepEqual(resolveChatModelState({ ...base }), {
   familiarId: "salem",
@@ -30,7 +33,7 @@ assert.deepEqual(resolveChatModelState({ ...base }), {
   effectiveModel: "anthropic/claude-sonnet-4-6",
   source: "familiar-default",
   applicationState: "saved",
-  reason: "Saved in Cave. Runtime model application is not confirmed by this harness path yet.",
+  reason: "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.",
 });
 
 assert.equal(
@@ -51,6 +54,25 @@ assert.equal(
   "next-message",
 );
 assert.equal(resolveChatModelState({ ...base, familiarModel: null }).source, "global-default");
+assert.deepEqual(
+  resolveChatModelState({
+    familiarId: "local-openclaw",
+    harness: "openclaw",
+    runtime: "local:/tmp/coven-cave",
+    globalDefaultModel: "openai/gpt-5.5",
+    familiarModel: "openclaw-local",
+  }),
+  {
+    familiarId: "local-openclaw",
+    harness: "openclaw",
+    runtime: "local:/tmp/coven-cave",
+    effectiveModel: "openai/gpt-5.5",
+    source: "global-default",
+    applicationState: "saved",
+    reason: "Inherited from Cave defaults.",
+  },
+  "legacy synthetic runtime-local placeholders should not become the effective model",
+);
 assert.equal(
   resolveChatModelState({ ...base, lastResponseModel: "anthropic/claude-haiku-4-5" })
     .effectiveModel,
@@ -64,7 +86,7 @@ assert.deepEqual(modelApplicationForHarness({ supported: true, confirmed: true }
 });
 assert.deepEqual(modelApplicationForHarness({ supported: false, confirmed: false }), {
   state: "unsupported",
-  reason: "Saved in Cave. Runtime model application is not confirmed by this harness path yet.",
+  reason: "Saved in Cave. Runtime model application is not confirmed by this runtime path yet.",
 });
 
 // modelRejectionInError: only model-specific failures count, not generic errors.

@@ -14,6 +14,7 @@ import {
   adapterManifestScaffoldForHarness,
   isTrustedOnboardingHarness,
 } from "@/lib/harness-adapters";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     );
   }
   const model =
-    (draft?.model ?? body.model ?? "codex-local").trim() || "codex-local";
+    (draft?.model ?? body.model ?? defaultModelForRuntime(harness)).trim() || defaultModelForRuntime(harness);
 
   const home = homedir();
   const covenDir = path.join(home, ".coven");

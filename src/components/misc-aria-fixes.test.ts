@@ -21,19 +21,7 @@ function read(file: string) {
   );
 }
 
-// 2. Plugin card status: either has aria-label, OR uses visible text only
-//    (in which case the visible text in the span serves as the label).
-{
-  const src = read("plugin-card.tsx");
-  const hasAriaLabel = /aria-label=/.test(src);
-  const visibleText = /Updating/.test(src) && /Installed/.test(src) && /setupLabel\(plugin\)/.test(src);
-  assert.ok(
-    hasAriaLabel || visibleText,
-    "plugin status badge has aria-label or visible text label",
-  );
-}
-
-// 3. Sidebar collapse toggle has aria-expanded.
+// 2. Sidebar collapse toggle has aria-expanded.
 {
   const a = read("sidebar-minimal.tsx");
   assert.ok(

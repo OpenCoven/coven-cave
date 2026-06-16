@@ -125,6 +125,16 @@ assert.match(
   /runtime: \{\s*\n\s*kind: "ssh",\s*\n\s*host: sshHost\.trim\(\),\s*\n\s*cwd: sshCwd\.trim\(\),/,
   "creating a remote familiar sends the ssh runtime to setup",
 );
+assert.match(
+  source,
+  /defaultModelForRuntime\(selectedHarness\.id\)/,
+  "creating a local familiar should seed the model from the runtime catalog/default",
+);
+assert.doesNotMatch(
+  source,
+  /model: `\$\{selectedHarness\.id\}-local`/,
+  "creating a local familiar must not write synthetic runtime-local model ids like openclaw-local",
+);
 
 assert.match(
   source,
