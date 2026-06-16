@@ -34,11 +34,10 @@ export async function GET() {
   // glyph picker uses as the starting value. The Cave-local override store
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
   //
-  // `avatarPath` is the absolute path to the workspace avatar
-  // (.../familiars/<id>/avatars/<img>) when one exists; the client links to it
-  // directly via Tauri's asset protocol. `avatarVersion` (file mtime) cache-busts
-  // the asset URL so an updated image shows without a restart. Familiars with no
-  // on-disk avatar omit both and render the glyph instead.
+  // `avatarUrl` points at the workspace avatar (.../familiars/<id>/avatars/<img>)
+  // when one exists, cache-busted by the file mtime so an updated image shows
+  // without a hard refresh. Familiars with no on-disk avatar omit it and render
+  // the glyph instead.
   const familiars = await Promise.all(
     (res.data ?? []).map(async (f) => {
       const binding = bindingFor(config, f.id);
@@ -51,8 +50,9 @@ export async function GET() {
         voiceProvider: binding.voiceProvider,
         voiceModel: binding.voiceModel,
         voiceName: binding.voiceName,
-        avatarPath: avatar?.absPath,
-        avatarVersion: avatar ? Math.round(avatar.mtimeMs) : undefined,
+        avatarUrl: avatar
+          ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}`
+          : undefined,
       };
     }),
   );

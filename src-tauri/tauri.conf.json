@@ -13,13 +13,7 @@
     "windows": [],
     "withGlobalTauri": true,
     "security": {
-      "csp": null,
-      "assetProtocol": {
-        "enable": true,
-        "scope": [
-          "$HOME/.coven/workspaces/familiars/*/avatars/*"
-        ]
-      }
+      "csp": null
     }
   },
   "plugins": {

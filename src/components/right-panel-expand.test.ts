@@ -20,4 +20,43 @@ assert.match(src, /chat-right-expanded/, "expanded overlay container");
 // attribute + CSS) so it can't intercept clicks on the top-right Close button.
 assert.match(src, /data-right-panel-expanded/, "flags expanded state on the document root");
 
+// The expand affordance is a floating toggle pinned just left of the side-panel
+// trigger in the shell, not an in-header button. ChatSurface bridges it via a
+// window event and flags right-panel-open on the root so the float can show only
+// when there is a panel to expand.
+assert.match(
+  src,
+  /addEventListener\("cave:right-panel-expand"/,
+  "ChatSurface listens for the shell float's expand event",
+);
+assert.match(
+  src,
+  /data-right-panel-open/,
+  "ChatSurface flags right-panel-open on the root for the shell float's visibility",
+);
+
+const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
+assert.match(
+  shell,
+  /shell-panel-float--expand/,
+  "shell renders the floating expand toggle",
+);
+assert.match(
+  shell,
+  /dispatchEvent\(new CustomEvent\("cave:right-panel-expand"\)\)/,
+  "the expand float dispatches the bridge event",
+);
+
+const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+assert.match(
+  css,
+  /\[data-right-panel-open\]\s*\.shell-panel-float--expand/,
+  "expand float is shown only when a right panel is open",
+);
+assert.match(
+  css,
+  /\[data-right-panel-expanded\]\s*\.shell-panel-float--expand[\s\S]*?display:\s*none/,
+  "expand float is hidden again while the panel is expanded",
+);
+
 console.log("right-panel-expand.test.ts: ok");

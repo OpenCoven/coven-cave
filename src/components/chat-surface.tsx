@@ -424,6 +424,28 @@ export function ChatSurface({
     return () => window.removeEventListener("keydown", onKey);
   }, [rightExpanded]);
 
+  // The expand affordance lives in the shell's floating toggle cluster
+  // (.shell-panel-float--expand), a different subtree, so it reaches the expand
+  // state through a window event — the same bridge pattern as cave:inspector-open.
+  // The reset effect above clears rightExpanded if the panel closes, so this is
+  // safe to fire unconditionally.
+  useEffect(() => {
+    const onExpand = () => setRightExpanded(true);
+    window.addEventListener("cave:right-panel-expand", onExpand);
+    return () => window.removeEventListener("cave:right-panel-expand", onExpand);
+  }, []);
+
+  // Flag right-panel-open on the document root so the shell's floating expand
+  // toggle (in shell.tsx, outside this subtree) shows only when there's actually
+  // a panel to expand. Mirrors the desktop placement: conversation scope only.
+  useEffect(() => {
+    const root = document.documentElement;
+    const open = rightPanel !== null && !isMobile && scope === "conversation";
+    if (open) root.setAttribute("data-right-panel-open", "");
+    else root.removeAttribute("data-right-panel-open");
+    return () => root.removeAttribute("data-right-panel-open");
+  }, [rightPanel, isMobile, scope]);
+
   // While the right panel is expanded it covers the chat surface, but the
   // shell's right edge-rail float (.shell-panel-float--right, z-40) sits above
   // the overlay's trapped z-index and intercepts clicks on the panel's
@@ -559,9 +581,7 @@ export function ChatSurface({
                       onCreateReminder={onCreateReminder}
                       onOpenInboxItem={onOpenInboxItem}
                       onInboxItemChanged={onInboxItemChanged}
-                      allowExpand
                       expanded={false}
-                      onToggleExpand={() => setRightExpanded(true)}
                     />
                   )}
                 </Panel>
