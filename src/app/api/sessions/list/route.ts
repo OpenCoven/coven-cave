@@ -73,8 +73,17 @@ function readGitContext(projectRoot: string): SessionGitContext | null {
   return { branch, worktreeRoot, isWorktree };
 }
 
+function readDiffStat(projectRoot: string): { additions: number; deletions: number } | null {
+  const out = git(projectRoot, ["diff", "HEAD", "--shortstat"]);
+  if (out == null) return { additions: 0, deletions: 0 };
+  const add = /(\d+) insertion/.exec(out);
+  const del = /(\d+) deletion/.exec(out);
+  return { additions: add ? Number(add[1]) : 0, deletions: del ? Number(del[1]) : 0 };
+}
+
 function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
   const gitContextByRoot = new Map<string, SessionGitContext | null>();
+  const diffByRoot = new Map<string, { additions: number; deletions: number } | null>();
   return sessions.map((session) => {
     const root = session.project_root?.trim();
     if (!root) return session;
@@ -82,7 +91,14 @@ function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
       gitContextByRoot.set(root, readGitContext(root));
     }
     const gitContext = gitContextByRoot.get(root) ?? null;
-    return gitContext ? { ...session, git: gitContext } : session;
+    if (!diffByRoot.has(root)) {
+      diffByRoot.set(root, gitContext ? readDiffStat(root) : null);
+    }
+    const diff = diffByRoot.get(root) ?? null;
+    const enriched: SessionRow = { ...session };
+    if (gitContext) enriched.git = gitContext;
+    if (diff) enriched.diff = diff;
+    return enriched;
   });
 }
 
