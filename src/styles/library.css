@@ -422,15 +422,19 @@
   min-height: 31px;
   padding: 6px 16px;
   border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 76%, transparent);
-  background: color-mix(in oklch, var(--bg-base) 94%, transparent);
+  /* Shared mode-aware header band (matches the chat rail / board / GitHub /
+     calendar / schedules / workflows group headers): darker than the page in
+     light mode, lighter in dark — the mix toward --foreground inverts per mode.
+     Opaque, so content scrolls cleanly under this sticky header. */
+  background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
   backdrop-filter: blur(14px);
 }
 
 .library-timeline-group-label {
   min-width: 0;
   overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
+  color: var(--text-primary);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1;
