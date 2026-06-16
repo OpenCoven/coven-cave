@@ -24,6 +24,7 @@ import {
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
+import { readableTextColor } from "@/lib/readable-text-color";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,7 @@ function deriveThemeVars(colors: ThreeColors): Record<string, string> {
   const elevated = `color-mix(in oklch, ${bg} 85%, white 15%)`;
   return {
     "--accent-presence": accent,
+    "--accent-presence-foreground": readableTextColor(accent),
     "--accent-faint": `${accent}22`,
     // Issue #14 surface ramp.
     "--bg-base": bg,
@@ -346,7 +348,7 @@ export function ThemeColorEditor({
           className="flex h-7 items-center gap-1 rounded-md border px-2.5 text-[11px] font-medium"
           style={{
             background: colors.bg,
-            color: colors.accent,
+            color: "var(--text-primary)",
             borderColor: colors.border,
           }}
         >
@@ -374,8 +376,8 @@ export function ThemeColorEditor({
           onClick={handleSave}
           className={`focus-ring flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors ${
             saved
-              ? "bg-[var(--color-success)] text-white"
-              : "bg-[var(--accent-presence)] text-white hover:opacity-90"
+              ? "bg-[var(--color-success)] text-[var(--bg-base)]"
+              : "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] hover:opacity-90"
           }`}
         >
           <Icon name={saved ? "ph:check-bold" : "ph:check-circle"} width={12} />

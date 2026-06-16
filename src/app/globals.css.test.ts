@@ -9,6 +9,7 @@ const lightBlock = css.match(/:root\[data-mode="light"\]\s*\{([\s\S]*?)\}/)?.[1]
 assert.ok(lightBlock.length > 0, ":root[data-mode=light] block exists");
 assert.match(lightBlock, /--background\s*:/, "light overrides --background");
 assert.match(lightBlock, /--foreground\s*:/, "light overrides --foreground");
+assert.match(lightBlock, /--accent-presence-foreground\s*:/, "light defines --accent-presence-foreground");
 
 // 2. Border vars derive from --foreground via color-mix.
 assert.match(
@@ -36,6 +37,11 @@ assert.doesNotMatch(
 //    assertion can't drift into another theme's background.
 const covenRootBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
 assert.match(covenRootBlock, /--background\s*:\s*oklch\(0\.13 0\.022 293\)/, "coven dark background");
+assert.match(
+  covenRootBlock,
+  /--accent-presence-foreground\s*:\s*var\(--primary-foreground\)/,
+  "coven dark defines a filled-accent foreground token",
+);
 
 console.log("globals.css.test.ts (task 3) OK");
 

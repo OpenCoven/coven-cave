@@ -18,6 +18,10 @@ const globals = await readFile(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const themeColorEditor = await readFile(
+  new URL("./theme-color-editor.tsx", import.meta.url),
+  "utf8",
+);
 const fontSettings = await readFile(
   new URL("./settings-fonts.tsx", import.meta.url),
   "utf8",
@@ -99,6 +103,11 @@ assert.match(
 );
 assert.match(
   settings,
+  /tweakcnSemanticVars[\s\S]*"--accent-presence-foreground"\][\s\S]*pick\("primary-foreground"\)[\s\S]*readableTextColor\(accent\)/,
+  "tweakcn import should derive a readable foreground for filled accent UI",
+);
+assert.match(
+  settings,
   /pick\("primary"\) \|\| pick\("ring"\) \|\| pick\("accent"\)/,
   "Accent should resolve from primary, then ring, then accent",
 );
@@ -148,6 +157,30 @@ assert.match(
   fontSettings,
   /Text size/,
   "Typography (FontSettings) should expose a Text size control",
+);
+
+assert.match(
+  globals,
+  /--accent-presence-foreground\s*:\s*var\(--primary-foreground\)/,
+  "Global themes must define a filled-accent foreground token",
+);
+
+assert.match(
+  themeColorEditor,
+  /"--accent-presence-foreground":\s*readableTextColor\(accent\)/,
+  "Custom color editor must persist a readable foreground for custom accent colors",
+);
+
+assert.doesNotMatch(
+  settings,
+  /bg-\[var\(--accent-presence\)\][^"`]*text-white/,
+  "Settings filled accent controls must not assume white text",
+);
+
+assert.match(
+  settings,
+  /bg-\[var\(--accent-presence\)\][^"`]*text-\[var\(--accent-presence-foreground\)\]/,
+  "Settings filled accent controls must use the readable accent foreground token",
 );
 
 assert.match(

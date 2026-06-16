@@ -56,6 +56,7 @@
      Lavender presence accent. Use sparingly — familiar dots,
      status strip, the gradient AI toggle in #22. */
   --accent-presence: #9a8ecd;
+  --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.72 0.08 295);
   --brand: var(--accent-presence);
   --brand-foreground: oklch(0.985 0 0);
@@ -246,6 +247,7 @@
   --ring: oklch(0.55 0.10 293);
 
   --accent-presence: #6F62A8;
+  --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.55 0.08 295);
 
   --bg-base: var(--background);
