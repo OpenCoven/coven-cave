@@ -391,6 +391,98 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent-presence) 38%, transparent);
 }
 
+/* ── Custom filter dropdown ──
+   The trigger keeps the .library-timeline-select look (border, gradient,
+   chevron, mobile touch sizing); only the menu is ours — a dense, app-styled
+   list instead of the OS <select> popup. */
+.library-timeline-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.library-timeline-select--trigger {
+  display: block;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.library-timeline-menu {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-width: min(240px, 70vw);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  box-shadow:
+    0 1px 0 color-mix(in oklch, var(--text-primary) 6%, transparent) inset,
+    0 14px 36px color-mix(in oklch, black 46%, transparent);
+  animation: library-timeline-menu-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes library-timeline-menu-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.library-timeline-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px 0 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-secondary);
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.library-timeline-menu-item__label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.library-timeline-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.library-timeline-menu-item__check {
+  flex-shrink: 0;
+  opacity: 0;
+  color: var(--accent-presence);
+}
+
+.library-timeline-menu-item[aria-checked="true"] {
+  color: var(--text-primary);
+}
+
+.library-timeline-menu-item[aria-checked="true"] .library-timeline-menu-item__check {
+  opacity: 1;
+}
+
+/* Phones: keep menu rows at the 44px touch target. */
+@media (max-width: 767px) {
+  .library-timeline-menu-item {
+    height: var(--touch-target);
+  }
+}
+
 /* Wide enough header → all filter options share one row. */
 @container view-header (min-width: 440px) {
   .library-timeline-filters {

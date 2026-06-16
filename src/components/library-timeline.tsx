@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "@/lib/icon";
 import { ViewHeader } from "@/components/ui/view-header";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -11,6 +12,84 @@ import type { Familiar } from "@/lib/types";
 
 type GroupBy = "date" | "source";
 type ListFilter = "all" | "bookmarks" | "reading" | "github";
+
+/**
+ * Compact, app-styled replacement for a native `<select>` in the timeline
+ * controls. The trigger keeps the `.library-timeline-select` look (and its
+ * mobile touch-target sizing); only the open menu is custom — a dense
+ * `role="menu"` with a check on the active option — instead of the OS dropdown.
+ */
+function TimelineSelect<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (next: T) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="library-timeline-dropdown"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="library-timeline-select library-timeline-select--trigger focus-ring"
+        aria-label={ariaLabel}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {current?.label ?? ""}
+      </button>
+      {open ? (
+        <ul className="library-timeline-menu" role="menu" aria-label={ariaLabel}>
+          {options.map((o) => {
+            const active = o.value === value;
+            return (
+              <li key={o.value} role="none">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={active}
+                  className="library-timeline-menu-item focus-ring"
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                >
+                  <Icon
+                    name="ph:check-bold"
+                    width={12}
+                    className="library-timeline-menu-item__check"
+                    aria-hidden
+                  />
+                  <span className="library-timeline-menu-item__label">{o.label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 function timelineEntryKey(entry: TimelineEntry, index: number): string {
   const item = entry.item as TimelineEntry["item"] & { id?: string; url?: string };
@@ -110,17 +189,15 @@ export function LibraryTimeline({
         }
         filters={
           <div className="library-timeline-filters">
-            <select
-              className="library-timeline-select focus-ring"
+            <TimelineSelect
+              ariaLabel="Filter by familiar"
               value={familiarFilter}
-              onChange={(e) => setFamiliarFilter(e.target.value)}
-              aria-label="Filter by familiar"
-            >
-              <option value="all">Familiar: all</option>
-              {familiars.map((f) => (
-                <option key={f.id} value={f.id}>{f.display_name}</option>
-              ))}
-            </select>
+              onChange={setFamiliarFilter}
+              options={[
+                { value: "all", label: "Familiar: all" },
+                ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
+              ]}
+            />
             <div className="library-timeline-group-toggle" role="group" aria-label="Group by">
               {(["date", "source"] as const).map((g) => (
                 <button
@@ -134,17 +211,17 @@ export function LibraryTimeline({
                 </button>
               ))}
             </div>
-            <select
-              className="library-timeline-select focus-ring"
+            <TimelineSelect<ListFilter>
+              ariaLabel="Filter by list"
               value={listFilter}
-              onChange={(e) => setListFilter(e.target.value as ListFilter)}
-              aria-label="Filter by list"
-            >
-              <option value="all">All lists</option>
-              <option value="bookmarks">Bookmarks</option>
-              <option value="reading">Reading</option>
-              <option value="github">GitHub</option>
-            </select>
+              onChange={setListFilter}
+              options={[
+                { value: "all", label: "All lists" },
+                { value: "bookmarks", label: "Bookmarks" },
+                { value: "reading", label: "Reading" },
+                { value: "github", label: "GitHub" },
+              ]}
+            />
           </div>
         }
       />
