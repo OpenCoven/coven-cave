@@ -6031,3 +6031,50 @@ button:active > .edge-rail-chip {
   animation: library-heading-flash 800ms ease-out;
   border-radius: 4px;
 }
+
+/* ── Corner sidepanel triggers ───────────────────────────────────────────────
+   Pin the left/right sidepanel toggles flush into the upper window corners:
+   inset 0, the OUTER corner rounded to the window's ~12px radius (concentric
+   with the OS corner) and the two window-meeting edges squared with no border
+   or shadow, so each reads as a notch carved into the corner. Border + a soft
+   shadow live only on the inner edges (facing the content). Overrides the
+   hover-reveal, --shell-float-top-centered base for --left/--right only; the
+   expand toggle keeps its centered position. */
+.shell-panel-float--left::before,
+.shell-panel-float--right::before {
+  top: 0;
+  opacity: 1;
+  border: none;
+}
+.shell-panel-float--left > svg,
+.shell-panel-float--right > svg {
+  top: 7px;
+  opacity: 1;
+  pointer-events: none;
+}
+.shell-panel-float--left::before {
+  left: 0;
+  transform: none;
+  border-radius: 12px 0 10px 0;
+  border-right: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
+  box-shadow: 3px 3px 12px color-mix(in oklch, black 22%, transparent);
+}
+.shell-panel-float--left > svg {
+  left: 7px;
+  transform: none;
+}
+.shell-panel-float--right::before {
+  left: auto;
+  right: 0;
+  transform: none;
+  border-radius: 0 12px 0 10px;
+  border-left: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
+  box-shadow: -3px 3px 12px color-mix(in oklch, black 22%, transparent);
+}
+.shell-panel-float--right > svg {
+  left: auto;
+  right: 7px;
+  transform: none;
+}
