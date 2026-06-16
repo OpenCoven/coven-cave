@@ -71,4 +71,12 @@ assert.match(
   ".cave-md must also set -webkit-hyphens for the WebKit webview",
 );
 
+// Chat message prose uses Inter (ChatGPT/Codex vibe), scoped to chat bubbles so
+// library + memory prose keep the app font.
+assert.match(
+  caveChat,
+  /\.cave-bubble-user\s+\.cave-md,\s*\.cave-bubble-assistant\s+\.cave-md,\s*\.cave-md--expanded\s*\{[\s\S]*?font-family:\s*var\(--font-inter\)/,
+  "chat bubble prose must set font-family to var(--font-inter)",
+);
+
 console.log("font-css-vars.test.ts OK");

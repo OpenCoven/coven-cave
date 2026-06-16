@@ -46,6 +46,18 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Chat message prose reads in Inter — a neutral grotesque for the ChatGPT/Codex
+   look — instead of the rounder geometric UI sans (Geist). Scoped to chat bubbles
+   so library-doc and memory prose (which also use .cave-md) keep the app font.
+   --font-inter is declared on <html> by next/font (src/app/fonts.ts) and loads
+   on demand the first time chat prose renders. */
+.cave-bubble-user .cave-md,
+.cave-bubble-assistant .cave-md,
+.cave-md--expanded {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
 .cave-md > * + * { margin-top: 0.7em; }
 .cave-md > *:first-child { margin-top: 0; }
 
