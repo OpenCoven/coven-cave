@@ -533,10 +533,10 @@ function CapabilityMap({
             <button
               type="button"
               onClick={() => onTypeFilter(type)}
-              className="focus-ring flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left"
+              className="focus-ring flex w-full items-center gap-2 rounded-t-lg border-b border-border bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-2 text-left"
             >
               <Icon name={TYPE_ICON[type]} width={13} className="text-muted-foreground" />
-              <h3 className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+              <h3 className="text-[12px] font-bold uppercase tracking-widest text-[var(--text-primary)]">
                 {TYPE_LABEL[type]}
               </h3>
               <span className="ml-auto rounded bg-muted px-1.5 py-px text-[10px] tabular-nums text-muted-foreground">
