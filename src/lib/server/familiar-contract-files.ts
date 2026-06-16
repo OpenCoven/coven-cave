@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { familiarWorkspace } from "@/lib/coven-paths";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import type { ContractFiles } from "@/lib/familiar-contract";
 
 /**
@@ -8,19 +9,14 @@ import type { ContractFiles } from "@/lib/familiar-contract";
  * /api/familiars/[id]/contract to run the adherence check server-side.
  *
  * The only user-controlled input is the familiar `id`, which is interpolated
- * into a filesystem path via `familiarWorkspace(id)`. To keep this from
- * becoming an arbitrary-directory-read primitive, the id is constrained to a
- * strict slug allow-list (alphanumerics, `_`, `-`) that cannot contain a path
- * separator or `..`. Callers MUST gate on `isValidFamiliarId` first; the loader
+ * into a filesystem path via `familiarWorkspace(id)`. The id is constrained to
+ * a strict slug allow-list (see `isValidFamiliarId`) that cannot contain a path
+ * separator or `..`, so this can't become an arbitrary-directory-read
+ * primitive. Callers MUST gate on `isValidFamiliarId` first; the loader
  * re-asserts it as an inline barrier.
  */
-const VALID_FAMILIAR_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
-
-export function isValidFamiliarId(id: string): boolean {
-  // The regex already excludes `/`, `\`, and `.`, so `..` is impossible; the
-  // explicit check documents the invariant for readers and static analysis.
-  return VALID_FAMILIAR_ID.test(id) && !id.includes("..");
-}
+// Re-exported for back-compat with existing imports from this module.
+export { isValidFamiliarId };
 
 /** The four files the Familiar Contract validator inspects, by report key. */
 const CONTRACT_FILE_NAMES: Record<keyof ContractFiles, string> = {
