@@ -3321,6 +3321,23 @@ button:active > .edge-rail-chip {
   background: var(--text-muted);
 }
 
+/* In-panel collapse trigger — mirror of the left sessions-rail Hide button. */
+.companion-rail__collapse {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.companion-rail__collapse:hover {
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  color: var(--text-primary);
+}
+
 .companion-rail__tabs {
   display: flex;
   gap: 2px;

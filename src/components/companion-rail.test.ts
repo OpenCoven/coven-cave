@@ -36,3 +36,18 @@ assert.match(
   /hideChatTab && requestedTab === "chat"[\s\S]*\? browserSlot \? "browser" : fallbackTab/,
   "When the main chat surface hides the duplicate Chat tab, the companion rail should fall back to Browser before Salem",
 );
+
+// In-panel collapse trigger — mirrors the left sessions-rail Hide button so the
+// right panel can be hidden from its own header (not only via ⌘⇧B).
+assert.match(source, /companion-rail__collapse/, "Header includes an in-panel collapse button (BEM class)");
+assert.match(source, /aria-label="Hide companion panel"/, "Collapse button is labelled for assistive tech");
+assert.match(
+  source,
+  /ph:sidebar-simple-fill/,
+  "Collapse button uses the same sidebar-simple glyph as the left rail's Hide button",
+);
+assert.match(
+  source,
+  /new CustomEvent\("cave:familiar-panel-toggle"\)/,
+  "Collapse button dispatches cave:familiar-panel-toggle so the Shell reuses its ⌘⇧B collapse path",
+);
