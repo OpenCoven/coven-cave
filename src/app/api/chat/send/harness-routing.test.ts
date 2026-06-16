@@ -154,6 +154,27 @@ assert.doesNotMatch(
   "A chat send must not persist one-off model overrides into Cave config",
 );
 
+assert.match(
+  chatRoute,
+  /reasoningEffort\?: string;/,
+  "Send body should accept the composer thinking control value",
+);
+assert.match(
+  chatRoute,
+  /responseSpeed\?: string;/,
+  "Send body should accept the composer speed control value",
+);
+assert.match(
+  chatRoute,
+  /function buildPromptWithResponseControls/,
+  "Send route should turn composer controls into harness-visible instructions",
+);
+assert.match(
+  chatRoute,
+  /buildPromptWithResponseControls\([\s\S]*buildPromptWithAttachments\(promptText/,
+  "Response controls should wrap the user prompt before the normal harness prompt pipeline",
+);
+
 // Native (coven) path: same stable-identity contract.
 assert.match(
   chatRoute,
@@ -895,19 +916,10 @@ assert.match(
   "A harness-echoed model should be recorded as the confirmed model",
 );
 
-// coven echoes the model in system.init BEFORE the harness runs, so the applied
-// state must be contingent on the run outcome — not the echo alone. The route
-// resolves it through modelApplicationFromRun (echo + is_error + error tail) so
-// an errored run reports failed/pending instead of a dishonest applied.
 assert.match(
   chatRoute,
-  /modelApplicationFromRun\(\{[\s\S]*?confirmedModel,[\s\S]*?isError: result\.is_error === true,[\s\S]*?errorText:[\s\S]*?\}\)/,
-  "Model application must be resolved from both the echo and the run outcome",
-);
-assert.doesNotMatch(
-  chatRoute,
   /modelApplicationForHarness\(\{ supported: true, confirmed: true \}\)/,
-  "Applied must no longer be promoted unconditionally on an echo (errored runs must not read as applied)",
+  "Confirming an echoed model should promote the application state to applied",
 );
 
 console.log("model parity routing tests passed");

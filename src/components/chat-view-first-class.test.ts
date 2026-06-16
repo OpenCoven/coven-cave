@@ -55,8 +55,8 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Attach files"/,
-  "Attachment button should have an explicit accessible label",
+  /aria-label="Add files"/,
+  "Add button should have an explicit accessible label",
 );
 
 assert.match(
@@ -78,9 +78,57 @@ assert.match(
 );
 
 assert.match(
+  source,
+  /className="cave-composer-action-row"[\s\S]*aria-label="Add files"[\s\S]*aria-label="Send message"/,
+  "Composer should keep Add and Send in the primary row above the dropdown divider",
+);
+
+assert.match(
+  source,
+  /className="cave-composer-divider" aria-hidden \/>[\s\S]*className="cave-composer-settings-row" aria-label="Chat response controls"/,
+  "Composer should render a divider line above the model/thinking/speed dropdown row",
+);
+
+assert.match(
+  source,
+  /<ChatModelControl state=\{modelState\} onSelectModel=\{handleSelectModel\} busy=\{busy\} \/>[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
+  "Composer dropdown row should expose model, thinking, and speed controls",
+);
+
+assert.match(
+  source,
+  /className="cave-composer-select__value" aria-hidden[\s\S]*\{selected\}/,
+  "Composer select pills should render a separate visual value so the native select can own the whole hit target",
+);
+
+assert.match(
+  source,
+  /reasoningEffort: thinkingEffort,[\s\S]*responseSpeed,/,
+  "Send payload should include thinking and speed control values",
+);
+
+assert.match(
   styles,
   /\.cave-composer-input\s*\{[\s\S]*min-height:\s*96px[\s\S]*max-height:\s*220px[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*hidden/,
   "Composer textarea should start taller without showing scroll overflow",
+);
+
+assert.match(
+  styles,
+  /\.cave-composer-panel\s*\{[\s\S]*backdrop-filter:\s*blur\(18px\) saturate\(1\.18\)/,
+  "Composer panel should use the minimal glass treatment",
+);
+
+assert.match(
+  styles,
+  /\.cave-composer-settings-row\s*\{[\s\S]*flex-wrap:\s*wrap[\s\S]*overflow-x:\s*visible/,
+  "Composer settings row should wrap controls instead of clipping or hiding available row width",
+);
+
+assert.match(
+  styles,
+  /\.cave-composer-select select\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*width:\s*100%[\s\S]*height:\s*100%[\s\S]*opacity:\s*0/,
+  "Composer select should cover the full pill so clicking anywhere opens the dropdown",
 );
 
 console.log("chat-view-first-class.test.ts: ok");

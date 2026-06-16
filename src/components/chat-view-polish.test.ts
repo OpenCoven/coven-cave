@@ -772,8 +772,8 @@ assert.match(
 );
 assert.match(
   mentionSendSource,
-  /appendMentionedFilesBlock\(\s*\n\s*buildPromptWithAttachments\(/,
-  "The mention block must join the prompt at the attachment prompt-build site",
+  /appendMentionedFilesBlock\(\s*\n\s*buildPromptWithResponseControls\(\s*\n\s*buildPromptWithAttachments\(/,
+  "The mention block must join the prompt after attachments and response controls are applied",
 );
 assert.match(
   mentionSendSource,

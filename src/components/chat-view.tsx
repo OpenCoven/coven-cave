@@ -128,6 +128,7 @@ type Props = {
    *  card focused. The link is bidirectional; this is the chat→task side. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  onProjectRootChange?: (projectRoot: string | null) => void;
 };
 
 export type ChatViewHandle = {
@@ -151,8 +152,53 @@ type FailedSend = {
   attachments: ChatAttachment[];
   mentionedFiles?: string[];
 };
+type ComposerThinkingEffort = "low" | "medium" | "high";
+type ComposerResponseSpeed = "fast" | "balanced" | "careful";
 
 const COMPOSER_MAX_HEIGHT = 220;
+const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
+const THINKING_OPTIONS: Array<{ value: ComposerThinkingEffort; label: string }> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+const SPEED_OPTIONS: Array<{ value: ComposerResponseSpeed; label: string }> = [
+  { value: "fast", label: "Fast" },
+  { value: "balanced", label: "Balanced" },
+  { value: "careful", label: "Careful" },
+];
+
+function readComposerPrefs(): {
+  thinkingEffort: ComposerThinkingEffort;
+  responseSpeed: ComposerResponseSpeed;
+} {
+  if (typeof window === "undefined") return { thinkingEffort: "high", responseSpeed: "fast" };
+  try {
+    const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY);
+    const parsed = raw ? JSON.parse(raw) as Partial<{ thinkingEffort: string; responseSpeed: string }> : {};
+    const thinkingEffort = THINKING_OPTIONS.some((option) => option.value === parsed.thinkingEffort)
+      ? parsed.thinkingEffort as ComposerThinkingEffort
+      : "high";
+    const responseSpeed = SPEED_OPTIONS.some((option) => option.value === parsed.responseSpeed)
+      ? parsed.responseSpeed as ComposerResponseSpeed
+      : "fast";
+    return { thinkingEffort, responseSpeed };
+  } catch {
+    return { thinkingEffort: "high", responseSpeed: "fast" };
+  }
+}
+
+function writeComposerPrefs(prefs: {
+  thinkingEffort: ComposerThinkingEffort;
+  responseSpeed: ComposerResponseSpeed;
+}) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* best effort */
+  }
+}
 
 function shouldKeepLiveNewChatState({
   sessionId,
@@ -240,6 +286,46 @@ function UsageText({ usage, costUsd }: { usage?: TurnUsage; costUsd?: number }) 
     >
       {summary}
     </span>
+  );
+}
+
+function ComposerControlSelect<T extends string>({
+  label,
+  icon,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  icon: IconName;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  const selected = options.find((option) => option.value === value)?.label ?? value;
+  return (
+    <label className="cave-composer-select" title={`${label}: ${selected}`}>
+      <Icon name={icon} width={13} aria-hidden />
+      <span className="cave-composer-select__label">{label}</span>
+      <span className="cave-composer-select__value" aria-hidden>
+        {selected}
+      </span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value as T)}
+        aria-label={label}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
+    </label>
   );
 }
 
@@ -520,7 +606,7 @@ function InlineProjectField({
           value={project.id}
           onChange={(e) => onProjectChange(e.target.value)}
           aria-label="Project for this chat"
-          className="min-w-0 flex-1 bg-transparent font-mono text-[10px] text-[var(--text-secondary)] outline-none"
+          className="min-w-0 flex-1 bg-transparent outline-none"
         >
           {projects.map((entry) => (
             <option key={entry.id} value={entry.id}>
@@ -1245,7 +1331,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl },
+  { familiar, sessionId, session, projectRoot, initialPrompt, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -1274,6 +1360,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readComposerPrefs().thinkingEffort);
+  const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readComposerPrefs().responseSpeed);
   const [input, setInput] = useState("");
   // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -1290,10 +1378,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const { projects } = useProjects();
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
-  const selectedProject = projectIdDraft
-    ? chatProjectById(projectIdDraft, projects) ?? firstProject
+  const resolvedProjectId = projectIdDraft ?? projectIdForRoot(session?.project_root ?? projectRoot, projects);
+  const selectedProject = resolvedProjectId
+    ? chatProjectById(resolvedProjectId, projects) ?? firstProject
     : firstProject;
   const activeProjectRoot = selectedProject?.root ?? session?.project_root ?? projectRoot ?? "";
+  useEffect(() => {
+    onProjectRootChange?.(activeProjectRoot || null);
+  }, [activeProjectRoot, onProjectRootChange]);
   const [csvRaw, setCsvRaw] = useState<string | null>(null);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
@@ -1353,6 +1445,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelled = true;
     };
   }, [refreshModelState]);
+
+  useEffect(() => {
+    writeComposerPrefs({ thinkingEffort, responseSpeed });
+  }, [thinkingEffort, responseSpeed]);
 
   // Persist a model choice through the existing channels: session scope when a
   // chat exists (writes the conversation's modelIntent), else familiar-default.
@@ -2115,6 +2211,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
           projectRoot: activeProjectRoot,
+          reasoningEffort: thinkingEffort,
+          responseSpeed,
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
           // relative to — resumed sessions don't resend projectRoot above.
           ...(outgoingMentions.length && mentionRoot
@@ -2724,7 +2822,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onSessionsChanged={onSessionsChanged}
           onBack={onBack}
         >
-          <ChatModelControl state={modelState} onSelectModel={handleSelectModel} busy={busy} />
           <div className="cave-chat-session-actions">
             {turns.length > 0 ? (
               <ChatFindBar
@@ -3158,8 +3255,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
-            <div className="cave-composer-controls flex items-center justify-between px-3 pb-2.5">
-              <div className="flex items-center gap-1 text-[var(--text-muted)]">
+            <div className="cave-composer-controls">
+              <div className="cave-composer-action-row">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -3170,15 +3267,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <button
                   type="button"
                   className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                  title="Attach files"
-                  aria-label="Attach files"
+                  title="Add files"
+                  aria-label="Add files"
                   disabled={busy || attachments.length >= 10}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <Icon name="ph:paperclip" width={14} />
+                  <Icon name="ph:plus-bold" width={14} />
                 </button>
-              </div>
-              <div className="flex items-center gap-2 text-[var(--text-muted)]">
                 {busy ? (
                   <button
                     type="button"
@@ -3195,12 +3290,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onClick={() => void send()}
                     disabled={!input.trim() && attachments.length === 0}
                     className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
-                    title={`Send (${keys.enter})`}
+                    title={`Send message (${keys.enter})`}
                     aria-label="Send message"
                   >
                     <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
                   </button>
                 )}
+              </div>
+              <div className="cave-composer-divider" aria-hidden />
+              <div className="cave-composer-settings-row" aria-label="Chat response controls">
+                <ChatModelControl state={modelState} onSelectModel={handleSelectModel} busy={busy} />
+                <ComposerControlSelect
+                  label="Thinking"
+                  icon="ph:sparkle-bold"
+                  value={thinkingEffort}
+                  options={THINKING_OPTIONS}
+                  disabled={busy}
+                  onChange={setThinkingEffort}
+                />
+                <ComposerControlSelect
+                  label="Speed"
+                  icon="ph:lightning-bold"
+                  value={responseSpeed}
+                  options={SPEED_OPTIONS}
+                  disabled={busy}
+                  onChange={setResponseSpeed}
+                />
               </div>
             </div>
           </div>

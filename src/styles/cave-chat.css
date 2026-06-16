@@ -1333,11 +1333,17 @@ details[open] > .cave-tool-summary::before {
 .cave-composer-panel {
   overflow: hidden;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  border-radius: 18px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--bg-raised) 86%, transparent),
+      color-mix(in oklch, var(--bg-panel) 76%, transparent)
+    );
+  backdrop-filter: blur(18px) saturate(1.18);
   box-shadow:
-    0 14px 42px oklch(0 0 0 / 22%),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+    0 18px 56px oklch(0 0 0 / 24%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
   transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 
@@ -1356,6 +1362,161 @@ details[open] > .cave-tool-summary::before {
   overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent-presence) 22%, transparent) transparent;
+}
+
+.cave-composer-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0 12px 12px;
+}
+
+.cave-composer-action-row {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+
+.cave-composer-icon-button {
+  border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+  background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.cave-composer-divider {
+  height: 1px;
+  margin: 7px 0 8px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--foreground) 12%, transparent) 12%,
+    color-mix(in oklch, var(--foreground) 12%, transparent) 88%,
+    transparent
+  );
+}
+
+.cave-composer-settings-row {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  overflow-x: visible;
+  overflow-y: visible;
+  padding-bottom: 1px;
+  scrollbar-width: none;
+}
+
+.cave-composer-settings-row::-webkit-scrollbar {
+  display: none;
+}
+
+.cave-composer-settings-row .cave-chat-model-wrap {
+  flex: 2 1 220px;
+  min-width: 150px;
+  max-width: none;
+}
+
+.cave-composer-settings-row .cave-chat-model-control,
+.cave-composer-select {
+  height: 30px;
+  border-radius: 999px;
+  border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+  background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
+  color: var(--text-secondary);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.cave-composer-settings-row .cave-chat-model-control {
+  width: 100%;
+  max-width: none;
+  padding: 0 10px;
+}
+
+.cave-composer-settings-row .cave-chat-model-control__state {
+  display: none;
+}
+
+.cave-composer-settings-row .cave-chat-model-popover {
+  top: auto;
+  bottom: calc(100% + 8px);
+  right: auto;
+  left: 0;
+}
+
+.cave-composer-select {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 142px;
+  align-items: center;
+  gap: 6px;
+  min-width: 124px;
+  max-width: 190px;
+  padding: 0 9px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.cave-composer-select svg {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+
+.cave-composer-select__label {
+  color: var(--text-muted);
+}
+
+.cave-composer-select__value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cave-composer-select select {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  opacity: 0;
+  outline: none;
+  padding: 0;
+}
+
+.cave-composer-select select:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.cave-composer-select:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 54%, var(--border-strong));
+  box-shadow:
+    0 0 0 2px color-mix(in oklch, var(--accent-presence) 22%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.cave-composer-select__chevron {
+  position: absolute;
+  right: 8px;
+  z-index: 0;
+  color: var(--text-muted) !important;
+  pointer-events: none;
 }
 
 .cave-composer-input::-webkit-scrollbar { width: 4px; }
@@ -1771,6 +1932,12 @@ details[open] > .cave-tool-summary::before {
   border-radius: 6px;
   background: transparent;
   padding: 1px 6px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .cave-chat-cwd-inline:hover,
@@ -1785,6 +1952,13 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-cwd-inline select {
   appearance: none;
   -webkit-appearance: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.cave-chat-cwd-inline option {
+  font: inherit;
 }
 
 .cave-chat-session-actions {
@@ -2129,10 +2303,10 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear .cave-composer-panel {
-  border-radius: 8px;
+  border-radius: 18px;
   box-shadow:
-    0 8px 26px oklch(0 0 0 / 18%),
-    inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+    0 14px 38px oklch(0 0 0 / 22%),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
 .cave-mobile-context-trigger {
@@ -2450,10 +2624,10 @@ details[open] > .cave-tool-summary::before {
 
   .cave-chat-linear .cave-chat-transcript {
     padding: 16px 12px 96px;
-    padding-bottom: calc(320px + var(--sai-bottom));
+    padding-bottom: calc(356px + var(--sai-bottom));
     overscroll-behavior: contain;
     scroll-padding-top: calc(var(--sai-top) + 64px);
-    scroll-padding-bottom: calc(336px + var(--sai-bottom));
+    scroll-padding-bottom: calc(372px + var(--sai-bottom));
     -webkit-overflow-scrolling: touch;
   }
 
@@ -2504,9 +2678,9 @@ details[open] > .cave-tool-summary::before {
 
   .cave-scroll-bottom-button {
     /* Sit just above the composer dock. The mobile composer (action strip +
-       ~116px input + ~54px controls + padding) is ~210px tall; hug ~just above
+       ~116px input + two compact control rows + padding) is ~246px tall; hug just above
        it rather than floating high in the transcript. */
-    bottom: calc(208px + var(--sai-bottom));
+    bottom: calc(246px + var(--sai-bottom));
     width: var(--touch-target);
     height: var(--touch-target);
     border-radius: 999px;
@@ -2543,7 +2717,7 @@ details[open] > .cave-tool-summary::before {
     position: relative;
     display: flex;
     flex-direction: column;
-    border-radius: 9px;
+    border-radius: 16px;
   }
 
   .cave-composer-popover {
@@ -2566,8 +2740,40 @@ details[open] > .cave-tool-summary::before {
 
   .cave-composer-controls {
     position: static;
-    min-height: 54px;
+    min-height: 100px;
     padding: 0 10px 10px !important;
+  }
+
+  .cave-composer-action-row {
+    min-height: 48px;
+  }
+
+  .cave-composer-settings-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .cave-composer-settings-row .cave-chat-model-control,
+  .cave-composer-select {
+    height: var(--touch-target);
+    width: 100%;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .cave-composer-settings-row .cave-chat-model-wrap {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .cave-composer-select {
+    gap: 5px;
+  }
+
+  .cave-composer-select__label {
+    display: none;
   }
 
   .cave-composer-icon-button {

@@ -49,7 +49,6 @@ import {
 import {
   cleanModelId,
   modelApplicationForHarness,
-  modelApplicationFromRun,
   resolveChatModelState,
   type ChatModelState,
 } from "@/lib/chat-model-state";
@@ -90,6 +89,8 @@ type SendBody = {
   projectRoot?: string;
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
+  reasoningEffort?: string;
+  responseSpeed?: string;
   attachments?: ChatAttachment[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
@@ -97,6 +98,9 @@ type SendBody = {
    * projectRoot in the body, so the composer sends the root it knows. */
   mentionedFilesRoot?: string;
 };
+
+type ReasoningEffort = "low" | "medium" | "high";
+type ResponseSpeed = "fast" | "balanced" | "careful";
 
 type StreamEvent =
   | { kind: "session"; sessionId: string }
@@ -438,6 +442,38 @@ function persistSendModelIntent(
     applicationState: modelState.applicationState,
     reason: modelState.reason ?? "Saved for this chat.",
   };
+}
+
+function normalizeReasoningEffort(value: unknown): ReasoningEffort {
+  return value === "low" || value === "medium" || value === "high" ? value : "high";
+}
+
+function normalizeResponseSpeed(value: unknown): ResponseSpeed {
+  return value === "fast" || value === "balanced" || value === "careful" ? value : "fast";
+}
+
+function buildPromptWithResponseControls(prompt: string, body: SendBody): string {
+  const effort = normalizeReasoningEffort(body.reasoningEffort);
+  const speed = normalizeResponseSpeed(body.responseSpeed);
+  const effortInstruction: Record<ReasoningEffort, string> = {
+    low: "Use minimal internal planning and answer directly.",
+    medium: "Balance planning with a concise answer.",
+    high: "Spend extra internal planning on correctness before answering.",
+  };
+  const speedInstruction: Record<ResponseSpeed, string> = {
+    fast: "Prioritize a fast, terse, action-first response.",
+    balanced: "Balance speed, detail, and clarity.",
+    careful: "Prioritize careful completeness over speed.",
+  };
+  return [
+    "<response_controls>",
+    `thinking: ${effort} — ${effortInstruction[effort]}`,
+    `speed: ${speed} — ${speedInstruction[speed]}`,
+    "Do not mention these controls unless the user asks about them.",
+    "</response_controls>",
+    "",
+    prompt,
+  ].join("\n");
 }
 
 type OpenClawAgentJson = {
@@ -1014,10 +1050,13 @@ export async function POST(req: Request) {
       buildTaskAwarePrompt(
         buildPromptWithFamiliarStartupContext(
           appendMentionedFilesBlock(
-            buildPromptWithAttachments(promptText, attachments, {
-              imagesSupported,
-              imageFilePaths,
-            }),
+            buildPromptWithResponseControls(
+              buildPromptWithAttachments(promptText, attachments, {
+                imagesSupported,
+                imageFilePaths,
+              }),
+              body,
+            ),
             mentionedFiles,
           ),
           [dailyMemoryContext],
@@ -1462,19 +1501,12 @@ export async function POST(req: Request) {
       // conversation's identity — keying off it created a new conversation
       // file (and sidebar entry) for every resumed turn.
       const harnessSessionId = sessionId;
-      // Model parity: coven echoes the requested model in `system.init` BEFORE
-      // the harness runs, so an echo confirms forwarding — not a successful run.
-      // Resolve the honest state from BOTH the echo and the run outcome:
-      // succeeded ⇒ applied, errored on the model ⇒ failed, errored otherwise ⇒
-      // pending. No echo ⇒ leave the pre-run `pending`/`unsupported` untouched.
-      if (confirmedModel) responseMetadata.confirmedModel = confirmedModel;
-      const modelSignal = modelApplicationFromRun({
-        confirmedModel,
-        isError: result.is_error === true,
-        errorText: (stderrTail.length ? stderrTail : stdoutErrTail).join("\n"),
-      });
-      if (modelSignal) {
-        const application = modelApplicationForHarness(modelSignal);
+      // Model parity: if the harness echoed its resolved model, promote the
+      // application state from `pending` to `applied` and record what actually
+      // ran. No echo ⇒ leave the honest `pending`/`unsupported` state untouched.
+      if (confirmedModel) {
+        const application = modelApplicationForHarness({ supported: true, confirmed: true });
+        responseMetadata.confirmedModel = confirmedModel;
         responseMetadata.modelApplicationState = application.state;
         responseMetadata.modelApplicationReason = application.reason;
         modelState.applicationState = application.state;

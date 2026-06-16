@@ -43,7 +43,7 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(320px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(336px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(356px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(372px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
   "Mobile transcript should reserve bottom safe-area breathing room above the taller composer",
 );
 
@@ -79,14 +79,14 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-controls flex items-center justify-between/,
+  /className="cave-composer-controls"/,
   "Composer controls should expose a mobile layout hook",
 );
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*min-height\s*:\s*54px/,
-  "Mobile composer controls should sit in a footer row so they never cover multiline text",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*min-height\s*:\s*100px/,
+  "Mobile composer controls should sit in a two-row footer so they never cover multiline text",
 );
 
 assert.match(
@@ -121,7 +121,7 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(208px \+ var\(--sai-bottom\)\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(246px \+ var\(--sai-bottom\)\)/,
   "Mobile scroll-to-bottom FAB should hug just above the composer dock",
 );
 
