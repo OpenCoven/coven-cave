@@ -3436,6 +3436,11 @@ button:active > .edge-rail-chip {
 .companion-rail__tabs {
   display: flex;
   gap: 2px;
+  /* Align the tab strip's top with the left sidebar's floating toggle, which
+     sits at --shell-float-top (published by the chat surface; 50px fallback).
+     The familiar header used to fill this band; now the tab strip is the
+     panel's top row and lines up with the left panel's toggle trigger. */
+  margin-top: var(--shell-float-top, 50px);
   padding: 5px 8px;
   border-bottom: 1px solid var(--border-hairline);
   background: var(--bg-panel);

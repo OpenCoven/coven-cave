@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./companion-rail.tsx", import.meta.url), "utf8");
 
 assert.match(source, /export function CompanionRail/, "Component must be named CompanionRail");
-assert.match(source, /companion-rail__header/, "Header element with BEM class");
+assert.doesNotMatch(source, /companion-rail__header/, "familiar header removed — tab strip is the panel's top row");
 assert.match(source, /companion-rail__tabs/, "Tab strip element with BEM class");
 assert.match(
   source,

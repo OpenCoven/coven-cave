@@ -2,8 +2,6 @@
 
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { Familiar } from "@/lib/types";
 
@@ -39,15 +37,11 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       memorySlot,
       browserSlot,
       salemSlot,
-      onOpenSwitcher,
       onCreateFamiliar,
-      daemonRunning,
       onTabChange,
       suppressEmpty = false,
       hideChatTab = false,
     } = props;
-    const resolvedFamiliars = useResolvedFamiliars(familiar ? [familiar] : [], { includeArchived: true });
-    const resolvedFamiliar = resolvedFamiliars[0];
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
     const requestedTab = activeTab ?? tab;
     const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "memory";
@@ -95,36 +89,8 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
 
     return (
       <aside className="companion-rail">
-        <header className="companion-rail__header">
-          <span className="companion-rail__glyph">
-            {resolvedFamiliar ? (
-              <FamiliarAvatar familiar={resolvedFamiliar} size="sm" />
-            ) : (
-              <Icon name="ph:globe" width={16} />
-            )}
-          </span>
-          {familiar ? (
-            <>
-              <button
-                type="button"
-                className="companion-rail__name"
-                onClick={onOpenSwitcher}
-                aria-label="Switch familiar"
-              >
-                <span>{familiar.display_name}</span>
-              </button>
-              <span
-                className={`companion-rail__status${daemonRunning ? "" : " companion-rail__status--off"}`}
-                title={daemonRunning ? "Live" : "Daemon offline"}
-                aria-hidden
-              />
-            </>
-          ) : (
-            <span className="companion-rail__name companion-rail__name--static">
-              <span>Browser</span>
-            </span>
-          )}
-        </header>
+        {/* Familiar header removed — the tab strip is the panel's top row and
+            its trigger band aligns with the left sidebar's floating toggle. */}
         <nav className="companion-rail__tabs" aria-label="Companion sections">
           {!familiar || hideChatTab ? null : (
             <button
