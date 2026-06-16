@@ -15,8 +15,8 @@ import { useEffect } from "react";
  * never touching shell.tsx's glow effect. Disabled for touch / reduced-motion.
  */
 
-const FIRE_DIST = 180; // px — near the glow edge (~200px range): casts as soon as it glows from afar
-const RELEASE_DIST = 220; // px — must leave the glow entirely to re-arm
+const FIRE_DIST = 225; // px — near the glow edge (~250px range): casts as soon as it glows from afar
+const RELEASE_DIST = 275; // px — must leave the glow entirely to re-arm
 const CAST_MS = 650;
 
 export function MagicTriggers() {

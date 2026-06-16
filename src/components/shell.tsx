@@ -330,7 +330,7 @@ function ShellInner({
   // cursor's distance to the chip; the CSS uses it for opacity + the pulse.
   useEffect(() => {
     if (!mounted || isMobile) return;
-    const RANGE = 200; // px — how far out the glow starts responding
+    const RANGE = 250; // px — how far out the glow starts responding
     let raf = 0;
     const onMove = (e: MouseEvent) => {
       if (raf) return;
