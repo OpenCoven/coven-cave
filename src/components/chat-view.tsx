@@ -3427,6 +3427,23 @@ function TurnRow({
     return () => window.removeEventListener("pointerdown", onDown);
   }, [expanded, onToggleAvatar]);
 
+  // Focus management for the inline familiar card.
+  // When the card opens, move focus to its close button; when it closes,
+  // return focus to the avatar button that triggered it.
+  const avatarBtnRef = useRef<HTMLButtonElement | null>(null);
+  const wasAvatarExpandedRef = useRef(false);
+  useEffect(() => {
+    if (expanded && !wasAvatarExpandedRef.current) {
+      // opened → focus the card's first focusable (close button)
+      const closeBtn = avatarWrapRef.current?.querySelector<HTMLElement>(".familiar-inline-card__close");
+      closeBtn?.focus();
+    } else if (!expanded && wasAvatarExpandedRef.current) {
+      // closed → return focus to the avatar button
+      avatarBtnRef.current?.focus();
+    }
+    wasAvatarExpandedRef.current = expanded;
+  }, [expanded]);
+
   if (turn.role === "system" || turn.role === "user") {
     return (
       <div
@@ -3502,6 +3519,7 @@ function TurnRow({
         {/* Avatar (interactive) + right column */}
         <div className="cave-linear-turn-avatar" ref={avatarWrapRef}>
           <button
+            ref={avatarBtnRef}
             type="button"
             className="cave-linear-turn-avatar-btn"
             aria-expanded={expanded}
