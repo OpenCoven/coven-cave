@@ -32,7 +32,7 @@
   padding: 2px 4px 2px 7px;
   flex-shrink: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: transparent;
   text-align: left;
   font: inherit;
@@ -89,7 +89,7 @@
   gap: 10px;
   padding: 8px 10px;
   min-height: 36px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -352,7 +352,7 @@
   gap: 10px;
   padding: 7px 10px;
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: none;
   background: transparent;
   color: var(--text-secondary);

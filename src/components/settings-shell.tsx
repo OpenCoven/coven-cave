@@ -18,6 +18,13 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { FontSettings } from "./settings-fonts";
 import {
+  CORNER_RADIUS_OPTIONS,
+  CORNER_RADIUS_LABELS,
+  applyCornerRadius,
+  readCornerRadius,
+  type CornerRadius,
+} from "@/lib/appearance-corner-radius";
+import {
   DEMO_MODE_EVENT,
   clearDemoModeData,
   demoModeFetchHeaders,
@@ -722,11 +729,13 @@ function AppearanceSection() {
   const [importError, setImportError] = useState<string | null>(null);
   // colorEditorBase: the preset that seeds the color editor; null = editor hidden.
   const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
+  const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
 
   // Read persisted theme + mode on mount
   useEffect(() => {
     setActiveTheme(readPersistedTheme());
     setMode(readPersistedMode());
+    setCornerRadius(readCornerRadius());
     const saved = localStorage.getItem(COVEN_THEME_KEY);
     if (saved === "custom") {
       const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
@@ -746,6 +755,11 @@ function AppearanceSection() {
     applyPreset(id);
     // Open the color editor seeded with this preset.
     setColorEditorBase(id);
+  };
+
+  const handleSetCornerRadius = (next: CornerRadius) => {
+    setCornerRadius(next);
+    applyCornerRadius(next);
   };
 
   const handleSetMode = (next: Mode) => {
@@ -844,6 +858,45 @@ function AppearanceSection() {
       </SettingsGroup>
 
       {/* Text size lives in the Typography block (<FontSettings />) below. */}
+
+      {/* ── Corner radius ── one control drives the shared --radius tokens, so
+          buttons, inputs, cards, and the familiar pill all round together. */}
+      <SettingsGroup label="Corners">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-[var(--text-secondary)]">
+              Corner radius
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)]">
+              Roundedness of buttons, cards, and the familiar switcher.
+            </div>
+          </div>
+          <div
+            role="group"
+            aria-label="Corner radius"
+            className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
+          >
+            {CORNER_RADIUS_OPTIONS.map((option) => {
+              const active = cornerRadius === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => handleSetCornerRadius(option)}
+                  className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "bg-[var(--accent-presence)] text-white"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  {CORNER_RADIUS_LABELS[option]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </SettingsGroup>
 
       {/* ── Preset themes ── */}
       <SettingsGroup label="Theme">

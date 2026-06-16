@@ -3656,7 +3656,7 @@ button:active > .edge-rail-chip {
   gap: 4px;
   height: 26px;
   padding: 0 6px 0 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-hairline);
   background: var(--bg-raised);
   color: var(--text-secondary);

@@ -11,6 +11,7 @@ import { ReadingWidthController } from "@/components/reading-width-controller";
 import { ReadingWeightController } from "@/components/reading-weight-controller";
 import { ReadingHyphensController } from "@/components/reading-hyphens-controller";
 import { ReadingDropcapController } from "@/components/reading-dropcap-controller";
+import { CornerRadiusController } from "@/components/corner-radius-controller";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { PwaRegister } from "@/components/pwa-register";
@@ -71,6 +72,7 @@ export default function RootLayout({
             <ReadingWeightController />
             <ReadingHyphensController />
             <ReadingDropcapController />
+            <CornerRadiusController />
             <PwaRegister />
             {children}
           </LiveRegionProvider>

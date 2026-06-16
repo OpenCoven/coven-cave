@@ -82,6 +82,20 @@ const THEME_SCRIPT = `
     if (fontMonoId && fontMonoId !== "jetbrains-mono" && /^[a-z0-9-]+$/.test(fontMonoId)) {
       try { html.style.setProperty("--font-mono", "var(--font-" + fontMonoId + "), " + MONO_FB); } catch (e) {}
     }
+    // ── UI corner radius ── override the base radius tokens before paint so the
+    // shell chrome (buttons, cards, the familiar pill) doesn't flash its default
+    // roundedness. Inlined from src/lib/appearance-corner-radius.ts (key +
+    // level → [base, control, card] values) — keep in sync. "default" is absent
+    // so it falls back to the :root token values.
+    var RADII = { sharp: ["0.125rem","2px","4px"], round: ["0.875rem","12px","16px"], pill: ["999px","999px","999px"] };
+    var radiusLevel = localStorage.getItem("cave:corner-radius");
+    if (radiusLevel && RADII[radiusLevel]) {
+      try {
+        html.style.setProperty("--radius", RADII[radiusLevel][0]);
+        html.style.setProperty("--radius-control", RADII[radiusLevel][1]);
+        html.style.setProperty("--radius-card", RADII[radiusLevel][2]);
+      } catch (e) {}
+    }
   } catch (e) {}
 })();
 `.trim();

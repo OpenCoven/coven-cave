@@ -241,6 +241,24 @@ assert.match(
   "Root layout should mount the global screen magnification controller",
 );
 
+// Corner radius drives the shared --radius tokens app-wide, so its boot block
+// must run before paint (ThemeScript) and its controller must mount in layout.
+assert.match(
+  settings,
+  /Corner radius/,
+  "Appearance settings should expose a Corner radius control",
+);
+assert.match(
+  layout,
+  /<CornerRadiusController \/>/,
+  "Root layout should mount the corner-radius controller so saved radius applies on load",
+);
+assert.match(
+  themeScript,
+  /localStorage\.getItem\("cave:corner-radius"\)[\s\S]*--radius-control/,
+  "ThemeScript should apply the saved corner radius before paint (no flash)",
+);
+
 assert.match(
   globals,
   /data-screen-scale="125"[\s\S]*--cave-screen-scale: 1\.25/,
