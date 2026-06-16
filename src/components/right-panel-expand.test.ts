@@ -63,8 +63,8 @@ assert.match(
 // they stay aligned through the post-load layout settle (no fixed-offset flash).
 assert.match(
   css,
-  /\.shell-panel-float\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\)/,
-  "floats consume the measured --shell-float-top (with a 50px fallback)",
+  /\.shell-panel-float::before\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\)[\s\S]*?\.shell-panel-float--expand\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\)/,
+  "side-panel chips and the expand float consume the measured --shell-float-top (with a 50px fallback)",
 );
 assert.match(
   src,

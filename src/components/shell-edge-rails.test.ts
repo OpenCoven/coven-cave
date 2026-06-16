@@ -1,10 +1,8 @@
 // @ts-nocheck
-// Closed side panels must stay discoverable and read as pressable:
-//   - when the nav is collapsed, a left-edge rail (mirroring the right-edge
-//     agent trigger rail) is the floating reopen affordance; while the nav is
-//     open the in-panel top toggle owns collapsing, so the rail stays hidden
-//   - edge-rail toggles render a visible button chip instead of an
-//     invisible-until-hover icon
+// Side panels must stay discoverable without visual chrome noise:
+//   - desktop shell owns a left and right full-height edge strip
+//   - the strips are clickable across their full height
+//   - the aligned chip/icon stays invisible until hover or keyboard focus
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -14,9 +12,9 @@ const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 
-// Codex-style floating panel toggles: two always-visible rounded buttons
-// pinned to the shell's top corners (left = nav sidebar, right = active side
-// panel) replace the old collapsed-only left edge rail.
+// Codex-style side panel toggles: two full-height invisible edge strips
+// (left = nav sidebar, right = active side panel) replace the old
+// collapsed-only left edge rail.
 assert.match(
   shell,
   /const panelFloats = !isMobile/,
@@ -69,6 +67,29 @@ assert.doesNotMatch(
   /familiar-trigger-rail--left/,
   "the old collapsed-only left edge rail is removed from the shell",
 );
+
+assert.match(
+  css,
+  /\.shell-panel-float\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?width:\s*44px;[\s\S]*?height:\s*100%;[\s\S]*?background:\s*transparent;/,
+  "left/right panel toggles should be full-height invisible edge strips",
+);
+assert.match(
+  css,
+  /\.shell-panel-float::before\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\);[\s\S]*?opacity:\s*0;/,
+  "panel toggle chip should share the measured top and stay hidden by default",
+);
+assert.match(
+  css,
+  /\.shell-panel-float > svg\s*\{[\s\S]*?top:\s*calc\(var\(--shell-float-top,\s*50px\) \+ 6\.5px\);[\s\S]*?opacity:\s*0;/,
+  "panel toggle icon should share the same measured top and stay hidden by default",
+);
+assert.match(
+  css,
+  /\.shell-panel-float:hover::before,[\s\S]*?\.shell-panel-float:focus-visible::before,[\s\S]*?\.shell-panel-float:hover > svg,[\s\S]*?\.shell-panel-float:focus-visible > svg\s*\{[\s\S]*?opacity:\s*1;/,
+  "panel toggle chip and icon should reveal on hover or keyboard focus",
+);
+assert.match(css, /\.shell-panel-float--left\s*\{[\s\S]*?left:\s*0;/, "left strip is pinned to the left edge");
+assert.match(css, /\.shell-panel-float--right\s*\{[\s\S]*?right:\s*0;/, "right strip is pinned to the right edge");
 
 // The edge-rail chip survives — the collapsed chat-projects strip still uses it
 // for its reopen tab. The familiar trigger-rail CSS that used to share it was
