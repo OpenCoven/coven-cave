@@ -9,11 +9,11 @@ assert.match(source, /companion-rail__header/, "Header element with BEM class");
 assert.match(source, /companion-rail__tabs/, "Tab strip element with BEM class");
 assert.match(
   source,
-  /type CompanionTab = "chat" \| "inspector" \| "memory" \| "browser" \| "salem"/,
-  "Companion tab union must include Browser and Salem",
+  /type CompanionTab = "chat" \| "memory" \| "browser" \| "salem"/,
+  "Companion tab union must include Browser and Salem (Inspector folded into Memory)",
 );
 assert.match(source, /Chat/, "Chat label rendered");
-assert.match(source, /Inspector/, "Inspector label rendered");
+assert.doesNotMatch(source, /title="Inspector"/, "standalone Inspector tab removed — folded into the Memory (brain) tab");
 assert.match(source, /Memory/, "Memory label rendered");
 assert.match(source, /Browser/, "Browser label rendered");
 assert.match(source, /Salem/, "Salem label rendered");

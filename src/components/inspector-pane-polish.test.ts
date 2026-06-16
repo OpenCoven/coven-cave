@@ -40,7 +40,7 @@ test("InspectorEmpty helper is defined and used for the three no-familiar/error 
 test("memory inner mode toggle uses the shared Vercel-style Tabs (2px underline)", () => {
   // The memory mode strip now delegates to the shared <Tabs> component, which
   // owns the tablist role + 2px underline idiom.
-  assert.match(src, /<Tabs<"inspector" \| "coven" \| "files">/, "memory mode renders shared Tabs");
+  assert.match(src, /<Tabs<"coven" \| "files">/, "memory mode renders shared Tabs");
   assert.match(src, /ariaLabel="Memory mode"/, "memory mode tablist labelled");
   // Should no longer use the old pill background for active mode
   assert.doesNotMatch(

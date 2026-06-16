@@ -6,7 +6,6 @@ import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
-import { MemoryInspectorPanel } from "@/components/memory-inspector-panel";
 import { VaultPanel } from "@/components/vault-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
@@ -585,7 +584,7 @@ type CovenMemoryEntry = {
 };
 
 function MemoryTab({ familiar }: { familiar: Familiar | null }) {
-  const [mode, setMode] = useState<"inspector" | "coven" | "files">("inspector");
+  const [mode, setMode] = useState<"coven" | "files">("coven");
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [covenLoaded, setCovenLoaded] = useState(false);
@@ -708,7 +707,7 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
   return (
     <div className="inspector-memory-tab-surface flex h-full min-h-0 flex-col bg-[var(--bg-base)]">
       <div className="flex items-end gap-0.5 border-b border-[var(--border-hairline)] px-2">
-        <Tabs<"inspector" | "coven" | "files">
+        <Tabs<"coven" | "files">
           bordered={false}
           size="sm"
           ariaLabel="Memory mode"
@@ -718,16 +717,14 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
             setMode(m);
           }}
           items={[
-            { id: "inspector", label: "Inspect" },
             { id: "coven", label: "Coven" },
             { id: "files", label: "Files" },
           ]}
         />
         <span className="ml-auto pb-1.5 text-[10px] text-[var(--text-muted)]">
-          {mode === "inspector" ? "read-only" : mode === "coven" ? covenFiltered.length : filtered.length}
+          {mode === "coven" ? covenFiltered.length : filtered.length}
         </span>
       </div>
-      {mode !== "inspector" ? (
       <div className="border-b border-[var(--border-hairline)] p-2">
         <input
           value={query}
@@ -736,13 +733,6 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
           className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
         />
       </div>
-      ) : null}
-
-      {mode === "inspector" ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <MemoryInspectorPanel familiar={familiar} />
-        </div>
-      ) : null}
 
       {mode === "coven" ? (
         <ul className="min-h-0 flex-1 overflow-y-auto p-2 text-xs">

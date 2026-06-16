@@ -23,7 +23,6 @@ import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { FamiliarsView } from "@/components/familiars-view";
 import { CallsView } from "@/components/calls-view";
-import { RailMemoryList } from "@/components/familiars-memory-view";
 import {
   getActiveFamiliar,
   setActiveFamiliar,
@@ -134,7 +133,11 @@ export function Workspace() {
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   const [railTab, setRailTab] = useState<CompanionTab>(() => {
     if (typeof window === "undefined") return "chat";
-    return (window.localStorage.getItem("cave:rail.tab") as CompanionTab) ?? "chat";
+    const stored = window.localStorage.getItem("cave:rail.tab");
+    // The standalone "inspector" (magnifier) tab folded into "memory" (brain);
+    // remap any persisted value so a stale key doesn't select a removed tab.
+    if (stored === "inspector") return "memory";
+    return (stored as CompanionTab) ?? "chat";
   });
   const [familiarPanelOpen, setFamiliarPanelOpen] = useState(false);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
@@ -1520,15 +1523,8 @@ export function Workspace() {
                   onOpenOnboarding={openOnboarding}
                 />
               }
-              inspectorSlot={
-                <RailInspector familiar={active} />
-              }
               memorySlot={
-                <RailMemoryList
-                  familiar={active}
-                  familiars={familiars}
-                  onOpenFullView={() => setMode("agents")}
-                />
+                <RailInspector familiar={active} />
               }
               browserSlot={
                 <BrowserPane ref={companionBrowserPaneRef} label="companion" activeFamiliarId={active?.id ?? null} />

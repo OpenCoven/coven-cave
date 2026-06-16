@@ -7,14 +7,13 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { Familiar } from "@/lib/types";
 
-export type CompanionTab = "chat" | "inspector" | "memory" | "browser" | "salem";
+export type CompanionTab = "chat" | "memory" | "browser" | "salem";
 
 type Props = {
   familiar: Familiar | null;
   defaultTab?: CompanionTab;
   activeTab?: CompanionTab;
   chatSlot: ReactNode;
-  inspectorSlot: ReactNode;
   memorySlot: ReactNode;
   browserSlot?: ReactNode;
   salemSlot?: ReactNode;
@@ -37,7 +36,6 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       defaultTab = "chat",
       activeTab,
       chatSlot,
-      inspectorSlot,
       memorySlot,
       browserSlot,
       salemSlot,
@@ -52,7 +50,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     const resolvedFamiliar = resolvedFamiliars[0];
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
     const requestedTab = activeTab ?? tab;
-    const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "inspector";
+    const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "memory";
     const selectedTab =
       hideChatTab && requestedTab === "chat"
         ? browserSlot ? "browser" : fallbackTab
@@ -140,26 +138,15 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
             </button>
           )}
           {familiar ? (
-            <>
-              <button
-                type="button"
-                className={`companion-rail__tab${selectedTab === "inspector" ? " companion-rail__tab--active" : ""}`}
-                onClick={() => switchTab("inspector")}
-                aria-current={selectedTab === "inspector"}
-                title="Inspector"
-              >
-                <Icon name="ph:magnifying-glass" width={14} />
-              </button>
-              <button
-                type="button"
-                className={`companion-rail__tab${selectedTab === "memory" ? " companion-rail__tab--active" : ""}`}
-                onClick={() => switchTab("memory")}
-                aria-current={selectedTab === "memory"}
-                title="Memory"
-              >
-                <Icon name="ph:brain" width={14} />
-              </button>
-            </>
+            <button
+              type="button"
+              className={`companion-rail__tab${selectedTab === "memory" ? " companion-rail__tab--active" : ""}`}
+              onClick={() => switchTab("memory")}
+              aria-current={selectedTab === "memory"}
+              title="Memory"
+            >
+              <Icon name="ph:brain" width={14} />
+            </button>
           ) : null}
           {browserSlot ? (
             <button
@@ -191,14 +178,9 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
             </div>
           )}
           {familiar ? (
-            <>
-              <div hidden={selectedTab !== "inspector"} className="companion-rail__pane">
-                {inspectorSlot}
-              </div>
-              <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
-                {memorySlot}
-              </div>
-            </>
+            <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
+              {memorySlot}
+            </div>
           ) : null}
           {browserSlot ? (
             <div hidden={selectedTab !== "browser"} className="companion-rail__pane companion-rail__pane--browser">
