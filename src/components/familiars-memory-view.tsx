@@ -307,10 +307,14 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
     return familiars.filter((familiar) => ids.has(familiar.id));
   }, [covenEntries, familiars]);
 
+  // These pools are coven-wide / shared (no familiar owner). Count only the
+  // ownerless entries so the header reflects the shared pool, not other
+  // familiars' workspace files — keeping the header isolated to the selected
+  // familiar's own memory + the shared coven pools.
   const fileSourceCounts = useMemo(() => ({
-    covenOrigin: fileEntries.filter((entry) => entry.sourceKind === "coven-origin").length,
-    externalHarnesses: fileEntries.filter((entry) => entry.sourceKind === "external-harness").length,
-    runtimeMemory: fileEntries.filter((entry) => entry.sourceKind === "runtime").length,
+    covenOrigin: fileEntries.filter((entry) => entry.familiarId == null && entry.sourceKind === "coven-origin").length,
+    externalHarnesses: fileEntries.filter((entry) => entry.familiarId == null && entry.sourceKind === "external-harness").length,
+    runtimeMemory: fileEntries.filter((entry) => entry.familiarId == null && entry.sourceKind === "runtime").length,
   }), [fileEntries]);
 
   useEffect(() => {
@@ -383,7 +387,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             >
               <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
-              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Files</span>
+              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Coven-wide</span>
               <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
               <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
               <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
