@@ -1429,7 +1429,9 @@ details[open] > .cave-tool-summary::before {
   white-space: nowrap;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  /* Match the chat title (.cave-chat-title-input, 12.5px) so the runtime/cwd
+     metadata reads at the same size as the title rather than as fine print. */
+  font-size: 12.5px;
 }
 
 /* CHAT-D3-06: ticking elapsed inside the streaming meta line. Tabular digits

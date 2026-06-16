@@ -90,6 +90,12 @@ assert.match(
 
 assert.match(
   styles,
+  /\.cave-chat-meta-line__meta\s*\{[\s\S]*?font-size:\s*12\.5px/,
+  "Header meta should read at the chat title size (12.5px), not fine print",
+);
+
+assert.match(
+  styles,
   /\.cave-chat-cwd-pair\s*\{[\s\S]*?display:\s*inline-flex[\s\S]*?gap:\s*4px/,
   "Header ROOT/CWD editor pair should stay compact inside the meta row",
 );
