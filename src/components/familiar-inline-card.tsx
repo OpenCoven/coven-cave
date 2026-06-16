@@ -135,7 +135,7 @@ export function FamiliarInlineCard({
       </div>
 
       <div className="familiar-inline-card__status">
-        {failed ? (
+        {!info ? (
           <span className="familiar-inline-card__status-muted">status unavailable</span>
         ) : (
           <>
@@ -182,7 +182,7 @@ export function FamiliarInlineCard({
       <div className="familiar-inline-card__memory">
         <div className="familiar-inline-card__memory-head">
           <span>Recent memory</span>
-          <button type="button" className="familiar-inline-card__view-all" onClick={() => act(() => openFamiliarStudio(familiar.id, "memory"))}>
+          <button type="button" aria-label="View all memory" className="familiar-inline-card__view-all" onClick={() => act(() => openFamiliarStudio(familiar.id, "memory"))}>
             View all →
           </button>
         </div>
