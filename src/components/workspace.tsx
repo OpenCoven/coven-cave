@@ -13,6 +13,7 @@ import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
+import { MagicTriggers } from "@/components/magic-triggers";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
@@ -1651,6 +1652,8 @@ export function Workspace() {
         onSnooze={snoozeToast}
         onOpen={openToastTarget}
       />
+
+      <MagicTriggers />
 
       <FamiliarGlyphPicker
         open={glyphPickerFor !== null}
