@@ -124,6 +124,15 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
               <span>Browser</span>
             </span>
           )}
+          <button
+            type="button"
+            className="companion-rail__collapse focus-ring"
+            aria-label="Hide companion panel"
+            title="Hide companion panel (⌘⇧B)"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:familiar-panel-toggle"))}
+          >
+            <Icon name="ph:sidebar-simple-fill" width={14} aria-hidden />
+          </button>
         </header>
         <nav className="companion-rail__tabs" aria-label="Companion sections">
           {!familiar || hideChatTab ? null : (

@@ -138,4 +138,18 @@ assert.doesNotMatch(
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
 assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
 
+// The CompanionRail's in-panel Hide button (mirror of the left rail) dispatches
+// cave:familiar-panel-toggle; the Shell listens for it and reuses the ⌘⇧B path.
+assert.match(
+  shell,
+  /addEventListener\("cave:familiar-panel-toggle", familiarPanelToggle\)/,
+  "Shell listens for the CompanionRail in-panel collapse event",
+);
+assert.match(
+  shell,
+  /removeEventListener\("cave:familiar-panel-toggle", familiarPanelToggle\)/,
+  "Shell cleans up the familiar-panel-toggle listener",
+);
+assert.match(css, /\.companion-rail__collapse/, "globals.css styles the in-panel collapse button");
+
 console.log("shell-edge-rails.test.ts OK");
