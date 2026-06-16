@@ -1524,7 +1524,7 @@ export function Workspace() {
                 />
               }
               memorySlot={
-                <RailInspector familiar={active} />
+                <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
               }
               browserSlot={
                 <BrowserPane ref={companionBrowserPaneRef} label="companion" activeFamiliarId={active?.id ?? null} />

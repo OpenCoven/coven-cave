@@ -49,6 +49,8 @@ type Props = {
   onInboxItemChanged?: () => void | Promise<void>;
   /** When true, drop the tab nav and outer border so the pane fits in 296px rail. */
   compact?: boolean;
+  /** When set, the Memory tab shows an "Open full memory →" footer button. */
+  onOpenFullView?: () => void;
 };
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -114,6 +116,7 @@ export function InspectorPane({
   onOpenInboxItem,
   onInboxItemChanged,
   compact = false,
+  onOpenFullView,
 }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
   const tablistRef = useRef<HTMLElement | null>(null);
@@ -209,7 +212,7 @@ export function InspectorPane({
           tab === "memory" ? "overflow-hidden" : "overflow-y-auto"
         }`}
       >
-        {tab === "memory" ? <MemoryTab familiar={familiar} /> : null}
+        {tab === "memory" ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
         {tab === "familiar" ? <FamiliarCapabilityPanel familiar={familiar} /> : null}
         {tab === "inbox" ? (
           <InboxTab
@@ -583,7 +586,13 @@ type CovenMemoryEntry = {
   excerpt?: string;
 };
 
-function MemoryTab({ familiar }: { familiar: Familiar | null }) {
+function MemoryTab({
+  familiar,
+  onOpenFullView,
+}: {
+  familiar: Familiar | null;
+  onOpenFullView?: () => void;
+}) {
   const [mode, setMode] = useState<"coven" | "files">("coven");
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
@@ -821,6 +830,16 @@ function MemoryTab({ familiar }: { familiar: Familiar | null }) {
           </li>
         ) : null}
       </ul>
+      ) : null}
+
+      {onOpenFullView ? (
+        <button
+          type="button"
+          className="focus-ring rail-memory__open-full"
+          onClick={onOpenFullView}
+        >
+          Open full memory →
+        </button>
       ) : null}
     </div>
   );
@@ -1380,8 +1399,10 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
 
 export function RailInspector({
   familiar,
+  onOpenFullView,
 }: {
   familiar: Familiar | null;
+  onOpenFullView?: () => void;
 }) {
   if (!familiar) {
     return (
@@ -1392,7 +1413,7 @@ export function RailInspector({
   }
   return (
     <div className="rail-inspector">
-      <InspectorPane familiar={familiar} compact={true} />
+      <InspectorPane familiar={familiar} compact={true} onOpenFullView={onOpenFullView} />
     </div>
   );
 }
