@@ -44,7 +44,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 
   { name: "/terminal", aliases: ["/comux"], hint: "Terminal", description: "Open the integrated terminal view.", section: "view" },
   { name: "/projects", hint: "Projects", description: "Open the project browser and file preview view.", section: "view" },
-  { name: "/toggle-agent", hint: "\u2318J", description: "Toggle the Familiar Chat side panel.", section: "view" },
+  { name: "/toggle-agent", hint: "\u2318\u21E7B", description: "Toggle the Familiar Chat side panel.", section: "view" },
 
   // Launch
   { name: "/run", hint: "run task", description: "Run a task through the active familiar's harness.", argPlaceholder: "task…", section: "launch" },
