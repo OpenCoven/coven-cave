@@ -196,6 +196,40 @@
   border-radius: 2px;
 }
 
+/* Mermaid diagrams (```mermaid fences). The plugin's postProcess swaps the
+   placeholder <pre class="cm-mermaid"> for <div class="cm-mermaid-diagram"><svg>.
+   The diagram's own colors come from the mermaid "dark" theme; we only style the
+   surrounding card and the fallback (pre-render / render-failure) placeholder. */
+.cave-md .cm-mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 16px;
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.cave-md .cm-mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+.cave-md .cm-mermaid-container { margin: 8px 0 16px; }
+.cave-md .cm-mermaid {
+  display: block;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+
 .cave-md table {
   width: 100%;
   border-collapse: collapse;

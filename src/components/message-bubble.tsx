@@ -31,6 +31,7 @@ import {
 } from "react";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
+import type { PreviewPlugin } from "@create-markdown/preview";
 import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
@@ -430,6 +431,37 @@ async function renderTableBlock(block: TableBlock, renderAsync: RenderAsyncFn): 
   return `<table class="cm-table"><thead><tr>${ths.join("")}</tr></thead><tbody>${trs.join("")}</tbody></table>`;
 }
 
+// Mermaid diagrams (```mermaid fences) render via @create-markdown/preview-mermaid.
+// The package + its `mermaid` peer are heavy and browser-only, so the plugin is
+// imported lazily and only when a message actually contains a mermaid fence. The
+// instance is a module singleton so init() (which loads mermaid) runs once.
+let mermaidPluginPromise: Promise<PreviewPlugin | null> | null = null;
+async function getMermaidPlugin(): Promise<PreviewPlugin | null> {
+  if (!mermaidPluginPromise) {
+    mermaidPluginPromise = import("@create-markdown/preview-mermaid")
+      .then(async ({ mermaidPlugin }) => {
+        // theme "dark" matches the Cave UI; securityLevel "strict" overrides the
+        // plugin's default "loose" so diagrams from untrusted chat content can't
+        // smuggle scripts/click handlers (postProcess output bypasses our sanitizer).
+        const plugin = mermaidPlugin({ theme: "dark", config: { securityLevel: "strict" } });
+        await plugin.init?.();
+        return plugin;
+      })
+      .catch((err) => {
+        console.error("[MarkdownBlock] mermaid plugin load failed", err);
+        return null;
+      });
+  }
+  return mermaidPluginPromise;
+}
+
+function isMermaidCodeBlock(block: Block): boolean {
+  if (block.type !== "codeBlock") return false;
+  const cb = block as { props: { language?: string; info?: string } };
+  const lang = (cb.props.language ?? cb.props.info ?? "").trim().toLowerCase();
+  return lang === "mermaid";
+}
+
 async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promise<string> {
   const cached = renderCacheGet(markdown);
   if (cached !== undefined) return cached;
@@ -456,6 +488,11 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   // so codeReplacements[i] corresponds to the i-th code block in parse order
   // regardless of Promise.all resolution order.
   const codeBlocks = blocks.filter((b) => b.type === "codeBlock");
+  // Only render diagrams on settled (non-transient) snapshots — mid-stream the
+  // fence is usually incomplete, so the mermaid source shows as a code block
+  // until the message finishes, then swaps to the rendered diagram.
+  const mermaidPlugin =
+    !opts?.transient && codeBlocks.some(isMermaidCodeBlock) ? await getMermaidPlugin() : null;
   const codeReplacements: string[] = new Array(codeBlocks.length);
   await Promise.all(
     codeBlocks.map(async (block, i) => {
@@ -466,6 +503,13 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
         props: { language?: string; info?: string };
       };
       const code = cb.content.map((s) => s.text).join("");
+      if (mermaidPlugin && isMermaidCodeBlock(block)) {
+        // renderBlock emits a sanitizer-safe <pre class="cm-mermaid"> placeholder;
+        // postProcess swaps it for the SVG AFTER sanitizeHtml (which would
+        // otherwise strip the <style> mermaid embeds inside the SVG).
+        codeReplacements[i] = mermaidPlugin.renderBlock?.(block, () => "") ?? "";
+        return;
+      }
       const rawInfo = cb.props.info ?? cb.props.language ?? "";
       const filename = fenceFilenames[i] ?? null;
       const info = filename ? `${rawInfo}:${filename}` : rawInfo;
@@ -516,7 +560,12 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
     html = tableHtml;
   }
 
-  const sanitizedHtml = sanitizeHtml(html);
+  let sanitizedHtml = sanitizeHtml(html);
+  // Render mermaid diagrams AFTER sanitize: the SVG (and the <style> mermaid
+  // embeds inside it) must not pass through sanitizeHtml, which strips <style>.
+  if (mermaidPlugin?.postProcess) {
+    sanitizedHtml = await mermaidPlugin.postProcess(sanitizedHtml);
+  }
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.

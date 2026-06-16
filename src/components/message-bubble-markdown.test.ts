@@ -207,4 +207,45 @@ assert.match(
   "Table cells undo .cave-md's break-anywhere so wide content scrolls instead of word-shattering",
 );
 
+// ── Mermaid diagrams (```mermaid) via @create-markdown/preview-mermaid ────────
+assert.match(
+  source,
+  /import\("@create-markdown\/preview-mermaid"\)/,
+  "mermaid plugin is lazily imported from the @create-markdown/preview-mermaid package",
+);
+assert.match(
+  source,
+  /mermaidPlugin\(\{ theme: "dark", config: \{ securityLevel: "strict" \} \}\)/,
+  "mermaid is initialized with the dark theme and a strict (safe) security level",
+);
+assert.match(
+  source,
+  /function isMermaidCodeBlock[\s\S]{0,360}=== "mermaid"/,
+  "mermaid code blocks are detected by language",
+);
+// renderBlock placeholder must be produced for mermaid blocks...
+assert.match(
+  source,
+  /isMermaidCodeBlock\(block\)\) \{[\s\S]{0,400}renderBlock\?\.\(block/,
+  "mermaid blocks emit the plugin's placeholder instead of a Shiki code block",
+);
+// ...and postProcess (the SVG injection) must run AFTER sanitizeHtml so the
+// SVG's embedded <style> survives.
+assert.match(
+  source,
+  /sanitizeHtml\(html\);[\s\S]{0,300}mermaidPlugin\?\.postProcess[\s\S]{0,80}postProcess\(sanitizedHtml\)/,
+  "mermaid postProcess runs after sanitize (sanitizer strips <style>, which mermaid embeds in its SVG)",
+);
+// Only on settled snapshots — mid-stream the fence is usually incomplete.
+assert.match(
+  source,
+  /!opts\?\.transient && codeBlocks\.some\(isMermaidCodeBlock\)/,
+  "diagrams render only on non-transient (settled) snapshots",
+);
+assert.match(
+  css,
+  /\.cave-md \.cm-mermaid-diagram \{/,
+  "cave-chat.css styles the rendered mermaid diagram card",
+);
+
 console.log("message-bubble-markdown.test.ts: ok");
