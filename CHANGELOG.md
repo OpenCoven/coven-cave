@@ -7,6 +7,36 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.94] - 2026-06-16
+
+Patch release: a chat composer and projects/sessions overhaul, configurable panel shortcuts, inline Familiar Studio in Settings, new research workflow templates, a markdown-rendering refactor, and a broad sweep of header/theme polish and accessibility fixes after 0.0.93.
+
+### Added
+- **Chat** — composer **thinking-effort** and **response-speed** controls (persisted), **quote replies**, and chat-project inference that groups the session rail by project (#798-equivalent composer/projects work in #801, #808).
+- **Chat** — render assistant prose in Inter, and render ` ```mermaid ` diagrams via `@create-markdown/preview-mermaid` (#778, #786).
+- **Sessions** — session git/PR context (branch / worktree / linked PR) surfaced in the rail (#801).
+- **Shortcuts** — configurable panel-toggle keyboard shortcuts (#798).
+- **Settings** — full Familiar Studio inline in Settings → Familiars (#802); per-runtime model picker with gated `--model` passthrough (model parity) (#791-era, #0399a089).
+- **Board** — task-chat project selector / project-assignment picker in the card inspector and new-card flow (#801, #40ad738e).
+- **Workflows** — new `research-brief` and `synthesize-sources` templates (#799).
+- **Tasks** — nudge completed chats toward archive (#810).
+- **Library** — a `/` quick-open palette across library content (#790).
+- **Appearance** — a 4-level UI corner-radius control (#791).
+- **Rail** — restored the "Open full memory →" button and folded the magnifier Inspector into the brain Memory tab (#785, #788).
+
+### Changed
+- **Markdown** — message-bubble now renders via `renderAsync` custom renderers instead of positional regex substitution (#800).
+- **Performance** — ship only the Phosphor icons the app actually uses (~3.5 MB lighter) and reduce packaged sidecar size (#793).
+- **UI polish** — uniform background across all themes (incl. custom), standardized "clear header" treatment across board / calendar / GitHub / rail section headers, sidebar spacing/rhythm, and new-chat start screen layout (#791, #803, #805–#807, #812, #813, #816).
+- **Schedules** — split into Reminders and Automations.
+
+### Fixed
+- **Rail** — suppress the bare default-branch (`main`/`master`) suffix in session titles when it carries no signal (#809).
+- **Honesty** — calls show the real trace count instead of capping at 30; chat reports model-application state from the run outcome, not echo alone (#795, #796).
+- **Clipboard** — copy buttons work off-localhost (Tauri webview / Tailscale) (#772).
+- **Accessibility** — focus-trap/Escape in workflow dialogs, accessible Connect-GitHub modal, board inspector row actions reachable by hover and keyboard (#58d80641, #6ab94b8b, #f97bba0a).
+- **Misc** — keep the desktop left panel open on selection, surface bookmark-save failures, preserve familiar model-id casing, cap Pill-level card radius at 20px, and release-pipeline fixes (FUSE-less AppImage, foreign-sidecar pruning) (#776, #777, #784, #794, and others).
+
 ## [0.0.93] - 2026-06-15
 
 Patch release: ships the familiar sessions polish, board project grouping, Delegations trace recovery, and chat runtime-scope hardening work after 0.0.92.
