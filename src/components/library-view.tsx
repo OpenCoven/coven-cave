@@ -343,7 +343,9 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           defaultNotes={[boardDraft.url, boardDraft.notes].filter(Boolean).join("\n")}
           defaultLabels={boardDraft.tags}
           onCreate={async (draft: NewCardDraft) => {
-            await fetch("/api/board", {
+            // Throw on failure so NewCardModal surfaces the error and keeps the
+            // dialog open, instead of silently closing on a lost save.
+            const res = await fetch("/api/board", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
@@ -356,6 +358,10 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
                 labels: draft.labels,
               }),
             });
+            const json = await res.json().catch(() => null);
+            if (!res.ok || !json?.ok) {
+              throw new Error(json?.error ?? "Couldn't save to the board. Please try again.");
+            }
             setBoardDraft(null);
           }}
         />

@@ -54,4 +54,12 @@ assert.match(
   "LibraryView should pass a retry handler that re-fires loadDocs",
 );
 
+// Saving a bookmark to the board must throw on a failed response so NewCardModal
+// surfaces the error and keeps the dialog open — never silently close on a lost save.
+assert.match(
+  view,
+  /const res = await fetch\("\/api\/board"[\s\S]{0,700}if \(!res\.ok \|\| !json\?\.ok\) \{[\s\S]{0,120}throw new Error/,
+  "Save-to-board should throw on a failed/!ok response instead of closing silently",
+);
+
 console.log("library-error-retry.test.ts: ok");
