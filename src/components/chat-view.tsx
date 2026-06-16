@@ -653,6 +653,16 @@ function SessionOverflowMenu({
         minWidth={216}
       >
         <PopoverBody>
+          <PopoverItem
+            icon="ph:pencil-simple"
+            onSelect={() => {
+              window.dispatchEvent(new Event("cave:chat-rename"));
+              close();
+            }}
+          >
+            Rename chat
+          </PopoverItem>
+          <PopoverSeparator />
           {projects.length > 1 ? (
             <>
               <PopoverLabel>Project</PopoverLabel>
@@ -788,6 +798,15 @@ function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
+  // The rename affordance now lives in the session overflow menu (Codex/ChatGPT
+  // idiom — a clean title, secondary actions one click away). The menu fires
+  // this event; clicking the title itself still enters edit mode directly.
+  useEffect(() => {
+    const onRename = () => setEditing(true);
+    window.addEventListener("cave:chat-rename", onRename);
+    return () => window.removeEventListener("cave:chat-rename", onRename);
+  }, []);
+
   const display = baseTitle || session.id;
 
   const submit = async () => {
@@ -850,33 +869,17 @@ function ChatTitleEditable({
   }
 
   return (
-    <span className={headline ? "flex w-full min-w-0 items-center gap-1.5" : "flex min-w-0 flex-1 items-center gap-1"}>
-      <button
-        type="button"
-        className={buttonClassName}
-        title={`${display} — click to rename`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-      >
-        {display}
-      </button>
-      {/* Explicit rename affordance — the click-to-rename title alone is
-          invisible; the pencil makes renaming discoverable. */}
-      <button
-        type="button"
-        title="Rename chat"
-        aria-label="Rename chat"
-        onClick={(e) => {
-          e.stopPropagation();
-          setEditing(true);
-        }}
-        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
-      >
-        <Icon name="ph:pencil-simple" width={11} aria-hidden />
-      </button>
-    </span>
+    <button
+      type="button"
+      className={buttonClassName}
+      title={`${display} — click to rename`}
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+    >
+      {display}
+    </button>
   );
 }
 
@@ -965,8 +968,10 @@ function metaLineSegments(args: {
     // itself so the ticking elapsed can live in an aria-hidden span — keeping
     // the per-second rewrite out of the role="status" live region.
   } else {
-    if (args.harness) segs.push(args.harness);
+    // Lead with the model (ChatGPT idiom) — the harness name is redundant with
+    // it, so it only appears as a fallback when no model id is resolved.
     if (args.model) segs.push(args.model);
+    else if (args.harness) segs.push(args.harness);
     if (runtime) segs.push({ dir: runtime });
     const dur = fmtDuration(args.durationMs);
     if (dur) segs.push(dur);
