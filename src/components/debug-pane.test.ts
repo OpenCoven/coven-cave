@@ -113,8 +113,13 @@ assert.match(
 );
 assert.match(
   changesRoute,
-  /const allowedRoot = resolveAllowedProjectPath\(projectRoot\);[\s\S]*?if \(!allowedRoot\)[\s\S]*?status: 403/,
-  "projectRoot must be denied before git access when it is outside the allowed workspace roots",
+  /const allowedRoot = await isAllowed\(projectRoot\);[\s\S]*?if \(!allowedRoot\)[\s\S]*?status: 403/,
+  "projectRoot must be denied before git access when it is outside the allowed roots",
+);
+assert.match(
+  changesRoute,
+  /const isAllowed = async[\s\S]*?resolveAllowedProjectPath\(candidate\)[\s\S]*?resolveWithinSessionRoots\(candidate, sessionRoots\)/,
+  "the allow check must fall back from the static workspace allow-list to daemon-known session roots",
 );
 assert.match(
   changesRoute,
