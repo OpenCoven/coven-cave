@@ -252,15 +252,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           label="New session"
           onClick={onNewChat}
         />
-        <ActionRow
-          icon={<Icon name="ph:sparkle" width={14} />}
-          label="Ask Salem"
-          onClick={() => {
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("cave:salem-open"));
-            }
-          }}
-        />
       </div>
 
       <div className="sidebar-nav-scroll">

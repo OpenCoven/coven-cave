@@ -23,9 +23,8 @@ assert.match(widget, /labels: \["salem", "happy-path", card\.recommendedPathId\]
 assert.match(widget, /steps: card\.steps\.map/, "copies path steps into the checklist");
 assert.match(widget, /Salem path: \$\{card\.title\}/, "titles the board card by the path");
 
-// Sidebar: Ask Salem entry opens the Salem rail.
-assert.match(sidebar, /label="Ask Salem"/, "sidebar exposes an Ask Salem entry");
-assert.match(sidebar, /cave:salem-open/, "Ask Salem opens the Salem rail");
+// Sidebar: the Ask Salem entry was removed from the left side panel.
+assert.doesNotMatch(sidebar, /label="Ask Salem"/, "sidebar no longer exposes an Ask Salem entry");
 
 // Projects empty state offers Ask Salem.
 assert.match(projects, /Ask Salem/, "projects empty state offers Ask Salem");
