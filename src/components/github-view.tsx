@@ -92,9 +92,9 @@ function relTime(iso: string): string {
   return d < 30 ? `${d}d` : `${Math.round(d / 30)}mo`;
 }
 
-const KIND_ICON: Record<string, "ph:git-pull-request" | "ph:issue-opened" | "ph:bell" | "ph:github-logo"> = {
+const KIND_ICON: Record<string, "ph:git-pull-request" | "ph:circle-dashed" | "ph:bell" | "ph:github-logo"> = {
   pr: "ph:git-pull-request",
-  issue: "ph:issue-opened",
+  issue: "ph:circle-dashed",
   review_request: "ph:git-pull-request",
   notification: "ph:bell",
 };
