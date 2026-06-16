@@ -679,12 +679,14 @@ function CapabilityDetails({
         </button>
       </div>
 
-      {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
-      {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
-      {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
-      {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
-      {item.tags?.length ? <InspectorBlock label="Tags" value={item.tags.join(", ")} /> : null}
-      {item.scannedAt ? <InspectorBlock label="Scanned" value={new Date(item.scannedAt).toLocaleString()} /> : null}
+      <div className="divide-y divide-[var(--border-hairline)] border-t border-[var(--border-hairline)]">
+        {item.description ? <InspectorBlock label="Detail" value={item.description} /> : null}
+        {item.warningMessage ? <InspectorBlock label="Warning" value={item.warningMessage} tone="warning" /> : null}
+        {item.sourcePath ? <InspectorBlock label="Path" value={item.sourcePath} mono /> : null}
+        {item.command ? <InspectorBlock label="Command" value={item.command} mono /> : null}
+        {item.tags?.length ? <InspectorBlock label="Tags" value={item.tags.join(", ")} /> : null}
+        {item.scannedAt ? <InspectorBlock label="Scanned" value={new Date(item.scannedAt).toLocaleString()} /> : null}
+      </div>
 
       <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
         <InspectorAction
@@ -944,11 +946,15 @@ function InspectorBlock({
   tone?: "warning";
 }) {
   return (
-    <div>
-      <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{label}</p>
-      <p className={`break-words rounded-md bg-muted px-2 py-1.5 text-[11px] leading-5 ${mono ? "font-mono" : ""} ${tone === "warning" ? "text-[var(--color-warning)]" : "text-muted-foreground"}`}>
+    <div className="grid grid-cols-[4.25rem_1fr] items-baseline gap-x-3 py-[7px]">
+      <span className="text-[9.5px] font-medium uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+      <span
+        className={`min-w-0 break-words text-[11px] leading-5 ${mono ? "font-mono text-[10.5px]" : ""} ${
+          tone === "warning" ? "text-[var(--color-warning)]" : "text-[var(--text-secondary)]"
+        }`}
+      >
         {value}
-      </p>
+      </span>
     </div>
   );
 }
