@@ -7,6 +7,7 @@ import {
   reportDaemonSyncSuccess,
 } from "@/lib/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
+import { catalogForRuntime } from "@/lib/runtime-models";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -19,13 +20,6 @@ type CapabilitiesResponse = {
   error?: string;
 };
 
-const MODEL_SUGGESTIONS = [
-  "anthropic/claude-fable-5",
-  "anthropic/claude-opus-4-7",
-  "anthropic/claude-sonnet-4-6",
-  "anthropic/claude-haiku-4-5",
-  "openai/gpt-5.5",
-];
 
 export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
@@ -63,6 +57,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   }, []);
 
   const harnessId = draftHarness || familiar.harness || "";
+
+  // Model parity: source the per-familiar model menu from the same runtime →
+  // provider catalog the chat picker uses. allowCustom keeps the free-text
+  // field as the escape hatch for ids not in the curated seed.
+  const modelCatalog = catalogForRuntime(harnessId);
+  const modelOptions = modelCatalog?.models ?? [];
+  const allowCustomModel = modelCatalog?.allowCustom ?? true;
+  const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
 
   useEffect(() => {
     if (!harnessId) {
@@ -160,18 +162,40 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       <label className="familiar-studio-brain__row">
         <span className="familiar-studio-brain__label">Model</span>
         <div className="familiar-studio-brain__control">
-          <input
-            type="text"
-            list="familiar-studio-brain-models"
-            value={draftModel}
-            onChange={(e) => setDraftModel(e.target.value)}
-            onBlur={() => save({ model: draftModel.trim() || undefined })}
-            placeholder="anthropic/claude-opus-4-7"
-            className="familiar-studio-brain__input"
-          />
-          <datalist id="familiar-studio-brain-models">
-            {MODEL_SUGGESTIONS.map((m) => <option key={m} value={m} />)}
-          </datalist>
+          {modelOptions.length > 0 ? (
+            <select
+              aria-label="Model"
+              value={draftModelIsListed ? draftModel : "__custom__"}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === "__custom__") {
+                  setDraftModel("");
+                  return;
+                }
+                setDraftModel(value);
+                void save({ model: value || undefined });
+              }}
+              className="familiar-studio-brain__input"
+            >
+              <option value="">— inherit default —</option>
+              {modelOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+              {allowCustomModel ? <option value="__custom__">Custom…</option> : null}
+            </select>
+          ) : null}
+          {allowCustomModel && (modelOptions.length === 0 || !draftModelIsListed) ? (
+            <input
+              type="text"
+              value={draftModel}
+              onChange={(e) => setDraftModel(e.target.value)}
+              onBlur={() => save({ model: draftModel.trim() || undefined })}
+              placeholder="provider/model"
+              className="familiar-studio-brain__input"
+            />
+          ) : null}
         </div>
       </label>
 

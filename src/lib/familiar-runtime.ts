@@ -55,11 +55,18 @@ type SshCovenRunArgs = {
   familiarId: string;
   prompt: string;
   sessionId?: string | null;
+  /**
+   * Model id to forward as `--model`. Only emitted when truthy, so callers gate
+   * it on the `coven run --model` capability probe (model parity). Absent ⇒
+   * today's behavior, byte-for-byte.
+   */
+  model?: string | null;
 };
 
 export function buildSshCovenRunCommand(args: SshCovenRunArgs): string {
   const remoteArgs = ["run", args.harness, "--stream-json"];
   if (args.sessionId) remoteArgs.push("--continue", args.sessionId);
+  if (args.model) remoteArgs.push("--model", args.model);
   if (/^[a-z0-9_-]+$/i.test(args.familiarId)) {
     remoteArgs.push("--familiar", args.familiarId);
   }

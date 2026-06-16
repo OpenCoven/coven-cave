@@ -77,3 +77,32 @@ assert.deepEqual(
   ],
   "SSH spawn args should keep the host as its own argv entry and send one quoted remote command",
 );
+
+// Model parity: when a model is forwarded it must land BEFORE the `--` prompt
+// separator (the prompt is a variadic positional that would otherwise swallow
+// it), and stay quoted.
+assert.equal(
+  buildSshCovenRunCommand({
+    runtime: { kind: "ssh", host: "devbox", cwd: "/home/val/project", command: "coven" },
+    harness: "claude",
+    familiarId: "remote_sage",
+    prompt: "summon",
+    sessionId: null,
+    model: "anthropic/claude-opus-4-7",
+  }),
+  "cd -- '/home/val/project' && 'coven' 'run' 'claude' '--stream-json' '--model' 'anthropic/claude-opus-4-7' '--familiar' 'remote_sage' '--' 'summon'",
+  "A forwarded model should be emitted as a quoted --model before the prompt separator",
+);
+
+// No model ⇒ no --model flag (today's behavior preserved).
+assert.doesNotMatch(
+  buildSshCovenRunCommand({
+    runtime: { kind: "ssh", host: "devbox", cwd: "/home/val/project", command: "coven" },
+    harness: "claude",
+    familiarId: "remote_sage",
+    prompt: "summon",
+    sessionId: null,
+  }),
+  /--model/,
+  "Omitting model must not introduce a --model flag",
+);
