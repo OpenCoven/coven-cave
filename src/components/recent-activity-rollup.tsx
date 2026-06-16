@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 
 /**
@@ -37,11 +37,11 @@ function relativeTime(iso: string | undefined): string {
   return `${Math.round(h / 24)}d`;
 }
 
-function modelIcon(model: string | null | undefined): string {
+function modelIcon(model: string | null | undefined): IconName {
   const m = (model ?? "").toLowerCase();
-  if (m.includes("gpt") || m.includes("openai") || m.includes("codex")) return "ph:circle-half-tilt";
-  if (m.includes("claude") || m.includes("opus") || m.includes("sonnet") || m.includes("haiku")) return "ph:sparkle-fill";
-  return "ph:cube";
+  if (m.includes("gpt") || m.includes("openai") || m.includes("codex")) return "ph:robot";
+  if (m.includes("claude") || m.includes("opus") || m.includes("sonnet") || m.includes("haiku")) return "ph:sparkle";
+  return "ph:cube-bold";
 }
 
 type Props = {
