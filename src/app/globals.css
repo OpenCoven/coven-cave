@@ -3148,11 +3148,10 @@ button:active > .edge-rail-chip {
 }
 
 /* ────────────────────────────────────────────────
-   Floating panel toggles (Codex-style)
-   Always-visible rounded buttons pinned to the shell's top corners that
-   show/hide the side panels — left toggles the nav sidebar, right toggles
-   the active companion/side panel. They float above the panels (z-index)
-   so a single persistent control owns each panel in any open/closed state.
+   Edge panel toggles (Codex-style)
+   Full-height invisible strips pinned to the shell's left/right edges. Hover
+   or keyboard focus reveals the small aligned chip; clicking anywhere along
+   the strip toggles the corresponding side panel.
    ──────────────────────────────────────────────── */
 .shell-body--floats {
   position: relative;
@@ -3170,17 +3169,35 @@ button:active > .edge-rail-chip {
 
 .shell-panel-float {
   position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  display: block;
+  width: 44px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in oklch, var(--text-secondary) 86%, var(--text-primary));
+  box-shadow: none;
+  cursor: pointer;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: color 120ms ease;
+}
+
+.shell-panel-float::before {
+  content: "";
+  position: absolute;
   /* Vertically centered on the side-panel header row — the 38px Inspector/Debug/
      Changes tab strip that sits directly below the ~45px chat scope-tabs header.
      The trigger + expand toggle read as part of that header rather than floating
-     above it; the left nav toggle is moved to the same row to stay level.
+     above it; both side strips use this same value so the chips stay level.
      ChatSurface measures the live header and publishes --shell-float-top so the
      floats track it through the post-load settle (no fixed-offset flash); the
      50px fallback matches the settled position when no panel is open. */
   top: var(--shell-float-top, 50px);
-  z-index: 40;
-  display: grid;
-  place-items: center;
+  left: 50%;
   width: 28px;
   height: 28px;
   border-radius: 8px;
@@ -3190,30 +3207,63 @@ button:active > .edge-rail-chip {
   box-shadow:
     inset 0 1px 0 color-mix(in oklch, var(--text-primary) 10%, transparent),
     0 6px 16px color-mix(in oklch, black 22%, transparent);
-  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-50%);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, transform 80ms ease;
+}
+
+.shell-panel-float > svg {
+  position: absolute;
+  top: calc(var(--shell-float-top, 50px) + 6.5px);
+  left: 50%;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease, color 120ms ease, transform 80ms ease;
 }
 
 .shell-panel-float--left {
-  left: 8px;
-  /* The left nav toggle belongs beside the "Coven Cave" wordmark row at the top
-     of the sidebar, not level with the right panel's lower tab strip. Override
-     the shared `top` so it rides up next to the wordmark. */
-  top: 20px;
+  left: 0;
 }
 
 .shell-panel-float--right {
-  right: 8px;
+  right: 0;
 }
 
 /* Expand-to-cover toggle: pinned one button-width + gap to the left of the
    side-panel trigger (8 + 28 + 8). Hidden until a chat right panel is actually
    open, and re-hidden while expanded (the in-panel Restore button takes over). */
 .shell-panel-float--expand {
+  top: var(--shell-float-top, 50px);
   right: 44px;
+  bottom: auto;
+  z-index: 40;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
+  background: color-mix(in oklch, var(--bg-raised) 86%, var(--bg-elevated));
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--text-primary) 10%, transparent),
+    0 6px 16px color-mix(in oklch, black 22%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   display: none;
+}
+.shell-panel-float--expand::before {
+  content: none;
+}
+.shell-panel-float--expand > svg {
+  position: static;
+  opacity: 1;
+  transform: none;
+}
+.shell-panel-float--expand:active {
+  transform: scale(0.94);
 }
 :root[data-right-panel-open] .shell-panel-float--expand {
   display: grid;
@@ -3224,23 +3274,38 @@ button:active > .edge-rail-chip {
 
 /* The Phosphor sidebar glyph points at a left panel; mirror it on the right
    toggle so it reads as a right-edge panel. */
-.shell-panel-float--right svg {
-  transform: scaleX(-1);
+.shell-panel-float--right > svg {
+  transform: translateX(-50%) scaleX(-1);
 }
 
-.shell-panel-float:hover {
-  background: var(--bg-elevated);
+.shell-panel-float:hover,
+.shell-panel-float:focus-visible {
   color: var(--text-primary);
+}
+
+.shell-panel-float:hover::before,
+.shell-panel-float:focus-visible::before,
+.shell-panel-float:hover > svg,
+.shell-panel-float:focus-visible > svg {
+  opacity: 1;
+}
+
+.shell-panel-float:hover::before,
+.shell-panel-float:focus-visible::before {
+  background: var(--bg-elevated);
   border-color: color-mix(in oklch, var(--text-muted) 48%, transparent);
 }
 
-.shell-panel-float:active {
-  transform: scale(0.94);
+.shell-panel-float:active::before {
+  transform: translateX(-50%) scale(0.94);
 }
 
 /* Open state: accent-tinted, matching the edge-rail "expanded" treatment. */
 .shell-panel-float--active {
   color: var(--text-primary);
+}
+
+.shell-panel-float--active::before {
   border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
 }
