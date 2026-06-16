@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
   // Standalone output produces a self-contained Node server at
   // .next/standalone/ that we can bundle as a Tauri sidecar.
   output: "standalone",
+  // Cave does not use Next's server-side image optimizer in the packaged app;
+  // icon generation happens before build via scripts/generate-pwa-icons.mjs.
+  images: { unoptimized: true },
   serverExternalPackages: ["node-pty"],
   // Next.js file tracing otherwise sucks the entire src-tauri/target/
   // (multi-GB) into the standalone bundle. Exclude noisy siblings.

@@ -137,6 +137,29 @@ prune_foreign_native_packages() {
   fi
 }
 
+prune_sidecar_nonruntime_files() {
+  local dest="$1"
+  if [ ! -d "$dest" ]; then
+    return 0
+  fi
+
+  echo "==> pruning sidecar non-runtime files"
+
+  rm -rf \
+    "$dest/node_modules/@playwright" \
+    "$dest/node_modules/@types" \
+    "$dest/node_modules/playwright" \
+    "$dest/node_modules/playwright-core" \
+    "$dest/node_modules/sharp" \
+    "$dest/node_modules/@img"
+
+  find "$dest" -type f \( \
+    -name '*.map' -o \
+    -name '*.d.ts' -o \
+    -name '*.d.ts.map' \
+  \) -delete
+}
+
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
 
@@ -263,6 +286,8 @@ if [ -d "$PUBLIC" ]; then
   echo "==> copying public/ → $DEST/public"
   cp -a "$PUBLIC/." "$DEST/public/"
 fi
+
+prune_sidecar_nonruntime_files "$DEST"
 
 # Sanity check
 for must in node_modules/@next/env node_modules/@swc/helpers/_; do

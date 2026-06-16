@@ -23,4 +23,12 @@ assert.match(src, /PNPM_STAGE.*node_modules/, "final node_modules must come from
 // Security: must not blindly copy symlinks from STANDALONE into bundle
 assert.match(src, /cp -aL/, "all node_modules copies must dereference symlinks");
 
+// App-size: runtime bundles must drop test/dev packages and metadata that are
+// useful only while developing or debugging the build machine.
+assert.match(src, /prune_sidecar_nonruntime_files\(\)/, "sidecar must prune non-runtime files before release bundling");
+assert.match(src, /node_modules\/playwright-core/, "sidecar must remove Playwright test runtime from the packaged app");
+assert.match(src, /node_modules\/@types/, "sidecar must remove TypeScript declaration packages from the packaged app");
+assert.match(src, /-name '\*\.map'/, "sidecar must remove source maps from the packaged app");
+assert.match(src, /node_modules\/sharp/, "sidecar must remove optional Sharp image optimizer from the packaged app");
+
 console.log("sidecar-bundle-deps.test: ok");
