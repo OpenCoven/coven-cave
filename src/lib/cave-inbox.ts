@@ -37,6 +37,12 @@ export type InboxItem = {
   familiarId?: string | null;
   sessionId?: string | null;
   link?: LinkRef | null;
+  /**
+   * Discriminator for machine-generated items (e.g. archive nudges). Absent on
+   * human/user-created items. Lets producers dedup and resolve their own items
+   * without brittle title matching. See `task-archive-nudge.ts`.
+   */
+  auto?: string | null;
 };
 
 type InboxFile = {
@@ -95,6 +101,7 @@ export type NewItemInput = {
   familiarId?: string | null;
   sessionId?: string | null;
   link?: LinkRef | null;
+  auto?: string | null;
 };
 
 export async function createItem(input: NewItemInput): Promise<InboxItem> {
@@ -119,6 +126,7 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
       familiarId: input.familiarId ?? null,
       sessionId: input.sessionId ?? null,
       link: input.link ?? null,
+      auto: input.auto ?? null,
     };
     file.items.push(item);
     await saveInbox(file);
