@@ -67,41 +67,64 @@ function resolveToHex(color: string): string {
 }
 
 /**
- * Write three colors to CSS vars on <html>. We map them to the Cave
- * custom-theme var set: --bg-base (background), --accent-presence (accent),
- * and --border-hairline (border). We also write --bg-card / --bg-raised as
- * lightened/darkened bg variants so the rest of the UI stays coherent.
+ * Build the full, coherent custom-theme variable group from the three picked
+ * colors. This is the single source of truth replayed by both the live editor
+ * (applyColorsToDOM) and the persisted theme (theme-script boot + settings-shell).
+ *
+ * Uniformity matters here: the preset themes define BOTH the Issue #14 surface
+ * ramp (--bg-base / --bg-raised / --bg-elevated / …) AND the legacy base tokens
+ * it aliases from (--background, --card, --muted, --border — see globals.css
+ * `--bg-base: var(--background)` etc.). Surfaces are split across the two
+ * vocabularies (calendar/board/roles use --bg-base; capabilities, inbox
+ * escalations, card modals, board-inspector chips still use bg-background /
+ * bg-card / bg-muted / border-border). A custom theme must therefore set BOTH
+ * groups — otherwise the legacy-vocab surfaces keep the previously-active
+ * theme's background and the app looks non-uniform under a custom theme.
+ */
+function deriveThemeVars(colors: ThreeColors): Record<string, string> {
+  const { bg, accent, border } = colors;
+  // Surface ramp lightened from the chosen background; color-mix is broadly
+  // supported in our target Chromium/WebKit.
+  const raised = `color-mix(in oklch, ${bg} 90%, white 10%)`;
+  const card = `color-mix(in oklch, ${bg} 93%, white 7%)`;
+  const elevated = `color-mix(in oklch, ${bg} 85%, white 15%)`;
+  return {
+    "--accent-presence": accent,
+    "--accent-faint": `${accent}22`,
+    // Issue #14 surface ramp.
+    "--bg-base": bg,
+    "--bg-panel": `color-mix(in oklch, ${bg} 92%, black 8%)`,
+    "--bg-raised": raised,
+    "--bg-card": card,
+    "--bg-elevated": elevated,
+    "--bg-hover": `color-mix(in oklch, ${bg} 80%, white 20%)`,
+    "--border-hairline": border,
+    "--border-strong": `color-mix(in oklch, ${border} 60%, ${accent} 40%)`,
+    // Legacy base tokens the ramp aliases from in preset themes. Mirror the
+    // preset aliasing so legacy-vocab surfaces track the custom background:
+    //   --bg-base: var(--background); --bg-raised: var(--card);
+    //   --bg-elevated≈--muted; --border-hairline: var(--border).
+    "--background": bg,
+    "--card": raised,
+    "--muted": elevated,
+    "--border": border,
+  };
+}
+
+/**
+ * Write the custom-theme colors to CSS vars on <html> for live preview.
  */
 function applyColorsToDOM(colors: ThreeColors, _mode: Mode) {
   const html = document.documentElement;
   html.setAttribute("data-theme", "custom");
-
-  const set = (prop: string, val: string) =>
+  const vars = deriveThemeVars(colors);
+  for (const [prop, val] of Object.entries(vars)) {
     html.style.setProperty(prop, val);
-
-  set("--accent-presence", colors.accent);
-  set("--accent-faint", `${colors.accent}22`);
-  set("--bg-base", colors.bg);
-  // bg-raised / bg-card are slightly lighter than bg-base; for now we use
-  // color-mix which is broadly supported in our target Chromium/WebKit.
-  set("--bg-raised", `color-mix(in oklch, ${colors.bg} 90%, white 10%)`);
-  set("--bg-card", `color-mix(in oklch, ${colors.bg} 93%, white 7%)`);
-  set("--bg-elevated", `color-mix(in oklch, ${colors.bg} 85%, white 15%)`);
-  set("--border-hairline", colors.border);
-  set("--border-strong", `color-mix(in oklch, ${colors.border} 60%, ${colors.accent} 40%)`);
+  }
 }
 
 function persistCustomTheme(presetBase: ThemeId, colors: ThreeColors, mode: Mode) {
-  const modeGroup = {
-    "--bg-base": colors.bg,
-    "--bg-raised": `color-mix(in oklch, ${colors.bg} 90%, white 10%)`,
-    "--bg-card": `color-mix(in oklch, ${colors.bg} 93%, white 7%)`,
-    "--bg-elevated": `color-mix(in oklch, ${colors.bg} 85%, white 15%)`,
-    "--accent-presence": colors.accent,
-    "--accent-faint": `${colors.accent}22`,
-    "--border-hairline": colors.border,
-    "--border-strong": `color-mix(in oklch, ${colors.border} 60%, ${colors.accent} 40%)`,
-  };
+  const modeGroup = deriveThemeVars(colors);
   const data = {
     name: `${THEME_META[presetBase].name} (custom)`,
     cssVars: {

@@ -181,12 +181,12 @@ function SortableChatListItem({
 // the phone list reads with the same grouping language (PINNED / SESSIONS).
 function ChatListSection({ label, count }: { label: string; count?: number }) {
   return (
-    <li className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-4 py-1.5">
-      <span className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+    <li className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-4 py-2">
+      <span className="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
         {label}
       </span>
       {typeof count === "number" ? (
-        <span className="font-mono text-[11px] text-[var(--text-muted)] opacity-70">{count}</span>
+        <span className="font-mono text-[12px] text-[var(--text-secondary)] opacity-80">{count}</span>
       ) : null}
     </li>
   );
@@ -790,12 +790,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               <li key={projectRoot ?? "__none__"}>
                 {/* Project group header */}
                 {projectRoot !== null && effectiveSelection === "all" && (
-                  <div className="group relative flex items-center gap-1.5 px-4 py-1.5 bg-[var(--bg-raised)]/30 border-b border-[var(--border-hairline)]">
-                    <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-muted)]" />
-                    <span className="truncate text-[11px] font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                  <div className="group relative flex items-center gap-1.5 px-4 py-2 bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] border-b border-[var(--border-hairline)]">
+                    <Icon name="ph:folder" width={12} className="shrink-0 text-[var(--text-secondary)]" />
+                    <span className="truncate text-[12px] font-bold text-[var(--text-primary)] uppercase tracking-wide">
                       {repoName(projectRoot)}
                     </span>
-                    <span className="font-mono text-[11px] text-[var(--text-muted)] opacity-70">{rows.length}</span>
+                    <span className="font-mono text-[12px] text-[var(--text-secondary)] opacity-80">{rows.length}</span>
                     <button
                       className="chat-list-group-new touch-always-visible absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                       onClick={(e) => {
@@ -1017,9 +1017,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                  visible there are deduped out of this section. ── */}
           {showContentSection && (
             <section aria-label="Matches in conversation content">
-              <div className="flex items-center gap-1.5 border-y border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 px-4 py-1.5">
-                <Icon name="ph:chats" width={12} className="shrink-0 text-[var(--text-muted)]" />
-                <span className="truncate text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              <div className="flex items-center gap-1.5 border-y border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-4 py-2">
+                <Icon name="ph:chats" width={12} className="shrink-0 text-[var(--text-secondary)]" />
+                <span className="truncate text-[12px] font-bold uppercase tracking-wide text-[var(--text-primary)]">
                   In conversations
                 </span>
               </div>

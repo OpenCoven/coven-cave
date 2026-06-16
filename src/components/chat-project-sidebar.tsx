@@ -123,13 +123,13 @@ function AccentBar({ tall }: { tall?: boolean }) {
 // Reused for PINNED / SESSIONS / PROJECTS so every group reads the same way.
 function RailSection({ label, count, action }: { label: string; count?: number; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-3 pb-1 pt-2">
+    <div className="flex items-center justify-between border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
       <span className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+        <span className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
           {label}
         </span>
         {typeof count === "number" ? (
-          <span className="font-mono text-[10px] text-[var(--text-muted)] opacity-70">{count}</span>
+          <span className="font-mono text-[11px] text-[var(--text-secondary)] opacity-80">{count}</span>
         ) : null}
       </span>
       {action}
