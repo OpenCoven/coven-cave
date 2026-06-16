@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.95] - 2026-06-16
+
+Patch release: reminders gain links and editing, the Companion panel gets an in-panel collapse trigger, a new Familiar Studio Contract tab, workspace-sourced avatars, and more header/polish fixes after 0.0.94.
+
+### Added
+- **Reminders** — a `link` parameter (URL / board card / chat session) on reminders, shown as a routing chip in the detail panel, plus full **edit** of an existing reminder (title / when / recurrence / link) via the reused reminder modal (#826).
+- **Companion panel** — an in-panel collapse trigger in the panel header, mirroring the left sessions rail's Hide button (#822).
+- **Familiar Studio** — a Contract tab that tests a familiar's adherence to the Familiar Contract.
+- **Familiars** — source avatars from the workspace `avatars/` dir, with the workspace avatar taking precedence (#821).
+
+### Fixed
+- **Changes** — allow the git Changes panel for daemon-known session roots (#d9a67288).
+- **Headers** — consistent "clear header" treatment for library timeline groups, schedules sections, and workflow library group headings.
+
 ## [0.0.94] - 2026-06-16
 
 Patch release: a chat composer and projects/sessions overhaul, configurable panel shortcuts, inline Familiar Studio in Settings, new research workflow templates, a markdown-rendering refactor, and a broad sweep of header/theme polish and accessibility fixes after 0.0.93.
