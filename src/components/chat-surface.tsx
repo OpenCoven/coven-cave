@@ -244,13 +244,22 @@ export function ChatSurface({
       setScope("conversation");
       window.setTimeout(() => routerRef.current?.goToList(), 0);
     };
+    const onFamiliarSelect = (e: Event) => {
+      const d = (e as CustomEvent<{ familiarId?: string | null }>).detail;
+      if (!d?.familiarId) return;
+      onSetActiveFamiliar(d.familiarId);
+      setScope("conversation");
+      window.setTimeout(() => routerRef.current?.goToList(), 0);
+    };
     window.addEventListener("cave:agents-new-chat", onNewChat);
     window.addEventListener("cave:agents-open-session", onOpenSession);
     window.addEventListener("cave:agents-list", onShowList);
+    window.addEventListener("cave:familiar-select", onFamiliarSelect);
     return () => {
       window.removeEventListener("cave:agents-new-chat", onNewChat);
       window.removeEventListener("cave:agents-open-session", onOpenSession);
       window.removeEventListener("cave:agents-list", onShowList);
+      window.removeEventListener("cave:familiar-select", onFamiliarSelect);
     };
   }, [onSetActiveFamiliar, routerRef]);
 
