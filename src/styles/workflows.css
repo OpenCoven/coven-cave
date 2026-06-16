@@ -155,9 +155,12 @@
   outline-offset: 1px;
 }
 
+/* Toggle (first child) pins to the inner/left edge; tabs push to the outer/right
+   edge — a horizontal mirror of the left library panel's title+toggle header. */
 .workflow-side-panel-header {
   display: flex;
   align-items: flex-end;
+  justify-content: space-between;
   gap: 4px;
   flex-shrink: 0;
   width: 100%;

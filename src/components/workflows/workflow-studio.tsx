@@ -296,6 +296,17 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
       </main>
       <aside className="workflow-studio-side" aria-label="Workflow details">
         <div className="workflow-side-panel-header">
+          {/* Toggle leftmost (inner edge) — mirrors the left library panel. */}
+          <button
+            type="button"
+            className="workflow-panel-collapse-button workflow-panel-tab-right"
+            aria-label={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
+            aria-expanded={rightPanelOpen}
+            title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
+            onClick={() => setRightPanelOpen((open) => !open)}
+          >
+            <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} className="workflow-panel-tab__icon" />
+          </button>
           <Tabs<WorkflowSidePanelSection>
             className="workflow-side-panel-tabs"
             ariaLabel="Workflow detail sections"
@@ -313,16 +324,6 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
               title: s.label,
             }))}
           />
-          <button
-            type="button"
-            className="workflow-panel-collapse-button workflow-panel-tab-right"
-            aria-label={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
-            aria-expanded={rightPanelOpen}
-            title={rightPanelOpen ? "Hide workflow details" : "Show workflow details"}
-            onClick={() => setRightPanelOpen((open) => !open)}
-          >
-            <Icon name={rightPanelOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={14} className="workflow-panel-tab__icon" />
-          </button>
         </div>
         <div className="workflow-studio-side-content">
           <div
