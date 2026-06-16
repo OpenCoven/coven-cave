@@ -67,22 +67,6 @@ function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; time
   );
 }
 
-async function openCwdInExplorer(rawCwd: string): Promise<string | null> {
-  const cwd = rawCwd.trim();
-  if (!cwd) return "Enter a CWD first.";
-  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
-    return "Open CWD is available in the desktop app.";
-  }
-
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("shell_open_path", { path: cwd });
-    return null;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
-}
-
 // ── Inline PAT Setup ─────────────────────────────────────────────────────────
 function InlinePATSetup({ onSaved }: { onSaved: () => void }) {
   const [pat, setPat] = useState("");
@@ -834,7 +818,6 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   // default — the badge summary still shows in the header chip; expand only
   // when you actually need to dispatch/cancel or read the timestamps.
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
-  const [cwdOpenErr, setCwdOpenErr] = useState<string | null>(null);
   const [newLabel, setNewLabel] = useState("");
 
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
@@ -842,9 +825,6 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const currentFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
   const resolvedFamiliarList = useResolvedFamiliars(currentFamiliar ? [currentFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliarList[0] ?? null;
-  const cwdProject = projects.find((project) => project.root === card.cwd) ?? (card.projectId ? projects.find((project) => project.id === card.projectId) ?? null : null);
-  const cwdSelectValue = cwdProject?.id ?? (card.cwd ? "__custom__" : "");
-  const activeCwd = cwdProject?.root ?? card.cwd ?? "";
 
   const close = () => { setClosing(true); setTimeout(onClose, 180); };
 
@@ -977,10 +957,13 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <select
                   className="board-drawer-field-select board-drawer-field-select--styled"
                   value={card.projectId ?? ""}
-                  onChange={(e) => onPatch(card.id, { projectId: e.target.value || null })}
+                  onChange={(e) => {
+                    const selectedProject = projects.find((project) => project.id === e.target.value) ?? null;
+                    onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
+                  }}
                 >
                   <option value="">No project</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                 </select>
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
@@ -1031,47 +1014,6 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 </button>
               </div>
             )}
-          </div>
-
-          <div className="board-drawer-field">
-            <div className="board-drawer-field-label"><Icon name="ph:folder" width={11} /> CWD</div>
-            <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
-              <button
-                type="button"
-                className="board-drawer-path-open"
-                aria-label="Open CWD in directory explorer"
-                title="Open CWD in directory explorer"
-                onClick={async () => {
-                  const err = await openCwdInExplorer(activeCwd);
-                  setCwdOpenErr(err);
-                }}
-              >
-                <Icon name="ph:folder" width={12} />
-              </button>
-              <select
-                className="board-drawer-field-select board-drawer-field-select--styled board-drawer-path-input"
-                value={cwdSelectValue}
-                aria-label="Project root for this task CWD"
-                onChange={(e) => {
-                  const selectedProject = projects.find((project) => project.id === e.target.value) ?? null;
-                  onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
-                  setCwdOpenErr(null);
-                }}
-              >
-                <option value="">No project</option>
-                {card.cwd && !cwdProject ? <option value="__custom__">Current path: {card.cwd}</option> : null}
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-              <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
-            </div>
-            <div className="board-drawer-path-preview" title={activeCwd}>
-              {activeCwd || "Select a project before starting chat"}
-            </div>
-            {cwdOpenErr ? <p className="board-drawer-field-error">{cwdOpenErr}</p> : null}
           </div>
 
           <StepsSection card={card} onPatch={onPatch} />

@@ -27,6 +27,10 @@ assert.match(view, /e\.key !== "\/" \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altK
 assert.match(view, /tag === "input" \|\| tag === "textarea" \|\| tag === "select"/, "/-shortcut is ignored while typing");
 // Opening fetches a fresh global snapshot: all docs + every captured link.
 assert.match(view, /fetch\("\/api\/library\/all"[\s\S]{0,200}fetch\("\/api\/library\?collection=all"/, "quick-open fetches captured links + all docs on open");
+assert.match(view, /function entryQuickKey\(entry: TimelineEntry, index: number\): string/, "quick-open uses a stable key helper for captured links");
+assert.match(view, /if \(item\.id\) return `\$\{entry\.list\}:\$\{item\.id\}`;/, "quick-open keys use the persisted item id when present");
+assert.match(view, /`\$\{entry\.list\}:legacy:[\s\S]*:\$\{index\}`/, "quick-open keys fall back to a legacy key that includes the row index");
+assert.doesNotMatch(view, /key: `bookmark:\$\{b\.id\}`/, "quick-open bookmark keys should not collapse to bookmark:undefined for legacy rows");
 // Selecting navigates to the item and opens it.
 assert.match(view, /const handleQuickSelect = useCallback\(/, "library-view defines a quick-select navigator");
 assert.match(view, /item\.kind === "doc"[\s\S]{0,200}handleSelectDoc\(doc\)/, "selecting a doc opens it via handleSelectDoc");

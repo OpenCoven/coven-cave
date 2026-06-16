@@ -227,7 +227,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         await startTaskChat(id, project.root);
         return;
       }
-      setChatLinkError("Set a project in CWD before starting chat.");
+      setChatLinkError("Set a project before starting chat.");
       return;
     }
     await startTaskChat(id);

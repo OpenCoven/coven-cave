@@ -114,27 +114,44 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
     return () => { cancelled = true; };
   }, [familiarId]);
 
+  async function refreshState() {
+    const res = await fetch("/api/skills/eval-loop/" + familiarId, { cache: "no-store" });
+    const json = await res.json();
+    if (json.ok) {
+      setState(json.state as EvalLoopState);
+      setError(null);
+      return;
+    }
+    setError(json.error ?? "eval-loop data unavailable");
+  }
+
   async function triggerRun(track: Track) {
     setTriggering(true);
+    setError(null);
     try {
-      await fetch("/api/skills/eval-loop/" + familiarId + "/run", {
+      const res = await fetch("/api/skills/eval-loop/" + familiarId + "/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ track }),
       });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error ?? "failed to start eval-loop");
+        setTriggering(false);
+        return;
+      }
       setState((prev) => prev ? { ...prev, running: true } : prev);
       setTimeout(() => {
         void (async () => {
           try {
-            const res = await fetch("/api/skills/eval-loop/" + familiarId, { cache: "no-store" });
-            const json = await res.json();
-            if (json.ok) setState(json.state as EvalLoopState);
+            await refreshState();
           } finally {
             setTriggering(false);
           }
         })();
       }, 2000);
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "failed to start eval-loop");
       setTriggering(false);
     }
   }
@@ -172,10 +189,20 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
           ))}
         </div>
       ) : error ? (
-        <div className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-4 text-center text-[var(--text-muted)]">
+        <button
+          type="button"
+          disabled={triggering}
+          onClick={() => void triggerRun("synthesis")}
+          className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-4 text-center text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:bg-[var(--bg-raised)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-presence)] disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label={`Start eval-loop for ${familiarName}`}
+        >
           <p className="mb-1">eval-loop not active for {familiarName}</p>
           <p className="text-[10px]">{error}</p>
-        </div>
+          <span className="mt-2 inline-flex items-center justify-center gap-1 rounded border border-[var(--border-strong)] px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+            <Icon name={triggering ? "ph:arrows-clockwise-bold" : TRACK_ICON.synthesis} width="0.7rem" />
+            {triggering ? "starting" : "start synthesis"}
+          </span>
+        </button>
       ) : (
         <>
           {state ? (

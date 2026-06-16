@@ -86,6 +86,8 @@ const view = normalizeCapabilities({ manifests, covenSkills });
 
 assert.equal(view.summary.harnesses, 2);
 assert.equal(view.summary.instructions, 1);
+assert.equal(view.summary.skills, 3);
+assert.equal(view.summary.plugins, 1);
 assert.equal(view.summary.workflows, 0, "no workflow items from empty manifest");
 assert.equal(view.summary.roles, 0, "no role items from empty manifest");
 assert.equal(view.summary.mcpServers, 1);
@@ -95,7 +97,7 @@ assert.equal(view.summary.warnings, 1);
 assert.deepEqual(
   view.harnesses.map((h) => [h.id, h.label, h.itemCount, h.warningCount]),
   [
-    ["codex", "Codex", 2, 1],
+    ["codex", "Codex", 5, 1],
     ["claude", "Claude Code", 0, 0],
   ],
 );
@@ -103,8 +105,12 @@ assert.deepEqual(
 const ids = view.items.map((item) => item.id);
 assert.deepEqual(ids, [
   "codex:instructions:global",
+  "codex:plugin:browser",
   "codex:mcp:filesystem",
+  "codex:skill:review",
+  "codex:skill:daily-check",
   "codex:warning:0",
+  "coven:skill:daily-brief",
 ]);
 
 const disabledMcp = view.items.find((item) => item.id === "codex:mcp:filesystem");
