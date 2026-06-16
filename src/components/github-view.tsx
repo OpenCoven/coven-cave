@@ -847,6 +847,13 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   useEffect(() => {
     if (repoFilter !== "all" && !repoOptions.includes(repoFilter)) setRepoFilter("all");
   }, [repoOptions, repoFilter]);
+  // Selecting a repo pins the Org filter to that repo's org (the Org select is
+  // disabled while a repo is chosen — clearing the repo re-enables it).
+  useEffect(() => {
+    if (repoFilter === "all") return;
+    const org = orgOf(repoFilter);
+    if (orgFilter !== org) setOrgFilter(org);
+  }, [repoFilter, orgFilter]);
 
   const scoped = useMemo(
     () =>
@@ -1042,9 +1049,9 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             className="gh-select"
             value={orgFilter}
             onChange={(e) => setOrgFilter(e.target.value)}
-            title="Filter by organization"
+            title={repoFilter !== "all" ? "Org is locked to the selected repo — clear the repo to change it" : "Filter by organization"}
             aria-label="Filter by organization"
-            disabled={orgOptions.length === 0}
+            disabled={orgOptions.length === 0 || repoFilter !== "all"}
           >
             <option value="all">All orgs</option>
             {orgOptions.map((o) => (
@@ -1065,17 +1072,29 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             ))}
           </select>
           <span className="gh-select-sep" aria-hidden />
-          <select
-            className="gh-select"
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value as GroupBy)}
-            title="Group rows"
-            aria-label="Group rows"
-          >
-            <option value="none">No grouping</option>
-            <option value="org">Group by org</option>
-            <option value="repo">Group by repo</option>
-          </select>
+          <div className="flex items-center gap-1" role="group" aria-label="Group rows">
+            {(["none", "org", "repo"] as GroupBy[]).map((g) => {
+              const labels: Record<GroupBy, string> = { none: "None", org: "Org", repo: "Repo" };
+              const isActive = groupBy === g;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGroupBy(g)}
+                  aria-pressed={isActive}
+                  title={g === "none" ? "No grouping" : `Group by ${g}`}
+                  className={[
+                    "rounded-md px-2.5 py-1 text-[12px] transition-colors",
+                    isActive
+                      ? "bg-[var(--bg-raised)] text-[var(--text-primary)] font-medium"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  ].join(" ")}
+                >
+                  {labels[g]}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
