@@ -47,6 +47,10 @@ on:
         description: "Tag to attach builds to (e.g. v0.0.16). Must already exist on origin."
         required: true
         type: string
+      source_ref:
+        description: "Git ref to build from for manual release-infra retries. Defaults to tag."
+        required: false
+        type: string
       platform:
         description: "Platform to build when manually re-running a release."
         required: false
@@ -94,7 +98,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # Manual retries may need newer release infrastructure while still
+          # attaching artifacts to an existing tag.
+          ref: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref }}
 
       - name: Set release metadata
         shell: bash
@@ -379,7 +385,9 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # Manual retries may need newer release infrastructure while still
+          # attaching artifacts to an existing tag.
+          ref: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref }}
           # release-notes.sh resolves the previous tag for the compare link
           # via `git tag --sort=-version:refname`, so the checksums job needs
           # the full tag history (shallow defaults would only have HEAD).

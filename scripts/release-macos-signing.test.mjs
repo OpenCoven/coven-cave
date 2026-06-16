@@ -64,6 +64,23 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
   );
 });
 
+test("manual release retries can build from a source ref while attaching to the tag", () => {
+  assert.match(releaseWorkflow, /source_ref:/);
+  assert.match(
+    releaseWorkflow,
+    /description: "Git ref to build from for manual release-infra retries\. Defaults to tag\."/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /ref: \$\{\{ github\.event\.inputs\.source_ref \|\| github\.event\.inputs\.tag \|\| github\.ref \}\}/,
+  );
+  assert.match(
+    releaseWorkflow,
+    /RAW_RELEASE_TAG: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref_name \}\}/,
+    "release attachment metadata must continue to come from the tag input",
+  );
+});
+
 test("sidecar bundle prunes foreign native packages before release bundling", () => {
   assert.match(sidecarScript, /prune_foreign_native_packages\(\)/);
   assert.match(sidecarScript, /process\.platform/);
