@@ -1191,7 +1191,7 @@
   min-width: 0;
   min-height: 0;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklch, var(--card) 60%, transparent);
+  background: var(--card);
 }
 
 .workflow-run-preview-resizer {
