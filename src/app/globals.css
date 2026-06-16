@@ -3250,12 +3250,12 @@ button:active > .edge-rail-chip {
 @keyframes shell-corner-float-pulse {
   0%,
   100% {
-    opacity: calc(var(--float-prox, 0) * 0.6);
-    transform: translate(var(--shell-float-glow-x), -8px) scale(1);
+    opacity: calc(var(--float-prox, 0) * 0.85);
+    transform: translate(var(--shell-float-glow-x), -14px) scale(1);
   }
   50% {
-    opacity: calc(var(--float-prox, 0) * 1);
-    transform: translate(var(--shell-float-glow-x), -8px) scale(1.55);
+    opacity: calc(var(--float-prox, 0) * 1.2);
+    transform: translate(var(--shell-float-glow-x), -14px) scale(1.7);
   }
 }
 
@@ -6145,9 +6145,9 @@ button:active > .edge-rail-chip {
 .shell-panel-float--left::after,
 .shell-panel-float--right::after {
   top: 0;
-  width: 52px;
-  height: 52px;
-  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 82%, transparent), transparent 68%);
+  width: 64px;
+  height: 64px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 95%, transparent), transparent 70%);
   animation-name: shell-corner-float-pulse;
 }
 .shell-panel-float--left::before {
@@ -6164,8 +6164,8 @@ button:active > .edge-rail-chip {
 }
 .shell-panel-float--left::after {
   left: 0;
-  --shell-float-glow-x: -8px;
-  transform: translate(-8px, -8px) scale(1);
+  --shell-float-glow-x: -14px;
+  transform: translate(-14px, -14px) scale(1);
 }
 .shell-panel-float--right::before {
   left: auto;
@@ -6184,6 +6184,6 @@ button:active > .edge-rail-chip {
 .shell-panel-float--right::after {
   left: auto;
   right: 0;
-  --shell-float-glow-x: 8px;
-  transform: translate(8px, -8px) scale(1);
+  --shell-float-glow-x: 14px;
+  transform: translate(14px, -14px) scale(1);
 }

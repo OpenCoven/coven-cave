@@ -342,10 +342,12 @@ function ShellInner({
           ) || 50;
         for (const el of document.querySelectorAll<HTMLElement>(".shell-panel-float")) {
           const r = el.getBoundingClientRect();
-          // Chip center: horizontally centered in the 44px column, vertically at
-          // the float band (top + ~14px to the 28px chip's center).
-          const cx = r.left + r.width / 2;
-          const cy = r.top + floatTop + 14;
+          // Chip center: corner tabs are pinned at 35px; the expand toggle keeps
+          // the measured header position.
+          const isLeftCorner = el.classList.contains("shell-panel-float--left");
+          const isRightCorner = el.classList.contains("shell-panel-float--right");
+          const cx = isLeftCorner ? r.left + 17.5 : isRightCorner ? r.right - 17.5 : r.left + r.width / 2;
+          const cy = isLeftCorner || isRightCorner ? r.top + 17.5 : r.top + floatTop + 14;
           const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
           const prox = Math.max(0, Math.min(1, 1 - dist / RANGE));
           el.style.setProperty("--float-prox", prox.toFixed(3));

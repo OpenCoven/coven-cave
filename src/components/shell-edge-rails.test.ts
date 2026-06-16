@@ -102,12 +102,12 @@ assert.match(
 );
 assert.match(
   css,
-  /\.shell-panel-float--left::after,[\s\S]*?\.shell-panel-float--right::after\s*\{[\s\S]*?top:\s*0;[\s\S]*?width:\s*52px;[\s\S]*?height:\s*52px;/,
+  /\.shell-panel-float--left::after,[\s\S]*?\.shell-panel-float--right::after\s*\{[\s\S]*?top:\s*0;[\s\S]*?width:\s*64px;[\s\S]*?height:\s*64px;/,
   "corner side-panel glows should be pinned to the actual corner tab locations",
 );
 assert.match(
   css,
-  /@keyframes shell-float-pulse \{[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 0\.6\);[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 1\);/,
+  /@keyframes shell-corner-float-pulse \{[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 0\.85\);[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 1\.2\);/,
   "corner side-panel glow should be more prominent as the cursor approaches",
 );
 
@@ -189,6 +189,16 @@ assert.match(
   shell,
   /setProperty\("--float-prox"/,
   "shell sets a per-float --float-prox from cursor distance",
+);
+assert.match(
+  shell,
+  /el\.classList\.contains\("shell-panel-float--left"\)[\s\S]*?r\.left \+ 17\.5/,
+  "left corner float proximity should target the actual 35px corner tab center",
+);
+assert.match(
+  shell,
+  /el\.classList\.contains\("shell-panel-float--right"\)[\s\S]*?r\.right - 17\.5/,
+  "right corner float proximity should target the actual 35px corner tab center",
 );
 assert.match(
   css,
