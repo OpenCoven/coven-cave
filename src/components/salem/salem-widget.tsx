@@ -91,7 +91,9 @@ export function SalemWidget({ retreat = false }: SalemWidgetProps) {
       tabIndex={retreating ? -1 : undefined}
     >
       <SalemCat3D mood={mood} size={88} />
-      <span className="salem-perch__label">Salem</span>
+      <span className="salem-perch__label" aria-hidden>
+        <Icon name="ph:chat-circle-dots-fill" width={13} />
+      </span>
     </button>
   );
 }

@@ -1494,7 +1494,14 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
-  const salemRetreating = mode === "chat" || mode === "workflows" || mode === "browser" || mode === "terminal";
+  // The Salem perch retreats on dense work surfaces, and ALWAYS while the right
+  // side panel (companion) is open — so it never overlaps that panel.
+  const salemRetreating =
+    familiarPanelOpen ||
+    mode === "chat" ||
+    mode === "workflows" ||
+    mode === "browser" ||
+    mode === "terminal";
 
   return (
     <FamiliarStudioProvider>
