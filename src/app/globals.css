@@ -6194,22 +6194,27 @@ button:active > .edge-rail-chip {
    halo (::after) with an expanding bright-purple burst — a small "spell cast"
    pulse. Purple is fixed (not theme accent) so the magic always reads violet. */
 .shell-panel-float.magic-cast::after {
-  background: radial-gradient(circle, color-mix(in oklch, #a855f7 95%, transparent), transparent 70%) !important;
+  /* White-hot violet core + a 4-point sparkle star (two crossed bright lines),
+     flashing and bursting outward with a rotate — a dramatic one-shot spell. */
+  background:
+    radial-gradient(circle, #ffffff 0%, color-mix(in oklch, #a855f7 92%, white 22%) 22%, color-mix(in oklch, #a855f7 72%, transparent) 46%, transparent 66%),
+    linear-gradient(0deg, transparent 46%, color-mix(in oklch, #ffffff 82%, #a855f7) 49%, color-mix(in oklch, #ffffff 82%, #a855f7) 51%, transparent 54%),
+    linear-gradient(90deg, transparent 46%, color-mix(in oklch, #ffffff 82%, #a855f7) 49%, color-mix(in oklch, #ffffff 82%, #a855f7) 51%, transparent 54%) !important;
   opacity: 1 !important;
-  animation: magic-cast-sparkle 650ms ease-out !important;
+  animation: magic-cast-sparkle 820ms cubic-bezier(0.18, 0.7, 0.2, 1) !important;
 }
 @keyframes magic-cast-sparkle {
   0% {
     opacity: 1;
-    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(0.5);
-    filter: brightness(1.4);
+    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(0.3) rotate(0deg);
+    filter: brightness(2.4) drop-shadow(0 0 12px color-mix(in oklch, #a855f7 90%, transparent));
   }
-  60% {
-    opacity: 0.85;
+  55% {
+    opacity: 0.9;
   }
   100% {
     opacity: 0;
-    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(2.9);
-    filter: brightness(1);
+    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(5) rotate(45deg);
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
   }
 }
