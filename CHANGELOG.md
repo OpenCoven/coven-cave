@@ -7,6 +7,17 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.98] - 2026-06-16
+
+Patch release: capability inspector text-size polish, a more dramatic shell sparkle, and saved workflow node-position updates after 0.0.97.
+
+### Fixed
+- **Capabilities** — mono Path/Command text now applies only the compact `9.5px` class instead of losing to the base `11px` class in the cascade (#892).
+
+### Polished
+- **Shell** — corner-trigger sparkle now casts with a brighter, more dramatic pass (#893).
+- **Workflows** — refreshed saved node positions for `curate-reading-list` and `research-brief`.
+
 ## [0.0.97] - 2026-06-16
 
 Patch release: per-session branch-diff in the new recent-activity roll-up, magic corner sidepanel triggers (now click-to-open), Salem perch polish, and a sweep of capability-inspector polish after 0.0.96.
