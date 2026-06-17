@@ -949,7 +949,7 @@ function ClampedValue({ value, tone }: { value: string; tone?: "warning" }) {
     <div className="min-w-0">
       <span
         ref={ref}
-        className={`break-words text-[11px] leading-5 ${expanded ? "block" : "line-clamp-3"} ${
+        className={`break-words text-[10px] leading-[17px] ${expanded ? "block" : "line-clamp-3"} ${
           tone === "warning" ? "text-[var(--color-warning)]" : "text-[var(--text-secondary)]"
         }`}
       >
