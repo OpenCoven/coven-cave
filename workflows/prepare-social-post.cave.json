@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "positions": {
+    "brief": {
+      "x": 80,
+      "y": 80
+    },
+    "draft-posts": {
+      "x": 80,
+      "y": 220
+    },
+    "check-claims": {
+      "x": 80,
+      "y": 360
+    },
+    "approval-gate": {
+      "x": 80,
+      "y": 500
+    },
+    "store-state": {
+      "x": 80,
+      "y": 640
+    }
+  }
+}
