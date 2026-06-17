@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { SalemPathfinderCard } from "./salem-pathfinder-card";
 import type { SalemPathfinderCard as SalemPathfinderCardData } from "@/lib/salem/pathfinder-types";
 // Salem's 2D cat avatar (floating perch 88px + chat panel 40px). Replaced the
@@ -29,6 +30,9 @@ export function SalemWidget({ retreat = false }: SalemWidgetProps) {
   const [mood, setMood] = useState<SalemMood>("idle");
   const [docked, setDocked] = useState(false);
   const [edgeRetreating, setEdgeRetreating] = useState(false);
+  const perchRef = useRef<HTMLButtonElement>(null);
+  const coarse = useIsCoarsePointer();
+  const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     const dock = () => setDocked(true);
@@ -50,6 +54,37 @@ export function SalemWidget({ retreat = false }: SalemWidgetProps) {
     return () => window.removeEventListener("pointermove", onPointerMove);
   }, []);
 
+  // Proximity: the perch rests small + translucent and grows toward full size /
+  // opacity as the cursor approaches it. Drives a `--salem-proximity` CSS var
+  // (0 far → 1 near), written straight to the node in a rAF tick to avoid a
+  // re-render per pointer move. Skipped on touch / reduced-motion (CSS pins the
+  // var to 1 there so the perch is always fully visible).
+  useEffect(() => {
+    if (coarse || reducedMotion || docked) return;
+    const el = perchRef.current;
+    if (!el) return;
+    const RADIUS = 280;
+    let raf = 0;
+    let target = 0;
+    const apply = () => {
+      raf = 0;
+      el.style.setProperty("--salem-proximity", target.toFixed(3));
+    };
+    const onMove = (event: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      const dx = event.clientX - (rect.left + rect.width / 2);
+      const dy = event.clientY - (rect.top + rect.height / 2);
+      const distance = Math.hypot(dx, dy);
+      target = Math.max(0, Math.min(1, 1 - distance / RADIUS));
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [coarse, reducedMotion, docked]);
+
   const open = () => {
     setDocked(true);
     openSalemPanel();
@@ -61,6 +96,7 @@ export function SalemWidget({ retreat = false }: SalemWidgetProps) {
 
   return (
     <button
+      ref={perchRef}
       type="button"
       className={`salem-perch${retreat || edgeRetreating ? " salem-perch--retreating" : ""}`}
       onClick={open}

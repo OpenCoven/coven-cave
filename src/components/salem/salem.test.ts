@@ -100,4 +100,16 @@ assert.match(css, /prefers-reduced-motion: reduce[\s\S]*\.salem-perch--retreatin
 assert.doesNotMatch(css, /\.salem-msg__glyph/, "open Salem chat must not keep unused emoji glyph CSS");
 assert.match(css, /position:\s*fixed/, "salem perch must be position fixed");
 
+// 8. Cursor-proximity presence: perch rests small + translucent and grows near.
+assert.match(widget, /--salem-proximity/, "widget must drive the --salem-proximity var");
+assert.match(widget, /setProperty\("--salem-proximity"/, "widget writes proximity straight to the node (no per-move re-render)");
+assert.match(widget, /requestAnimationFrame/, "proximity updates should be rAF-throttled");
+assert.match(css, /scale:\s*calc\([^)]*var\(--salem-proximity\)/, "perch scale must be driven by --salem-proximity");
+assert.match(css, /opacity:\s*calc\([^)]*var\(--salem-proximity\)/, "perch opacity must be driven by --salem-proximity");
+assert.match(
+  css,
+  /@media \(hover: none\)[\s\S]*?--salem-proximity:\s*1/,
+  "touch/no-hover must pin the perch to full presence (proximity 1)",
+);
+
 console.log("✅  Salem guard tests passed");

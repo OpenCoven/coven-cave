@@ -5637,10 +5637,25 @@ button:active > .edge-rail-chip {
     drop-shadow(0 0 16px color-mix(in oklch, var(--accent-presence) 45%, transparent));
   transform: translate3d(0, 0, 0);
   transform-origin: 50% 80%;
+  /* Cursor-proximity presence: the perch rests small + translucent and grows to
+     full size/opacity as the pointer nears. JS writes --salem-proximity (0 far →
+     1 near); scale uses the standalone `scale` property so it composes with the
+     retreat/hover `transform`. */
+  --salem-proximity: 0;
+  scale: calc(0.62 + 0.38 * var(--salem-proximity));
+  opacity: calc(0.38 + 0.62 * var(--salem-proximity));
   transition:
     transform 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.28s ease,
+    scale 0.2s ease,
+    opacity 0.2s ease,
     filter 0.18s ease;
+}
+/* Touch / no-hover: there's no cursor to approach, so keep the perch fully
+   present instead of stuck small + translucent. */
+@media (hover: none), (pointer: coarse) {
+  .salem-perch {
+    --salem-proximity: 1;
+  }
 }
 .salem-perch::before {
   content: "";
@@ -5663,7 +5678,8 @@ button:active > .edge-rail-chip {
   transform: translateX(-50%);
 }
 .salem-perch:hover {
-  transform: translateY(-4px) scale(1.06);
+  transform: translateY(-4px);
+  scale: 1.06;
   filter:
     drop-shadow(0 10px 22px rgba(0, 0, 0, 0.42))
     drop-shadow(0 0 24px color-mix(in oklch, var(--accent-presence) 62%, transparent));
@@ -5672,7 +5688,8 @@ button:active > .edge-rail-chip {
 .salem-perch--retreating:hover {
   pointer-events: none;
   opacity: 0;
-  transform: translate3d(calc(100% + 36px), 10px, 0) rotate(5deg) scale(0.96);
+  transform: translate3d(calc(100% + 36px), 10px, 0) rotate(5deg);
+  scale: 0.96;
   filter:
     drop-shadow(0 5px 12px rgba(0, 0, 0, 0.24))
     drop-shadow(0 0 10px color-mix(in oklch, var(--accent-presence) 28%, transparent));
@@ -5691,6 +5708,8 @@ button:active > .edge-rail-chip {
 
 @media (prefers-reduced-motion: reduce) {
   .salem-perch {
+    /* No cursor-driven growth — keep the perch at full presence. */
+    --salem-proximity: 1;
     transition: opacity 0.12s ease, filter 0.12s ease;
   }
   .salem-perch--retreating,
