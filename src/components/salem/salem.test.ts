@@ -30,6 +30,11 @@ assert.match(widget, /size=\{88\}/, "perch cat must be large enough to read on d
 assert.match(widget, /clientX >= window\.innerWidth - 2/, "floating Salem must retreat when the pointer leaves through the right edge");
 assert.match(widget, /clientX < window\.innerWidth - 96/, "floating Salem must return when the pointer moves back from the right edge");
 assert.match(widget, /salem-perch--retreating/, "floating Salem must expose a retreating class");
+assert.match(
+  widget,
+  /salem-perch__label[\s\S]*?<Icon name="ph:chat-circle-dots-fill"/,
+  "the perch label is an icon (chat-with-Salem), not a text label",
+);
 assert.doesNotMatch(widget, /salem-msg__glyph|🐱|😅/, "open Salem chat must not render emoji glyphs");
 
 // 3. Salem preload context exists
@@ -73,7 +78,8 @@ assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem laun
 assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher must expand the right panel");
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
 assert.match(workspace, /import \{ SalemChatPanel, SalemWidget \}/, "workspace must import both Salem surfaces");
-assert.match(workspace, /const salemRetreating = mode === "chat" \|\| mode === "workflows" \|\| mode === "browser" \|\| mode === "terminal"/, "workspace must retreat floating Salem on crowded surfaces");
+assert.match(workspace, /const salemRetreating =[\s\S]*?mode === "chat"[\s\S]*?mode === "workflows"[\s\S]*?mode === "browser"[\s\S]*?mode === "terminal"/, "workspace must retreat floating Salem on crowded surfaces");
+assert.match(workspace, /const salemRetreating =\s*\n?\s*familiarPanelOpen \|\|/, "floating Salem must always retreat while the right side panel is open");
 assert.match(workspace, /<SalemWidget retreat=\{salemRetreating\} \/>/, "workspace must render floating Salem with screen-driven retreat state");
 assert.match(workspace, /salemSlot=\{<SalemChatPanel \/>\}/, "workspace must render Salem in the companion rail");
 assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
