@@ -33,6 +33,7 @@ import {
 } from "@/lib/chat-tool-events";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
+import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import {
   covenHome,
@@ -471,6 +472,8 @@ function buildPromptWithResponseControls(prompt: string, body: SendBody): string
     `speed: ${speed} — ${speedInstruction[speed]}`,
     "Do not mention these controls unless the user asks about them.",
     "</response_controls>",
+    "",
+    buildNextPathsDirective(),
     "",
     prompt,
   ].join("\n");
