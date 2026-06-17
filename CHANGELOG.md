@@ -7,6 +7,27 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.97] - 2026-06-16
+
+Patch release: per-session branch-diff in the new recent-activity roll-up, magic corner sidepanel triggers, and a sweep of capability-inspector polish after 0.0.96.
+
+### Added
+- **Activity** — recent-activity roll-up in the left panel + a top-right inbox toast (#880).
+- **Activity** — per-session branch diff in the roll-up: each session's own branch vs the repo's default base, cached per `(root, branch)` (#883).
+- **Shell** — corner sidepanel triggers cast from a distance (proximity-glow magic triggers) (#881).
+- **Workflows** — saved node positions for the `prepare-social-post` workflow (#886).
+
+### Fixed
+- **Chat** — session-row meta no longer overlaps in the narrow Companion Rail (#874).
+- **Capabilities** — skill description now renders in the inspector Detail row (#875).
+- **Shell** — tightened panel-toggle proximity-glow range (250→160px) (#884).
+- **CSS** — dropped orphaned `.chat-scope-tabs__new` styles (#877).
+
+### Polished
+- **Capabilities** — Detail/Warning clamps to 3 lines with Show more/less (#876).
+- **Capabilities** — Show more/less toggle uses accent-color (#879) and tighter type (#882).
+- **Capabilities** — Detail/Warning value text and mono Path/Command text use compact reference sizing (#885, #887).
+
 ## [0.0.96] - 2026-06-16
 
 Patch release: GitHub org/repo filtering improvements, Codex-style floating panel toggles, an expanding chat right-panel, Agent Completion Reports, and theme/header fixes after 0.0.95.
