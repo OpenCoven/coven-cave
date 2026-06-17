@@ -989,7 +989,7 @@ function InspectorBlock({
         <ClampedValue value={value} tone={tone} />
       ) : (
         <span
-          className={`min-w-0 break-words text-[11px] leading-5 ${mono ? "font-mono text-[10.5px]" : ""} ${
+          className={`min-w-0 break-words text-[11px] leading-5 ${mono ? "font-mono text-[9.5px]" : ""} ${
             tone === "warning" ? "text-[var(--color-warning)]" : "text-[var(--text-secondary)]"
           }`}
         >
