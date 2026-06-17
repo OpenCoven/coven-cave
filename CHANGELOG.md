@@ -9,18 +9,20 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.97] - 2026-06-16
 
-Patch release: per-session branch-diff in the new recent-activity roll-up, magic corner sidepanel triggers, and a sweep of capability-inspector polish after 0.0.96.
+Patch release: per-session branch-diff in the new recent-activity roll-up, magic corner sidepanel triggers (now click-to-open), Salem perch polish, and a sweep of capability-inspector polish after 0.0.96.
 
 ### Added
 - **Activity** — recent-activity roll-up in the left panel + a top-right inbox toast (#880).
 - **Activity** — per-session branch diff in the roll-up: each session's own branch vs the repo's default base, cached per `(root, branch)` (#883).
 - **Shell** — corner sidepanel triggers cast from a distance (proximity-glow magic triggers) (#881).
+- **Salem** — icon perch label; always hide the perch when the side panel is open (#888).
 - **Workflows** — saved node positions for the `prepare-social-post` workflow (#886).
 
 ### Fixed
 - **Chat** — session-row meta no longer overlaps in the narrow Companion Rail (#874).
 - **Capabilities** — skill description now renders in the inspector Detail row (#875).
 - **Shell** — tightened panel-toggle proximity-glow range (250→160px) (#884).
+- **Shell** — corner triggers are click-to-open; drop the proximity auto-open behavior (#890).
 - **CSS** — dropped orphaned `.chat-scope-tabs__new` styles (#877).
 
 ### Polished
