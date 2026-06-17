@@ -5632,9 +5632,14 @@ button:active > .edge-rail-chip {
   cursor: pointer;
   user-select: none;
   isolation: isolate;
+  /* Accent glow also tracks proximity: dim + tight at rest, brighter + wider as
+     the cursor nears (same --salem-proximity 0→1). */
   filter:
     drop-shadow(0 7px 18px rgba(0, 0, 0, 0.38))
-    drop-shadow(0 0 16px color-mix(in oklch, var(--accent-presence) 45%, transparent));
+    drop-shadow(
+      0 0 calc(10px + 22px * var(--salem-proximity))
+      color-mix(in oklch, var(--accent-presence) calc(26% + 46% * var(--salem-proximity)), transparent)
+    );
   transform: translate3d(0, 0, 0);
   transform-origin: 50% 80%;
   /* Cursor-proximity presence: the perch rests small + translucent and grows to

@@ -111,5 +111,9 @@ assert.match(
   /@media \(hover: none\)[\s\S]*?--salem-proximity:\s*1/,
   "touch/no-hover must pin the perch to full presence (proximity 1)",
 );
+// Glow also brightens/widens on approach: both the blur radius and the
+// color-mix accent percentage interpolate on --salem-proximity.
+assert.match(css, /calc\(10px \+ 22px \* var\(--salem-proximity\)\)/, "perch glow blur radius must grow with --salem-proximity");
+assert.match(css, /calc\(26% \+ 46% \* var\(--salem-proximity\)\)/, "perch glow accent strength must brighten with --salem-proximity");
 
 console.log("✅  Salem guard tests passed");
