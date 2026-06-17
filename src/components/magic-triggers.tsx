@@ -3,68 +3,31 @@
 import { useEffect } from "react";
 
 /**
- * "Cast from a distance" for the corner sidepanel triggers. shell.tsx already
- * publishes a per-float cursor proximity (`--float-prox`) that fades in a purple
- * glow as you approach; this layer adds the spell: once the cursor is close
- * enough that the trigger has gone purple, it auto-fires the toggle (calls the
- * button's own click — opening/closing the panel from afar) and flashes a purple
- * sparkle (`.magic-cast`). Hysteresis re-arms only after the cursor leaves, so it
- * casts once per approach rather than flickering.
- *
- * Additive + self-contained: it reads the DOM and clicks the existing buttons,
- * never touching shell.tsx's glow effect. Disabled for touch / reduced-motion.
+ * Sparkle the corner sidepanel trigger on an actual click. Opening is
+ * click-to-open — there is no proximity auto-open. shell.tsx still fades in the
+ * purple proximity glow as hover feedback (and `.shell-panel-float` is
+ * `cursor: pointer`, so hovering shows the hand); clicking the trigger fires its
+ * own toggle and adds a one-shot purple `.magic-cast` sparkle.
  */
 
-const FIRE_DIST = 225; // px — near the glow edge (~250px range): casts as soon as it glows from afar
-const RELEASE_DIST = 275; // px — must leave the glow entirely to re-arm
 const CAST_MS = 650;
 
 export function MagicTriggers() {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (window.matchMedia?.("(pointer: coarse)").matches) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
-    const armed = new Map<Element, boolean>();
-    let raf = 0;
-    let x = 0;
-    let y = 0;
-
-    const tick = () => {
-      raf = 0;
-      const els = document.querySelectorAll<HTMLElement>(
-        ".shell-panel-float--left, .shell-panel-float--right",
-      );
-      els.forEach((el) => {
-        const r = el.getBoundingClientRect();
-        if (r.width === 0) return;
-        // chip center: corner tabs pinned ~17.5px in from the corner (matches shell.tsx)
-        const cx = el.classList.contains("shell-panel-float--left") ? r.left + 17.5 : r.right - 17.5;
-        const cy = r.top + 17.5;
-        const dist = Math.hypot(x - cx, y - cy);
-        if (!armed.has(el)) armed.set(el, true);
-        if (dist <= FIRE_DIST && armed.get(el)) {
-          armed.set(el, false);
-          el.classList.add("magic-cast");
-          el.click();
-          window.setTimeout(() => el.classList.remove("magic-cast"), CAST_MS);
-        } else if (dist > RELEASE_DIST) {
-          armed.set(el, true);
-        }
-      });
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const el = target?.closest(".shell-panel-float--left, .shell-panel-float--right");
+      if (!(el instanceof HTMLElement)) return;
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+      el.classList.add("magic-cast");
+      window.setTimeout(() => el.classList.remove("magic-cast"), CAST_MS);
     };
 
-    const onMove = (e: MouseEvent) => {
-      x = e.clientX;
-      y = e.clientY;
-      if (!raf) raf = window.requestAnimationFrame(tick);
-    };
-
-    window.addEventListener("mousemove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      if (raf) window.cancelAnimationFrame(raf);
-    };
+    // Capture so the sparkle is added even though the button's own onClick also runs.
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
   }, []);
 
   return null;
