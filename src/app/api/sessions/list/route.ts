@@ -73,17 +73,38 @@ function readGitContext(projectRoot: string): SessionGitContext | null {
   return { branch, worktreeRoot, isWorktree };
 }
 
-function readDiffStat(projectRoot: string): { additions: number; deletions: number } | null {
-  const out = git(projectRoot, ["diff", "HEAD", "--shortstat"]);
-  if (out == null) return { additions: 0, deletions: 0 };
+type DiffStat = { additions: number; deletions: number };
+
+function parseShortstat(out: string | null): DiffStat | null {
+  if (out == null) return null;
   const add = /(\d+) insertion/.exec(out);
   const del = /(\d+) deletion/.exec(out);
   return { additions: add ? Number(add[1]) : 0, deletions: del ? Number(del[1]) : 0 };
 }
 
+/**
+ * The repo's default base ref (e.g. `origin/main`) to diff a session branch
+ * against. Prefers `origin/HEAD`, then common fallbacks.
+ */
+function defaultBaseRef(root: string): string | null {
+  const originHead = git(root, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (originHead) return originHead;
+  for (const ref of ["origin/main", "origin/master", "main", "master"]) {
+    if (git(root, ["rev-parse", "--verify", "--quiet", ref]) != null) return ref;
+  }
+  return null;
+}
+
+// Bound the per-request git work; sessions arrive most-recent-first, so the
+// roll-up's visible rows are covered well within this cap.
+const MAX_DIFF_CALLS = 32;
+
 function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
   const gitContextByRoot = new Map<string, SessionGitContext | null>();
-  const diffByRoot = new Map<string, { additions: number; deletions: number } | null>();
+  const baseByRoot = new Map<string, string | null>();
+  const diffByKey = new Map<string, DiffStat | null>();
+  let diffCalls = 0;
+
   return sessions.map((session) => {
     const root = session.project_root?.trim();
     if (!root) return session;
@@ -91,10 +112,32 @@ function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
       gitContextByRoot.set(root, readGitContext(root));
     }
     const gitContext = gitContextByRoot.get(root) ?? null;
-    if (!diffByRoot.has(root)) {
-      diffByRoot.set(root, gitContext ? readDiffStat(root) : null);
+
+    // Per-session diff = the session's own branch vs the repo base (committed
+    // changes since it diverged), cached per (root, branch) so sessions on the
+    // same branch share the figure but different branches read distinctly.
+    let diff: DiffStat | null = null;
+    const branch = gitContext?.branch;
+    if (branch) {
+      const key = `${root}\u0000${branch}`;
+      if (diffByKey.has(key)) {
+        diff = diffByKey.get(key) ?? null;
+      } else if (diffCalls < MAX_DIFF_CALLS) {
+        if (!baseByRoot.has(root)) baseByRoot.set(root, defaultBaseRef(root));
+        const base = baseByRoot.get(root) ?? null;
+        let computed: DiffStat | null = null;
+        if (base) {
+          diffCalls += 1;
+          computed = parseShortstat(git(root, ["diff", `${base}...${branch}`, "--shortstat"])) ?? {
+            additions: 0,
+            deletions: 0,
+          };
+        }
+        diffByKey.set(key, computed);
+        diff = computed;
+      }
     }
-    const diff = diffByRoot.get(root) ?? null;
+
     const enriched: SessionRow = { ...session };
     if (gitContext) enriched.git = gitContext;
     if (diff) enriched.diff = diff;
