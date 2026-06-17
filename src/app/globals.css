@@ -6242,3 +6242,22 @@ button:active > .edge-rail-chip {
     filter: brightness(1) drop-shadow(0 0 0 transparent);
   }
 }
+
+
+/* ── Chat next-path suggestion chips ─────────────────────────────────────────
+   Clickable next-step chips under an assistant reply (parsed from the
+   <coven:next-paths> block); clicking sends the suggestion as the next turn. */
+.cave-next-paths { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cave-next-path {
+  display: inline-flex; align-items: center; max-width: 100%;
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-secondary); font-size: 12px; line-height: 1.2;
+  cursor: pointer; text-align: left;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.cave-next-path:hover {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  border-color: var(--accent-presence); color: var(--text-primary);
+}

@@ -45,6 +45,7 @@ import {
   formatRuntime,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
+import { extractNextPaths } from "@/lib/next-paths";
 import {
   chatProjectById,
   projectIdForRoot,
@@ -2438,7 +2439,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   function replyToTurn(turn: Turn) {
     const author =
       turn.role === "assistant" ? familiar.display_name : turn.role === "system" ? "System" : "You";
-    const source = turn.role === "assistant" ? splitReasoning(turn.text).visible : turn.text;
+    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
     const snippet = buildReplySnippet(source);
     if (!snippet) return;
     setReplyTarget({ turnId: turn.id, author, snippet });
@@ -2448,7 +2449,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   /** Build the Reply action for a settled, non-empty turn (undefined hides it). */
   function replyFor(turn: Turn): (() => void) | undefined {
     if (turn.pending) return undefined;
-    const source = turn.role === "assistant" ? splitReasoning(turn.text).visible : turn.text;
+    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
     if (!source.trim()) return undefined;
     return () => replyToTurn(turn);
   }
@@ -2472,8 +2473,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => void sendRaw(text, prevAttachments ?? []);
   }
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
     // CHAT-D5-01: sendRaw early-returns while a response is streaming, so
@@ -3086,6 +3087,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onRegenerate={regenerateFor(t)}
                     onReply={replyFor(t)}
                     onOpenUrl={onOpenUrl}
+                    onSuggestion={(sug) => void send(sug)}
                     expanded={expandedAvatarTurnId === t.id}
                     onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
                   />
@@ -3121,7 +3123,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onRegenerate={regenerateFor(t)}
                         onReply={replyFor(t)}
                         onOpenUrl={onOpenUrl}
-                        expanded={expandedAvatarTurnId === t.id}
+                        onSuggestion={(sug) => void send(sug)}
+                    expanded={expandedAvatarTurnId === t.id}
                         onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
                       />
                     );
@@ -3507,8 +3510,10 @@ function TurnRow({
   onOpenUrl,
   expanded = false,
   onToggleAvatar,
+  onSuggestion,
 }: {
   turn: Turn;
+  onSuggestion?: (s: string) => void;
   familiar: Familiar;
   showTimestamp?: boolean;
   /** CHAT-D9-04: true while this turn is the just-jumped-to find match —
@@ -3594,7 +3599,9 @@ function TurnRow({
     );
   }
 
-  const { visible, reasoning: inlineReasoning } = splitReasoning(turn.text);
+  const reasoningSplit = splitReasoning(turn.text);
+  const inlineReasoning = reasoningSplit.reasoning;
+  const { visible, suggestions: nextPaths } = extractNextPaths(reasoningSplit.visible);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -3739,6 +3746,15 @@ function TurnRow({
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
+            {nextPaths.length > 0 && !turn.pending ? (
+              <div className="cave-next-paths">
+                {nextPaths.map((s, i) => (
+                  <button key={i} type="button" className="cave-next-path" onClick={() => onSuggestion?.(s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {/* Legacy trailing rollup — ONLY for turns whose tools predate
                 textOffset; segmented turns render their tools inline.
                 CHAT-D13-01: same default-hidden contract as inline tools. */}
