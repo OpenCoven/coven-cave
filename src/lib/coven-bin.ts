@@ -11,9 +11,9 @@
 //
 // Strategy:
 //   1. Probe a small list of well-known coven install locations in priority
-//      order (nvm/fnm node bin dirs, pnpm global, bun global, homebrew,
-//      ~/.local/bin, /usr/local/bin, then ~/.cargo/bin as a last resort
-//      because it tends to be the stale one).
+//      order (nvm/fnm node bin dirs, Windows npm global shims, pnpm global,
+//      bun global, homebrew, ~/.local/bin, /usr/local/bin, then ~/.cargo/bin
+//      as a last resort because it tends to be the stale one).
 //   2. If none exist, fall back to the user's login-shell PATH by exec-ing
 //      `$SHELL -ilc 'echo $PATH'` so anything the user has in their interactive
 //      profile (custom rc edits, asdf, mise, etc.) still works.
@@ -62,10 +62,22 @@ function fnmBinDirs(): string[] {
   }
 }
 
+function windowsNpmBinDirs(): string[] {
+  if (process.platform === "win32") {
+    const dirs = [
+      process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : null,
+      process.env.npm_config_prefix ?? null,
+    ].filter((d): d is string => !!d && existsSync(d));
+    return Array.from(new Set(dirs));
+  }
+  return [];
+}
+
 function candidateDirs(): string[] {
   return [
     ...nodeNvmBinDirs(),
     ...fnmBinDirs(),
+    ...windowsNpmBinDirs(),
     path.join(HOME, "Library", "pnpm"),
     path.join(HOME, ".bun", "bin"),
     "/opt/homebrew/bin",
@@ -75,6 +87,10 @@ function candidateDirs(): string[] {
     // missing flags. Prefer the npm-published binary when both exist.
     path.join(HOME, ".cargo", "bin"),
   ].filter((d) => existsSync(d));
+}
+
+function candidateBinNames(): string[] {
+  return process.platform === "win32" ? ["coven.cmd", "coven.exe", "coven"] : ["coven"];
 }
 
 function loginShellPath(): string | null {
@@ -119,15 +135,17 @@ export function covenBin(): string {
   }
 
   for (const dir of candidateDirs()) {
-    const candidate = path.join(dir, "coven");
-    try {
-      const st = statSync(candidate);
-      if (st.isFile() || st.isSymbolicLink()) {
-        cachedBin = candidate;
-        return cachedBin;
+    for (const name of candidateBinNames()) {
+      const candidate = path.join(dir, name);
+      try {
+        const st = statSync(candidate);
+        if (st.isFile() || st.isSymbolicLink()) {
+          cachedBin = candidate;
+          return cachedBin;
+        }
+      } catch {
+        /* not here; keep looking */
       }
-    } catch {
-      /* not here; keep looking */
     }
   }
 
@@ -147,8 +165,8 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
     const prependedDirs = candidateDirs();
     const parts = [
       ...prependedDirs,
-      ...(fromShell ? fromShell.split(":") : []),
-      ...(process.env.PATH ? process.env.PATH.split(":") : []),
+      ...(fromShell ? fromShell.split(path.delimiter) : []),
+      ...(process.env.PATH ? process.env.PATH.split(path.delimiter) : []),
     ];
     const seen = new Set<string>();
     const dedup: string[] = [];
@@ -157,7 +175,7 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
       seen.add(p);
       dedup.push(p);
     }
-    cachedPath = dedup.join(":");
+    cachedPath = dedup.join(path.delimiter);
   }
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: cachedPath };
   for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {

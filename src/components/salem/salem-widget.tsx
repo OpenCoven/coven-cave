@@ -15,15 +15,20 @@ type Message = { role: "user" | "salem"; text: string };
 
 type SalemMood = "idle" | "thinking" | "happy" | "listening";
 
+type SalemWidgetProps = {
+  retreat?: boolean;
+};
+
 const GREETING = "I'm Salem, your Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
 function openSalemPanel() {
   window.dispatchEvent(new CustomEvent("cave:salem-open"));
 }
 
-export function SalemWidget() {
+export function SalemWidget({ retreat = false }: SalemWidgetProps) {
   const [mood, setMood] = useState<SalemMood>("idle");
   const [docked, setDocked] = useState(false);
+  const [edgeRetreating, setEdgeRetreating] = useState(false);
 
   useEffect(() => {
     const dock = () => setDocked(true);
@@ -36,6 +41,15 @@ export function SalemWidget() {
     };
   }, []);
 
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.clientX >= window.innerWidth - 2) setEdgeRetreating(true);
+      if (event.clientX < window.innerWidth - 96) setEdgeRetreating(false);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    return () => window.removeEventListener("pointermove", onPointerMove);
+  }, []);
+
   const open = () => {
     setDocked(true);
     openSalemPanel();
@@ -46,9 +60,16 @@ export function SalemWidget() {
   if (docked) return null;
 
   return (
-    <button type="button" className="salem-perch" onClick={open} aria-label="Open Salem docs familiar">
+    <button
+      type="button"
+      className={`salem-perch${retreat || edgeRetreating ? " salem-perch--retreating" : ""}`}
+      onClick={open}
+      aria-label="Open Salem docs familiar"
+    >
       <SalemCat mood={mood} size={88} />
-      <span className="salem-perch__label">Salem</span>
+      <span className="salem-perch__label">
+        <Icon name="ph:chat-circle-dots-fill" width={16} aria-hidden />
+      </span>
     </button>
   );
 }

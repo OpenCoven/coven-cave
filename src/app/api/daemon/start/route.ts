@@ -11,6 +11,10 @@ export async function POST() {
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
       env: covenSpawnEnv(),
+      // Windows npm exposes CLI shims as .cmd files. The daemon-start argv is
+      // fixed by this route, so shell mode is safe here and lets Node launch
+      // those shims instead of raising ENOENT after status already found them.
+      shell: process.platform === "win32",
     });
 
     let stdout = "";

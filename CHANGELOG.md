@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.99] - 2026-06-16
+
+Patch release: Windows first-run daemon startup fix and a Salem typecheck guard after 0.0.98.
+
+### Fixed
+- **Windows setup** — Cave now resolves npm-installed `coven.cmd` shims from `%APPDATA%\npm` / `npm_config_prefix`, preserves Windows PATH delimiters, and starts the daemon through shell mode for the fixed `coven daemon start` command. This fixes the welcome screen reporting `covenCli.ok: true` while the daemon button still surfaced "coven CLI not found on PATH."
+- **Salem** — restored the floating Salem perch `retreat` prop and right-edge retreat behavior so the workspace typecheck stays green.
+
 ## [0.0.98] - 2026-06-16
 
 Patch release: capability inspector text-size polish, a more dramatic shell sparkle, and saved workflow node-position updates after 0.0.97.

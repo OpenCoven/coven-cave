@@ -10,4 +10,10 @@ assert.match(
   "daemon start should not surface raw spawn coven ENOENT on new installs",
 );
 
+assert.match(
+  source,
+  /shell: process\.platform === "win32"/,
+  "daemon start runs Windows npm .cmd shims through shell mode",
+);
+
 console.log("daemon start route.test.ts: ok");
