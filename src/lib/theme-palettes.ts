@@ -53,10 +53,10 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     bgDark: "oklch(0.10 0.040 150)", bgLight: "oklch(0.97 0.018 145)",
   },
   ember: {
-    name: "Ember",
-    description: "Brazier-warmed parchment. A slow burn for long workings.",
-    hue: 40, accentDark: "#F4B264", accentLight: "#8E5614",
-    bgDark: "oklch(0.11 0.045 40)", bgLight: "oklch(0.975 0.014 65)",
+    name: "Vintage Paper",
+    description: "Sun-faded folio. Warm tan ink steeped into aged paper; unhurried.",
+    hue: 66, accentDark: "#c0a080", accentLight: "#a67c52",
+    bgDark: "oklch(0.2747 0.0139 57.6523)", bgLight: "oklch(0.9582 0.0152 90.2357)",
   },
   bloom: {
     name: "Bloom",
