@@ -132,6 +132,7 @@ export const SUITES = {
     "src/components/comux-view-terminal.test.ts",
     "src/components/comux-view-edit.test.ts",
     "src/components/comux-view-changes.test.ts",
+    "src/components/comux-view-search-options.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-view.test.ts",
     "src/components/settings-shortcut.test.ts",

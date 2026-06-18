@@ -298,6 +298,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // Project-wide code search (CODE-SEARCH-01).
   const [searchInput, setSearchInput] = useState("");
   const [searchRegex, setSearchRegex] = useState(false);
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchGlob, setSearchGlob] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -661,6 +663,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     const timer = setTimeout(() => {
       const params = new URLSearchParams({ root: searchRoot, q: query });
       if (searchRegex) params.set("regex", "1");
+      if (searchCaseSensitive) params.set("case", "sensitive");
+      const glob = searchGlob.trim();
+      if (glob) params.set("glob", glob);
       fetch(`/api/project/search?${params.toString()}`, { cache: "no-store" })
         .then((res) => res.json())
         .then((json: SearchResult & { ok: boolean; repo?: boolean; error?: string }) => {
@@ -686,7 +691,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchInput, searchRegex, searchRoot]);
+  }, [searchInput, searchRegex, searchCaseSensitive, searchGlob, searchRoot]);
 
   // Open a search match: search paths are relative to the searched root, so
   // rejoin them to the project root before handing off to the file preview.
@@ -1111,21 +1116,54 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           onChange={(e) => setSearchInput(e.target.value)}
                           placeholder="Search in project…"
                           aria-label="Search in project"
-                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1.5 pl-7 pr-14 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
+                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1.5 pl-7 pr-[3.75rem] text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
                         />
-                        <button
-                          type="button"
-                          onClick={() => setSearchRegex((v) => !v)}
-                          aria-pressed={searchRegex}
-                          title={searchRegex ? "Regex search on" : "Regex search off — matching literal text"}
-                          className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 font-mono text-[10px] transition-colors ${
-                            searchRegex
-                              ? "bg-[var(--accent-presence,var(--bg-raised))] text-[var(--text-primary)]"
-                              : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
-                          }`}
-                        >
-                          .*
-                        </button>
+                        <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setSearchCaseSensitive((v) => !v)}
+                            aria-pressed={searchCaseSensitive}
+                            title={searchCaseSensitive ? "Case-sensitive" : "Case-insensitive (smart case)"}
+                            className={`rounded px-1 py-0.5 font-mono text-[10px] transition-colors ${
+                              searchCaseSensitive
+                                ? "bg-[var(--accent-presence,var(--bg-raised))] text-[var(--text-primary)]"
+                                : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                            }`}
+                          >
+                            Aa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSearchRegex((v) => !v)}
+                            aria-pressed={searchRegex}
+                            title={searchRegex ? "Regex search on" : "Regex search off — matching literal text"}
+                            className={`rounded px-1 py-0.5 font-mono text-[10px] transition-colors ${
+                              searchRegex
+                                ? "bg-[var(--accent-presence,var(--bg-raised))] text-[var(--text-primary)]"
+                                : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                            }`}
+                          >
+                            .*
+                          </button>
+                        </div>
+                      </div>
+                      {/* File-glob include filter (passes ?glob= to ripgrep). */}
+                      <div className="relative mt-1.5">
+                        <Icon
+                          name="ph:funnel"
+                          width={11}
+                          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                        />
+                        <input
+                          type="text"
+                          value={searchGlob}
+                          onChange={(e) => setSearchGlob(e.target.value)}
+                          placeholder="Filter files — e.g. *.ts, src/**"
+                          aria-label="Filter files by glob"
+                          spellCheck={false}
+                          autoComplete="off"
+                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1 pl-7 pr-2 font-mono text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
+                        />
                       </div>
                       {searchInput.trim() && (
                         <div className="mt-2">
