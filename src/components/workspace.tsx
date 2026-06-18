@@ -877,6 +877,14 @@ export function Workspace() {
         return;
       }
 
+      // ⌘, -> Settings (the TopBar account button advertises this shortcut in
+      // its tooltip, but nothing was wired to handle it).
+      if (meta && !alt && e.key === ",") {
+        e.preventDefault();
+        nextRouter.push("/settings");
+        return;
+      }
+
       // ⌥1..⌥9 → Nth familiar
       if (alt && !meta && /^[1-9]$/.test(e.key)) {
         const idx = parseInt(e.key, 10) - 1;
@@ -908,7 +916,7 @@ export function Workspace() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [familiars, activeId, mode, selectFamiliar, startFamiliarChat]);
+  }, [familiars, activeId, mode, selectFamiliar, startFamiliarChat, nextRouter]);
 
   const showFamiliarChatList = useCallback(() => {
     setPendingChatAction({ kind: "list", nonce: Date.now() });

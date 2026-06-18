@@ -5827,6 +5827,10 @@ a.mobile-handoff__link:hover {
   background: var(--bg-panel);
   box-shadow: none;
   backdrop-filter: none;
+  /* Size-query the rail so its own width (not the viewport) drives the
+     responsive header — lets the "Find your next path" trigger collapse to a
+     bare icon when the companion panel is dragged down to its min width. */
+  container: salem-rail / inline-size;
 }
 
 .salem-panel__header {
@@ -5887,6 +5891,8 @@ a.mobile-handoff__link:hover {
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color 0.14s, background 0.14s;
 }
 .salem-panel__pathfind:hover:not(:disabled) {
@@ -5894,6 +5900,23 @@ a.mobile-handoff__link:hover {
   background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
 }
 .salem-panel__pathfind:disabled { opacity: 0.5; cursor: default; }
+.salem-panel__pathfind-text { white-space: nowrap; }
+
+/* Narrow rail: drop the pill label so the trigger reads as a subtle, square
+   icon-only button that still fits at the companion panel's min width. */
+@container salem-rail (max-width: 300px) {
+  .salem-panel__pathfind-text { display: none; }
+  .salem-panel__pathfind {
+    gap: 0;
+    padding: 5px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-muted);
+  }
+  .salem-panel__pathfind:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  }
+}
 
 .salem-pf {
   width: 100%;
