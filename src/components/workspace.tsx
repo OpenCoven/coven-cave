@@ -1451,7 +1451,7 @@ export function Workspace() {
         }
         comux={
           <ComuxView
-            view="terminal"
+            view="projects"
             active={mode === "code"}
             storageNamespace=":code"
             sessions={sessions}

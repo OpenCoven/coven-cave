@@ -49,6 +49,14 @@ assert.match(
   /mode === "code" \? \([\s\S]*?<CodeView[\s\S]*?storageNamespace=":code"/,
   "mode 'code' renders CodeView with a namespaced ComuxView",
 );
+// The Code workspace must mount the comux PROJECTS view (file tree + editable
+// preview + project search + Files/Changes), not the terminal-only view — that
+// is where the coding surfaces live.
+assert.match(
+  workspace,
+  /mode === "code" \? \([\s\S]*?<ComuxView\s+view="projects"[\s\S]*?storageNamespace=":code"/,
+  "the Code workspace comux uses the projects view (coding surfaces), not terminal-only",
+);
 assert.match(
   workspace,
   /e\.key === "0"\) \{[\s\S]*?setMode\("code"\)/,
