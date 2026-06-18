@@ -490,7 +490,7 @@ function ShellInner({
           <Panel
             id="agent"
             className="shell-familiar-panel"
-            defaultSize={"18%"}
+            defaultSize={"24%"}
             minSize="14%"
             maxSize="50%"
             collapsible
