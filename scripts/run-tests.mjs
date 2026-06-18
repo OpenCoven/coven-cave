@@ -72,6 +72,7 @@ export const SUITES = {
     "src/components/mermaid-viewer.test.ts",
     "src/components/message-bubble-code-header.test.ts",
     "src/components/message-bubble-jump-to-line.test.ts",
+    "src/components/message-bubble-file-links.test.ts",
     "src/components/library-reader-polish.test.ts",
     "src/components/chat-view-polish.test.ts",
     "src/components/chat-view-lifecycle.test.ts",

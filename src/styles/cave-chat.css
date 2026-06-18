@@ -122,6 +122,22 @@
   white-space: nowrap;
 }
 
+/* Inline file references linkified by wireFilePathLinks — clickable, with an
+   underline-on-hover affordance so they read as actionable. */
+.cave-md code.cave-file-link {
+  cursor: pointer;
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+.cave-md code.cave-file-link:hover {
+  background: color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cave-md code.cave-file-link:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    BLOCKQUOTE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
