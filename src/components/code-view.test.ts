@@ -17,12 +17,18 @@ assert.match(codeView, /id="code-chat"[\s\S]*?\{chat\}/, "the left pane renders 
 assert.match(codeView, /id="code-comux"[\s\S]*?\{comux\}/, "the right pane renders the comux slot");
 // Its own persisted layout key, independent of chat/shell.
 assert.match(codeView, /CODE_GROUP_ID = "cave\.code\.widths\.v1"/, "CodeView persists under its own storage key");
-// Mobile collapses to chat-only (a horizontal split is unusable on a phone).
+// Mobile: a Chat / Code segmented switcher swaps which pane is full-screen
+// (a horizontal split is unusable on a phone); both panes stay mounted so
+// their state survives tab taps.
+assert.match(codeView, /if \(isMobile\) \{/, "mobile gets a dedicated layout branch");
+assert.match(codeView, /setMobileTab\("chat"\)|onClick=\{\(\) => setMobileTab\(tab\)\}/, "mobile has a Chat/Code tab switcher");
 assert.match(
   codeView,
-  /isMobile \? \["code-chat"\] : \["code-chat", "code-comux"\]/,
-  "on mobile only the chat pane mounts (panelIds reflect it)",
+  /mobileTab === "chat" \? "flex" : "hidden"[\s\S]*?mobileTab === "code" \? "flex" : "hidden"/,
+  "the inactive mobile pane is hidden (not unmounted) so state persists",
 );
+// Desktop keeps the two-pane resizable split under its own key.
+assert.match(codeView, /panelIds: \["code-chat", "code-comux"\]/, "desktop mounts both panels in the split");
 
 // ── ComuxView accepts a storage namespace so Code-mode terminals are isolated ─
 assert.match(comux, /storageNamespace\?: string/, "ComuxView accepts a storageNamespace prop");
