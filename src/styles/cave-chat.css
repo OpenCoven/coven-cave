@@ -558,6 +558,17 @@
   transition: background 0.08s;
 }
 .cave-line:hover { background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+/* Jump-to-line target (e.g. opened from Projects search): a brief accent wash
+   that fades after landing so it draws the eye without staying loud. */
+.cave-line--active {
+  background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence, var(--foreground));
+  animation: cave-line-flash 1.6s ease-out;
+}
+@keyframes cave-line-flash {
+  0% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 38%, transparent); }
+  100% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent); }
+}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    LINE NUMBERS

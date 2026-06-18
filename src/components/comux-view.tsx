@@ -265,6 +265,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [previewLoading, setPreviewLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [previewRaw, setPreviewRaw] = useState(false);
+  // 1-based line to scroll the preview to (set when opened from a search match,
+  // cleared when opened from the file tree).
+  const [previewLine, setPreviewLine] = useState<number | undefined>(undefined);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   // Project-wide code search (CODE-SEARCH-01).
   const [searchInput, setSearchInput] = useState("");
@@ -482,8 +485,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     return () => window.removeEventListener("keydown", onKey);
   }, [view, active, addSession, removeSession, currentIdx, sessions.length]);
 
-  const openFilePreview = useCallback(async (path: string) => {
+  const openFilePreview = useCallback(async (path: string, line?: number) => {
     setPreviewPath(path);
+    setPreviewLine(line);
     setPreviewLoading(true);
     setPreview(null);
     setPreviewRaw(false);
@@ -569,9 +573,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // Open a search match: search paths are relative to the searched root, so
   // rejoin them to the project root before handing off to the file preview.
   const openSearchMatch = useCallback(
-    (relPath: string) => {
+    (relPath: string, line?: number) => {
       if (!searchRoot) return;
-      void openFilePreview(`${searchRoot.replace(/\/$/, "")}/${relPath}`);
+      void openFilePreview(`${searchRoot.replace(/\/$/, "")}/${relPath}`, line);
     },
     [searchRoot, openFilePreview],
   );
@@ -1007,7 +1011,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                         <button
                                           key={`${file.path}:${match.line}:${i}`}
                                           type="button"
-                                          onClick={() => openSearchMatch(file.path)}
+                                          onClick={() => openSearchMatch(file.path, match.line)}
                                           className="flex w-full items-baseline gap-2 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
                                           title={`${file.path}:${match.line}`}
                                         >
@@ -1191,6 +1195,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             <SyntaxBlock
                               text={preview?.content ?? ""}
                               lang={previewPath.split(".").pop()}
+                              highlightLine={previewLine}
                               className="leading-relaxed"
                             />
                           )
