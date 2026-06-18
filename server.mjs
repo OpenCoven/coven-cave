@@ -22,16 +22,6 @@ const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const sessions = /* @__PURE__ */ new Map();
-const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
-const DETACH_GRACE_MS = 6e4;
-function appendScrollback(session, data) {
-  session.scrollback.push(data);
-  session.scrollbackBytes += data.length;
-  while (session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES && session.scrollback.length > 1) {
-    const dropped = session.scrollback.shift();
-    if (dropped) session.scrollbackBytes -= dropped.length;
-  }
-}
 function getTokensFromCookie(header) {
   if (!header) return [];
   const tokens = [];
@@ -190,10 +180,7 @@ function spawnPty(threadId, ws, cols, rows, cwd) {
     detachTimer: null
   };
   sessions.set(threadId, session);
-  shell.onData((data) => {
-    appendScrollback(session, Buffer.from(data, "utf8"));
-    if (session.ws) sendPtyData(session.ws, data);
-  });
+  shell.onData((data) => sendPtyData(ws, data));
   shell.onExit(({ exitCode }) => {
     const current = sessions.get(threadId);
     if (current?.pty === shell) {
@@ -260,17 +247,11 @@ function handlePtyConnection(ws, threadId, cols, rows, cwd) {
   ws.on("close", () => {
     const session = sessions.get(threadId);
     if (!session || session.ws !== ws) return;
-    session.ws = null;
-    if (session.detachTimer) clearTimeout(session.detachTimer);
-    session.detachTimer = setTimeout(() => {
-      const current = sessions.get(threadId);
-      if (current !== session || current.ws) return;
-      sessions.delete(threadId);
-      try {
-        session.pty.kill();
-      } catch {
-      }
-    }, DETACH_GRACE_MS);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+    }
   });
 }
 const dev = process.env.NODE_ENV !== "production";
