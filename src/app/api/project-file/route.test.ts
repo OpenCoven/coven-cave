@@ -62,4 +62,8 @@ assert.match(
   "writes must reject non-string content",
 );
 
+// ES/CommonJS module files (.mjs/.cjs — e.g. scripts/run-tests.mjs, *.test.mjs)
+// are JavaScript text and must be previewable + editable, not rejected.
+assert.match(source, /"\.mjs",[\s\S]*?"\.cjs",/, ".mjs and .cjs are previewable/editable text extensions");
+
 console.log("project-file route.test.ts: ok");
