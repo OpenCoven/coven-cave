@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
 import { SkillCard } from "@/components/skill-card";
 import {
   SkillDetailDrawer,
@@ -9,6 +8,7 @@ import {
   type SkillEntry as SkillDetailEntry,
 } from "@/components/skill-detail-drawer";
 import { listWorkflows, type WorkflowSummary } from "@/lib/workflows";
+import { Icon } from "@/lib/icon";
 
 type Tab = "roles" | "workflows" | "skills";
 
@@ -54,10 +54,23 @@ const TAB_LABEL: Record<Tab, string> = {
   skills: "Skills",
 };
 
-const TAB_ICON: Record<Tab, Parameters<typeof Icon>[0]["name"]> = {
-  roles: "ph:mask-happy",
-  workflows: "ph:graph",
-  skills: "ph:sparkle",
+type IconName = Parameters<typeof Icon>[0]["name"];
+
+// Single source of truth for every icon in this view — edit a name here to swap it everywhere.
+const ICONS = {
+  search: "ph:magnifying-glass",
+  tabRoles: "ph:mask-happy",
+  tabWorkflows: "ph:graph",
+  tabSkills: "ph:sparkle",
+  workflowChip: "ph:lightning-bold",
+  workflowItem: "ph:graph",
+  workflowOpen: "ph:arrow-right-bold",
+} satisfies Record<string, IconName>;
+
+const TAB_ICON: Record<Tab, IconName> = {
+  roles: ICONS.tabRoles,
+  workflows: ICONS.tabWorkflows,
+  skills: ICONS.tabSkills,
 };
 
 function includesQuery(values: Array<string | undefined>, query: string): boolean {
@@ -244,7 +257,7 @@ export function PluginsView({
             </h2>
           </div>
           <label className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 lg:w-80">
-            <Icon name="ph:magnifying-glass" width={15} className="shrink-0 text-[var(--text-muted)]" />
+            <Icon name={ICONS.search} width={15} className="shrink-0 text-[var(--text-muted)]" />
             <input
               ref={searchRef}
               value={query}
@@ -342,16 +355,16 @@ function RolesTab({
   if (roles.length === 0) return <EmptyPanel title="No roles found" body="Add ROLE.md files to a familiar workspace to populate this view." />;
 
   return (
-    <div className="grid gap-3 xl:grid-cols-2">
+    <div className="flex flex-col gap-2">
       {roles.map((role) => {
         const key = `${role.familiar}:${role.id}`;
         return (
           <article
             key={key}
-            className="plugins-role-card rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4"
+            className="plugins-role-card rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3"
           >
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[16px] font-semibold text-[var(--text-primary)]">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[15px] font-semibold text-[var(--text-primary)]">
                 {role.emoji || role.name.slice(0, 1).toUpperCase()}
               </span>
               <div className="min-w-0 flex-1">
@@ -367,20 +380,29 @@ function RolesTab({
                   ) : null}
                 </div>
                 {role.description ? (
-                  <p className="mt-1 text-[12px] leading-relaxed text-[var(--text-secondary)]">{role.description}</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--text-secondary)]">{role.description}</p>
                 ) : null}
               </div>
-              <button
-                type="button"
-                disabled={busyRoleKey === key}
-                onClick={() => onToggleRole(role)}
-                className="plugins-role-toggle focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
-              >
-                {role.active ? "Disable" : "Enable"}
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busyRoleKey === key}
+                  onClick={() => onToggleRole(role)}
+                  className="plugins-role-toggle focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+                >
+                  {role.active ? "Disable" : "Enable"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenChat}
+                  className="focus-ring rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-[12px] text-[var(--bg-base)]"
+                >
+                  Open chat
+                </button>
+              </div>
             </div>
 
-            <dl className="mt-4 space-y-2.5">
+            <dl className="mt-3 space-y-2">
               <CapabilityRow label="Skills" items={role.skills} />
               <CapabilityRow label="Tools" items={role.tools} />
               <CapabilityRow
@@ -390,16 +412,6 @@ function RolesTab({
                 openHint="Open workflow"
               />
             </dl>
-
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={onOpenChat}
-                className="focus-ring rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-[12px] text-[var(--bg-base)]"
-              >
-                Open chat
-              </button>
-            </div>
           </article>
         );
       })}
@@ -437,7 +449,7 @@ function CapabilityRow({
                   title={openHint ? `${openHint}: ${item}` : item}
                   className="plugins-role-chip plugins-role-chip--action focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]"
                 >
-                  <Icon name="ph:lightning-bold" width={10} aria-hidden />
+                  <Icon name={ICONS.workflowChip} width={10} aria-hidden />
                   {item}
                 </button>
               ) : (
@@ -478,7 +490,7 @@ function WorkflowsTab({
           className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[var(--bg-raised)]"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)]">
-            <Icon name="ph:graph" width={16} className="text-[var(--text-muted)]" />
+            <Icon name={ICONS.workflowItem} width={16} className="text-[var(--text-muted)]" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]">
@@ -488,7 +500,7 @@ function WorkflowsTab({
               {[workflow.pattern, workflow.familiar, workflow.summary].filter(Boolean).join(" · ") || workflow.id}
             </span>
           </span>
-          <Icon name="ph:arrow-right-bold" width={13} className="text-[var(--text-muted)]" />
+          <Icon name={ICONS.workflowOpen} width={13} className="text-[var(--text-muted)]" />
         </button>
       ))}
     </div>

@@ -162,30 +162,32 @@ function ThreadRow({
         }}
         aria-current={active ? "true" : undefined}
         className={[
-          "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-2 py-2 pl-3 pr-1.5 text-left text-[12px] transition-colors",
+          "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-1.5 py-2 pl-2 pr-1.5 text-left text-[12px] transition-colors",
           active
             ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
         ].join(" ")}
       >
         {active ? <AccentBar /> : null}
-        {/* Drag handle — appears on hover; carries the sortable listeners so the
-            row's own click stays an "open". */}
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to reorder"
-          aria-label={`Reorder ${title}`}
-          className="chat-thread-handle -ml-1 grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/row:opacity-100"
-        >
-          <Icon name="ph:dots-six-vertical" width={11} aria-hidden />
-        </button>
-        <span
-          aria-hidden
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`}
-        />
+        {/* Status dot and drag handle share one slot — dot by default, handle on
+            hover — so the row reserves no extra left gutter for the handle. */}
+        <span className="relative grid h-4 w-3 shrink-0 place-items-center">
+          <span
+            aria-hidden
+            className={`h-1.5 w-1.5 rounded-full transition-opacity group-hover/row:opacity-0 ${statusDotClass(session.status)}`}
+          />
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to reorder"
+            aria-label={`Reorder ${title}`}
+            className="chat-thread-handle absolute inset-0 grid cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/row:opacity-100"
+          >
+            <Icon name="ph:dots-six-vertical" width={11} aria-hidden />
+          </button>
+        </span>
         <span className="min-w-0 flex-1 truncate">{title}</span>
         <span className="chat-thread-age shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/row:hidden">
           {shortAge(session.updated_at)}
@@ -260,25 +262,32 @@ function FolderChatRow({
         }}
         aria-current={active ? "true" : undefined}
         className={[
-          "relative flex min-h-[34px] w-full items-center gap-2 py-2 pl-3 pr-2 text-left text-[12px] transition-colors",
+          "relative flex min-h-[34px] w-full items-center gap-1.5 py-2 pl-2 pr-2 text-left text-[12px] transition-colors",
           active
             ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
         ].join(" ")}
       >
         {active ? <AccentBar /> : null}
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to reorder or move to another project"
-          aria-label={`Move ${title}`}
-          className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/row:opacity-100"
-        >
-          <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
-        </button>
-        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} />
+        {/* Status dot and drag handle share one slot — dot by default, handle on
+            hover — so the row reserves no extra left gutter for the handle. */}
+        <span className="relative grid h-4 w-3 shrink-0 place-items-center">
+          <span
+            aria-hidden
+            className={`h-1.5 w-1.5 rounded-full transition-opacity group-hover/row:opacity-0 ${statusDotClass(session.status)}`}
+          />
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to reorder or move to another project"
+            aria-label={`Move ${title}`}
+            className="absolute inset-0 grid cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/row:opacity-100"
+          >
+            <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
+          </button>
+        </span>
         <span className="min-w-0 flex-1 truncate">{title}</span>
       </div>
     </li>
