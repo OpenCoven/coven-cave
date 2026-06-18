@@ -268,6 +268,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // 1-based line to scroll the preview to (set when opened from a search match,
   // cleared when opened from the file tree).
   const [previewLine, setPreviewLine] = useState<number | undefined>(undefined);
+  // Editable preview: edit mode swaps the read-only render for a textarea and
+  // POSTs back to /api/project-file on save.
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   // Project-wide code search (CODE-SEARCH-01).
   const [searchInput, setSearchInput] = useState("");
@@ -491,6 +497,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     setPreviewLoading(true);
     setPreview(null);
     setPreviewRaw(false);
+    // Leave any prior edit session — opening a new file discards unsaved edits.
+    setEditing(false);
+    setSaveError(null);
     try {
       const res = await fetch(
         `/api/project-file?path=${encodeURIComponent(path)}`,
@@ -526,6 +535,52 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setTimeout(() => setCopied(false), 1500);
     });
   }, [preview]);
+
+  // Enter edit mode: seed the textarea with the current source and show raw
+  // (markdown previews edit their source, not the rendered HTML).
+  const startEditing = useCallback(() => {
+    if (!preview || preview.kind !== "text") return;
+    setEditValue(preview.content);
+    setSaveError(null);
+    setPreviewRaw(true);
+    setEditing(true);
+  }, [preview]);
+
+  const cancelEditing = useCallback(() => {
+    setEditing(false);
+    setSaveError(null);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!previewPath) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/project-file", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: previewPath, content: editValue }),
+      });
+      const json = (await res.json()) as { ok: boolean; size?: number; error?: string };
+      if (!res.ok || !json.ok) {
+        setSaveError(json.error ?? `save failed (${res.status})`);
+        return;
+      }
+      // Commit the edit into the preview so a cancel/reopen shows saved text.
+      setPreview({ kind: "text", content: editValue, size: json.size });
+      setEditing(false);
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [previewPath, editValue]);
+
+  // A redacted .env (server refuses writes) and error placeholders aren't
+  // editable; everything else text is.
+  const previewEditable =
+    preview?.kind === "text" &&
+    !(previewPath ? previewPath.split("/").pop()?.startsWith(".env") : false);
 
   // Debounced project-wide search. Re-runs when the query, regex toggle, or
   // selected project changes; an empty query clears results without a request.
@@ -1138,7 +1193,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             {formatBytes(preview.size) && <span>· {formatBytes(preview.size)}</span>}
                           </span>
                         )}
-                        {previewIsMarkdown && (
+                        {!editing && previewIsMarkdown && (
                           <div className="flex shrink-0 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
                             <button
                               type="button"
@@ -1156,15 +1211,54 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             </button>
                           </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={copyPreview}
-                          disabled={!preview || preview.kind !== "text"}
-                          className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
-                        >
-                          <Icon name="ph:copy" width={11} />
-                          {copied ? "Copied" : "Copy"}
-                        </button>
+                        {editing ? (
+                          <>
+                            {saveError && (
+                              <span className="shrink-0 truncate text-[10px] text-[var(--color-danger,#f87171)]" title={saveError}>
+                                {saveError}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={cancelEditing}
+                              disabled={saving}
+                              className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void saveEdit()}
+                              disabled={saving}
+                              className="flex shrink-0 items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--accent-presence,var(--bg-raised))] px-2 py-0.5 text-[10px] text-[var(--text-primary)] transition-colors hover:opacity-90 disabled:opacity-40"
+                            >
+                              <Icon name={saving ? "ph:arrow-clockwise" : "ph:floppy-disk-bold"} width={11} className={saving ? "animate-spin" : ""} />
+                              {saving ? "Saving…" : "Save"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {previewEditable && (
+                              <button
+                                type="button"
+                                onClick={startEditing}
+                                className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                              >
+                                <Icon name="ph:pencil-simple" width={11} />
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={copyPreview}
+                              disabled={!preview || preview.kind !== "text"}
+                              className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                            >
+                              <Icon name="ph:copy" width={11} />
+                              {copied ? "Copied" : "Copy"}
+                            </button>
+                          </>
+                        )}
                       </div>
                       {/* Preview content */}
                       <div className="comux-file-preview min-h-0 flex-1 overflow-auto p-3">
@@ -1173,6 +1267,24 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             <Icon name="ph:arrow-clockwise" width={12} className="animate-spin" />
                             Loading…
                           </div>
+                        ) : editing ? (
+                          <textarea
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                                e.preventDefault();
+                                void saveEdit();
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                cancelEditing();
+                              }
+                            }}
+                            spellCheck={false}
+                            autoComplete="off"
+                            aria-label={`Edit ${previewPath.split("/").pop() ?? "file"}`}
+                            className="h-full w-full resize-none rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
+                          />
                         ) : (
                           preview?.kind === "image" ? (
                             <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4">
