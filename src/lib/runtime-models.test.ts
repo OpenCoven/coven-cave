@@ -22,8 +22,12 @@ assert.equal(catalogForRuntime("claude").provider, "anthropic");
 assert.equal(catalogForRuntime("hermes").provider, "nous");
 assert.ok(catalogForRuntime("claude").models.length > 0, "claude should seed a menu");
 assert.ok(
-  catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
-  "claude catalog should seed Claude Fable 5",
+  catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-opus-4-8"),
+  "claude catalog should seed Claude Opus 4.8",
+);
+assert.ok(
+  !catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
+  "claude catalog should no longer offer the retired Claude Fable 5",
 );
 
 // Namespaced model id convention (`provider/model`) holds across the seed.
