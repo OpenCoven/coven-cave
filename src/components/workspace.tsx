@@ -160,6 +160,9 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
+  // Whether the first daemon status poll has resolved. Until it has, the daemon
+  // state is *unknown* (not "offline"), so the offline banner must stay hidden.
+  const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
   // Pending Workflow Studio deep link (set when opening a workflow from Roles).
   const [workflowDeepLink, setWorkflowDeepLink] = useState<string | null>(null);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
@@ -219,6 +222,10 @@ export function Workspace() {
       setDaemonRunning(json.running === true);
     } catch {
       setDaemonRunning(false);
+    } finally {
+      // The first poll has now produced a real answer — only after this may the
+      // offline banner appear, so a fresh load doesn't flash it before we know.
+      setDaemonStatusResolved(true);
     }
   }, []);
 
@@ -364,7 +371,9 @@ export function Workspace() {
     if (daemonRunning) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
-    } else {
+    } else if (daemonStatusResolved) {
+      // Only show the offline banner once the status has actually resolved to
+      // "not running" — never during the initial unknown window.
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
@@ -377,7 +386,7 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonRunning, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonRunning, daemonStatusResolved, pushBanner, dismissBanner, startDaemon]);
 
   const loadFamiliars = useCallback(async () => {
     try {

@@ -133,3 +133,12 @@ assert.doesNotMatch(
 );
 
 console.log("github-view-polish.test.ts OK");
+
+// The header must reserve a right gutter so its actions clear the floating
+// right panel-toggle (.shell-panel-float--right, a 44px strip) — otherwise the
+// Add PAT / Refresh buttons render under it and become unclickable.
+assert.match(
+  source,
+  /github-surface-header[^"]*\bpr-11\b/,
+  "GitHub header reserves a 44px (pr-11) right gutter for the floating panel toggle",
+);

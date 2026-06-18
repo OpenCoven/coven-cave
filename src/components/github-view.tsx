@@ -1111,7 +1111,11 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       )}
 
       {/* ── Header ── */}
-      <header className="github-surface-header flex items-center gap-3 px-5 py-2">
+      {/* pr-11 (44px) reserves a gutter for the floating right panel-toggle
+          (.shell-panel-float--right, a full-height 44px strip overlaying the
+          surface's right edge), so the Add PAT / Refresh buttons don't sit
+          under it and become unclickable — same gutter the chat header uses. */}
+      <header className="github-surface-header flex items-center gap-3 pl-5 pr-11 py-2">
         <div className="flex items-center gap-2">
           {activity?.login && (
             <span className="text-[12px] text-[var(--text-secondary)]">@{activity.login}</span>
