@@ -54,6 +54,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const { projects } = useProjects();
 
+  // "Clear done" flow: an inline confirm gate, and a transient undo banner that
+  // snapshots the cleared cards so they can be re-created via POST.
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearedBanner, setClearedBanner] = useState<{ snapshot: Card[] } | null>(null);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/board", { cache: "no-store" });
@@ -131,6 +136,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     blocked: filtered.filter((c) => c.status === "blocked" || c.needsHuman).length,
   }), [filtered]);
 
+  // Done cards in the CURRENT scope (the filtered set the user is viewing) —
+  // the exact set "Clear done" operates on.
+  const doneCards = useMemo(() => filtered.filter((c) => c.status === "done"), [filtered]);
+
+  // The undo banner is transient — auto-dismiss ~5s after a clear.
+  useEffect(() => {
+    if (!clearedBanner) return;
+    const t = window.setTimeout(() => setClearedBanner(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [clearedBanner]);
+
   // Familiar grouping is redundant once the board is scoped to a single
   // familiar — fall back to status there. Status and project grouping stay
   // meaningful regardless of the familiar scope.
@@ -190,6 +206,75 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
     const json = await res.json();
     if (json.ok) { if (selectedCardId === id) setSelectedCardId(null); await load(); }
+  };
+
+  const handleClearDone = async () => {
+    const snapshot = doneCards;
+    setClearConfirm(false);
+    if (snapshot.length === 0) return;
+    const ids = new Set(snapshot.map((c) => c.id));
+    // Optimistic remove + drop selection if it pointed at a cleared card.
+    setCards((prev) => prev.filter((c) => !ids.has(c.id)));
+    if (selectedCardId && ids.has(selectedCardId)) setSelectedCardId(null);
+    // Fire deletes in parallel; collect the cards whose delete failed.
+    const results = await Promise.all(
+      snapshot.map(async (c) => {
+        try {
+          const res = await fetch(`/api/board/${c.id}`, { method: "DELETE" });
+          const json = await res.json();
+          return json.ok ? null : c;
+        } catch {
+          return c;
+        }
+      }),
+    );
+    const failed = results.filter((c): c is Card => c !== null);
+    const cleared = snapshot.filter((c) => !failed.some((f) => f.id === c.id));
+    if (failed.length > 0) {
+      // Resync from the server (failed cards reappear, cleared stay gone), then
+      // surface the banner — mirrors the patchCard failure path.
+      setActionError(
+        `Couldn't clear ${failed.length} of ${snapshot.length} done task${snapshot.length === 1 ? "" : "s"} — reverted those.`,
+      );
+      await load();
+    } else {
+      setActionError(null);
+    }
+    if (cleared.length > 0) setClearedBanner({ snapshot: cleared });
+  };
+
+  const handleUndoClear = async () => {
+    const banner = clearedBanner;
+    if (!banner) return;
+    setClearedBanner(null);
+    try {
+      await Promise.all(
+        banner.snapshot.map((c) =>
+          fetch("/api/board", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: c.title,
+              notes: c.notes,
+              status: c.status,
+              priority: c.priority,
+              familiarId: c.familiarId,
+              sessionId: c.sessionId,
+              cwd: c.cwd,
+              projectId: c.projectId,
+              links: c.links,
+              github: c.github,
+              labels: c.labels,
+              template: c.template,
+              steps: c.steps.map((s) => ({ text: s.text })),
+            }),
+          }),
+        ),
+      );
+    } catch {
+      setActionError("Couldn't restore all cleared tasks — reload to check.");
+    }
+    await load();
   };
 
   const startTaskChat = async (id: string, projectRoot?: string) => {
@@ -354,6 +439,37 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             </button>
           </div>
 
+          {clearConfirm ? (
+            <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
+              <button
+                type="button"
+                className="board-toolbar-btn board-toolbar-btn--danger"
+                onClick={() => void handleClearDone()}
+              >
+                <Icon name="ph:trash" width={13} />
+                Clear {doneCards.length} done
+              </button>
+              <button
+                type="button"
+                className="board-toolbar-btn"
+                onClick={() => setClearConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="board-toolbar-btn"
+              onClick={() => setClearConfirm(true)}
+              disabled={doneCards.length === 0}
+              title="Remove all done tasks in view"
+            >
+              <Icon name="ph:trash" width={13} />
+              Clear done
+            </button>
+          )}
+
           <button
             type="button"
             className="board-toolbar-btn"
@@ -401,6 +517,27 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         >
           <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
           <span className="min-w-0 truncate">{chatLinkError}</span>
+        </div>
+      )}
+      {clearedBanner && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-success)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_10%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--text-secondary)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:check-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">
+              Cleared {clearedBanner.snapshot.length} done task{clearedBanner.snapshot.length === 1 ? "" : "s"}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleUndoClear()}
+            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+            Undo
+          </button>
         </div>
       )}
       {actionError && (
