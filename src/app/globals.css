@@ -5780,6 +5780,14 @@ a.mobile-handoff__link:hover {
   }
 }
 
+/* Mobile (≤1023px) navigates via the bottom tab bar, so the floating Salem
+   chat bubble is hidden there — it overlaps the tabs and the composer. */
+@media (max-width: 1023px) {
+  .salem-perch {
+    display: none;
+  }
+}
+
 .salem-panel {
   position: fixed;
   bottom: 20px;

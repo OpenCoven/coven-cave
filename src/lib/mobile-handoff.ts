@@ -3,7 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
 
-export const MOBILE_INVITE_TTL_MS = 10 * 60 * 1000;
+export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
 type TailscaleServeStatus = {
   Web?: Record<
