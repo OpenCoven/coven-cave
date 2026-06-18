@@ -978,7 +978,10 @@
   border: 1px solid var(--border-hairline);
   border-radius: 8px;
   padding: 10px 13px;
-  max-width: min(78%, 640px);
+  /* Wider bubble (2026-06-18): pairs with the full-width thread — the user
+     message uses most of the pane instead of a narrow 640px cap, while still
+     right-aligning so it reads as the user's turn. */
+  max-width: min(85%, 1100px);
   word-break: break-word;
   overflow-wrap: anywhere;
   box-shadow:
