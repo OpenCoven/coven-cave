@@ -7,6 +7,7 @@ import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { MarkdownBlock } from "@/components/message-bubble";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   GitHubActionPopover,
@@ -549,6 +550,110 @@ function AddToBoardAction({
   );
 }
 
+// ── Item detail (full issue/PR body, author, assignees, labels) ───────────────
+
+type GitHubPerson = { login: string; avatarUrl: string | null; url: string | null };
+
+type ItemDetail = {
+  ok: true;
+  title: string;
+  number: number;
+  state: string;
+  isPull: boolean;
+  merged: boolean;
+  draft: boolean;
+  body: string;
+  author: GitHubPerson | null;
+  assignees: GitHubPerson[];
+  labels: { name: string; color: string }[];
+  createdAt: string | null;
+  updatedAt: string | null;
+  htmlUrl: string | null;
+  comments: number;
+};
+
+type DetailState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; detail: ItemDetail }
+  | { status: "error" };
+
+/**
+ * Fetches the full issue/PR detail (body, author, assignees, colored labels)
+ * for the selected item so the panel can render a faithful GitHub issue view.
+ * Re-fetches whenever the selected repo/number changes; in-flight responses for
+ * a since-changed selection are dropped.
+ */
+function useGitHubItemDetail(item: GitHubItem | null): DetailState {
+  const [state, setState] = useState<DetailState>({ status: "idle" });
+  const repo = item?.repo ?? null;
+  const number = item?.number ?? null;
+
+  useEffect(() => {
+    if (!repo || number == null) {
+      setState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setState({ status: "loading" });
+    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) setState({ status: "ready", detail: data as ItemDetail });
+        else setState({ status: "error" });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "error" });
+      });
+    return () => { cancelled = true; };
+  }, [repo, number]);
+
+  return state;
+}
+
+/** A tiny copy-to-clipboard affordance for the issue number. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="gh-issue-copy"
+      title={copied ? "Copied" : label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard?.writeText(value).then(
+          () => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1200);
+          },
+          () => {},
+        );
+      }}
+    >
+      <Icon name={copied ? "ph:check" : "ph:copy"} width={11} />
+    </button>
+  );
+}
+
+/** GitHub person avatar + login. Falls back to a monogram when no avatar. */
+function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string }) {
+  return (
+    <span className="gh-person">
+      {person.avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={person.avatarUrl} alt="" className="gh-person-avatar" width={16} height={16} />
+      ) : (
+        <span className="gh-person-avatar gh-person-avatar--fallback" aria-hidden>
+          {person.login.slice(0, 1).toUpperCase()}
+        </span>
+      )}
+      <span className="gh-person-login">{prefix}{person.login}</span>
+    </span>
+  );
+}
+
 // ── Selected item detail ─────────────────────────────────────────────────────
 
 function GitHubItemGlassPanel({
@@ -572,6 +677,7 @@ function GitHubItemGlassPanel({
   onFocusCard?: (cardId: string) => void;
   onAfterLink: () => void;
 }) {
+  const detailState = useGitHubItemDetail(item);
   if (!item) {
     return (
       <aside className="gh-glass-panel gh-glass-panel--empty" aria-label="GitHub item details">
@@ -580,6 +686,18 @@ function GitHubItemGlassPanel({
       </aside>
     );
   }
+
+  const detail = detailState.status === "ready" ? detailState.detail : null;
+  const rawState = detail?.state ?? item.state ?? "open";
+  const merged = detail?.merged ?? false;
+  const stateKind = merged ? "merged" : rawState === "closed" ? "closed" : "open";
+  const stateLabel = merged ? "Merged" : stateKind === "closed" ? "Closed" : "Open";
+  const openedNoun =
+    item.kind === "pr" || item.kind === "review_request" ? "pull request" : "issue";
+  const labels: { name: string; color: string }[] =
+    detail?.labels && detail.labels.length > 0
+      ? detail.labels
+      : (item.labels ?? []).map((name) => ({ name, color: "" }));
 
   const rowFamiliars = Array.from(
     new Set(
@@ -615,47 +733,76 @@ function GitHubItemGlassPanel({
           <Icon name={KIND_ICON[item.kind] ?? "ph:github-logo"} width={15} />
           {detailLabel}
         </span>
-        <h3>{item.title}</h3>
-        <div className="gh-glass-meta">
-          <span>{item.repo}</span>
-          {item.number != null && <span>#{item.number}</span>}
-          <span>{item.state ?? "open"}</span>
-          <span>{relTime(item.updatedAt)} ago</span>
+        <h3>{detail?.title ?? item.title}</h3>
+        <div className="gh-issue-subline">
+          {item.number != null && (
+            <span className="gh-issue-number">
+              #{item.number}
+              <CopyButton value={`#${item.number}`} label={`Copy #${item.number}`} />
+            </span>
+          )}
+          <span className={`gh-issue-state gh-issue-state--${stateKind}`} title={stateLabel}>
+            <span className="gh-issue-state-dot" aria-hidden />
+            {stateLabel}
+          </span>
+        </div>
+        <div className="gh-issue-opened">
+          {detail?.author && <PersonChip person={detail.author} />}
+          <span className="gh-issue-opened-text">
+            {detail?.author ? "opened this " : ""}
+            {openedNoun}
+            {" · "}
+            {item.repo}
+            {" · "}
+            {relTime(detail?.createdAt ?? item.updatedAt)} ago
+          </span>
         </div>
       </div>
 
       <div className="gh-glass-section">
-        <div className="gh-glass-section-title">Key information</div>
-        <dl className="gh-glass-facts">
-          <div>
-            <dt>Repository</dt>
-            <dd>{item.repo}</dd>
+        <div className="gh-glass-section-title">Assignees</div>
+        {detail?.assignees && detail.assignees.length > 0 ? (
+          <div className="gh-issue-people">
+            {detail.assignees.map((p) => (
+              <PersonChip key={p.login} person={p} />
+            ))}
           </div>
-          <div>
-            <dt>Number</dt>
-            <dd>{item.number != null ? `#${item.number}` : "Unnumbered"}</dd>
-          </div>
-          <div>
-            <dt>State</dt>
-            <dd>{item.draft ? "Draft" : item.state ?? "Open"}</dd>
-          </div>
-          <div>
-            <dt>Updated</dt>
-            <dd>{new Date(item.updatedAt).toLocaleString()}</dd>
-          </div>
-        </dl>
+        ) : (
+          <p className="gh-glass-muted">No one assigned.</p>
+        )}
       </div>
 
       <div className="gh-glass-section">
         <div className="gh-glass-section-title">Labels</div>
-        {item.labels && item.labels.length > 0 ? (
-          <div className="gh-glass-labels">
-            {item.labels.slice(0, 6).map((label) => (
-              <span key={label}>{label}</span>
+        {labels.length > 0 ? (
+          <div className="gh-issue-labels">
+            {labels.slice(0, 8).map((l) => (
+              <span
+                key={l.name}
+                className="gh-issue-label"
+                style={l.color ? ({ "--gh-label": `#${l.color}` } as React.CSSProperties) : undefined}
+                title={l.name}
+              >
+                <span className="gh-issue-label-dot" aria-hidden />
+                {l.name}
+              </span>
             ))}
           </div>
         ) : (
           <p className="gh-glass-muted">No labels on this item.</p>
+        )}
+      </div>
+
+      <div className="gh-glass-section">
+        <div className="gh-glass-section-title">Description</div>
+        {detailState.status === "loading" ? (
+          <p className="gh-glass-muted">Loading description…</p>
+        ) : detailState.status === "error" ? (
+          <p className="gh-glass-muted">Couldn’t load the description — open on GitHub for the full thread.</p>
+        ) : detail?.body?.trim() ? (
+          <MarkdownBlock text={detail.body} className="gh-issue-body" />
+        ) : (
+          <p className="gh-glass-muted">No description provided.</p>
         )}
       </div>
 
