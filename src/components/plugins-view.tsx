@@ -419,7 +419,7 @@ function CapabilityRow({
   openHint?: string;
 }) {
   return (
-    <div className="plugins-role-capability grid grid-cols-[64px_minmax(0,1fr)] items-start gap-2">
+    <div className="plugins-role-capability grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
       <dt className="pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
         {label}
       </dt>
