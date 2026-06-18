@@ -63,13 +63,28 @@ assert.match(
 // The preview MUST be a sandboxed iframe WITHOUT allow-same-origin, so
 // generated (untrusted) code can't reach Cave's origin.
 assert.match(artifactNode, /<iframe/, "artifacts render in an iframe");
-assert.match(artifactNode, /srcDoc=\{buildPreviewSrcDoc/, "the iframe is fed a framed srcDoc");
+assert.match(artifactNode, /srcDoc=\{srcDoc\}/, "the iframe is fed the framed srcDoc");
 assert.match(artifactNode, /sandbox="allow-scripts/, "the preview iframe must be sandboxed (scripts allowed)");
 assert.doesNotMatch(
   artifactNode,
   /sandbox="[^"]*allow-same-origin/,
   "the preview must NOT grant allow-same-origin — that would break isolation",
 );
+
+// React artifacts use the offline-runtime harness; HTML artifacts the plain doc.
+assert.match(artifactNode, /buildReactSrcDoc\(artifact\.code\)/, "react artifacts build the runtime harness srcDoc");
+assert.match(artifactNode, /buildPreviewSrcDoc\(artifact\.code\)/, "html artifacts build the plain srcDoc");
+assert.match(artifactNode, /artifact\.kind === "react"/, "the node branches the preview on artifact kind");
+
+// Runtime errors from the sandbox surface in the node (not a blank frame),
+// matched to THIS frame by comparing the postMessage source.
+assert.match(artifactNode, /addEventListener\("message"/, "the node listens for sandbox postMessage errors");
+assert.match(artifactNode, /e\.source !== frameRef\.current\?\.contentWindow/, "errors are matched to this node's iframe");
+assert.match(artifactNode, /sandbox-error/, "the node handles the runtime's sandbox-error message");
+assert.match(artifactNode, /canvas-artifact__error/, "a runtime error renders an overlay");
+
+// Generated kind is plumbed through to the stored artifact.
+assert.match(view, /kind\s*=\s*result\.kind/, "generation records the extracted artifact kind");
 
 // Artifacts persist to the canvas store via POST and delete via DELETE.
 assert.match(view, /method:\s*"POST"[\s\S]{0,120}artifact/, "artifacts upsert to /api/canvas via POST");

@@ -106,6 +106,7 @@ export const SUITES = {
     "src/lib/calendar-layout.test.ts",
     "src/lib/canvas-layout.test.ts",
     "src/lib/canvas-artifacts.test.ts",
+    "src/lib/canvas-react-harness.test.ts",
     "src/lib/canvas-generate.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/canvas-view.test.ts",

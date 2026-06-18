@@ -6,6 +6,7 @@ import {
   buildRefinePrompt,
   buildSketchPrompt,
   clampArtifactCode,
+  extractArtifact,
   extractHtmlArtifact,
   isFullDocument,
   MAX_ARTIFACT_CODE_CHARS,
@@ -63,7 +64,7 @@ const huge = "y".repeat(MAX_ARTIFACT_CODE_CHARS + 500);
 assert.equal(clampArtifactCode(huge).length, MAX_ARTIFACT_CODE_CHARS, "code is clamped to the storage cap");
 
 const prompt = buildSketchPrompt("a login form");
-assert.match(prompt, /ONE fenced ```html code block/, "sketch prompt constrains output to one html block");
+assert.match(prompt, /EXACTLY ONE fenced code block/, "sketch prompt constrains output to one code block");
 assert.match(prompt, /a login form/, "sketch prompt carries the user's ask");
 assert.match(buildSketchPrompt("  "), /a simple example UI/, "blank ask gets a sensible default");
 
@@ -90,5 +91,60 @@ assert.equal(
   "build a thing",
   "a missing title is derived from the prompt",
 );
+
+// ── extractArtifact: classify React vs HTML ────────────────────────────────
+
+assert.deepEqual(
+  extractArtifact("```tsx\nexport default function App(){return <h1>hi</h1>}\n```"),
+  { kind: "react", code: "export default function App(){return <h1>hi</h1>}" },
+  "a tsx fence is classified as React",
+);
+assert.equal(extractArtifact("```jsx\n<App/>\n```").kind, "react", "jsx fence ⇒ react");
+assert.equal(
+  extractArtifact("```html\n<!doctype html><html></html>\n```").kind,
+  "html",
+  "html fence ⇒ html",
+);
+// A react fence wins even if an html fence is also present.
+assert.equal(
+  extractArtifact("```html\n<div/>\n```\n```tsx\nexport default ()=><i/>\n```").kind,
+  "react",
+  "react fence is preferred over html",
+);
+// Untagged fence classified by content.
+assert.equal(
+  extractArtifact("```\nexport default function App(){const [n]=React.useState(0);return null}\n```").kind,
+  "react",
+  "untagged fence with export default + hooks ⇒ react",
+);
+assert.equal(extractArtifact("```\n<section>hi</section>\n```").kind, "html", "untagged markup ⇒ html");
+assert.equal(extractArtifact("nothing renderable"), null, "no code ⇒ null");
+// extractHtmlArtifact stays for back-compat.
+assert.equal(typeof extractHtmlArtifact, "function", "extractHtmlArtifact is still exported");
+
+// ── kind is persisted and prompts cover both forms ─────────────────────────
+
+const reactArt = sanitizeArtifacts([{ id: "r", prompt: "p", code: "x", kind: "react" }])[0];
+assert.equal(reactArt.kind, "react", "kind survives sanitization");
+assert.equal(
+  sanitizeArtifacts([{ id: "h", prompt: "p", code: "x" }])[0].kind,
+  "html",
+  "absent kind defaults to html (back-compat)",
+);
+assert.equal(
+  sanitizeArtifacts([{ id: "b", prompt: "p", code: "x", kind: "bogus" }])[0].kind,
+  "html",
+  "unknown kind coerces to html",
+);
+
+const sketch = buildSketchPrompt("a counter");
+assert.match(sketch, /```tsx/, "sketch prompt offers a tsx/React option");
+assert.match(sketch, /default-exported|DEFAULT-EXPORTED/i, "sketch prompt states the default-export contract");
+assert.match(sketch, /do NOT .*import|import React/i, "sketch prompt forbids importing react (it's global)");
+
+const refineReact = buildRefinePrompt("export default function App(){}", "add a button", "react");
+assert.match(refineReact, /```tsx/, "refining a react artifact asks for tsx, not html");
+const refineHtml = buildRefinePrompt("<!doctype html>", "make it blue", "html");
+assert.match(refineHtml, /```html/, "refining an html artifact asks for html");
 
 console.log("canvas-artifacts.test.ts ✓");

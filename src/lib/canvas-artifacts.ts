@@ -4,14 +4,21 @@
 // preview, and persist it. Everything here is framework-/fs-free so it can be
 // unit-tested without a DOM, a daemon, or React Flow.
 
+// An artifact is either a self-contained HTML document or a single React
+// component (transpiled + rendered by the sandbox runtime). Older records
+// (pre-React) have no `kind` and are treated as "html".
+export type ArtifactKind = "html" | "react";
+
 export type CanvasArtifact = {
   id: string;
   /** Short human label, derived from the prompt (editable later). */
   title: string;
   /** The natural-language description the user asked for. */
   prompt: string;
-  /** The self-contained HTML document rendered in the preview. */
+  /** The HTML document, or React component source, rendered in the preview. */
   code: string;
+  /** How `code` should be previewed. Absent ⇒ "html" (back-compat). */
+  kind?: ArtifactKind;
   createdAt: string;
   updatedAt: string;
 };
@@ -43,6 +50,36 @@ export function extractHtmlArtifact(text: string): string | null {
   // No usable fence — accept a bare document if one is present.
   const docMatch = text.match(/<!doctype html[\s\S]*<\/html>/i) ?? text.match(/<html[\s\S]*<\/html>/i);
   if (docMatch) return docMatch[0].trim();
+
+  return null;
+}
+
+/** Heuristic: does this fenced code look like a React component vs HTML? */
+function looksLikeReact(code: string): boolean {
+  if (/<!doctype html/i.test(code) || /<html[\s>]/i.test(code)) return false;
+  return /\bexport\s+default\b/.test(code) || /\bfunction\s+App\b/.test(code) || /\buse(State|Effect|Ref|Memo|Callback)\b/.test(code);
+}
+
+/**
+ * Pull a renderable artifact out of a familiar's response and classify it. A
+ * `tsx`/`jsx` fence ⇒ React; an `html` fence (or bare `<!doctype>`) ⇒ HTML; an
+ * untagged fence is classified by content. Returns null when nothing renders.
+ */
+export function extractArtifact(text: string): { kind: ArtifactKind; code: string } | null {
+  if (typeof text !== "string" || !text.trim()) return null;
+
+  const fences = [...text.matchAll(/```([\w-]*)\n([\s\S]*?)```/g)];
+  if (fences.length > 0) {
+    const react = fences.find((m) => /^(tsx|jsx|react|javascriptreact|typescriptreact)$/i.test(m[1] ?? ""));
+    if (react && react[2]?.trim()) return { kind: "react", code: react[2].trim() };
+    const html = fences.find((m) => /^(html?|markup|xml)$/i.test(m[1] ?? ""));
+    if (html && html[2]?.trim()) return { kind: "html", code: html[2].trim() };
+    const first = (fences[0][2] ?? "").trim();
+    if (first) return { kind: looksLikeReact(first) ? "react" : "html", code: first };
+  }
+
+  const docMatch = text.match(/<!doctype html[\s\S]*<\/html>/i) ?? text.match(/<html[\s\S]*<\/html>/i);
+  if (docMatch) return { kind: "html", code: docMatch[0].trim() };
 
   return null;
 }
@@ -102,12 +139,20 @@ export function buildSketchPrompt(userPrompt: string): string {
   return [
     "You are generating a UI for a live preview sandbox inside a design canvas.",
     "",
-    "Rules:",
-    "- Output EXACTLY ONE fenced ```html code block and nothing else — no prose, no explanation before or after.",
-    "- The block must be a COMPLETE, self-contained document starting with `<!doctype html>`.",
-    "- Inline all CSS in a <style> tag and all JS in a <script> tag. Do not reference local files or build tooling.",
-    "- It must render on its own with no network access. If you need a library (e.g. React), load it from a CDN such as https://esm.sh, but prefer plain HTML/CSS/JS when it suffices.",
-    "- Make it visually polished and responsive; fill the viewport sensibly.",
+    "Output EXACTLY ONE fenced code block and nothing else — no prose before or after.",
+    "Choose ONE of these two forms:",
+    "",
+    "(A) A ```html block: a COMPLETE self-contained document starting with `<!doctype html>`,",
+    "    with all CSS inlined in <style> and all JS inlined in <script>. No external files.",
+    "",
+    "(B) A ```tsx block: a single React component, DEFAULT-EXPORTED and named `App`",
+    "    (e.g. `export default function App() { … }`). React 19 and its hooks are available",
+    "    as globals — use `React.useState`, or destructure `const { useState } = React`.",
+    "    Do NOT write `import React`/`import ReactDOM` and do NOT load anything from a CDN.",
+    "    There is no Tailwind/CSS framework — style with inline `style={{…}}` or a <style> element.",
+    "",
+    "Prefer (B) tsx for interactive components; (A) html for static pages or plain markup.",
+    "It must render on its own with no network access. Make it polished and responsive.",
     "",
     `Build this: ${ask}`,
   ].join("\n");
@@ -118,14 +163,20 @@ export function buildSketchPrompt(userPrompt: string): string {
  * document plus the change request, keeping the same one-document output
  * contract so the result drops straight back onto the canvas.
  */
-export function buildRefinePrompt(currentCode: string, changeRequest: string): string {
+export function buildRefinePrompt(
+  currentCode: string,
+  changeRequest: string,
+  kind: ArtifactKind = "html",
+): string {
   const ask = (changeRequest ?? "").trim() || "improve it";
+  const lang = kind === "react" ? "tsx" : "html";
+  const noun = kind === "react" ? "React component" : "document";
   return [
     buildSketchPrompt(`Apply this change: ${ask}`),
     "",
-    "Modify the document below. Return the FULL updated document, not a diff:",
+    `Modify the ${noun} below. Keep the same ${lang} form and return the FULL updated ${noun}, not a diff:`,
     "",
-    "```html",
+    "```" + lang,
     (currentCode ?? "").trim(),
     "```",
   ].join("\n");
@@ -160,9 +211,10 @@ export function sanitizeArtifact(value: unknown): CanvasArtifact | null {
   const prompt = typeof v.prompt === "string" ? v.prompt : "";
   const code = clampArtifactCode(typeof v.code === "string" ? v.code : "");
   const title = typeof v.title === "string" && v.title.trim() ? v.title.trim().slice(0, MAX_TITLE_CHARS) : titleFromPrompt(prompt);
+  const kind: ArtifactKind = v.kind === "react" ? "react" : "html";
   const createdAt = typeof v.createdAt === "string" ? v.createdAt : "";
   const updatedAt = typeof v.updatedAt === "string" ? v.updatedAt : createdAt;
-  return { id, title, prompt, code, createdAt, updatedAt };
+  return { id, title, prompt, code, kind, createdAt, updatedAt };
 }
 
 /** Sanitize an array of artifact records, dropping any that are unusable. */

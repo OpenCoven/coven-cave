@@ -45,6 +45,7 @@ import {
   titleFromPrompt,
   type CanvasArtifact,
 } from "@/lib/canvas-artifacts";
+import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
 import { ArtifactNode, type ArtifactFlowNode } from "@/components/canvas-artifact-node";
 
@@ -245,7 +246,9 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
       }
       setActionError(null);
       setGenerating((prev) => new Set(prev).add(id));
-      const sendPrompt = refineOf ? buildRefinePrompt(refineOf.code, ask) : buildSketchPrompt(ask);
+      const sendPrompt = refineOf
+        ? buildRefinePrompt(refineOf.code, ask, refineOf.kind ?? "html")
+        : buildSketchPrompt(ask);
       const result = await generateArtifactCode({ prompt: sendPrompt, familiarId });
       setGenerating((prev) => {
         const next = new Set(prev);
@@ -254,9 +257,10 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
       });
       if (result.code) {
         const code = clampArtifactCode(result.code);
+        const kind = result.kind ?? "html";
         const updatedAt = new Date().toISOString();
         const current = artifactsRef.current.find((a) => a.id === id);
-        const updated: CanvasArtifact | null = current ? { ...current, code, updatedAt } : null;
+        const updated: CanvasArtifact | null = current ? { ...current, code, kind, updatedAt } : null;
         if (updated) {
           setArtifacts((prev) => prev.map((a) => (a.id === id ? updated : a)));
           setArtifactView((prev) => ({ ...prev, [id]: "preview" }));
@@ -286,6 +290,7 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
         title: opts?.blank ? "Blank sketch" : titleFromPrompt(prompt),
         prompt,
         code: opts?.blank ? STARTER_ARTIFACT_HTML : "",
+        kind: "html",
         createdAt: now,
         updatedAt: now,
       };
@@ -364,7 +369,10 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
     const art = artifactsRef.current.find((a) => a.id === id);
     if (!art) return;
     try {
-      const blob = new Blob([buildPreviewSrcDoc(art.code)], { type: "text/html" });
+      // blob: inherits our origin, so the React harness's /sandbox runtime path
+      // still resolves in the opened tab.
+      const doc = art.kind === "react" ? buildReactSrcDoc(art.code) : buildPreviewSrcDoc(art.code);
+      const blob = new Blob([doc], { type: "text/html" });
       window.open(URL.createObjectURL(blob), "_blank", "noopener");
     } catch {
       /* popup blocked or unsupported — preview node still works */

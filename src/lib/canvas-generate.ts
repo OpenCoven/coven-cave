@@ -3,7 +3,7 @@
 // Cave has no server-side LLM, so generation routes through the daemon agent).
 // The SSE frame parser is exported pure so it can be unit-tested.
 
-import { extractHtmlArtifact } from "@/lib/canvas-artifacts";
+import { extractArtifact, type ArtifactKind } from "@/lib/canvas-artifacts";
 
 export type SketchStreamEvent = {
   kind?: string;
@@ -27,6 +27,7 @@ export function parseSseFrame(frame: string): SketchStreamEvent | null {
 
 export type GenerateResult = {
   code: string | null;
+  kind: ArtifactKind | null;
   text: string;
   sessionId: string | null;
   error: string | null;
@@ -58,10 +59,10 @@ export async function generateArtifactCode(opts: {
       signal: opts.signal,
     });
   } catch (err) {
-    return { code: null, text: "", sessionId: null, error: (err as Error)?.message ?? "request failed" };
+    return { code: null, kind: null, text: "", sessionId: null, error: (err as Error)?.message ?? "request failed" };
   }
   if (!res.ok || !res.body) {
-    return { code: null, text: "", sessionId: null, error: `chat bridge ${res.status}` };
+    return { code: null, kind: null, text: "", sessionId: null, error: `chat bridge ${res.status}` };
   }
 
   const reader = res.body.getReader();
@@ -100,9 +101,15 @@ export async function generateArtifactCode(opts: {
     }
   }
 
-  const code = extractHtmlArtifact(text);
-  if (!code && !error) {
-    error = "The familiar didn't return an HTML document. Try rephrasing.";
+  const extracted = extractArtifact(text);
+  if (!extracted && !error) {
+    error = "The familiar didn't return a renderable UI. Try rephrasing.";
   }
-  return { code, text, sessionId, error };
+  return {
+    code: extracted?.code ?? null,
+    kind: extracted?.kind ?? null,
+    text,
+    sessionId,
+    error,
+  };
 }
