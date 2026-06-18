@@ -39,6 +39,63 @@ export const CODE_PRESET_ICONS: Record<CodePreset, IconName> = {
   review: "ph:git-diff",
 };
 
+/** One-line hint shown in each preset chip's tooltip — what the mode is *for*. */
+export const CODE_PRESET_HINTS: Record<CodePreset, string> = {
+  chat: "Focus the conversation — widen chat, hide the projects list",
+  split: "Balanced — chat beside the file tree & preview",
+  review: "Review changes — widen code and open the git diff",
+};
+
+/**
+ * A preset is more than a width: it sets up the whole Code workspace for a task.
+ * These maps let the chat-pane toolbar (code-view) and the coding surface
+ * (comux-view) agree on the *context* each preset implies, dispatched over the
+ * events below so neither component has to reach into the other.
+ */
+
+/** Whether a preset hides the comux projects list (Chat focuses the chat). */
+export const CODE_PRESET_HIDES_PROJECT_LIST: Record<CodePreset, boolean> = {
+  chat: true,
+  split: false,
+  review: false,
+};
+
+/** Which comux right-pane a preset switches to, or null to leave it untouched. */
+export const CODE_PRESET_RIGHT_VIEW: Record<CodePreset, "files" | "changes" | null> = {
+  chat: null, // conversation-forward: don't disturb whatever's open
+  split: "files", // balanced working layout → file tree & preview
+  review: "changes", // review-forward → the git diff
+};
+
+/** localStorage key for whether the comux projects list is collapsed. */
+export const CODE_PROJECT_LIST_KEY = "cave.code.projectListCollapsed.v1";
+
+/** Fired by the Code toolbar (code-view) → consumed by comux-view to show/hide
+ *  the projects list. `detail.collapsed: boolean`. */
+export const CODE_PROJECT_LIST_EVENT = "cave:code-project-list";
+
+/** Fired when a preset is chosen → comux-view switches its right pane to match.
+ *  `detail.preset: CodePreset`. */
+export const CODE_PRESET_EVENT = "cave:code-preset";
+
+export function readProjectListCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(CODE_PROJECT_LIST_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeProjectListCollapsed(collapsed: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CODE_PROJECT_LIST_KEY, collapsed ? "1" : "0");
+  } catch {
+    /* ignore unavailable storage */
+  }
+}
+
 export function normalizeCodePreset(value: unknown): CodePreset {
   return CODE_PRESETS.includes(value as CodePreset)
     ? (value as CodePreset)
