@@ -1,7 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-import { buildReactSrcDoc, escapeForScriptTag, SANDBOX_RUNTIME_SRC } from "./canvas-react-harness.ts";
+import {
+  buildReactSrcDoc,
+  escapeForScriptTag,
+  SANDBOX_RUNTIME_SRC,
+  SANDBOX_TAILWIND_SRC,
+} from "./canvas-react-harness.ts";
 
 // escapeForScriptTag: component source must not be able to break out of the
 // embedding <script> tag.
@@ -22,6 +27,14 @@ assert.match(doc, /<script type="text\/jsx">/, "embeds the component in a jsx sc
 assert.match(doc, /export default function App/, "carries the component source");
 assert.ok(doc.includes(`<script src="${SANDBOX_RUNTIME_SRC}">`), "loads the offline sandbox runtime");
 assert.equal(SANDBOX_RUNTIME_SRC, "/sandbox/react-runtime.js", "runtime path matches the built asset");
+assert.ok(doc.includes(`<script src="${SANDBOX_TAILWIND_SRC}">`), "loads the offline Tailwind engine");
+assert.equal(SANDBOX_TAILWIND_SRC, "/sandbox/tailwind.js", "tailwind path matches the built asset");
+// Tailwind's observer must be live before the component mounts → its script
+// precedes the jsx + runtime scripts.
+assert.ok(
+  doc.indexOf(SANDBOX_TAILWIND_SRC) < doc.indexOf('type="text/jsx"'),
+  "tailwind loads before the component so its observer catches React's output",
+);
 
 // Escaping is applied through the builder.
 const malicious = buildReactSrcDoc('const x = "</script><script>steal()</script>";');

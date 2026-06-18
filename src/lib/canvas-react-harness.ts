@@ -1,15 +1,18 @@
 // Builds the <iframe srcdoc> document that previews a React artifact. The doc
 // embeds the component source in a <script type="text/jsx"> and loads the
 // offline sandbox runtime (public/sandbox/react-runtime.js, built in prebuild),
-// which transpiles + mounts it. Pure + DOM-free so it's unit-testable.
+// which transpiles + mounts it, plus the offline Tailwind engine
+// (public/sandbox/tailwind.js) so utility classes work. Pure + DOM-free so it's
+// unit-testable.
 //
 // Isolation is unchanged from the HTML path: the result runs in an
-// <iframe sandbox="allow-scripts"> (no allow-same-origin). The runtime asset is
+// <iframe sandbox="allow-scripts"> (no allow-same-origin). The assets are
 // same-origin to our server but the iframe stays an opaque origin — loading a
 // script is allowed; reaching Cave's DOM/cookies is not.
 
-/** Absolute path (resolved against the parent's base URL inside about:srcdoc). */
+/** Absolute paths (resolved against the parent's base URL inside about:srcdoc). */
 export const SANDBOX_RUNTIME_SRC = "/sandbox/react-runtime.js";
+export const SANDBOX_TAILWIND_SRC = "/sandbox/tailwind.js";
 
 /**
  * Neutralize `</script>` so component source can't break out of the embedding
@@ -33,6 +36,10 @@ export function buildReactSrcDoc(code: string): string {
     "  :root { color-scheme: light dark; }",
     "  body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }",
     "</style>",
+    // Tailwind's in-browser JIT: scans the DOM (incl. React output, via a
+    // MutationObserver) and generates utility CSS. Loaded first so its observer
+    // is active before the component mounts.
+    `<script src="${SANDBOX_TAILWIND_SRC}"></script>`,
     "</head>",
     "<body>",
     '<div id="root"></div>',

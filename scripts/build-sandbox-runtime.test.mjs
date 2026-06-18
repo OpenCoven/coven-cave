@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 
-import { buildSandboxRuntime, OUTFILE } from "./build-sandbox-runtime.mjs";
+import { buildSandboxRuntime, OUTFILE, TAILWIND_OUTFILE } from "./build-sandbox-runtime.mjs";
 
 // Build the sandbox runtime and assert it produced a self-contained browser
 // bundle with React + sucrase inlined and the runtime's public surface intact.
@@ -26,5 +26,11 @@ for (const sym of ["__transpile", "__mount", "createRoot", "sandbox-error"]) {
 assert.doesNotMatch(src, /https?:\/\/(unpkg|esm\.sh|cdn\.|jsdelivr)/i, "runtime must not reference a CDN (offline)");
 // Production React (no dev-only invariant message machinery bloating the sandbox).
 assert.doesNotMatch(src, /react-dom\.development/i, "must bundle the production React build");
+
+// Tailwind's offline in-browser engine is self-hosted alongside (served from
+// /sandbox), so utility classes work without a CDN.
+const tw = await stat(TAILWIND_OUTFILE);
+assert.ok(tw.isFile(), "tailwind.js must be emitted");
+assert.ok(tw.size > 100_000, `tailwind bundle looks too small (${tw.size} bytes)`);
 
 console.log("build-sandbox-runtime.test.mjs: ok");

@@ -141,6 +141,7 @@ const sketch = buildSketchPrompt("a counter");
 assert.match(sketch, /```tsx/, "sketch prompt offers a tsx/React option");
 assert.match(sketch, /default-exported|DEFAULT-EXPORTED/i, "sketch prompt states the default-export contract");
 assert.match(sketch, /do NOT .*import|import React/i, "sketch prompt forbids importing react (it's global)");
+assert.match(sketch, /Tailwind utility classes ARE available/i, "sketch prompt advertises Tailwind support");
 
 const refineReact = buildRefinePrompt("export default function App(){}", "add a button", "react");
 assert.match(refineReact, /```tsx/, "refining a react artifact asks for tsx, not html");
