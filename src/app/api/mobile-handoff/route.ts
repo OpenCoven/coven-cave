@@ -68,6 +68,29 @@ function runTailscale(args: string[], timeoutMs = 8000): Promise<TailscaleResult
   });
 }
 
+// `tailscale serve status --json` is normally a clean JSON document, but some
+// builds prepend health/warning lines (or emit nothing when there is no serve
+// config). Parse tolerantly: empty output means "no serve config" ({}), and we
+// fall back to extracting the outermost JSON object before giving up.
+function parseServeStatus(raw: string): { value: unknown } | { error: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { value: {} };
+  try {
+    return { value: JSON.parse(trimmed) };
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        return { value: JSON.parse(trimmed.slice(start, end + 1)) };
+      } catch {
+        // fall through
+      }
+    }
+    return { error: trimmed.slice(0, 500) };
+  }
+}
+
 function backendUrl(req: Request) {
   const url = new URL(req.url);
   const port = url.port || process.env.PORT || "3000";
@@ -108,15 +131,18 @@ async function mobileHandoff(req: Request) {
     );
   }
 
-  let parsedStatus: unknown;
-  try {
-    parsedStatus = JSON.parse(status.stdout);
-  } catch {
+  const parsed = parseServeStatus(status.stdout);
+  if ("error" in parsed) {
     return NextResponse.json(
-      { ok: false, error: "invalid tailscale serve status output" },
+      {
+        ok: false,
+        error: "invalid tailscale serve status output",
+        stderr: status.stderr || parsed.error,
+      },
       { status: 500 },
     );
   }
+  const parsedStatus = parsed.value;
 
   const serveUrl = findServeUrl(parsedStatus, backend);
   if (!serveUrl) {

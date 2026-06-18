@@ -139,7 +139,7 @@ export function TopBar(props: Props) {
           aria-label="Open on phone"
           title="Open on phone"
         >
-          <Icon name="ph:phone" width={14} />
+          <Icon name="ph:device-mobile" width={14} />
         </button>
         <NotificationBell
           items={inboxItems}

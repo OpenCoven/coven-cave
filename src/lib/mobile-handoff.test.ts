@@ -8,12 +8,15 @@ import {
 } from "./mobile-handoff.ts";
 import { verifyMobileAccessToken } from "./mobile-access-token.ts";
 
+const serveHost = "cave.tailnet.example.ts.net";
+const serveUrl = `https://${serveHost}/`;
+
 const status = {
   TCP: {
     "443": { HTTPS: true },
   },
   Web: {
-    "mb-black.taile46e90.ts.net:443": {
+    [`${serveHost}:443`]: {
       Handlers: {
         "/": {
           Proxy: "http://127.0.0.1:3000",
@@ -26,12 +29,27 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
 {
   const url = findServeUrl(status, "http://127.0.0.1:3000");
-  assert.equal(url, "https://mb-black.taile46e90.ts.net/");
+  assert.equal(url, serveUrl);
 }
 
 {
   const url = findServeUrl(status, "http://127.0.0.1:4242");
   assert.equal(url, null);
+}
+
+{
+  // Tailscale may report the proxy with a trailing slash or as `localhost`.
+  const variants = {
+    Web: {
+      [`${serveHost}:443`]: {
+        Handlers: { "/": { Proxy: "http://localhost:3000/" } },
+      },
+    },
+  };
+  assert.equal(
+    findServeUrl(variants, "http://127.0.0.1:3000"),
+    serveUrl,
+  );
 }
 
 {
@@ -65,20 +83,20 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 
 {
   const url = buildInviteUrl({
-    baseUrl: "https://mb-black.taile46e90.ts.net/",
+    baseUrl: serveUrl,
     mobileAccessToken: "mobile-token",
     sidecarToken: "sidecar-token",
   });
   assert.equal(
     url,
-    "https://mb-black.taile46e90.ts.net/?coven_access_token=mobile-token&covenCaveToken=sidecar-token",
+    `${serveUrl}?coven_access_token=mobile-token&covenCaveToken=sidecar-token`,
   );
 }
 
 {
   const now = 1_800_000_000_000;
   const invite = await createMobileInvite({
-    baseUrl: "https://mb-black.taile46e90.ts.net/",
+    baseUrl: serveUrl,
     accessSecret: signingKey,
     sidecarToken: "sidecar-a",
     ttlMs: 10 * 60 * 1000,
@@ -87,7 +105,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   });
 
   assert.equal(invite.expiresAt, now + 10 * 60 * 1000);
-  assert.match(invite.url, /^https:\/\/mb-black\.taile46e90\.ts\.net\/\?coven_access_token=v1\./);
+  assert.match(invite.url, /^https:\/\/cave\.tailnet\.example\.ts\.net\/\?coven_access_token=v1\./);
   assert.match(invite.url, /&covenCaveToken=sidecar-a$/);
 
   const parsed = new URL(invite.url);

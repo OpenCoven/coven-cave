@@ -23,6 +23,16 @@ function normalizeServeHost(host: string) {
   return host.endsWith(":443") ? host.slice(0, -4) : host;
 }
 
+// Tailscale may store the proxy target with a trailing slash or as `localhost`
+// rather than the `http://127.0.0.1:<port>` we asked for. Normalize both sides
+// so the lookup doesn't fail on cosmetic differences.
+function normalizeProxyTarget(target: string) {
+  return target
+    .trim()
+    .replace(/\/+$/, "")
+    .replace("://localhost", "://127.0.0.1");
+}
+
 type ResolveTailscaleBinOptions = {
   envBin?: string | null;
   pathEnv?: string | null;
@@ -128,11 +138,12 @@ export function findServeUrl(status: unknown, backendUrl: string) {
   const web = (status as TailscaleServeStatus | null)?.Web;
   if (!web || typeof web !== "object") return null;
 
+  const wantTarget = normalizeProxyTarget(backendUrl);
   for (const [host, config] of Object.entries(web)) {
     const handlers = config?.Handlers;
     if (!handlers || typeof handlers !== "object") continue;
     for (const [path, handler] of Object.entries(handlers)) {
-      if (handler?.Proxy !== backendUrl) continue;
+      if (!handler?.Proxy || normalizeProxyTarget(handler.Proxy) !== wantTarget) continue;
       const normalizedPath = path.startsWith("/") ? path : `/${path}`;
       const suffix = normalizedPath === "/" ? "/" : normalizedPath;
       return `https://${normalizeServeHost(host)}${suffix}`;

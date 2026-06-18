@@ -329,7 +329,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             aria-label="Open on phone"
             title="Open on phone"
           >
-            <Icon name="ph:phone" width={14} className="sidebar-foot-icon" />
+            <Icon name="ph:device-mobile" width={14} className="sidebar-foot-icon" />
           </button>
           <button
             type="button"
