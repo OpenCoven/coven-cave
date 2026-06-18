@@ -184,7 +184,7 @@ assert.match(
 );
 assert.match(
   source,
-  /wireMarkdownLinks\(containerRef\.current, onOpenUrl\)/,
+  /wireMarkdownLinks\(el, onOpenUrl\)/,
   "MarkdownContent should wire rendered markdown links through the chat link-open callback",
 );
 assert.match(

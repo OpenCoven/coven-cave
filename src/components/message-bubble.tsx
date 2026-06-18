@@ -710,12 +710,26 @@ function wireFilePathLinks(container: HTMLElement) {
 function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, linkifyPaths = false) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (html && containerRef.current) {
-      wireCopyButtons(containerRef.current);
-      wireMarkdownLinks(containerRef.current, onOpenUrl);
-      wireMermaidDiagrams(containerRef.current);
-      if (linkifyPaths) wireFilePathLinks(containerRef.current);
-    }
+    const el = containerRef.current;
+    if (!html || !el) return;
+    const wireAll = () => {
+      wireCopyButtons(el);
+      wireMarkdownLinks(el, onOpenUrl);
+      wireMermaidDiagrams(el);
+      if (linkifyPaths) wireFilePathLinks(el);
+    };
+    wireAll();
+    // Re-wire when nodes are added after the first pass. Components that render
+    // once (e.g. the comux file/markdown preview's MarkdownBlock/SyntaxBlock,
+    // vs the chat's repeatedly-re-rendering MarkdownContent) could otherwise
+    // leave a code block's Copy/collapse/expand buttons unwired if the
+    // highlighter populated them after this effect ran. All wiring is
+    // idempotent (guarded per element), and the wiring itself only touches
+    // attributes/listeners — not childList — so it never re-triggers the
+    // observer into a loop.
+    const observer = new MutationObserver(() => wireAll());
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [html, onOpenUrl, linkifyPaths]);
   return containerRef;
 }

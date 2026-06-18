@@ -17,7 +17,7 @@ assert.match(
 );
 assert.match(
   bubble,
-  /wireMermaidDiagrams\(containerRef\.current\)/,
+  /wireMermaidDiagrams\(el\)/,
   "wireMermaidDiagrams runs in the shared useWireCopyButtons post-render hook",
 );
 
