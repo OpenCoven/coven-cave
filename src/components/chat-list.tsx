@@ -530,7 +530,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   return (
     <div className="flex h-full min-w-0">
-      {!compact && (
+      {!compact && sidebarOpen && (
       <ChatProjectSidebar
         groups={sidebarGroups}
         selection={effectiveSelection}
@@ -621,6 +621,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
         {/* Search + filter row */}
         <div className="mt-3 flex items-center gap-2 px-4 pb-3">
+          {!compact && !sidebarOpen && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              title="Show sessions"
+              aria-label="Show sessions"
+              aria-expanded={false}
+              className="chat-list-reopen-rail focus-ring hidden h-8 w-8 shrink-0 place-items-center rounded-lg border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)] lg:grid"
+            >
+              <Icon name="ph:sidebar-simple" width={14} aria-hidden />
+            </button>
+          )}
           <label className="chat-list-search-control flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/60 px-2.5 transition-colors focus-within:border-[var(--accent-presence)]/50 focus-within:bg-[var(--bg-raised)]">
             <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" />
             <input
@@ -870,7 +882,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             onClick={(e) => e.stopPropagation()}
                             title="Drag to reorder"
                             aria-label={`Reorder chat ${rowName}`}
-                            className="chat-list-drag-handle touch-always-visible -ml-1 mt-0.5 grid h-6 w-4 shrink-0 cursor-grab touch-none place-items-center rounded text-[var(--text-muted)] opacity-0 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                            className="chat-list-drag-handle touch-always-visible absolute left-0 top-1/2 grid h-6 w-4 -translate-y-1/2 cursor-grab touch-none place-items-center rounded text-[var(--text-muted)] opacity-0 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
                           >
                             <Icon name="ph:dots-six-vertical" width={12} aria-hidden />
                           </button>
