@@ -124,10 +124,11 @@ async function runViaSession(body: RunBody) {
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
-    // Pass the familiar to the daemon natively (snake_case `familiar_id`, as the
-    // daemon stores it) so the session is attributed at the source, not only in
-    // cave-state. recordSessionFamiliar below still mirrors it for Cave's own UI.
-    body: { projectRoot, harness: binding.harness, prompt, ...(familiarId ? { familiar_id: familiarId } : {}) },
+    // Pass the familiar to the daemon natively so the session is attributed at
+    // the source, not only in cave-state. The daemon keys on camelCase
+    // `familiarId` on input (verified live) and renames it to `familiar_id` in
+    // its response. recordSessionFamiliar below still mirrors it for Cave's UI.
+    body: { projectRoot, harness: binding.harness, prompt, ...(familiarId ? { familiarId } : {}) },
     timeoutMs: 8000,
   });
 

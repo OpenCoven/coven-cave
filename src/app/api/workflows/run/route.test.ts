@@ -26,7 +26,7 @@ assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, 
 assert.match(source, /buildWorkflowRunPrompt\(workflow\)/, "session executor compiles the manifest into a run prompt");
 assert.match(source, /path:\s*"\/api\/v1\/sessions"/, "session executor spawns a daemon agent session");
 assert.match(source, /harness:\s*binding\.harness/, "session executor honors the familiar's harness binding");
-assert.match(source, /familiar_id:\s*familiarId/, "session executor passes the familiar to the daemon natively (snake_case familiar_id)");
+assert.match(source, /\{\s*familiarId\s*\}/, "session executor passes the familiar to the daemon natively (camelCase familiarId, as the daemon keys on)");
 assert.match(source, /isAllowedHarness\(binding\.harness\)/, "session executor guards the harness allow-list");
 assert.match(source, /executor:\s*"session"/, "a session run is tagged executor: session");
 assert.match(source, /sessionId,/, "a session run returns the live session id");
