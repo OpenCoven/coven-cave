@@ -27,6 +27,12 @@ assert.match(
 );
 assert.match(editor, /key: "Escape", run: \(\) => \{ onCancel\(\); return true; \}/, "Escape cancels from inside the editor");
 
+// Editor chrome is themed to the app's CSS tokens (not the generic dark theme).
+assert.match(editor, /const appTheme = EditorView\.theme\(/, "a CodeMirror theme is defined from app tokens");
+assert.match(editor, /backgroundColor: "var\(--bg-base\)"/, "editor background uses the app surface token");
+assert.match(editor, /caretColor: "var\(--accent-presence\)"/, "caret uses the app accent token");
+assert.match(editor, /theme=\{appTheme\}/, "the editor uses the app theme");
+
 // comux uses CodeEditor in edit mode — the plain textarea is gone.
 assert.match(comux, /import \{ CodeEditor \} from "@\/components\/code-editor"/, "comux imports CodeEditor");
 assert.match(
