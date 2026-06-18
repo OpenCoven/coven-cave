@@ -106,6 +106,19 @@ export function usageSummary(
   return parts.length ? parts.join(" · ") : null;
 }
 
+/** Tokens currently occupying the context window for a turn: the full prompt
+ *  size (input + cache-read + cache-creation). This is what a context meter
+ *  should divide by the model window — NOT input+output, and NOT a running
+ *  sum across turns. Returns 0 when usage is absent or carries no input. */
+export function contextTokens(usage?: TurnUsage): number {
+  if (!usage) return 0;
+  return (
+    usage.inputTokens +
+    (usage.cacheReadTokens ?? 0) +
+    (usage.cacheCreationTokens ?? 0)
+  );
+}
+
 /** Full breakdown for tooltips: every captured counter plus a cost, preserving
  *  four decimals only for sub-cent values. Null when there is nothing to break down. */
 export function usageBreakdown(

@@ -40,7 +40,8 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } fro
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
-import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
+import { contextTokens, formatTokens, usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
+import { computeContextMeter } from "@/lib/model-context-windows";
 import {
   formatRuntime,
   type ChatResponseMetadata,
@@ -288,6 +289,46 @@ function UsageText({ usage, costUsd }: { usage?: TurnUsage; costUsd?: number }) 
       title={usageBreakdown(usage, costUsd) ?? undefined}
     >
       {summary}
+    </span>
+  );
+}
+
+/** Compact context-window gauge for the composer: a thin fill bar plus
+ *  "37% · 74k/200k". Driven by the most recent settled turn's prompt size
+ *  (input + cache) over the model's window. Renders nothing when the model
+ *  window is unknown or no turn has reported usage yet — never a fake number. */
+function ContextMeter({ usage, model }: { usage?: TurnUsage; model?: string | null }) {
+  const meter = computeContextMeter(contextTokens(usage), model ?? undefined);
+  if (!meter) return null;
+  const used = formatTokens(meter.used) ?? String(meter.used);
+  const window = formatTokens(meter.window) ?? String(meter.window);
+  const near = meter.fraction >= 0.85;
+  const title = `Context: ${meter.used.toLocaleString()} / ${meter.window.toLocaleString()} tokens (${meter.percent}%)${meter.note ? ` · ${meter.note}` : ""}`;
+  return (
+    <span
+      className="cave-context-meter inline-flex items-center gap-1.5 font-mono text-[10px] text-[var(--text-muted)]"
+      title={title}
+      role="meter"
+      aria-label={`Context window ${meter.percent} percent full`}
+      aria-valuenow={meter.percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <span
+        className="cave-context-meter__track relative h-1 w-10 overflow-hidden rounded-full bg-[var(--bg-panel)]"
+        aria-hidden
+      >
+        <span
+          className="cave-context-meter__fill absolute inset-y-0 left-0 rounded-full"
+          style={{
+            width: `${Math.max(meter.percent, meter.used > 0 ? 4 : 0)}%`,
+            background: near ? "var(--accent-danger, #e5484d)" : "var(--accent-presence)",
+          }}
+        />
+      </span>
+      <span className="cave-context-meter__label tabular-nums">
+        {meter.percent}% · {used}/{window}
+      </span>
     </span>
   );
 }
@@ -2324,6 +2365,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
           projectRoot: activeProjectRoot,
+          // WYSIWYG model: forward the exact model the picker is showing so the
+          // turn runs on it instead of falling back to a stale persisted intent
+          // or the familiar/global default. The route cleans + capability-gates
+          // this (`coven run --model`), so it is a safe no-op until the CLI
+          // advertises the flag. Synthetic local pseudo-models aren't forwarded.
+          ...(modelState?.effectiveModel &&
+          modelState.effectiveModel !== "unknown" &&
+          !isSyntheticLocalModel(modelState.effectiveModel, modelState.harness)
+            ? { modelOverride: modelState.effectiveModel, modelOverrideScope: "session" as const }
+            : {}),
           reasoningEffort: thinkingEffort,
           responseSpeed,
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
@@ -3430,6 +3481,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               <div className="cave-composer-divider" aria-hidden />
               <div className="cave-composer-settings-row" aria-label="Chat response controls">
                 <ChatModelControl state={modelState} onSelectModel={handleSelectModel} busy={busy} />
+                <ContextMeter
+                  usage={lastSettledAssistantTurn?.usage}
+                  model={lastSettledAssistantTurn?.responseMetadata?.model ?? modelState?.effectiveModel}
+                />
                 <ComposerControlSelect
                   label="Thinking"
                   icon="ph:sparkle-bold"
