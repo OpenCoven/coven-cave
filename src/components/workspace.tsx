@@ -7,6 +7,7 @@ import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
+import { CanvasView } from "@/components/canvas-view";
 import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
@@ -84,6 +85,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   roles: "Roles",
   workflows: "Workflows",
   capabilities: "Capabilities",
+  canvas: "Canvas",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -1482,6 +1484,16 @@ export function Workspace() {
         }}
         onJumpToSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);
+        }}
+      />
+    ) : mode === "canvas" ? (
+      <CanvasView
+        familiars={familiars}
+        activeFamiliarId={activeId}
+        onOpenCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        onOpenUrl={(url) => {
+          setMode("browser");
+          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
         }}
       />
     ) : mode === "inbox" ? (

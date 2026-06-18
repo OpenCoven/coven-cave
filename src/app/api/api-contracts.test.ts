@@ -23,6 +23,7 @@ const contracts: RouteContract[] = [
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/canvas", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
