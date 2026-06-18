@@ -17,6 +17,12 @@ import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
 import { resolveFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
+import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
+import {
+  isChatArchiveNudgeDismissed,
+  markChatArchiveNudgeDismissed,
+  shouldShowChatArchiveNudge,
+} from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import {
   MAX_ATTACHMENT_IMAGE_BYTES,
@@ -1497,6 +1503,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  // In-chat "final nudge" — surfaces when the linked task hits `completed`
+  // lifecycle. Dismiss is persisted per-session in localStorage so the banner
+  // doesn't reappear on every reload after the user waved it off.
+  const [archiveNudgeDismissed, setArchiveNudgeDismissed] = useState<boolean>(() =>
+    typeof window === "undefined"
+      ? false
+      : isChatArchiveNudgeDismissed(sessionId ?? "", window.localStorage),
+  );
+  const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readComposerPrefs().thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readComposerPrefs().responseSpeed);
@@ -2878,6 +2893,44 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id]);
 
+  // Re-read the per-session dismiss flag whenever the active chat changes, so
+  // dismissing one chat doesn't silently hide the nudge on a different chat.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setArchiveNudgeDismissed(isChatArchiveNudgeDismissed(sessionId ?? "", window.localStorage));
+  }, [sessionId]);
+
+  const dismissArchiveNudge = useCallback(() => {
+    if (typeof window !== "undefined" && sessionId) {
+      markChatArchiveNudgeDismissed(sessionId, window.localStorage);
+    }
+    setArchiveNudgeDismissed(true);
+  }, [sessionId]);
+
+  const archiveChat = useCallback(async () => {
+    if (!sessionId || archivingChat) return;
+    setArchivingChat(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "archive failed");
+        return;
+      }
+      onSessionsChanged?.();
+      onBack?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "archive failed");
+    } finally {
+      setArchivingChat(false);
+    }
+  }, [sessionId, archivingChat, onSessionsChanged, onBack]);
+
   const deleteChat = async () => {
     if (!sessionId || deleting) return;
     setDeleting(true);
@@ -3182,6 +3235,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               );
             });
           })()}
+          {shouldShowChatArchiveNudge({
+            taskLifecycle: linkedContext?.task?.lifecycle ?? null,
+            sessionArchived: Boolean(session?.archived_at),
+            dismissed: archiveNudgeDismissed,
+          }) ? (
+            <ChatArchiveNudge
+              taskTitle={linkedContext?.task?.title ?? ""}
+              onArchive={() => void archiveChat()}
+              onDismiss={dismissArchiveNudge}
+              archiving={archivingChat}
+            />
+          ) : null}
           <div ref={tailRef} />
         </div>
 

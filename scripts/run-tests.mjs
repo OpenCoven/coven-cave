@@ -236,6 +236,8 @@ export const SUITES = {
     "src/lib/task-chat-context.test.ts",
     "src/lib/task-archive-nudge.test.ts",
     "src/lib/task-archive-nudge-wiring.test.ts",
+    "src/lib/chat-archive-nudge.test.ts",
+    "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/title-enricher.test.ts",
     "src/lib/url-safety.test.ts",
