@@ -1546,6 +1546,10 @@ details[open] > .cave-tool-summary::before {
   flex-direction: column;
   gap: 0;
   padding: 0 12px 12px;
+  /* Container for the settings-row density query below: in the narrow Code-mode
+     column the model + Thinking + Speed pills used to wrap to 2–3 lines. */
+  container-type: inline-size;
+  container-name: composer;
 }
 
 .cave-composer-action-row {
@@ -1655,6 +1659,23 @@ details[open] > .cave-tool-summary::before {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Density: when the composer column is narrow (notably the Code-mode chat pane),
+   drop the "Thinking"/"Speed" control labels — the icon + value still show — and
+   let the model pill shrink, so model + Thinking + Speed stay on one row instead
+   of wrapping to two or three. The wide standalone-chat composer is unaffected. */
+@container composer (max-width: 480px) {
+  .cave-composer-settings-row {
+    gap: 6px;
+  }
+  .cave-composer-select__label {
+    display: none;
+  }
+  .cave-composer-settings-row .cave-chat-model-wrap {
+    flex: 1 1 120px;
+    min-width: 92px;
+  }
 }
 
 .cave-composer-select select {

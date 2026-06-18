@@ -267,6 +267,7 @@ export const SUITES = {
     "src/lib/code-layout-preset.test.ts",
     "src/lib/use-changes-summary.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
+    "src/components/composer-density.test.ts",
     "src/lib/memory-rows.test.ts",
     "src/components/familiars-memory-row.test.ts",
     "src/components/familiars-memory-reader.test.ts",
