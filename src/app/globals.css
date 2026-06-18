@@ -4632,8 +4632,11 @@ button:active > .edge-rail-chip {
 }
 .familiar-studio-inline__tabs {
   display: flex;
+  align-items: stretch;
   gap: 2px;
-  padding: var(--space-2) var(--space-3) 0;
+  /* Match a left familiar-list row (~50px) so the two columns' top bands line up. */
+  min-height: 50px;
+  padding: 0 var(--space-3);
   border-bottom: 1px solid var(--border-hairline);
   overflow-x: auto;
 }
@@ -4641,7 +4644,7 @@ button:active > .edge-rail-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 0 12px;
   border: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
