@@ -159,7 +159,14 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
               <p className="mobile-handoff__meta">
                 Expires at {expiryLabel(handoff.expiresAtIso)}
               </p>
-              <p className="mobile-handoff__url">{handoff.serveUrl}</p>
+              <a
+                className="mobile-handoff__url mobile-handoff__link"
+                href={handoff.inviteUrl || handoff.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {handoff.inviteUrl || handoff.url}
+              </a>
               <p className="mobile-handoff__hint">
                 Scan the short-lived Tailscale invite link, or copy it and paste it into the mobile app.
               </p>
