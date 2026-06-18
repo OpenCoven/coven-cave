@@ -32,6 +32,13 @@ export type WorkflowPlaybackState = {
   cursor: number;
   /** Wall-clock start, for elapsed display. */
   startedAtMs: number;
+  /**
+   * Set when a real agent session is carrying out the plan (the session
+   * executor). The walk then reads as a live execution, not a preview, and the
+   * UI offers to open the session. `sessionId` is that live daemon session.
+   */
+  live?: boolean;
+  sessionId?: string;
 };
 
 function isBlockedOutcome(outcome: WorkflowStepOutcome | undefined): boolean {
@@ -80,23 +87,38 @@ export function blockedCount(state: WorkflowPlaybackState): number {
 export function playbackSummary(state: WorkflowPlaybackState): string {
   const total = state.order.length;
   if (total === 0) return "no steps";
+  // A live session run has no per-step cursor we can trust — report scope, not position.
+  if (state.live) return total === 1 ? "1 step · live" : `${total} steps · live`;
   if (!playbackFinished(state)) return `step ${state.cursor + 1} / ${total}`;
   const blocked = blockedCount(state);
   return blocked > 0 ? `${total} steps · ${blocked} blocked` : `${total} steps · all ready`;
 }
 
-/** Seed playback from a dry-run plan, resolving each step to its plan verdict. */
+/**
+ * Seed playback from a dry-run plan, resolving each step to its plan verdict.
+ * Pass `live` (with the spawned `sessionId`) when a real agent session is
+ * executing the plan, so the walk reads as a live run rather than a preview.
+ */
 export function playbackFromPlan(
   workflow: WorkflowSummary,
   plan: WorkflowDryRunPlan,
   source: WorkflowPlaybackSource,
+  live?: { sessionId: string },
 ): WorkflowPlaybackState {
   const order = workflowExecutionOrder(workflow);
   const outcome: Record<string, WorkflowStepOutcome> = {};
   for (const id of order) {
     outcome[id] = plan.steps?.find((step) => step.id === id)?.status ?? "ready";
   }
-  return { workflowId: workflow.id, source, order, outcome, cursor: 0, startedAtMs: Date.now() };
+  return {
+    workflowId: workflow.id,
+    source,
+    order,
+    outcome,
+    cursor: 0,
+    startedAtMs: Date.now(),
+    ...(live ? { live: true, sessionId: live.sessionId } : {}),
+  };
 }
 
 /** Seed playback from a recorded run, replaying its step outcomes in stored order. */

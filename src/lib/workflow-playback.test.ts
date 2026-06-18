@@ -100,4 +100,19 @@ const replayEnd = advancePlayback(advancePlayback(replay));
 assert.equal(nodePhase(replayEnd, "a"), "done", "succeeded replay step resolves to done");
 assert.equal(nodePhase(replayEnd, "b"), "blocked", "failed replay step resolves to blocked");
 
+// --- live session run (the session executor) ---
+const live = playbackFromPlan(sequential, plan, "play", { sessionId: "abc-123" });
+assert.equal(live.live, true, "a live run is flagged live");
+assert.equal(live.sessionId, "abc-123", "a live run carries the spawned session id");
+assert.equal(live.source, "play", "a live run keeps the play source");
+assert.equal(
+  playbackSummary(live),
+  "3 steps · live",
+  "a live run reports scope, not a per-step cursor it can't trust",
+);
+// Without the live option the run is an ordinary preview (no live flag, no session id).
+const preview = playbackFromPlan(sequential, plan, "play");
+assert.equal(preview.live, undefined, "a preview run is not flagged live");
+assert.equal(preview.sessionId, undefined, "a preview run has no session id");
+
 console.log("workflow-playback.test.ts: ok");

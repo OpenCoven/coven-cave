@@ -78,8 +78,15 @@ assert.match(source, /await load\(true\);\s*\n\s*setSelectedWorkflowId\(saved\.i
 assert.match(source, /playbackFromPlan/, "Dry-run/Play should seed playback from the plan");
 assert.match(source, /playbackFromRun/, "A real run or replay should seed playback from the recorded run");
 assert.match(source, /setPlayback\(playbackFromPlan\(workflow, result, "dry-run"\)\)/, "Dry-run should walk the plan across the canvas");
-assert.match(source, /setPlayback\(playbackFromPlan\(workflow, plan, "play"\)\)/, "Play should fall back to a labelled plan preview when the engine is unavailable");
+assert.match(source, /setPlayback\(playbackFromPlan\(workflow, plan, "play"\)\)/, "Play should fall back to a labelled plan preview when the daemon is offline");
 assert.match(source, /preview \(no execution\)/, "Play preview must stay honest about not executing");
+// Operational Play: a session-executor run walks the plan as a LIVE run and opens the session.
+assert.match(source, /result\.executor === "session" && result\.sessionId/, "Play should detect the session executor result");
+assert.match(source, /playbackFromPlan\(workflow, plan, "play", \{ sessionId: result\.sessionId \}\)/, "A session run should seed a LIVE plan walk carrying the session id");
+assert.match(source, /Running as a live agent session/, "Play should report the live agent session");
+assert.match(source, /const openWorkflowSession = useCallback/, "View should expose an open-session deep link");
+assert.match(source, /window\.location\.hash = `chat-\$\{sessionId\}`/, "Open-session should deep-link into the chat thread");
+assert.match(source, /playback\.live \|\| playbackFinished/, "The walk timer should not auto-advance a live session run");
 assert.match(source, /advancePlayback\(current\)/, "A single timer should advance the playback cursor");
 assert.match(source, /const stopPlayback = useCallback/, "View should expose a stop-playback control");
 assert.match(source, /const replayRun = useCallback/, "View should expose replay-on-canvas");

@@ -27,6 +27,8 @@ type WorkflowRunStripProps = {
   onUndo: () => void;
   onRedo: () => void;
   onStopPlayback: () => void;
+  /** Jump to the live agent session a session-executor run spawned. */
+  onOpenSession: (sessionId: string) => void;
 };
 
 function issuesForAction(action: WorkflowStudioActionState | null): WorkflowValidationIssue[] {
@@ -63,6 +65,7 @@ export function WorkflowRunStrip({
   onUndo,
   onRedo,
   onStopPlayback,
+  onOpenSession,
 }: WorkflowRunStripProps) {
   const issues = issuesForAction(action);
   const validateBusy = workflow ? busyId === `${workflow.id}:validate` : false;
@@ -140,8 +143,8 @@ export function WorkflowRunStrip({
             dirty
               ? "Save before running"
               : engineUnavailable
-                ? "Engine pending — plays the plan as a preview, no execution"
-                : "Execute through the daemon engine"
+                ? "Daemon offline — plays the plan as a preview, no execution"
+                : "Run the workflow as a live agent session"
           }
         >
           <Icon name="ph:lightning-bold" width={14} />
@@ -157,13 +160,30 @@ export function WorkflowRunStrip({
           <Icon name={PLAYBACK_SOURCE_ICON[activePlayback.source]} width={13} />
           <span className="workflow-playback-source">{PLAYBACK_SOURCE_LABEL[activePlayback.source]}</span>
           <span className="workflow-playback-progress">{playbackSummary(activePlayback)}</span>
-          {playbackRunning && activeStepLabel && (
+          {playbackRunning && !activePlayback.live && activeStepLabel && (
             <span className="workflow-playback-active" title={activeStepLabel}>
               {activeStepLabel}
             </span>
           )}
-          {activePlayback.source !== "replay" && (
-            <span className="workflow-playback-honesty">preview · not a live execution</span>
+          {activePlayback.live ? (
+            <>
+              <span className="workflow-playback-live">executing in agent session</span>
+              {activePlayback.sessionId && (
+                <button
+                  type="button"
+                  className="workflow-playback-open"
+                  onClick={() => onOpenSession(activePlayback.sessionId!)}
+                  title="Open the live agent session in Chat"
+                >
+                  <Icon name="ph:arrow-square-out-bold" width={12} />
+                  Open in Chat
+                </button>
+              )}
+            </>
+          ) : (
+            activePlayback.source !== "replay" && (
+              <span className="workflow-playback-honesty">preview · not a live execution</span>
+            )
           )}
           <button
             type="button"
@@ -178,7 +198,7 @@ export function WorkflowRunStrip({
       ) : (
         <>
           {engineUnavailable && (
-            <p className="workflow-run-hint">Run endpoint pending — Play shows a plan preview</p>
+            <p className="workflow-run-hint">Daemon offline — Play shows a plan preview</p>
           )}
           <p className="workflow-run-feedback">
             {notice
@@ -187,7 +207,7 @@ export function WorkflowRunStrip({
                 ? `${action.kind === "validate" ? "Validation" : "Dry-run"} ${action.result.ok ? "ready" : "blocked"} · ${
                     action.result.error ?? workflowIssueSummary(issues)
                   }`
-                : "Validate to check the manifest · Dry-run or Play to watch the plan walk the graph."}
+                : "Validate to check the manifest · Dry-run previews · Play runs it as a live agent session."}
           </p>
         </>
       )}

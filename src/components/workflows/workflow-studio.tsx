@@ -87,6 +87,7 @@ export type WorkflowStudioProps = {
   viewResetKey: number;
   playback: WorkflowPlaybackState | null;
   onStopPlayback: () => void;
+  onOpenSession: (sessionId: string) => void;
   onReplayRun: (run: WorkflowRunRecord) => void;
   onResetView: () => void;
   onSwitchLayout: () => void;
@@ -256,6 +257,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           onUndo={props.onUndo}
           onRedo={props.onRedo}
           onStopPlayback={props.onStopPlayback}
+          onOpenSession={props.onOpenSession}
         />
         <section className="workflow-run-preview-frame" aria-label="Run preview details">
           <button

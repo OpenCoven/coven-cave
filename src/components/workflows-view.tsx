@@ -258,7 +258,10 @@ export function WorkflowsView({
   // A single timer keyed on the cursor keeps the walkthrough smooth and
   // self-cancelling when playback is cleared or the workflow switches.
   useEffect(() => {
-    if (!playback || playbackFinished(playback)) return;
+    // A live agent-session run has no per-step telemetry, so we don't fake a
+    // walk that greens nodes as "done"; the cursor holds on the first step and
+    // the canvas reads as in-progress. Plan previews/replays animate as before.
+    if (!playback || playback.live || playbackFinished(playback)) return;
     const timer = setTimeout(() => {
       setPlayback((current) => (current ? advancePlayback(current) : current));
     }, PLAYBACK_STEP_MS);
@@ -266,6 +269,13 @@ export function WorkflowsView({
   }, [playback]);
 
   const stopPlayback = useCallback(() => setPlayback(null), []);
+
+  // Deep-link into the live agent session a session-executor run spawned. Same
+  // `#chat-<sessionId>` idiom the workspace uses to restore a thread; the
+  // workspace's hash listener switches to chat mode and opens it.
+  const openWorkflowSession = useCallback((sessionId: string) => {
+    if (typeof window !== "undefined") window.location.hash = `chat-${sessionId}`;
+  }, []);
 
   const confirmDiscard = useCallback((): boolean => {
     if (!dirty) return true;
@@ -337,20 +347,30 @@ export function WorkflowsView({
       const result = await runWorkflow({ id: workflow.id });
       if (result.unavailable) {
         setEngineUnavailable(true);
-        // No daemon engine yet: rather than dead-end Play, compute a fresh plan
-        // and play it through the graph as an explicitly-labelled preview. Cave
-        // still never claims an execution happened.
+        // Daemon unreachable, so no agent session can be spawned: rather than
+        // dead-end Play, compute a fresh plan and walk it as an explicitly-
+        // labelled preview. Cave still never claims an execution happened.
         const plan = await dryRunWorkflow({ id: workflow.id, inputs: {} });
         setAction({ id: workflow.id, kind: "dry-run", result: plan });
         setPlayback(playbackFromPlan(workflow, plan, "play"));
-        showNotice("Engine pending — playing the plan as a preview (no execution).");
+        showNotice("Daemon offline — playing the plan as a preview (no execution).");
         return;
       }
       if (!result.ok) {
         showNotice(result.error ?? "workflow run failed");
         return;
       }
-      // A real daemon run was accepted; replay its recorded steps on the canvas.
+      setEngineUnavailable(false);
+      if (result.executor === "session" && result.sessionId) {
+        // The session executor spawned a real agent carrying out the plan. Walk
+        // the plan as a LIVE run (not a preview) and offer to open the session.
+        const plan = await dryRunWorkflow({ id: workflow.id, inputs: {} });
+        setPlayback(playbackFromPlan(workflow, plan, "play", { sessionId: result.sessionId }));
+        showNotice("Running as a live agent session — open it in Chat.");
+        void loadRuns(workflow.id);
+        return;
+      }
+      // The daemon's native engine accepted the run; replay its recorded steps.
       if (result.run) setPlayback(playbackFromRun(result.run));
       showNotice("Execution accepted by daemon.");
       void loadRuns(workflow.id);
@@ -577,6 +597,7 @@ export function WorkflowsView({
       viewResetKey={viewResetKey}
       playback={playback}
       onStopPlayback={stopPlayback}
+      onOpenSession={openWorkflowSession}
       onReplayRun={replayRun}
       onResetView={resetWorkflowView}
       onSwitchLayout={switchWorkflowLayout}

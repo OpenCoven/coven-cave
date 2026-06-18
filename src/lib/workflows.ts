@@ -152,6 +152,10 @@ export type RunWorkflowResponse = {
   unavailable?: boolean;
   error?: string;
   run?: WorkflowRunRecord;
+  /** Which executor handled the run: the daemon's native engine, or a spawned agent session. */
+  executor?: "engine" | "session";
+  /** When `executor === "session"`, the live daemon session id carrying out the plan. */
+  sessionId?: string;
 };
 
 /** Minimal role shape the studio needs for attach toggles. */

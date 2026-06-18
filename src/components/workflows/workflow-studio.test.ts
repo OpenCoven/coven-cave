@@ -43,11 +43,11 @@ for (const label of ["Validate", "Dry-run", "Play"]) {
   assert.match(runStrip, new RegExp(label), `WorkflowRunStrip should include ${label}`);
 }
 assert.match(runStrip, /workflowIssueSummary/, "WorkflowRunStrip should summarize validator and dry-run issues");
-assert.match(runStrip, /Run endpoint pending/, "WorkflowRunStrip should guard Play until daemon execution exists");
+assert.match(runStrip, /Daemon offline/, "WorkflowRunStrip should guard Play with an honest offline hint");
 assert.match(
   runStrip,
-  /<p[^>]*>[\s\S]*Run endpoint pending/,
-  "WorkflowRunStrip should show a visible pending-run hint",
+  /<p[^>]*>[\s\S]*Daemon offline/,
+  "WorkflowRunStrip should show a visible offline-run hint",
 );
 
 assert.match(
@@ -232,6 +232,11 @@ assert.match(canvas, /workflow-edge-active/, "Canvas should highlight the edge f
 assert.match(runStrip, /workflow-playback-transport/, "Run strip should show a playback transport");
 assert.match(runStrip, /onStopPlayback/, "Run strip should expose a stop/clear control");
 assert.match(runStrip, /preview · not a live execution/, "Run strip must label previews honestly");
+// Operational Play: a live agent-session run reads as live and offers to open the session.
+assert.match(runStrip, /executing in agent session/, "Run strip must label a live session run as executing");
+assert.match(runStrip, /Open in Chat/, "A live session run should offer to open the session");
+assert.match(runStrip, /onOpenSession\(activePlayback\.sessionId!\)/, "Open-in-Chat should invoke the open-session callback");
+assert.match(studio, /onOpenSession=\{props\.onOpenSession\}/, "Studio should thread the open-session control into the run strip");
 assert.match(runStrip, /playbackSummary/, "Run strip should show playback progress");
 
 assert.match(runsPanel, /aria-expanded=\{expanded\}/, "Runs rows should be expandable");

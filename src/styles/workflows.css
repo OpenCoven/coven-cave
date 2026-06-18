@@ -1802,6 +1802,32 @@
   color: var(--muted-foreground);
 }
 
+.workflow-playback-live {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: color-mix(in oklch, var(--color-success, #46a758) 80%, var(--text-primary));
+}
+
+.workflow-playback-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid color-mix(in oklch, var(--accent, #d8c98f) 55%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--accent, #d8c98f) 14%, var(--card));
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.workflow-playback-open:hover {
+  border-color: color-mix(in oklch, var(--accent, #d8c98f) 80%, var(--border));
+}
+
 .workflow-playback-stop {
   flex: none;
   display: inline-flex;
