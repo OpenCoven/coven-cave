@@ -29,3 +29,11 @@ assert.match(
   /name: "\/sessions"[\s\S]*description: "Open all sessions across familiars and runtimes\."/,
   "Slash command help should describe Sessions as cross-familiar and cross-runtime",
 );
+
+// The daemon-offline banner must only appear once the status poll has resolved
+// — never during the initial unknown window (which flashed the banner on load).
+assert.match(
+  workspace,
+  /else if \(daemonStatusResolved\)/,
+  "daemon-offline banner is gated on a resolved status, not the initial unknown state",
+);
