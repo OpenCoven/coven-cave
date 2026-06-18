@@ -20,6 +20,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
+import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { type Card, type CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
@@ -41,9 +42,11 @@ import {
   buildRefinePrompt,
   buildSketchPrompt,
   clampArtifactCode,
+  CANVAS_TEMPLATES,
   STARTER_ARTIFACT_HTML,
   titleFromPrompt,
   type CanvasArtifact,
+  type CanvasTemplate,
 } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
@@ -158,6 +161,9 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const [artifactView, setArtifactView] = useState<Record<string, "preview" | "code">>({});
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState("");
+  // Template dropdown (where the Blank button lives).
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const templatesAnchorRef = useRef<HTMLButtonElement | null>(null);
 
   const artifactsRef = useRef<CanvasArtifact[]>([]);
   useEffect(() => {
@@ -280,26 +286,31 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   }, []);
 
   const createArtifact = useCallback(
-    (ask: string, opts?: { blank?: boolean }) => {
+    (ask: string, opts?: { blank?: boolean; template?: CanvasTemplate }) => {
       const prompt = ask.trim();
-      if (!opts?.blank && !prompt) return;
+      const template = opts?.template;
+      // Blank and template starters skip generation; a plain ask needs a prompt.
+      const starter = opts?.blank || !!template;
+      if (!starter && !prompt) return;
       const id = `art-${crypto.randomUUID()}`;
       const now = new Date().toISOString();
       const art: CanvasArtifact = {
         id,
-        title: opts?.blank ? "Blank sketch" : titleFromPrompt(prompt),
+        title: template ? template.label : opts?.blank ? "Blank sketch" : titleFromPrompt(prompt),
         prompt,
-        code: opts?.blank ? STARTER_ARTIFACT_HTML : "",
-        kind: "html",
+        code: template ? template.code : opts?.blank ? STARTER_ARTIFACT_HTML : "",
+        kind: template ? template.kind : "html",
         createdAt: now,
         updatedAt: now,
       };
       setArtifacts((prev) => [...prev, art]);
       const pos = placementFor(artifactsRef.current.length);
       savePosition(id, pos);
+      // Templates open to their preview (they're complete); Blank opens to code
+      // for hand-writing.
       setArtifactView((prev) => ({ ...prev, [id]: opts?.blank ? "code" : "preview" }));
       persistArtifact(art);
-      if (!opts?.blank) void runGeneration(id, prompt);
+      if (!starter) void runGeneration(id, prompt);
     },
     [placementFor, savePosition, persistArtifact, runGeneration],
   );
@@ -564,14 +575,47 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
               }}
             />
             <div className="canvas-composer__actions">
-              <button
-                type="button"
-                className="canvas-composer__blank"
-                title="Add a blank artifact to hand-write or paste HTML"
-                onClick={() => createArtifact("", { blank: true })}
-              >
-                <Icon name="ph:plus" /> Blank
-              </button>
+              <span className="canvas-composer__new">
+                <button
+                  ref={templatesAnchorRef}
+                  type="button"
+                  className="canvas-composer__blank"
+                  title="Start from a blank sketch or a template"
+                  aria-haspopup="menu"
+                  aria-expanded={templatesOpen}
+                  onClick={() => setTemplatesOpen((v) => !v)}
+                >
+                  <Icon name="ph:plus" /> Blank
+                  <Icon name="ph:caret-down" width={11} />
+                </button>
+                <Popover
+                  open={templatesOpen}
+                  onOpenChange={setTemplatesOpen}
+                  anchorRef={templatesAnchorRef}
+                  placement="top-start"
+                  minWidth={232}
+                >
+                  <PopoverBody>
+                    <PopoverItem
+                      icon="ph:file-dashed"
+                      onSelect={() => { createArtifact("", { blank: true }); setTemplatesOpen(false); }}
+                    >
+                      Blank sketch
+                    </PopoverItem>
+                    <PopoverSeparator />
+                    <PopoverLabel>Templates</PopoverLabel>
+                    {CANVAS_TEMPLATES.map((t) => (
+                      <PopoverItem
+                        key={t.id}
+                        icon="ph:file-code"
+                        onSelect={() => { createArtifact("", { template: t }); setTemplatesOpen(false); }}
+                      >
+                        {t.label}
+                      </PopoverItem>
+                    ))}
+                  </PopoverBody>
+                </Popover>
+              </span>
               <button
                 type="button"
                 className="canvas-composer__send"
