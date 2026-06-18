@@ -30,6 +30,21 @@ assert.match(
 // Desktop keeps the two-pane resizable split under its own key.
 assert.match(codeView, /panelIds: \["code-chat", "code-comux"\]/, "desktop mounts both panels in the split");
 
+// ── Layout presets (Chat / Split / Review) re-weight the desktop split ───────
+// A preset toolbar resizes the chat panel imperatively (usePanelRef) — no
+// remount, so the comux terminals/preview keep their state. The chip selection
+// persists under its own key; pane sizes persist under CODE_GROUP_ID.
+assert.match(codeView, /usePanelRef/, "desktop uses a panel ref to drive presets");
+assert.match(codeView, /panelRef=\{chatPanelRef\}/, "the chat panel takes the preset handle via panelRef");
+assert.match(codeView, /chatPanelRef\.current\?\.resize\(CODE_PRESET_CHAT_SIZE\[/, "presets resize the chat panel (comux fills the rest)");
+assert.match(codeView, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
+assert.match(
+  codeView,
+  /codeStorage\.getItem\(CODE_GROUP_ID\) == null/,
+  "the stored preset is applied only when no dragged layout exists (no clobbering manual drags)",
+);
+assert.match(codeView, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
+
 // ── ComuxView accepts a storage namespace so Code-mode terminals are isolated ─
 assert.match(comux, /storageNamespace\?: string/, "ComuxView accepts a storageNamespace prop");
 assert.match(

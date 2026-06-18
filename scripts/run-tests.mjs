@@ -262,6 +262,7 @@ export const SUITES = {
     "src/lib/reading-hyphens.test.ts",
     "src/lib/reading-dropcap.test.ts",
     "src/lib/appearance-corner-radius.test.ts",
+    "src/lib/code-layout-preset.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
     "src/lib/memory-rows.test.ts",
     "src/components/familiars-memory-row.test.ts",
