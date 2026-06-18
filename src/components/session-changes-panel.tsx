@@ -332,7 +332,19 @@ function CheckpointSection({
 
 // ── Panel body (mounted per project root) ─────────────────────────────────────
 
-export function SessionChangesInner({ projectRoot, running }: { projectRoot: string; running: boolean }) {
+export function SessionChangesInner({
+  projectRoot,
+  running,
+  focusPath,
+  focusNonce,
+}: {
+  projectRoot: string;
+  running: boolean;
+  /** Expand a specific file's diff (e.g. jumped to from a transcript edit
+   *  tool). `focusNonce` re-triggers the jump even when the same path repeats. */
+  focusPath?: string | null;
+  focusNonce?: number;
+}) {
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [notARepo, setNotARepo] = useState(false);
@@ -458,6 +470,21 @@ export function SessionChangesInner({ projectRoot, running }: { projectRoot: str
     },
     [diffs, expandedPath, fetchDiff],
   );
+
+  // Jump-to-diff: when a transcript edit tool is clicked, expand that file's
+  // diff. The changes list is repo-relative while focusPath may be absolute (or
+  // vice versa), so match on exact path or suffix. Keyed on focusNonce + the
+  // file list so it retries once the just-edited file appears in the diff list.
+  useEffect(() => {
+    if (!focusPath) return;
+    const match = files.find(
+      (f) => f.path === focusPath || focusPath.endsWith(f.path) || f.path.endsWith(focusPath),
+    );
+    if (!match) return;
+    setExpandedPath(match.path);
+    if (!diffs[match.path]) void fetchDiff(match.path);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNonce, focusPath, filesSig]);
 
   const saveCheckpoint = useCallback(async () => {
     setCheckpointing(true);

@@ -291,6 +291,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // flips once the user clicks a toggle or opens a file; prevChangeCount tracks
   // the 0→>0 edit transition so we surface the diff exactly once per project.
   const pinnedRightViewRef = useRef(false);
+  // Jump-to-diff target from a transcript edit tool (cave:open-file-diff). The
+  // nonce re-triggers the focus even when the same path is clicked again.
+  const [focusDiff, setFocusDiff] = useState<{ path: string; nonce: number } | null>(null);
   const prevChangeCountRef = useRef(0);
   // Project-wide code search (CODE-SEARCH-01).
   const [searchInput, setSearchInput] = useState("");
@@ -570,8 +573,22 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setRightView("files");
       void openFilePreview(path, typeof detail.line === "number" ? detail.line : undefined);
     };
+    // Edit tools jump to their file's diff in the Changes review instead of the
+    // file preview. Pin Changes and focus that file (matched repo-relative or
+    // by suffix inside SessionChangesInner).
+    const onOpenDiff = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string }>).detail;
+      if (!detail?.path) return;
+      pinnedRightViewRef.current = true;
+      setRightView("changes");
+      setFocusDiff((prev) => ({ path: detail.path!, nonce: (prev?.nonce ?? 0) + 1 }));
+    };
     window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
-    return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
+    window.addEventListener("cave:open-file-diff", onOpenDiff as EventListener);
+    return () => {
+      window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
+      window.removeEventListener("cave:open-file-diff", onOpenDiff as EventListener);
+    };
   }, [active, openFilePreview, selectedRoot]);
 
   const copyPreview = useCallback(() => {
@@ -1272,6 +1289,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         key={selectedProject.root}
                         projectRoot={selectedProject.root}
                         running={projectHasRunningSession}
+                        focusPath={focusDiff?.path ?? null}
+                        focusNonce={focusDiff?.nonce}
                       />
                     </div>
                   ) : previewPath ? (

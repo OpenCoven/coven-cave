@@ -3921,11 +3921,19 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
   // workspace switches to Code mode first when neither is showing.
   const targetFile = toolTargetFile(tool.name, tool.input);
+  // An edit tool (Edit/Write/MultiEdit/NotebookEdit — the ones with a structured
+  // input diff) jumps to its file's DIFF in the Changes review; other file tools
+  // open the file preview. The comux pane handles both events.
+  const isEditTool = inputDiff != null;
   const openTargetFile = (e: ReactMouseEvent) => {
     if (!targetFile) return;
     e.preventDefault();
     e.stopPropagation();
-    window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path: targetFile } }));
+    window.dispatchEvent(
+      new CustomEvent(isEditTool ? "cave:open-file-diff" : "cave:open-project-file", {
+        detail: { path: targetFile },
+      }),
+    );
   };
   return (
     <details className="cave-tool-block" data-default-collapsed="true">
@@ -3937,11 +3945,11 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <button
               type="button"
               onClick={openTargetFile}
-              title={`Open ${targetFile} in the Code workspace`}
+              title={isEditTool ? `View diff for ${targetFile}` : `Open ${targetFile} in the Code workspace`}
               className="group/openfile inline-flex min-w-0 max-w-[18rem] items-center gap-1 truncate font-mono text-[var(--text-muted)] hover:text-[var(--accent-presence,var(--text-secondary))] hover:underline"
             >
               <span className="truncate">· {argSummary}</span>
-              <Icon name="ph:arrow-square-out" width={10} className="shrink-0 opacity-0 transition-opacity group-hover/openfile:opacity-100" aria-hidden />
+              <Icon name={isEditTool ? "ph:git-diff" : "ph:arrow-square-out"} width={10} className="shrink-0 opacity-0 transition-opacity group-hover/openfile:opacity-100" aria-hidden />
             </button>
           ) : (
             <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>

@@ -45,8 +45,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /dispatchEvent\(new CustomEvent\("cave:open-project-file", \{ detail: \{ path: targetFile \} \}\)\)/,
-  "clicking a tool's file dispatches cave:open-project-file",
+  /dispatchEvent\(\s*new CustomEvent\(isEditTool \? "cave:open-file-diff" : "cave:open-project-file", \{\s*detail: \{ path: targetFile \},/,
+  "clicking a tool's file dispatches the diff jump for edit tools, else the file preview",
 );
 // Click must not also toggle the <details> open/closed.
 assert.match(chatView, /openTargetFile = \(e: ReactMouseEvent\) => \{[\s\S]*?stopPropagation\(\)/, "open handler stops propagation");

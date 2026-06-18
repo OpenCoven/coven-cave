@@ -11,8 +11,18 @@ const changes = await readFile(new URL("./session-changes-panel.tsx", import.met
 // The reusable inner panel is exported for embedding.
 assert.match(
   changes,
-  /export function SessionChangesInner\(\{ projectRoot, running \}/,
+  /export function SessionChangesInner\(\{\s*projectRoot,\s*running/,
   "SessionChangesInner must be exported so other surfaces can embed the diff review",
+);
+
+// Jump-to-diff: SessionChangesInner accepts focusPath/focusNonce and expands the
+// matching file's diff (repo-relative or suffix match) when a transcript edit
+// tool is clicked.
+assert.match(changes, /focusPath\?: string \| null;/, "SessionChangesInner takes a focusPath prop");
+assert.match(
+  changes,
+  /focusPath\.endsWith\(f\.path\) \|\| f\.path\.endsWith\(focusPath\)/,
+  "focusPath matches repo-relative or absolute paths by suffix",
 );
 
 // comux imports it and renders it for the SELECTED project (not the active
@@ -47,6 +57,24 @@ assert.match(
   comux,
   /!pinnedRightViewRef\.current &&[\s\S]*?rightView === "files" &&[\s\S]*?prev === 0 &&[\s\S]*?changesSummary\.count > 0[\s\S]*?setRightView\("changes"\)/,
   "auto-switch to Changes on the first edit transition when the user hasn't pinned a view",
+);
+
+// Transcript edit tool → diff jump: comux listens for cave:open-file-diff,
+// pins + switches to Changes, and focuses the file via a nonce.
+assert.match(comux, /window\.addEventListener\("cave:open-file-diff"/, "comux listens for the open-file-diff jump");
+assert.match(
+  comux,
+  /setRightView\("changes"\);\s*setFocusDiff\(\(prev\) => \(\{ path: detail\.path!, nonce: \(prev\?\.nonce \?\? 0\) \+ 1 \}\)\)/,
+  "open-file-diff pins Changes and bumps the focus nonce",
+);
+assert.match(comux, /focusPath=\{focusDiff\?\.path \?\? null\}[\s\S]*?focusNonce=\{focusDiff\?\.nonce\}/, "focus is forwarded to SessionChangesInner");
+
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+assert.match(chatView, /const isEditTool = inputDiff != null/, "ToolBlock detects edit tools by their input diff");
+assert.match(
+  chatView,
+  /isEditTool \? "cave:open-file-diff" : "cave:open-project-file"/,
+  "edit tools jump to the diff; other file tools open the preview",
 );
 
 console.log("comux-view-changes.test.ts (diff-first) checks passed");
