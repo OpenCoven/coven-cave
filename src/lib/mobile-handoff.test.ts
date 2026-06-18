@@ -4,6 +4,8 @@ import {
   buildInviteUrl,
   createMobileInvite,
   findServeUrl,
+  magicDnsHost,
+  magicDnsServeUrl,
   resolveTailscaleBin,
 } from "./mobile-handoff.ts";
 import { verifyMobileAccessToken } from "./mobile-access-token.ts";
@@ -113,6 +115,27 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.ok(token);
   const verification = await verifyMobileAccessToken(token, signingKey, now);
   assert.equal(verification.ok, true);
+}
+
+{
+  // MagicDNS fallback: derive the serve URL from `status --self --json` when
+  // the serve config can't be read (the GUI-failed-to-start case). The root
+  // dot Tailscale appends to DNSName is stripped.
+  const self = { Self: { DNSName: "cave.tailnet.example.ts.net." } };
+  assert.equal(magicDnsHost(self), "cave.tailnet.example.ts.net");
+  assert.equal(magicDnsServeUrl(self), serveUrl);
+
+  // The fallback host matches what findServeUrl would have produced, so the
+  // invite link is well-formed either way.
+  assert.equal(magicDnsServeUrl(self), findServeUrl(status, "http://127.0.0.1:3000"));
+}
+
+{
+  // No DNSName → no fallback (caller then surfaces the serve error).
+  assert.equal(magicDnsServeUrl(null), null);
+  assert.equal(magicDnsServeUrl({}), null);
+  assert.equal(magicDnsServeUrl({ Self: {} }), null);
+  assert.equal(magicDnsHost({ Self: { DNSName: "  " } }), null);
 }
 
 console.log("mobile-handoff.test.ts OK");

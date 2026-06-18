@@ -44,4 +44,35 @@ assert.match(mobileStub, /id="clear-url"[\s\S]*hidden/, "Mobile connection scree
 assert.doesNotMatch(tauriConfig, /"deep-link"[\s\S]*"scheme": \["opencoven"\]/, "iOS app should not register a custom app connect URL scheme");
 assert.doesNotMatch(tauriLib, /tauri_plugin_deep_link::init/, "iOS shell should not install the deep-link plugin");
 
+// Resilient handoff: when `tailscale serve --bg` fails (e.g. macOS "GUI failed
+// to start, CLIError 3"), the route must NOT hard-fail. It should fall back to
+// the MagicDNS host so the invite link + QR still generate, returning the serve
+// error as a non-fatal warning instead.
+assert.doesNotMatch(
+  handoffRoute,
+  /error: "failed to start tailscale serve"/,
+  "serve --bg failure must not short-circuit the whole handoff",
+);
+assert.match(
+  handoffRoute,
+  /magicDnsServeUrl\(selfStatus\)/,
+  "route falls back to the MagicDNS host when the serve config can't be read",
+);
+assert.match(
+  handoffRoute,
+  /status", "--self", "--json"/,
+  "route reads self status as JSON to source the MagicDNS fallback host",
+);
+assert.match(
+  handoffRoute,
+  /warning: serveWarning/,
+  "route returns the serve-start failure as a non-fatal warning alongside the link",
+);
+assert.match(
+  modal,
+  /handoff\.warning \?\s*\(\s*<p className="mobile-handoff__warning">\{handoff\.warning\}/,
+  "modal shows the non-fatal warning while still rendering the link and QR",
+);
+assert.match(css, /\.mobile-handoff__warning/, "the non-fatal warning has stable styling");
+
 console.log("mobile-handoff.test.ts OK");

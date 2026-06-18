@@ -134,6 +134,30 @@ export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: cachedTailscalePath };
 }
 
+type TailscaleSelfStatus = {
+  Self?: { DNSName?: string };
+};
+
+// The device's MagicDNS name from `tailscale status --self --json`, with the
+// trailing root dot the daemon appends to DNSName stripped so it can prefix a
+// `https://` URL.
+export function magicDnsHost(selfStatus: unknown): string | null {
+  const dns = (selfStatus as TailscaleSelfStatus | null)?.Self?.DNSName;
+  if (typeof dns !== "string") return null;
+  const host = dns.trim().replace(/\.+$/, "");
+  return host || null;
+}
+
+// Fallback serve URL when `tailscale serve status` can't be read (e.g. the GUI
+// failed to start): the MagicDNS host is the same host key `findServeUrl`
+// returns, so the invite link/QR are still well-formed. The link resolves once
+// a serve config is live — which it often already is, since serve config
+// persists in the daemon independently of the GUI helper that errored.
+export function magicDnsServeUrl(selfStatus: unknown): string | null {
+  const host = magicDnsHost(selfStatus);
+  return host ? `https://${host}/` : null;
+}
+
 export function findServeUrl(status: unknown, backendUrl: string) {
   const web = (status as TailscaleServeStatus | null)?.Web;
   if (!web || typeof web !== "object") return null;
