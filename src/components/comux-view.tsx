@@ -43,6 +43,10 @@ type Props = {
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
   onNewChat: (projectRoot: string) => void;
   active?: boolean;
+  /** Suffix that isolates this instance's persisted terminal layout/sessions
+   *  from other ComuxView instances (e.g. the Code workspace keeps its own
+   *  terminals separate from the standalone Terminal surface). */
+  storageNamespace?: string;
 };
 
 type ProjectFilePreview =
@@ -94,10 +98,10 @@ function TerminalDropZone({
   );
 }
 
-function readLegacySessions(): TerminalSession[] {
+function readLegacySessions(storageKey: string): TerminalSession[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_SESSIONS);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -132,10 +136,10 @@ function isLayoutNode(value: unknown): value is TerminalLayoutNode {
   });
 }
 
-function readTerminalLayout(): TerminalLayoutState {
+function readTerminalLayout(layoutKey: string, sessionsKey: string): TerminalLayoutState {
   if (typeof window === "undefined") return createTerminalLayout();
   try {
-    const raw = window.localStorage.getItem(STORAGE_LAYOUT);
+    const raw = window.localStorage.getItem(layoutKey);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<TerminalLayoutState>;
       if (
@@ -171,7 +175,7 @@ function readTerminalLayout(): TerminalLayoutState {
   } catch {
     // Fall back to the legacy flat session list below.
   }
-  const legacy = readLegacySessions();
+  const legacy = readLegacySessions(sessionsKey);
   return createTerminalLayout(legacy, legacy[0]?.id ?? null);
 }
 
@@ -246,11 +250,13 @@ function shortProjectTime(iso: string | null): string {
   }
 }
 
-export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true }: Props) {
+export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "" }: Props) {
+  const layoutKey = STORAGE_LAYOUT + storageNamespace;
+  const sessionsKey = STORAGE_SESSIONS + storageNamespace;
   const [terminalLayout, dispatchTerminalLayout] = useReducer(
     terminalLayoutReducer,
     undefined,
-    readTerminalLayout,
+    () => readTerminalLayout(layoutKey, sessionsKey),
   );
   const sessions = terminalLayout.sessions;
   const activeSessionId = terminalLayout.activeSessionId;
@@ -309,9 +315,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // Persist the full pane tree. Keep the legacy flat key in sync so older
   // versions can still recover terminal tabs if a user rolls back.
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_LAYOUT, JSON.stringify(terminalLayout));
-    window.localStorage.setItem(STORAGE_SESSIONS, JSON.stringify(sessions));
-  }, [terminalLayout, sessions]);
+    window.localStorage.setItem(layoutKey, JSON.stringify(terminalLayout));
+    window.localStorage.setItem(sessionsKey, JSON.stringify(sessions));
+  }, [terminalLayout, sessions, layoutKey, sessionsKey]);
 
   const projects = useMemo(
     () => deriveComuxProjects(daemonSessions, daemonProjectRoot),
@@ -361,14 +367,17 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // project root. Only the canonical terminal instance handles it so a single
   // session is created, and it spawns in that project's cwd via addSession.
   useEffect(() => {
-    if (view !== "terminal") return;
+    // Gate on `active` so that when several ComuxView instances are mounted
+    // (e.g. the hidden Terminal surface plus the visible Code workspace), only
+    // the active one opens a session — otherwise a single event spawns two.
+    if (view !== "terminal" || !active) return;
     const onTerminalOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ projectRoot?: string }>).detail;
       addSession(detail?.projectRoot);
     };
     window.addEventListener("cave:terminal-open", onTerminalOpen as EventListener);
     return () => window.removeEventListener("cave:terminal-open", onTerminalOpen as EventListener);
-  }, [view, addSession]);
+  }, [view, active, addSession]);
 
   useEffect(() => {
     const activeTerminal = view === "terminal" && active;

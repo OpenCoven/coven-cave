@@ -81,8 +81,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(view !== "terminal"\) return;[\s\S]{0,260}?addEventListener\("cave:terminal-open"/,
-  "only the canonical terminal instance handles cave:terminal-open (single session, no duplicates)",
+  /if \(view !== "terminal" \|\| !active\) return;[\s\S]{0,360}?addEventListener\("cave:terminal-open"/,
+  "only the ACTIVE terminal instance handles cave:terminal-open — when several ComuxViews are mounted (e.g. Terminal surface + Code workspace) just one spawns a session",
 );
 
 // ⌘N / ⌘W keydown handler is wired and respects modifier + contentEditable gate.
