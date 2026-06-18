@@ -94,12 +94,14 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   reminder: "Reminder",
   agent: "Familiar update",
   "response-needed": "Response needed",
+  "daily-summary": "Daily report",
 };
 
 export const KIND_ICON: Record<ItemKind, string> = {
   reminder: "ph:bell",
   agent: "ph:sparkle",
   "response-needed": "ph:chat-circle-dots",
+  "daily-summary": "ph:newspaper",
 };
 
 /**
@@ -199,23 +201,9 @@ export type RecentReport = {
 /**
  * All generated daily-summary items in the inbox, newest first, mapped to the
  * dashboard's "recent reports" rows.
- *
- * The `daily-summary` inbox kind and its `media.stats` payload ship with the
- * (separate) daily-report generator. This reads them through a loose shape so
- * the dashboard compiles today and lights up automatically once those items
- * start appearing in the inbox — no change needed here.
  */
-type SummaryShape = {
-  kind: string;
-  auto?: string | null;
-  title: string;
-  firedAt?: string | null;
-  updatedAt?: string | null;
-  media?: { stats?: DailyReportStats | null } | null;
-};
-
 export function recentReports(items: InboxItem[]): RecentReport[] {
-  return (items as unknown as SummaryShape[])
+  return items
     .filter((item) => item.kind === "daily-summary" && typeof item.auto === "string")
     .map((item) => {
       const slug = (item.auto ?? "").replace(/^daily-summary:/, "");
