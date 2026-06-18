@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.104] - 2026-06-18
+
+Patch release: the Workflow Studio's **Play** now actually runs a workflow, plus terminal-split survival, a fullscreen diagram viewer, and assorted UI polish.
+
+### Added
+- **Workflows** — pressing Play now executes the workflow: when the daemon has no native engine, Cave compiles the manifest into an orchestration prompt and spawns a real agent session that carries out the plan, recorded in run history with an "Open in Chat" jump to the live thread. Only a fully offline daemon falls back to the honest plan preview (#923).
+- **Workflows** — the spawned run session is now attributed to its familiar on the daemon, not just in Cave's local state (#928).
+- **Chat** — fullscreen zoom/pan viewer for Mermaid diagrams (#922).
+- **Theme** — Ember retheme into Vintage Paper (tweakcn port) (#929).
+
+### Fixed
+- **Terminal** — splitting a pane no longer tears down the shell into a dead/blank pane; panes can also be dragged by their title bar to reorganize the layout (#925).
+- **Sidebar** — Recent Activity items now navigate to their session (#924); familiars fall back to their glyph when an avatar image fails to load (#921).
+- **Chat & roles** — full-width role rows and a tighter session rail (#926), with the stray left whitespace removed from the session list (#927).
+- **Mobile** — the handoff flow produces a working invite link/QR even when Tailscale Serve fails to start (#931).
+
 ## [0.0.103] - 2026-06-18
 
 Patch release: respect persisted home navigation state after the v0.0.102 chat-width release.
