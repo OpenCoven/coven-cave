@@ -223,6 +223,20 @@ assert.match(
   "capabilities stays in Tools",
 );
 
+// Recent Activity items must navigate: RecentActivityRollup's onClick calls
+// onOpenSession, so the sidebar must forward the prop (and activeSessionId for
+// the active-row accent) or clicking a recent session silently does nothing.
+assert.match(
+  source,
+  /<RecentActivityRollup\b[^/]*\bonOpenSession=\{onOpenSession\}/,
+  "Recent Activity must receive onOpenSession so selecting an item navigates to it",
+);
+assert.match(
+  source,
+  /<RecentActivityRollup\b[^/]*\bactiveSessionId=\{activeSessionId\}/,
+  "Recent Activity must receive activeSessionId to highlight the open session",
+);
+
 // PR #322 wrapped the New Chat ActionRow in .sidebar-new-chat-row so desktop
 // CSS could hide it (the FamiliarSwitcher had its own + button to dedupe
 // against). PR #304 replaced the switcher with a plain dropdown that has no

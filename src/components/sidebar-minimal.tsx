@@ -188,6 +188,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onOpenSettings,
     onOpenMobileHandoff,
     onModeChange,
+    onOpenSession,
+    activeSessionId,
     addons,
     familiars,
     activeFamiliarId,
@@ -293,7 +295,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           ))}
         </SidebarSection>
 
-        <RecentActivityRollup />
+        <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
       {/* Bottom: Notifications + Settings */}
