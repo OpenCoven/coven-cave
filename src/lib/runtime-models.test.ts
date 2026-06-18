@@ -26,8 +26,8 @@ assert.ok(
   "claude catalog should seed Claude Opus 4.8",
 );
 assert.ok(
-  !catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
-  "claude catalog should no longer offer the retired Claude Fable 5",
+  catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
+  "claude catalog should still offer Claude Fable 5 (both Fable 5 and Opus 4.8 are current)",
 );
 
 // Namespaced model id convention (`provider/model`) holds across the seed.
