@@ -50,6 +50,8 @@ export const SUITES = {
     "src/lib/chat-reply.test.ts",
     "src/components/chat-reply-wiring.test.ts",
     "src/lib/reminder-draft.test.ts",
+    "src/lib/daily-report.test.ts",
+    "src/app/dashboard-page.test.ts",
     "src/components/dev-cache-reset-script.test.ts",
     "src/components/pwa-register.test.ts",
     "src/lib/readable-text-color.test.ts",
