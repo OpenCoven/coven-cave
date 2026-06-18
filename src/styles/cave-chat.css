@@ -214,6 +214,137 @@
   max-width: 100%;
   height: auto;
 }
+/* Rendered diagrams are click-to-expand into the fullscreen zoom/pan viewer. */
+.cave-md .cm-mermaid-diagram--interactive {
+  position: relative;
+  cursor: zoom-in;
+}
+.cm-mermaid-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-panel) 82%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+.cm-mermaid-diagram--interactive:hover .cm-mermaid-expand,
+.cm-mermaid-expand:focus-visible {
+  opacity: 1;
+}
+.cm-mermaid-expand:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Fullscreen diagram viewer (zoom + pan), mounted on <body>. */
+.cm-mermaid-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  /* Mermaid diagrams are transparent, so unlike the modal (which sits on an
+     opaque panel) the backdrop must be near-solid or the chat bleeds through.
+     The mermaid theme is always dark, so a solid dark backdrop always fits. */
+  background: rgba(9, 9, 11, 0.97);
+  backdrop-filter: blur(6px);
+}
+.cm-mermaid-viewer__stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.cm-mermaid-viewer__stage--grabbing {
+  cursor: grabbing;
+}
+.cm-mermaid-viewer__canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.cm-mermaid-viewer__canvas svg {
+  display: block;
+  overflow: visible;
+}
+/* Stop per-node label clipping when mermaid's pre-font-load measurement left
+   the boxes narrower than the final text. */
+.cm-mermaid-viewer__canvas svg foreignObject {
+  overflow: visible;
+}
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .label,
+.cm-mermaid-viewer__canvas svg .edgeLabel {
+  overflow: visible;
+}
+.cm-mermaid-viewer__toolbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.cm-mermaid-viewer__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.cm-mermaid-viewer__btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.cm-mermaid-viewer__btn--close {
+  color: var(--text-muted);
+}
+.cm-mermaid-viewer__level {
+  min-width: 46px;
+  text-align: center;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.cm-mermaid-viewer__hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
+  border: 1px solid var(--border-hairline);
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+  pointer-events: none;
+}
+
 .cave-md .cm-mermaid-container { margin: 8px 0 16px; }
 .cave-md .cm-mermaid {
   display: block;
