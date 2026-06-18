@@ -7,6 +7,7 @@ import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
+import { SessionChangesInner } from "@/components/session-changes-panel";
 import { resolveLangLabel } from "@/lib/code-lang";
 import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
@@ -281,6 +282,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  // Right pane view: the file preview, or the project's git changes/diff review.
+  const [rightView, setRightView] = useState<"files" | "changes">("files");
   // Project-wide code search (CODE-SEARCH-01).
   const [searchInput, setSearchInput] = useState("");
   const [searchRegex, setSearchRegex] = useState(false);
@@ -660,6 +663,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       .slice(0, 6);
   }, [daemonSessions, selectedProject]);
 
+  // Poll the diff while a familiar is actively working this project so the
+  // Changes view reflects edits as they land.
+  const projectHasRunningSession = recentProjectSessions.some((s) => s.status === "running");
   const previewIsMarkdown = preview?.kind === "text" && isMarkdownPath(previewPath);
   const previewLineCount = preview?.kind === "text" ? preview.content.split("\n").length : 0;
   const renderAsMarkdown = previewIsMarkdown && !previewRaw;
@@ -1177,7 +1183,37 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 </div>
 
                 <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
-                  {previewPath ? (
+                  {/* Files / Changes toggle — review the familiar's working-tree
+                      diffs (revert + checkpoints) without leaving the surface. */}
+                  <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5">
+                    <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setRightView("files")}
+                        className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "files" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                      >
+                        <Icon name="ph:file-code" width={11} />
+                        Files
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRightView("changes")}
+                        className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "changes" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                      >
+                        <Icon name="ph:git-diff" width={11} />
+                        Changes
+                      </button>
+                    </div>
+                  </div>
+                  {rightView === "changes" ? (
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <SessionChangesInner
+                        key={selectedProject.root}
+                        projectRoot={selectedProject.root}
+                        running={projectHasRunningSession}
+                      />
+                    </div>
+                  ) : previewPath ? (
                     <>
                       {/* Preview header */}
                       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">

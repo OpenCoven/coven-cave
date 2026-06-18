@@ -117,6 +117,7 @@ export const SUITES = {
     "src/components/library-link-viewer.test.ts",
     "src/components/comux-view-terminal.test.ts",
     "src/components/comux-view-edit.test.ts",
+    "src/components/comux-view-changes.test.ts",
     "src/components/code-view.test.ts",
     "src/components/bottom-terminal-sr-mirror.test.ts",
     "src/components/terminal-key-bar.test.ts",
