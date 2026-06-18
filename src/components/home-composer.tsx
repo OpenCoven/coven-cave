@@ -19,6 +19,8 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { Icon, type IconName } from "@/lib/icon";
+import { ChatModelControl } from "@/components/chat-model-control";
+import type { ChatModelState } from "@/lib/chat-model-state";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 
@@ -87,6 +89,60 @@ export function HomeComposer({
   const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? "";
+  const [modelState, setModelState] = useState<ChatModelState | null>(null);
+
+  // Show the selected familiar's effective model on the home composer. No session
+  // exists here, so GET keys on familiarId only. The `cancelled` flag drops any
+  // out-of-order response when the selection changes mid-flight.
+  useEffect(() => {
+    if (!selectedFamiliarId) {
+      setModelState(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/chat/model-state?familiarId=${encodeURIComponent(selectedFamiliarId)}`,
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+        if (cancelled) return;
+        setModelState(json.ok && json.state ? json.state : null);
+      } catch {
+        if (!cancelled) setModelState(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFamiliarId]);
+
+  // A pick at home is sticky per familiar: PATCH familiar-default (the in-chat
+  // picker's no-session path). The new chat inherits it at send time.
+  const handleSelectModel = useCallback(
+    (modelId: string) => {
+      if (!selectedFamiliarId) return;
+      void (async () => {
+        try {
+          const res = await fetch("/api/chat/model-state", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              familiarId: selectedFamiliarId,
+              model: modelId,
+              scope: "familiar-default",
+            }),
+          });
+          const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+          if (json.ok && json.state) setModelState(json.state);
+        } catch {
+          /* keep prior state; the effect refetches when the familiar changes */
+        }
+      })();
+    },
+    [selectedFamiliarId],
+  );
 
   // Mirror the chat composer's matching rule: surface only while the user is
   // still typing the command token (no whitespace yet).
@@ -385,6 +441,14 @@ export function HomeComposer({
             </select>
             <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
           </label>
+
+          {destination === "chat" && selectedFamiliarId ? (
+            <ChatModelControl
+              state={modelState}
+              onSelectModel={handleSelectModel}
+              busy={sending}
+            />
+          ) : null}
 
           {/* Destination pills */}
           <div className="hc-dest-pills">
