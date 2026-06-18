@@ -250,6 +250,8 @@ export function NotificationBell({
                       name={
                         it.kind === "response-needed"
                           ? "ph:chat-circle-dots-fill"
+                          : it.kind === "daily-summary"
+                          ? "ph:newspaper"
                           : it.kind === "agent"
                           ? "ph:magic-wand-fill"
                           : "ph:alarm-fill"

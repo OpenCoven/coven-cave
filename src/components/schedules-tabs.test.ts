@@ -43,8 +43,13 @@ assert.match(automations, /\["automations", "Automations", codexAutos\.length\]/
 
 assert.match(
   automations,
-  /const reminderItems = useMemo\(\(\) =>\s*items\.filter\(\(it\) => it\.kind === "reminder"\)/,
-  "Reminders tab should only include reminder inbox items",
+  /function isScheduleInboxItem\(item: InboxItem\): boolean \{[\s\S]*item\.kind === "reminder" \|\| item\.kind === "daily-summary"/,
+  "Reminders tab should include reminder-style inbox items, including daily summaries",
+);
+assert.match(
+  automations,
+  /const reminderItems = useMemo\(\(\) =>\s*items\.filter\(isScheduleInboxItem\)/,
+  "Reminders tab should use the schedule inbox item filter",
 );
 assert.match(
   automations,

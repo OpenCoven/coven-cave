@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import type { InboxItem } from "@/lib/cave-inbox";
+import type { InboxItem, InboxMedia, LinkRef } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 
 export type Toast = {
   id: string;
@@ -12,6 +12,9 @@ export type Toast = {
   itemId?: string;
   sessionId?: string | null;
   familiarId?: string | null;
+  link?: LinkRef | null;
+  iconName?: IconName;
+  media?: InboxMedia | null;
 };
 
 type Props = {
@@ -47,7 +50,7 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
         >
           <div className="mb-1 flex items-start gap-2">
             <span className="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden>
-              <Icon name="ph:alarm-fill" />
+              <Icon name={t.iconName ?? "ph:alarm-fill"} />
             </span>
             <span className="flex-1 text-sm font-medium text-[var(--text-primary)]">{t.title}</span>
             <button
@@ -58,6 +61,13 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
               <Icon name="ph:x-bold" aria-hidden />
             </button>
           </div>
+          {t.media?.imageUrl ? (
+            <img
+              src={t.media.imageUrl}
+              alt={t.media.alt}
+              className="mb-2 h-24 w-full rounded-md border border-[var(--border-hairline)] object-cover"
+            />
+          ) : null}
           {t.body ? (
             <p className="mb-2 line-clamp-3 text-[11px] text-[var(--text-secondary)]">{t.body}</p>
           ) : null}
@@ -84,6 +94,13 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
   );
 }
 
+function toastIconForItem(item: InboxItem): IconName {
+  if (item.kind === "daily-summary") return "ph:newspaper";
+  if (item.kind === "response-needed") return "ph:chat-circle-dots-fill";
+  if (item.kind === "agent") return "ph:magic-wand-fill";
+  return "ph:alarm-fill";
+}
+
 export function toastFromItem(item: InboxItem): Toast {
   return {
     id: item.id,
@@ -92,5 +109,8 @@ export function toastFromItem(item: InboxItem): Toast {
     itemId: item.id,
     sessionId: item.sessionId,
     familiarId: item.familiarId,
+    link: item.link,
+    iconName: toastIconForItem(item),
+    media: item.media,
   };
 }

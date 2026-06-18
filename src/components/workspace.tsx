@@ -51,6 +51,11 @@ import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
+import {
+  buildDailySummaryNotification,
+  dailySummaryAutoKey,
+  ensureDailySummaryNotification,
+} from "@/lib/daily-summary-notifications";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -207,6 +212,7 @@ export function Workspace() {
   // often; the listener should not resubscribe on either.
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  const dailySummaryRequestedRef = useRef<string | null>(null);
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
@@ -605,6 +611,19 @@ export function Workspace() {
     return () => es.close();
   }, []);
 
+  useEffect(() => {
+    if (!sessionsLoaded) return;
+    const now = new Date();
+    const key = dailySummaryAutoKey(now);
+    if (dailySummaryRequestedRef.current === key) return;
+    const draft = buildDailySummaryNotification({ items: inboxItems, sessions, now });
+    if (!draft) return;
+    dailySummaryRequestedRef.current = key;
+    void ensureDailySummaryNotification({ items: inboxItems, sessions, now }).then((result) => {
+      if (result === "failed") dailySummaryRequestedRef.current = null;
+    });
+  }, [inboxItems, sessions, sessionsLoaded]);
+
   const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
@@ -789,6 +808,10 @@ export function Workspace() {
   const openReminderLink = useCallback((link: LinkRef) => {
     if (link.kind === "url") {
       if (!link.ref) return;
+      if (link.ref.startsWith("/")) {
+        nextRouter.push(link.ref);
+        return;
+      }
       setMode("browser");
       requestAnimationFrame(() => browserPaneRef.current?.navigateTo(link.ref));
     } else if (link.kind === "card") {
@@ -797,7 +820,7 @@ export function Workspace() {
     } else if (link.kind === "session") {
       openFamiliarSession(link.ref);
     }
-  }, [openFamiliarSession]);
+  }, [nextRouter, openFamiliarSession]);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
     const sessionId =
@@ -986,12 +1009,14 @@ export function Workspace() {
 
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
-    if (toast.sessionId) {
+    if (toast.link) {
+      openReminderLink(toast.link);
+    } else if (toast.sessionId) {
       openFamiliarSession(toast.sessionId, toast.familiarId);
     } else {
       setMode("inbox");
     }
-  }, [openFamiliarSession]);
+  }, [openFamiliarSession, openReminderLink]);
 
   const toggleFamiliarPanel = useCallback(() => {
     shellRef.current?.toggleFamiliar();

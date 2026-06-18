@@ -56,6 +56,7 @@ const contracts: RouteContract[] = [
   { route: "/inbox/[id]/done", methods: ["POST"], kind: "json" },
   { route: "/inbox/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/inbox/[id]/snooze", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/inbox/daily-summary", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty", localOriginGuard: true },
   { route: "/inbox/prefs", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/inbox", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/stream", methods: ["GET"], kind: "stream" },
@@ -215,6 +216,23 @@ for (const contract of contracts) {
     assert.match(source, /isLocalOrigin/, `${contract.route} must preserve local-origin guard`);
     assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
   }
+}
+
+{
+  const dailySummarySource = readFileSync(
+    path.join(apiRoot, "inbox", "daily-summary", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    dailySummarySource,
+    /link:\s*draft\.link/,
+    "/inbox/daily-summary should persist the generated report link",
+  );
+  assert.match(
+    dailySummarySource,
+    /media:\s*draft\.media/,
+    "/inbox/daily-summary should persist the generated media card",
+  );
 }
 
 // CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an

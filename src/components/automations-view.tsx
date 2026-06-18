@@ -72,6 +72,10 @@ function humanSchedule(rec: Recurrence | undefined): string {
   return "Scheduled";
 }
 
+function isScheduleInboxItem(item: InboxItem): boolean {
+  return item.kind === "reminder" || item.kind === "daily-summary";
+}
+
 function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
   const delta = new Date(iso).getTime() - Date.now();
@@ -257,6 +261,7 @@ function DetailPanel({
 }) {
   const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
   const isRecurring = item.recurrence && item.recurrence.type !== "none";
+  const isDailySummary = item.kind === "daily-summary";
   const busy = busyId === item.id;
 
   return (
@@ -266,7 +271,7 @@ function DetailPanel({
       <div className="flex items-center justify-between border-b px-5 py-3"
         style={{ borderColor: "var(--border-hairline)" }}>
         <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          Reminder details
+          {isDailySummary ? "Daily summary details" : "Reminder details"}
         </h2>
         <button type="button" onClick={onClose}
           className="rounded p-1 transition-colors hover:bg-white/5"
@@ -296,26 +301,30 @@ function DetailPanel({
         )}
 
         <div className="grid grid-cols-1 gap-4">
-          <div>
-            <FieldLabel>Schedule</FieldLabel>
-            <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
-              {humanSchedule(item.recurrence)}
-            </p>
-          </div>
+          {!isDailySummary && (
+            <div>
+              <FieldLabel>Schedule</FieldLabel>
+              <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+                {humanSchedule(item.recurrence)}
+              </p>
+            </div>
+          )}
           <div>
             <FieldLabel>Status</FieldLabel>
             <p className="text-[12px] capitalize" style={{ color: paused ? "var(--text-muted)" : "var(--text-primary)" }}>
               {paused ? "Paused" : item.status}
             </p>
           </div>
+          {!isDailySummary && (
+            <div>
+              <FieldLabel>Next run</FieldLabel>
+              <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+                {relTime(item.fireAt)}
+              </p>
+            </div>
+          )}
           <div>
-            <FieldLabel>Next run</FieldLabel>
-            <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
-              {relTime(item.fireAt)}
-            </p>
-          </div>
-          <div>
-            <FieldLabel>Last run</FieldLabel>
+            <FieldLabel>{isDailySummary ? "Sent" : "Last run"}</FieldLabel>
             <p className="text-[12px]" style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
               {item.firedAt ? relTime(item.firedAt) : "Never"}
             </p>
@@ -353,7 +362,7 @@ function DetailPanel({
       {/* Actions */}
       <div className="border-t px-5 py-4 space-y-2"
         style={{ borderColor: "var(--border-hairline)" }}>
-        {onEdit && (
+        {onEdit && !isDailySummary && (
           <button type="button" disabled={busy} onClick={() => onEdit(item)}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
             style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
@@ -361,17 +370,21 @@ function DetailPanel({
             Edit
           </button>
         )}
-        <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: "var(--accent-presence)" }}>
-          Run now
-        </button>
-        <button type="button" disabled={busy} onClick={() => togglePaused(item)}
-          className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-          style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
-          {paused ? "Resume" : "Pause"}
-        </button>
-        {isRecurring && (
+        {!isDailySummary && (
+          <>
+            <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
+              className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
+              style={{ background: "var(--accent-presence)" }}>
+              Run now
+            </button>
+            <button type="button" disabled={busy} onClick={() => togglePaused(item)}
+              className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+              style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
+              {paused ? "Resume" : "Pause"}
+            </button>
+          </>
+        )}
+        {isRecurring && !isDailySummary && (
           <button type="button" disabled={busy} onClick={() => stopRecurrence(item.id)}
             className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
             style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
@@ -400,7 +413,9 @@ function ReminderTaskRow({
   onSelect: (item: InboxItem) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
-  const schedule = item.recurrence?.type !== "none"
+  const schedule = item.kind === "daily-summary"
+    ? "Daily summary"
+    : item.recurrence?.type !== "none"
     ? humanSchedule(item.recurrence)
     : item.fireAt
     ? relTime(item.fireAt)
@@ -1073,7 +1088,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   // ── Sections ──────────────────────────────────────────────────────────────
   const reminderItems = useMemo(() =>
-    items.filter((it) => it.kind === "reminder"),
+    items.filter(isScheduleInboxItem),
     [items]);
 
   const current = useMemo(() =>

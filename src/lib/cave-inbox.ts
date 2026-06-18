@@ -5,7 +5,7 @@ import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 
 const INBOX_PATH = path.join(homedir(), ".coven", "cave-inbox.json");
 
-export type ItemKind = "reminder" | "agent" | "response-needed";
+export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";
 
 // Re-exported so existing consumers that say
@@ -19,6 +19,19 @@ export type { Recurrence };
 export type LinkRef = {
   kind: "session" | "card" | "memory" | "url";
   ref: string;
+};
+
+export type InboxMedia = {
+  kind: "summary-card";
+  imageUrl: string;
+  alt: string;
+  stats: {
+    reminders: number;
+    responses: number;
+    familiars: number;
+    sessions: number;
+  };
+  generatedAt: string;
 };
 
 export type InboxItem = {
@@ -37,6 +50,7 @@ export type InboxItem = {
   familiarId?: string | null;
   sessionId?: string | null;
   link?: LinkRef | null;
+  media?: InboxMedia | null;
   /**
    * Discriminator for machine-generated items (e.g. archive nudges). Absent on
    * human/user-created items. Lets producers dedup and resolve their own items
@@ -101,6 +115,7 @@ export type NewItemInput = {
   familiarId?: string | null;
   sessionId?: string | null;
   link?: LinkRef | null;
+  media?: InboxMedia | null;
   auto?: string | null;
 };
 
@@ -109,7 +124,7 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
     const file = await loadInbox();
     const now = new Date().toISOString();
     const status: ItemStatus =
-      input.kind === "agent" && !input.fireAt ? "fired" : "pending";
+      (input.kind === "agent" || input.kind === "daily-summary") && !input.fireAt ? "fired" : "pending";
     const item: InboxItem = {
       id: crypto.randomUUID(),
       kind: input.kind,
@@ -126,6 +141,7 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
       familiarId: input.familiarId ?? null,
       sessionId: input.sessionId ?? null,
       link: input.link ?? null,
+      media: input.media ?? null,
       auto: input.auto ?? null,
     };
     file.items.push(item);

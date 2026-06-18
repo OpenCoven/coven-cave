@@ -109,6 +109,7 @@ function urgencyColor(item: InboxItem): string {
 }
 
 function platformIcon(item: InboxItem): IconName {
+  if (item.kind === "daily-summary") return "ph:newspaper";
   const meta = (item as unknown as { comms?: { platform?: string } }).comms;
   if (!meta?.platform) return "ph:bell";
   const map: Record<string, IconName> = {
@@ -874,6 +875,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   reminder: "Reminder",
   agent: "Familiar",
   "response-needed": "Response needed",
+  "daily-summary": "Daily summary",
 };
 
 function ItemDetailPanel({

@@ -4,6 +4,7 @@ import {
   loadInbox,
   type ItemKind,
   type ItemStatus,
+  type InboxMedia,
   type LinkRef,
   type Recurrence,
 } from "@/lib/cave-inbox";
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
     familiarId?: string | null;
     sessionId?: string | null;
     link?: LinkRef | null;
+    media?: InboxMedia | null;
   };
   try {
     body = await req.json();
@@ -70,6 +72,7 @@ export async function POST(req: Request) {
     familiarId: body.familiarId,
     sessionId: body.sessionId,
     link: body.link,
+    media: body.media,
   });
   broadcastCreated(item);
   return NextResponse.json({ ok: true, item });
