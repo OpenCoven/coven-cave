@@ -116,3 +116,40 @@ for (const [name, src] of [
     `${name} aria-activedescendant should track the highlighted index and be absent when the menu is closed`,
   );
 }
+
+// ── Model picker (home composer) ──────────────────────────────────────────────
+assert.match(
+  source,
+  /import \{ ChatModelControl \} from "@\/components\/chat-model-control"/,
+  "HomeComposer should import the shared ChatModelControl",
+);
+
+assert.match(
+  source,
+  /\/api\/chat\/model-state\?familiarId=/,
+  "HomeComposer should GET model-state for the selected familiar",
+);
+
+assert.match(
+  source,
+  /scope: "familiar-default"/,
+  "HomeComposer should persist a model pick as the familiar default",
+);
+
+assert.match(
+  source,
+  /destination === "chat" && selectedFamiliarId[\s\S]{0,120}<ChatModelControl/,
+  "HomeComposer should render the model picker only for the chat destination with a familiar selected",
+);
+
+assert.match(
+  source,
+  /<ChatModelControl[\s\S]{0,120}state=\{modelState\}[\s\S]{0,120}onSelectModel=\{handleSelectModel\}/,
+  "HomeComposer model picker should be wired to modelState + handleSelectModel",
+);
+
+assert.doesNotMatch(
+  source,
+  /scope: "session"/,
+  "HomeComposer must not use session scope — there is no session at home",
+);

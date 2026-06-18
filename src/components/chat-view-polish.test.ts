@@ -57,8 +57,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const \{ visible, reasoning: inlineReasoning \} = splitReasoning\(turn\.text\)/,
-  "Assistant turns should split visible content from collapsible reasoning",
+  /const reasoningSplit = splitReasoning\(turn\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const \{ visible, suggestions: nextPaths \} = extractNextPaths\(reasoningSplit\.visible\)/,
+  "Assistant turns should split visible content from collapsible reasoning before extracting next-path suggestions",
 );
 
 assert.match(
@@ -117,8 +117,8 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const \{ visible, reasoning: inlineReasoning \} = splitReasoning\(turn\.text\)/,
-  "Assistant turns should render only reasoning-filtered visible content",
+  /<MessageBubble[\s\S]*role="assistant"[\s\S]*content=\{visible \|\| \(turn\.pending \? "…" : ""\)\}/,
+  "Assistant turns should render only filtered visible content",
 );
 
 assert.match(
