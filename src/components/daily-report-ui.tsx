@@ -92,6 +92,7 @@ const ROW_ACCENT: Record<InboxItem["kind"], string> = {
   reminder: ACCENT_VAR.amber,
   agent: ACCENT_VAR.lavender,
   "response-needed": ACCENT_VAR.rose,
+  "daily-summary": ACCENT_VAR.blue,
 };
 
 /** A single actionable inbox item. Renders as a deep link when it has a target. */

@@ -94,12 +94,14 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   reminder: "Reminder",
   agent: "Familiar update",
   "response-needed": "Response needed",
+  "daily-summary": "Daily summary",
 };
 
 export const KIND_ICON: Record<ItemKind, string> = {
   reminder: "ph:bell",
   agent: "ph:sparkle",
   "response-needed": "ph:chat-circle-dots",
+  "daily-summary": "ph:newspaper",
 };
 
 /**
