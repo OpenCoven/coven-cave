@@ -10,6 +10,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
+const preset = await readFile(new URL("../lib/code-layout-preset.ts", import.meta.url), "utf8");
 
 // ── CodeView is a two-pane resizable shell, chat | comux ─────────────────────
 assert.match(codeView, /orientation="horizontal"/, "CodeView lays the panes out horizontally");
@@ -44,6 +45,54 @@ assert.match(
   "the stored preset is applied only when no dragged layout exists (no clobbering manual drags)",
 );
 assert.match(codeView, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
+
+// ── Projects toggle collapses ONLY the projects list (not the whole code pane) ─
+// The toolbar's Projects button drives the comux projects-list column over a
+// window event; it must NOT collapse the code/comux Panel itself.
+assert.match(codeView, /onClick=\{toggleProjects\}/, "the toolbar has a Projects toggle");
+assert.match(
+  codeView,
+  /const toggleProjects = \(\) => setProjectList\(!projectsCollapsed\)/,
+  "the toggle flips the projects-list collapse, nothing else",
+);
+assert.match(
+  codeView,
+  /new CustomEvent\(CODE_PROJECT_LIST_EVENT, \{ detail: \{ collapsed \} \}\)/,
+  "collapse is broadcast to comux over CODE_PROJECT_LIST_EVENT",
+);
+assert.doesNotMatch(
+  codeView,
+  /\.collapse\(\)|collapsedSize|collapsible/,
+  "the code/comux Panel is never collapsed — only the projects list is",
+);
+
+// Presets are task setups, not just widths: each broadcasts a context preset
+// and toggles the projects list (Chat focuses the conversation).
+assert.match(
+  codeView,
+  /new CustomEvent\(CODE_PRESET_EVENT, \{ detail: \{ preset: next \} \}\)/,
+  "selecting a preset broadcasts the context preset",
+);
+assert.match(
+  codeView,
+  /setProjectList\(CODE_PRESET_HIDES_PROJECT_LIST\[next\]\)/,
+  "a preset shows/hides the projects list per its definition",
+);
+
+// ── comux reacts: hides the projects list + switches the right pane per preset ─
+assert.match(comux, /projectListCollapsed \? null : \(/, "comux hides the projects list column when collapsed");
+assert.match(comux, /addEventListener\(CODE_PROJECT_LIST_EVENT/, "comux listens for the projects-list toggle");
+assert.match(comux, /addEventListener\(CODE_PRESET_EVENT/, "comux listens for the layout preset");
+assert.match(
+  comux,
+  /CODE_PRESET_RIGHT_VIEW\[preset\][\s\S]*?setRightView\(nextRight\)/,
+  "a preset switches comux's right pane (Review → Changes, Split → Files)",
+);
+
+// The Review preset must target the git diff, and Split the files view —
+// otherwise the chips are just width tweaks.
+assert.match(preset, /review: "changes"/, "Review opens the git changes/diff");
+assert.match(preset, /split: "files"/, "Split shows the file tree & preview");
 
 // ── ComuxView accepts a storage namespace so Code-mode terminals are isolated ─
 assert.match(comux, /storageNamespace\?: string/, "ComuxView accepts a storageNamespace prop");

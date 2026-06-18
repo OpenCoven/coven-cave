@@ -11,6 +11,13 @@ import { SessionChangesInner } from "@/components/session-changes-panel";
 import { useChangesSummary } from "@/lib/use-changes-summary";
 import { CodeEditor } from "@/components/code-editor";
 import { resolveLangLabel } from "@/lib/code-lang";
+import {
+  CODE_PRESET_EVENT,
+  CODE_PRESET_RIGHT_VIEW,
+  CODE_PROJECT_LIST_EVENT,
+  readProjectListCollapsed,
+  type CodePreset,
+} from "@/lib/code-layout-preset";
 import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import {
@@ -284,6 +291,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  // Projects list (the 200px column) visibility, driven by the Code workspace
+  // toolbar's Projects toggle and its layout presets over window events. Lives
+  // here because comux owns the column; code-view only mirrors the boolean.
+  const [projectListCollapsed, setProjectListCollapsed] = useState(false);
   // Right pane view: the file preview, or the project's git changes/diff review.
   const [rightView, setRightView] = useState<"files" | "changes">("files");
   // Diff-first review: auto-switch to Changes the first time an agent run
@@ -592,6 +603,36 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       window.removeEventListener("cave:open-file-diff", onOpenDiff as EventListener);
     };
   }, [active, openFilePreview, selectedRoot]);
+
+  // Code workspace toolbar wiring (projects view only): the Projects toggle
+  // shows/hides this column, and a layout preset additionally switches the
+  // right pane (Review → Changes, Split → Files). Sync the initial collapse
+  // state from storage so a reload remembers it.
+  useEffect(() => {
+    if (view !== "projects") return;
+    setProjectListCollapsed(readProjectListCollapsed());
+    const onProjectList = (event: Event) => {
+      const detail = (event as CustomEvent<{ collapsed?: boolean }>).detail;
+      setProjectListCollapsed(Boolean(detail?.collapsed));
+    };
+    const onPreset = (event: Event) => {
+      const preset = (event as CustomEvent<{ preset?: CodePreset }>).detail?.preset;
+      if (!preset) return;
+      const nextRight = CODE_PRESET_RIGHT_VIEW[preset];
+      if (nextRight) {
+        // An explicit preset is a deliberate view choice — pin it so diff-first
+        // auto-switch doesn't override.
+        pinnedRightViewRef.current = true;
+        setRightView(nextRight);
+      }
+    };
+    window.addEventListener(CODE_PROJECT_LIST_EVENT, onProjectList as EventListener);
+    window.addEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
+    return () => {
+      window.removeEventListener(CODE_PROJECT_LIST_EVENT, onProjectList as EventListener);
+      window.removeEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
+    };
+  }, [view]);
 
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;
@@ -1009,7 +1050,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       ) : (
         /* Project tab */
         <div className="flex flex-1 min-h-0">
-          {/* Project list */}
+          {/* Project list — hidden via the Code toolbar's Projects toggle / Chat preset */}
+          {projectListCollapsed ? null : (
           <div className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] py-2 text-[12px]">
             <div className="mb-1 flex items-center gap-1.5 px-3 pb-1">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Projects</span>
@@ -1061,6 +1103,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               })}
             </div>
           </div>
+          )}
 
           {/* Project detail */}
           <div className="flex min-w-0 min-h-0 flex-1 flex-col">
