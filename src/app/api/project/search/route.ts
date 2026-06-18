@@ -118,7 +118,10 @@ function buildRgArgs(params: {
   caseMode: "smart" | "sensitive" | "insensitive";
   glob: string | null;
 }): string[] {
-  const args = ["--json", "--max-count", String(RG_MAX_COUNT), "--max-columns", "2000", "--no-messages"];
+  const args = ["--json", "--max-count", String(RG_MAX_COUNT), "--max-columns", "2000", "--no-messages",
+    // One line of context on each side of a match, emitted as `context` events
+    // the parser stitches onto matches as before/after lines.
+    "--context", "1"];
   if (!params.regex) args.push("--fixed-strings");
   if (params.caseMode === "insensitive") args.push("--ignore-case");
   else if (params.caseMode === "sensitive") args.push("--case-sensitive");

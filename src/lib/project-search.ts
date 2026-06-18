@@ -5,10 +5,11 @@
  * Keeping the parse pure (no child_process, no next/server) lets it be
  * unit-tested against captured ripgrep output without a live binary or repo.
  *
- * ripgrep emits one JSON object per line. We only care about `match` events;
- * `begin`/`end`/`summary`/`context` are ignored. Each match carries the file
- * path, the 1-based line number, the matched line text, and submatch byte
- * offsets (used to derive a 1-based column for jump-to-line).
+ * ripgrep emits one JSON object per line. We read `match` events (the file
+ * path, 1-based line number, matched line text, and submatch byte offsets used
+ * to derive a 1-based column for jump-to-line) and, when ripgrep ran with
+ * context (`-C`), `context` events — stitched onto the adjacent match as
+ * before/after lines. `begin`/`end`/`summary` are ignored.
  *
  * Output is grouped by file and bounded twice — total matches and per-file
  * matches — so a pathological query ("e" across a monorepo) can't flood the
@@ -22,6 +23,11 @@ export type SearchMatch = {
   column: number;
   /** The matched line, newline-stripped and length-capped for display. */
   preview: string;
+  /** The line immediately before the match (present when ripgrep ran with
+   *  context, `-C`). Newline-stripped + length-capped like `preview`. */
+  before?: string;
+  /** The line immediately after the match (present when run with context). */
+  after?: string;
 };
 
 export type SearchFileGroup = {
@@ -85,8 +91,14 @@ export function parseRipgrepJson(stdout: string, options: ParseOptions = {}): Se
 
   const groups = new Map<string, SearchFileGroup>();
   const order: string[] = [];
+  // Context lines (from ripgrep `-C`) keyed by path → (1-based line → text),
+  // collected alongside matches and stitched onto adjacent matches at the end.
+  const contextByPath = new Map<string, Map<number, string>>();
   let totalMatches = 0;
   let truncated = false;
+
+  const clip = (raw: string): string =>
+    raw.length > maxPreviewLen ? `${raw.slice(0, maxPreviewLen)}…` : raw;
 
   for (const rawLine of stdout.split("\n")) {
     const line = rawLine.trim();
@@ -98,7 +110,7 @@ export function parseRipgrepJson(stdout: string, options: ParseOptions = {}): Se
     } catch {
       continue; // tolerate partial/garbled lines
     }
-    if (event.type !== "match" || !event.data) continue;
+    if ((event.type !== "match" && event.type !== "context") || !event.data) continue;
 
     const data = event.data;
     // ripgrep reports paths relative to the search path we pass ("."), so they
@@ -108,6 +120,15 @@ export function parseRipgrepJson(stdout: string, options: ParseOptions = {}): Se
     if (!path) continue;
     const lineNumber = typeof data.line_number === "number" ? data.line_number : 0;
     if (lineNumber <= 0) continue;
+    const text = clip(textOf(data.lines).replace(/\r?\n$/, ""));
+
+    // Context lines don't count toward the match caps; record them for stitching.
+    if (event.type === "context") {
+      let ctx = contextByPath.get(path);
+      if (!ctx) { ctx = new Map(); contextByPath.set(path, ctx); }
+      ctx.set(lineNumber, text);
+      continue;
+    }
 
     if (totalMatches >= maxMatches) {
       truncated = true;
@@ -125,16 +146,24 @@ export function parseRipgrepJson(stdout: string, options: ParseOptions = {}): Se
       continue; // keep scanning other files, just skip this one's overflow
     }
 
-    const rawPreview = textOf(data.lines).replace(/\r?\n$/, "");
-    const preview =
-      rawPreview.length > maxPreviewLen ? `${rawPreview.slice(0, maxPreviewLen)}…` : rawPreview;
-
     group.matches.push({
       line: lineNumber,
       column: columnFromSubmatches(data),
-      preview,
+      preview: text,
     });
     totalMatches += 1;
+  }
+
+  // Stitch the immediately-adjacent context lines onto each match.
+  for (const path of order) {
+    const ctx = contextByPath.get(path);
+    if (!ctx) continue;
+    for (const m of groups.get(path)!.matches) {
+      const before = ctx.get(m.line - 1);
+      const after = ctx.get(m.line + 1);
+      if (before !== undefined) m.before = before;
+      if (after !== undefined) m.after = after;
+    }
   }
 
   return {

@@ -120,4 +120,34 @@ function matchLine(path, lineNumber, text, submatchStart) {
   assert.equal(result.files[0].matches[0].preview, `${"x".repeat(10)}…`);
 }
 
+// ── context lines stitch onto adjacent matches (ripgrep -C) ─────────────────
+function contextLine(path, lineNumber, text) {
+  return JSON.stringify({ type: "context", data: { path: { text: path }, lines: { text }, line_number: lineNumber } });
+}
+{
+  // file with: context(11) match(12) context(13), and a second match(40) with
+  // only a preceding context(39).
+  const stdout = [
+    contextLine("src/a.ts", 11, "const before = 1;\n"),
+    matchLine("src/a.ts", 12, "const foo = 2;\n", 6),
+    contextLine("src/a.ts", 13, "const after = 3;\n"),
+    contextLine("src/a.ts", 39, "// preceding\n"),
+    matchLine("src/a.ts", 40, "  return foo;\n", 9),
+  ].join("\n");
+  const result = parseRipgrepJson(stdout);
+  assert.equal(result.totalMatches, 2, "context lines don't count as matches");
+  const [m1, m2] = result.files[0].matches;
+  assert.equal(m1.before, "const before = 1;", "match 12 gets the line above");
+  assert.equal(m1.after, "const after = 3;", "match 12 gets the line below");
+  assert.equal(m2.before, "// preceding", "match 40 gets its preceding context");
+  assert.equal(m2.after, undefined, "no trailing context → after stays undefined");
+}
+
+// Context with no nearby match is simply dropped (not rendered as a match).
+{
+  const result = parseRipgrepJson(contextLine("src/b.ts", 5, "lonely\n"));
+  assert.equal(result.totalMatches, 0);
+  assert.deepEqual(result.files, []);
+}
+
 console.log("project-search.test.ts: all assertions passed");
