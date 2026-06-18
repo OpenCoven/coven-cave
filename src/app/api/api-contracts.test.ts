@@ -357,7 +357,9 @@ for (const contract of contracts) {
   );
 }
 
-const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-assert.match(packageJson.scripts?.["test:api"] ?? "", /api-contracts\.test\.ts/, "package.json must expose this API contract suite");
+// The test:api npm script delegates to scripts/run-tests.mjs; assert this
+// suite is listed in that runner's manifest so it actually runs in CI.
+const runnerSource = readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8");
+assert.match(runnerSource, /api-contracts\.test\.ts/, "scripts/run-tests.mjs must list this API contract suite");
 
 console.log(`api-contracts.test.ts: ${contracts.length} route contracts passed`);
