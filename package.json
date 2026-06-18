@@ -21,7 +21,7 @@
     "mobile:tailscale:stop": "bash scripts/mobile-tailscale.sh stop",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "icons:subset": "node scripts/generate-icon-subset.mjs",
-    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-pwa-icons.mjs",
+    "prebuild": "node scripts/generate-icon-subset.mjs && node scripts/generate-pwa-icons.mjs && node scripts/build-sandbox-runtime.mjs",
     "build": "next build && pnpm build:server",
     "typecheck": "tsc --noEmit",
     "check:tests-wired": "node scripts/check-tests-wired.mjs",
@@ -67,6 +67,7 @@
     "react-dom": "19.2.4",
     "react-resizable-panels": "4.11.2",
     "shiki": "4.2.0",
+    "sucrase": "3.35.1",
     "ws": "8.21.0",
     "yaml": "2.9.0"
   },

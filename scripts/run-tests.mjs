@@ -313,6 +313,7 @@ export const SUITES = {
   ],
   api: [
     "scripts/dependency-policy.test.mjs",
+    "scripts/build-sandbox-runtime.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/app/api/api-contracts.test.ts",

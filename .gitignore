@@ -95,3 +95,6 @@ package-lock.json
 /graphify-out
 /artifacts
 /docs/superpowers
+
+# Generated Canvas Sketch sandbox runtime (built in prebuild)
+/public/sandbox/
