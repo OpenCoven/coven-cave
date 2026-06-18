@@ -52,6 +52,36 @@ assert.match(
   "npm argv is fully fixed — only the allowlisted package name varies",
 );
 
+assert.match(
+  source,
+  /await prepareForInstall\(targetName, target, job\)/,
+  "installer should run target-specific preparation before npm mutates a global tool",
+);
+
+assert.match(
+  source,
+  /targetName !== "coven-cli"/,
+  "daemon stop/kill preparation should be scoped to coven-cli upgrades only",
+);
+
+assert.match(
+  source,
+  /callDaemon<\{ ok\?: boolean; daemon\?: \{ pid\?: number \} \}>/,
+  "coven-cli upgrades should query the live daemon pid instead of trusting stale pid files",
+);
+
+assert.match(
+  source,
+  /process\.kill\(pid, "SIGTERM"\)/,
+  "coven-cli upgrades should clear a still-running daemon that keeps coven.exe locked",
+);
+
+assert.match(
+  source,
+  /installFailureHint\(targetName, job\.output\)/,
+  "installer should translate common Windows lock failures into actionable guidance",
+);
+
 // The request body must never reach the spawn call.
 assert.doesNotMatch(
   source,

@@ -13,6 +13,8 @@ Patch release: respect persisted home navigation state after the v0.0.102 chat-w
 
 ### Fixed
 - **Shell** — reverted the forced home-screen nav reopen so fresh desktop launches still default open, but a deliberate collapsed nav stays collapsed across reloads and app launches (#920).
+- **Windows OpenClaw bridge** — Cave now resolves and launches npm `openclaw.cmd` shims safely, so OpenClaw-backed familiars such as TARS do not require a hand-built `openclaw.exe`.
+- **OpenCoven tools update** — updating the coven CLI from Cave now best-effort stops the running daemon first and surfaces clearer guidance if Windows still has `coven.exe` locked.
 
 ## [0.0.102] - 2026-06-18
 

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
-import { covenSpawnEnv } from "@/lib/coven-bin";
+import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { callDaemon } from "@/lib/coven-daemon";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -105,6 +106,10 @@ type SpawnPlan = {
   shell: boolean;
 };
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
 /** Resolve the fixed spawn plan for a target. Returns null when a
  *  prerequisite is missing (npm targets need npm on PATH). */
 async function spawnPlanFor(
@@ -167,6 +172,110 @@ const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
 
 function appendOutput(job: InstallJob, chunk: string) {
   job.output = (job.output + chunk).slice(-OUTPUT_CAP);
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runCommand(
+  command: string,
+  args: string[],
+  options: { shell: boolean; timeoutMs: number },
+): Promise<{ code: number | null; signal: NodeJS.Signals | null; output: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: covenSpawnEnv(),
+      shell: options.shell,
+    });
+    let output = "";
+    const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
+    child.stdout.on("data", (data) => {
+      output += stripAnsi(data.toString());
+    });
+    child.stderr.on("data", (data) => {
+      output += stripAnsi(data.toString());
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({ code: 1, signal: null, output: err.message });
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal, output });
+    });
+  });
+}
+
+async function prepareForInstall(
+  targetName: InstallTarget,
+  target: (typeof INSTALL_TARGETS)[InstallTarget],
+  job: InstallJob,
+) {
+  if (targetName !== "coven-cli") return;
+  appendOutput(job, "Preparing coven CLI update: checking daemon lock state...\n");
+  const health = await callDaemon<{ ok?: boolean; daemon?: { pid?: number } }>({
+    path: "/api/v1/health",
+    timeoutMs: 800,
+  });
+  const pid = health.data?.daemon?.pid;
+  if (!health.ok || typeof pid !== "number" || !Number.isFinite(pid) || pid <= 0) {
+    appendOutput(job, "No reachable Coven daemon reported a live pid; continuing.\n");
+    return;
+  }
+
+  appendOutput(job, `Stopping Coven daemon before updating ${target.label} (pid ${pid})...\n`);
+  const stop = await runCommand(covenBin(), ["daemon", "stop"], {
+    shell: process.platform === "win32",
+    timeoutMs: 8_000,
+  });
+  if (stop.output.trim()) appendOutput(job, `${stop.output.trim()}\n`);
+  appendOutput(
+    job,
+    stop.code === 0
+      ? "Coven daemon stop command completed; verifying process exit...\n"
+      : `Coven daemon stop exited ${stop.code === null ? `signal ${stop.signal ?? "unknown"}` : `code ${stop.code}`}; verifying process exit...\n`,
+  );
+  await sleep(500);
+
+  if (!isProcessAlive(pid)) {
+    appendOutput(job, "Coven daemon is stopped; continuing with npm update.\n");
+    return;
+  }
+
+  appendOutput(job, `Coven daemon is still running; terminating pid ${pid} to unlock coven.exe...\n`);
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (err) {
+    appendOutput(
+      job,
+      `Could not terminate daemon pid ${pid}: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return;
+  }
+  await sleep(500);
+  appendOutput(
+    job,
+    isProcessAlive(pid)
+      ? "Warning: daemon process still appears to be running; npm may report a file lock.\n"
+      : "Daemon process terminated; continuing with npm update.\n",
+  );
+}
+
+function installFailureHint(targetName: InstallTarget, output: string): string | null {
+  if (
+    targetName === "coven-cli" &&
+    /(EBUSY|resource busy|locked|coven\.exe)/i.test(output)
+  ) {
+    return "coven.exe is still locked by a running daemon. Cave tried to stop it first; fully quit Cave, end the coven process in Task Manager if it remains, then retry the update.";
+  }
+  return null;
 }
 
 function jobView(job: InstallJob) {
@@ -275,47 +384,59 @@ export async function POST(req: Request) {
   };
   jobs.set(targetName, job);
 
-  const child = spawn(plan.command, plan.args, {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: covenSpawnEnv(),
-    shell: plan.shell,
-  });
-  child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-  child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-  let killTimer: NodeJS.Timeout | undefined;
-  const timer = setTimeout(() => {
-    // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
-    job.error = `install timed out after ${target.timeoutMs / 1000}s`;
-    child.kill("SIGTERM");
-    killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-  }, target.timeoutMs);
-  child.on("error", (e) => {
-    clearTimeout(timer);
-    if (killTimer) clearTimeout(killTimer);
-    job.status = "done";
-    job.finishedAt = Date.now();
-    job.ok = false;
-    job.error = e.message;
-  });
-  child.on("close", (code, signal) => {
-    clearTimeout(timer);
-    if (killTimer) clearTimeout(killTimer);
-    void (async () => {
-      const installedPath = await commandPath(target.binary);
-      const ok = code === 0 && !!installedPath && !job.error;
+  void (async () => {
+    try {
+      await prepareForInstall(targetName, target, job);
+    } catch (err) {
+      appendOutput(
+        job,
+        `Preparation warning: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+
+    const child = spawn(plan.command, plan.args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: covenSpawnEnv(),
+      shell: plan.shell,
+    });
+    child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+    child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+    let killTimer: NodeJS.Timeout | undefined;
+    const timer = setTimeout(() => {
+      // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
+      job.error = `install timed out after ${target.timeoutMs / 1000}s`;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+    }, target.timeoutMs);
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       job.status = "done";
       job.finishedAt = Date.now();
-      job.ok = ok;
-      job.code = code;
-      job.binaryPath = installedPath;
-      if (!ok && !job.error) {
-        job.error =
-          code === 0
-            ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-            : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`;
-      }
-    })();
-  });
+      job.ok = false;
+      job.error = e.message;
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      void (async () => {
+        const installedPath = await commandPath(target.binary);
+        const ok = code === 0 && !!installedPath && !job.error;
+        job.status = "done";
+        job.finishedAt = Date.now();
+        job.ok = ok;
+        job.code = code;
+        job.binaryPath = installedPath;
+        if (!ok && !job.error) {
+          job.error =
+            installFailureHint(targetName, job.output) ??
+            (code === 0
+              ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
+              : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
+        }
+      })();
+    });
+  })();
 
   return NextResponse.json(
     { started: true, target: targetName },

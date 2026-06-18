@@ -35,6 +35,7 @@ import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { openClawBin, openClawNeedsShell, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   covenHome,
   familiarWorkspacesRoot,
@@ -528,9 +529,10 @@ async function readOpenClawAgentBinding(familiarId: string): Promise<string | nu
 
 function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
   return new Promise((resolve) => {
-    const child = spawn("openclaw", ["agents", "list", "--json"], {
+    const child = spawn(openClawBin(), ["agents", "list", "--json"], {
       stdio: ["ignore", "pipe", "ignore"],
-      env: covenSpawnEnv(),
+      env: openClawSpawnEnv(),
+      shell: openClawNeedsShell(),
     });
     let stdout = "";
     child.stdout.on("data", (data: Buffer) => {
@@ -700,10 +702,11 @@ function openClawChatResponse(args: {
         modelApplicationReason: args.modelState.reason,
       };
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
-      const child = spawn("openclaw", argv, {
+      const child = spawn(openClawBin(), argv, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
-        env: covenSpawnEnv(),
+        env: openClawSpawnEnv(),
+        shell: openClawNeedsShell(),
       });
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
