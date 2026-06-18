@@ -8,6 +8,7 @@ import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { SessionChangesInner } from "@/components/session-changes-panel";
+import { useChangesSummary } from "@/lib/use-changes-summary";
 import { CodeEditor } from "@/components/code-editor";
 import { resolveLangLabel } from "@/lib/code-lang";
 import type { SearchResult } from "@/lib/project-search";
@@ -285,6 +286,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   // Right pane view: the file preview, or the project's git changes/diff review.
   const [rightView, setRightView] = useState<"files" | "changes">("files");
+  // Diff-first review: auto-switch to Changes the first time an agent run
+  // produces edits — but never fight an explicit user choice. pinnedRightView
+  // flips once the user clicks a toggle or opens a file; prevChangeCount tracks
+  // the 0→>0 edit transition so we surface the diff exactly once per project.
+  const pinnedRightViewRef = useRef(false);
+  const prevChangeCountRef = useRef(0);
   // Project-wide code search (CODE-SEARCH-01).
   const [searchInput, setSearchInput] = useState("");
   const [searchRegex, setSearchRegex] = useState(false);
@@ -557,6 +564,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         : selectedRoot
           ? `${selectedRoot.replace(/\/$/, "")}/${detail.path.replace(/^\.?\//, "")}`
           : detail.path;
+      // A user-initiated file open is an explicit view choice — pin it so the
+      // diff-first auto-switch doesn't yank them back to Changes.
+      pinnedRightViewRef.current = true;
       setRightView("files");
       void openFilePreview(path, typeof detail.line === "number" ? detail.line : undefined);
     };
@@ -690,6 +700,33 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // Poll the diff while a familiar is actively working this project so the
   // Changes view reflects edits as they land.
   const projectHasRunningSession = recentProjectSessions.some((s) => s.status === "running");
+
+  // Diff-first review: poll a lightweight changes summary while Files is showing
+  // and a familiar is working this project, and flip to the Changes/diff view
+  // the first time edits appear — unless the user pinned a view. The poll pauses
+  // once Changes is shown (SessionChangesInner takes over its own polling).
+  const changesSummary = useChangesSummary(
+    selectedProject?.root,
+    rightView !== "changes" && projectHasRunningSession,
+  );
+  useEffect(() => {
+    // Reset the diff-first decision when switching projects.
+    pinnedRightViewRef.current = false;
+    prevChangeCountRef.current = 0;
+  }, [selectedProject?.root]);
+  useEffect(() => {
+    const prev = prevChangeCountRef.current;
+    prevChangeCountRef.current = changesSummary.count;
+    if (
+      !pinnedRightViewRef.current &&
+      rightView === "files" &&
+      prev === 0 &&
+      changesSummary.count > 0
+    ) {
+      setRightView("changes");
+    }
+  }, [changesSummary.count, rightView]);
+
   const previewIsMarkdown = preview?.kind === "text" && isMarkdownPath(previewPath);
   const previewLineCount = preview?.kind === "text" ? preview.content.split("\n").length : 0;
   const renderAsMarkdown = previewIsMarkdown && !previewRaw;
@@ -1213,7 +1250,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
                       <button
                         type="button"
-                        onClick={() => setRightView("files")}
+                        onClick={() => { pinnedRightViewRef.current = true; setRightView("files"); }}
                         className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "files" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                       >
                         <Icon name="ph:file-code" width={11} />
@@ -1221,7 +1258,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       </button>
                       <button
                         type="button"
-                        onClick={() => setRightView("changes")}
+                        onClick={() => { pinnedRightViewRef.current = true; setRightView("changes"); }}
                         className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "changes" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                       >
                         <Icon name="ph:git-diff" width={11} />

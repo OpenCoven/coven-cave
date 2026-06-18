@@ -24,15 +24,32 @@ assert.match(
   "comux renders SessionChangesInner for the selected project, polling while a session runs",
 );
 
-// A right-pane view toggle drives it.
+// A right-pane view toggle drives it. Clicking a toggle pins the choice so the
+// diff-first auto-switch won't override an explicit selection.
 assert.match(comux, /useState<"files" \| "changes">\("files"\)/, "right pane defaults to the Files view");
-assert.match(comux, /onClick=\{\(\) => setRightView\("changes"\)\}/, "a Changes toggle switches the right pane");
-assert.match(comux, /onClick=\{\(\) => setRightView\("files"\)\}/, "a Files toggle switches back");
+assert.match(comux, /pinnedRightViewRef\.current = true; setRightView\("changes"\)/, "Changes toggle switches + pins the view");
+assert.match(comux, /pinnedRightViewRef\.current = true; setRightView\("files"\)/, "Files toggle switches + pins the view");
 assert.match(
   comux,
   /rightView === "changes" \? \([\s\S]*?<SessionChangesInner/,
   "the Changes view replaces the file preview when selected",
 );
+
+// Diff-first review: the comux pane polls a lightweight changes summary and
+// auto-switches to Changes the first time edits appear (0 → >0), unless pinned.
+assert.match(comux, /import \{ useChangesSummary \} from "@\/lib\/use-changes-summary"/, "comux uses the changes-summary hook");
+assert.match(
+  comux,
+  /useChangesSummary\(\s*selectedProject\?\.root,\s*rightView !== "changes" && projectHasRunningSession,/,
+  "the summary poll is gated to Files view + a running session (pauses when Changes is shown)",
+);
+assert.match(
+  comux,
+  /!pinnedRightViewRef\.current &&[\s\S]*?rightView === "files" &&[\s\S]*?prev === 0 &&[\s\S]*?changesSummary\.count > 0[\s\S]*?setRightView\("changes"\)/,
+  "auto-switch to Changes on the first edit transition when the user hasn't pinned a view",
+);
+
+console.log("comux-view-changes.test.ts (diff-first) checks passed");
 
 // Polling flag is derived from a running session in the selected project.
 assert.match(
