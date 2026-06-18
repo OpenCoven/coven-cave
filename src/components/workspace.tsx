@@ -35,6 +35,7 @@ import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal"
 import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import { ComuxView } from "@/components/comux-view";
+import { CodeView } from "@/components/code-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
@@ -78,6 +79,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   library: "Library",
   browser: "Browser",
   terminal: "Terminal",
+  code: "Code",
   github: "GitHub",
   roles: "Roles",
   workflows: "Workflows",
@@ -848,6 +850,13 @@ export function Workspace() {
         return;
       }
 
+      // ⌘0 -> Code workspace (chat beside files + terminal)
+      if (meta && !alt && e.key === "0") {
+        e.preventDefault();
+        setMode("code");
+        return;
+      }
+
       // ⌥1..⌥9 → Nth familiar
       if (alt && !meta && /^[1-9]$/.test(e.key)) {
         const idx = parseInt(e.key, 10) - 1;
@@ -1387,6 +1396,52 @@ export function Workspace() {
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInCompanionBrowser}
       />
+    ) : mode === "code" ? (
+      <CodeView
+        chat={
+          <ChatSurface
+            familiars={familiars}
+            sessions={sessions}
+            activeFamiliar={active}
+            activeFamiliarId={activeId}
+            daemonRunning={daemonRunning}
+            routerRef={routerRef}
+            sessionsLoaded={sessionsLoaded}
+            inboxItems={inboxItemsWithEphemeral}
+            inspectorOpen={inspectorOpen}
+            rightPanel={rightPanel}
+            pendingProjectRoot={pendingProjectChatRoot}
+            pendingChatAction={pendingChatAction}
+            onSetInspectorOpen={setInspectorOpen}
+            onSetRightPanel={setRightPanel}
+            onSetActiveFamiliar={setActiveId}
+            onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
+            onPendingChatActionHandled={() => setPendingChatAction(null)}
+            onSessionStarted={loadSessions}
+            onSlashFromChat={handleSlashIntent}
+            onOpenOnboarding={openOnboarding}
+            onOpenInbox={() => setMode("inbox")}
+            onCreateReminder={openReminderForFamiliar}
+            onOpenInboxItem={openInspectorInboxItem}
+            onInboxItemChanged={refreshInbox}
+            onSessionsChanged={loadSessions}
+            onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+            onOpenUrl={openUrlInCompanionBrowser}
+          />
+        }
+        comux={
+          <ComuxView
+            view="terminal"
+            active={mode === "code"}
+            storageNamespace=":code"
+            sessions={sessions}
+            onOpenSession={(sessionId, familiarId) => {
+              openFamiliarSession(sessionId, familiarId);
+            }}
+            onNewChat={openProjectChat}
+          />
+        }
+      />
     ) : mode === "library" ? (
       <LibraryView
         onOpenUrl={(url) => {
@@ -1506,6 +1561,7 @@ export function Workspace() {
   const salemRetreating =
     familiarPanelOpen ||
     mode === "chat" ||
+    mode === "code" ||
     mode === "workflows" ||
     mode === "browser" ||
     mode === "terminal";
