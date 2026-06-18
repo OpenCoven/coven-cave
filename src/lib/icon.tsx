@@ -134,6 +134,7 @@ export const ICON_NAMES = [
   "ph:sparkle-bold",
   "ph:bell-bold",
   "ph:phone",
+  "ph:device-mobile",
   "ph:warning-fill",
   "ph:check",
   "ph:copy",

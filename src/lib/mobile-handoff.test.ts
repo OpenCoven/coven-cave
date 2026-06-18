@@ -35,6 +35,21 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 }
 
 {
+  // Tailscale may report the proxy with a trailing slash or as `localhost`.
+  const variants = {
+    Web: {
+      "mb-black.taile46e90.ts.net:443": {
+        Handlers: { "/": { Proxy: "http://localhost:3000/" } },
+      },
+    },
+  };
+  assert.equal(
+    findServeUrl(variants, "http://127.0.0.1:3000"),
+    "https://mb-black.taile46e90.ts.net/",
+  );
+}
+
+{
   const bin = resolveTailscaleBin({
     envBin: "/custom/tailscale",
     pathEnv: "",
