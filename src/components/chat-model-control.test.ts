@@ -36,4 +36,14 @@ assert.match(
   "Selection writes session scope when a chat exists, else familiar-default",
 );
 
+// Pill variant — model selection mirrors the familiar selector pill (used on
+// the home composer): caret-up-down trigger + dedicated pill styling.
+assert.match(source, /variant\??:\s*"default"\s*\|\s*"pill"/, "ChatModelControl exposes a pill variant");
+assert.match(source, /cave-chat-model-control--pill/, "pill variant adds its modifier class");
+assert.match(source, /caret-up-down/, "pill trigger shows a caret-up-down like the familiar selector");
+assert.match(css, /\.cave-chat-model-control--pill/, "pill variant has matching CSS");
+
+const homeComposer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+assert.match(homeComposer, /<ChatModelControl[\s\S]{0,160}variant="pill"/, "home composer uses the pill model selector");
+
 console.log("chat-model-control.test.ts: ok");

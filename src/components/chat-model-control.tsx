@@ -13,6 +13,13 @@ type Props = {
    */
   onSelectModel?: (modelId: string) => void;
   busy?: boolean;
+  /**
+   * "pill" renders the trigger as a dropdown pill matching the familiar
+   * selector (glyph + model + caret-up-down) so model selection reads as the
+   * same control type as picking a familiar. Default keeps the compact in-chat
+   * chip with its inline application-state label.
+   */
+  variant?: "default" | "pill";
 };
 
 const SOURCE_LABELS: Record<ModelScope, string> = {
@@ -31,7 +38,7 @@ const STATE_LABELS: Record<ModelApplicationState, string> = {
   failed: "Runtime failed",
 };
 
-export function ChatModelControl({ state, onSelectModel, busy }: Props) {
+export function ChatModelControl({ state, onSelectModel, busy, variant = "default" }: Props) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
 
@@ -66,7 +73,7 @@ export function ChatModelControl({ state, onSelectModel, busy }: Props) {
     >
       <button
         type="button"
-        className="cave-chat-model-control focus-ring"
+        className={`cave-chat-model-control focus-ring${variant === "pill" ? " cave-chat-model-control--pill" : ""}`}
         aria-label="Chat model"
         aria-expanded={open}
         aria-haspopup={canPick ? "menu" : undefined}
@@ -75,7 +82,11 @@ export function ChatModelControl({ state, onSelectModel, busy }: Props) {
       >
         <Icon name="ph:brain-bold" width={12} aria-hidden />
         <span className="cave-chat-model-control__model">{state.effectiveModel}</span>
-        <span className="cave-chat-model-control__state">{stateLabel}</span>
+        {variant === "pill" ? (
+          <Icon name="ph:caret-up-down-bold" width={10} className="cave-chat-model-control__caret" aria-hidden />
+        ) : (
+          <span className="cave-chat-model-control__state">{stateLabel}</span>
+        )}
       </button>
       {open ? (
         <div

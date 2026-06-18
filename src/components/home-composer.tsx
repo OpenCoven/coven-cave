@@ -447,6 +447,7 @@ export function HomeComposer({
               state={modelState}
               onSelectModel={handleSelectModel}
               busy={sending}
+              variant="pill"
             />
           ) : null}
 

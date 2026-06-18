@@ -1780,6 +1780,35 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
+/* Pill variant — mirrors .hc-familiar-selector so model selection reads as the
+   same dropdown-pill control as the familiar picker on the home composer. */
+.cave-chat-model-control--pill {
+  height: auto;
+  gap: 5px;
+  border-radius: 8px;
+  padding: 3px 7px 3px 6px;
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.cave-chat-model-control--pill:hover,
+.cave-chat-model-control--pill[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+}
+
+.cave-chat-model-control--pill .cave-chat-model-control__model {
+  max-width: 140px;
+  font-weight: 500;
+}
+
+.cave-chat-model-control--pill .cave-chat-model-control__caret {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
 .cave-chat-model-popover {
   position: absolute;
   right: 0;
