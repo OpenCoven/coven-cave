@@ -34,6 +34,7 @@ import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
 import { parseFileRef } from "@/lib/file-ref";
+import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
@@ -184,10 +185,16 @@ async function renderCodeBlock(
   const filenameHtml = filename
     ? `<span class="cave-code-filename">${escHtml(filename)}</span>`
     : "";
+  // Collapse toggle (chevron) folds the block down to just this header so a
+  // long code dump can be tucked away; blocks render expanded by default. The
+  // line count hints at size while collapsed.
+  const lineCount = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+  const collapseBtn = `<button type="button" class="cave-code-collapse-btn" aria-label="Collapse code" aria-expanded="true"><svg class="cave-code-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+  const linesHtml = lineCount > 1 ? `<span class="cave-code-lines" aria-hidden="true">${lineCount} lines</span>` : "";
   // No data-code attribute (CHAT-D7-04): wireCopyButtons reads the code text
   // back out of the rendered DOM at click time instead of carrying a second
   // copy of every block's source in an attribute.
-  const headerHtml = `<div class="cave-code-header">${labelHtml}${filenameHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
+  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${filenameHtml}${linesHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
   const expandHtml = lines.length >= CODE_EXPAND_MIN_LINES
     ? `<div class="cave-code-expand"><button type="button" class="cave-code-expand-btn">Show more</button></div>`
     : "";
@@ -612,6 +619,16 @@ function wireCopyButtons(container: HTMLElement) {
           btn.classList.remove("cave-copy-btn--confirmed");
         }, 2000);
       });
+    });
+  }
+  // Collapse toggle: fold the whole block down to its header (and back).
+  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-collapse-btn"))) {
+    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
+    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
+    btn.addEventListener("click", () => {
+      const wrap = btn.closest(".cave-code-wrap");
+      if (!wrap) return;
+      toggleCodeBlockCollapse(wrap, btn);
     });
   }
   // Show more / Show less footer on height-clamped blocks (CHAT-D7-03).

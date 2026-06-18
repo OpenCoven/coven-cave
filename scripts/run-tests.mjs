@@ -71,6 +71,8 @@ export const SUITES = {
     "src/components/message-bubble-markdown.test.ts",
     "src/components/mermaid-viewer.test.ts",
     "src/components/message-bubble-code-header.test.ts",
+    "src/components/message-bubble-code-collapse.test.ts",
+    "src/lib/code-block-collapse.test.ts",
     "src/components/message-bubble-jump-to-line.test.ts",
     "src/components/message-bubble-file-links.test.ts",
     "src/components/library-reader-polish.test.ts",
