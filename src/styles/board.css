@@ -26,6 +26,10 @@
 .board-toolbar-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-toolbar-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
 .board-toolbar-btn--active { background:color-mix(in oklch,var(--accent-presence) 14%,var(--bg-raised)); border-color:color-mix(in oklch,var(--accent-presence) 40%,transparent); color:var(--text-primary); }
+.board-toolbar-btn--danger { color:var(--color-danger); border-color:color-mix(in oklch,var(--color-danger) 30%,var(--border-strong)); }
+.board-toolbar-btn--danger:hover { background:color-mix(in oklch,var(--color-danger) 12%,var(--bg-raised)); color:var(--text-primary); border-color:color-mix(in oklch,var(--color-danger) 55%,transparent); }
+
+.board-clear-confirm { display:flex; gap:6px; }
 
 
 .board-multiselect-btn { display:inline-flex; align-items:center; gap:5px; padding:0 8px; height:28px; white-space:nowrap; }
