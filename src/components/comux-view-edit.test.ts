@@ -35,16 +35,14 @@ assert.match(
   "previewEditable must exclude non-text and .env files",
 );
 
-// The Edit affordance is gated on previewEditable; the textarea is bound to editValue.
+// The Edit affordance is gated on previewEditable; edit mode renders the
+// CodeMirror editor (CodeEditor) bound to editValue. Cmd/Ctrl+S and Escape are
+// handled inside CodeEditor's keymap (covered by code-editor.test.ts).
 assert.match(source, /previewEditable &&[\s\S]*?onClick=\{startEditing\}/, "Edit button must be gated on previewEditable");
-assert.match(source, /<textarea[\s\S]*?value=\{editValue\}[\s\S]*?onChange=\{\(e\) => setEditValue/, "edit mode must render a textarea bound to editValue");
-
-// Keyboard: Cmd/Ctrl+S saves, Escape cancels.
 assert.match(
   source,
-  /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === "s"[\s\S]*?saveEdit\(\)/,
-  "Cmd/Ctrl+S must save",
+  /editing \? \([\s\S]*?<CodeEditor[\s\S]*?value=\{editValue\}[\s\S]*?onChange=\{setEditValue\}[\s\S]*?onSave=\{[\s\S]*?saveEdit[\s\S]*?onCancel=\{cancelEditing\}/,
+  "edit mode must render CodeEditor wired to the edit state (value/onChange/onSave/onCancel)",
 );
-assert.match(source, /e\.key === "Escape"[\s\S]*?cancelEditing\(\)/, "Escape must cancel editing");
 
 console.log("comux-view-edit.test.ts: ok");

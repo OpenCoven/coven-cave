@@ -8,6 +8,7 @@ import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { SessionChangesInner } from "@/components/session-changes-panel";
+import { CodeEditor } from "@/components/code-editor";
 import { resolveLangLabel } from "@/lib/code-lang";
 import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
@@ -1328,23 +1329,15 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             Loading…
                           </div>
                         ) : editing ? (
-                          <textarea
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                                e.preventDefault();
-                                void saveEdit();
-                              } else if (e.key === "Escape") {
-                                e.preventDefault();
-                                cancelEditing();
-                              }
-                            }}
-                            spellCheck={false}
-                            autoComplete="off"
-                            aria-label={`Edit ${previewPath.split("/").pop() ?? "file"}`}
-                            className="h-full w-full resize-none rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 font-mono text-[12px] leading-relaxed text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                          />
+                          <div className="h-full overflow-hidden rounded-md border border-[var(--border-hairline)]">
+                            <CodeEditor
+                              value={editValue}
+                              filename={previewPath.split("/").pop() ?? ""}
+                              onChange={setEditValue}
+                              onSave={() => void saveEdit()}
+                              onCancel={cancelEditing}
+                            />
+                          </div>
                         ) : (
                           preview?.kind === "image" ? (
                             <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4">
