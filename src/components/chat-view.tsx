@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
@@ -54,7 +54,7 @@ import {
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
-import { toolInputAsDiff } from "@/lib/tool-input-diff";
+import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 
@@ -3917,13 +3917,35 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // structured before/after diff instead of the raw JSON payload; null for
   // every other tool (or unparseable input) falls back to the plain block.
   const inputDiff = toolInputAsDiff(tool.name, tool.input);
+  // Click-to-open: a file tool's target opens in the Code workspace preview.
+  // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
+  // workspace switches to Code mode first when neither is showing.
+  const targetFile = toolTargetFile(tool.name, tool.input);
+  const openTargetFile = (e: ReactMouseEvent) => {
+    if (!targetFile) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path: targetFile } }));
+  };
   return (
     <details className="cave-tool-block" data-default-collapsed="true">
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
         <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
         {argSummary ? (
-          <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
+          targetFile ? (
+            <button
+              type="button"
+              onClick={openTargetFile}
+              title={`Open ${targetFile} in the Code workspace`}
+              className="group/openfile inline-flex min-w-0 max-w-[18rem] items-center gap-1 truncate font-mono text-[var(--text-muted)] hover:text-[var(--accent-presence,var(--text-secondary))] hover:underline"
+            >
+              <span className="truncate">· {argSummary}</span>
+              <Icon name="ph:arrow-square-out" width={10} className="shrink-0 opacity-0 transition-opacity group-hover/openfile:opacity-100" aria-hidden />
+            </button>
+          ) : (
+            <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
+          )
         ) : null}
         <span className={[
           "rounded px-1.5 py-0.5 font-mono text-[10px]",

@@ -108,3 +108,30 @@ export function toolInputAsDiff(name: string, input?: string | null): string | n
 
   return null;
 }
+
+/** Tool names that operate on a single addressable file we can open in the
+ *  editor preview (mutations plus the read tool). */
+const FILE_TOOLS = new Set([...MUTATION_TOOLS, "read"]);
+
+/**
+ * Best-effort absolute file path a tool call targets, for click-to-open in the
+ * Code workspace. Returns null for non-file tools, unparseable input, or when
+ * no concrete path is present (so the caller renders a plain, non-clickable
+ * label rather than a dead link).
+ */
+export function toolTargetFile(name: string, input?: string | null): string | null {
+  if (!FILE_TOOLS.has(name.toLowerCase())) return null;
+  const raw = (input ?? "").trim();
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const path = filePathOf(parsed as Rec);
+  // filePathOf falls back to the literal "file" when no key matched; treat that
+  // sentinel (and any non-absolute path) as "no openable target".
+  return path !== "file" && path.startsWith("/") ? path : null;
+}
