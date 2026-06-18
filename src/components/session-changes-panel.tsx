@@ -332,7 +332,7 @@ function CheckpointSection({
 
 // ── Panel body (mounted per project root) ─────────────────────────────────────
 
-function SessionChangesInner({ projectRoot, running }: { projectRoot: string; running: boolean }) {
+export function SessionChangesInner({ projectRoot, running }: { projectRoot: string; running: boolean }) {
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [repoRoot, setRepoRoot] = useState<string | null>(null);
   const [notARepo, setNotARepo] = useState(false);
