@@ -680,12 +680,12 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* Centered reading column (2026-06-13): the thread fills narrow panes but
-     caps its measure and centers on wide/full-screen so responses sit in the
-     middle instead of sprawling left across the pane. */
+  /* Full-width chat (2026-06-18): the thread spans the whole pane so the
+     transcript lines up with the full-width header and composer instead of
+     sitting in a centered reading column. */
   width: 100%;
-  max-width: 1180px;
-  margin-inline: auto;
+  max-width: 100%;
+  margin-inline: 0;
 }
 
 .cave-chat-empty {
@@ -2172,13 +2172,13 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear .cave-chat-thread {
   gap: 0;
-  /* Centered reading column (2026-06-13): fill narrow panes, but cap the
-     measure and center on wide/full-screen so the transcript sits in the
-     middle rather than sprawling left. */
+  /* Full-width chat (2026-06-18): span the whole pane so the transcript lines
+     up with the full-width header and composer instead of sitting in a
+     centered reading column. */
   width: 100%;
-  max-width: 1180px;
+  max-width: 100%;
   margin-block: 0;
-  margin-inline: auto;
+  margin-inline: 0;
 }
 
 /* ── Turn rows ──────────────────────────────────────────────────────────── */

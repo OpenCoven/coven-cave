@@ -86,33 +86,32 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// Centered reading column (2026-06-13) — supersedes the 2026-06-12 full-width
-// decision (#533): the thread fills narrow panes (width: 100%) but caps its
-// measure (max-width: 1180px) and centers (margin-inline: auto) on wide/full-
-// screen so the transcript sits in the middle rather than sprawling left. The
-// old CHAT-D10-04 920px measure stays gone.
+// Full-width chat (2026-06-18) — supersedes the 2026-06-13 centered-column
+// decision: the thread spans the whole pane (width: 100%, max-width: 100%, no
+// auto centering) so the transcript lines up with the full-width header and
+// composer. The old 920px and 1180px reading-measure caps stay gone.
 // ---------------------------------------------------------------------------
 
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,
   /width:\s*100%/,
-  "Linear thread must fill narrow panes (width: 100%)",
+  "Linear thread must fill the pane (width: 100%)",
 );
 assert.match(
   linearThread,
-  /max-width:\s*1180px/,
-  "Linear thread must cap its reading measure at 1180px (centered reading column)",
-);
-assert.match(
-  linearThread,
-  /margin-inline:\s*auto/,
-  "Linear thread must center its capped measure (margin-inline: auto)",
+  /max-width:\s*100%/,
+  "Linear thread must span full width (max-width: 100%)",
 );
 assert.doesNotMatch(
   linearThread,
-  /max-width:\s*(?:min\(100%,\s*)?920px/,
-  "The old 920px reading-measure cap must stay gone",
+  /margin-inline:\s*auto/,
+  "Linear thread must not center (no margin-inline: auto)",
+);
+assert.doesNotMatch(
+  linearThread,
+  /max-width:\s*(?:min\(100%,\s*)?(?:920|1180)px/,
+  "The old reading-measure caps (920px / 1180px) must stay gone",
 );
 
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
