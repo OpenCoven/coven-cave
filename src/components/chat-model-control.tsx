@@ -64,6 +64,40 @@ export function ChatModelControl({ state, onSelectModel, busy, variant = "defaul
     setOpen(false);
   };
 
+  // Pill variant: a native <select> that mirrors the familiar selector. The OS
+  // renders the option list in its own layer, so it can't be clipped by the
+  // composer card's `overflow: hidden` the way a custom popover is — and it's
+  // the same control type used to pick a familiar. The current model is always
+  // an option even if it isn't in the runtime catalog.
+  if (variant === "pill") {
+    const inCatalog = options.some((option) => option.id === state.effectiveModel);
+    const pillOptions = inCatalog
+      ? options
+      : [{ id: state.effectiveModel, label: state.effectiveModel }, ...options];
+    return (
+      <label
+        className="cave-chat-model-pill"
+        title={`${state.effectiveModel} · ${sourceLabel} · ${stateLabel}`}
+      >
+        <Icon name="ph:brain-bold" width={12} aria-hidden />
+        <select
+          className="cave-chat-model-pill__select"
+          aria-label="Chat model"
+          value={state.effectiveModel}
+          disabled={!canPick || busy}
+          onChange={(event) => choose(event.currentTarget.value)}
+        >
+          {pillOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <Icon name="ph:caret-up-down-bold" width={10} className="cave-chat-model-pill__caret" aria-hidden />
+      </label>
+    );
+  }
+
   return (
     <div
       className="cave-chat-model-wrap"
@@ -73,7 +107,7 @@ export function ChatModelControl({ state, onSelectModel, busy, variant = "defaul
     >
       <button
         type="button"
-        className={`cave-chat-model-control focus-ring${variant === "pill" ? " cave-chat-model-control--pill" : ""}`}
+        className="cave-chat-model-control focus-ring"
         aria-label="Chat model"
         aria-expanded={open}
         aria-haspopup={canPick ? "menu" : undefined}
@@ -82,11 +116,7 @@ export function ChatModelControl({ state, onSelectModel, busy, variant = "defaul
       >
         <Icon name="ph:brain-bold" width={12} aria-hidden />
         <span className="cave-chat-model-control__model">{state.effectiveModel}</span>
-        {variant === "pill" ? (
-          <Icon name="ph:caret-up-down-bold" width={10} className="cave-chat-model-control__caret" aria-hidden />
-        ) : (
-          <span className="cave-chat-model-control__state">{stateLabel}</span>
-        )}
+        <span className="cave-chat-model-control__state">{stateLabel}</span>
       </button>
       {open ? (
         <div

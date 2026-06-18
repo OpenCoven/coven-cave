@@ -1780,31 +1780,58 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Pill variant — mirrors .hc-familiar-selector so model selection reads as the
-   same dropdown-pill control as the familiar picker on the home composer. */
-.cave-chat-model-control--pill {
-  height: auto;
+/* Pill variant — a native <select> mirroring .hc-familiar-selector, so model
+   selection is the same control type as the familiar picker and (being native)
+   opens in the OS layer instead of a custom popover that the composer card's
+   `overflow: hidden` would clip. */
+.cave-chat-model-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
   border-radius: 8px;
-  padding: 3px 7px 3px 6px;
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+  padding: 3px 7px 3px 6px;
   color: var(--text-primary);
-  font-size: 12px;
 }
 
-.cave-chat-model-control--pill:hover,
-.cave-chat-model-control--pill[aria-expanded="true"] {
+.cave-chat-model-pill:hover,
+.cave-chat-model-pill:focus-within {
   background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-base));
   border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
 }
 
-.cave-chat-model-control--pill .cave-chat-model-control__model {
-  max-width: 140px;
-  font-weight: 500;
+.cave-chat-model-pill > svg {
+  flex-shrink: 0;
+  color: var(--accent-presence);
 }
 
-.cave-chat-model-control--pill .cave-chat-model-control__caret {
+.cave-chat-model-pill__select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  max-width: 150px;
+  padding-right: 14px;
+  text-overflow: ellipsis;
+}
+
+.cave-chat-model-pill__select:disabled {
+  cursor: default;
+}
+
+.cave-chat-model-pill__caret {
+  position: absolute;
+  right: 5px;
+  pointer-events: none;
   flex-shrink: 0;
   color: var(--text-muted);
 }
