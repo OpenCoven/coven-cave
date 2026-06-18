@@ -81,6 +81,7 @@ const contracts: RouteContract[] = [
   { route: "/project-file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project-tree", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },

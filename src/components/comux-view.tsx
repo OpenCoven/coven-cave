@@ -8,6 +8,7 @@ import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { resolveLangLabel } from "@/lib/code-lang";
+import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import {
   deriveComuxProjects,
@@ -265,6 +266,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [copied, setCopied] = useState(false);
   const [previewRaw, setPreviewRaw] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  // Project-wide code search (CODE-SEARCH-01).
+  const [searchInput, setSearchInput] = useState("");
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const treeRef = useRef<ProjectTreeHandle | null>(null);
   const wasActiveTerminalRef = useRef(false);
 
@@ -515,6 +522,59 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setTimeout(() => setCopied(false), 1500);
     });
   }, [preview]);
+
+  // Debounced project-wide search. Re-runs when the query, regex toggle, or
+  // selected project changes; an empty query clears results without a request.
+  const searchRoot = selectedProject?.root;
+  useEffect(() => {
+    const query = searchInput.trim();
+    if (!query || !searchRoot) {
+      setSearchResult(null);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ root: searchRoot, q: query });
+      if (searchRegex) params.set("regex", "1");
+      fetch(`/api/project/search?${params.toString()}`, { cache: "no-store" })
+        .then((res) => res.json())
+        .then((json: SearchResult & { ok: boolean; repo?: boolean; error?: string }) => {
+          if (cancelled) return;
+          if (!json.ok || json.repo === false) {
+            setSearchResult(null);
+            setSearchError(json.error ?? "search unavailable");
+          } else {
+            setSearchResult({ files: json.files ?? [], totalMatches: json.totalMatches ?? 0, truncated: !!json.truncated });
+            setSearchError(null);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setSearchResult(null);
+          setSearchError(String(err));
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchInput, searchRegex, searchRoot]);
+
+  // Open a search match: search paths are relative to the searched root, so
+  // rejoin them to the project root before handing off to the file preview.
+  const openSearchMatch = useCallback(
+    (relPath: string) => {
+      if (!searchRoot) return;
+      void openFilePreview(`${searchRoot.replace(/\/$/, "")}/${relPath}`);
+    },
+    [searchRoot, openFilePreview],
+  );
 
   const selectProject = useCallback((project: ComuxProject) => {
     setSelectedProjectRoot(project.root);
@@ -885,6 +945,92 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    {/* Project-wide code search (CODE-SEARCH-01) */}
+                    <div className="mb-3">
+                      <div className="relative">
+                        <Icon
+                          name="ph:magnifying-glass"
+                          width={12}
+                          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                        />
+                        <input
+                          type="search"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
+                          placeholder="Search in project…"
+                          aria-label="Search in project"
+                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1.5 pl-7 pr-14 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSearchRegex((v) => !v)}
+                          aria-pressed={searchRegex}
+                          title={searchRegex ? "Regex search on" : "Regex search off — matching literal text"}
+                          className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 font-mono text-[10px] transition-colors ${
+                            searchRegex
+                              ? "bg-[var(--accent-presence,var(--bg-raised))] text-[var(--text-primary)]"
+                              : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          }`}
+                        >
+                          .*
+                        </button>
+                      </div>
+                      {searchInput.trim() && (
+                        <div className="mt-2">
+                          {searchLoading ? (
+                            <div className="flex items-center gap-2 py-1 pl-1 text-[11px] text-[var(--text-muted)]">
+                              <Icon name="ph:arrow-clockwise" width={11} className="animate-spin" />
+                              Searching…
+                            </div>
+                          ) : searchError ? (
+                            <p className="py-1 pl-1 text-[11px] text-[var(--color-danger,#f87171)]">{searchError}</p>
+                          ) : searchResult && searchResult.totalMatches > 0 ? (
+                            <>
+                              <div className="mb-1 flex items-center gap-1.5 pl-1 text-[10px] text-[var(--text-muted)]">
+                                <span>
+                                  {searchResult.totalMatches} {searchResult.totalMatches === 1 ? "match" : "matches"} in{" "}
+                                  {searchResult.files.length} {searchResult.files.length === 1 ? "file" : "files"}
+                                </span>
+                                {searchResult.truncated && <span className="text-[var(--text-muted)]">· capped</span>}
+                              </div>
+                              <div className="space-y-1.5">
+                                {searchResult.files.map((file) => (
+                                  <div key={file.path}>
+                                    <div
+                                      className="truncate px-1 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]"
+                                      title={file.path}
+                                    >
+                                      {file.path}
+                                    </div>
+                                    <div className="space-y-px">
+                                      {file.matches.map((match, i) => (
+                                        <button
+                                          key={`${file.path}:${match.line}:${i}`}
+                                          type="button"
+                                          onClick={() => openSearchMatch(file.path)}
+                                          className="flex w-full items-baseline gap-2 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+                                          title={`${file.path}:${match.line}`}
+                                        >
+                                          <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--text-muted)]">
+                                            {match.line}
+                                          </span>
+                                          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-primary)]">
+                                            {match.preview.trim()}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <p className="py-1 pl-1 text-[11px] text-[var(--text-muted)]">No matches.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Recent sessions — collapsible */}
                     <div className="mb-2">
                       <button
