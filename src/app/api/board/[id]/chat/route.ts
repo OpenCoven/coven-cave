@@ -5,6 +5,8 @@ import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
+import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
+import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -68,11 +70,50 @@ export async function POST(
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
+
+  // ── Intelligent worktree isolation ────────────────────────────────────────
+  // If another card already has a live session for a *different* issue in the
+  // same GitHub repo, this issue gets its own dedicated git worktree so the
+  // concurrent agents can't trample each other in the shared checkout. The
+  // first/only issue in flight stays in the main checkout. This is strictly
+  // best-effort: any resolution or git failure falls back to the shared root,
+  // so isolation never blocks starting a session.
+  let sessionRoot = projectRoot;
+  let worktree: { path: string; branch: string } | null = null;
+  const ghLink = card.github.find(
+    (g) => g.number && (g.kind === "issue" || g.kind === "pr" || g.kind === "review_request"),
+  );
+  if (ghLink) {
+    const activeKeys = board.cards
+      .filter((c) => c.id !== card.id && c.sessionId)
+      .flatMap((c) => c.github)
+      .filter((g) => g.repo === ghLink.repo && g.number)
+      .map((g) => issueContentionKey(g.repo, g.number));
+    if (shouldIsolateInWorktree(activeKeys, issueContentionKey(ghLink.repo, ghLink.number))) {
+      try {
+        const root = await resolveRepoRoot(projectRoot);
+        if (root.ok) {
+          const prov = await provisionIssueWorktree(root.repoRoot, {
+            kind: ghLink.kind as IssueWorktreeKind,
+            number: ghLink.number,
+            title: ghLink.title ?? card.title,
+          });
+          if (prov.ok) {
+            sessionRoot = prov.worktree;
+            worktree = { path: prov.worktree, branch: prov.branch };
+          }
+        }
+      } catch {
+        /* fall back to the shared checkout */
+      }
+    }
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
     body: {
-      projectRoot,
+      projectRoot: sessionRoot,
       harness: binding.harness,
       prompt: buildInitialTaskChatPrompt(card),
     },
@@ -107,7 +148,12 @@ export async function POST(
   const updated = await updateCard(card.id, {
     sessionId,
     familiarId,
-    ...(!card.cwd && body.projectRoot ? { cwd: body.projectRoot } : {}),
+    // When we isolated into a worktree, pin the card's CWD to it so reopening
+    // the chat lands back in the same worktree. Otherwise keep the prior
+    // behavior of recording a start-time CWD only when the card had none.
+    ...(worktree
+      ? { cwd: sessionRoot }
+      : (!card.cwd && body.projectRoot ? { cwd: body.projectRoot } : {})),
   });
   if (!updated) {
     return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
@@ -123,5 +169,6 @@ export async function POST(
     card: updated,
     sessionId,
     familiarId,
+    worktree,
   });
 }
