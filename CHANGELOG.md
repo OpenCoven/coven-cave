@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+A coding-experience arc: turning the Projects/Code surfaces into a Codex/Cursor-class workspace where familiars (the coding agents) sit beside the files, editor, terminal, and change review.
+
+### Added
+- **Code workspace** — a top-level Code surface (⌘0) that places a familiar chat beside the project's file tree, editable preview, terminal, search, and git change review in one resizable IDE-like layout, with a Chat/Code switcher on mobile (#939, #944).
+- **Project search** — ripgrep-backed search across the open project with a regex toggle and results grouped by file; clicking a match opens the file, scrolled to and briefly highlighting the matched line (#932, #934).
+- **In-app editing** — files can be edited in place and saved through a CodeMirror editor with syntax highlighting and line numbers themed to the app palette; `Cmd/Ctrl+S` saves, `Esc` cancels (#937, #942, #943). `.mjs`/`.cjs` files are previewable and editable (#950).
+- **Change review** — a Files/Changes toggle surfaces the project's git diff, per-file revert, and checkpoints right beside the files (#940).
+- **Chat ↔ editor links** — file paths in a familiar's tool calls (#941) and in its prose, e.g. `src/foo.ts:42` (#946), are clickable and open the file in the Code workspace at the referenced line.
+
+### Fixed
+- **Code workspace** — the unified surface now shows the coding panes (file tree, editor, search, change review), not just a terminal (#949).
+
 ## [0.0.103] - 2026-06-18
 
 Patch release: respect persisted home navigation state after the v0.0.102 chat-width release.
