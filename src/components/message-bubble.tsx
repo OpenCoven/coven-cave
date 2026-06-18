@@ -169,7 +169,9 @@ async function renderCodeBlock(
           const lineNum = showLineNums
             ? `<span class="cave-ln" aria-hidden="true">${i + 1}</span>`
             : "";
-          return `<span class="cave-line${gutterClass}">${lineNum}${line}</span>`;
+          // data-line lets surfaces (e.g. the Projects search) scroll a code
+          // block to a specific 1-based line. Harmless to chat code blocks.
+          return `<span class="cave-line${gutterClass}" data-line="${i + 1}">${lineNum}${line}</span>`;
         });
         return `${co}${wrappedLines.join("")}${cc}`;
       });
@@ -220,6 +222,9 @@ type SyntaxBlockProps = {
   lang?: string;
   /** Additional className on the outer wrapper */
   className?: string;
+  /** 1-based line to scroll to and highlight once rendered (e.g. a search
+   *  match). Re-running with the same value re-scrolls. */
+  highlightLine?: number;
 };
 
 /**
@@ -227,7 +232,7 @@ type SyntaxBlockProps = {
  * inspector pane. Uses the same Shiki singleton as MessageBubble, so the
  * highlighter is only initialised once per session.
  */
-export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
+export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
   const containerRef = useWireCopyButtons(html);
   const resolvedLang = lang ?? autoDetectLang(text);
@@ -240,6 +245,20 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
     });
     return () => { cancelled = true; };
   }, [text, resolvedLang]);
+
+  // Scroll to and briefly highlight the target line once the highlighted HTML
+  // is in the DOM. data-line anchors are emitted by renderCodeBlock.
+  useEffect(() => {
+    if (!html) return;
+    const container = containerRef.current;
+    if (!container) return;
+    container.querySelectorAll(".cave-line--active").forEach((el) => el.classList.remove("cave-line--active"));
+    if (!highlightLine) return;
+    const row = container.querySelector<HTMLElement>(`.cave-line[data-line="${highlightLine}"]`);
+    if (!row) return;
+    row.classList.add("cave-line--active");
+    row.scrollIntoView({ block: "center" });
+  }, [html, highlightLine, containerRef]);
 
   if (!html) {
     return (
