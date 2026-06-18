@@ -11,12 +11,19 @@ import path from "node:path";
 import { homedir } from "node:os";
 
 import type { CanvasPosition, CanvasPositions } from "@/lib/canvas-layout";
+import { sanitizeArtifacts, type CanvasArtifact } from "@/lib/canvas-artifacts";
 
 const CANVAS_PATH = path.join(homedir(), ".coven", "cave-canvas.json");
 
-export type CanvasFile = { version: number; positions: CanvasPositions };
+export type CanvasFile = {
+  version: number;
+  positions: CanvasPositions;
+  // Sketch-layer artifacts: ad-hoc generated UI examples. Their positions live
+  // in the shared `positions` map (keyed by artifact id) like every other node.
+  artifacts: CanvasArtifact[];
+};
 
-const EMPTY: CanvasFile = { version: 1, positions: {} };
+const EMPTY: CanvasFile = { version: 1, positions: {}, artifacts: [] };
 
 /** Coerce an unknown value into a finite {x,y}, or null if unusable. */
 function asPosition(value: unknown): CanvasPosition | null {
@@ -56,7 +63,11 @@ export async function loadCanvas(): Promise<CanvasFile> {
     return { ...EMPTY };
   }
   const file = parsed as Partial<CanvasFile>;
-  return { version: file.version ?? 1, positions: sanitizePositions(file.positions) };
+  return {
+    version: file.version ?? 1,
+    positions: sanitizePositions(file.positions),
+    artifacts: sanitizeArtifacts(file.artifacts),
+  };
 }
 
 // Serialize writes: each mutation does load → merge → save, so without a lock
@@ -92,10 +103,48 @@ export async function mergeCanvasPositions(
   return withLock(async () => {
     const current = await loadCanvas();
     const merged: CanvasFile = {
-      version: current.version,
+      ...current,
       positions: { ...current.positions, ...clean },
     };
     await saveCanvas(merged);
     return merged;
   });
 }
+
+/**
+ * Insert or replace an artifact by id, returning the updated file. The caller's
+ * record is normalized through sanitizeArtifacts so a bad body can't corrupt
+ * the store. `updatedAt` is the caller's responsibility (it has the clock).
+ */
+export async function upsertCanvasArtifact(artifact: CanvasArtifact): Promise<CanvasFile> {
+  const [clean] = sanitizeArtifacts([artifact]);
+  if (!clean) {
+    // Nothing usable in the payload — return the current file unchanged.
+    return withLock(loadCanvas);
+  }
+  return withLock(async () => {
+    const current = await loadCanvas();
+    const without = current.artifacts.filter((a) => a.id !== clean.id);
+    const next: CanvasFile = { ...current, artifacts: [...without, clean] };
+    await saveCanvas(next);
+    return next;
+  });
+}
+
+/** Remove an artifact (and its saved position) by id. */
+export async function deleteCanvasArtifact(id: string): Promise<CanvasFile> {
+  return withLock(async () => {
+    const current = await loadCanvas();
+    const positions = { ...current.positions };
+    delete positions[id];
+    const next: CanvasFile = {
+      ...current,
+      positions,
+      artifacts: current.artifacts.filter((a) => a.id !== id),
+    };
+    await saveCanvas(next);
+    return next;
+  });
+}
+
+export type { CanvasArtifact } from "@/lib/canvas-artifacts";

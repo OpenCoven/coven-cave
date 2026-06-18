@@ -44,4 +44,35 @@ assert.match(
   "canvas must scope cards to the active familiar the same way the board does",
 );
 
+// ── Sketch layer: generate UIs ad hoc, render in a sandboxed iframe ────────
+
+const artifactNode = await readFile(new URL("./canvas-artifact-node.tsx", import.meta.url), "utf8");
+
+// Layer toggle is persisted and gates the bands (triage-only).
+assert.match(view, /cave:canvas:layer/, "the Triage/Sketch layer choice must persist");
+assert.match(view, /isSketch \? null : <BandGuides/, "status bands must only render in the triage layer");
+
+// Generation routes through the chat bridge (Cave has no server LLM).
+assert.match(view, /generateArtifactCode/, "Sketch must generate via the chat-bridge helper");
+assert.match(
+  artifactNode + view,
+  /buildSketchPrompt|buildRefinePrompt/,
+  "generation must wrap the user's ask in the one-document sketch/refine prompt",
+);
+
+// The preview MUST be a sandboxed iframe WITHOUT allow-same-origin, so
+// generated (untrusted) code can't reach Cave's origin.
+assert.match(artifactNode, /<iframe/, "artifacts render in an iframe");
+assert.match(artifactNode, /srcDoc=\{buildPreviewSrcDoc/, "the iframe is fed a framed srcDoc");
+assert.match(artifactNode, /sandbox="allow-scripts/, "the preview iframe must be sandboxed (scripts allowed)");
+assert.doesNotMatch(
+  artifactNode,
+  /sandbox="[^"]*allow-same-origin/,
+  "the preview must NOT grant allow-same-origin — that would break isolation",
+);
+
+// Artifacts persist to the canvas store via POST and delete via DELETE.
+assert.match(view, /method:\s*"POST"[\s\S]{0,120}artifact/, "artifacts upsert to /api/canvas via POST");
+assert.match(view, /method:\s*"DELETE"/, "deleting an artifact calls DELETE /api/canvas");
+
 console.log("canvas-view.test.ts ✓");

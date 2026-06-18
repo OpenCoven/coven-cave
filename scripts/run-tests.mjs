@@ -105,6 +105,8 @@ export const SUITES = {
     "src/components/calendar-view-polish.test.ts",
     "src/lib/calendar-layout.test.ts",
     "src/lib/canvas-layout.test.ts",
+    "src/lib/canvas-artifacts.test.ts",
+    "src/lib/canvas-generate.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/canvas-view.test.ts",
     "src/components/calendar-actions.test.ts",
@@ -409,6 +411,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/canvas-generate.test.ts",
+  "src/lib/cave-canvas.test.ts",
   "src/lib/task-archive-nudge.test.ts",
   "src/lib/cave-config.test.ts",
   "src/lib/cave-config-state-race.test.ts",
