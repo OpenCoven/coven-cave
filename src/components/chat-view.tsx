@@ -41,6 +41,7 @@ import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
+import { computeContextMeter } from "@/lib/context-meter";
 import {
   formatRuntime,
   type ChatResponseMetadata,
@@ -1120,6 +1121,35 @@ function MetaLineElapsed({ since }: { since: string }) {
   );
 }
 
+/** Compact context-window meter for the completed-turn meta line: a tiny bar +
+ *  percentage sized against the model's context window, fed by the latest
+ *  turn's token usage. Null when the harness reported no usage (e.g. the
+ *  OpenClaw bridge) or the model/window can't be resolved. The bar fill warms
+ *  from accent → amber → red as the window fills. */
+function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string }) {
+  const meter = computeContextMeter(usage, model);
+  if (!meter) return null;
+  const fill =
+    meter.level === "high"
+      ? "var(--text-danger, #e5484d)"
+      : meter.level === "warn"
+        ? "var(--text-warning, #d9920a)"
+        : "var(--accent-presence)";
+  const title = `Context ${meter.percent}% full — ${meter.usedTokens.toLocaleString()} of ${meter.windowTokens.toLocaleString()} tokens${meter.known ? "" : " (window size estimated)"}`;
+  return (
+    <span className="cave-chat-meta-line__context inline-flex items-center gap-1" title={title}>
+      {" · "}
+      <span
+        aria-hidden
+        className="inline-block h-[5px] w-7 overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--text-muted)_28%,transparent)]"
+      >
+        <span className="block h-full rounded-full" style={{ width: `${Math.max(3, meter.percent)}%`, background: fill }} />
+      </span>
+      <span aria-label={`Context ${meter.percent} percent full`}>{`${meter.percent}%`}</span>
+    </span>
+  );
+}
+
 /** Single header row: editable title left, harness/model/status meta right.
  *  Ephemeral state (streaming, failed, daemon offline) recolors the line and
  *  rewrites the meta string instead of emitting separate pills/bars. */
@@ -1160,15 +1190,18 @@ function MetaLine({
   children?: React.ReactNode;
 }) {
   const state = metaLineState({ busy, lifecycle, error, daemonRunning });
+  // Resolve once: the effective model id drives both the meta segments and the
+  // context meter (the meter needs the model to size the window).
+  const metaModel =
+    responseMetadataModel(responseMetadata) ??
+    visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
+    visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined) ??
+    undefined;
   const segments = metaLineSegments({
     state,
     lifecycle,
     harness: familiar.harness ?? undefined,
-    model:
-      responseMetadataModel(responseMetadata) ??
-      visibleModelId(session?.model ?? undefined, familiar.harness ?? undefined) ??
-      visibleModelId(familiar.model ?? undefined, familiar.harness ?? undefined) ??
-      undefined,
+    model: metaModel,
     runtime: responseMetadata?.runtime ?? session?.runtime,
     projectRoot: session?.project_root ?? projectRoot,
     durationMs,
@@ -1208,6 +1241,7 @@ function MetaLine({
         ))}
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
         {state === "streaming" ? " · esc to cancel" : null}
+        {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
       </span>
       {children}
     </div>
@@ -2326,6 +2360,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           projectRoot: activeProjectRoot,
           reasoningEffort: thinkingEffort,
           responseSpeed,
+          // Forward the picked model explicitly so it reaches `coven run
+          // --model` for THIS turn — don't rely on the PATCH to model-state
+          // having persisted to the conversation file before this send (a
+          // race), and so a brand-new chat (no sessionId yet) still pins its
+          // session model. Only session-scoped picks need this; familiar- and
+          // global-default models already resolve server-side from config.
+          ...(modelState?.source === "session" &&
+          modelState.effectiveModel &&
+          modelState.effectiveModel !== "unknown"
+            ? {
+                modelOverride: modelState.effectiveModel,
+                modelOverrideScope: "session" as const,
+              }
+            : {}),
           // CHAT-D1-04: @-mentioned repo files ride with the root they are
           // relative to — resumed sessions don't resend projectRoot above.
           ...(outgoingMentions.length && mentionRoot
