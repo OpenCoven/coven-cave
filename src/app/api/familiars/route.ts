@@ -35,9 +35,9 @@ export async function GET() {
   // (`cave-glyph-overrides.ts`) wins on render when the user picks something.
   //
   // `avatarUrl` points at the workspace avatar (.../familiars/<id>/avatars/<img>)
-  // when one exists, cache-busted by the file mtime so an updated image shows
-  // without a hard refresh. Familiars with no on-disk avatar omit it and render
-  // the glyph instead.
+  // when one exists, cache-busted by file mtime plus renderer format so both
+  // content changes and server-side encoding changes refetch in desktop
+  // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
   const familiars = await Promise.all(
     (res.data ?? []).map(async (f) => {
       const binding = bindingFor(config, f.id);
@@ -56,7 +56,7 @@ export async function GET() {
         voiceModel: binding.voiceModel,
         voiceName: binding.voiceName,
         avatarUrl: avatar
-          ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}`
+          ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
           : undefined,
       };
     }),

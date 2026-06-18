@@ -13,8 +13,9 @@ export const runtime = "nodejs";
 // into memory before downscaling.
 const MAX_AVATAR_BYTES = 48 * 1024 * 1024;
 
-// Avatars render at 16–36px (sm/md/lg); 256px on the longest edge stays crisp
-// at 3–4× DPR while turning a ~30MB source into a few KB of WebP.
+// Avatars render at 16–48px (sm/md/lg/xl); 256px on the longest edge stays
+// crisp at 3–4× DPR while turning a ~30MB source into a small PNG that every
+// supported desktop WebView can decode.
 const AVATAR_MAX_DIM = 256;
 
 type RenderedAvatar = { body: Uint8Array<ArrayBuffer>; contentType: string };
@@ -48,8 +49,9 @@ function cacheSet(key: string, value: RenderedAvatar): void {
  * Serve a familiar's avatar image from its workspace:
  *   ~/.coven/workspaces/familiars/<id>/avatars/<image>.<ext>
  *
- * Raster avatars are downscaled to <=256px and re-encoded as WebP so a 30MB
- * source doesn't ship for a 36px glyph; SVGs are served as-is (already small,
+ * Raster avatars are downscaled to <=256px and re-encoded as PNG so a 30MB
+ * source doesn't ship for a 48px avatar while still rendering in desktop
+ * WebViews that lack WebP codec support; SVGs are served as-is (already small,
  * and vector). The `id` segment (the only user input) is slug-guarded, and the
  * served filename is chosen from the directory listing — never from the request
  * — so this can't read outside the avatars dir. 404 when the familiar has no
@@ -96,12 +98,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     rendered = { body: new Uint8Array(bytes), contentType: "image/svg+xml" };
   } else {
     try {
-      const webp = await sharp(bytes)
+      const png = await sharp(bytes)
         .rotate() // honor EXIF orientation before resizing
         .resize(AVATAR_MAX_DIM, AVATAR_MAX_DIM, { fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 82 })
+        .png({ compressionLevel: 9, adaptiveFiltering: true })
         .toBuffer();
-      rendered = { body: new Uint8Array(webp), contentType: "image/webp" };
+      rendered = { body: new Uint8Array(png), contentType: "image/png" };
     } catch {
       // Not a decodable raster image — treat as missing rather than 500.
       return NextResponse.json({ ok: false, error: "no avatar" }, { status: 404 });

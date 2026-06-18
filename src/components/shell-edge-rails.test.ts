@@ -97,6 +97,16 @@ assert.match(
 );
 assert.match(
   css,
+  /\.shell-panel-float--left::before\s*\{[\s\S]*?border-radius:\s*8px 0 6px 0;/,
+  "left corner side-panel tab should use a tighter radius",
+);
+assert.match(
+  css,
+  /\.shell-panel-float--right::before\s*\{[\s\S]*?border-radius:\s*0 8px 0 6px;/,
+  "right corner side-panel tab should use a tighter radius",
+);
+assert.match(
+  css,
   /\.shell-panel-float--left > svg,[\s\S]*?\.shell-panel-float--right > svg\s*\{[\s\S]*?top:\s*10px;/,
   "corner side-panel tab icons should stay centered in the larger 35px chip",
 );

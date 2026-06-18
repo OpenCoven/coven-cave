@@ -6,6 +6,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry } from "@/components/familiars-memory-view";
+import { Modal } from "@/components/ui/modal";
 import {
   buildFamiliarCardStats,
   type FamiliarCardStats,
@@ -76,6 +77,7 @@ export function FamiliarsView({
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [query, setQuery] = useState("");
+  const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
   const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem(LAST_SELECTED_KEY);
@@ -232,6 +234,7 @@ export function FamiliarsView({
               familiars={resolvedFamiliars}
               selectedId={selectedFamiliar.id}
               onSelect={enterDetail}
+              onPreview={setPreviewFamiliar}
               onBack={backToRoster}
             />
             <FamiliarDetailPanel
@@ -242,6 +245,7 @@ export function FamiliarsView({
               memoryError={memoryError}
               memoryLoaded={memoryLoaded}
               onClose={backToRoster}
+              onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
               onOpenSession={(sid) => onOpenSession(sid, selectedFamiliar.id)}
               onOpenMemoryFile={onOpenMemoryFile}
@@ -271,6 +275,12 @@ export function FamiliarsView({
           familiar={memoryFamiliar}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
+        />
+      ) : null}
+      {previewFamiliar ? (
+        <FamiliarAvatarPreviewOverlay
+          familiar={previewFamiliar}
+          onClose={() => setPreviewFamiliar(null)}
         />
       ) : null}
     </div>
@@ -460,10 +470,11 @@ type AgentDetailRailProps = {
   familiars: ResolvedFamiliar[];
   selectedId: string;
   onSelect: (id: string) => void;
+  onPreview: (familiar: ResolvedFamiliar) => void;
   onBack: () => void;
 };
 
-function FamiliarDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDetailRailProps) {
+function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview, onBack }: AgentDetailRailProps) {
   return (
     <nav className="familiars-view__rail flex w-[64px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 py-3">
       <button
@@ -483,14 +494,17 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onBack }: AgentDe
             <li key={f.id}>
               <button
                 type="button"
-                onClick={() => onSelect(f.id)}
+                onClick={() => {
+                  onSelect(f.id);
+                  onPreview(f);
+                }}
                 className={`focus-ring familiars-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
                   active
                     ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--accent-presence)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                 }`}
                 title={f.display_name}
-                aria-label={f.display_name}
+                aria-label={`Preview ${f.display_name}'s avatar`}
                 aria-current={active ? "true" : undefined}
               >
                 <FamiliarAvatar familiar={f} size="sm" />
@@ -517,6 +531,7 @@ type AgentDetailPanelProps = {
   memoryError: string | null;
   memoryLoaded: boolean;
   onClose: () => void;
+  onPreview: () => void;
   onStartChat: () => void;
   onOpenSession: (sessionId: string) => void;
   onOpenMemoryFile: (path: string) => void;
@@ -530,6 +545,7 @@ function FamiliarDetailPanel({
   memoryError,
   memoryLoaded,
   onClose,
+  onPreview,
   onStartChat,
   onOpenSession,
   onOpenMemoryFile,
@@ -554,7 +570,15 @@ function FamiliarDetailPanel({
     <section className="familiars-view__panel flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <header className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-4 py-3">
         <div className="flex items-center gap-2">
-          <FamiliarAvatar familiar={familiar} size="sm" />
+          <button
+            type="button"
+            onClick={onPreview}
+            className="focus-ring inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 text-[var(--text-primary)] hover:border-[var(--accent-presence)]/60"
+            aria-label={`Enlarge ${familiar.display_name}'s avatar`}
+            title="Enlarge avatar"
+          >
+            <FamiliarAvatar familiar={familiar} size="xl" />
+          </button>
           <div className="min-w-0">
             <h2 className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
               {familiar.display_name}
@@ -678,5 +702,47 @@ function FamiliarDetailPanel({
         )}
       </div>
     </section>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// FamiliarAvatarPreviewOverlay — enlarged peek at the selected familiar avatar
+// ────────────────────────────────────────────────────────────────────────────
+
+type FamiliarAvatarPreviewOverlayProps = {
+  familiar: ResolvedFamiliar;
+  onClose: () => void;
+};
+
+function FamiliarAvatarPreviewOverlay({ familiar, onClose }: FamiliarAvatarPreviewOverlayProps) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      breadcrumb={["Familiars", familiar.display_name]}
+      ariaLabel={`${familiar.display_name} avatar preview`}
+    >
+      <div className="flex flex-col items-center gap-3 text-center">
+        <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
+          {familiar.avatarImage ? (
+            <img
+              src={familiar.avatarImage}
+              alt={`${familiar.display_name} avatar`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <FamiliarAvatar familiar={familiar} size="xl" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
+            {familiar.display_name}
+          </div>
+          <div className="mt-0.5 truncate text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+            {familiar.role || familiar.harness || familiar.id}
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }

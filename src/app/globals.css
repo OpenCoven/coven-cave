@@ -6161,9 +6161,8 @@ a.mobile-handoff__link:hover {
 
 /* ── Corner sidepanel triggers ───────────────────────────────────────────────
    Pin the left/right sidepanel toggles flush into the upper window corners:
-   inset 0, the OUTER corner rounded to the window's ~12px radius (concentric
-   with the OS corner) and the two window-meeting edges squared with no border
-   or shadow, so each reads as a notch carved into the corner. Border + a soft
+   inset 0, with the two window-meeting edges squared and a tighter radius so
+   each reads as a compact notch carved into the corner. Border + a soft
    shadow live only on the inner edges (facing the content). Overrides the
    hover-reveal, --shell-float-top-centered base for --left/--right only; the
    expand toggle keeps its centered position. */
@@ -6192,7 +6191,7 @@ a.mobile-handoff__link:hover {
 .shell-panel-float--left::before {
   left: 0;
   transform: none;
-  border-radius: 12px 0 10px 0;
+  border-radius: 8px 0 6px 0;
   border-right: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
   border-bottom: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
   box-shadow: 3px 3px 12px color-mix(in oklch, black 22%, transparent);
@@ -6210,7 +6209,7 @@ a.mobile-handoff__link:hover {
   left: auto;
   right: 0;
   transform: none;
-  border-radius: 0 12px 0 10px;
+  border-radius: 0 8px 0 6px;
   border-left: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
   border-bottom: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
   box-shadow: -3px 3px 12px color-mix(in oklch, black 22%, transparent);

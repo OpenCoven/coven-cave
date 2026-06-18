@@ -92,6 +92,16 @@ scan "Bearer token"          'Bearer[[:space:]]+[A-Za-z0-9_.-]{16,}'
 scan "PEM private key"       'BEGIN ((RSA|EC|OPENSSH|DSA|PGP|ENCRYPTED) )?PRIVATE KEY'
 scan "password assignment"   '(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'\''][^"'\''[:space:]]{8,}["'\'']'
 
+# Tailscale Serve hostnames are not credentials, but real MagicDNS hostnames
+# can identify Val's private tailnet/machine. Allow examples and placeholders.
+tailscale_hits=$(grep -InE '[A-Za-z0-9-]+\.[A-Za-z0-9-]+\.ts\.net(:[0-9]+)?' "$ADDED_FILE" \
+  | grep -vE '(^|[.])example\.ts\.net|<[^>]+>\.ts\.net|\*\.ts\.net' || true)
+if [ -n "$tailscale_hits" ]; then
+  fail "possible private Tailscale Serve host in staged diff:"
+  printf '%s\n' "$tailscale_hits" | head -5 | sed 's/^/    /' >&2
+  BLOCKED=1
+fi
+
 if [ "$BLOCKED" -ne 0 ]; then
   cat >&2 <<EOF
 

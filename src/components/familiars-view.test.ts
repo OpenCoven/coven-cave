@@ -86,6 +86,54 @@ assert.match(
 
 assert.match(
   source,
+  /const \[previewFamiliar, setPreviewFamiliar\] = useState<ResolvedFamiliar \| null>\(null\)/,
+  "FamiliarsView tracks the familiar selected for avatar preview",
+);
+
+assert.match(
+  source,
+  /onPreview=\{setPreviewFamiliar\}/,
+  "Detail rail can open the enlarged avatar preview",
+);
+
+assert.match(
+  source,
+  /onClick=\{\(\) => \{\s*onSelect\(f\.id\);\s*onPreview\(f\);/,
+  "Selecting a rail avatar opens the preview for that familiar",
+);
+
+assert.match(
+  source,
+  /aria-label=\{`Preview \$\{f\.display_name\}'s avatar`\}/,
+  "Rail avatar buttons expose preview intent to assistive tech",
+);
+
+assert.match(
+  source,
+  /aria-label=\{`Enlarge \$\{familiar\.display_name\}'s avatar`\}/,
+  "Detail header avatar exposes an enlarge action",
+);
+
+assert.match(
+  source,
+  /<FamiliarAvatarPreviewOverlay[\s\S]*familiar=\{previewFamiliar\}/,
+  "Avatar preview overlay renders for the selected preview familiar",
+);
+
+assert.match(
+  source,
+  /<Modal[\s\S]*ariaLabel=\{`\$\{familiar\.display_name\} avatar preview`\}/,
+  "Avatar preview uses the shared modal with an accessible label",
+);
+
+assert.match(
+  source,
+  /familiar\.avatarImage \?[\s\S]*className="h-full w-full object-cover"/,
+  "Avatar preview enlarges uploaded avatar images",
+);
+
+assert.match(
+  source,
   /setViewMode\("agent-memory"\)/,
   "Header button switches to agent-memory mode",
 );

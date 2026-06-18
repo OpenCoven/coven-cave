@@ -1,5 +1,7 @@
 # Cave
 
+Hello World
+
 > The desktop home for your Coven.
 
 Cave is the native workspace for [OpenCoven](https://github.com/OpenCoven/coven): a local-first app for talking with familiars, watching their work, inspecting memory, managing workflows, and moving between chat, projects, terminal, browser, calendar, and board surfaces without leaving the Coven.
