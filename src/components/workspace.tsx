@@ -1420,6 +1420,7 @@ export function Workspace() {
       <CodeView
         chat={
           <ChatSurface
+            surface="code"
             familiars={familiars}
             sessions={sessions}
             activeFamiliar={active}
