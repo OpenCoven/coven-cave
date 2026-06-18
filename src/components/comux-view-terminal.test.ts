@@ -18,7 +18,7 @@ const globals = readFileSync(
 // Keyboard hint footer (matches the inbox/calendar/library/home/browser pattern).
 assert.match(
   source,
-  /⌘N new · ⌘W close · drag tabs onto pane edges to split · drag dividers to resize/,
+  /⌘N new · ⌘W close · drag tabs or pane bars onto pane edges to split &amp; reorganize · drag dividers to resize/,
   "renders the keyboard hint footer below the terminal area",
 );
 
@@ -168,6 +168,18 @@ assert.match(
   source,
   /function TerminalDropZone\([\s\S]*?onDrop=\{\(e\) => \{[\s\S]*?onSplit\(dragged,\s*side\);/,
   "terminal panes expose edge drop zones that split with the dragged session",
+);
+// Drag a pane by its title bar onto another pane's edge to relocate it — the
+// same gesture as dragging a tab, reusing the move/drop-zone machinery.
+assert.match(
+  source,
+  /comux-terminal-pane-bar"\s*\n\s*draggable\s*\n\s*data-terminal-pane-handle=\{s\.id\}/,
+  "the pane title bar is a drag handle carrying its session id",
+);
+assert.match(
+  source,
+  /comux-terminal-pane-bar[\s\S]*?onDragStart=\{[\s\S]*?dataTransfer\.setData\(TERMINAL_SESSION_DRAG_TYPE,\s*s\.id\)/,
+  "dragging a pane bar stores the session id so a drop relocates that pane",
 );
 assert.match(
   source,

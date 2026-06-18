@@ -2116,6 +2116,21 @@ select {
     opacity var(--duration-fast) var(--ease-standard);
 }
 
+/* The bar is a drag handle: grab a pane by its header and drop it onto
+   another pane's edge to relocate it (mirrors the tab-drag gesture). */
+.comux-terminal-pane-bar {
+  cursor: grab;
+}
+
+.comux-terminal-pane-bar:active {
+  cursor: grabbing;
+}
+
+/* Source pane recedes while it's being dragged so the drop target reads. */
+.comux-terminal-pane[data-dragging="true"] {
+  opacity: 0.5;
+}
+
 /* Inactive pane headers dim back; the active one lifts with an accent wash. */
 .comux-terminal-pane:not([data-active="true"]) .comux-terminal-pane-bar {
   opacity: 0.66;

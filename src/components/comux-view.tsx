@@ -562,12 +562,30 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             data-active={isActive ? "true" : undefined}
             onClick={() => focusSessionById(s.id)}
           >
-            <div className="comux-terminal-pane-bar">
+            <div
+              className="comux-terminal-pane-bar"
+              draggable
+              data-terminal-pane-handle={s.id}
+              title="Drag onto another pane's edge to move this terminal"
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData(TERMINAL_SESSION_DRAG_TYPE, s.id);
+                e.currentTarget
+                  .closest(".comux-terminal-pane")
+                  ?.setAttribute("data-dragging", "true");
+              }}
+              onDragEnd={(e) => {
+                e.currentTarget
+                  .closest(".comux-terminal-pane")
+                  ?.removeAttribute("data-dragging");
+              }}
+            >
               <Icon name="ph:terminal-window" width={12} aria-hidden />
               <span className="min-w-0 flex-1 truncate">{s.label}</span>
               {visiblePaneCount > 1 ? (
                 <button
                   type="button"
+                  draggable={false}
                   className="comux-terminal-pane-action"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -768,7 +786,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             )}
           </div>
           <footer className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
-            ⌘N new · ⌘W close · drag tabs onto pane edges to split · drag dividers to resize
+            ⌘N new · ⌘W close · drag tabs or pane bars onto pane edges to split &amp; reorganize · drag dividers to resize
           </footer>
         </div>
       ) : (

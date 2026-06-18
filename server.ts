@@ -46,6 +46,30 @@ type PtySession = {
 
 const sessions = new Map<string, PtySession>();
 
+// Recent-output ring replayed to a (re)attaching client so it repaints the
+// screen instead of staring at a blank pane. Matches the Rust desktop PTY's
+// 256KB ring (src-tauri/src/pty.rs).
+const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
+// How long a shell survives after its socket drops before being reaped. A
+// terminal pane remounts whenever the Comux layout restructures (split,
+// drag-reorganize, tab switch) or the page reloads; killing the shell the
+// instant the old socket closes turned every one of those into a dead/blank
+// pane with a brand-new shell. Detach instead of kill, and let the timer reap
+// only genuinely-abandoned shells.
+const DETACH_GRACE_MS = 60_000;
+
+function appendScrollback(session: PtySession, data: Buffer): void {
+  session.scrollback.push(data);
+  session.scrollbackBytes += data.length;
+  while (
+    session.scrollbackBytes > SCROLLBACK_LIMIT_BYTES &&
+    session.scrollback.length > 1
+  ) {
+    const dropped = session.scrollback.shift();
+    if (dropped) session.scrollbackBytes -= dropped.length;
+  }
+}
+
 function getTokensFromCookie(header: string | undefined): string[] {
   if (!header) return [];
   const tokens: string[] = [];
@@ -243,7 +267,14 @@ function spawnPty(threadId: string, ws: WebSocket, cols: number, rows: number, c
   };
   sessions.set(threadId, session);
 
-  shell.onData((data: string) => sendPtyData(ws, data));
+  shell.onData((data: string) => {
+    // Keep the ring filling even while detached so a client that reattaches
+    // (split/reorg remount, reload, sleep/wake) sees what happened while it
+    // was away. Route live output to the CURRENTLY-attached socket, not the
+    // spawn-time one — adoptSession swaps session.ws on reattach.
+    appendScrollback(session, Buffer.from(data, "utf8"));
+    if (session.ws) sendPtyData(session.ws, data);
+  });
   shell.onExit(({ exitCode }: { exitCode?: number | null }) => {
     const current = sessions.get(threadId);
     if (current?.pty === shell) {
@@ -335,13 +366,24 @@ function handlePtyConnection(
   ws.on("message", (data: RawData) => onWsMessage(threadId, data));
   ws.on("close", () => {
     const session = sessions.get(threadId);
+    // A newer socket already adopted this shell (adoptSession swapped ws and
+    // closed us as "replaced") — nothing to reap.
     if (!session || session.ws !== ws) return;
-    sessions.delete(threadId);
-    try {
-      session.pty.kill();
-    } catch {
-      // Already gone.
-    }
+    // Detach, don't kill: give the client a grace window to come back
+    // (layout restructure remount, reload, sleep/wake). The ring keeps
+    // collecting output; the timer reaps only truly-abandoned shells.
+    session.ws = null;
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    session.detachTimer = setTimeout(() => {
+      const current = sessions.get(threadId);
+      if (current !== session || current.ws) return;
+      sessions.delete(threadId);
+      try {
+        session.pty.kill();
+      } catch {
+        // Already gone.
+      }
+    }, DETACH_GRACE_MS);
   });
 }
 

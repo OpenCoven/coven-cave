@@ -102,6 +102,55 @@ assert.match(
   "terminal renders the error message, not [object Event]",
 );
 
-console.log("server-pty-ws.test.ts OK");
+// PTY survival across pane remounts (#481 behavior; regressed by the #714 auth
+// rewrite, restored here). A Comux pane remounts whenever the terminal layout
+// restructures — split, drag-reorganize, tab switch — which closes its
+// websocket. If the shell is killed the instant that socket drops, the split
+// leaves a dead/blank pane backed by a brand-new shell. Three pieces keep the
+// shell alive and repaintable across the remount:
+//
+// 1. A bounded scrollback ring, populated as output streams and replayed on
+//    reattach so the returning client repaints instead of showing a blank pane.
+assert.match(
+  src,
+  /function appendScrollback\(session: PtySession, data: Buffer\): void/,
+  "server keeps a scrollback ring helper so reattaching clients can repaint",
+);
+assert.match(
+  src,
+  /shell\.onData\(\(data: string\) => \{[\s\S]*?appendScrollback\(session,/,
+  "live PTY output is appended to the scrollback ring",
+);
+// 2. Live output is routed to the CURRENTLY-attached socket. Capturing the
+//    spawn-time socket (the #714 regression) sent output into the closed
+//    socket after adoptSession swapped session.ws — one replay then silence.
+assert.match(
+  src,
+  /shell\.onData\(\(data: string\) => \{[\s\S]*?if \(session\.ws\) sendPtyData\(session\.ws, data\)/,
+  "live PTY output routes to the current session.ws, not the spawn-time socket",
+);
+assert.match(
+  src,
+  /session\.scrollbackBytes > 0[\s\S]{0,80}sendPtyData\(ws, Buffer\.concat\(session\.scrollback\)/,
+  "adoptSession replays the scrollback ring to a reattaching client",
+);
+// 3. A detach grace window: on socket close the shell is detached (session.ws
+//    nulled) and a timer reaps it later, instead of an immediate kill. A quick
+//    remount reattaches within the window and the shell survives losslessly.
+assert.match(
+  src,
+  /const DETACH_GRACE_MS = /,
+  "server defines a detach grace window before reaping an abandoned shell",
+);
+assert.match(
+  src,
+  /ws\.on\("close", \(\) => \{[\s\S]*?session\.ws = null;[\s\S]*?setTimeout\([\s\S]*?DETACH_GRACE_MS\)/,
+  "closing the socket detaches and arms a reap timer rather than killing the shell immediately",
+);
+assert.match(
+  src,
+  /if \(session\.detachTimer\) \{\s*clearTimeout\(session\.detachTimer\)/,
+  "adoptSession cancels the pending reap when a client reattaches in time",
+);
 
-// Detach grace removed in #714 — PTY is killed immediately on close
+console.log("server-pty-ws.test.ts OK");
