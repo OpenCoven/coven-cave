@@ -540,6 +540,21 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     }
   }, []);
 
+  // Click-to-open from chat: a file tool's target (or any surface) dispatches
+  // `cave:open-project-file` with an absolute path; the active comux opens it
+  // in the Files preview. Gated on `active` so only the visible instance reacts.
+  useEffect(() => {
+    if (!active) return;
+    const onOpenFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
+      if (!detail?.path) return;
+      setRightView("files");
+      void openFilePreview(detail.path, typeof detail.line === "number" ? detail.line : undefined);
+    };
+    window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
+    return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
+  }, [active, openFilePreview]);
+
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;
     void copyText(preview.content).then(() => {

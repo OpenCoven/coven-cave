@@ -316,6 +316,24 @@ export function Workspace() {
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
   }, []);
 
+  // Click-to-open a file from chat: the comux pane (Code/Terminal) handles
+  // `cave:open-project-file` directly when it's showing. When neither is, switch
+  // to the Code workspace and re-emit so the freshly-mounted comux catches it.
+  useEffect(() => {
+    const onOpenFile = (e: Event) => {
+      const m = modeRef.current;
+      if (m === "code" || m === "terminal") return;
+      const detail = (e as CustomEvent).detail;
+      setMode("code");
+      window.setTimeout(
+        () => window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail })),
+        0,
+      );
+    };
+    window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
+    return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
+  }, []);
+
   useEffect(() => {
     if (railTab !== "salem") {
       window.dispatchEvent(new CustomEvent("cave:salem-undock"));

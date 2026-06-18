@@ -110,6 +110,7 @@ export const SUITES = {
     "src/lib/comux-projects.test.ts",
     "src/lib/code-lang.test.ts",
     "src/lib/project-search.test.ts",
+    "src/lib/tool-target-file.test.ts",
     "src/lib/terminal-layout.test.ts",
     "src/components/library-polish.test.ts",
     "src/components/eval-loop-panel.test.ts",
