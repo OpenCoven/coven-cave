@@ -33,6 +33,7 @@ import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
+import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -643,6 +644,7 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
     if (html && containerRef.current) {
       wireCopyButtons(containerRef.current);
       wireMarkdownLinks(containerRef.current, onOpenUrl);
+      wireMermaidDiagrams(containerRef.current);
     }
   }, [html, onOpenUrl]);
   return containerRef;
