@@ -46,6 +46,7 @@
     "@dnd-kit/utilities": "3.2.2",
     "@iconify-json/ph": "1.2.2",
     "@iconify/react": "6.0.2",
+    "@tailwindcss/browser": "4.3.0",
     "@tauri-apps/api": "2.11.0",
     "@tauri-apps/plugin-notification": "2.3.3",
     "@tauri-apps/plugin-os": "2.3.2",
