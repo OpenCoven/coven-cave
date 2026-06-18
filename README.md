@@ -10,7 +10,7 @@ A familiar is not just a chat window. It has a name, role, runtime, memory, tool
 
 ## Status
 
-- Current app version: `0.0.102`
+- Current app version: `0.0.103`
 - Native shell: Tauri 2
 - Frontend: Next.js 16, React 19, Tailwind v4
 - Runtime dependency: a healthy local `coven` CLI/daemon plus at least one runtime source

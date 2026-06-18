@@ -7,6 +7,13 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.103] - 2026-06-18
+
+Patch release: respect persisted home navigation state after the v0.0.102 chat-width release.
+
+### Fixed
+- **Shell** — reverted the forced home-screen nav reopen so fresh desktop launches still default open, but a deliberate collapsed nav stays collapsed across reloads and app launches (#920).
+
 ## [0.0.102] - 2026-06-18
 
 Patch release: full-width chat composition polish and a desktop launch affordance after 0.0.101.
