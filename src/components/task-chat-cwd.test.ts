@@ -89,7 +89,7 @@ assert.match(
 );
 assert.match(
   boardInspector,
-  /<div className="board-drawer-field-label">Project<\/div>[\s\S]{0,900}onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
+  /<div className="board-drawer-field-label board-drawer-field-label--split">[\s\S]{0,120}<span>Project<\/span>[\s\S]{0,1100}onPatch\(card\.id, \{ projectId: selectedProject\?\.id \?\? null, cwd: selectedProject\?\.root \?\? null \}\)/,
   "The task Project field should set the runtime root for chat starts",
 );
 assert.match(
@@ -109,8 +109,23 @@ assert.doesNotMatch(
 );
 assert.match(
   boardView,
-  /Set a project before starting chat\./,
-  "CWD-less task chat starts should direct the user to the task Project field",
+  /Choose a project for this task before starting chat, or open Projects to create one\./,
+  "CWD-less task chat starts should direct the user to the task Project field and the project creation surface",
+);
+assert.match(
+  boardInspector,
+  /CHAT_OPEN_PROJECTS_EVENT/,
+  "The task inspector should expose a path to the Projects surface",
+);
+assert.match(
+  boardInspector,
+  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "chat" \} \}\)/,
+  "The task inspector's project action should navigate to Chat before opening the Projects tab",
+);
+assert.match(
+  boardInspector,
+  /window\.dispatchEvent\(new CustomEvent\(CHAT_OPEN_PROJECTS_EVENT\)\)/,
+  "The task inspector's project action should open the Projects tab",
 );
 assert.match(
   boardView,

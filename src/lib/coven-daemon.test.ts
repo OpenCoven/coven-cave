@@ -1,7 +1,13 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 
-const { normalizeDaemonError, socketPath, extractDaemonError } = await import("./coven-daemon.ts");
+const {
+  normalizeDaemonError,
+  socketPath,
+  extractDaemonError,
+  normalizeWindowsDaemonSocket,
+  resolveDaemonSocketPath,
+} = await import("./coven-daemon.ts");
 
 // ENOENT (socket missing) → "daemon offline"
 {
@@ -61,6 +67,49 @@ const { normalizeDaemonError, socketPath, extractDaemonError } = await import(".
   const def = socketPath();
   assert.match(def, /\.coven\/coven\.sock$/);
   if (before !== undefined) process.env.COVEN_SOCKET = before;
+}
+
+// Windows daemon status stores the pipe name; Node HTTP needs the full pipe path
+{
+  assert.equal(
+    normalizeWindowsDaemonSocket("coven-daemon-abc123.sock"),
+    "\\\\.\\pipe\\coven-daemon-abc123.sock",
+  );
+  assert.equal(
+    normalizeWindowsDaemonSocket("\\\\.\\pipe\\coven-daemon-abc123.sock"),
+    "\\\\.\\pipe\\coven-daemon-abc123.sock",
+  );
+}
+
+// Windows socket resolution should use daemon.json instead of defaulting to ~/.coven/coven.sock
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: {},
+    homeDir: "C:/Users/Sonic",
+    readFileSync: (filePath) => {
+      assert.match(String(filePath), /daemon\.json$/);
+      return JSON.stringify({
+        pid: 12345,
+        startedAt: "2026-06-18T00:00:00Z",
+        socket: "coven-daemon-abc123.sock",
+      });
+    },
+  });
+  assert.equal(socket, "\\\\.\\pipe\\coven-daemon-abc123.sock");
+}
+
+// COVEN_SOCKET remains authoritative on Windows, with named pipe shorthand normalized
+{
+  const socket = resolveDaemonSocketPath({
+    platform: "win32",
+    env: { COVEN_SOCKET: "coven-daemon-from-env.sock" },
+    homeDir: "C:/Users/Sonic",
+    readFileSync: () => {
+      throw new Error("daemon.json should not be read when COVEN_SOCKET is set");
+    },
+  });
+  assert.equal(socket, "\\\\.\\pipe\\coven-daemon-from-env.sock");
 }
 
 // extractDaemonError handles the canonical { error: { message } } shape

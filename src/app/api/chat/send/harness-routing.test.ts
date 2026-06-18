@@ -80,7 +80,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /import \{ openClawBin, openClawNeedsShell, openClawSpawnEnv \} from "@\/lib\/openclaw-bin";/,
+  /import \{ openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv \} from "@\/lib\/openclaw-bin";/,
   "OpenClaw native chat should use the Windows-aware binary resolver instead of spawning a bare command",
 );
 
@@ -92,14 +92,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /spawn\(openClawBin\(\), \["agents", "list", "--json"\][\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: openClawNeedsShell\(\)/,
+  /spawn\(openClawBin\(\), openClawSpawnArgs\(\["agents", "list", "--json"\]\)[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: openClawNeedsShell\(\)/,
   "OpenClaw agent listing should launch Windows npm .cmd shims correctly",
 );
 
 assert.match(
   chatRoute,
-  /spawn\(openClawBin\(\), argv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: openClawNeedsShell\(\)/,
-  "OpenClaw chat should launch Windows npm .cmd shims correctly",
+  /const spawnArgv = openClawSpawnArgs\(argv\);[\s\S]*spawn\(openClawBin\(\), spawnArgv,[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: openClawNeedsShell\(\)/,
+  "OpenClaw chat should shell-quote Windows npm .cmd shim argv before spawning",
 );
 
 // Session persistence contract (regression: chats forked into new sessions

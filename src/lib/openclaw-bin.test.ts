@@ -27,6 +27,16 @@ assert.match(
 );
 assert.match(
   src,
+  /export function openClawSpawnArgs\(argv: string\[\]\): string\[\][\s\S]*openClawNeedsShell\(\)[\s\S]*quoteWindowsShellArg/,
+  "Windows shell-mode OpenClaw spawn args should quote argv entries before Node joins them for cmd.exe",
+);
+assert.match(
+  src,
+  /quoteWindowsShellArg\(arg: string\)[\s\S]*return `"\$\{escaped\}"`/,
+  "OpenClaw Windows shell quoting should preserve a multi-word --message as one CLI argument",
+);
+assert.match(
+  src,
   /delete env\[key\]/,
   "OpenClaw spawn env should strip forbidden secret keys before subprocess launch",
 );

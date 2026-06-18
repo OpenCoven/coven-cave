@@ -8,7 +8,9 @@ export type WorkspaceMode =
   | "library"
   | "browser"
   | "terminal"
+  | "code"
   | "github"
   | "roles"
   | "workflows"
-  | "capabilities";
+  | "capabilities"
+  | "canvas";

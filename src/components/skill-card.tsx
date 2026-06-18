@@ -99,7 +99,7 @@ export function SkillCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center gap-4 px-0 py-3 border-b border-[var(--border-hairline)] last:border-b-0 transition-colors hover:bg-[var(--bg-raised)] cursor-pointer text-left"
+      className="group flex w-full items-center gap-4 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3 transition-colors hover:border-[color-mix(in_srgb,var(--foreground)_24%,var(--border-hairline))] hover:bg-[var(--bg-raised)] cursor-pointer text-left"
     >
       {/* Icon */}
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">

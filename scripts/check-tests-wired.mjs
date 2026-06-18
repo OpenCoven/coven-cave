@@ -1,19 +1,18 @@
 // CI guard: every `*.test.ts` / `*.test.mjs` under src/ and scripts/ must be
-// wired into a CI-run test script (test:app / test:api / test:mobile), so an
-// authored test can't silently never run. (110 of 243 tests were orphaned this
-// way before #524.) Playwright `*.spec.ts` are e2e, run separately and
-// intentionally not in CI — they're excluded here.
+// wired into a CI-run test suite (the SUITES map in scripts/run-tests.mjs,
+// which `test:app` / `test:api` / `test:mobile` execute), so an authored test
+// can't silently never run. (110 of 243 tests were orphaned this way before
+// #524.) Playwright `*.spec.ts` are e2e, run separately and intentionally not
+// in CI — they're excluded here.
 //
 // Run: `node scripts/check-tests-wired.mjs` (wired as `pnpm check:tests-wired`).
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SUITES } from "./run-tests.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-
-// The npm scripts CI actually executes (see .github/workflows/ci.yml).
-const CI_TEST_SCRIPTS = ["test:app", "test:api", "test:mobile"];
 
 // Tests deliberately NOT wired into the frontend gate. Key = repo-relative
 // path, value = the reason (printed in the "allowlisted" summary). Keep this
@@ -43,13 +42,9 @@ function walk(dir, acc) {
 
 const onDisk = [...walk(path.join(root, "src"), []), ...walk(path.join(root, "scripts"), [])].sort();
 
-const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const referenced = new Set();
-for (const name of CI_TEST_SCRIPTS) {
-  const script = pkg.scripts?.[name] ?? "";
-  for (const m of script.matchAll(/(?:src|scripts)\/[A-Za-z0-9_./[\]-]+\.test\.(?:ts|mjs)/g)) {
-    referenced.add(m[0]);
-  }
+for (const files of Object.values(SUITES)) {
+  for (const f of files) referenced.add(f);
 }
 
 const unwired = onDisk.filter((f) => !referenced.has(f) && !ALLOWLIST.has(f));
@@ -60,18 +55,18 @@ let failed = false;
 
 if (unwired.length) {
   failed = true;
-  console.error(`\n✗ ${unwired.length} test file(s) on disk are not wired into any CI test script (${CI_TEST_SCRIPTS.join(", ")}):\n`);
+  console.error(`\n✗ ${unwired.length} test file(s) on disk are not wired into any CI test suite (${Object.keys(SUITES).join(", ")}):\n`);
   for (const f of unwired) console.error(`    ${f}`);
-  console.error(`\n  Fix: append \`&& node --experimental-strip-types <file>\` to the relevant script in package.json`);
-  console.error(`  (add \`--import ./scripts/test-alias-register.mjs\` if the test's module graph imports the \`@/\` alias).`);
+  console.error(`\n  Fix: append the file path to the relevant suite array (app/api/mobile) in scripts/run-tests.mjs.`);
+  console.error(`  (.mjs tests that need the TS stripper go in STRIP_TYPES_MJS; tests whose import graph reaches the \`@/\` alias go in ALIAS_LOADER.)`);
   console.error(`  If it genuinely can't run in CI, add it to ALLOWLIST in scripts/check-tests-wired.mjs with a reason.\n`);
 }
 
 if (missing.length) {
   failed = true;
-  console.error(`\n✗ ${missing.length} test file(s) are referenced in package.json but don't exist on disk:\n`);
+  console.error(`\n✗ ${missing.length} test file(s) are listed in scripts/run-tests.mjs but don't exist on disk:\n`);
   for (const f of missing) console.error(`    ${f}`);
-  console.error(`\n  Fix: remove the stale reference from package.json (or restore the file).\n`);
+  console.error(`\n  Fix: remove the stale entry from the suite array in scripts/run-tests.mjs (or restore the file).\n`);
 }
 
 if (staleAllow.length) {

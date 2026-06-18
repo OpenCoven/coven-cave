@@ -29,12 +29,14 @@ export type FolderMode =
   | "calendar"
   | "inbox"
   | "terminal"
+  | "code"
   | "browser"
   | "github"
   | "roles"
   | "workflows"
   | "library"
-  | "capabilities";
+  | "capabilities"
+  | "canvas";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -80,6 +82,7 @@ const FOLDER_MODES: Array<{
   { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description: "Overview and quick actions" },
   { id: "chat", label: "Familiars", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
   { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects" },
+  { id: "canvas", label: "Canvas", iconName: "ph:bounding-box", group: "work", description: "Triage issues on a freeform spatial canvas" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations" },
   // Knowledge
@@ -87,6 +90,7 @@ const FOLDER_MODES: Array<{
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description: "Built-in web browser" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8", description: "Shell session in your project" },
+  { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘0", description: "Chat with a familiar beside your files and terminal" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Reusable agent personas you can attach to a familiar" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools", description: "Skills and tools your familiars can use" },

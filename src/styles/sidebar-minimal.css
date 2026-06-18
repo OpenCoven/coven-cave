@@ -382,13 +382,22 @@
   padding-top: 4px;
 }
 
+/* Shared mode-aware header band (matches the chat rail / board / GitHub /
+   calendar / schedules / library / roles / capabilities group headers): darker
+   than the page in light mode, lighter in dark — the mix toward --foreground
+   inverts per mode. Applied to every eyebrow section label in this sidebar so
+   they read as headers and stay consistent with each other. */
 .sidebar-section-label {
-  padding: 0 10px 6px;
+  margin: 0 6px 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-primary);
   user-select: none;
 }
 
@@ -455,12 +464,16 @@
 
 /* ── Recents header ──────────────────────────────────────────────────────── */
 .sidebar-recents-header {
-  padding: 8px 14px 3px;
+  margin: 4px 6px 3px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-primary);
   flex-shrink: 0;
   user-select: none;
 }
@@ -642,12 +655,16 @@
 
 /* ── Familiars section (left nav) ────────────────────────────────────────── */
 .sidebar-familiar-section-label {
-  padding: 5px 8px 2px;
+  margin: 5px 6px 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-primary);
   user-select: none;
 }
 
@@ -885,8 +902,9 @@
    Superconductor activity sidebar: stacked cards with title · project · model ·
    +N -N diff · relative time, the active session marked by a left accent bar. */
 .recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0 2px; }
-.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 2px 6px; border: 0; background: transparent; cursor: pointer; color: var(--text-muted); }
-.recent-activity__label { font-size: 10px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 4px 8px; border: 0; border-radius: 6px; background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent); cursor: pointer; color: var(--text-primary); }
+.recent-activity__label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .recent-activity__chevron { transition: transform 140ms ease; }
 .recent-activity__chevron--collapsed { transform: rotate(-90deg); }
 .recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }

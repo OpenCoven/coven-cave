@@ -1,13 +1,81 @@
+import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
+
+type SocketPathResolverOptions = {
+  platform?: NodeJS.Platform;
+  env?: Record<string, string | undefined>;
+  homeDir?: string;
+  readFileSync?: ReadTextFile;
+};
+
+type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
+
+const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
+
+export function normalizeWindowsDaemonSocket(socket: string): string {
+  const trimmed = socket.trim();
+  if (!trimmed) return trimmed;
+
+  const normalizedSlashes = trimmed.replaceAll("/", "\\");
+  if (normalizedSlashes.toLowerCase().startsWith(WINDOWS_PIPE_PREFIX)) {
+    return normalizedSlashes;
+  }
+
+  if (
+    path.win32.isAbsolute(trimmed) ||
+    path.posix.isAbsolute(trimmed) ||
+    /^[a-zA-Z]:[\\/]/.test(trimmed)
+  ) {
+    return trimmed;
+  }
+
+  return `${WINDOWS_PIPE_PREFIX}${trimmed}`;
+}
+
+function covenHomePath(env: Record<string, string | undefined>, homeDir: string): string {
+  return env.COVEN_HOME ?? path.join(homeDir, ".coven");
+}
+
+function daemonStatusSocket(covenHome: string, readFile: ReadTextFile): string | null {
+  try {
+    const raw = readFile(path.join(covenHome, "daemon.json"), "utf8");
+    const parsed = JSON.parse(raw) as { socket?: unknown };
+    return typeof parsed.socket === "string" && parsed.socket.trim() ? parsed.socket : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveDaemonSocketPath(options: SocketPathResolverOptions = {}): string {
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const homeDir = options.homeDir ?? homedir();
+  const readFile: ReadTextFile =
+    options.readFileSync ?? ((filePath, encoding) => readFileSync(filePath, encoding));
+
+  if (env.COVEN_SOCKET) {
+    return platform === "win32"
+      ? normalizeWindowsDaemonSocket(env.COVEN_SOCKET)
+      : env.COVEN_SOCKET;
+  }
+
+  const covenHome = covenHomePath(env, homeDir);
+  if (platform === "win32") {
+    const statusSocket = daemonStatusSocket(covenHome, readFile);
+    if (statusSocket) return normalizeWindowsDaemonSocket(statusSocket);
+  }
+
+  return path.join(covenHome, "coven.sock");
+}
 
 /**
  * Resolve the daemon socket path at call time so a mid-session
  * COVEN_SOCKET env change is honored without an app restart.
  */
 export function socketPath(): string {
-  return process.env.COVEN_SOCKET ?? path.join(homedir(), ".coven", "coven.sock");
+  return resolveDaemonSocketPath();
 }
 
 /**

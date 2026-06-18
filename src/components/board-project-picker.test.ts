@@ -29,6 +29,11 @@ assert.match(
   /projects\.map\(\(project\) => <option key=\{project\.id\} value=\{project\.id\}>\{project\.name\}<\/option>\)/,
   "inspector lists every known project by id/name",
 );
+assert.match(
+  inspector,
+  /Open Projects/,
+  "inspector offers a direct route to the project creation surface",
+);
 
 // ── New-card modal can set a project at creation time ──────────────────────
 assert.match(newCard, /projectId: string \| null;/, "NewCardDraft carries projectId");

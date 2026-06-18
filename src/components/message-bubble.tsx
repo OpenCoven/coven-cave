@@ -33,6 +33,8 @@ import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
+import { parseFileRef } from "@/lib/file-ref";
+import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
@@ -169,7 +171,9 @@ async function renderCodeBlock(
           const lineNum = showLineNums
             ? `<span class="cave-ln" aria-hidden="true">${i + 1}</span>`
             : "";
-          return `<span class="cave-line${gutterClass}">${lineNum}${line}</span>`;
+          // data-line lets surfaces (e.g. the Projects search) scroll a code
+          // block to a specific 1-based line. Harmless to chat code blocks.
+          return `<span class="cave-line${gutterClass}" data-line="${i + 1}">${lineNum}${line}</span>`;
         });
         return `${co}${wrappedLines.join("")}${cc}`;
       });
@@ -181,10 +185,16 @@ async function renderCodeBlock(
   const filenameHtml = filename
     ? `<span class="cave-code-filename">${escHtml(filename)}</span>`
     : "";
+  // Collapse toggle (chevron) folds the block down to just this header so a
+  // long code dump can be tucked away; blocks render expanded by default. The
+  // line count hints at size while collapsed.
+  const lineCount = lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+  const collapseBtn = `<button type="button" class="cave-code-collapse-btn" aria-label="Collapse code" aria-expanded="true"><svg class="cave-code-chevron" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+  const linesHtml = lineCount > 1 ? `<span class="cave-code-lines" aria-hidden="true">${lineCount} lines</span>` : "";
   // No data-code attribute (CHAT-D7-04): wireCopyButtons reads the code text
   // back out of the rendered DOM at click time instead of carrying a second
   // copy of every block's source in an attribute.
-  const headerHtml = `<div class="cave-code-header">${labelHtml}${filenameHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
+  const headerHtml = `<div class="cave-code-header">${collapseBtn}${labelHtml}${filenameHtml}${linesHtml}<button type="button" class="cave-copy-btn cave-copy-btn-mounted">Copy</button></div>`;
   const expandHtml = lines.length >= CODE_EXPAND_MIN_LINES
     ? `<div class="cave-code-expand"><button type="button" class="cave-code-expand-btn">Show more</button></div>`
     : "";
@@ -220,6 +230,9 @@ type SyntaxBlockProps = {
   lang?: string;
   /** Additional className on the outer wrapper */
   className?: string;
+  /** 1-based line to scroll to and highlight once rendered (e.g. a search
+   *  match). Re-running with the same value re-scrolls. */
+  highlightLine?: number;
 };
 
 /**
@@ -227,7 +240,7 @@ type SyntaxBlockProps = {
  * inspector pane. Uses the same Shiki singleton as MessageBubble, so the
  * highlighter is only initialised once per session.
  */
-export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
+export function SyntaxBlock({ text, lang, className, highlightLine }: SyntaxBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
   const containerRef = useWireCopyButtons(html);
   const resolvedLang = lang ?? autoDetectLang(text);
@@ -240,6 +253,20 @@ export function SyntaxBlock({ text, lang, className }: SyntaxBlockProps) {
     });
     return () => { cancelled = true; };
   }, [text, resolvedLang]);
+
+  // Scroll to and briefly highlight the target line once the highlighted HTML
+  // is in the DOM. data-line anchors are emitted by renderCodeBlock.
+  useEffect(() => {
+    if (!html) return;
+    const container = containerRef.current;
+    if (!container) return;
+    container.querySelectorAll(".cave-line--active").forEach((el) => el.classList.remove("cave-line--active"));
+    if (!highlightLine) return;
+    const row = container.querySelector<HTMLElement>(`.cave-line[data-line="${highlightLine}"]`);
+    if (!row) return;
+    row.classList.add("cave-line--active");
+    row.scrollIntoView({ block: "center" });
+  }, [html, highlightLine, containerRef]);
 
   if (!html) {
     return (
@@ -594,6 +621,16 @@ function wireCopyButtons(container: HTMLElement) {
       });
     });
   }
+  // Collapse toggle: fold the whole block down to its header (and back).
+  for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-collapse-btn"))) {
+    if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
+    (btn as HTMLButtonElement & { _wired?: boolean })._wired = true;
+    btn.addEventListener("click", () => {
+      const wrap = btn.closest(".cave-code-wrap");
+      if (!wrap) return;
+      toggleCodeBlockCollapse(wrap, btn);
+    });
+  }
   // Show more / Show less footer on height-clamped blocks (CHAT-D7-03).
   for (const btn of Array.from(container.querySelectorAll<HTMLButtonElement>(".cave-code-expand-btn"))) {
     if ((btn as HTMLButtonElement & { _wired?: boolean })._wired) continue;
@@ -631,22 +668,69 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
   }
 }
 
+// Inline file references in prose (e.g. `src/foo.ts` or `lib/bar.py:42`) become
+// clickable, opening the file in the Code workspace. Match logic lives in
+// @/lib/file-ref (pure + unit-tested); only inline code is considered.
+function wireFilePathLinks(container: HTMLElement) {
+  for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
+    // Inline code only — never the highlighted lines inside a fenced block.
+    if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
+    const flagged = code as HTMLElement & { _caveFileLink?: boolean };
+    if (flagged._caveFileLink) continue;
+    const ref = parseFileRef(code.textContent ?? "");
+    if (!ref) continue;
+    flagged._caveFileLink = true;
+    const { path, line } = ref;
+    code.classList.add("cave-file-link");
+    code.setAttribute("role", "button");
+    code.setAttribute("tabindex", "0");
+    code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
+    const open = () =>
+      window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
+    code.addEventListener("click", open);
+    code.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  }
+}
+
 /**
  * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
  * whenever the injected HTML changes. Every component that injects
  * renderCodeBlock/mdToHtml output via dangerouslySetInnerHTML must attach the
  * returned ref, otherwise its Copy buttons render but silently do nothing
  * (wireCopyButtons is idempotent per button via the `_wired` flag).
+ *
+ * `linkifyPaths` opts inline file references in prose into clickable
+ * Code-workspace links; only the chat prose path enables it.
  */
-function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void) {
+function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, linkifyPaths = false) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (html && containerRef.current) {
-      wireCopyButtons(containerRef.current);
-      wireMarkdownLinks(containerRef.current, onOpenUrl);
-      wireMermaidDiagrams(containerRef.current);
-    }
-  }, [html, onOpenUrl]);
+    const el = containerRef.current;
+    if (!html || !el) return;
+    const wireAll = () => {
+      wireCopyButtons(el);
+      wireMarkdownLinks(el, onOpenUrl);
+      wireMermaidDiagrams(el);
+      if (linkifyPaths) wireFilePathLinks(el);
+    };
+    wireAll();
+    // Re-wire when nodes are added after the first pass. Components that render
+    // once (e.g. the comux file/markdown preview's MarkdownBlock/SyntaxBlock,
+    // vs the chat's repeatedly-re-rendering MarkdownContent) could otherwise
+    // leave a code block's Copy/collapse/expand buttons unwired if the
+    // highlighter populated them after this effect ran. All wiring is
+    // idempotent (guarded per element), and the wiring itself only touches
+    // attributes/listeners — not childList — so it never re-triggers the
+    // observer into a loop.
+    const observer = new MutationObserver(() => wireAll());
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [html, onOpenUrl, linkifyPaths]);
   return containerRef;
 }
 
@@ -657,7 +741,8 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
 
 function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html, onOpenUrl);
+  // linkifyPaths=true: chat prose file references (`src/foo.ts:42`) open in Code.
+  const containerRef = useWireCopyButtons(html, onOpenUrl, true);
   // Out-of-order guard: mdToHtml is async and during streaming several
   // renders can be in flight at once. Every render takes a monotonically
   // increasing stamp, and a result only commits if it is newer than the

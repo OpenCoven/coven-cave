@@ -23,6 +23,7 @@ const contracts: RouteContract[] = [
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/enrich-steps", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/canvas", methods: ["GET", "PUT", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -46,8 +47,10 @@ const contracts: RouteContract[] = [
   { route: "/familiars", methods: ["GET"], kind: "json" },
   { route: "/github/activity", methods: ["GET"], kind: "json" },
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
+  { route: "/github/item", methods: ["GET"], kind: "json" },
   { route: "/github/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/github/tasks", methods: ["GET"], kind: "json" },
+  { route: "/github/worktree", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/harnesses", methods: ["GET"], kind: "json" },
   { route: "/inbox/[id]/dismiss", methods: ["POST"], kind: "json" },
   { route: "/inbox/[id]/done", methods: ["POST"], kind: "json" },
@@ -78,9 +81,10 @@ const contracts: RouteContract[] = [
   { route: "/onboarding/status", methods: ["GET"], kind: "json" },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
-  { route: "/project-file", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/project-file", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/project-tree", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -356,7 +360,9 @@ for (const contract of contracts) {
   );
 }
 
-const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-assert.match(packageJson.scripts?.["test:api"] ?? "", /api-contracts\.test\.ts/, "package.json must expose this API contract suite");
+// The test:api npm script delegates to scripts/run-tests.mjs; assert this
+// suite is listed in that runner's manifest so it actually runs in CI.
+const runnerSource = readFileSync(path.join(root, "scripts/run-tests.mjs"), "utf8");
+assert.match(runnerSource, /api-contracts\.test\.ts/, "scripts/run-tests.mjs must list this API contract suite");
 
 console.log(`api-contracts.test.ts: ${contracts.length} route contracts passed`);

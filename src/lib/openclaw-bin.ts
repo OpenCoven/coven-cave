@@ -82,6 +82,39 @@ export function openClawNeedsShell(): boolean {
   return process.platform === "win32";
 }
 
+const WINDOWS_SHELL_META_RE = /[\s"&|<>()^%!]/;
+
+function quoteWindowsShellArg(arg: string): string {
+  if (arg.length === 0) return "\"\"";
+  if (!WINDOWS_SHELL_META_RE.test(arg)) return arg;
+
+  // Node joins args into one cmd.exe command line when shell:true is set.
+  // Quote each logical argv entry so multi-word --message payloads stay intact.
+  let escaped = "";
+  let backslashes = 0;
+  for (const char of arg) {
+    if (char === "\\") {
+      backslashes += 1;
+      continue;
+    }
+    if (char === "\"") {
+      escaped += "\\".repeat(backslashes * 2 + 1);
+      escaped += "\"";
+      backslashes = 0;
+      continue;
+    }
+    escaped += "\\".repeat(backslashes);
+    backslashes = 0;
+    escaped += char;
+  }
+  escaped += "\\".repeat(backslashes * 2);
+  return `"${escaped}"`;
+}
+
+export function openClawSpawnArgs(argv: string[]): string[] {
+  return openClawNeedsShell() ? argv.map(quoteWindowsShellArg) : argv;
+}
+
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
   for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {

@@ -50,7 +50,7 @@ const source = await readFile(new URL("./message-bubble.tsx", import.meta.url), 
 
 assert.match(
   source,
-  /function useWireCopyButtons\([\s\S]*?wireCopyButtons\(containerRef\.current\)/,
+  /function useWireCopyButtons\([\s\S]*?wireCopyButtons\(el\)/,
   "A shared post-render hook should wire copy buttons once the injected HTML lands",
 );
 

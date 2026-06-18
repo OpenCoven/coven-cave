@@ -7,6 +7,7 @@ import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
+import { CanvasView } from "@/components/canvas-view";
 import { CalendarView } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
@@ -35,6 +36,7 @@ import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal"
 import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import { ComuxView } from "@/components/comux-view";
+import { CodeView } from "@/components/code-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
@@ -78,10 +80,12 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   library: "Library",
   browser: "Browser",
   terminal: "Terminal",
+  code: "Code",
   github: "GitHub",
   roles: "Roles",
   workflows: "Workflows",
   capabilities: "Capabilities",
+  canvas: "Canvas",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -312,6 +316,24 @@ export function Workspace() {
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
+  }, []);
+
+  // Click-to-open a file from chat: the comux pane (Code/Terminal) handles
+  // `cave:open-project-file` directly when it's showing. When neither is, switch
+  // to the Code workspace and re-emit so the freshly-mounted comux catches it.
+  useEffect(() => {
+    const onOpenFile = (e: Event) => {
+      const m = modeRef.current;
+      if (m === "code" || m === "terminal") return;
+      const detail = (e as CustomEvent).detail;
+      setMode("code");
+      window.setTimeout(
+        () => window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail })),
+        0,
+      );
+    };
+    window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
+    return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
   }, []);
 
   useEffect(() => {
@@ -845,6 +867,13 @@ export function Workspace() {
           e.preventDefault();
           setMode(target);
         }
+        return;
+      }
+
+      // ⌘0 -> Code workspace (chat beside files + terminal)
+      if (meta && !alt && e.key === "0") {
+        e.preventDefault();
+        setMode("code");
         return;
       }
 
@@ -1387,6 +1416,53 @@ export function Workspace() {
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInCompanionBrowser}
       />
+    ) : mode === "code" ? (
+      <CodeView
+        chat={
+          <ChatSurface
+            surface="code"
+            familiars={familiars}
+            sessions={sessions}
+            activeFamiliar={active}
+            activeFamiliarId={activeId}
+            daemonRunning={daemonRunning}
+            routerRef={routerRef}
+            sessionsLoaded={sessionsLoaded}
+            inboxItems={inboxItemsWithEphemeral}
+            inspectorOpen={inspectorOpen}
+            rightPanel={rightPanel}
+            pendingProjectRoot={pendingProjectChatRoot}
+            pendingChatAction={pendingChatAction}
+            onSetInspectorOpen={setInspectorOpen}
+            onSetRightPanel={setRightPanel}
+            onSetActiveFamiliar={setActiveId}
+            onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
+            onPendingChatActionHandled={() => setPendingChatAction(null)}
+            onSessionStarted={loadSessions}
+            onSlashFromChat={handleSlashIntent}
+            onOpenOnboarding={openOnboarding}
+            onOpenInbox={() => setMode("inbox")}
+            onCreateReminder={openReminderForFamiliar}
+            onOpenInboxItem={openInspectorInboxItem}
+            onInboxItemChanged={refreshInbox}
+            onSessionsChanged={loadSessions}
+            onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+            onOpenUrl={openUrlInCompanionBrowser}
+          />
+        }
+        comux={
+          <ComuxView
+            view="projects"
+            active={mode === "code"}
+            storageNamespace=":code"
+            sessions={sessions}
+            onOpenSession={(sessionId, familiarId) => {
+              openFamiliarSession(sessionId, familiarId);
+            }}
+            onNewChat={openProjectChat}
+          />
+        }
+      />
     ) : mode === "library" ? (
       <LibraryView
         onOpenUrl={(url) => {
@@ -1409,6 +1485,16 @@ export function Workspace() {
         }}
         onJumpToSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);
+        }}
+      />
+    ) : mode === "canvas" ? (
+      <CanvasView
+        familiars={familiars}
+        activeFamiliarId={activeId}
+        onOpenCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        onOpenUrl={(url) => {
+          setMode("browser");
+          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
         }}
       />
     ) : mode === "inbox" ? (
@@ -1506,6 +1592,7 @@ export function Workspace() {
   const salemRetreating =
     familiarPanelOpen ||
     mode === "chat" ||
+    mode === "code" ||
     mode === "workflows" ||
     mode === "browser" ||
     mode === "terminal";

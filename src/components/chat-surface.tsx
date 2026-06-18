@@ -80,6 +80,12 @@ type Props = {
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
+  /** Which surface embeds this ChatSurface. In "code" mode the chat pane is
+   *  transcript-only (the comux pane owns project/file/session navigation), so
+   *  the in-chat project sidebar and the duplicate Projects tab are dropped and
+   *  the transcript gets a readable measure. Defaults to the standalone
+   *  "chat" surface, which keeps the sidebar + all three scope tabs. */
+  surface?: "chat" | "code";
 };
 
 // ── Right panel (inspector / chat) ────────────────────────────────────────────
@@ -277,7 +283,9 @@ export function ChatSurface({
   onSessionsChanged,
   onOpenTask,
   onOpenUrl,
+  surface = "chat",
 }: Props) {
+  const isCodeSurface = surface === "code";
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   const [rightExpanded, setRightExpanded] = useState(false);
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
@@ -537,11 +545,20 @@ export function ChatSurface({
                   window.setTimeout(() => routerRef.current?.goToList(), 0);
                 }
               }}
-              items={[
-                { id: "conversation", label: "Sessions" },
-                { id: "memory", label: "Memory" },
-                { id: "projects", label: "Projects" },
-              ]}
+              // In Code mode the comux pane owns project/file navigation, so the
+              // duplicate Projects tab is dropped — only Sessions + Memory here.
+              items={
+                isCodeSurface
+                  ? [
+                      { id: "conversation", label: "Sessions" },
+                      { id: "memory", label: "Memory" },
+                    ]
+                  : [
+                      { id: "conversation", label: "Sessions" },
+                      { id: "memory", label: "Memory" },
+                      { id: "projects", label: "Projects" },
+                    ]
+              }
             />
           </div>
         </div>
@@ -556,7 +573,7 @@ export function ChatSurface({
               window.location.hash = `memory:${encodeURIComponent(path)}`;
             }}
           />
-        ) : scope === "projects" ? (
+        ) : scope === "projects" && !isCodeSurface ? (
           <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} />
         ) : (
           <Group
@@ -566,7 +583,7 @@ export function ChatSurface({
             onLayoutChanged={onLayoutChanged}
           >
             <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
-              <div className="min-h-0 min-w-0 flex-1">
+              <div className="min-h-0 min-w-0 flex-1" data-surface={surface}>
                 <ChatRouter
                   ref={routerRef}
                   familiar={activeFamiliar}
@@ -574,6 +591,7 @@ export function ChatSurface({
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
+                  compact={isCodeSurface}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}

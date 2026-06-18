@@ -156,6 +156,31 @@ assert.match(
   "ChatSurface should keep live chat available inside the Chat tab",
 );
 
+// Code surface ("code" mode): the chat pane is transcript-only — the comux pane
+// owns project/file navigation. ChatSurface takes a `surface` prop, derives
+// isCodeSurface, drops the in-chat project sidebar by passing compact, and tags
+// the transcript wrapper so the reading-width cap applies.
+assert.match(
+  chatSurface,
+  /surface\s*=\s*"chat"/,
+  "ChatSurface should accept a surface prop defaulting to standalone chat",
+);
+assert.match(
+  chatSurface,
+  /const isCodeSurface = surface === "code"/,
+  "ChatSurface should derive isCodeSurface from the surface prop",
+);
+assert.match(
+  chatSurface,
+  /<ChatRouter[\s\S]*?compact=\{isCodeSurface\}/,
+  "ChatSurface should suppress the in-chat project sidebar in Code mode via compact",
+);
+assert.match(
+  chatSurface,
+  /data-surface=\{surface\}/,
+  "ChatSurface should tag the transcript wrapper with the surface for the reading-width cap",
+);
+
 assert.match(
   chatSurface,
   /onOpenUrl\?: \(url: string\) => void/,

@@ -524,7 +524,7 @@ function SkillsTab({
   }
 
   return (
-    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4">
+    <div className="flex flex-col gap-1.5">
       {skills.map((skill) => (
         <SkillCard
           key={`${skill.familiar}:${skill.id}:${skill.path}`}

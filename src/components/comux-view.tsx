@@ -7,7 +7,11 @@ import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
+import { SessionChangesInner } from "@/components/session-changes-panel";
+import { useChangesSummary } from "@/lib/use-changes-summary";
+import { CodeEditor } from "@/components/code-editor";
 import { resolveLangLabel } from "@/lib/code-lang";
+import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import {
   deriveComuxProjects,
@@ -42,6 +46,10 @@ type Props = {
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
   onNewChat: (projectRoot: string) => void;
   active?: boolean;
+  /** Suffix that isolates this instance's persisted terminal layout/sessions
+   *  from other ComuxView instances (e.g. the Code workspace keeps its own
+   *  terminals separate from the standalone Terminal surface). */
+  storageNamespace?: string;
 };
 
 type ProjectFilePreview =
@@ -93,10 +101,10 @@ function TerminalDropZone({
   );
 }
 
-function readLegacySessions(): TerminalSession[] {
+function readLegacySessions(storageKey: string): TerminalSession[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_SESSIONS);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -131,10 +139,10 @@ function isLayoutNode(value: unknown): value is TerminalLayoutNode {
   });
 }
 
-function readTerminalLayout(): TerminalLayoutState {
+function readTerminalLayout(layoutKey: string, sessionsKey: string): TerminalLayoutState {
   if (typeof window === "undefined") return createTerminalLayout();
   try {
-    const raw = window.localStorage.getItem(STORAGE_LAYOUT);
+    const raw = window.localStorage.getItem(layoutKey);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<TerminalLayoutState>;
       if (
@@ -170,7 +178,7 @@ function readTerminalLayout(): TerminalLayoutState {
   } catch {
     // Fall back to the legacy flat session list below.
   }
-  const legacy = readLegacySessions();
+  const legacy = readLegacySessions(sessionsKey);
   return createTerminalLayout(legacy, legacy[0]?.id ?? null);
 }
 
@@ -245,11 +253,13 @@ function shortProjectTime(iso: string | null): string {
   }
 }
 
-export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true }: Props) {
+export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "" }: Props) {
+  const layoutKey = STORAGE_LAYOUT + storageNamespace;
+  const sessionsKey = STORAGE_SESSIONS + storageNamespace;
   const [terminalLayout, dispatchTerminalLayout] = useReducer(
     terminalLayoutReducer,
     undefined,
-    readTerminalLayout,
+    () => readTerminalLayout(layoutKey, sessionsKey),
   );
   const sessions = terminalLayout.sessions;
   const activeSessionId = terminalLayout.activeSessionId;
@@ -264,7 +274,33 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [previewLoading, setPreviewLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [previewRaw, setPreviewRaw] = useState(false);
+  // 1-based line to scroll the preview to (set when opened from a search match,
+  // cleared when opened from the file tree).
+  const [previewLine, setPreviewLine] = useState<number | undefined>(undefined);
+  // Editable preview: edit mode swaps the read-only render for a textarea and
+  // POSTs back to /api/project-file on save.
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  // Right pane view: the file preview, or the project's git changes/diff review.
+  const [rightView, setRightView] = useState<"files" | "changes">("files");
+  // Diff-first review: auto-switch to Changes the first time an agent run
+  // produces edits — but never fight an explicit user choice. pinnedRightView
+  // flips once the user clicks a toggle or opens a file; prevChangeCount tracks
+  // the 0→>0 edit transition so we surface the diff exactly once per project.
+  const pinnedRightViewRef = useRef(false);
+  // Jump-to-diff target from a transcript edit tool (cave:open-file-diff). The
+  // nonce re-triggers the focus even when the same path is clicked again.
+  const [focusDiff, setFocusDiff] = useState<{ path: string; nonce: number } | null>(null);
+  const prevChangeCountRef = useRef(0);
+  // Project-wide code search (CODE-SEARCH-01).
+  const [searchInput, setSearchInput] = useState("");
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const treeRef = useRef<ProjectTreeHandle | null>(null);
   const wasActiveTerminalRef = useRef(false);
 
@@ -293,9 +329,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // Persist the full pane tree. Keep the legacy flat key in sync so older
   // versions can still recover terminal tabs if a user rolls back.
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_LAYOUT, JSON.stringify(terminalLayout));
-    window.localStorage.setItem(STORAGE_SESSIONS, JSON.stringify(sessions));
-  }, [terminalLayout, sessions]);
+    window.localStorage.setItem(layoutKey, JSON.stringify(terminalLayout));
+    window.localStorage.setItem(sessionsKey, JSON.stringify(sessions));
+  }, [terminalLayout, sessions, layoutKey, sessionsKey]);
 
   const projects = useMemo(
     () => deriveComuxProjects(daemonSessions, daemonProjectRoot),
@@ -345,14 +381,17 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // project root. Only the canonical terminal instance handles it so a single
   // session is created, and it spawns in that project's cwd via addSession.
   useEffect(() => {
-    if (view !== "terminal") return;
+    // Gate on `active` so that when several ComuxView instances are mounted
+    // (e.g. the hidden Terminal surface plus the visible Code workspace), only
+    // the active one opens a session — otherwise a single event spawns two.
+    if (view !== "terminal" || !active) return;
     const onTerminalOpen = (event: Event) => {
       const detail = (event as CustomEvent<{ projectRoot?: string }>).detail;
       addSession(detail?.projectRoot);
     };
     window.addEventListener("cave:terminal-open", onTerminalOpen as EventListener);
     return () => window.removeEventListener("cave:terminal-open", onTerminalOpen as EventListener);
-  }, [view, addSession]);
+  }, [view, active, addSession]);
 
   useEffect(() => {
     const activeTerminal = view === "terminal" && active;
@@ -475,11 +514,15 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     return () => window.removeEventListener("keydown", onKey);
   }, [view, active, addSession, removeSession, currentIdx, sessions.length]);
 
-  const openFilePreview = useCallback(async (path: string) => {
+  const openFilePreview = useCallback(async (path: string, line?: number) => {
     setPreviewPath(path);
+    setPreviewLine(line);
     setPreviewLoading(true);
     setPreview(null);
     setPreviewRaw(false);
+    // Leave any prior edit session — opening a new file discards unsaved edits.
+    setEditing(false);
+    setSaveError(null);
     try {
       const res = await fetch(
         `/api/project-file?path=${encodeURIComponent(path)}`,
@@ -508,6 +551,46 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     }
   }, []);
 
+  // Click-to-open from chat: a file tool's target (absolute path) or a prose
+  // reference (relative, e.g. `src/foo.ts:42`) dispatches `cave:open-project-file`;
+  // the active comux opens it in the Files preview. Relative paths resolve
+  // against the selected project root. Gated on `active` so only the visible
+  // instance reacts.
+  const selectedRoot = selectedProject?.root;
+  useEffect(() => {
+    if (!active) return;
+    const onOpenFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
+      if (!detail?.path) return;
+      const path = detail.path.startsWith("/")
+        ? detail.path
+        : selectedRoot
+          ? `${selectedRoot.replace(/\/$/, "")}/${detail.path.replace(/^\.?\//, "")}`
+          : detail.path;
+      // A user-initiated file open is an explicit view choice — pin it so the
+      // diff-first auto-switch doesn't yank them back to Changes.
+      pinnedRightViewRef.current = true;
+      setRightView("files");
+      void openFilePreview(path, typeof detail.line === "number" ? detail.line : undefined);
+    };
+    // Edit tools jump to their file's diff in the Changes review instead of the
+    // file preview. Pin Changes and focus that file (matched repo-relative or
+    // by suffix inside SessionChangesInner).
+    const onOpenDiff = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string }>).detail;
+      if (!detail?.path) return;
+      pinnedRightViewRef.current = true;
+      setRightView("changes");
+      setFocusDiff((prev) => ({ path: detail.path!, nonce: (prev?.nonce ?? 0) + 1 }));
+    };
+    window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
+    window.addEventListener("cave:open-file-diff", onOpenDiff as EventListener);
+    return () => {
+      window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
+      window.removeEventListener("cave:open-file-diff", onOpenDiff as EventListener);
+    };
+  }, [active, openFilePreview, selectedRoot]);
+
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;
     void copyText(preview.content).then(() => {
@@ -515,6 +598,105 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setTimeout(() => setCopied(false), 1500);
     });
   }, [preview]);
+
+  // Enter edit mode: seed the textarea with the current source and show raw
+  // (markdown previews edit their source, not the rendered HTML).
+  const startEditing = useCallback(() => {
+    if (!preview || preview.kind !== "text") return;
+    setEditValue(preview.content);
+    setSaveError(null);
+    setPreviewRaw(true);
+    setEditing(true);
+  }, [preview]);
+
+  const cancelEditing = useCallback(() => {
+    setEditing(false);
+    setSaveError(null);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!previewPath) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/project-file", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: previewPath, content: editValue }),
+      });
+      const json = (await res.json()) as { ok: boolean; size?: number; error?: string };
+      if (!res.ok || !json.ok) {
+        setSaveError(json.error ?? `save failed (${res.status})`);
+        return;
+      }
+      // Commit the edit into the preview so a cancel/reopen shows saved text.
+      setPreview({ kind: "text", content: editValue, size: json.size });
+      setEditing(false);
+    } catch (err) {
+      setSaveError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [previewPath, editValue]);
+
+  // A redacted .env (server refuses writes) and error placeholders aren't
+  // editable; everything else text is.
+  const previewEditable =
+    preview?.kind === "text" &&
+    !(previewPath ? previewPath.split("/").pop()?.startsWith(".env") : false);
+
+  // Debounced project-wide search. Re-runs when the query, regex toggle, or
+  // selected project changes; an empty query clears results without a request.
+  const searchRoot = selectedProject?.root;
+  useEffect(() => {
+    const query = searchInput.trim();
+    if (!query || !searchRoot) {
+      setSearchResult(null);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ root: searchRoot, q: query });
+      if (searchRegex) params.set("regex", "1");
+      fetch(`/api/project/search?${params.toString()}`, { cache: "no-store" })
+        .then((res) => res.json())
+        .then((json: SearchResult & { ok: boolean; repo?: boolean; error?: string }) => {
+          if (cancelled) return;
+          if (!json.ok || json.repo === false) {
+            setSearchResult(null);
+            setSearchError(json.error ?? "search unavailable");
+          } else {
+            setSearchResult({ files: json.files ?? [], totalMatches: json.totalMatches ?? 0, truncated: !!json.truncated });
+            setSearchError(null);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setSearchResult(null);
+          setSearchError(String(err));
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchInput, searchRegex, searchRoot]);
+
+  // Open a search match: search paths are relative to the searched root, so
+  // rejoin them to the project root before handing off to the file preview.
+  const openSearchMatch = useCallback(
+    (relPath: string, line?: number) => {
+      if (!searchRoot) return;
+      void openFilePreview(`${searchRoot.replace(/\/$/, "")}/${relPath}`, line);
+    },
+    [searchRoot, openFilePreview],
+  );
 
   const selectProject = useCallback((project: ComuxProject) => {
     setSelectedProjectRoot(project.root);
@@ -531,6 +713,36 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       )
       .slice(0, 6);
   }, [daemonSessions, selectedProject]);
+
+  // Poll the diff while a familiar is actively working this project so the
+  // Changes view reflects edits as they land.
+  const projectHasRunningSession = recentProjectSessions.some((s) => s.status === "running");
+
+  // Diff-first review: poll a lightweight changes summary while Files is showing
+  // and a familiar is working this project, and flip to the Changes/diff view
+  // the first time edits appear — unless the user pinned a view. The poll pauses
+  // once Changes is shown (SessionChangesInner takes over its own polling).
+  const changesSummary = useChangesSummary(
+    selectedProject?.root,
+    rightView !== "changes" && projectHasRunningSession,
+  );
+  useEffect(() => {
+    // Reset the diff-first decision when switching projects.
+    pinnedRightViewRef.current = false;
+    prevChangeCountRef.current = 0;
+  }, [selectedProject?.root]);
+  useEffect(() => {
+    const prev = prevChangeCountRef.current;
+    prevChangeCountRef.current = changesSummary.count;
+    if (
+      !pinnedRightViewRef.current &&
+      rightView === "files" &&
+      prev === 0 &&
+      changesSummary.count > 0
+    ) {
+      setRightView("changes");
+    }
+  }, [changesSummary.count, rightView]);
 
   const previewIsMarkdown = preview?.kind === "text" && isMarkdownPath(previewPath);
   const previewLineCount = preview?.kind === "text" ? preview.content.split("\n").length : 0;
@@ -885,6 +1097,92 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   </div>
 
                   <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    {/* Project-wide code search (CODE-SEARCH-01) */}
+                    <div className="mb-3">
+                      <div className="relative">
+                        <Icon
+                          name="ph:magnifying-glass"
+                          width={12}
+                          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                        />
+                        <input
+                          type="search"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
+                          placeholder="Search in project…"
+                          aria-label="Search in project"
+                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1.5 pl-7 pr-14 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSearchRegex((v) => !v)}
+                          aria-pressed={searchRegex}
+                          title={searchRegex ? "Regex search on" : "Regex search off — matching literal text"}
+                          className={`absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 font-mono text-[10px] transition-colors ${
+                            searchRegex
+                              ? "bg-[var(--accent-presence,var(--bg-raised))] text-[var(--text-primary)]"
+                              : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          }`}
+                        >
+                          .*
+                        </button>
+                      </div>
+                      {searchInput.trim() && (
+                        <div className="mt-2">
+                          {searchLoading ? (
+                            <div className="flex items-center gap-2 py-1 pl-1 text-[11px] text-[var(--text-muted)]">
+                              <Icon name="ph:arrow-clockwise" width={11} className="animate-spin" />
+                              Searching…
+                            </div>
+                          ) : searchError ? (
+                            <p className="py-1 pl-1 text-[11px] text-[var(--color-danger,#f87171)]">{searchError}</p>
+                          ) : searchResult && searchResult.totalMatches > 0 ? (
+                            <>
+                              <div className="mb-1 flex items-center gap-1.5 pl-1 text-[10px] text-[var(--text-muted)]">
+                                <span>
+                                  {searchResult.totalMatches} {searchResult.totalMatches === 1 ? "match" : "matches"} in{" "}
+                                  {searchResult.files.length} {searchResult.files.length === 1 ? "file" : "files"}
+                                </span>
+                                {searchResult.truncated && <span className="text-[var(--text-muted)]">· capped</span>}
+                              </div>
+                              <div className="space-y-1.5">
+                                {searchResult.files.map((file) => (
+                                  <div key={file.path}>
+                                    <div
+                                      className="truncate px-1 py-0.5 font-mono text-[10px] text-[var(--text-secondary)]"
+                                      title={file.path}
+                                    >
+                                      {file.path}
+                                    </div>
+                                    <div className="space-y-px">
+                                      {file.matches.map((match, i) => (
+                                        <button
+                                          key={`${file.path}:${match.line}:${i}`}
+                                          type="button"
+                                          onClick={() => openSearchMatch(file.path, match.line)}
+                                          className="flex w-full items-baseline gap-2 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+                                          title={`${file.path}:${match.line}`}
+                                        >
+                                          <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--text-muted)]">
+                                            {match.line}
+                                          </span>
+                                          <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-primary)]">
+                                            {match.preview.trim()}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <p className="py-1 pl-1 text-[11px] text-[var(--text-muted)]">No matches.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* Recent sessions — collapsible */}
                     <div className="mb-2">
                       <button
@@ -963,7 +1261,39 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 </div>
 
                 <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
-                  {previewPath ? (
+                  {/* Files / Changes toggle — review the familiar's working-tree
+                      diffs (revert + checkpoints) without leaving the surface. */}
+                  <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5">
+                    <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => { pinnedRightViewRef.current = true; setRightView("files"); }}
+                        className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "files" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                      >
+                        <Icon name="ph:file-code" width={11} />
+                        Files
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { pinnedRightViewRef.current = true; setRightView("changes"); }}
+                        className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "changes" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+                      >
+                        <Icon name="ph:git-diff" width={11} />
+                        Changes
+                      </button>
+                    </div>
+                  </div>
+                  {rightView === "changes" ? (
+                    <div className="min-h-0 flex-1 overflow-hidden">
+                      <SessionChangesInner
+                        key={selectedProject.root}
+                        projectRoot={selectedProject.root}
+                        running={projectHasRunningSession}
+                        focusPath={focusDiff?.path ?? null}
+                        focusNonce={focusDiff?.nonce}
+                      />
+                    </div>
+                  ) : previewPath ? (
                     <>
                       {/* Preview header */}
                       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
@@ -988,7 +1318,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             {formatBytes(preview.size) && <span>· {formatBytes(preview.size)}</span>}
                           </span>
                         )}
-                        {previewIsMarkdown && (
+                        {!editing && previewIsMarkdown && (
                           <div className="flex shrink-0 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
                             <button
                               type="button"
@@ -1006,15 +1336,54 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             </button>
                           </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={copyPreview}
-                          disabled={!preview || preview.kind !== "text"}
-                          className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
-                        >
-                          <Icon name="ph:copy" width={11} />
-                          {copied ? "Copied" : "Copy"}
-                        </button>
+                        {editing ? (
+                          <>
+                            {saveError && (
+                              <span className="shrink-0 truncate text-[10px] text-[var(--color-danger,#f87171)]" title={saveError}>
+                                {saveError}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={cancelEditing}
+                              disabled={saving}
+                              className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void saveEdit()}
+                              disabled={saving}
+                              className="flex shrink-0 items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--accent-presence,var(--bg-raised))] px-2 py-0.5 text-[10px] text-[var(--text-primary)] transition-colors hover:opacity-90 disabled:opacity-40"
+                            >
+                              <Icon name={saving ? "ph:arrow-clockwise" : "ph:floppy-disk-bold"} width={11} className={saving ? "animate-spin" : ""} />
+                              {saving ? "Saving…" : "Save"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {previewEditable && (
+                              <button
+                                type="button"
+                                onClick={startEditing}
+                                className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                              >
+                                <Icon name="ph:pencil-simple" width={11} />
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={copyPreview}
+                              disabled={!preview || preview.kind !== "text"}
+                              className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                            >
+                              <Icon name="ph:copy" width={11} />
+                              {copied ? "Copied" : "Copy"}
+                            </button>
+                          </>
+                        )}
                       </div>
                       {/* Preview content */}
                       <div className="comux-file-preview min-h-0 flex-1 overflow-auto p-3">
@@ -1022,6 +1391,16 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           <div className="flex items-center gap-2 py-4 text-[11px] text-[var(--text-muted)]">
                             <Icon name="ph:arrow-clockwise" width={12} className="animate-spin" />
                             Loading…
+                          </div>
+                        ) : editing ? (
+                          <div className="h-full overflow-hidden rounded-md border border-[var(--border-hairline)]">
+                            <CodeEditor
+                              value={editValue}
+                              filename={previewPath.split("/").pop() ?? ""}
+                              onChange={setEditValue}
+                              onSave={() => void saveEdit()}
+                              onCancel={cancelEditing}
+                            />
                           </div>
                         ) : (
                           preview?.kind === "image" ? (
@@ -1045,6 +1424,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             <SyntaxBlock
                               text={preview?.content ?? ""}
                               lang={previewPath.split(".").pop()}
+                              highlightLine={previewLine}
                               className="leading-relaxed"
                             />
                           )

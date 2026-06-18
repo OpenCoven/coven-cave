@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const src = await readFile(new URL("./open-coven-tools-update.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-const pkg = await readFile(new URL("../../package.json", import.meta.url), "utf8");
+const runner = await readFile(new URL("../../scripts/run-tests.mjs", import.meta.url), "utf8");
 
 assert.match(src, /\/api\/opencoven-tools\/status/, "component fetches OpenCoven tool version status");
 assert.match(src, /\/api\/onboarding\/install/, "component reuses the allowlisted background installer");
@@ -16,6 +16,6 @@ assert.match(src, /coven-code/, "coven-code is included in the client install ta
 assert.match(src, /Check tools/, "component offers a manual re-check");
 assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");
 assert.match(settings, /<SettingsGroup label="OpenCoven tools">[\s\S]*<OpenCovenToolsUpdate \/>/, "About settings renders the OpenCoven tools group");
-assert.match(pkg, /src\/components\/open-coven-tools-update\.test\.ts/, "OpenCoven tools update test is wired into test:app");
+assert.match(runner, /src\/components\/open-coven-tools-update\.test\.ts/, "OpenCoven tools update test is wired into the test:app suite (scripts/run-tests.mjs)");
 
 console.log("open-coven-tools-update.test.ts: ok");

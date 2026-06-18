@@ -46,6 +46,14 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Code surface (mode === "code"): the chat pane is transcript-only, so it can
+   get wide. Cap the measure at a readable ~90ch by default so agent prose
+   doesn't stretch to 200-char lines. An explicit Settings reading-width still
+   wins (the var), and standalone chat (no data-surface="code") keeps `none`. */
+[data-surface="code"] .cave-md {
+  max-width: var(--cave-reading-width, 90ch);
+}
+
 /* Chat message prose reads in Inter — a neutral grotesque for the ChatGPT/Codex
    look — instead of the rounder geometric UI sans (Geist). Scoped to chat bubbles
    so library-doc and memory prose (which also use .cave-md) keep the app font.
@@ -120,6 +128,22 @@
   color: color-mix(in oklch, var(--accent-presence) 85%, var(--text-primary));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
   white-space: nowrap;
+}
+
+/* Inline file references linkified by wireFilePathLinks — clickable, with an
+   underline-on-hover affordance so they read as actionable. */
+.cave-md code.cave-file-link {
+  cursor: pointer;
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+.cave-md code.cave-file-link:hover {
+  background: color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cave-md code.cave-file-link:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -449,6 +473,55 @@
   max-height: none;
 }
 
+/* Collapsed: fold the block to just its sticky header (toggled by the chevron
+   in wireCopyButtons' collapse wiring). The code body + "Show more" footer are
+   hidden; the header — language, filename, line count, Copy — stays. */
+.cave-code-wrap--collapsed {
+  max-height: none;
+  overflow: hidden;
+}
+.cave-code-wrap--collapsed > pre,
+.cave-code-wrap--collapsed > .cave-code-expand {
+  display: none;
+}
+
+.cave-code-collapse-btn {
+  order: -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.cave-code-collapse-btn:hover {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.cave-code-collapse-btn:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+.cave-code-chevron {
+  transition: transform 0.12s ease;
+}
+.cave-code-wrap--collapsed .cave-code-chevron {
+  transform: rotate(-90deg);
+}
+
+.cave-code-lines {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .cave-code-wrap::-webkit-scrollbar { width: 4px; }
 .cave-code-wrap::-webkit-scrollbar-track { background: transparent; }
 .cave-code-wrap::-webkit-scrollbar-thumb {
@@ -558,6 +631,17 @@
   transition: background 0.08s;
 }
 .cave-line:hover { background: color-mix(in oklch, var(--foreground) 2.5%, transparent); }
+/* Jump-to-line target (e.g. opened from Projects search): a brief accent wash
+   that fades after landing so it draws the eye without staying loud. */
+.cave-line--active {
+  background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence, var(--foreground));
+  animation: cave-line-flash 1.6s ease-out;
+}
+@keyframes cave-line-flash {
+  0% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 38%, transparent); }
+  100% { background: color-mix(in oklch, var(--accent-presence, var(--foreground)) 16%, transparent); }
+}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    LINE NUMBERS
@@ -1511,6 +1595,10 @@ details[open] > .cave-tool-summary::before {
   flex-direction: column;
   gap: 0;
   padding: 0 12px 12px;
+  /* Container for the settings-row density query below: in the narrow Code-mode
+     column the model + Thinking + Speed pills used to wrap to 2–3 lines. */
+  container-type: inline-size;
+  container-name: composer;
 }
 
 .cave-composer-action-row {
@@ -1620,6 +1708,23 @@ details[open] > .cave-tool-summary::before {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Density: when the composer column is narrow (notably the Code-mode chat pane),
+   drop the "Thinking"/"Speed" control labels — the icon + value still show — and
+   let the model pill shrink, so model + Thinking + Speed stay on one row instead
+   of wrapping to two or three. The wide standalone-chat composer is unaffected. */
+@container composer (max-width: 480px) {
+  .cave-composer-settings-row {
+    gap: 6px;
+  }
+  .cave-composer-select__label {
+    display: none;
+  }
+  .cave-composer-settings-row .cave-chat-model-wrap {
+    flex: 1 1 120px;
+    min-width: 92px;
+  }
 }
 
 .cave-composer-select select {

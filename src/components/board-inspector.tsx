@@ -20,6 +20,7 @@ import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -33,6 +34,13 @@ const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
   failed:     [{ to: "queued", label: "retry", retry: true }, { to: "cancelled", label: "cancel" }],
   cancelled:  [{ to: "queued", label: "re-queue" }],
 };
+
+function openProjectsSurface() {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+  }, 0);
+}
 
 type Props = {
   card: Card;
@@ -949,7 +957,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
             </div>
 
             <div className="board-drawer-field">
-              <div className="board-drawer-field-label">Project</div>
+              <div className="board-drawer-field-label board-drawer-field-label--split">
+                <span>Project</span>
+                <button
+                  type="button"
+                  className="board-drawer-inline-link"
+                  onClick={openProjectsSurface}
+                  title="Open Projects"
+                >
+                  <Icon name="ph:folder-open" width={11} />
+                  Open Projects
+                </button>
+              </div>
               <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                 <span className="board-drawer-project-icon" aria-hidden>
                   <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
@@ -967,6 +986,11 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 </select>
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
+              {projects.length === 0 ? (
+                <p className="board-drawer-field-hint">
+                  No projects yet. Open Projects to add one, then choose it here.
+                </p>
+              ) : null}
             </div>
           </div>
 

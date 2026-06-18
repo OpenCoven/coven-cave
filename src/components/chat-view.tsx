@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
@@ -54,7 +54,7 @@ import {
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
-import { toolInputAsDiff } from "@/lib/tool-input-diff";
+import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 
@@ -3046,6 +3046,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         </MetaLine>
         <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
       </header>
+      <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
           className="cave-chat-thread"
@@ -3830,6 +3831,15 @@ function ReasoningBlock({ reasoning }: { reasoning: string }) {
   );
 }
 
+/** The step to surface as "what's happening now": the most recent running
+ *  event, else the last event. Shared by ProgressGroup and RunActivityStrip. */
+function currentProgress(progress: ProgressEvent[]): ProgressEvent | undefined {
+  return (
+    [...progress].reverse().find((event) => event.status === "running") ??
+    progress[progress.length - 1]
+  );
+}
+
 function ProgressGroup({
   progress,
   pending,
@@ -3840,9 +3850,7 @@ function ProgressGroup({
   const running = progress.filter((event) => event.status === "running").length;
   const errors = progress.filter((event) => event.status === "error").length;
   const completed = progress.length - running - errors;
-  const current =
-    [...progress].reverse().find((event) => event.status === "running") ??
-    progress[progress.length - 1];
+  const current = currentProgress(progress);
 
   return (
     <details className="cave-progress-group mt-3" data-default-collapsed="true" open={pending || undefined}>
@@ -3917,13 +3925,43 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // structured before/after diff instead of the raw JSON payload; null for
   // every other tool (or unparseable input) falls back to the plain block.
   const inputDiff = toolInputAsDiff(tool.name, tool.input);
+  // Click-to-open: a file tool's target opens in the Code workspace preview.
+  // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
+  // workspace switches to Code mode first when neither is showing.
+  const targetFile = toolTargetFile(tool.name, tool.input);
+  // An edit tool (Edit/Write/MultiEdit/NotebookEdit — the ones with a structured
+  // input diff) jumps to its file's DIFF in the Changes review; other file tools
+  // open the file preview. The comux pane handles both events.
+  const isEditTool = inputDiff != null;
+  const openTargetFile = (e: ReactMouseEvent) => {
+    if (!targetFile) return;
+    e.preventDefault();
+    e.stopPropagation();
+    window.dispatchEvent(
+      new CustomEvent(isEditTool ? "cave:open-file-diff" : "cave:open-project-file", {
+        detail: { path: targetFile },
+      }),
+    );
+  };
   return (
     <details className="cave-tool-block" data-default-collapsed="true">
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
         <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
         <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
         {argSummary ? (
-          <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
+          targetFile ? (
+            <button
+              type="button"
+              onClick={openTargetFile}
+              title={isEditTool ? `View diff for ${targetFile}` : `Open ${targetFile} in the Code workspace`}
+              className="group/openfile inline-flex min-w-0 max-w-[18rem] items-center gap-1 truncate font-mono text-[var(--text-muted)] hover:text-[var(--accent-presence,var(--text-secondary))] hover:underline"
+            >
+              <span className="truncate">· {argSummary}</span>
+              <Icon name={isEditTool ? "ph:git-diff" : "ph:arrow-square-out"} width={10} className="shrink-0 opacity-0 transition-opacity group-hover/openfile:opacity-100" aria-hidden />
+            </button>
+          ) : (
+            <span className="min-w-0 max-w-[18rem] truncate font-mono text-[var(--text-muted)]">· {argSummary}</span>
+          )
         ) : null}
         <span className={[
           "rounded px-1.5 py-0.5 font-mono text-[10px]",
@@ -4014,6 +4052,100 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Persistent run-activity strip (pinned above the transcript). Surfaces what the
+ * agent is doing *now* — the running tool (with its arg summary) or current
+ * plan/todo step, plus running/done/issue counts — and, unlike the inline
+ * per-turn ProgressGroup (hidden after settle, CHAT-D13-01), keeps a compact,
+ * dismissible "last run" summary after the turn settles. Click to expand the
+ * full ProgressGroup + tool list. Reads live turn data directly, so it works for
+ * both segmented and legacy turns.
+ */
+function RunActivityStrip({
+  activeTurn,
+  lastTurn,
+}: {
+  activeTurn: Turn | undefined;
+  lastTurn: Turn | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const live = !!activeTurn;
+  const turn = activeTurn ?? lastTurn;
+  if (!turn) return null;
+  if (!live && dismissedId === turn.id) return null;
+
+  const tools = turn.tools ?? [];
+  const progress = turn.progress ?? [];
+  if (tools.length === 0 && progress.length === 0) return null;
+
+  const runningTool = [...tools].reverse().find((t) => t.status === "running");
+  const step = currentProgress(progress);
+  const running =
+    tools.filter((t) => t.status === "running").length +
+    progress.filter((p) => p.status === "running").length;
+  const issues =
+    tools.filter((t) => t.status === "error").length +
+    progress.filter((p) => p.status === "error").length;
+  const done =
+    tools.filter((t) => t.status === "ok").length +
+    progress.filter((p) => p.status === "done").length;
+
+  let headline: string;
+  if (live && runningTool) {
+    const arg = toolArgSummary(runningTool.name, runningTool.input);
+    headline = arg ? `${runningTool.name} · ${arg}` : runningTool.name;
+  } else if (live) {
+    headline = step?.label ?? "Working…";
+  } else {
+    headline = step?.label ?? "Last run";
+  }
+
+  return (
+    <div className="cave-run-activity shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-base)]/60 px-3 py-1.5 text-[11px]">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={expanded}
+          aria-label={live ? "Agent activity (running)" : "Last run summary"}
+        >
+          <Icon
+            name={live ? "ph:circle-dashed" : issues ? "ph:warning-circle" : "ph:check-circle"}
+            width={13}
+            className={`shrink-0 ${live ? "animate-spin text-[var(--accent-presence)]" : issues ? "text-[var(--color-warning)]" : "text-[var(--color-success)]"}`}
+            aria-hidden
+          />
+          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">{headline}</span>
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-[var(--text-muted)]">
+            {running ? <span className="cave-tool-count cave-tool-count--running">{running} running</span> : null}
+            {issues ? <span className="cave-tool-count cave-tool-count--error">{issues} {issues === 1 ? "issue" : "issues"}</span> : null}
+            {done ? <span className="cave-tool-count">{done} done</span> : null}
+          </span>
+          <Icon name={expanded ? "ph:caret-up" : "ph:caret-down"} width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+        </button>
+        {!live ? (
+          <button
+            type="button"
+            onClick={() => setDismissedId(turn.id)}
+            className="shrink-0 rounded p-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
+            aria-label="Dismiss last run summary"
+          >
+            <Icon name="ph:x" width={11} aria-hidden />
+          </button>
+        ) : null}
+      </div>
+      {expanded ? (
+        <div className="mt-1.5">
+          {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
+          {tools.length ? <ToolGroup tools={tools} /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

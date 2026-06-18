@@ -340,6 +340,10 @@
 .board-drawer-field { display:flex; flex-direction:column; gap:5px; }
 .board-drawer-field-label { display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--text-secondary); }
 .board-drawer-field-label svg { opacity:.85; }
+.board-drawer-field-label--split { display:flex; justify-content:space-between; width:100%; }
+.board-drawer-inline-link { display:inline-flex; align-items:center; gap:4px; border:0; background:transparent; padding:0; color:var(--accent-presence); font-size:10px; font-weight:600; text-transform:none; letter-spacing:0; cursor:pointer; }
+.board-drawer-inline-link:hover { color:var(--text-primary); }
+.board-drawer-field-hint { margin:0; color:var(--text-muted); font-size:11px; line-height:1.35; }
 .board-drawer-count-pill { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:14px; padding:0 5px; border-radius:7px; background:var(--bg-elevated); border:1px solid var(--border-hairline); color:var(--text-secondary); font-size:9.5px; font-weight:600; letter-spacing:0; text-transform:none; }
 .board-drawer-field-select,.board-drawer-field-input { width:100%; padding:6px 9px; border-radius:8px; border:1px solid var(--border-strong); background:var(--bg-base); color:var(--text-primary); line-height:1.25; outline:none; transition:border-color .12s,box-shadow .12s; }
 .board-drawer-field-select:focus,.board-drawer-field-input:focus { border-color:color-mix(in oklch,var(--accent-presence) 60%,transparent); box-shadow:0 0 0 3px color-mix(in oklch,var(--accent-presence) 16%,transparent); }
@@ -520,7 +524,7 @@
   position:relative;
   z-index:1;
   display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(300px,360px);
+  grid-template-columns:minmax(0,1fr) minmax(340px,420px);
   gap:14px;
   min-height:100%;
   padding:14px;
@@ -766,6 +770,122 @@
   gap:7px;
   padding-top:2px;
 }
+
+/* ── Faithful issue/PR detail view (GitHub-style) ───────────────────────────── */
+/* Keep the rich body from running off-screen — the panel scrolls, the list doesn't. */
+.gh-glass-panel { max-height:calc(100dvh - 150px); overflow-y:auto; scrollbar-width:thin; }
+
+.gh-issue-subline {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:11px;
+}
+.gh-issue-number {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+  font-size:13px;
+  font-weight:650;
+  color:var(--text-secondary);
+}
+.gh-issue-copy {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:18px;
+  height:18px;
+  border:none;
+  border-radius:5px;
+  background:transparent;
+  color:var(--text-muted);
+  cursor:pointer;
+  transition:background .1s,color .1s;
+}
+.gh-issue-copy:hover { background:var(--bg-hover); color:var(--text-primary); }
+
+.gh-issue-state {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:3px 9px 3px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:600;
+  color:#fff;
+}
+.gh-issue-state-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.gh-issue-state--open   { background:color-mix(in oklab,var(--color-success) 88%,#000 4%); }
+.gh-issue-state--closed { background:color-mix(in oklab,var(--color-danger) 88%,#000 4%); }
+.gh-issue-state--merged { background:color-mix(in oklab,#a371f7 90%,#000); }
+
+.gh-issue-opened {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:10px;
+  color:var(--text-muted);
+  font-size:11.5px;
+}
+.gh-issue-opened-text { color:var(--text-muted); }
+
+.gh-person { display:inline-flex; align-items:center; gap:5px; }
+.gh-person-avatar {
+  width:16px;
+  height:16px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--bg-raised);
+  flex-shrink:0;
+}
+.gh-person-avatar--fallback {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:9px;
+  font-weight:700;
+  color:var(--text-secondary);
+  border:1px solid var(--border-hairline);
+}
+.gh-person-login { color:var(--text-secondary); font-size:11.5px; font-weight:550; }
+
+.gh-issue-people { display:flex; flex-wrap:wrap; gap:10px; }
+
+.gh-issue-labels { display:flex; flex-wrap:wrap; gap:6px; }
+.gh-issue-label {
+  --gh-label:var(--accent-presence);
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  max-width:100%;
+  padding:2px 9px;
+  border:1px solid color-mix(in oklab,var(--gh-label) 45%,transparent);
+  border-radius:999px;
+  background:color-mix(in oklab,var(--gh-label) 14%,transparent);
+  color:var(--text-secondary);
+  font-size:10.5px;
+  line-height:1.3;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-issue-label-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:var(--gh-label);
+  flex-shrink:0;
+}
+
+.gh-issue-body {
+  font-size:12.5px;
+  line-height:1.6;
+  color:var(--text-secondary);
+  word-break:break-word;
+}
+.gh-issue-body :first-child { margin-top:0; }
+.gh-issue-body :last-child { margin-bottom:0; }
 
 @media (max-width: 1040px) {
   .gh-workspace { grid-template-columns:1fr; }

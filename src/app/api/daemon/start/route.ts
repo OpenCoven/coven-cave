@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { callDaemon } from "@/lib/coven-daemon";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { covenCliMissingError, isMissingExecutableError } from "@/lib/coven-spawn-error";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
+  // Idempotent start: if a daemon is already serving, don't spawn `coven daemon
+  // start`. That subcommand *restarts* the daemon, which fights a supervisor
+  // (e.g. a launchd KeepAlive agent) for the socket — the supervisor relaunches
+  // its copy while the restart spawns another, churning the socket. A healthy
+  // daemon means "start" has nothing to do, so report it as already running.
+  const health = await callDaemon({ path: "/api/v1/health", timeoutMs: 1500 });
+  if (health.ok) {
+    return NextResponse.json({ ok: true, alreadyRunning: true });
+  }
+
   return new Promise<Response>((resolve) => {
     const child = spawn(covenBin(), ["daemon", "start"], {
       stdio: ["ignore", "pipe", "pipe"],
