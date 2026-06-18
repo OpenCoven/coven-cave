@@ -75,6 +75,7 @@ export const SUITES = {
     "src/components/message-bubble-file-links.test.ts",
     "src/components/library-reader-polish.test.ts",
     "src/components/chat-view-polish.test.ts",
+    "src/components/run-activity-strip.test.ts",
     "src/components/chat-view-lifecycle.test.ts",
     "src/components/chat-view-render-optimization.test.ts",
     "src/components/csv-import-modal.test.ts",
