@@ -58,8 +58,8 @@ assert.match(
 );
 assert.match(
   comux,
-  /if \(!active\) return;[\s\S]*?setRightView\("files"\);[\s\S]*?openFilePreview\(detail\.path/,
-  "the active comux opens the file in the Files preview",
+  /if \(!active\) return;[\s\S]*?setRightView\("files"\);[\s\S]*?openFilePreview\(path/,
+  "the active comux opens the file in the Files preview (path resolved from the event detail)",
 );
 
 assert.match(

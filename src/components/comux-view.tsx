@@ -541,20 +541,28 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     }
   }, []);
 
-  // Click-to-open from chat: a file tool's target (or any surface) dispatches
-  // `cave:open-project-file` with an absolute path; the active comux opens it
-  // in the Files preview. Gated on `active` so only the visible instance reacts.
+  // Click-to-open from chat: a file tool's target (absolute path) or a prose
+  // reference (relative, e.g. `src/foo.ts:42`) dispatches `cave:open-project-file`;
+  // the active comux opens it in the Files preview. Relative paths resolve
+  // against the selected project root. Gated on `active` so only the visible
+  // instance reacts.
+  const selectedRoot = selectedProject?.root;
   useEffect(() => {
     if (!active) return;
     const onOpenFile = (event: Event) => {
       const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
       if (!detail?.path) return;
+      const path = detail.path.startsWith("/")
+        ? detail.path
+        : selectedRoot
+          ? `${selectedRoot.replace(/\/$/, "")}/${detail.path.replace(/^\.?\//, "")}`
+          : detail.path;
       setRightView("files");
-      void openFilePreview(detail.path, typeof detail.line === "number" ? detail.line : undefined);
+      void openFilePreview(path, typeof detail.line === "number" ? detail.line : undefined);
     };
     window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
     return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
-  }, [active, openFilePreview]);
+  }, [active, openFilePreview, selectedRoot]);
 
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;

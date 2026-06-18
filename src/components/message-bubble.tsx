@@ -33,6 +33,7 @@ import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
+import { parseFileRef } from "@/lib/file-ref";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
@@ -650,22 +651,55 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
   }
 }
 
+// Inline file references in prose (e.g. `src/foo.ts` or `lib/bar.py:42`) become
+// clickable, opening the file in the Code workspace. Match logic lives in
+// @/lib/file-ref (pure + unit-tested); only inline code is considered.
+function wireFilePathLinks(container: HTMLElement) {
+  for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
+    // Inline code only — never the highlighted lines inside a fenced block.
+    if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
+    const flagged = code as HTMLElement & { _caveFileLink?: boolean };
+    if (flagged._caveFileLink) continue;
+    const ref = parseFileRef(code.textContent ?? "");
+    if (!ref) continue;
+    flagged._caveFileLink = true;
+    const { path, line } = ref;
+    code.classList.add("cave-file-link");
+    code.setAttribute("role", "button");
+    code.setAttribute("tabindex", "0");
+    code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
+    const open = () =>
+      window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
+    code.addEventListener("click", open);
+    code.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  }
+}
+
 /**
  * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
  * whenever the injected HTML changes. Every component that injects
  * renderCodeBlock/mdToHtml output via dangerouslySetInnerHTML must attach the
  * returned ref, otherwise its Copy buttons render but silently do nothing
  * (wireCopyButtons is idempotent per button via the `_wired` flag).
+ *
+ * `linkifyPaths` opts inline file references in prose into clickable
+ * Code-workspace links; only the chat prose path enables it.
  */
-function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void) {
+function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, linkifyPaths = false) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (html && containerRef.current) {
       wireCopyButtons(containerRef.current);
       wireMarkdownLinks(containerRef.current, onOpenUrl);
       wireMermaidDiagrams(containerRef.current);
+      if (linkifyPaths) wireFilePathLinks(containerRef.current);
     }
-  }, [html, onOpenUrl]);
+  }, [html, onOpenUrl, linkifyPaths]);
   return containerRef;
 }
 
@@ -676,7 +710,8 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
 
 function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
-  const containerRef = useWireCopyButtons(html, onOpenUrl);
+  // linkifyPaths=true: chat prose file references (`src/foo.ts:42`) open in Code.
+  const containerRef = useWireCopyButtons(html, onOpenUrl, true);
   // Out-of-order guard: mdToHtml is async and during streaming several
   // renders can be in flight at once. Every render takes a monotonically
   // increasing stamp, and a result only commits if it is newer than the
