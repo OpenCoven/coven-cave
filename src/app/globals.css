@@ -4285,6 +4285,18 @@ button:active > .edge-rail-chip {
   overflow-wrap: anywhere;
 }
 
+a.mobile-handoff__link {
+  display: block;
+  text-decoration: none;
+  user-select: all;
+  transition: border-color 120ms ease;
+}
+
+a.mobile-handoff__link:hover {
+  border-color: var(--border-strong, var(--text-secondary));
+  text-decoration: underline;
+}
+
 .mobile-handoff__error {
   margin: 0;
   padding: 8px 10px;

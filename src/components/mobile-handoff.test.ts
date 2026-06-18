@@ -28,6 +28,8 @@ assert.match(modal, /autoCopyRequest/, "Modal should accept an auto-copy request
 assert.match(modal, /lastAutoCopyRequestRef/, "Modal should copy the invite only once per sidebar request");
 assert.match(modal, /Copy invite/, "Modal should make the invite link copyable");
 assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should prefer inviteUrl while supporting url fallback");
+assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
+assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
 assert.match(handoffRoute, /inviteUrl: invite\.url/, "API should expose inviteUrl as the canonical invite field");
 assert.match(handoffRoute, /appUrl: invite\.url/, "API should keep appUrl as an inviteUrl alias for compatibility");
