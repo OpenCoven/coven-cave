@@ -208,19 +208,6 @@ export function Workspace() {
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  // On app launch, open the left nav whenever the home screen is the landing
-  // surface — even if a prior session left it collapsed in the persisted panel
-  // layout (react-resizable-panels restores the last sizes, so a one-time
-  // collapse would otherwise stick across launches). Desktop only; mobile uses
-  // drawers, where force-opening one on launch would be intrusive. Runs once.
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      const desktop = window.matchMedia("(min-width: 1024px)").matches;
-      if (desktop && modeRef.current === "home") shellRef.current?.openNav();
-    });
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
   const refreshDaemonStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
