@@ -1441,13 +1441,12 @@ export function Workspace() {
       />
     ) : mode === "roles" ? (
       <PluginsView
-        tabs={["roles", "workflows", "plugins", "skills"]}
+        tabs={["roles", "workflows", "skills"]}
         initialTab="roles"
         familiars={resolvedFamiliars}
         onOpenChat={() => setMode("chat")}
         onOpenWorkflow={(id) => { setWorkflowDeepLink(id); setMode("workflows"); }}
         onCreateSkill={() => setMode("capabilities")}
-        onCreatePlugin={() => setMode("capabilities")}
       />
     ) : mode === "workflows" ? (
       <WorkflowsView

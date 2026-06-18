@@ -8,10 +8,9 @@ import {
   type FamiliarForSkill,
   type SkillEntry as SkillDetailEntry,
 } from "@/components/skill-detail-drawer";
-import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { listWorkflows, type WorkflowSummary } from "@/lib/workflows";
 
-type Tab = "roles" | "workflows" | "plugins" | "skills";
+type Tab = "roles" | "workflows" | "skills";
 
 type RoleEntry = {
   id: string;
@@ -44,7 +43,6 @@ type Props = {
   onOpenChat: () => void;
   onOpenWorkflow?: (id: string) => void;
   onCreateSkill?: () => void;
-  onCreatePlugin?: () => void;
   familiars?: FamiliarForSkill[];
   tabs?: Tab[];
   initialTab?: Tab;
@@ -53,14 +51,12 @@ type Props = {
 const TAB_LABEL: Record<Tab, string> = {
   roles: "Roles",
   workflows: "Workflows",
-  plugins: "Plugins",
   skills: "Skills",
 };
 
 const TAB_ICON: Record<Tab, Parameters<typeof Icon>[0]["name"]> = {
   roles: "ph:mask-happy",
   workflows: "ph:graph",
-  plugins: "ph:plug",
   skills: "ph:sparkle",
 };
 
@@ -70,17 +66,12 @@ function includesQuery(values: Array<string | undefined>, query: string): boolea
   return haystack.includes(query.toLowerCase());
 }
 
-function itemList(items: string[]): string {
-  return items.length ? items.join(", ") : "None declared";
-}
-
 export function PluginsView({
   onOpenChat,
   onOpenWorkflow,
   onCreateSkill,
-  onCreatePlugin,
   familiars = [],
-  tabs = ["roles", "workflows", "plugins", "skills"],
+  tabs = ["roles", "workflows", "skills"],
   initialTab,
 }: Props) {
   const tabSet = useMemo(() => tabs, [tabs]);
@@ -98,9 +89,6 @@ export function PluginsView({
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [workflowsLoaded, setWorkflowsLoaded] = useState(false);
   const [workflowsError, setWorkflowsError] = useState<string | null>(null);
-  const [capabilities, setCapabilities] = useState<HarnessCapabilityManifest[]>([]);
-  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
-  const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
   const [busyRoleKey, setBusyRoleKey] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillDetailEntry | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -152,32 +140,11 @@ export function PluginsView({
     }
   }, []);
 
-  const loadCapabilities = useCallback(async () => {
-    setCapabilitiesLoaded(false);
-    try {
-      const res = await fetch("/api/capabilities", { cache: "no-store" });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        harness_capabilities?: HarnessCapabilityManifest[];
-        error?: string;
-      };
-      if (!json.ok) throw new Error(json.error ?? `capabilities http ${res.status}`);
-      setCapabilities(json.harness_capabilities ?? []);
-      setCapabilitiesError(null);
-    } catch (err) {
-      setCapabilities([]);
-      setCapabilitiesError(err instanceof Error ? err.message : "capabilities unavailable");
-    } finally {
-      setCapabilitiesLoaded(true);
-    }
-  }, []);
-
   useEffect(() => {
     void loadRoles();
     void loadSkills();
     void loadWorkflows();
-    void loadCapabilities();
-  }, [loadRoles, loadSkills, loadWorkflows, loadCapabilities]);
+  }, [loadRoles, loadSkills, loadWorkflows]);
 
   useEffect(() => {
     if (tabSet.includes(tab)) return;
@@ -234,28 +201,6 @@ export function PluginsView({
     [workflows, query],
   );
 
-  const capabilityPlugins = useMemo(
-    () =>
-      capabilities.flatMap((manifest) =>
-        manifest.skills.map((skill) => ({
-          id: `${manifest.harness_id}:${skill.id}`,
-          name: skill.name,
-          description: skill.description,
-          harness: manifest.harness_id,
-          path: skill.path,
-        })),
-      ),
-    [capabilities],
-  );
-
-  const filteredCapabilityPlugins = useMemo(
-    () =>
-      capabilityPlugins.filter((plugin) =>
-        includesQuery([plugin.id, plugin.name, plugin.description, plugin.harness, plugin.path], query),
-      ),
-    [capabilityPlugins, query],
-  );
-
   const toggleRole = async (role: RoleEntry) => {
     const key = `${role.familiar}:${role.id}`;
     const next = !role.active;
@@ -284,13 +229,7 @@ export function PluginsView({
   };
 
   const activeError =
-    tab === "roles"
-      ? rolesError
-      : tab === "skills"
-        ? skillsError
-        : tab === "workflows"
-          ? workflowsError
-          : capabilitiesError;
+    tab === "roles" ? rolesError : tab === "skills" ? skillsError : workflowsError;
 
   return (
     <section className="plugins-view flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
@@ -354,7 +293,7 @@ export function PluginsView({
           />
         ) : tab === "workflows" ? (
           <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} onOpenWorkflow={onOpenWorkflow} />
-        ) : tab === "skills" ? (
+        ) : (
           <SkillsTab
             skills={filteredSkills}
             loaded={skillsLoaded}
@@ -371,12 +310,6 @@ export function PluginsView({
                 source: skill.path,
               })
             }
-          />
-        ) : (
-          <PluginsTab
-            plugins={filteredCapabilityPlugins}
-            loaded={capabilitiesLoaded}
-            onCreatePlugin={onCreatePlugin}
           />
         )}
       </div>
@@ -447,14 +380,18 @@ function RolesTab({
               </button>
             </div>
 
-            <dl className="mt-4 grid gap-2 text-[12px] sm:grid-cols-2">
-              <RoleMeta label="Skills" value={itemList(role.skills)} />
-              <RoleMeta label="Tools" value={itemList(role.tools)} />
-              <RoleMeta label="Plugins" value={itemList(role.plugins)} />
-              <RoleMeta label="Workflows" value={itemList(role.workflows)} />
+            <dl className="mt-4 space-y-2.5">
+              <CapabilityRow label="Skills" items={role.skills} />
+              <CapabilityRow label="Tools" items={role.tools} />
+              <CapabilityRow
+                label="Workflows"
+                items={role.workflows}
+                onOpen={onOpenWorkflow}
+                openHint="Open workflow"
+              />
             </dl>
 
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-4">
               <button
                 type="button"
                 onClick={onOpenChat}
@@ -462,16 +399,6 @@ function RolesTab({
               >
                 Open chat
               </button>
-              {role.workflows.map((workflowId) => (
-                <button
-                  key={workflowId}
-                  type="button"
-                  onClick={() => onOpenWorkflow?.(workflowId)}
-                  className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-                >
-                  Open {workflowId}
-                </button>
-              ))}
             </div>
           </article>
         );
@@ -480,12 +407,50 @@ function RolesTab({
   );
 }
 
-function RoleMeta({ label, value }: { label: string; value: string }) {
+function CapabilityRow({
+  label,
+  items,
+  onOpen,
+  openHint,
+}: {
+  label: string;
+  items: string[];
+  onOpen?: (id: string) => void;
+  openHint?: string;
+}) {
   return (
-    <div className="min-w-0 rounded-md bg-[var(--bg-raised)] px-3 py-2">
-      <dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">{label}</dt>
-      <dd className="mt-1 truncate text-[12px] text-[var(--text-primary)]" title={value}>
-        {value}
+    <div className="plugins-role-capability grid grid-cols-[64px_minmax(0,1fr)] items-start gap-2">
+      <dt className="pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
+        {label}
+      </dt>
+      <dd className="min-w-0">
+        {items.length === 0 ? (
+          <span className="text-[12px] text-[var(--text-muted)]">None</span>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {items.map((item) =>
+              onOpen ? (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onOpen(item)}
+                  title={openHint ? `${openHint}: ${item}` : item}
+                  className="plugins-role-chip plugins-role-chip--action focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]"
+                >
+                  <Icon name="ph:lightning-bold" width={10} aria-hidden />
+                  {item}
+                </button>
+              ) : (
+                <span
+                  key={item}
+                  className="plugins-role-chip inline-flex items-center rounded-md bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+                >
+                  {item}
+                </span>
+              ),
+            )}
+          </div>
+        )}
       </dd>
     </div>
   );
@@ -563,48 +528,6 @@ function SkillsTab({
           }}
           onClick={() => onSelectSkill(skill)}
         />
-      ))}
-    </div>
-  );
-}
-
-function PluginsTab({
-  plugins,
-  loaded,
-  onCreatePlugin,
-}: {
-  plugins: Array<{ id: string; name: string; description?: string; harness: string; path: string }>;
-  loaded: boolean;
-  onCreatePlugin?: () => void;
-}) {
-  if (!loaded) return <ListSkeleton />;
-  if (plugins.length === 0) {
-    return <EmptyPanel title="No runtime plugins found" body="Run a capabilities scan or add runtime extensions to populate this list." actionLabel="Open Capabilities" onAction={onCreatePlugin} />;
-  }
-
-  return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      {plugins.map((plugin) => (
-        <article
-          key={plugin.id}
-          className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4"
-        >
-          <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)]">
-              <Icon name="ph:plug" width={16} className="text-[var(--text-muted)]" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="truncate text-[13px] font-medium text-[var(--text-primary)]">{plugin.name}</h3>
-              <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{plugin.harness}</p>
-              {plugin.description ? (
-                <p className="mt-2 text-[12px] leading-relaxed text-[var(--text-secondary)]">{plugin.description}</p>
-              ) : null}
-              <p className="mt-2 truncate text-[11px] text-[var(--text-muted)]" title={plugin.path}>
-                {plugin.path}
-              </p>
-            </div>
-          </div>
-        </article>
       ))}
     </div>
   );
