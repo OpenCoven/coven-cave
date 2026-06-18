@@ -5,6 +5,7 @@ import { stripAnsi } from "@/lib/ansi";
 import {
   createMobileInvite,
   findServeUrl,
+  magicDnsServeUrl,
   MOBILE_INVITE_TTL_MS,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -111,48 +112,53 @@ async function mobileHandoff(req: Request) {
     return NextResponse.json({ ok: false, error }, { status: 503 });
   }
 
-  const self = await runTailscale(["status", "--self"]);
+  // `--json` doubles as the connectivity check (exit 0 == connected) and the
+  // source for the MagicDNS fallback host below.
+  const self = await runTailscale(["status", "--self", "--json"]);
   if (!self.ok) {
     return NextResponse.json(
       { ok: false, error: "tailscale is not connected", stderr: self.stderr },
       { status: 503 },
     );
   }
+  // Best-effort: an unparseable self status just disables the MagicDNS
+  // fallback; an existing serve config can still yield a URL. Reuse the
+  // tolerant parser so prepended health/warning lines don't break it.
+  const parsedSelf = parseServeStatus(self.stdout);
+  const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
 
   const backend = backendUrl(req);
+
+  // Best-effort (re)start of Tailscale Serve. Don't hard-fail when this errors
+  // — on macOS the CLI can return "GUI failed to start (CLIError 3)" even
+  // though the serve config (and tunnel) is already live in the daemon. Capture
+  // the error as a non-fatal warning and try to produce a working link anyway.
   const serve = await runTailscale(["serve", "--bg", backend]);
-  if (!serve.ok) {
-    return NextResponse.json(
-      { ok: false, error: "failed to start tailscale serve", stderr: serve.stderr },
-      { status: 500 },
-    );
-  }
+  const serveWarning = serve.ok
+    ? null
+    : serve.stderr || "Tailscale Serve could not be (re)started.";
 
+  // Prefer the real serve config when it's readable.
+  let serveUrl: string | null = null;
   const status = await runTailscale(["serve", "status", "--json"]);
-  if (!status.ok) {
-    return NextResponse.json(
-      { ok: false, error: "failed to read tailscale serve status", stderr: status.stderr },
-      { status: 500 },
-    );
+  if (status.ok) {
+    const parsed = parseServeStatus(status.stdout);
+    if (!("error" in parsed)) serveUrl = findServeUrl(parsed.value, backend);
   }
 
-  const parsed = parseServeStatus(status.stdout);
-  if ("error" in parsed) {
+  // Fallback to the device's MagicDNS host so the invite link + QR still work
+  // when the serve config can't be read (the case the user hit).
+  if (!serveUrl) serveUrl = magicDnsServeUrl(selfStatus);
+
+  if (!serveUrl) {
+    // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(
       {
         ok: false,
-        error: "invalid tailscale serve status output",
-        stderr: status.stderr || parsed.error,
+        error: serveWarning ?? "tailscale serve URL not found",
+        stderr: serveWarning ?? status.stderr,
+        backendUrl: backend,
       },
-      { status: 500 },
-    );
-  }
-  const parsedStatus = parsed.value;
-
-  const serveUrl = findServeUrl(parsedStatus, backend);
-  if (!serveUrl) {
-    return NextResponse.json(
-      { ok: false, error: "tailscale serve URL not found", backendUrl: backend },
       { status: 500 },
     );
   }
@@ -180,6 +186,9 @@ async function mobileHandoff(req: Request) {
     expiresAt: invite.expiresAt,
     expiresAtIso: invite.expiresAtIso,
     qrSvg,
+    // Non-fatal: the link/QR are usable, but Serve couldn't be (re)started, so
+    // the tunnel may need attention if the link doesn't resolve on the phone.
+    warning: serveWarning ?? undefined,
   });
 }
 

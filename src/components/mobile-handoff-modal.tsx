@@ -14,6 +14,7 @@ type HandoffReady = {
   expiresAt: number;
   expiresAtIso: string;
   qrSvg: string;
+  warning?: string;
 };
 
 type HandoffError = {
@@ -170,6 +171,9 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
               <p className="mobile-handoff__hint">
                 Scan the short-lived Tailscale invite link, or copy it and paste it into the mobile app.
               </p>
+              {handoff.warning ? (
+                <p className="mobile-handoff__warning">{handoff.warning}</p>
+              ) : null}
             </>
           ) : error ? (
             <p className="mobile-handoff__error">{error}</p>

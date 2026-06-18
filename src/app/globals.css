@@ -4336,6 +4336,19 @@ a.mobile-handoff__link:hover {
   line-height: 1.45;
 }
 
+/* Non-fatal note: the link/QR are usable but Tailscale Serve couldn't be
+   (re)started. Caution treatment so it reads as advisory, not a hard failure. */
+.mobile-handoff__warning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning, #d9a441) 45%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--warning, #d9a441) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
 /* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
