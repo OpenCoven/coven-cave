@@ -90,4 +90,13 @@ assert.match(view, /kind\s*=\s*result\.kind/, "generation records the extracted 
 assert.match(view, /method:\s*"POST"[\s\S]{0,120}artifact/, "artifacts upsert to /api/canvas via POST");
 assert.match(view, /method:\s*"DELETE"/, "deleting an artifact calls DELETE /api/canvas");
 
+// Chrome: the MiniMap is gated on having nodes (an empty canvas would render a
+// blank box), and React Flow's MiniMap/Controls are themed to the dark surface
+// (they default to white, which the workflow canvas only fixes under its own
+// scope).
+assert.match(view, /nodes\.length > 0 \? <MiniMap/, "MiniMap only renders when there are nodes");
+const canvasCss = await readFile(new URL("../styles/canvas.css", import.meta.url), "utf8");
+assert.match(canvasCss, /\.canvas-view \.react-flow__minimap\s*\{/, "canvas themes the React Flow minimap");
+assert.match(canvasCss, /\.canvas-view \.react-flow__controls-button\s*\{/, "canvas themes the React Flow controls");
+
 console.log("canvas-view.test.ts ✓");

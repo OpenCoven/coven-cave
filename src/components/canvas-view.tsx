@@ -497,7 +497,9 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
         {isSketch ? null : <BandGuides />}
         <Background gap={24} size={1} />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeStrokeWidth={2} />
+        {/* Nothing to map on an empty canvas — the minimap would just render a
+            blank box, so only show it once there are nodes. */}
+        {nodes.length > 0 ? <MiniMap pannable zoomable nodeStrokeWidth={2} /> : null}
 
         <Panel position="top-left" className="canvas-toolbar">
           <span className="canvas-toolbar__title">

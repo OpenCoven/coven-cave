@@ -562,3 +562,47 @@
   border-radius: 6px;
   cursor: pointer;
 }
+
+/* ── React Flow chrome: theme to match the dark surface ──────────────────── */
+/* Without these, the MiniMap renders a solid white box and the Controls show
+   white buttons (the workflow canvas themes them only under .workflow-canvas). */
+
+.canvas-view .react-flow__controls {
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.canvas-view .react-flow__controls-button {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-primary);
+  fill: currentColor;
+}
+
+.canvas-view .react-flow__controls-button:hover {
+  background: var(--bg-hover);
+}
+
+.canvas-view .react-flow__minimap {
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.canvas-view .react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.55);
+}
+
+.canvas-view .react-flow__minimap-node {
+  fill: color-mix(in oklab, var(--accent, #6b8fbf) 45%, transparent);
+}
+
+/* Lift the empty-state copy above the bottom composer so it doesn't sit dead
+   center with a large gap below it. */
+.canvas-view[data-layer="sketch"] .canvas-empty {
+  padding-bottom: 160px;
+}
