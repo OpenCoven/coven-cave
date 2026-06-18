@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.100] - 2026-06-17
+
+Patch release: Salem perch proximity polish, companion rail alignment fixes, next-path chat suggestions, and mobile handoff quality-of-life updates after 0.0.99.
+
+### Added
+- **Chat** — assistant responses can surface model-generated next-path suggestion chips to keep follow-up work moving (#898).
+- **Mobile** — handoff now auto-copies invite details and includes small UI refinements for the mobile bridge.
+
+### Fixed
+- **Shell** — companion rail tab strip aligns cleanly with the corner side-panel trigger (#899).
+
+### Polished
+- **Salem** — the perch starts smaller and translucent, grows on cursor approach, and uses a brighter approach glow (#896, #897).
+
 ## [0.0.99] - 2026-06-16
 
 Patch release: Windows first-run daemon startup fix and a Salem typecheck guard after 0.0.98.
