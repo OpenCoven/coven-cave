@@ -33,6 +33,7 @@ assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styl
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
 assert.match(handoffRoute, /inviteUrl: invite\.url/, "API should expose inviteUrl as the canonical invite field");
 assert.match(handoffRoute, /appUrl: invite\.url/, "API should keep appUrl as an inviteUrl alias for compatibility");
+assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
 assert.match(css, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
 assert.match(css, /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/, "Phone handoff button should hide on mobile/tablet chrome");
 assert.match(mobileStub, /Invite link or Tailscale URL/, "Mobile connection screen should label the real accepted input");
