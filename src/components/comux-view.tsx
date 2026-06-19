@@ -1236,7 +1236,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           onChange={(e) => setSearchInput(e.target.value)}
                           placeholder="Search in project…"
                           aria-label="Search in project"
-                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1.5 pl-7 pr-[3.75rem] text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
+                          className="h-7 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 pl-7 pr-[3.75rem] text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
                         />
                         <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
                           <button
@@ -1282,7 +1282,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           aria-label="Filter files by glob"
                           spellCheck={false}
                           autoComplete="off"
-                          className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 py-1 pl-7 pr-2 font-mono text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
+                          className="h-7 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 pl-7 pr-2 font-mono text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)] focus:outline-none"
                         />
                       </div>
                       {searchInput.trim() && (
