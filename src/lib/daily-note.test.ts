@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  buildActivityDigest,
   DAILY_NOTE_SECTIONS,
+  excerptOf,
   formatDailyNote,
   isEmptyNote,
   isValidNoteDate,
@@ -49,5 +51,33 @@ assert.equal(
 assert.ok(notePreview({ notes: "x".repeat(300), reflection: "" }).endsWith("…"), "long previews are truncated");
 
 assert.equal(DAILY_NOTE_SECTIONS.reflection, "Self-reflection", "the reflection section is named Self-reflection");
+
+// ── excerptOf ────────────────────────────────────────────────────────────────
+assert.equal(excerptOf("# Heading\n\nThe **real** body line."), "The real body line.", "strips headings + markdown");
+assert.equal(excerptOf(""), "", "empty input yields empty excerpt");
+assert.ok(excerptOf("x".repeat(300)).endsWith("…"), "long excerpts are truncated");
+
+// ── buildActivityDigest ──────────────────────────────────────────────────────
+assert.equal(
+  buildActivityDigest([], []),
+  "_No tracked activity for this day yet._",
+  "empty activity yields the honest empty state",
+);
+
+const digest = buildActivityDigest(
+  [{ title: "Letta research", harness: "claude" }, { title: "Deck pass" }],
+  [{ file: "2026-06-18.md", excerpt: "sharpened identity contrast" }],
+);
+assert.match(digest, /2 sessions today:/, "counts sessions");
+assert.match(digest, /- Letta research _\(claude\)_/, "lists session title + harness");
+assert.match(digest, /- Deck pass$/m, "a session without a harness omits the suffix");
+assert.match(digest, /Memory touched \(1\):/, "counts memory files");
+assert.match(digest, /- `2026-06-18\.md` — sharpened identity contrast/, "shows memory excerpt");
+
+assert.equal(
+  buildActivityDigest([{ title: "only a session" }], []).includes("Memory touched"),
+  false,
+  "omits the memory block when there are no memory files",
+);
 
 console.log("daily-note: all assertions passed");

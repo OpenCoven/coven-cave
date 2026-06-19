@@ -20,10 +20,13 @@ Storage & format (must match exactly so the Cave UI parses it):
 
 Steps:
 1. Enumerate familiars from `~/.coven/familiars.toml` (plus the default ids), and resolve each workspace.
-2. Scaffold the factual digest first by running, from a Coven Cave checkout:
-   `node --experimental-strip-types scripts/generate-daily-notes.mjs`
-   This writes/refreshes each familiar's `## Notes` activity digest and seeds the reflection prompts (it never overwrites a note that already has content).
-3. For each familiar, review its day — recent sessions, memory changes, and inbox/board items tagged to it — and REPLACE the seeded reflection prompts with a genuine, first-person Self-reflection written as that familiar: what went well, what was hard, and what to try next time. Keep the `## Notes` digest factual.
+2. Refresh the factual digest first by running, from a Coven Cave checkout:
+   `node --experimental-strip-types scripts/generate-daily-notes.mjs --section notes`
+   `--section notes` rewrites each familiar's `## Notes` activity digest (sessions + memory touched) but PRESERVES any reflection already there — so re-running never wipes a prior reflection.
+3. For each familiar, write the `## Self-reflection` IN THAT FAMILIAR'S VOICE:
+   - Read its `SOUL.md` and `IDENTITY.md` (in its workspace) so the reflection sounds like that familiar, not a generic template.
+   - Read YESTERDAY's note (`notes/<yesterday>.md`) and follow up on any intention it set ("last time I planned to … — did I?"). Make the reflection cumulative, not isolated.
+   - Ground it in today's real work (the digest, sessions, memory, inbox/board items tagged to it): what went well, what was hard, what to try next time. First person, honest, concise.
 4. Only write to each familiar's own `notes/` directory. Do not touch other familiars' files, memory, or unrelated state.
 
 Deliverable: a one-line-per-familiar summary of which daily notes you wrote or updated, and any familiar whose day had nothing worth noting.'''
