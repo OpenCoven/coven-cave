@@ -33,8 +33,12 @@ test.describe("mobile command center pages", () => {
       // On a fresh profile (CI) the onboarding overlay covers the app and
       // intercepts pointer events — dismiss it so the shell is interactive.
       window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      // CI has no daemon, so drive the surfaces from self-contained demo data
+      // (same approach as the other chat specs) instead of a live backend.
+      window.localStorage.setItem("cave:demo-mode", "1");
     });
-    await page.goto("/");
+    await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.goto("/?demo=1");
     await page.waitForSelector(".mobile-bottom-tabs");
   });
 
