@@ -109,10 +109,43 @@ function SidebarSection({
   className?: string;
   children: React.ReactNode;
 }) {
+  const storageKey = label
+    ? `cave:sidebar:section:${label.toLowerCase().replace(/\s+/g, "-")}`
+    : null;
+  const [collapsed, setCollapsed] = React.useState(false);
+  // Hydrate the persisted collapse state after mount so the SSR markup (always
+  // expanded) matches the first client render, then reconcile from storage.
+  React.useEffect(() => {
+    if (!storageKey) return;
+    setCollapsed(localStorage.getItem(storageKey) === "1");
+  }, [storageKey]);
+  const toggle = React.useCallback(() => {
+    setCollapsed((v) => {
+      const next = !v;
+      if (storageKey) localStorage.setItem(storageKey, next ? "1" : "0");
+      return next;
+    });
+  }, [storageKey]);
   return (
     <div className={`sidebar-folders ${className}`.trim()}>
-      {label ? <div className="sidebar-section-label">{label}</div> : null}
-      {children}
+      {label ? (
+        // The whole header is the hit target — clicking anywhere across its full
+        // height/width collapses or expands the section.
+        <button
+          type="button"
+          className="sidebar-section-label"
+          aria-expanded={!collapsed}
+          onClick={toggle}
+        >
+          <span className="sidebar-section-label__text">{label}</span>
+          <Icon
+            name="ph:caret-down-bold"
+            width="0.7rem"
+            className={`sidebar-section-label__chevron${collapsed ? " sidebar-section-label__chevron--collapsed" : ""}`}
+          />
+        </button>
+      ) : null}
+      {collapsed ? null : children}
     </div>
   );
 }

@@ -391,17 +391,46 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   margin: 2px 6px 8px;
   padding: 6px 10px;
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-base) 70%, var(--foreground) 30%);
   border: 1px solid color-mix(in oklch, var(--border-hairline) 95%, var(--foreground) 5%);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.11em;
   text-transform: uppercase;
+  text-align: left;
   color: var(--text-primary);
+  cursor: pointer;
   user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.sidebar-section-label:hover {
+  background: color-mix(in oklch, var(--bg-base) 58%, var(--foreground) 42%);
+}
+
+.sidebar-section-label:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+}
+
+.sidebar-section-label__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-section-label__chevron {
+  flex: none;
+  opacity: 0.7;
+  transition: transform 140ms ease;
+}
+
+.sidebar-section-label__chevron--collapsed {
+  transform: rotate(-90deg);
 }
 
 /* A short accent tick before the label so each section reads as a deliberate
