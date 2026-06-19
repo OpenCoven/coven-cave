@@ -325,42 +325,6 @@ function ShellInner({
     return () => window.clearTimeout(t);
   }, [mounted]);
 
-  // Proximity glow: as the cursor moves toward a floating panel toggle, fade in
-  // (and pulse) its chip. Each float gets a `--float-prox` (0→1) driven by the
-  // cursor's distance to the chip; the CSS uses it for opacity + the pulse.
-  useEffect(() => {
-    if (!mounted || isMobile) return;
-    const RANGE = 160; // px — how far out the glow starts responding (tighter: kicks in closer to the toggle)
-    let raf = 0;
-    const onMove = (e: MouseEvent) => {
-      if (raf) return;
-      raf = window.requestAnimationFrame(() => {
-        raf = 0;
-        const floatTop =
-          parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue("--shell-float-top"),
-          ) || 50;
-        for (const el of document.querySelectorAll<HTMLElement>(".shell-panel-float")) {
-          const r = el.getBoundingClientRect();
-          // Chip center: corner tabs are pinned at 35px; the expand toggle keeps
-          // the measured header position.
-          const isLeftCorner = el.classList.contains("shell-panel-float--left");
-          const isRightCorner = el.classList.contains("shell-panel-float--right");
-          const cx = isLeftCorner ? r.left + 17.5 : isRightCorner ? r.right - 17.5 : r.left + r.width / 2;
-          const cy = isLeftCorner || isRightCorner ? r.top + 17.5 : r.top + floatTop + 14;
-          const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
-          const prox = Math.max(0, Math.min(1, 1 - dist / RANGE));
-          el.style.setProperty("--float-prox", prox.toFixed(3));
-        }
-      });
-    };
-    window.addEventListener("mousemove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      if (raf) window.cancelAnimationFrame(raf);
-    };
-  }, [mounted, isMobile]);
-
   useEffect(() => {
     onNavOpenChange?.(navOpen);
   }, [navOpen, onNavOpenChange]);
@@ -440,7 +404,9 @@ function ShellInner({
   if (!mounted) {
     return (
       <div className="shell-frame flex h-full w-full flex-col">
-        {renderedTopBar}
+        <div className="shell-top">
+          <div className="shell-top__bar">{renderedTopBar}</div>
+        </div>
         <div className="shell-body flex flex-1 min-h-0">
           <div className="shell-root flex-1 min-h-0" />
         </div>
@@ -539,12 +505,11 @@ function ShellInner({
     "--shell-right-gap-px": `${detailGaps.right}px`,
     "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
-  // Codex-style floating panel toggles. Two always-visible rounded buttons
-  // pinned to the shell's top corners that show/hide the side panels: the
-  // left one toggles the navigation sidebar, the right one toggles whichever
-  // right panel is active (the companion/inspector/browser slot). They replace
-  // the old collapsed-only edge rails and the in-panel collapse toggles, so a
-  // single persistent control owns each panel regardless of its open state.
+  // Panel toggles, hoisted into the top menu bar. The nav toggle anchors the
+  // bar's left edge and the side-panel + expand toggles its right edge, so a
+  // single persistent control owns each panel regardless of its open state
+  // (replacing the old corner edge-rail floats). Desktop-only — below 1024px the
+  // mobile `.top-bar` carries its own drawer toggles.
   const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
   const toggleNavPanel = () => {
     const panel = navRef.current;
@@ -558,45 +523,42 @@ function ShellInner({
     if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
     else { panel.collapse(); setFamiliarOpen(false); }
   };
-  const panelFloats = !isMobile ? (
+  const navToggle = !isMobile ? (
+    <button
+      type="button"
+      className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
+      aria-label={navOpen ? "Hide navigation" : "Show navigation"}
+      aria-expanded={navOpen}
+      title={navOpen ? `Hide navigation (${leftPanelShortcutLabel})` : `Show navigation (${leftPanelShortcutLabel})`}
+      onClick={toggleNavPanel}
+    >
+      <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+    </button>
+  ) : null;
+  const rightToggles = !isMobile && hasFamiliar ? (
     <>
+      {/* Expand-to-cover toggle. CSS keeps it hidden until a chat right panel is
+          actually open (:root[data-right-panel-open]) and re-hides it while
+          expanded. It reaches the chat surface's expand state via a window event. */}
       <button
         type="button"
-        className={`shell-panel-float shell-panel-float--left focus-ring${navOpen ? " shell-panel-float--active" : ""}`}
-        aria-label={navOpen ? "Hide navigation" : "Show navigation"}
-        aria-expanded={navOpen}
-        title={navOpen ? `Hide navigation (${leftPanelShortcutLabel})` : `Show navigation (${leftPanelShortcutLabel})`}
-        onClick={toggleNavPanel}
+        className="shell-top-toggle shell-top-toggle--expand focus-ring"
+        aria-label="Expand side panel"
+        title="Expand side panel"
+        onClick={() => window.dispatchEvent(new CustomEvent("cave:right-panel-expand"))}
       >
-        <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+        <Icon name="ph:arrows-out-simple" width={14} />
       </button>
-      {hasFamiliar ? (
-        <>
-          {/* Expand-to-cover toggle, pinned just left of the side-panel trigger.
-              CSS keeps it hidden until a chat right panel is actually open
-              (:root[data-right-panel-open]) and re-hides it while expanded. It
-              reaches the chat surface's expand state via a window event. */}
-          <button
-            type="button"
-            className="shell-panel-float shell-panel-float--expand focus-ring"
-            aria-label="Expand side panel"
-            title="Expand side panel"
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:right-panel-expand"))}
-          >
-            <Icon name="ph:arrows-out-simple" width={14} />
-          </button>
-          <button
-            type="button"
-            className={`shell-panel-float shell-panel-float--right focus-ring${familiarOpen ? " shell-panel-float--active" : ""}`}
-            aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
-            aria-expanded={familiarOpen}
-            title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
-            onClick={toggleRightPanel}
-          >
-            <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
-          </button>
-        </>
-      ) : null}
+      <button
+        type="button"
+        className={`shell-top-toggle shell-top-toggle--right focus-ring${familiarOpen ? " shell-top-toggle--active" : ""}`}
+        aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
+        aria-expanded={familiarOpen}
+        title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
+        onClick={toggleRightPanel}
+      >
+        <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+      </button>
     </>
   ) : null;
 
@@ -606,9 +568,12 @@ function ShellInner({
       style={shellFrameStyle}
       data-settled={settled ? "" : undefined}
     >
-      {renderedTopBar}
-      <div className="shell-body shell-body--floats flex flex-1 min-h-0">
-        {panelFloats}
+      <div className="shell-top">
+        {navToggle}
+        <div className="shell-top__bar">{renderedTopBar}</div>
+        {rightToggles}
+      </div>
+      <div className="shell-body flex flex-1 min-h-0">
         {hasBottom ? (
           <Group
             className="flex-1 min-h-0"

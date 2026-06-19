@@ -16,65 +16,46 @@ assert.match(src, /onSetPanel\("changes"\)/, "Changes is selectable as a tab whe
 assert.match(src, /rightExpanded/, "ChatSurface tracks rightExpanded");
 assert.match(src, /chat-right-expanded/, "expanded overlay container");
 
-// While expanded, the shell's right edge-rail float is hidden (via a root data
-// attribute + CSS) so it can't intercept clicks on the top-right Close button.
+// While expanded, the shell's top-bar side-panel toggle is hidden (via a root
+// data attribute + CSS) since it's redundant under a full-surface panel.
 assert.match(src, /data-right-panel-expanded/, "flags expanded state on the document root");
 
-// The expand affordance is a floating toggle pinned just left of the side-panel
-// trigger in the shell, not an in-header button. ChatSurface bridges it via a
-// window event and flags right-panel-open on the root so the float can show only
-// when there is a panel to expand.
+// The expand affordance is a top-bar toggle in the shell, not an in-header
+// button. ChatSurface bridges it via a window event and flags right-panel-open
+// on the root so the toggle can show only when there is a panel to expand.
 assert.match(
   src,
   /addEventListener\("cave:right-panel-expand"/,
-  "ChatSurface listens for the shell float's expand event",
+  "ChatSurface listens for the shell toggle's expand event",
 );
 assert.match(
   src,
   /data-right-panel-open/,
-  "ChatSurface flags right-panel-open on the root for the shell float's visibility",
+  "ChatSurface flags right-panel-open on the root for the expand toggle's visibility",
 );
 
 const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
 assert.match(
   shell,
-  /shell-panel-float--expand/,
-  "shell renders the floating expand toggle",
+  /shell-top-toggle--expand/,
+  "shell renders the top-bar expand toggle",
 );
 assert.match(
   shell,
   /dispatchEvent\(new CustomEvent\("cave:right-panel-expand"\)\)/,
-  "the expand float dispatches the bridge event",
+  "the expand toggle dispatches the bridge event",
 );
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 assert.match(
   css,
-  /\[data-right-panel-open\]\s*\.shell-panel-float--expand/,
-  "expand float is shown only when a right panel is open",
+  /\[data-right-panel-open\]\s*\.shell-top-toggle--expand/,
+  "expand toggle is shown only when a right panel is open",
 );
 assert.match(
   css,
-  /\[data-right-panel-expanded\]\s*\.shell-panel-float--expand[\s\S]*?display:\s*none/,
-  "expand float is hidden again while the panel is expanded",
-);
-
-// The floats track the live side-panel header position via a measured CSS var so
-// they stay aligned through the post-load layout settle (no fixed-offset flash).
-assert.match(
-  css,
-  /\.shell-panel-float::before\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\)[\s\S]*?\.shell-panel-float--expand\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\)/,
-  "side-panel chips and the expand float consume the measured --shell-float-top (with a 50px fallback)",
-);
-assert.match(
-  src,
-  /setProperty\("--shell-float-top"/,
-  "ChatSurface publishes the live header center to --shell-float-top",
-);
-assert.match(
-  src,
-  /querySelector\("\.right-panel-tabs"\)[\s\S]*getBoundingClientRect/,
-  "the float position is derived from the measured side-panel header rect",
+  /\[data-right-panel-expanded\]\s*\.shell-top-toggle--expand[\s\S]*?display:\s*none/,
+  "expand toggle is hidden again while the panel is expanded",
 );
 
 console.log("right-panel-expand.test.ts: ok");

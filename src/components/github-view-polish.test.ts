@@ -132,13 +132,13 @@ assert.doesNotMatch(
   "the old grouping dropdown is gone",
 );
 
-console.log("github-view-polish.test.ts OK");
-
-// The header must reserve a right gutter so its actions clear the floating
-// right panel-toggle (.shell-panel-float--right, a 44px strip) — otherwise the
-// Add PAT / Refresh buttons render under it and become unclickable.
-assert.match(
+// The side-panel toggle moved up into the top menu bar, so it no longer overlays
+// the header's right edge — the 44px (pr-11) gutter that used to clear it is
+// gone and the header uses a symmetric pr-5.
+assert.doesNotMatch(
   source,
   /github-surface-header[^"]*\bpr-11\b/,
-  "GitHub header reserves a 44px (pr-11) right gutter for the floating panel toggle",
+  "GitHub header no longer reserves a gutter for the retired floating panel toggle",
 );
+
+console.log("github-view-polish.test.ts OK");
