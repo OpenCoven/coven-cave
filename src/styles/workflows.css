@@ -184,6 +184,12 @@
 
 .workflow-studio-side-content .workflow-panel {
   padding-top: 10px;
+  /* Fill the column height so each detail section reads as a full-height side
+     surface — like the populated library panel on the left — instead of a short
+     card floating above empty space. The tab panel is already a flex column
+     with min-height:100% (see below); grow the section card into it. The
+     manifest preview sets the same flex on itself to expand its YAML editor. */
+  flex: 1 1 auto;
 }
 
 .workflow-panel-collapse-button {
