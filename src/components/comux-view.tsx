@@ -1062,23 +1062,25 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           {/* Project list — collapse from its own header; a thin rail re-opens it.
               The Code layout presets also drive this (Chat hides it). */}
           {projectListCollapsed ? (
-          <div className="flex w-[34px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border-hairline)] py-2">
-            <button
-              type="button"
-              onClick={() => setProjectListVisible(true)}
-              aria-label="Show projects list"
-              title="Show projects list"
-              className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            >
+          // The whole rail is the click target — its full height re-opens the
+          // list, not just the icon at the top.
+          <button
+            type="button"
+            onClick={() => setProjectListVisible(true)}
+            aria-label="Show projects list"
+            title="Show projects list"
+            className="flex w-[34px] shrink-0 flex-col items-center gap-1 self-stretch border-r border-[var(--border-hairline)] py-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <span className="grid h-7 w-7 place-items-center">
               <Icon name="ph:sidebar-simple" width={15} />
-            </button>
+            </span>
             <span
-              className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]"
+              className="mt-1 text-[10px] font-semibold uppercase tracking-widest"
               style={{ writingMode: "vertical-rl" }}
             >
               Projects
             </span>
-          </div>
+          </button>
           ) : (
           <div className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] py-2 text-[12px]">
             <div className="mb-1 flex items-center gap-1.5 px-3 pb-1">
@@ -1091,9 +1093,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 onClick={() => setProjectListVisible(false)}
                 aria-label="Hide projects list"
                 title="Hide projects list"
-                className="ml-auto grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                className="-my-1 ml-auto grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
               >
-                <Icon name="ph:sidebar-simple-fill" width={13} />
+                <Icon name="ph:sidebar-simple-fill" width={15} />
               </button>
             </div>
             <div className="space-y-px px-1">
