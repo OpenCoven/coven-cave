@@ -487,8 +487,8 @@ export function CommandPalette({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message,
-          context: buildSalemSearchContext(rows, message),
+          message: query.trim(),
+          context: buildSalemSearchContext(rows, query.trim()),
         }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };
