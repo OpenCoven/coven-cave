@@ -14,7 +14,6 @@
 
 import React from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
@@ -151,30 +150,6 @@ function SidebarSection({
 }
 
 
-function ActionRow({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={`sidebar-action-row ${active ? "sidebar-action-row--active" : ""}`}
-      aria-current={active ? "page" : undefined}
-      onClick={onClick}
-    >
-      <span className="sidebar-action-icon">{icon}</span>
-      <span className="sidebar-action-label">{label}</span>
-    </button>
-  );
-}
-
 function FolderRow({
   id,
   label,
@@ -220,18 +195,12 @@ function FolderRow({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
-    sessions,
-    onNewChat,
     onOpenSettings,
     onOpenMobileHandoff,
     onModeChange,
     onOpenSession,
     activeSessionId,
     addons,
-    familiars,
-    activeFamiliarId,
-    onFamiliarScopeChange,
-    responseNeeded,
     notificationBadgeCount,
     onOpenInbox,
   } = props;
@@ -261,28 +230,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
+      {/* Familiar scope selection and New session live in the desktop top
+          menu bar (FamiliarMenuBar) and the mobile top bar — the left panel is
+          pure navigation now, so the nav flows straight under the wordmark. */}
       <div className="sidebar-header sidebar-header--static">
         <span className="sidebar-title">Coven Cave</span>
-      </div>
-
-      {/* Header actions: familiar profile switcher + New session. The same switcher
-          also renders in the mobile top bar; on desktop this is its home. */}
-      <div className="sidebar-actions sidebar-action-stack">
-        <div className="sidebar-familiar-slot">
-          <FamiliarSwitcher
-            familiars={familiars}
-            activeFamiliarId={activeFamiliarId}
-            sessions={sessions}
-            responseNeeded={responseNeeded}
-            onSelectFamiliar={onFamiliarScopeChange}
-            labeled
-          />
-        </div>
-        <ActionRow
-          icon={<Icon name="ph:note-pencil" width={14} />}
-          label="New session"
-          onClick={onNewChat}
-        />
       </div>
 
       <div className="sidebar-nav-scroll">

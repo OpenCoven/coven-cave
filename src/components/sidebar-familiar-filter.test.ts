@@ -24,13 +24,14 @@ assert.doesNotMatch(
   "Sidebar should no longer render the global search action in the left panel",
 );
 
-// The horizontal dock is replaced by a single profile switcher (FamiliarSwitcher),
-// rendered in the sidebar header (desktop) and the mobile top bar.
+// The horizontal dock is gone, and the profile switcher is not in the left
+// panel: scope selection lives in the top bars (FamiliarMenuBar on desktop, the
+// mobile top bar). The sidebar is pure navigation.
 assert.doesNotMatch(sidebar, /<FamiliarDock/, "the horizontal familiar dock is replaced");
-assert.match(
+assert.doesNotMatch(
   sidebar,
-  /<FamiliarSwitcher[\s\S]*onSelectFamiliar=\{onFamiliarScopeChange\}/,
-  "sidebar mounts the familiar profile switcher wired to the scope handler",
+  /<FamiliarSwitcher/,
+  "the familiar switcher is no longer mounted in the left sidebar",
 );
 
 assert.doesNotMatch(
