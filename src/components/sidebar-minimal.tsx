@@ -211,9 +211,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onModeChange(id);
   };
 
-  // Filter out disabled add-on items. GitHub is gated; library is always shown.
+  // Filter out disabled add-on items. GitHub and Library are gated add-ons,
+  // hidden from the nav until enabled in Settings → Add-ons (both default off).
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
+    if (fm.id === "library") return addons?.library === true;
     return true;
   });
 
@@ -267,21 +269,23 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           ))}
         </SidebarSection>
 
-        <SidebarSection label="Knowledge">
-          {knowledgeModes.map((fm) => (
-            <FolderRow
-              key={fm.id}
-              id={fm.id}
-              label={fm.label}
-              iconName={fm.iconName}
-              active={mode === fm.id}
-              badge={fm.badge?.(props)}
-              kbd={fm.kbd}
-              description={fm.description}
-              onClick={() => handleModeSelect(fm.id)}
-            />
-          ))}
-        </SidebarSection>
+        {knowledgeModes.length > 0 ? (
+          <SidebarSection label="Knowledge">
+            {knowledgeModes.map((fm) => (
+              <FolderRow
+                key={fm.id}
+                id={fm.id}
+                label={fm.label}
+                iconName={fm.iconName}
+                active={mode === fm.id}
+                badge={fm.badge?.(props)}
+                kbd={fm.kbd}
+                description={fm.description}
+                onClick={() => handleModeSelect(fm.id)}
+              />
+            ))}
+          </SidebarSection>
+        ) : null}
 
         <SidebarSection label="Tools">
           {toolsModes.map((fm) => (

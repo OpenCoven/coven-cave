@@ -102,6 +102,22 @@ assert.match(
   "Library remains the sole Knowledge surface",
 );
 
+// Library is a gated add-on (default off): the nav filter hides it until the
+// add-on is enabled, mirroring GitHub. Without the gate the Knowledge section
+// would always render Library.
+assert.match(
+  source,
+  /if \(fm\.id === "library"\) return addons\?\.library === true;/,
+  "Library nav entry is gated on the library add-on",
+);
+
+// The Knowledge section must not render an empty header when Library is hidden.
+assert.match(
+  source,
+  /knowledgeModes\.length > 0 \? \(/,
+  "Knowledge section only renders when it has visible surfaces",
+);
+
 assert.match(
   source,
   /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description:/,
