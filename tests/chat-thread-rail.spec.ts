@@ -27,6 +27,7 @@ async function gotoChat(page: Page) {
     window.localStorage.setItem("cave:demo-mode", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),

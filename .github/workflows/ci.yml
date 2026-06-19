@@ -102,3 +102,27 @@ jobs:
           touch resources/node/.cargo-check-placeholder
 
       - run: cargo check --locked
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - run: pnpm install --frozen-lockfile
+
+      # Browsers + their Linux system libraries. The e2e projects use chromium
+      # (desktop, pixel-5) and webkit (iphone-13); --with-deps installs the apt
+      # packages those engines need on the runner.
+      - run: pnpm exec playwright install --with-deps chromium webkit
+
+      # The Playwright config self-starts `next dev` on :3100 (COVEN_CAVE_E2E=1)
+      # and runs the three viewport projects. CI=true makes the config use
+      # workers:2 + retries:1; per-test timeout is 60s for dev-server compile.
+      - run: pnpm exec playwright test
