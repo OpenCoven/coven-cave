@@ -477,7 +477,8 @@ export function CommandPalette({
   }, [query, familiars]);
 
   const askSalem = async () => {
-    if (!query.trim() || salemLoading) return;
+    const message = query.trim();
+    if (!message || salemLoading) return;
     setSalemLoading(true);
     setSalemAnswer(null);
     setSalemError(null);
@@ -486,14 +487,17 @@ export function CommandPalette({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: query.trim(),
-          context: buildSalemSearchContext(rows, query.trim()),
+          message,
+          context: buildSalemSearchContext(rows, message),
         }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };
+      // If the user kept typing while the request was in flight, ignore the stale result.
+      if ((inputRef.current?.value ?? "").trim() !== message) return;
       if (!res.ok || data.error) throw new Error(data.error ?? "Salem could not answer.");
       setSalemAnswer(data.reply ?? "Salem did not return an answer.");
     } catch (err) {
+      if ((inputRef.current?.value ?? "").trim() !== message) return;
       setSalemError(err instanceof Error ? err.message : "Salem could not answer.");
     } finally {
       setSalemLoading(false);
