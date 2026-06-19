@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { LibraryUndoToast } from "@/components/library-undo-toast";
 import type { LibraryReadingItem, ReadingStatus } from "@/lib/library-types";
@@ -12,7 +12,16 @@ import { useIsCoarsePointer } from "@/lib/use-viewport";
 type SortKey = "title" | "status" | "addedAt";
 type SortDir = "asc" | "desc";
 type GroupBy = "status" | "sourceType" | "none";
-const INLINE_STATUS_OPTIONS: ReadingStatus[] = ["want-to-read", "reading", "done"];
+const INLINE_STATUS_OPTIONS = ["want-to-read", "reading", "done"] as const;
+type InlineStatus = (typeof INLINE_STATUS_OPTIONS)[number];
+
+// Inline 3-way status toggle: full label for the active state + tooltip, short
+// label for the segmented control, icon for the compact/touch layout.
+const STATUS_META: Record<InlineStatus, { label: string; short: string; icon: IconName }> = {
+  "want-to-read": { label: "Want to read", short: "Want", icon: "ph:bookmark-simple" },
+  reading: { label: "Reading", short: "Reading", icon: "ph:book-open" },
+  done: { label: "Read", short: "Read", icon: "ph:check-circle" },
+};
 
 const STATUS_ORDER: Record<ReadingStatus, number> = {
   "want-to-read": 0,
@@ -394,23 +403,38 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                         )}
                       </td>
                       <td className="library-reading-col-status">
-                        <select
-                          className="library-status-badge library-status-select"
-                          style={statusBadgeStyle(item.status)}
-                          value={item.status}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            void handleStatusChange(item, e.target.value as ReadingStatus);
-                          }}
+                        <div
+                          className="library-status-toggle"
+                          role="radiogroup"
                           aria-label={`Status for ${item.title}`}
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {INLINE_STATUS_OPTIONS.map((status) => (
-                            <option key={status} value={status}>
-                              {status.replace(/-/g, " ")}
-                            </option>
-                          ))}
-                        </select>
+                          {INLINE_STATUS_OPTIONS.map((status) => {
+                            const meta = STATUS_META[status];
+                            const active = item.status === status;
+                            return (
+                              <button
+                                key={status}
+                                type="button"
+                                role="radio"
+                                aria-checked={active}
+                                data-status={status}
+                                className={`library-status-toggle__opt${active ? " is-active" : ""}`}
+                                style={active ? statusBadgeStyle(status) : undefined}
+                                title={meta.label}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!active) void handleStatusChange(item, status);
+                                }}
+                              >
+                                <Icon name={meta.icon} width={13} aria-hidden />
+                                {active && (
+                                  <span className="library-status-toggle__label">{meta.short}</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </td>
                       <td className="library-reading-col-added">
                         <span className="board-table-muted">{relTime(item.addedAt)}</span>
