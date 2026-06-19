@@ -9,7 +9,7 @@
 **Current settings** (verified live; `gh api repos/OpenCoven/coven-cave/branches/main/protection`):
 
 - PR required before merging — **0 approvals** (you can self-merge once checks pass; no second human needed for solo work).
-- Required status checks (all must pass): `Frontend build`, `Rust check`, `CodeQL`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR.)
+- Required status checks (all must pass): `Frontend build`, `Rust check`, `CodeQL`, `E2E (Playwright)`. (Require the **aggregate** `CodeQL` check, not the individual `Analyze (<lang>)` jobs — those are matched ambiguously by branch protection and get stuck as "expected", which blocks every PR.) The `E2E (Playwright)` job runs daemon-less (`COVEN_CAVE_E2E=1`), so e2e specs must be self-contained — dismiss onboarding (`cave:onboarding:dismissed=1`) and drive surfaces via demo mode / route mocks rather than a live daemon.
 - `enforce_admins = true` — admins are **not** exempt.
 - Force-pushes and deletion of `main` are blocked.
 
