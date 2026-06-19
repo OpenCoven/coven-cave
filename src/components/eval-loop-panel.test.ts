@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./eval-loop-panel.tsx", import.meta.url), "utf8");
+const skillsRoute = readFileSync(new URL("../app/api/skills/route.ts", import.meta.url), "utf8");
 const evalLoopRoute = readFileSync(new URL("../app/api/skills/eval-loop/[familiarId]/route.ts", import.meta.url), "utf8");
 const evalLoopRunRoute = readFileSync(new URL("../app/api/skills/eval-loop/[familiarId]/run/route.ts", import.meta.url), "utf8");
 
@@ -40,6 +41,18 @@ assert.doesNotMatch(
   evalLoopRoute,
   /\{\s*status:\s*503\s*\}/,
   "inactive/offline eval-loop reads should not create browser-console 503 noise",
+);
+
+assert.match(
+  skillsRoute,
+  /NextResponse\.json\([\s\S]*?ok: false,[\s\S]*?skills: \[\]/,
+  "offline skills reads should return a quiet ok:false payload",
+);
+
+assert.doesNotMatch(
+  skillsRoute,
+  /\{\s*status:\s*503\s*\}/,
+  "offline skills reads should not create browser-console 503 noise",
 );
 
 assert.match(
