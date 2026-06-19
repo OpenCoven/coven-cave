@@ -217,23 +217,62 @@ assert.match(
   "mobile terminal icon and close buttons should meet the shared touch target",
 );
 
-// Projects view: the file/navigation side and preview side should share the
-// project detail area evenly, and the preview should start at the top rather
-// than sitting below a full-width project header.
+// Projects view: the file/navigation side and preview side share the project
+// detail area, and each side can collapse into a thin rail.
 assert.match(
   source,
-  /className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-2"/,
-  "Projects detail should split file controls and preview 50/50 on desktop",
+  /className="flex min-h-0 flex-1 flex-col xl:flex-row"/,
+  "Projects detail should use a flexible split that can swap panes for rails",
 );
 assert.match(
   source,
-  /className="flex min-h-0 min-w-0 flex-col border-b border-\[var\(--border-hairline\)\] xl:border-b-0 xl:border-r"[\s\S]*?selectedProject\.name[\s\S]*?ProjectTree/,
+  /className="flex min-h-0 min-w-0 flex-col border-b border-\[var\(--border-hairline\)\] xl:flex-1 xl:border-b-0 xl:border-r"[\s\S]*?selectedProject\.name[\s\S]*?ProjectTree/,
   "Projects left half should own the project header and file tree",
 );
 assert.match(
   source,
-  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">[\s\S]*?previewPath/,
+  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\)\}\s*\{filePreviewCollapsed \? \([\s\S]*?<div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">[\s\S]*?previewPath/,
   "Projects preview pane should be the right full-height half of the split",
+);
+assert.match(
+  source,
+  /projectDetailCollapsed,\s*setProjectDetailCollapsed[\s\S]{0,80}useState\(false\)/,
+  "Projects detail pane should own collapse state",
+);
+assert.match(
+  source,
+  /filePreviewCollapsed,\s*setFilePreviewCollapsed[\s\S]{0,80}useState\(false\)/,
+  "File preview pane should own collapse state",
+);
+assert.match(
+  source,
+  /aria-label="Hide project details"[\s\S]*?setProjectDetailVisible\(false\)/,
+  "Projects detail header exposes a collapse control",
+);
+assert.match(
+  source,
+  /projectDetailCollapsed \? \([\s\S]*?<button[\s\S]*?aria-label="Show project details"[\s\S]*?className="flex min-h-\[34px\][^"]*xl:self-stretch[^"]*xl:border-r[^"]*"[\s\S]*?Details/,
+  "Collapsed project detail rail re-opens the details pane with a full-height click target",
+);
+assert.match(
+  source,
+  /aria-label="Hide file preview"[\s\S]*?setFilePreviewVisible\(false\)/,
+  "File preview header exposes a collapse control",
+);
+assert.match(
+  source,
+  /filePreviewCollapsed \? \([\s\S]*?<button[\s\S]*?aria-label="Show file preview"[\s\S]*?className="flex min-h-\[34px\][^"]*xl:self-stretch[^"]*xl:border-l[^"]*"[\s\S]*?Preview/,
+  "Collapsed file preview rail re-opens the preview pane with a full-height click target",
+);
+assert.match(
+  source,
+  /if \(!visible && filePreviewCollapsed\) setFilePreviewCollapsed\(false\)/,
+  "Collapsing project details should keep the preview side visible",
+);
+assert.match(
+  source,
+  /if \(!visible && projectDetailCollapsed\) setProjectDetailCollapsed\(false\)/,
+  "Collapsing file preview should keep the project details side visible",
 );
 
 // Projects file preview: visual formats should render as media, not an
