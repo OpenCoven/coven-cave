@@ -46,19 +46,19 @@ assert.match(
 );
 assert.match(codeView, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
 
-// ── Projects toggle collapses ONLY the projects list (not the whole code pane) ─
-// The toolbar's Projects button drives the comux projects-list column over a
-// window event; it must NOT collapse the code/comux Panel itself.
-assert.match(codeView, /onClick=\{toggleProjects\}/, "the toolbar has a Projects toggle");
+// ── The projects-list collapse lives in the list's OWN header (in comux) ──────
+// It collapses only the 200px projects column — never the code/comux Panel —
+// and a thin rail re-opens it. The Code toolbar no longer carries the toggle.
+assert.doesNotMatch(codeView, /toggleProjects|aria-label=\{?"?(Hide|Show) projects/i, "the collapse toggle is not in the Code toolbar anymore");
+assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(false\)\}/, "the projects-list header has a Hide control");
+assert.match(comux, /aria-label="Hide projects list"/, "the header collapse control is labelled");
+assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(true\)\}/, "a collapsed rail re-opens the projects list");
+assert.match(comux, /aria-label="Show projects list"/, "the re-open control is labelled");
+assert.match(comux, /projectListCollapsed \? \(/, "comux swaps the column for a thin rail when collapsed");
 assert.match(
-  codeView,
-  /const toggleProjects = \(\) => setProjectList\(!projectsCollapsed\)/,
-  "the toggle flips the projects-list collapse, nothing else",
-);
-assert.match(
-  codeView,
-  /new CustomEvent\(CODE_PROJECT_LIST_EVENT, \{ detail: \{ collapsed \} \}\)/,
-  "collapse is broadcast to comux over CODE_PROJECT_LIST_EVENT",
+  comux,
+  /const setProjectListVisible = useCallback\([\s\S]*?writeProjectListCollapsed\(!visible\)/,
+  "toggling visibility persists so a reload remembers it",
 );
 assert.doesNotMatch(
   codeView,
@@ -67,7 +67,7 @@ assert.doesNotMatch(
 );
 
 // Presets are task setups, not just widths: each broadcasts a context preset
-// and toggles the projects list (Chat focuses the conversation).
+// and shows/hides the projects list (Chat focuses the conversation).
 assert.match(
   codeView,
   /new CustomEvent\(CODE_PRESET_EVENT, \{ detail: \{ preset: next \} \}\)/,
@@ -75,12 +75,16 @@ assert.match(
 );
 assert.match(
   codeView,
-  /setProjectList\(CODE_PRESET_HIDES_PROJECT_LIST\[next\]\)/,
-  "a preset shows/hides the projects list per its definition",
+  /new CustomEvent\(CODE_PROJECT_LIST_EVENT, \{ detail: \{ collapsed \} \}\)/,
+  "a preset shows/hides the projects list over CODE_PROJECT_LIST_EVENT",
+);
+assert.match(
+  codeView,
+  /CODE_PRESET_HIDES_PROJECT_LIST\[next\]/,
+  "the preset's list visibility comes from its definition",
 );
 
 // ── comux reacts: hides the projects list + switches the right pane per preset ─
-assert.match(comux, /projectListCollapsed \? null : \(/, "comux hides the projects list column when collapsed");
 assert.match(comux, /addEventListener\(CODE_PROJECT_LIST_EVENT/, "comux listens for the projects-list toggle");
 assert.match(comux, /addEventListener\(CODE_PRESET_EVENT/, "comux listens for the layout preset");
 assert.match(

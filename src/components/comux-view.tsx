@@ -16,6 +16,7 @@ import {
   CODE_PRESET_RIGHT_VIEW,
   CODE_PROJECT_LIST_EVENT,
   readProjectListCollapsed,
+  writeProjectListCollapsed,
   type CodePreset,
 } from "@/lib/code-layout-preset";
 import type { SearchResult } from "@/lib/project-search";
@@ -634,6 +635,14 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     };
   }, [view]);
 
+  // Show/hide the projects list from its own header (and the collapsed rail).
+  // Persists so a reload remembers; the Code presets also drive this over the
+  // event above.
+  const setProjectListVisible = useCallback((visible: boolean) => {
+    setProjectListCollapsed(!visible);
+    writeProjectListCollapsed(!visible);
+  }, []);
+
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;
     void copyText(preview.content).then(() => {
@@ -1050,14 +1059,42 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       ) : (
         /* Project tab */
         <div className="flex flex-1 min-h-0">
-          {/* Project list — hidden via the Code toolbar's Projects toggle / Chat preset */}
-          {projectListCollapsed ? null : (
+          {/* Project list — collapse from its own header; a thin rail re-opens it.
+              The Code layout presets also drive this (Chat hides it). */}
+          {projectListCollapsed ? (
+          <div className="flex w-[34px] shrink-0 flex-col items-center gap-2 border-r border-[var(--border-hairline)] py-2">
+            <button
+              type="button"
+              onClick={() => setProjectListVisible(true)}
+              aria-label="Show projects list"
+              title="Show projects list"
+              className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:sidebar-simple" width={15} />
+            </button>
+            <span
+              className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]"
+              style={{ writingMode: "vertical-rl" }}
+            >
+              Projects
+            </span>
+          </div>
+          ) : (
           <div className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] py-2 text-[12px]">
             <div className="mb-1 flex items-center gap-1.5 px-3 pb-1">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Projects</span>
-              <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
+              <span className="rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
                 {projects.length}
               </span>
+              <button
+                type="button"
+                onClick={() => setProjectListVisible(false)}
+                aria-label="Hide projects list"
+                title="Hide projects list"
+                className="ml-auto grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:sidebar-simple-fill" width={13} />
+              </button>
             </div>
             <div className="space-y-px px-1">
               {projects.map((project) => {
