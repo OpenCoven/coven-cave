@@ -57,14 +57,14 @@ assert.doesNotMatch(
   "Familiars subpage should not appear as a Work navigation row",
 );
 
-// The horizontal dock is replaced by a single profile switcher. The sidebar
-// header mounts FamiliarSwitcher (the same control also renders in the mobile
-// top bar) wired to the nullable familiar scope.
+// The horizontal dock is gone, and the profile switcher no longer lives in the
+// left panel either: familiar scope selection moved to the desktop top menu bar
+// (FamiliarMenuBar) and the mobile top bar, leaving the sidebar as pure nav.
 assert.doesNotMatch(source, /<FamiliarDock/, "the old horizontal familiar dock is gone");
-assert.match(
+assert.doesNotMatch(
   source,
-  /<FamiliarSwitcher[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onSelectFamiliar=\{onFamiliarScopeChange\}/,
-  "Sidebar header mounts the familiar profile switcher wired to scope",
+  /<FamiliarSwitcher/,
+  "the familiar switcher is no longer mounted in the left sidebar (it lives in the top bars)",
 );
 assert.match(
   source,
