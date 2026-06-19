@@ -425,9 +425,9 @@ function ShellInner({
       <Panel
         id="nav"
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
-        defaultSize="18%"
+        defaultSize="24%"
         minSize="14%"
-        maxSize="25%"
+        maxSize="28%"
         collapsible
         collapsedSize={0}
         panelRef={navRef}
