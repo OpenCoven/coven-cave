@@ -502,7 +502,15 @@
 }
 
 .canvas-artifact-resizer__handle:hover {
-  transform: scale(1.08);
+  transform: scale(1.12);
+  opacity: 1;
+}
+
+/* While a resize drag is in flight the cursor must keep tracking the handle even
+   as it sweeps across an artifact preview — the sandboxed iframe would otherwise
+   swallow the pointer and stall the drag. */
+.canvas-view.is-resizing .canvas-artifact__frame {
+  pointer-events: none;
 }
 
 .canvas-artifact__frame {
