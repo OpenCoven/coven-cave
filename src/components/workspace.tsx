@@ -1705,6 +1705,9 @@ export function Workspace() {
             activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
             familiarOptions={resolvedFamiliars}
             onSelectFamiliar={selectFamiliarScope}
+            onStartChat={() => startFamiliarChat(activeId)}
+            onViewTasks={() => setMode("board")}
+            taskCount={boardTaskCount}
             sessions={sessions}
             responseNeeded={responseNeeded}
             familiarSwitcherLabeled={mode === "chat"}

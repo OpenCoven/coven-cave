@@ -4543,6 +4543,31 @@ button:active > .edge-rail-chip {
   color: var(--text-primary);
 }
 
+/* Tasks quick action (folded in from the desktop menu bar) — an icon button
+   with a small open-task count badge. */
+.top-bar__tasks {
+  position: relative;
+}
+
+.top-bar__tasks-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-presence-foreground);
+  background: color-mix(in oklch, var(--accent-presence) 65%, transparent);
+  pointer-events: none;
+}
+
 /* Mobile drawer toggles. Hidden on desktop; CSS @media block below
    reveals them and gives them a 44px hit area. The TopBar omits them
    from JSX when the surface has no relevant pane (e.g. two-pane modes

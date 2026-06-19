@@ -133,4 +133,34 @@ assert.match(
   "Selection handler is nullable so the menu can scope to all familiars",
 );
 
+// Mobile quick actions folded in from the desktop menu bar: New chat + Tasks.
+// (The top bar is the single mobile bar — display:none on desktop — so these
+// render only on mobile; the inbox stays on the NotificationBell, the switcher
+// is already present, so nothing is duplicated.)
+assert.match(
+  source,
+  /onStartChat\?: \(\) => void/,
+  "Top bar accepts a New chat handler for the mobile quick action",
+);
+assert.match(
+  source,
+  /onViewTasks\?: \(\) => void/,
+  "Top bar accepts a View tasks handler for the mobile quick action",
+);
+assert.match(
+  source,
+  /onStartChat \?[\s\S]*aria-label="New chat"[\s\S]*ph:chat-circle-dots/,
+  "Top bar renders a New chat button when wired",
+);
+assert.match(
+  source,
+  /onViewTasks \?[\s\S]*className="top-bar__icon-btn top-bar__tasks"[\s\S]*onClick=\{onViewTasks\}/,
+  "Top bar renders a Tasks button when wired",
+);
+assert.match(
+  source,
+  /taskCount && taskCount > 0 \? \(\s*<span className="top-bar__tasks-badge">/,
+  "Tasks button shows an open-task count badge, hidden at zero",
+);
+
 console.log("top-bar.test.ts: ok");
