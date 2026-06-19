@@ -43,7 +43,7 @@ assert.match(
 
 assert.match(
   source,
-  /function retryLastSend\(\)[\s\S]*sendRaw\(lastFailedSend\.text,\s*lastFailedSend\.attachments\b/,
+  /function retryLastSend\(\)[\s\S]*sendRaw\(\s*lastFailedSend\.text,\s*lastFailedSend\.attachments\b/,
   "ChatView should expose a retry action that resends the failed prompt and attachments",
 );
 
