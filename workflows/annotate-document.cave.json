@@ -1,25 +1,33 @@
 {
   "version": 1,
   "positions": {
-    "intake": {
+    "input": {
       "x": 80,
       "y": 80
     },
+    "intake": {
+      "x": 320,
+      "y": 80
+    },
     "read-pass": {
-      "x": 80,
-      "y": 220
+      "x": 560,
+      "y": 80
     },
     "annotate-claims": {
-      "x": 80,
-      "y": 360
+      "x": 800,
+      "y": 80
     },
     "verify-citations": {
-      "x": 80,
-      "y": 500
+      "x": 1040,
+      "y": 80
     },
     "save-notes": {
-      "x": 80,
-      "y": 640
+      "x": 1280,
+      "y": 80
+    },
+    "output": {
+      "x": 1520,
+      "y": 80
     }
   }
 }

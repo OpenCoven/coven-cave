@@ -1,25 +1,33 @@
 {
   "version": 1,
   "positions": {
-    "select-cluster": {
+    "input": {
       "x": 80,
       "y": 80
     },
+    "select-cluster": {
+      "x": 320,
+      "y": 80
+    },
     "extract-source-notes": {
-      "x": 80,
-      "y": 220
+      "x": 560,
+      "y": 80
     },
     "compare-claims": {
-      "x": 80,
-      "y": 360
+      "x": 800,
+      "y": 80
     },
     "write-synthesis": {
-      "x": 80,
-      "y": 500
+      "x": 1040,
+      "y": 80
     },
     "save-synthesis": {
-      "x": 80,
-      "y": 640
+      "x": 1280,
+      "y": 80
+    },
+    "output": {
+      "x": 1520,
+      "y": 80
     }
   }
 }

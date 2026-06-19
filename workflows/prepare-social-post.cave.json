@@ -1,25 +1,33 @@
 {
   "version": 1,
   "positions": {
-    "brief": {
+    "input": {
       "x": 80,
       "y": 80
     },
+    "brief": {
+      "x": 320,
+      "y": 80
+    },
     "draft-posts": {
-      "x": 80,
-      "y": 220
+      "x": 560,
+      "y": 80
     },
     "check-claims": {
-      "x": 80,
-      "y": 360
+      "x": 800,
+      "y": 80
     },
     "approval-gate": {
-      "x": 80,
-      "y": 500
+      "x": 1040,
+      "y": 80
     },
     "store-state": {
-      "x": 80,
-      "y": 640
+      "x": 1280,
+      "y": 80
+    },
+    "output": {
+      "x": 1520,
+      "y": 80
     }
   }
 }

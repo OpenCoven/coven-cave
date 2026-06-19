@@ -1,25 +1,33 @@
 {
   "version": 1,
   "positions": {
-    "load-library": {
+    "input": {
       "x": 80,
       "y": 80
     },
+    "load-library": {
+      "x": 320,
+      "y": 80
+    },
     "classify-items": {
-      "x": 80,
-      "y": 220
+      "x": 560,
+      "y": 80
     },
     "prioritize-queue": {
-      "x": 80,
-      "y": 360
+      "x": 800,
+      "y": 80
     },
     "prune-gate": {
-      "x": 80,
-      "y": 500
+      "x": 1040,
+      "y": 80
     },
     "update-list": {
-      "x": 80,
-      "y": 640
+      "x": 1280,
+      "y": 80
+    },
+    "output": {
+      "x": 1520,
+      "y": 80
     }
   }
 }

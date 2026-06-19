@@ -1,33 +1,37 @@
 {
   "version": 1,
   "positions": {
-    "scope-question": {
+    "input": {
       "x": 80,
       "y": 80
     },
-    "gather-primary": {
+    "scope-question": {
       "x": 320,
       "y": 80
     },
-    "gather-local": {
-      "x": 320,
-      "y": 220
-    },
-    "map-claims": {
+    "gather-primary": {
       "x": 560,
       "y": 80
     },
-    "synthesize": {
+    "gather-local": {
+      "x": 560,
+      "y": 220
+    },
+    "map-claims": {
       "x": 800,
       "y": 80
     },
-    "deliver": {
+    "synthesize": {
       "x": 1040,
       "y": 80
     },
-    "step-7": {
-      "x": 227.94640160550526,
-      "y": 368.9597331233512
+    "deliver": {
+      "x": 1280,
+      "y": 80
+    },
+    "output": {
+      "x": 1520,
+      "y": 80
     }
   }
 }
