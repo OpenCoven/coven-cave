@@ -1,9 +1,10 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { Popover } from "@/components/ui/popover";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
@@ -19,6 +20,8 @@ type Props = {
   inboxCount: number;
   /** Start a chat with a familiar (`null` = the active/default familiar). */
   onChatWithFamiliar: (id: string | null) => void;
+  /** Start a chat with a familiar and an opening message (auto-sent on entry). */
+  onComposeChat: (id: string | null, prompt: string) => void;
   /** Change the active-familiar scope (the switcher menu's "All"/per-familiar). */
   onSelectFamiliar: (id: string | null) => void;
   /** Jump to the task board. */
@@ -50,6 +53,7 @@ export function FamiliarMenuBar({
   taskCount,
   inboxCount,
   onChatWithFamiliar,
+  onComposeChat,
   onSelectFamiliar,
   onViewTasks,
   onViewInbox,
@@ -99,15 +103,12 @@ export function FamiliarMenuBar({
           </ul>
         ) : null}
 
-        <button
-          type="button"
-          className="menu-bar__new focus-ring"
-          onClick={() => onChatWithFamiliar(activeFamiliarId)}
-          aria-label="Start a new chat"
-        >
-          <Icon name="ph:chat-circle-dots" width={14} aria-hidden />
-          <span>New chat</span>
-        </button>
+        <NewChatMenu
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId}
+          onChatWithFamiliar={onChatWithFamiliar}
+          onComposeChat={onComposeChat}
+        />
       </div>
 
       <div className="menu-bar__group menu-bar__group--tasks">
@@ -135,5 +136,131 @@ export function FamiliarMenuBar({
         </button>
       </div>
     </nav>
+  );
+}
+
+/**
+ * The "New chat" control: a button that opens a small quick-chat dropdown — pick
+ * a familiar and (optionally) type an opening message. Submitting with text
+ * starts the chat and auto-sends the message; submitting empty just opens a
+ * blank chat with the selected familiar.
+ */
+function NewChatMenu({
+  familiars,
+  activeFamiliarId,
+  onChatWithFamiliar,
+  onComposeChat,
+}: {
+  familiars: ResolvedFamiliar[];
+  activeFamiliarId: string | null;
+  onChatWithFamiliar: (id: string | null) => void;
+  onComposeChat: (id: string | null, prompt: string) => void;
+}) {
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(activeFamiliarId);
+
+  // Each time the dropdown opens, default the selection to the active familiar
+  // (or the first one) and focus the composer so you can type straight away.
+  useEffect(() => {
+    if (!open) return;
+    setSelectedId(activeFamiliarId ?? familiars[0]?.id ?? null);
+    const t = window.setTimeout(() => textareaRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [open, activeFamiliarId, familiars]);
+
+  const selectedName = familiars.find((f) => f.id === selectedId)?.display_name ?? "a familiar";
+
+  const autoGrow = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, []);
+
+  const handleStart = useCallback(() => {
+    const prompt = text.trim();
+    if (prompt) onComposeChat(selectedId, prompt);
+    else onChatWithFamiliar(selectedId);
+    setText("");
+    setOpen(false);
+  }, [text, selectedId, onComposeChat, onChatWithFamiliar]);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // plain Enter sends; Shift+Enter inserts a newline
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleStart();
+      }
+    },
+    [handleStart],
+  );
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="menu-bar__new focus-ring"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Start a new chat"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <Icon name="ph:chat-circle-dots" width={14} aria-hidden />
+        <span>New chat</span>
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={triggerRef}
+        placement="bottom-start"
+        minWidth={300}
+        className="menu-bar__compose"
+      >
+        <div className="menu-bar__compose-row">
+          <label className="menu-bar__compose-label" htmlFor="menu-bar-compose-familiar">
+            To
+          </label>
+          <select
+            id="menu-bar-compose-familiar"
+            className="menu-bar__compose-select"
+            value={selectedId ?? ""}
+            onChange={(e) => setSelectedId(e.target.value || null)}
+          >
+            {familiars.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <textarea
+          ref={textareaRef}
+          className="menu-bar__compose-input"
+          placeholder={`Ask ${selectedName} anything…`}
+          rows={3}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            autoGrow();
+          }}
+          onKeyDown={handleKeyDown}
+          aria-label="Message"
+          enterKeyHint="send"
+        />
+        <div className="menu-bar__compose-actions">
+          <button type="button" className="menu-bar__compose-send focus-ring" onClick={handleStart}>
+            <span>Open chat</span>
+            <kbd className="menu-bar__compose-kbd" aria-hidden>
+              ↵
+            </kbd>
+          </button>
+        </div>
+      </Popover>
+    </>
   );
 }

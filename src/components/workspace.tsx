@@ -1690,6 +1690,7 @@ export function Workspace() {
               taskCount={boardTaskCount}
               inboxCount={inboxBadgeCount}
               onChatWithFamiliar={(id) => startFamiliarChat(id)}
+              onComposeChat={(id, prompt) => startFamiliarChat(id, null, prompt)}
               onSelectFamiliar={selectFamiliarScope}
               onViewTasks={() => setMode("board")}
               onViewInbox={() => setMode("inbox")}
