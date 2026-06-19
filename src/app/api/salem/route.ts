@@ -23,7 +23,8 @@ const MAX_CHUNK_CHARS = 1200;
 const CHAT_API_URL = (
   process.env.SALEM_CHAT_API_URL ?? "https://salem.opencoven.ai"
 ).replace(/\/+$/, "");
-const CHAT_API_TIMEOUT_MS = 25_000;
+const CHAT_API_CONNECT_TIMEOUT_MS = 20_000;
+const CHAT_API_TIMEOUT_MS = 45_000;
 
 /**
  * Ask the upstream opencoven-chat-api and aggregate its streamed text/plain
@@ -32,9 +33,8 @@ const CHAT_API_TIMEOUT_MS = 25_000;
  */
 async function askChatApi(message: string): Promise<string | null> {
   try {
-    const connectTimeoutMs = 2_500;
     const controller = new AbortController();
-    const connectTimer = setTimeout(() => controller.abort(), connectTimeoutMs);
+    const connectTimer = setTimeout(() => controller.abort(), CHAT_API_CONNECT_TIMEOUT_MS);
 
     const res = await fetch(`${CHAT_API_URL}/api/chat`, {
       method: "POST",

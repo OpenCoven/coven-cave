@@ -61,6 +61,9 @@ const route = await readFile(path.join(root, "src/app/api/salem/route.ts"), "utf
 assert.match(route, /POST/, "must export POST handler");
 assert.match(route, /GET/, "must expose preloaded context to the widget");
 assert.match(route, /SALEM_PRELOAD_CONTEXT/, "must use shared preload context");
+assert.match(route, /CHAT_API_CONNECT_TIMEOUT_MS\s*=\s*20_000/, "Salem upstream chat API connect timeout must allow the hosted stream to start");
+assert.match(route, /CHAT_API_TIMEOUT_MS\s*=\s*45_000/, "Salem upstream chat API stream timeout must allow full hosted replies");
+assert.doesNotMatch(route, /const connectTimeoutMs = 2_500/, "Salem must not abort the upstream chat API before it can stream");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
 assert.match(route, /plugin|Plugin/, "must know about plugins");
