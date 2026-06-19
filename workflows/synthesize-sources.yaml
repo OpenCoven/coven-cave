@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: select-cluster
     kind: agent
     name: Select source cluster
     uses: sage
     summary: Identify the topic cluster and confirm enough sources are ready for synthesis.
+    requires:
+      - input
   - id: extract-source-notes
     kind: agent
     name: Extract source notes
@@ -52,3 +58,9 @@ steps:
     summary: Save the synthesis doc and update library metadata for retrieval.
     requires:
       - write-synthesis
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - save-synthesis

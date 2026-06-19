@@ -18,11 +18,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: classify-task
     kind: agent
     name: Classify task
     uses: astra
     summary: Identify whether the work is research, implementation, memory, comms, strategy, or orchestration.
+    requires:
+      - input
   - id: map-dependencies
     kind: agent
     name: Map dependencies
@@ -51,3 +57,9 @@ steps:
     summary: Emit context, acceptance criteria, stop conditions, owner, and next action.
     requires:
       - escalation-check
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - handoff

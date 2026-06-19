@@ -7,7 +7,39 @@ const {
   validateWorkflow,
   dryRunWorkflow,
   workflowIssueSummary,
+  workflowRunBlockReason,
+  workflowInputSteps,
+  workflowOutputSteps,
 } = await import("./workflows.ts");
+
+// I/O contract gate: needs both an input and an output node to be runnable.
+{
+  const wf = (steps) => ({ id: "w", version: "1", steps });
+  assert.match(
+    workflowRunBlockReason(wf([{ id: "a", kind: "agent" }])),
+    /input node and an output node/,
+    "no I/O nodes ⇒ blocked for both",
+  );
+  assert.match(
+    workflowRunBlockReason(wf([{ id: "i", kind: "input" }, { id: "a", kind: "agent" }])),
+    /output node/,
+    "input only ⇒ blocked on output",
+  );
+  assert.match(
+    workflowRunBlockReason(wf([{ id: "a", kind: "agent" }, { id: "o", kind: "output" }])),
+    /input node/,
+    "output only ⇒ blocked on input",
+  );
+  assert.equal(
+    workflowRunBlockReason(wf([{ id: "i", kind: "input" }, { id: "o", kind: "output" }])),
+    null,
+    "input + output ⇒ runnable",
+  );
+  assert.equal(workflowRunBlockReason(null), "Select a workflow first.", "null workflow is blocked");
+  const both = wf([{ id: "i", kind: "input" }, { id: "a", kind: "agent" }, { id: "o", kind: "output" }]);
+  assert.equal(workflowInputSteps(both).length, 1, "finds the input node");
+  assert.equal(workflowOutputSteps(both).length, 1, "finds the output node");
+}
 
 {
   assert.equal(

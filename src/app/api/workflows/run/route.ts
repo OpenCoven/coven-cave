@@ -6,7 +6,7 @@ import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
-import type { WorkflowSummary } from "@/lib/workflows";
+import { workflowRunBlockReason, type WorkflowSummary } from "@/lib/workflows";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +59,17 @@ export async function POST(req: Request) {
 
   if (!body.id && !body.path) {
     return NextResponse.json({ ok: false, error: "id or path required" }, { status: 400 });
+  }
+
+  // I/O contract gate: refuse to run a workflow with no input node (no defined
+  // input) or no output node (no produced artifact). Enforced here so the rule
+  // holds for any caller, not just the Studio's Play button.
+  const gateWorkflow = await resolveWorkflow(body);
+  if (gateWorkflow) {
+    const blocked = workflowRunBlockReason(gateWorkflow);
+    if (blocked) {
+      return NextResponse.json({ ok: false, error: blocked }, { status: 400 });
+    }
   }
 
   // 1. Native daemon engine first (forward-compatible).

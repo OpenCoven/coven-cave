@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: load-library
     kind: agent
     name: Load library context
     uses: sage
     summary: Read current bookmarks, reading statuses, collections, and active project needs.
+    requires:
+      - input
   - id: classify-items
     kind: agent
     name: Classify items
@@ -52,3 +58,9 @@ steps:
     summary: Save the curated list with rationale, tags, and next reading actions.
     requires:
       - prune-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - update-list

@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: gather-context
     kind: agent
     name: Gather context
     uses: nova
     summary: Read requirements, existing architecture, repo boundaries, and relevant memory.
+    requires:
+      - input
   - id: define-boundaries
     kind: agent
     name: Define boundaries
@@ -59,3 +65,9 @@ steps:
     summary: Prepare a scoped plan with tasks, tests, gates, and handoff criteria.
     requires:
       - approval-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - implementation-plan

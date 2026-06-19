@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: intake-packet
     kind: agent
     name: Intake packet
     uses: echo
     summary: Read curated notes, project summaries, and explicit retrospective scope.
+    requires:
+      - input
   - id: extract-decisions
     kind: agent
     name: Extract decisions
@@ -52,3 +58,9 @@ steps:
     summary: Save the retrospective with decisions, open loops, and memory-review notes.
     requires:
       - propose-memory
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - write-retro

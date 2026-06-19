@@ -18,11 +18,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: gather-status
     kind: agent
     name: Gather status
     uses: charm
     summary: Collect issue, release, support, or community context plus current project status.
+    requires:
+      - input
   - id: verify-facts
     kind: agent
     name: Verify facts
@@ -51,3 +57,9 @@ steps:
     summary: Save the reply draft and approval state for the target surface.
     requires:
       - approval-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - save-draft

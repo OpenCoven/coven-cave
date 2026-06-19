@@ -33,6 +33,8 @@ assert.equal(graph.nodes[0].data.kind, "human-gate", "node data preserves step k
 assert.equal(graph.nodes[0].data.tone, "gate", "human gates use gate tone");
 assert.equal(graph.nodes[1].position.x > graph.nodes[0].position.x, true, "nodes are laid out left to right");
 assert.equal(workflowNodeTone("workflow"), "workflow", "nested workflow nodes get workflow tone");
+assert.equal(workflowNodeTone("input"), "input", "input nodes get input tone");
+assert.equal(workflowNodeTone("output"), "output", "output nodes get output tone");
 
 const verticalGraph = workflowToGraph(workflow, undefined, undefined, "vertical");
 assert.equal(

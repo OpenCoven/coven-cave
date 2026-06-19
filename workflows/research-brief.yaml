@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: scope-question
     kind: agent
     name: Scope question
     uses: sage
     summary: Define the research question, decision context, constraints, and evidence standard.
+    requires:
+      - input
   - id: gather-primary
     kind: agent
     name: Gather primary sources
@@ -60,3 +66,9 @@ steps:
     summary: Save the cited brief and next-step recommendations.
     requires:
       - synthesize
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - deliver

@@ -702,6 +702,11 @@
   outline-offset: 2px;
 }
 
+.workflow-node-input {
+  border-color: #4f9d69;
+  border-left-width: 3px;
+}
+
 .workflow-node-agent {
   border-color: #6b8fbf;
 }
@@ -720,6 +725,7 @@
 
 .workflow-node-output {
   border-color: #5f9ea0;
+  border-right-width: 3px;
 }
 
 .workflow-node-unknown {
@@ -988,6 +994,8 @@
   opacity: 0.45;
 }
 
+.workflow-palette-input { border-left: 3px solid #4f9d69; }
+.workflow-palette-output { border-left: 3px solid #5f9ea0; }
 .workflow-palette-agent { border-left: 3px solid color-mix(in oklch, var(--color-info, #6aa6ff) 70%, transparent); }
 .workflow-palette-tool { border-left: 3px solid color-mix(in oklch, var(--color-success, #57c878) 70%, transparent); }
 .workflow-palette-gate { border-left: 3px solid color-mix(in oklch, var(--color-warning, #d9a13c) 70%, transparent); }

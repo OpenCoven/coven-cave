@@ -1,6 +1,6 @@
 import type { WorkflowDryRunPlan, WorkflowStepKind, WorkflowStepSummary, WorkflowSummary } from "./workflows.ts";
 
-export type WorkflowNodeTone = "agent" | "gate" | "tool" | "workflow" | "output" | "unknown";
+export type WorkflowNodeTone = "input" | "agent" | "gate" | "tool" | "workflow" | "output" | "unknown";
 
 export type WorkflowGraphNodeData = {
   label: string;
@@ -39,6 +39,7 @@ export type WorkflowGraph = {
 export type WorkflowLayoutDirection = "horizontal" | "vertical";
 
 export function workflowNodeTone(kind: WorkflowStepKind): WorkflowNodeTone {
+  if (kind === "input") return "input";
   if (kind === "agent") return "agent";
   if (kind === "human-gate") return "gate";
   if (kind === "skill" || kind === "tool") return "tool";

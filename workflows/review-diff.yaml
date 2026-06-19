@@ -19,11 +19,17 @@ visibility:
   coven_cave: true
   coven_code: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: load-context
     kind: agent
     name: Load context
     uses: cody
     summary: Read the diff, requirements, related tests, and touched ownership boundaries.
+    requires:
+      - input
   - id: inspect-behavior
     kind: agent
     name: Inspect behavior
@@ -53,3 +59,9 @@ steps:
     summary: Lead with actionable findings by severity, then questions and residual risk.
     requires:
       - adversarial-pass
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - report-findings

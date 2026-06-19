@@ -20,11 +20,17 @@ visibility:
   coven_cave: true
   coven_code: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: gate
     kind: human-gate
     name: Val approval
     uses: valentina
     summary: Hold until Val approves cutting the release.
+    requires:
+      - input
   - id: review
     kind: agent
     name: Nova review
@@ -46,3 +52,9 @@ steps:
     summary: Produce the human-facing release brief.
     requires:
       - lint
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - brief

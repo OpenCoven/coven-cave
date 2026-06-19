@@ -18,11 +18,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: scan-items
     kind: agent
     name: Scan items
     uses: sage
     summary: Read target library entries, current tags, collections, titles, and statuses.
+    requires:
+      - input
   - id: normalize-metadata
     kind: agent
     name: Normalize metadata
@@ -58,3 +64,9 @@ steps:
     summary: Save metadata updates and a short rationale for future retrieval.
     requires:
       - deletion-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - write-library

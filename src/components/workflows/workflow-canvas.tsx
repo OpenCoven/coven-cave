@@ -106,6 +106,7 @@ function workflowMiniMapNodeColor(node: Node): string {
   const data = node.data as Partial<WorkflowGraphNodeData> | undefined;
   if (data?.status === "blocked") return "#b95050";
   if (data?.status === "ready") return "#3f8f5b";
+  if (data?.tone === "input") return "#4f9d69";
   if (data?.tone === "agent") return "#6b8fbf";
   if (data?.tone === "gate") return "#b5892f";
   if (data?.tone === "tool") return "#7c9b70";

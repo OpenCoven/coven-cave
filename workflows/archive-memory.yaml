@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: collect-context
     kind: agent
     name: Collect context
     uses: echo
     summary: Gather daily notes, decisions, open loops, and relevant project summaries.
+    requires:
+      - input
   - id: separate-records
     kind: agent
     name: Separate records
@@ -52,3 +58,9 @@ steps:
     summary: Save the approved archive packet with open loops and review notes.
     requires:
       - review-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - write-archive
