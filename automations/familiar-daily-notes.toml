@@ -1,0 +1,29 @@
+version = 1
+id = "familiar-daily-notes"
+kind = "cron"
+name = "Familiar Daily Notes"
+status = "PAUSED"
+rrule = "RRULE:FREQ=WEEKLY;BYHOUR=21;BYMINUTE=0;BYDAY=SU,MO,TU,WE,TH,FR,SA"
+reasoning_effort = "medium"
+execution_environment = "worktree"
+cwds = []
+tags = ["coven", "familiars", "daily-notes", "reflection"]
+prompt = '''Author today's Daily Note for every Coven familiar — the same notes surfaced in Cave under Familiars → a familiar → the "Daily Notes" tab.
+
+Storage & format (must match exactly so the Cave UI parses it):
+- One Markdown file per familiar per day at:
+  `~/.coven/workspaces/familiars/<familiarId>/notes/<YYYY-MM-DD>.md`
+- The file has exactly two level-2 sections, in this order:
+  `## Notes` — what the familiar actually worked on / observed today.
+  `## Self-reflection` — how the day went, from the familiar's own perspective.
+- A `# Daily Notes — <YYYY-MM-DD>` title line at the top is fine.
+
+Steps:
+1. Enumerate familiars from `~/.coven/familiars.toml` (plus the default ids), and resolve each workspace.
+2. Scaffold the factual digest first by running, from a Coven Cave checkout:
+   `node --experimental-strip-types scripts/generate-daily-notes.mjs`
+   This writes/refreshes each familiar's `## Notes` activity digest and seeds the reflection prompts (it never overwrites a note that already has content).
+3. For each familiar, review its day — recent sessions, memory changes, and inbox/board items tagged to it — and REPLACE the seeded reflection prompts with a genuine, first-person Self-reflection written as that familiar: what went well, what was hard, and what to try next time. Keep the `## Notes` digest factual.
+4. Only write to each familiar's own `notes/` directory. Do not touch other familiars' files, memory, or unrelated state.
+
+Deliverable: a one-line-per-familiar summary of which daily notes you wrote or updated, and any familiar whose day had nothing worth noting.'''

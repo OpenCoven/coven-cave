@@ -210,4 +210,16 @@ assert.match(
   "Overlay exposes modal dialog semantics",
 );
 
+assert.match(
+  source,
+  /\{ id: "daily-notes", label: "Daily Notes" \}/,
+  "Detail panel exposes a Daily Notes tab",
+);
+
+assert.match(
+  source,
+  /tab === "daily-notes" \? \(\s*<FamiliarDailyNotes familiar=\{familiar\} \/>/,
+  "Daily Notes tab renders FamiliarDailyNotes scoped to the selected familiar",
+);
+
 console.log("familiars-view: all assertions passed");
