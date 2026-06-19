@@ -163,6 +163,7 @@ type FailedSend = {
   text: string;
   attachments: ChatAttachment[];
   mentionedFiles?: string[];
+  promptOverride?: string;
 };
 type ComposerThinkingEffort = "low" | "medium" | "high";
 type ComposerResponseSpeed = "fast" | "balanced" | "careful";
@@ -2347,6 +2348,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       text: trimmed,
       attachments: outgoingAttachments,
       ...(outgoingMentions.length ? { mentionedFiles: outgoingMentions } : {}),
+      ...(opts?.promptOverride ? { promptOverride: opts.promptOverride } : {}),
     };
     setBusy(true);
     setError(null);
@@ -2499,7 +2501,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!lastFailedSend || busy) return;
     setError(null);
     setLastFailedSend(null);
-    void sendRaw(lastFailedSend.text, lastFailedSend.attachments, lastFailedSend.mentionedFiles ?? []);
+    void sendRaw(
+      lastFailedSend.text,
+      lastFailedSend.attachments,
+      lastFailedSend.mentionedFiles ?? [],
+      lastFailedSend.promptOverride ? { promptOverride: lastFailedSend.promptOverride } : undefined,
+    );
   }
 
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
