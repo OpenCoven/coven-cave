@@ -16,6 +16,14 @@ import { expect, test } from "@playwright/test";
 // "did the foundation land at all" canary.
 
 test.describe("mobile foundations", () => {
+  test.beforeEach(async ({ page }) => {
+    // On a fresh profile (CI) the onboarding overlay covers the app and
+    // intercepts clicks on the sidebar/shell — dismiss it before each test.
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    });
+  });
+
   test("viewport meta sets viewport-fit=cover", async ({ page }) => {
     await page.goto("/");
     const viewport = await page

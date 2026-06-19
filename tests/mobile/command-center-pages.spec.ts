@@ -30,6 +30,9 @@ test.describe("mobile command center pages", () => {
     test.skip(testInfo.project.name === "desktop", "mobile-only: requires .mobile-bottom-tabs");
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:active-familiar", "nova");
+      // On a fresh profile (CI) the onboarding overlay covers the app and
+      // intercepts pointer events — dismiss it so the shell is interactive.
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
     });
     await page.goto("/");
     await page.waitForSelector(".mobile-bottom-tabs");
