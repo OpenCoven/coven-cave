@@ -17,6 +17,48 @@ const DOCS_BASE = "https://docs.opencoven.ai";
 const TOP_K = 5;
 const MAX_CHUNK_CHARS = 1200;
 
+// Salem's real brain: the opencoven-chat-api (hybrid RAG + reranking + streamed
+// GPT answers). When reachable, its grounded reply is preferred over the local
+// token-overlap fallback below. Override the origin with SALEM_CHAT_API_URL.
+const CHAT_API_URL = (
+  process.env.SALEM_CHAT_API_URL ?? "https://salem.opencoven.ai"
+).replace(/\/+$/, "");
+const CHAT_API_TIMEOUT_MS = 25_000;
+
+/**
+ * Ask the upstream opencoven-chat-api and aggregate its streamed text/plain
+ * response into a single reply string. Returns null on any failure so the
+ * caller can fall back to local retrieval (Cave stays useful offline).
+ */
+async function askChatApi(message: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${CHAT_API_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+      signal: AbortSignal.timeout(CHAT_API_TIMEOUT_MS),
+    });
+
+    if (!res.ok || !res.body) return null;
+
+    // The chat API streams plain-text deltas; concatenate them.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+
+    const trimmed = text.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Module-level cache ────────────────────────────────────────────────────────
 
 type DocChunk = {
@@ -168,7 +210,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ reply: quick, preloadSummary: summarizePreload(), source: "static" });
     }
 
-    // Fetch + retrieve
+    // Primary path: ask the real opencoven-chat-api for a grounded, LLM-written
+    // answer. Falls through to local token-overlap retrieval if unreachable.
+    const apiReply = await askChatApi(message);
+    if (apiReply) {
+      return NextResponse.json({
+        reply: apiReply,
+        preloadSummary: summarizePreload(),
+        source: "chat-api",
+      });
+    }
+
+    // Fallback: fetch + local retrieve
     const { chunks, error: fetchError } = await getDocsChunks();
 
     if (chunks.length === 0) {
@@ -189,8 +242,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // Format top chunks as a grounded answer.
-    // If an LLM proxy becomes available at /api/llm, wire it in here.
+    // Format top chunks as a grounded answer (local fallback when the
+    // upstream chat-api is unreachable — see askChatApi above).
     const primary = topChunks[0];
     const extras = topChunks.slice(1, 3);
 
