@@ -73,6 +73,11 @@ assert.match(
 );
 assert.match(
   css,
+  /\.workflow-studio-side-content \.workflow-panel\s*\{[\s\S]*flex:\s*1 1 auto;/,
+  "Each detail section card should grow to fill the column height (full-height side surface, like the left library) — not float as a short card above empty space",
+);
+assert.match(
+  css,
   /\.workflow-manifest-preview\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
   "Workflow manifest preview should use a vertical flex layout",
 );
