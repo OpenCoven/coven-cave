@@ -4,6 +4,8 @@ import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandl
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
+import { extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
@@ -3613,6 +3615,44 @@ function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "s
   return <FamiliarAvatar familiar={resolved} size={size} />;
 }
 
+// Split a prose run into ordered segments, replacing every complete renderable
+// HTML/React fenced block with an inline ChatArtifactViewer. Text on either
+// side of a block is preserved as markdown. Returns a single text segment when
+// there's nothing renderable, so callers can detect "no artifacts".
+function splitTextForArtifacts(
+  text: string,
+  ctx: { familiarId: string | null },
+): MessageBubbleSegment[] {
+  const blocks = extractArtifactBlocks(text);
+  if (blocks.length === 0) return [{ kind: "text", text }];
+  const out: MessageBubbleSegment[] = [];
+  let cursor = 0;
+  blocks.forEach((b, i) => {
+    if (b.index > cursor) {
+      const pre = text.slice(cursor, b.index);
+      if (pre.trim()) out.push({ kind: "text", text: pre });
+    }
+    const preceding = text.slice(0, b.index).trim();
+    const title = preceding ? titleFromPrompt(preceding) : "Canvas artifact";
+    out.push({
+      kind: "block",
+      key: `artifact-${i}-${b.index}`,
+      node: (
+        <ChatArtifactViewer
+          initialCode={b.code}
+          kind={b.kind}
+          title={title}
+          familiarId={ctx.familiarId}
+        />
+      ),
+    });
+    cursor = b.index + b.length;
+  });
+  const tail = text.slice(cursor);
+  if (tail.trim()) out.push({ kind: "text", text: tail });
+  return out;
+}
+
 function TurnRow({
   turn,
   familiar,
@@ -3752,6 +3792,23 @@ function TurnRow({
         },
   );
 
+  // Auto-detect renderable artifacts and inject the tabbed viewer. Runs on
+  // SETTLED turns only (streaming shows plain code until the fence closes), and
+  // independently of showTools so the viewer appears even when tools are hidden.
+  const artifactCtx = { familiarId: familiar.id };
+  const expandArtifacts = (segs: MessageBubbleSegment[]): MessageBubbleSegment[] =>
+    segs.flatMap((seg) => (seg.kind === "text" ? splitTextForArtifacts(seg.text, artifactCtx) : [seg]));
+
+  let renderSegments: MessageBubbleSegment[] | undefined;
+  if (turn.pending) {
+    renderSegments = showTools ? bubbleSegments : undefined;
+  } else if (showTools && bubbleSegments) {
+    renderSegments = expandArtifacts(bubbleSegments);
+  } else {
+    const split = splitTextForArtifacts(visible, artifactCtx);
+    renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
+  }
+
   return (
     <div
       data-turn-id={turn.id}
@@ -3843,7 +3900,7 @@ function TurnRow({
                 // CHAT-D13-01: with tools hidden, fall back to plain content —
                 // the text segments concatenate to `visible` anyway, so prose
                 // renders identically with the tool blocks omitted.
-                segments={showTools ? bubbleSegments : undefined}
+                segments={renderSegments}
               />
             )}
             {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
