@@ -206,7 +206,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
             className="chat-artifact__code-edit"
             spellCheck={false}
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => { setCode(e.target.value); setSaveState("idle"); }}
           />
         ) : (
           <pre className="chat-artifact__code"><code>{code}</code></pre>
@@ -217,6 +217,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
         <Icon name="ph:sparkle" width={14} className="chat-artifact__refine-icon" />
         <input
           className="chat-artifact__refine-input"
+          aria-label="Refine artifact"
           placeholder={familiarId ? "Refine — describe a change…" : "Pick a familiar to refine"}
           value={refineText}
           disabled={!familiarId || generating}
