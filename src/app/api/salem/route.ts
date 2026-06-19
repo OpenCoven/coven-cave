@@ -291,7 +291,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const topChunks = retrieveTopK(chunks, messageForApi, TOP_K);
+    const topChunks = retrieveTopK(chunks, message, TOP_K);
 
     if (topChunks.length === 0) {
       return NextResponse.json({
