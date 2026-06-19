@@ -15,6 +15,16 @@ type GroupBy = "status" | "sourceType" | "none";
 const INLINE_STATUS_OPTIONS = ["want-to-read", "reading", "done"] as const;
 type InlineStatus = (typeof INLINE_STATUS_OPTIONS)[number];
 
+// Some legacy items were persisted with status "read" (and other variants)
+// before the canonical enum settled on "done". Fold them onto a toggle option
+// so the active segment renders correctly; the raw status is still what we
+// compare against on click, so re-picking the option heals it to "done".
+function toggleStatus(status: ReadingStatus | string): InlineStatus {
+  if (status === "read" || status === "done") return "done";
+  if (status === "reading") return "reading";
+  return "want-to-read";
+}
+
 // Inline 3-way status toggle: full label for the active state + tooltip, short
 // label for the segmented control, icon for the compact/touch layout.
 const STATUS_META: Record<InlineStatus, { label: string; short: string; icon: IconName }> = {
@@ -199,7 +209,7 @@ type Props = {
 
 const COLS: { key: SortKey; label: string; className: string; width?: string }[] = [
   { key: "title",   label: "Title",  className: "library-reading-col-title" },
-  { key: "status",  label: "Status", className: "library-reading-col-status", width: "128px" },
+  { key: "status",  label: "Status", className: "library-reading-col-status", width: "196px" },
   { key: "addedAt", label: "Added",  className: "library-reading-col-added",  width: "64px" },
 ];
 
@@ -411,7 +421,7 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                         >
                           {INLINE_STATUS_OPTIONS.map((status) => {
                             const meta = STATUS_META[status];
-                            const active = item.status === status;
+                            const active = toggleStatus(item.status) === status;
                             return (
                               <button
                                 key={status}
@@ -424,7 +434,9 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                                 title={meta.label}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (!active) void handleStatusChange(item, status);
+                                  // Compare raw status (not the folded one) so picking
+                                  // the active option on a legacy "read" item heals it.
+                                  if (item.status !== status) void handleStatusChange(item, status);
                                 }}
                               >
                                 <Icon name={meta.icon} width={13} aria-hidden />

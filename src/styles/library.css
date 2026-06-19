@@ -1330,7 +1330,11 @@ tr:focus-within .library-row-delete {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 1px;
 }
-.library-status-toggle__label { overflow: hidden; text-overflow: ellipsis; }
+/* The active segment owns its label and must never clip it; inactive
+   (icon-only) segments stay minimal so the control fits the status column. */
+.library-status-toggle__opt.is-active { padding: 0 10px; }
+.library-status-toggle__opt:not(.is-active) { padding: 0 7px; }
+.library-status-toggle__label { overflow: visible; white-space: nowrap; flex: 0 0 auto; }
 
 /* ── progress bar ──────────────────────────────────────────────── */
 .library-progress-bar {
