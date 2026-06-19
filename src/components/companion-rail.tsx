@@ -1,7 +1,10 @@
 "use client";
 
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { Icon } from "@/lib/icon";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { YoutubeViewer } from "@/components/youtube-viewer";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { Familiar } from "@/lib/types";
 
@@ -43,6 +46,10 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       hideChatTab = false,
     } = props;
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
+    // The Video tab is a toggle, not a mutually-exclusive section: when on, the
+    // YouTube viewer drops into a resizable bottom pane below the active tab's
+    // content rather than replacing it.
+    const [youtubeOpen, setYoutubeOpen] = useState(false);
     const requestedTab = activeTab ?? tab;
     const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "memory";
     const selectedTab =
@@ -86,6 +93,33 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       setTab(next);
       onTabChange?.(next);
     };
+
+    // The active tab's content. Rendered once; either fills the body or sits in
+    // the top pane of the split when the Video toggle is on.
+    const panes = (
+      <>
+        {!familiar || hideChatTab ? null : (
+          <div hidden={selectedTab !== "chat"} className="companion-rail__pane">
+            {chatSlot}
+          </div>
+        )}
+        {familiar ? (
+          <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
+            {memorySlot}
+          </div>
+        ) : null}
+        {browserSlot ? (
+          <div hidden={selectedTab !== "browser"} className="companion-rail__pane companion-rail__pane--browser">
+            {selectedTab === "browser" ? browserSlot : null}
+          </div>
+        ) : null}
+        {salemSlot ? (
+          <div hidden={selectedTab !== "salem"} className="companion-rail__pane">
+            {selectedTab === "salem" ? salemSlot : null}
+          </div>
+        ) : null}
+      </>
+    );
 
     return (
       <aside className="companion-rail">
@@ -136,28 +170,42 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
               <Icon name="ph:book-open" width={14} />
             </button>
           ) : null}
+          <button
+            type="button"
+            className={`companion-rail__tab${youtubeOpen ? " companion-rail__tab--active" : ""}`}
+            onClick={() => setYoutubeOpen((open) => !open)}
+            aria-pressed={youtubeOpen}
+            title="Video"
+          >
+            <Icon name="ph:video" width={14} />
+          </button>
         </nav>
         <div className="companion-rail__body">
-          {!familiar || hideChatTab ? null : (
-            <div hidden={selectedTab !== "chat"} className="companion-rail__pane">
-              {chatSlot}
-            </div>
+          {youtubeOpen ? (
+            <Group orientation="vertical" className="companion-rail__split">
+              <Panel
+                id="companion-rail-main"
+                minSize={20}
+                defaultSize={58}
+                className="companion-rail__split-pane"
+              >
+                {panes}
+              </Panel>
+              <Separator className="companion-rail__resize shrink-0" data-orientation="row">
+                <SeparatorHandle orientation="row" />
+              </Separator>
+              <Panel
+                id="companion-rail-youtube"
+                minSize={20}
+                defaultSize={42}
+                className="companion-rail__split-pane"
+              >
+                <YoutubeViewer />
+              </Panel>
+            </Group>
+          ) : (
+            panes
           )}
-          {familiar ? (
-            <div hidden={selectedTab !== "memory"} className="companion-rail__pane">
-              {memorySlot}
-            </div>
-          ) : null}
-          {browserSlot ? (
-            <div hidden={selectedTab !== "browser"} className="companion-rail__pane companion-rail__pane--browser">
-              {selectedTab === "browser" ? browserSlot : null}
-            </div>
-          ) : null}
-          {salemSlot ? (
-            <div hidden={selectedTab !== "salem"} className="companion-rail__pane">
-              {selectedTab === "salem" ? salemSlot : null}
-            </div>
-          ) : null}
         </div>
       </aside>
     );

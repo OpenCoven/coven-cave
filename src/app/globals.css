@@ -3469,6 +3469,101 @@ button:active > .edge-rail-chip {
   display: none;
 }
 
+/* ── Video toggle: active tab content on top, YouTube viewer in a resizable
+   bottom pane (the "Video" tab in the rail tab strip). ── */
+.companion-rail__split {
+  flex: 1;
+  min-height: 0;
+}
+
+.companion-rail__split-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.companion-rail__resize {
+  position: relative;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+.youtube-viewer {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--bg-panel);
+}
+
+.youtube-viewer__bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.youtube-viewer__icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.youtube-viewer__input {
+  min-width: 0;
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 40%, transparent);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+
+.youtube-viewer__input::placeholder {
+  color: var(--text-muted);
+}
+
+.youtube-viewer__load {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.youtube-viewer__load:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.youtube-viewer__error {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: var(--text-xs);
+  color: var(--color-danger, #f87171);
+}
+
+.youtube-viewer__frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+
+.youtube-viewer__frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
 /* ────────────────────────────────────────────────
    Rail-pane empty + memory styles
    (Phase 2, shell-ia-redesign)
