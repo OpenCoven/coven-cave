@@ -99,6 +99,17 @@ assert.match(
 // Generated kind is plumbed through to the stored artifact.
 assert.match(view, /kind\s*=\s*result\.kind/, "generation records the extracted artifact kind");
 
+// Refining generated artifacts must stay inside Cave's UI instead of using a
+// blocking browser prompt.
+assert.doesNotMatch(view, /window\.prompt/, "artifact refine must not use a native browser prompt");
+assert.match(view, /transformArtifactId,\s*setTransformArtifactId/, "artifact refine opens an in-app transform panel");
+assert.match(view, /Transform \{transformArtifact\?\.title \?\? "artifact"\}/, "transform panel names the target artifact");
+assert.match(view, /Apply change/, "transform panel uses a concrete action label");
+assert.match(view, /Cmd\+Enter/, "transform panel advertises the keyboard submit path");
+assert.match(view, /TRANSFORM_SUGGESTIONS\.map/, "transform panel offers quick transform chips");
+assert.match(view, /onClick=\{\(\) => setTransformAsk\(suggestion\.prompt\)\}/, "quick chips fill the transform textarea");
+assert.match(view, /submitTransform\(\)/, "transform panel submits through the refine generation path");
+
 // Artifacts persist to the canvas store via POST and delete via DELETE.
 assert.match(view, /method:\s*"POST"[\s\S]{0,120}artifact/, "artifacts upsert to /api/canvas via POST");
 assert.match(view, /method:\s*"DELETE"/, "deleting an artifact calls DELETE /api/canvas");
