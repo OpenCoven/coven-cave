@@ -11,6 +11,10 @@ const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url)
 const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const preset = await readFile(new URL("../lib/code-layout-preset.ts", import.meta.url), "utf8");
+// The Chat/Split/Review presets + companion-panel toggle now ride on the chat
+// surface's Sessions/Memory tab row, in a self-contained toolbar.
+const toolbar = await readFile(new URL("./code-inline-toolbar.tsx", import.meta.url), "utf8");
+const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 
 // ── CodeView is a two-pane resizable shell, chat | comux ─────────────────────
 assert.match(codeView, /orientation="horizontal"/, "CodeView lays the panes out horizontally");
@@ -32,19 +36,25 @@ assert.match(
 assert.match(codeView, /panelIds: \["code-chat", "code-comux"\]/, "desktop mounts both panels in the split");
 
 // ── Layout presets (Chat / Split / Review) re-weight the desktop split ───────
-// A preset toolbar resizes the chat panel imperatively (usePanelRef) — no
-// remount, so the comux terminals/preview keep their state. The chip selection
-// persists under its own key; pane sizes persist under CODE_GROUP_ID.
+// The preset chips live on the chat surface's tab row (CodeInlineToolbar) and
+// broadcast CODE_PRESET_EVENT; code-view owns the chat-panel resize via a
+// listener — no remount, so the comux terminals/preview keep their state. The
+// chip selection persists under its own key; pane sizes persist under CODE_GROUP_ID.
 assert.match(codeView, /usePanelRef/, "desktop uses a panel ref to drive presets");
 assert.match(codeView, /panelRef=\{chatPanelRef\}/, "the chat panel takes the preset handle via panelRef");
+assert.match(codeView, /addEventListener\(CODE_PRESET_EVENT/, "code-view listens for the preset broadcast");
 assert.match(codeView, /chatPanelRef\.current\?\.resize\(CODE_PRESET_CHAT_SIZE\[/, "presets resize the chat panel (comux fills the rest)");
-assert.match(codeView, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
+assert.match(toolbar, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
 assert.match(
   codeView,
   /codeStorage\.getItem\(CODE_GROUP_ID\) == null/,
   "the stored preset is applied only when no dragged layout exists (no clobbering manual drags)",
 );
-assert.match(codeView, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
+assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
+// The toolbar is mounted on the Code surface's tab row + carries the panel toggle.
+assert.match(chatSurface, /isCodeSurface \? <CodeInlineToolbar \/> : null/, "the Code tab row hosts the inline toolbar");
+assert.match(toolbar, /code-panel-toggle/, "the toolbar includes the companion-panel toggle");
+assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shell to toggle the companion panel");
 
 // ── The projects-list collapse lives in the list's OWN header (in comux) ──────
 // It collapses only the 200px projects column — never the code/comux Panel —
@@ -69,17 +79,17 @@ assert.doesNotMatch(
 // Presets are task setups, not just widths: each broadcasts a context preset
 // and shows/hides the projects list (Chat focuses the conversation).
 assert.match(
-  codeView,
+  toolbar,
   /new CustomEvent\(CODE_PRESET_EVENT, \{ detail: \{ preset: next \} \}\)/,
   "selecting a preset broadcasts the context preset",
 );
 assert.match(
-  codeView,
+  toolbar,
   /new CustomEvent\(CODE_PROJECT_LIST_EVENT, \{ detail: \{ collapsed \} \}\)/,
   "a preset shows/hides the projects list over CODE_PROJECT_LIST_EVENT",
 );
 assert.match(
-  codeView,
+  toolbar,
   /CODE_PRESET_HIDES_PROJECT_LIST\[next\]/,
   "the preset's list visibility comes from its definition",
 );

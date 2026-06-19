@@ -3397,6 +3397,53 @@ button:active > .edge-rail-chip {
   display: none;
 }
 
+/* Code surface hoists the companion-panel toggle onto its tab row
+   (.code-panel-toggle in CodeInlineToolbar), so hide the shell's floating right
+   toggle while that surface is mounted — otherwise there'd be two. */
+:root[data-code-inline-toolbar] .shell-panel-float--right {
+  display: none;
+}
+
+/* Code mode crowds the tab row (familiar scope + Sessions/Memory tabs + layout
+   presets + panel toggle), so tighten its padding/gaps to fit the narrowest
+   chat-pane preset (Review, ~30%) without the presets overlapping the tabs. */
+:root[data-code-inline-toolbar] .chat-scope-tabs--minimal {
+  padding-inline: 8px;
+  gap: 8px;
+}
+:root[data-code-inline-toolbar] .chat-scope-tabs--minimal > div:first-child {
+  gap: 8px;
+}
+
+/* Inline companion-panel toggle on the Code surface tab row. Mirrors the shell
+   float's affordance but sits in normal flow beside the layout presets. */
+.code-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+.code-panel-toggle:hover {
+  color: var(--text-secondary);
+}
+.code-panel-toggle[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
+}
+/* The sidebar glyph points at the left rail by default; mirror it so it reads
+   as the RIGHT companion panel, matching the shell float. */
+.code-panel-toggle > svg {
+  transform: scaleX(-1);
+}
+
 /* ────────────────────────────────────────────────
    Companion rail — right-side per-familiar pane
    (Phase 2, shell-ia-redesign)

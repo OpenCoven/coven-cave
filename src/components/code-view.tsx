@@ -8,16 +8,7 @@ import { useIsMobile } from "@/lib/use-viewport";
 import {
   CODE_PRESET_CHAT_SIZE,
   CODE_PRESET_EVENT,
-  CODE_PRESET_HIDES_PROJECT_LIST,
-  CODE_PRESET_HINTS,
-  CODE_PRESET_ICONS,
-  CODE_PRESET_LABELS,
-  CODE_PRESETS,
-  CODE_PROJECT_LIST_EVENT,
-  DEFAULT_CODE_PRESET,
   readCodePreset,
-  writeCodePreset,
-  writeProjectListCollapsed,
   type CodePreset,
 } from "@/lib/code-layout-preset";
 
@@ -107,62 +98,31 @@ function DesktopCodeView({ chat, comux }: Props) {
     storage: codeStorage,
   });
   const chatPanelRef = usePanelRef();
-  // Tracks the highlighted chip. The actual sizes live in the panels' own
-  // persisted layout (CODE_GROUP_ID); this only records the last preset chosen.
-  const [preset, setPreset] = useState<CodePreset>(DEFAULT_CODE_PRESET);
 
   useEffect(() => {
-    setPreset(readCodePreset());
     // Apply the stored preset's width ONLY on a first-ever load (no dragged
     // layout persisted yet), so we never clobber a manual drag on reload — the
     // "default only when unstored" idiom. After this, useDefaultLayout restores
-    // the persisted sizes and the chip is purely cosmetic until the next click.
+    // the persisted sizes.
     if (codeStorage.getItem(CODE_GROUP_ID) == null) {
       chatPanelRef.current?.resize(CODE_PRESET_CHAT_SIZE[readCodePreset()]);
     }
+    // The preset chips now live on the chat surface's tab row (CodeInlineToolbar)
+    // and broadcast CODE_PRESET_EVENT; here we own the chat-pane resize. Going
+    // through onLayoutChanged persists the size, and there's no remount so the
+    // comux terminals/file preview keep their state.
+    const onPreset = (e: Event) => {
+      const preset = (e as CustomEvent<{ preset?: CodePreset }>).detail?.preset;
+      if (preset) chatPanelRef.current?.resize(CODE_PRESET_CHAT_SIZE[preset]);
+    };
+    window.addEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
+    return () => window.removeEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const applyPreset = (next: CodePreset) => {
-    setPreset(next);
-    writeCodePreset(next);
-    // Resize the chat panel; the comux pane fills the remainder (clamped to its
-    // own minSize). This goes through onLayoutChanged, so it persists — no
-    // remount, so the comux terminals/file preview keep their state.
-    chatPanelRef.current?.resize(CODE_PRESET_CHAT_SIZE[next]);
-    // A preset is a task setup, not just a width: show/hide the comux projects
-    // list (the toggle itself lives in that list's header) and tell comux which
-    // right pane (files vs. git changes) to show.
-    const collapsed = CODE_PRESET_HIDES_PROJECT_LIST[next];
-    writeProjectListCollapsed(collapsed);
-    window.dispatchEvent(new CustomEvent(CODE_PROJECT_LIST_EVENT, { detail: { collapsed } }));
-    window.dispatchEvent(new CustomEvent(CODE_PRESET_EVENT, { detail: { preset: next } }));
-  };
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b border-[var(--border-hairline)] px-2 py-1">
-        <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[11px]">
-          {CODE_PRESETS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => applyPreset(p)}
-              aria-pressed={preset === p}
-              title={CODE_PRESET_HINTS[p]}
-              className={`flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 transition-colors ${
-                preset === p
-                  ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              }`}
-            >
-              <Icon name={CODE_PRESET_ICONS[p]} width={13} />
-              {CODE_PRESET_LABELS[p]}
-            </button>
-          ))}
-        </div>
-      </div>
       <Group
         className="flex min-h-0 min-w-0 flex-1"
         orientation="horizontal"

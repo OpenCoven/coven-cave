@@ -367,6 +367,13 @@ function ShellInner({
 
   useEffect(() => {
     onFamiliarOpenChange?.(familiarOpen);
+    // Mirror the companion panel's open state to the document root + a window
+    // event so an inline toggle (e.g. the Code surface's, outside this subtree)
+    // can reflect it without prop-drilling.
+    const root = document.documentElement;
+    if (familiarOpen) root.setAttribute("data-familiar-open", "");
+    else root.removeAttribute("data-familiar-open");
+    window.dispatchEvent(new CustomEvent("cave:familiar-open", { detail: { open: familiarOpen } }));
   }, [familiarOpen, onFamiliarOpenChange]);
 
   useEffect(() => {
@@ -415,11 +422,18 @@ function ShellInner({
         togglePanel(bottomRef.current);
       }
     };
+    // Let an inline toggle (e.g. the Code surface toolbar) flip the companion
+    // panel without reaching into the Shell's panel ref.
+    const onToggleRight = () => {
+      if (hasFamiliar) toggleFamiliarPanel();
+    };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
+    window.addEventListener("cave:toggle-right-panel", onToggleRight);
     return () => {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
+      window.removeEventListener("cave:toggle-right-panel", onToggleRight);
     };
   }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
 

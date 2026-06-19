@@ -14,6 +14,7 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { CodeInlineToolbar } from "@/components/code-inline-toolbar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -448,6 +449,16 @@ export function ChatSurface({
     return () => root.removeAttribute("data-right-panel-open");
   }, [rightPanel, isMobile, scope]);
 
+  // The Code surface hosts the companion-panel toggle inline (CodeInlineToolbar
+  // on the tab row), so flag the root to hide the shell's floating right toggle
+  // while this surface is mounted — otherwise there'd be two of them.
+  useEffect(() => {
+    if (!isCodeSurface) return;
+    const root = document.documentElement;
+    root.setAttribute("data-code-inline-toolbar", "");
+    return () => root.removeAttribute("data-code-inline-toolbar");
+  }, [isCodeSurface]);
+
   // Keep the shell's floating toggles (left nav, expand, side-panel trigger)
   // vertically centered on the LIVE side-panel header. Its top can shift while
   // the layout settles after load (e.g. transient chrome above the panel), so a
@@ -519,7 +530,13 @@ export function ChatSurface({
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="chat-surface__familiar-scope flex w-[min(220px,34vw)] min-w-0 shrink-0 py-1.5 max-sm:w-[min(168px,42vw)]">
+            {/* Code mode crowds this row with layout presets + the panel toggle,
+                so the familiar scope collapses to a compact avatar there. */}
+            <div
+              className={`chat-surface__familiar-scope flex min-w-0 shrink-0 py-1.5 ${
+                isCodeSurface ? "" : "w-[min(220px,34vw)] max-sm:w-[min(168px,42vw)]"
+              }`}
+            >
               <FamiliarSwitcher
                 familiars={resolvedFamiliars}
                 activeFamiliarId={activeFamiliarId}
@@ -530,7 +547,7 @@ export function ChatSurface({
                   window.setTimeout(() => routerRef.current?.goToList(), 0);
                 }}
                 placement="bottom-start"
-                labeled
+                labeled={!isCodeSurface}
               />
             </div>
             <span aria-hidden className="h-5 w-px shrink-0 bg-[var(--border-hairline)]" />
@@ -561,6 +578,9 @@ export function ChatSurface({
               }
             />
           </div>
+          {/* Code workspace: layout presets + companion-panel toggle ride on
+              this row so the Code surface needs no separate toolbar row. */}
+          {isCodeSurface ? <CodeInlineToolbar /> : null}
         </div>
 
         {scope === "memory" ? (
