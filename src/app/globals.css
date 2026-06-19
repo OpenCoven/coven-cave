@@ -5363,6 +5363,14 @@ a.mobile-handoff__link:hover {
     border-radius: var(--radius-control);
     background: transparent;
   }
+  /* Match the familiar switcher's height to the other action buttons so the
+     row reads as one consistent set. Width stays content-based to fit its
+     avatar + caret (the bell/account are square icon buttons). */
+  .top-bar__actions .familiar-switcher__trigger,
+  .top-bar__actions .familiar-switcher__trigger[data-labeled="true"] {
+    height: var(--touch-target);
+    min-height: var(--touch-target);
+  }
   .top-bar__actions .notification-bell {
     position: static;
   }
