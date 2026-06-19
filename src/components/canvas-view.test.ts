@@ -18,23 +18,21 @@ assert.match(workspace, /import \{ CanvasView \} from "@\/components\/canvas-vie
 assert.match(sidebar, /id: "canvas"/, "sidebar must list a canvas destination");
 assert.match(sidebar, /\|\s*"canvas"/, "FolderMode union must include canvas");
 
-// ── The triage gesture: drag across a band → PATCH the card's status ───────
+// ── Sketch-only canvas: the triage layer (board cards / status bands) is gone ─
 
 assert.match(view, /onNodeDragStop/, "canvas must react to drag completion");
-assert.match(view, /bandForX\(centerX\)/, "drop position must map to a status band");
-assert.match(
+assert.match(view, /data-layer="sketch"/, "canvas renders only the sketch layer");
+assert.doesNotMatch(
   view,
-  /fetch\(`\/api\/board\/\$\{id\}`,\s*\{\s*method:\s*"PATCH"/,
-  "a band change must PATCH the card status on the board",
+  /BandGuides|bandForX|cave:canvas:layer|"triage"/,
+  "the triage layer, its bands, and the layer toggle must be removed",
 );
-// Optimistic mutation must revert on failure (board-view lesson: review the failure path).
-assert.match(view, /status:\s*prevStatus/, "a failed status PATCH must revert to the previous status");
+assert.doesNotMatch(view, /\/api\/board/, "the sketch canvas no longer reads or mutates the board");
 assert.match(view, /setActionError/, "a failed mutation must surface an error to the user");
 
-// ── Positions persist to the dedicated canvas store, not the board ─────────
+// ── Positions persist to the dedicated canvas store ────────────────────────
 
 assert.match(view, /fetch\("\/api\/canvas",\s*\{\s*method:\s*"PUT"/, "moved nodes must persist to /api/canvas");
-assert.match(view, /resolvePositions/, "nodes must be built from resolved (saved + auto-placed) positions");
 assert.match(view, /useNodesState<Node>\(\[\]\)/, "canvas should use React Flow's managed node-state hook");
 assert.match(view, /change\.type !== "dimensions"[\s\S]*?const \{ width,\s*height \} = change\.dimensions/, "artifact resize changes must capture dimensions");
 assert.match(view, /savePosition\(change\.id,\s*\{[\s\S]*?width,[\s\S]*?height[\s\S]*?\}\)/, "resized artifacts must persist width/height");
@@ -44,21 +42,9 @@ assert.match(view, /change\.type !== "dimensions" \|\| change\.resizing \|\| !ch
 assert.match(view, /width:\s*saved\.width \?\? ARTIFACT_W/, "artifact nodes must restore saved width");
 assert.match(view, /height:\s*saved\.height \?\? ARTIFACT_H/, "artifact nodes must restore saved height");
 
-// ── Familiar scoping mirrors the Board ─────────────────────────────────────
-
-assert.match(
-  view,
-  /activeFamiliarId === null \|\| c\.familiarId === activeFamiliarId/,
-  "canvas must scope cards to the active familiar the same way the board does",
-);
-
 // ── Sketch layer: generate UIs ad hoc, render in a sandboxed iframe ────────
 
 const artifactNode = await readFile(new URL("./canvas-artifact-node.tsx", import.meta.url), "utf8");
-
-// Layer toggle is persisted and gates the bands (triage-only).
-assert.match(view, /cave:canvas:layer/, "the Triage/Sketch layer choice must persist");
-assert.match(view, /isSketch \? null : <BandGuides/, "status bands must only render in the triage layer");
 
 // Generation routes through the chat bridge (Cave has no server LLM).
 assert.match(view, /generateArtifactCode/, "Sketch must generate via the chat-bridge helper");
