@@ -149,3 +149,33 @@ const refineHtml = buildRefinePrompt("<!doctype html>", "make it blue", "html");
 assert.match(refineHtml, /```html/, "refining an html artifact asks for html");
 
 console.log("canvas-artifacts.test.ts ✓");
+
+// ── extractArtifactBlocks: locate complete, renderable fenced blocks ────────
+import { extractArtifactBlocks } from "./canvas-artifacts.ts";
+
+const reactMsg = "Here you go:\n\n```tsx\nexport default function App(){ return <div>hi</div>; }\n```\n\nEnjoy.";
+const rb = extractArtifactBlocks(reactMsg);
+assert.equal(rb.length, 1, "one renderable block");
+assert.equal(rb[0].kind, "react", "tsx + export default ⇒ react");
+assert.match(rb[0].code, /export default function App/, "code is the fence body");
+assert.equal(reactMsg.slice(rb[0].index, rb[0].index + rb[0].length).startsWith("```tsx"), true, "index/length span the fence");
+
+const htmlMsg = "```html\n<!doctype html><html><body><h1>Hi</h1></body></html>\n```";
+const hb = extractArtifactBlocks(htmlMsg);
+assert.equal(hb.length, 1, "html full-document fence is renderable");
+assert.equal(hb[0].kind, "html", "html kind");
+
+const untagged = "```\n<!doctype html><html><body>x</body></html>\n```";
+assert.equal(extractArtifactBlocks(untagged)[0]?.kind, "html", "untagged full-document ⇒ html");
+
+assert.equal(extractArtifactBlocks("```bash\nls -la\n```").length, 0, "non-renderable language ignored");
+assert.equal(extractArtifactBlocks("```tsx\nconst x = 1;\n```").length, 0, "tsx without export default ignored");
+assert.equal(extractArtifactBlocks("```html\n<button>x</button>\n```").length, 0, "html fragment (not a document) ignored");
+assert.equal(extractArtifactBlocks("```tsx\nexport default function A(){return null}\n").length, 0, "unterminated fence ignored");
+
+const two = "```tsx\nexport default function A(){return null}\n```\n```html\n<!doctype html><html></html>\n```";
+const tb = extractArtifactBlocks(two);
+assert.equal(tb.length, 2, "two blocks found");
+assert.ok(tb[1].index > tb[0].index, "blocks reported in order with increasing offsets");
+
+console.log("canvas-artifacts extractArtifactBlocks: ok");

@@ -86,6 +86,39 @@ export function extractArtifact(text: string): { kind: ArtifactKind; code: strin
   return null;
 }
 
+const RENDERABLE_REACT_LANGS = /^(tsx|jsx|react|javascriptreact|typescriptreact)$/i;
+const RENDERABLE_HTML_LANGS = /^(html?|markup|xml)$/i;
+
+/** A renderable fenced block with its span in the source text. */
+export type RenderableBlock = { index: number; length: number; kind: ArtifactKind; code: string };
+
+/**
+ * Find every COMPLETE, renderable fenced code block in `text` and report its
+ * span (`index`/`length` are offsets into `text`, fence delimiters included) so
+ * a caller can slice the surrounding prose. Conservative on purpose: only a
+ * `tsx/jsx/react` fence containing `export default` (React) or an `html`/
+ * untagged fence whose body is a full document (HTML) qualifies — trivial
+ * snippets stay as ordinary code. Unterminated fences never match.
+ */
+export function extractArtifactBlocks(text: string): RenderableBlock[] {
+  if (typeof text !== "string" || !text) return [];
+  const out: RenderableBlock[] = [];
+  for (const m of text.matchAll(/```([\w-]*)\n([\s\S]*?)```/g)) {
+    const lang = (m[1] ?? "").trim();
+    const code = (m[2] ?? "").trim();
+    if (!code) continue;
+    let kind: ArtifactKind | null = null;
+    if (RENDERABLE_REACT_LANGS.test(lang) && /\bexport\s+default\b/.test(code)) {
+      kind = "react";
+    } else if ((RENDERABLE_HTML_LANGS.test(lang) || lang === "") && isFullDocument(code)) {
+      kind = "html";
+    }
+    if (!kind) continue;
+    out.push({ index: m.index ?? 0, length: m[0].length, kind, code });
+  }
+  return out;
+}
+
 /** True when `code` already looks like a full HTML document (vs a fragment). */
 export function isFullDocument(code: string): boolean {
   return /<html[\s>]/i.test(code) || /<!doctype html/i.test(code);
