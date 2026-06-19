@@ -142,8 +142,8 @@ assert.match(
 );
 assert.match(
   reading,
-  /className="library-reading-col-status"[\s\S]{0,200}<select[\s\S]{0,120}className="library-status-badge library-status-select"/,
-  "Reading status controls should live in a targetable column so they can keep a readable width",
+  /className="library-reading-col-status"[\s\S]{0,200}className="library-status-toggle"[\s\S]{0,120}role="radiogroup"/,
+  "Reading status should be a 3-way segmented toggle living in a targetable column",
 );
 assert.match(
   libraryCss,
