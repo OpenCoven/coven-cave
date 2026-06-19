@@ -107,7 +107,13 @@ export function ArtifactNode({ data, selected }: NodeProps<ArtifactFlowNode>) {
             className="canvas-artifact__btn canvas-artifact__btn--danger"
             title="Delete"
             aria-label="Delete"
-            onClick={() => data.onDelete(artifact.id)}
+            onClick={() => {
+              // Deleting a sketch is destructive and not undoable, so confirm first.
+              const name = artifact.title?.trim() || "this sketch";
+              if (window.confirm(`Delete ${name}? This can't be undone.`)) {
+                data.onDelete(artifact.id);
+              }
+            }}
           >
             <Icon name="ph:trash" />
           </button>

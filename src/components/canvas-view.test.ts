@@ -114,6 +114,14 @@ assert.match(view, /submitTransform\(\)/, "transform panel submits through the r
 assert.match(view, /method:\s*"POST"[\s\S]{0,120}artifact/, "artifacts upsert to /api/canvas via POST");
 assert.match(view, /method:\s*"DELETE"/, "deleting an artifact calls DELETE /api/canvas");
 
+// Deleting a sketch is destructive + not undoable, so the trash control must
+// confirm before calling onDelete.
+assert.match(
+  artifactNode,
+  /window\.confirm\([\s\S]{0,80}\)\s*\)\s*\{\s*data\.onDelete\(artifact\.id\)/,
+  "the artifact delete button must confirm before deleting",
+);
+
 // Chrome: the MiniMap is gated on having nodes (an empty canvas would render a
 // blank box), and React Flow's MiniMap/Controls are themed to the dark surface
 // (they default to white, which the workflow canvas only fixes under its own
