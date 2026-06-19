@@ -5,110 +5,17 @@ import { Icon } from "@/lib/icon";
 import type { SalemPreloadContext } from "./salem-context";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
-import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { SalemPathfinderCard } from "./salem-pathfinder-card";
 import type { SalemPathfinderCard as SalemPathfinderCardData } from "@/lib/salem/pathfinder-types";
-// Salem's 2D cat avatar (floating perch 88px + chat panel 40px). Replaced the
-// former Three.js scene to drop the heavy WebGL `three` dependency.
+// Salem's 2D cat avatar. Replaced the former Three.js scene to drop the heavy
+// WebGL `three` dependency.
 import { SalemCat } from "./salem-cat";
 
 type Message = { role: "user" | "salem"; text: string };
 
 type SalemMood = "idle" | "thinking" | "happy" | "listening";
 
-type SalemWidgetProps = {
-  retreat?: boolean;
-};
-
 const GREETING = "I'm Salem, your Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
-
-function openSalemPanel() {
-  window.dispatchEvent(new CustomEvent("cave:salem-open"));
-}
-
-export function SalemWidget({ retreat = false }: SalemWidgetProps) {
-  const [mood, setMood] = useState<SalemMood>("idle");
-  const [docked, setDocked] = useState(false);
-  const [edgeRetreating, setEdgeRetreating] = useState(false);
-  const perchRef = useRef<HTMLButtonElement>(null);
-  const coarse = useIsCoarsePointer();
-  const reducedMotion = usePrefersReducedMotion();
-
-  useEffect(() => {
-    const dock = () => setDocked(true);
-    const undock = () => setDocked(false);
-    window.addEventListener("cave:salem-open", dock);
-    window.addEventListener("cave:salem-undock", undock);
-    return () => {
-      window.removeEventListener("cave:salem-open", dock);
-      window.removeEventListener("cave:salem-undock", undock);
-    };
-  }, []);
-
-  useEffect(() => {
-    const onPointerMove = (event: PointerEvent) => {
-      if (event.clientX >= window.innerWidth - 2) setEdgeRetreating(true);
-      if (event.clientX < window.innerWidth - 96) setEdgeRetreating(false);
-    };
-    window.addEventListener("pointermove", onPointerMove);
-    return () => window.removeEventListener("pointermove", onPointerMove);
-  }, []);
-
-  // Proximity: the perch rests small + translucent and grows toward full size /
-  // opacity as the cursor approaches it. Drives a `--salem-proximity` CSS var
-  // (0 far → 1 near), written straight to the node in a rAF tick to avoid a
-  // re-render per pointer move. Skipped on touch / reduced-motion (CSS pins the
-  // var to 1 there so the perch is always fully visible).
-  useEffect(() => {
-    if (coarse || reducedMotion || docked) return;
-    const el = perchRef.current;
-    if (!el) return;
-    const RADIUS = 280;
-    let raf = 0;
-    let target = 0;
-    const apply = () => {
-      raf = 0;
-      el.style.setProperty("--salem-proximity", target.toFixed(3));
-    };
-    const onMove = (event: PointerEvent) => {
-      const rect = el.getBoundingClientRect();
-      const dx = event.clientX - (rect.left + rect.width / 2);
-      const dy = event.clientY - (rect.top + rect.height / 2);
-      const distance = Math.hypot(dx, dy);
-      target = Math.max(0, Math.min(1, 1 - distance / RADIUS));
-      if (!raf) raf = requestAnimationFrame(apply);
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [coarse, reducedMotion, docked]);
-
-  const open = () => {
-    setDocked(true);
-    openSalemPanel();
-    setMood("happy");
-    setTimeout(() => setMood("idle"), 1800);
-  };
-
-  if (docked) return null;
-
-  return (
-    <button
-      ref={perchRef}
-      type="button"
-      className={`salem-perch${retreat || edgeRetreating ? " salem-perch--retreating" : ""}`}
-      onClick={open}
-      aria-label="Open Salem docs familiar"
-    >
-      <SalemCat mood={mood} size={88} />
-      <span className="salem-perch__label">
-        <Icon name="ph:chat-circle-dots-fill" width={16} aria-hidden />
-      </span>
-    </button>
-  );
-}
 
 export function SalemChatPanel() {
   const [mood, setMood] = useState<SalemMood>("idle");

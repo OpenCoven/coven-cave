@@ -43,8 +43,8 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(356px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(372px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
-  "Mobile transcript should reserve bottom safe-area breathing room above the taller composer",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-chat-transcript\s*\{[\s\S]*padding-bottom\s*:\s*calc\(324px \+ var\(--sai-bottom\)\)[\s\S]*scroll-padding-bottom\s*:\s*calc\(340px \+ var\(--sai-bottom\)\)[\s\S]*overscroll-behavior\s*:\s*contain/,
+  "Mobile transcript should reserve bottom safe-area breathing room above the shorter composer",
 );
 
 assert.match(
@@ -115,13 +115,13 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-input\s*\{[\s\S]*min-height\s*:\s*116px[\s\S]*max-height\s*:\s*min\(34dvh, 188px\)/,
-  "Mobile composer input should start tall and only scroll after roughly 6-8 rows",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-input\s*\{[\s\S]*min-height\s*:\s*84px[\s\S]*max-height\s*:\s*min\(28dvh, 148px\)/,
+  "Mobile composer input should stay compact and scroll after roughly 4-5 rows",
 );
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(246px \+ var\(--sai-bottom\)\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-scroll-bottom-button\s*\{[\s\S]*bottom\s*:\s*calc\(214px \+ var\(--sai-bottom\)\)/,
   "Mobile scroll-to-bottom FAB should hug just above the composer dock",
 );
 

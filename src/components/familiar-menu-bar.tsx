@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Popover } from "@/components/ui/popover";
-import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -22,6 +20,12 @@ type Props = {
   onChatWithFamiliar: (id: string | null) => void;
   /** Start a chat with a familiar and an opening message (auto-sent on entry). */
   onComposeChat: (id: string | null, prompt: string) => void;
+  /** Open the shared context-aware search palette. */
+  onOpenSearch: () => void;
+  /** Shared top-search query, mirrored with the mobile top bar and palette. */
+  searchQuery: string;
+  /** Update shared top-search query. */
+  onSearchQueryChange: (query: string) => void;
   /** Change the active-familiar scope (the switcher menu's "All"/per-familiar). */
   onSelectFamiliar: (id: string | null) => void;
   /** Jump to the task board. */
@@ -30,20 +34,15 @@ type Props = {
   onViewInbox: () => void;
 };
 
-// How many familiars get a one-click chat avatar before the rest fold into the
-// switcher menu. Keeps the bar legible on narrower desktop widths.
-const MAX_QUICK_CHAT = 6;
-
 function fmtBadge(n: number): string {
   return n > 99 ? "99+" : String(n);
 }
 
 /**
- * A slim, always-visible desktop top menu bar with exactly two jobs: start a
- * chat with a familiar (the avatar strip + switcher on the left) and view tasks
- * (the Tasks/Inbox buttons with live counts on the right). It is the desktop
- * counterpart to the mobile `.top-bar` (which stays hidden ≥1024px); this bar
- * is hidden below 1024px so the two never both render.
+ * A slim, always-visible desktop top menu bar with the familiar selector,
+ * global search, and task/inbox counters. It is the desktop counterpart to the
+ * mobile `.top-bar` (which stays hidden ≥1024px); this bar is hidden below
+ * 1024px so the two never both render.
  */
 export function FamiliarMenuBar({
   familiars,
@@ -54,12 +53,13 @@ export function FamiliarMenuBar({
   inboxCount,
   onChatWithFamiliar,
   onComposeChat,
+  onOpenSearch,
+  searchQuery,
+  onSearchQueryChange,
   onSelectFamiliar,
   onViewTasks,
   onViewInbox,
 }: Props) {
-  const quickChat = familiars.slice(0, MAX_QUICK_CHAT);
-
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
       <div className="menu-bar__group menu-bar__group--chat">
@@ -73,36 +73,6 @@ export function FamiliarMenuBar({
           labeled
         />
 
-        {quickChat.length > 0 ? (
-          <ul className="menu-bar__familiars" aria-label="Chat with a familiar">
-            {quickChat.map((f) => {
-              const needsReply = responseNeeded?.has(f.id) ?? false;
-              const presence = computePresence({
-                familiar: f,
-                sessions,
-                needsReply,
-                isRemoteHarness: f.harness ? REMOTE_HARNESSES.has(f.harness) : false,
-              });
-              return (
-                <li key={f.id}>
-                  <button
-                    type="button"
-                    className="menu-bar__familiar focus-ring"
-                    style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
-                    onClick={() => onChatWithFamiliar(f.id)}
-                    aria-label={`Chat with ${f.display_name}`}
-                    title={`Chat with ${f.display_name} · ${presence.label}`}
-                  >
-                    <FamiliarAvatar familiar={f} size="sm" />
-                    <span className={`menu-bar__presence ${presence.dot}`} aria-hidden />
-                    {needsReply ? <span className="menu-bar__familiar-unread" aria-hidden /> : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
-
         <NewChatMenu
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
@@ -110,6 +80,29 @@ export function FamiliarMenuBar({
           onComposeChat={onComposeChat}
         />
       </div>
+
+      <form
+        className="menu-bar__search"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onOpenSearch();
+        }}
+      >
+        <Icon name="ph:magnifying-glass" width={13} className="menu-bar__search-icon" aria-hidden />
+        <input
+          type="search"
+          className="menu-bar__search-input"
+          value={searchQuery}
+          onChange={(e) => onSearchQueryChange(e.target.value)}
+          onFocus={onOpenSearch}
+          placeholder="Search or ask Salem..."
+          aria-label="Search anything or ask Salem"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <kbd>⌘K</kbd>
+      </form>
 
       <div className="menu-bar__group menu-bar__group--tasks">
         <button

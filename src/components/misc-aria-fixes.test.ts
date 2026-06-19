@@ -6,18 +6,14 @@ function read(file: string) {
   return readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
 }
 
-// 1. Salem perch is a real <button>, not a <div role="button">.
+// 1. Salem no longer renders a floating perch. It lives in the sidepanel and
+// context-aware search, so the old perch markup must not reappear.
 {
   const src = read("salem/salem-widget.tsx");
   assert.doesNotMatch(
     src,
-    /<div[\s\S]{0,200}role="button"[\s\S]{0,200}salem-perch/,
-    "salem perch must not be a div role=button (use real <button>)",
-  );
-  assert.match(
-    src,
-    /<button[\s\S]{0,200}salem-perch/,
-    "salem perch is a <button> element",
+    /salem-perch|export function SalemWidget/,
+    "floating Salem perch markup must stay removed",
   );
 }
 

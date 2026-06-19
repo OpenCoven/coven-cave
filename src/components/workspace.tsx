@@ -45,7 +45,7 @@ import { WorkflowsView } from "@/components/workflows-view";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
-import { SalemChatPanel, SalemWidget } from "@/components/salem/salem-widget";
+import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
@@ -164,6 +164,7 @@ export function Workspace() {
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
@@ -1661,16 +1662,6 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
-  // The Salem perch retreats on dense work surfaces, and ALWAYS while the right
-  // side panel (companion) is open — so it never overlaps that panel.
-  const salemRetreating =
-    familiarPanelOpen ||
-    mode === "chat" ||
-    mode === "code" ||
-    mode === "workflows" ||
-    mode === "browser" ||
-    mode === "terminal";
-
   return (
     <FamiliarStudioProvider>
       <Shell
@@ -1691,36 +1682,47 @@ export function Workspace() {
               inboxCount={inboxBadgeCount}
               onChatWithFamiliar={(id) => startFamiliarChat(id)}
               onComposeChat={(id, prompt) => startFamiliarChat(id, null, prompt)}
+              onOpenSearch={() => setPaletteOpen(true)}
+              searchQuery={topSearchQuery}
+              onSearchQueryChange={(query) => {
+                setTopSearchQuery(query);
+                setPaletteOpen(true);
+              }}
               onSelectFamiliar={selectFamiliarScope}
               onViewTasks={() => setMode("board")}
               onViewInbox={() => setMode("inbox")}
             />
             <TopBar
-            onOpenPalette={() => setPaletteOpen(true)}
-            onOpenInbox={() => setMode("inbox")}
-            onOpenSettings={() => nextRouter.push("/settings")}
-            onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
-            inboxItems={inboxItemsWithEphemeral}
-            familiars={familiars}
-            activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
-            familiarOptions={resolvedFamiliars}
-            onSelectFamiliar={selectFamiliarScope}
-            onStartChat={() => startFamiliarChat(activeId)}
-            onViewTasks={() => setMode("board")}
-            taskCount={boardTaskCount}
-            sessions={sessions}
-            responseNeeded={responseNeeded}
-            familiarSwitcherLabeled={mode === "chat"}
-            inboxPrefs={inboxPrefs}
-            inboxBadgeCount={inboxBadgeCount}
-            onOpenInboxItem={(item) => {
-              if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-              else setMode("inbox");
-            }}
-            onNotificationPrefsChanged={refreshPrefs}
-            onToggleNav={() => shellRef.current?.toggleNav()}
-            onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
-            navDrawerOpen={navDrawerOpen}
+              onOpenPalette={() => setPaletteOpen(true)}
+              searchQuery={topSearchQuery}
+              onSearchQueryChange={(query) => {
+                setTopSearchQuery(query);
+                setPaletteOpen(true);
+              }}
+              onOpenInbox={() => setMode("inbox")}
+              onOpenSettings={() => nextRouter.push("/settings")}
+              onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
+              inboxItems={inboxItemsWithEphemeral}
+              familiars={familiars}
+              activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
+              familiarOptions={resolvedFamiliars}
+              onSelectFamiliar={selectFamiliarScope}
+              onStartChat={() => startFamiliarChat(activeId)}
+              onViewTasks={() => setMode("board")}
+              taskCount={boardTaskCount}
+              sessions={sessions}
+              responseNeeded={responseNeeded}
+              familiarSwitcherLabeled={mode === "chat"}
+              inboxPrefs={inboxPrefs}
+              inboxBadgeCount={inboxBadgeCount}
+              onOpenInboxItem={(item) => {
+                if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
+                else setMode("inbox");
+              }}
+              onNotificationPrefsChanged={refreshPrefs}
+              onToggleNav={() => shellRef.current?.toggleNav()}
+              onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
+              navDrawerOpen={navDrawerOpen}
             listDrawerOpen={listDrawerOpen}
             familiarDrawerOpen={familiarDrawerOpen}
             onToggleFamiliar={
@@ -1770,7 +1772,6 @@ export function Workspace() {
           ) : undefined
         }
       />
-      <SalemWidget retreat={salemRetreating} />
 
       <CommandPalette
         open={paletteOpen}
@@ -1778,6 +1779,8 @@ export function Workspace() {
         familiars={familiars}
         sessions={sessions}
         activeFamiliarId={activeId}
+        initialQuery={topSearchQuery}
+        onQueryChange={setTopSearchQuery}
         onIntent={onPaletteIntent}
       />
 

@@ -2880,10 +2880,10 @@ details[open] > .cave-tool-summary::before {
 
   .cave-chat-linear .cave-chat-transcript {
     padding: 16px 12px 96px;
-    padding-bottom: calc(356px + var(--sai-bottom));
+    padding-bottom: calc(324px + var(--sai-bottom));
     overscroll-behavior: contain;
     scroll-padding-top: calc(var(--sai-top) + 64px);
-    scroll-padding-bottom: calc(372px + var(--sai-bottom));
+    scroll-padding-bottom: calc(340px + var(--sai-bottom));
     -webkit-overflow-scrolling: touch;
   }
 
@@ -2934,9 +2934,9 @@ details[open] > .cave-tool-summary::before {
 
   .cave-scroll-bottom-button {
     /* Sit just above the composer dock. The mobile composer (action strip +
-       ~116px input + two compact control rows + padding) is ~246px tall; hug just above
+       ~84px input + two compact control rows + padding) is ~214px tall; hug just above
        it rather than floating high in the transcript. */
-    bottom: calc(246px + var(--sai-bottom));
+    bottom: calc(214px + var(--sai-bottom));
     width: var(--touch-target);
     height: var(--touch-target);
     border-radius: 999px;
@@ -2988,9 +2988,9 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-composer-input {
-    min-height: 116px;
-    max-height: min(34dvh, 188px);
-    padding: 12px 14px 8px !important;
+    min-height: 84px;
+    max-height: min(28dvh, 148px);
+    padding: 10px 14px 7px !important;
     line-height: 1.45;
   }
 
