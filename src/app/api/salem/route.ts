@@ -32,27 +32,38 @@ const CHAT_API_TIMEOUT_MS = 25_000;
  */
 async function askChatApi(message: string): Promise<string | null> {
   try {
+    const connectTimeoutMs = 2_500;
+    const controller = new AbortController();
+    const connectTimer = setTimeout(() => controller.abort(), connectTimeoutMs);
+
     const res = await fetch(`${CHAT_API_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message }),
-      signal: AbortSignal.timeout(CHAT_API_TIMEOUT_MS),
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(connectTimer));
 
     if (!res.ok || !res.body) return null;
 
     // The chat API streams plain-text deltas; concatenate them.
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let text = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
+    const parts: string[] = [];
+    const streamTimer = setTimeout(() => controller.abort(), CHAT_API_TIMEOUT_MS);
 
-    const trimmed = text.trim();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(decoder.decode(value, { stream: true }));
+      }
+      parts.push(decoder.decode());
+    } finally {
+      clearTimeout(streamTimer);
+      reader.releaseLock();
+    }
+
+    const trimmed = parts.join("").trim();
     return trimmed.length > 0 ? trimmed : null;
   } catch {
     return null;
