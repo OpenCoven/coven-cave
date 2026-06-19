@@ -1,8 +1,8 @@
 // @ts-nocheck
-// Side panels must stay discoverable without visual chrome noise:
-//   - desktop shell owns a left and right full-height edge strip
-//   - the strips are clickable across their full height
-//   - the aligned chip/icon stays invisible until hover or keyboard focus
+// Side panel toggles live in the desktop top menu bar:
+//   - the nav toggle anchors the bar's left edge
+//   - the side-panel + expand toggles its right edge
+//   - they share the bar's height/background so they read as one strip
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -12,118 +12,117 @@ const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 
-// Codex-style side panel toggles: two full-height invisible edge strips
-// (left = nav sidebar, right = active side panel) replace the old
-// collapsed-only left edge rail.
+// The panel toggles are hoisted into the top bar (a flex row wrapping the
+// rendered top bar), desktop-only — they're built only when !isMobile.
 assert.match(
   shell,
-  /const panelFloats = !isMobile/,
-  "shell builds the floating panel toggles on desktop only",
+  /const navToggle = !isMobile/,
+  "shell builds the nav toggle on desktop only",
 );
 assert.match(
   shell,
-  /shell-panel-float shell-panel-float--left/,
-  "shell renders a floating left toggle for the nav sidebar",
+  /const rightToggles = !isMobile && hasFamiliar/,
+  "shell builds the right side-panel toggles on desktop only, when a familiar is active",
 );
 assert.match(
   shell,
-  /shell-panel-float--right/,
-  "shell renders a floating right toggle for the active side panel",
+  /<div className="shell-top">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar">\{renderedTopBar\}<\/div>[\s\S]*?\{rightToggles\}/,
+  "the top bar row flanks the rendered top bar with the nav (left) and side-panel (right) toggles",
 );
 assert.match(
   shell,
-  /shell-panel-float--left[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
-  "left float label reflects nav state",
+  /shell-top-toggle shell-top-toggle--nav/,
+  "shell renders a top-bar nav toggle for the sidebar",
 );
 assert.match(
   shell,
-  /shell-panel-float--left[\s\S]*?aria-expanded=\{navOpen\}/,
-  "left float exposes nav expanded state",
+  /shell-top-toggle--right/,
+  "shell renders a top-bar right toggle for the active side panel",
 );
 assert.match(
   shell,
-  /shell-panel-float--left[\s\S]*?navOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/,
-  "left float icon reflects nav state",
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
+  "nav toggle label reflects nav state",
+);
+assert.match(
+  shell,
+  /shell-top-toggle--nav[\s\S]*?aria-expanded=\{navOpen\}/,
+  "nav toggle exposes nav expanded state",
+);
+assert.match(
+  shell,
+  /shell-top-toggle--nav[\s\S]*?navOpen \? "ph:sidebar-simple-fill" : "ph:sidebar-simple"/,
+  "nav toggle icon reflects nav state",
 );
 assert.match(
   shell,
   /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
-  "left float collapses and expands the nav panel",
+  "nav toggle collapses and expands the nav panel",
 );
 assert.match(
   shell,
-  /shell-panel-float--right[\s\S]*?aria-expanded=\{familiarOpen\}/,
-  "right float exposes the active side-panel state",
+  /shell-top-toggle--right[\s\S]*?aria-expanded=\{familiarOpen\}/,
+  "right toggle exposes the active side-panel state",
 );
 assert.match(
   shell,
   /const toggleRightPanel = \(\) => \{[\s\S]*?familiarRef\.current[\s\S]*?setFamiliarOpen/,
-  "right float toggles the active right panel via familiarRef",
+  "right toggle toggles the active right panel via familiarRef",
 );
-// Floats are always visible (open or closed) — the old collapsed-only left
-// edge rail is gone.
+// The old collapsed-only left edge rail and full-height corner floats are gone.
 assert.doesNotMatch(
   shell,
   /familiar-trigger-rail--left/,
   "the old collapsed-only left edge rail is removed from the shell",
 );
+assert.doesNotMatch(
+  shell,
+  /shell-panel-float/,
+  "the old absolutely-positioned corner floats are removed from the shell",
+);
 
+// The toggles share the menu bar's 44px height + panel background so they read
+// as one continuous strip, and tint accent in their open state.
 assert.match(
   css,
-  /\.shell-panel-float\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?width:\s*44px;[\s\S]*?height:\s*100%;[\s\S]*?background:\s*transparent;/,
-  "left/right panel toggles should be full-height invisible edge strips",
+  /\.shell-top\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*stretch;/,
+  "the top bar row is a stretch flex container",
 );
 assert.match(
   css,
-  /\.shell-panel-float::before\s*\{[\s\S]*?top:\s*var\(--shell-float-top,\s*50px\);[\s\S]*?opacity:\s*0;/,
-  "panel toggle chip should share the measured top and stay hidden by default",
+  /\.shell-top__bar\s*\{[\s\S]*?flex:\s*1 1 auto;/,
+  "the rendered top bar flexes to fill between the toggles",
 );
 assert.match(
   css,
-  /\.shell-panel-float > svg\s*\{[\s\S]*?top:\s*calc\(var\(--shell-float-top,\s*50px\) \+ 6\.5px\);[\s\S]*?opacity:\s*0;/,
-  "panel toggle icon should share the same measured top and stay hidden by default",
+  /\.shell-top-toggle\s*\{[\s\S]*?height:\s*44px;[\s\S]*?border-bottom:\s*1px solid var\(--border-hairline\);[\s\S]*?background:\s*var\(--bg-panel\);/,
+  "top-bar toggles match the menu bar's height, hairline and panel background",
 );
 assert.match(
   css,
-  /\.shell-panel-float:hover::before,[\s\S]*?\.shell-panel-float:focus-visible::before,[\s\S]*?\.shell-panel-float:hover > svg,[\s\S]*?\.shell-panel-float:focus-visible > svg\s*\{[\s\S]*?opacity:\s*1;/,
-  "panel toggle chip and icon should reveal on hover or keyboard focus",
-);
-assert.match(css, /\.shell-panel-float--left\s*\{[\s\S]*?left:\s*0;/, "left strip is pinned to the left edge");
-assert.match(css, /\.shell-panel-float--right\s*\{[\s\S]*?right:\s*0;/, "right strip is pinned to the right edge");
-assert.match(
-  css,
-  /\.shell-panel-float--left::before,[\s\S]*?\.shell-panel-float--right::before\s*\{[\s\S]*?width:\s*35px;[\s\S]*?height:\s*35px;/,
-  "corner side-panel tabs should be 25% larger than the base 28px chip",
+  /\.shell-top-toggle--active\s*\{[\s\S]*?color:\s*var\(--accent-presence\);/,
+  "an open panel's toggle tints accent",
 );
 assert.match(
   css,
-  /\.shell-panel-float--left::before\s*\{[\s\S]*?border-radius:\s*8px 0 6px 0;/,
-  "left corner side-panel tab should use a tighter radius",
+  /\.shell-top-toggle--right > svg\s*\{[\s\S]*?transform:\s*scaleX\(-1\);/,
+  "the right toggle mirrors the sidebar glyph so it reads as a right-edge panel",
 );
-assert.match(
-  css,
-  /\.shell-panel-float--right::before\s*\{[\s\S]*?border-radius:\s*0 8px 0 6px;/,
-  "right corner side-panel tab should use a tighter radius",
+
+// The float is gone — no proximity-glow tracking or --shell-float-top plumbing.
+assert.doesNotMatch(
+  shell,
+  /--float-prox/,
+  "shell no longer tracks cursor proximity for the floats",
 );
-assert.match(
+assert.doesNotMatch(
   css,
-  /\.shell-panel-float--left > svg,[\s\S]*?\.shell-panel-float--right > svg\s*\{[\s\S]*?top:\s*10px;/,
-  "corner side-panel tab icons should stay centered in the larger 35px chip",
-);
-assert.match(
-  css,
-  /\.shell-panel-float--left::after,[\s\S]*?\.shell-panel-float--right::after\s*\{[\s\S]*?top:\s*0;[\s\S]*?width:\s*64px;[\s\S]*?height:\s*64px;/,
-  "corner side-panel glows should be pinned to the actual corner tab locations",
-);
-assert.match(
-  css,
-  /@keyframes shell-corner-float-pulse \{[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 0\.85\);[\s\S]*opacity: calc\(var\(--float-prox, 0\) \* 1\.2\);/,
-  "corner side-panel glow should be more prominent as the cursor approaches",
+  /shell-panel-float/,
+  "the float CSS is pruned",
 );
 
 // The edge-rail chip survives — the collapsed chat-projects strip still uses it
-// for its reopen tab. The familiar trigger-rail CSS that used to share it was
-// pruned along with the rails themselves.
+// for its reopen tab.
 assert.match(css, /\.edge-rail-chip \{/, "edge-rail chip class exists");
 assert.match(
   css,
@@ -141,8 +140,8 @@ assert.doesNotMatch(
   "the dead familiar trigger-rail CSS is pruned",
 );
 
-// The right edge-rail tab toggle was retired — the shell's floating top-right
-// toggle now owns showing/hiding the companion panel.
+// The right edge-rail tab toggle was retired — the top-bar right toggle now owns
+// showing/hiding the companion panel.
 assert.doesNotMatch(
   workspace,
   /familiarPanelRail=/,
@@ -183,42 +182,12 @@ assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut 
 assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
 
 // The CompanionRail's in-panel Hide button was removed along with its
-// cave:familiar-panel-toggle bridge — the floating top-right toggle (and ⌘⇧B)
-// own hiding the right panel now.
+// cave:familiar-panel-toggle bridge — the top-bar right toggle (and ⌘⇧B) own
+// hiding the right panel now.
 assert.doesNotMatch(
   shell,
   /cave:familiar-panel-toggle/,
   "Shell no longer wires the retired in-panel collapse event",
-);
-
-// Proximity glow: floats fade in (and pulse) as the cursor approaches. shell.tsx
-// tracks mousemove distance and sets --float-prox per float; the CSS drives the
-// chip opacity + the pulse halo from it.
-assert.match(shell, /addEventListener\("mousemove"/, "shell listens for mousemove to track cursor proximity");
-assert.match(
-  shell,
-  /setProperty\("--float-prox"/,
-  "shell sets a per-float --float-prox from cursor distance",
-);
-assert.match(
-  shell,
-  /el\.classList\.contains\("shell-panel-float--left"\)[\s\S]*?r\.left \+ 17\.5/,
-  "left corner float proximity should target the actual 35px corner tab center",
-);
-assert.match(
-  shell,
-  /el\.classList\.contains\("shell-panel-float--right"\)[\s\S]*?r\.right - 17\.5/,
-  "right corner float proximity should target the actual 35px corner tab center",
-);
-assert.match(
-  css,
-  /\.shell-panel-float::before \{[\s\S]*?opacity: var\(--float-prox, 0\)/,
-  "the float chip fades in by cursor proximity",
-);
-assert.match(
-  css,
-  /@keyframes shell-float-pulse \{[\s\S]*?var\(--float-prox, 0\)/,
-  "the proximity halo pulses with intensity gated by --float-prox",
 );
 
 console.log("shell-edge-rails.test.ts OK");

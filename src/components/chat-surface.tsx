@@ -426,8 +426,8 @@ export function ChatSurface({
     return () => window.removeEventListener("keydown", onKey);
   }, [rightExpanded]);
 
-  // The expand affordance lives in the shell's floating toggle cluster
-  // (.shell-panel-float--expand), a different subtree, so it reaches the expand
+  // The expand affordance lives in the shell's top-bar toggle cluster
+  // (.shell-top-toggle--expand), a different subtree, so it reaches the expand
   // state through a window event — the same bridge pattern as cave:inspector-open.
   // The reset effect above clears rightExpanded if the panel closes, so this is
   // safe to fire unconditionally.
@@ -437,7 +437,7 @@ export function ChatSurface({
     return () => window.removeEventListener("cave:right-panel-expand", onExpand);
   }, []);
 
-  // Flag right-panel-open on the document root so the shell's floating expand
+  // Flag right-panel-open on the document root so the shell's top-bar expand
   // toggle (in shell.tsx, outside this subtree) shows only when there's actually
   // a panel to expand. Mirrors the desktop placement: conversation scope only.
   useEffect(() => {
@@ -449,7 +449,7 @@ export function ChatSurface({
   }, [rightPanel, isMobile, scope]);
 
   // The Code surface hosts the companion-panel toggle inline (CodeInlineToolbar
-  // on the tab row), so flag the root to hide the shell's floating right toggle
+  // on the tab row), so flag the root to hide the shell's top-bar right toggle
   // while this surface is mounted — otherwise there'd be two of them.
   useEffect(() => {
     if (!isCodeSurface) return;
@@ -458,61 +458,10 @@ export function ChatSurface({
     return () => root.removeAttribute("data-code-inline-toolbar");
   }, [isCodeSurface]);
 
-  // Keep the shell's floating toggles (left nav, expand, side-panel trigger)
-  // vertically centered on the LIVE side-panel header. Its top can shift while
-  // the layout settles after load (e.g. transient chrome above the panel), so a
-  // fixed CSS offset flashes out of alignment. Publish the header's centered top
-  // as a root CSS var the floats consume (--shell-float-top), and track it via a
-  // short rAF loop that runs only until the value holds steady, plus a resize
-  // re-arm. Falls back to the CSS default when there's no panel to align to.
-  useEffect(() => {
-    if (isMobile || scope !== "conversation" || rightPanel === null || rightExpanded) return;
-    const root = document.documentElement;
-    const FLOAT_H = 28;
-    let raf = 0;
-    let steady = 0;
-    let last = Number.NaN;
-    const measure = () => {
-      const header = document.querySelector(".right-panel-tabs");
-      if (header) {
-        const r = header.getBoundingClientRect();
-        const top = Math.round(r.top + (r.height - FLOAT_H) / 2);
-        if (top !== last) {
-          root.style.setProperty("--shell-float-top", `${top}px`);
-          last = top;
-          steady = 0;
-        } else {
-          steady += 1;
-        }
-      }
-    };
-    const loop = () => {
-      measure();
-      // Stop once the measurement holds for ~6 frames — covers the post-load
-      // settle without polling forever.
-      if (steady < 6) raf = requestAnimationFrame(loop);
-    };
-    loop();
-    const rearm = () => {
-      steady = 0;
-      last = Number.NaN;
-      cancelAnimationFrame(raf);
-      loop();
-    };
-    window.addEventListener("resize", rearm);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", rearm);
-      root.style.removeProperty("--shell-float-top");
-    };
-  }, [isMobile, scope, rightPanel, rightExpanded]);
-
-  // While the right panel is expanded it covers the chat surface, but the
-  // shell's right edge-rail float (.shell-panel-float--right, z-40) sits above
-  // the overlay's trapped z-index and intercepts clicks on the panel's
-  // top-right Close button. Flag the expanded state on the document root so CSS
-  // can hide that float while expanded (it's redundant under a full-surface
-  // panel anyway). Restore/Esc clear it; the cleanup guards against unmount.
+  // While the right panel is expanded it covers the chat surface; flag the
+  // expanded state on the document root so CSS can hide the top-bar side-panel
+  // toggle while expanded (it's redundant under a full-surface panel anyway).
+  // Restore/Esc clear it; the cleanup guards against unmount.
   useEffect(() => {
     const root = document.documentElement;
     if (rightExpanded) root.setAttribute("data-right-panel-expanded", "");

@@ -3184,231 +3184,79 @@ button:active > .edge-rail-chip {
 }
 
 /* ────────────────────────────────────────────────
-   Edge panel toggles (Codex-style)
-   Full-height invisible strips pinned to the shell's left/right edges. Hover
-   or keyboard focus reveals the small aligned chip; clicking anywhere along
-   the strip toggles the corresponding side panel.
+   Top-bar panel toggles
+   The side-panel triggers live in the desktop top menu bar: the nav toggle
+   anchors the bar's left edge, the side-panel + expand toggles its right edge.
+   They share the bar's height/background so they read as one continuous strip.
+   Desktop-only — they're rendered only when !isMobile (≥1024px), matching the
+   `.menu-bar` breakpoint; below that the mobile `.top-bar` carries its own.
    ──────────────────────────────────────────────── */
-.shell-body--floats {
-  position: relative;
+.shell-top {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
 }
 
-/* Clear the floating top-left toggle so it doesn't sit on top of the sidebar
-   wordmark, while keeping the wordmark's left edge aligned with the nav-card
-   content column below it (Salem / New session / Home). The left float is 28px
-   wide at left:8 (right edge 36); 15px lands the wordmark just clear of it, at
-   the same indent as the card icons. Scoped to the desktop shell — the floats
-   are desktop-only. */
-.shell-body--floats .sidebar-header--static {
-  padding-left: 15px;
+.shell-top__bar {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.shell-panel-float {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 40;
-  display: block;
-  width: 44px;
-  height: 100%;
+.shell-top-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 44px;
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
   color: color-mix(in oklch, var(--text-secondary) 86%, var(--text-primary));
-  box-shadow: none;
   cursor: pointer;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  transition: color 120ms ease;
+  transition: color 120ms ease, background 120ms ease;
 }
 
-.shell-panel-float::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  /* Vertically centered on the side-panel header row — the 38px Inspector/Debug/
-     Changes tab strip that sits directly below the ~45px chat scope-tabs header.
-     The trigger + expand toggle read as part of that header rather than floating
-     above it; both side strips use this same value so the chips stay level.
-     ChatSurface measures the live header and publishes --shell-float-top so the
-     floats track it through the post-load settle (no fixed-offset flash); the
-     50px fallback matches the settled position when no panel is open. */
-  top: var(--shell-float-top, 50px);
-  left: 50%;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
-  background: color-mix(in oklch, var(--bg-raised) 86%, var(--bg-elevated));
-  color: color-mix(in oklch, var(--text-secondary) 86%, var(--text-primary));
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--text-primary) 10%, transparent),
-    0 6px 16px color-mix(in oklch, black 22%, transparent);
-  /* Fades in by cursor proximity (--float-prox, set per-float in shell.tsx);
-     :hover/:focus-visible below force it fully visible for direct interaction. */
-  opacity: var(--float-prox, 0);
-  transform: translateX(-50%);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease, transform 80ms ease;
+.shell-top-toggle:hover,
+.shell-top-toggle:focus-visible {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-raised) 70%, var(--bg-panel));
 }
 
-/* Pulsing accent halo behind the chip — gated by --float-prox so it only shows
-   (and pulses) as the cursor approaches the toggle. */
-.shell-panel-float::after {
-  content: "";
-  position: absolute;
-  top: var(--shell-float-top, 50px);
-  left: 50%;
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
-  z-index: 0;
-  pointer-events: none;
-  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 60%, transparent), transparent 70%);
-  opacity: 0;
-  transform: translateX(-50%) scale(1);
-  animation: shell-float-pulse 1800ms ease-in-out infinite;
-}
-
-@keyframes shell-float-pulse {
-  0%,
-  100% {
-    opacity: calc(var(--float-prox, 0) * 0.6);
-    transform: translateX(-50%) scale(1);
-  }
-  50% {
-    opacity: calc(var(--float-prox, 0) * 1);
-    transform: translateX(-50%) scale(1.55);
-  }
-}
-
-@keyframes shell-corner-float-pulse {
-  0%,
-  100% {
-    opacity: calc(var(--float-prox, 0) * 0.85);
-    transform: translate(var(--shell-float-glow-x), -14px) scale(1);
-  }
-  50% {
-    opacity: calc(var(--float-prox, 0) * 1.2);
-    transform: translate(var(--shell-float-glow-x), -14px) scale(1.7);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shell-panel-float::after {
-    animation: none;
-    opacity: calc(var(--float-prox, 0) * 0.4);
-  }
-}
-
-.shell-panel-float > svg {
-  position: absolute;
-  top: calc(var(--shell-float-top, 50px) + 6.5px);
-  left: 50%;
-  z-index: 2;
-  opacity: var(--float-prox, 0);
-  pointer-events: none;
-  transform: translateX(-50%);
-  transition: opacity 120ms ease, color 120ms ease, transform 80ms ease;
-}
-
-.shell-panel-float--left {
-  left: 0;
-}
-
-.shell-panel-float--right {
-  right: 0;
-}
-
-/* Expand-to-cover toggle: pinned one button-width + gap to the left of the
-   side-panel trigger (8 + 28 + 8). Hidden until a chat right panel is actually
-   open, and re-hidden while expanded (the in-panel Restore button takes over). */
-.shell-panel-float--expand {
-  top: var(--shell-float-top, 50px);
-  right: 44px;
-  bottom: auto;
-  z-index: 40;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
-  background: color-mix(in oklch, var(--bg-raised) 86%, var(--bg-elevated));
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--text-primary) 10%, transparent),
-    0 6px 16px color-mix(in oklch, black 22%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  display: none;
-}
-.shell-panel-float--expand::before {
-  content: none;
-}
-.shell-panel-float--expand > svg {
-  position: static;
-  opacity: 1;
-  transform: none;
-}
-.shell-panel-float--expand:active {
+.shell-top-toggle:active {
   transform: scale(0.94);
 }
-:root[data-right-panel-open] .shell-panel-float--expand {
-  display: grid;
-}
-:root[data-right-panel-expanded] .shell-panel-float--expand {
-  display: none;
+
+/* Open state: accent-tinted to match the panel it controls. */
+.shell-top-toggle--active {
+  color: var(--accent-presence);
 }
 
 /* The Phosphor sidebar glyph points at a left panel; mirror it on the right
    toggle so it reads as a right-edge panel. */
-.shell-panel-float--right > svg {
-  transform: translateX(-50%) scaleX(-1);
+.shell-top-toggle--right > svg {
+  transform: scaleX(-1);
 }
 
-.shell-panel-float:hover,
-.shell-panel-float:focus-visible {
-  color: var(--text-primary);
+/* Expand-to-cover toggle: hidden until a chat right panel is actually open
+   (:root[data-right-panel-open]), and re-hidden while expanded (the in-panel
+   Restore button takes over). */
+.shell-top-toggle--expand {
+  display: none;
 }
-
-.shell-panel-float:hover::before,
-.shell-panel-float:focus-visible::before,
-.shell-panel-float:hover > svg,
-.shell-panel-float:focus-visible > svg {
-  opacity: 1;
+:root[data-right-panel-open] .shell-top-toggle--expand {
+  display: inline-flex;
 }
-
-.shell-panel-float:hover::before,
-.shell-panel-float:focus-visible::before {
-  background: var(--bg-elevated);
-  border-color: color-mix(in oklch, var(--text-muted) 48%, transparent);
-}
-
-.shell-panel-float:active::before {
-  transform: translateX(-50%) scale(0.94);
-}
-
-/* Open state: accent-tinted, matching the edge-rail "expanded" treatment. */
-.shell-panel-float--active {
-  color: var(--text-primary);
-}
-
-.shell-panel-float--active::before {
-  border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
-}
-
-/* When the chat right panel is expanded it covers the whole chat surface; the
-   right edge-rail float would otherwise float above it (z-40) and intercept the
-   panel's top-right Close button. Hide it while expanded. */
-:root[data-right-panel-expanded] .shell-panel-float--right {
+:root[data-right-panel-expanded] .shell-top-toggle--expand {
   display: none;
 }
 
-/* Code surface hoists the companion-panel toggle onto its tab row
-   (.code-panel-toggle in CodeInlineToolbar), so hide the shell's floating right
-   toggle while that surface is mounted — otherwise there'd be two. */
-:root[data-code-inline-toolbar] .shell-panel-float--right {
+/* While the chat right panel is expanded it covers the whole surface, so the
+   side-panel toggle is redundant; and the Code surface hoists its own companion
+   toggle onto its tab row (.code-panel-toggle), so suppress the shell's there
+   too — otherwise there'd be two. */
+:root[data-right-panel-expanded] .shell-top-toggle--right,
+:root[data-code-inline-toolbar] .shell-top-toggle--right {
   display: none;
 }
 
@@ -3571,10 +3419,8 @@ button:active > .edge-rail-chip {
 .companion-rail__tabs {
   display: flex;
   gap: 2px;
-  /* The side-panel trigger is now pinned flush into the top-right window corner
-     (.shell-panel-float--right::before — a 35px notch at top:0), not centered on
-     --shell-float-top. Sit the tab strip flush at the panel's top so its icon row
-     lines up with that corner trigger instead of dropping ~50px below it. */
+  /* The side-panel trigger lives in the top menu bar now; sit the tab strip
+     flush at the panel's top so its icon row reads as the panel's own header. */
   margin-top: 0;
   padding: 5px 8px;
   border-bottom: 1px solid var(--border-hairline);
@@ -6524,92 +6370,35 @@ a.mobile-handoff__link:hover {
   border-radius: 4px;
 }
 
-/* ── Corner sidepanel triggers ───────────────────────────────────────────────
-   Pin the left/right sidepanel toggles flush into the upper window corners:
-   inset 0, with the two window-meeting edges squared and a tighter radius so
-   each reads as a compact notch carved into the corner. Border + a soft
-   shadow live only on the inner edges (facing the content). Overrides the
-   hover-reveal, --shell-float-top-centered base for --left/--right only; the
-   expand toggle keeps its centered position. */
-.shell-panel-float--left::before,
-.shell-panel-float--right::before {
-  top: 0;
-  width: 35px;
-  height: 35px;
-  opacity: 1;
-  border: none;
+/* ── Magic cast: sparkle the side-panel toggle on click ──────────────────────
+   When MagicTriggers fires a top-bar panel toggle, flash a one-shot purple
+   sparkle centered on the button — a small "spell cast" pulse. Purple is fixed
+   (not theme accent) so the magic always reads violet. */
+.shell-top-toggle {
+  position: relative;
 }
-.shell-panel-float--left > svg,
-.shell-panel-float--right > svg {
-  top: 10px;
-  opacity: 1;
+.shell-top-toggle.magic-cast::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
   pointer-events: none;
-}
-.shell-panel-float--left::after,
-.shell-panel-float--right::after {
-  top: 0;
-  width: 64px;
-  height: 64px;
-  background: radial-gradient(circle, color-mix(in oklch, var(--accent-presence) 95%, transparent), transparent 70%);
-  animation-name: shell-corner-float-pulse;
-}
-.shell-panel-float--left::before {
-  left: 0;
-  transform: none;
-  border-radius: 8px 0 6px 0;
-  border-right: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
-  border-bottom: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
-  box-shadow: 3px 3px 12px color-mix(in oklch, black 22%, transparent);
-}
-.shell-panel-float--left > svg {
-  left: 10px;
-  transform: none;
-}
-.shell-panel-float--left::after {
-  left: 0;
-  --shell-float-glow-x: -14px;
-  transform: translate(-14px, -14px) scale(1);
-}
-.shell-panel-float--right::before {
-  left: auto;
-  right: 0;
-  transform: none;
-  border-radius: 0 8px 0 6px;
-  border-left: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
-  border-bottom: 1px solid color-mix(in oklch, var(--text-muted) 34%, transparent);
-  box-shadow: -3px 3px 12px color-mix(in oklch, black 22%, transparent);
-}
-.shell-panel-float--right > svg {
-  left: auto;
-  right: 10px;
-  transform: none;
-}
-.shell-panel-float--right::after {
-  left: auto;
-  right: 0;
-  --shell-float-glow-x: 14px;
-  transform: translate(14px, -14px) scale(1);
-}
-
-/* ── Magic cast: open the sidepanel from a distance ──────────────────────────
-   When MagicTriggers fires the corner toggle (cursor close enough that the glow
-   has gone purple), flash a one-shot purple sparkle by overriding the proximity
-   halo (::after) with an expanding bright-purple burst — a small "spell cast"
-   pulse. Purple is fixed (not theme accent) so the magic always reads violet. */
-.shell-panel-float.magic-cast::after {
+  z-index: 1;
   /* White-hot violet core + a 4-point sparkle star (two crossed bright lines),
      flashing and bursting outward with a rotate — a dramatic one-shot spell. */
   background:
     radial-gradient(circle, #ffffff 0%, color-mix(in oklch, #a855f7 92%, white 22%) 22%, color-mix(in oklch, #a855f7 72%, transparent) 46%, transparent 66%),
     linear-gradient(0deg, transparent 46%, color-mix(in oklch, #ffffff 82%, #a855f7) 49%, color-mix(in oklch, #ffffff 82%, #a855f7) 51%, transparent 54%),
-    linear-gradient(90deg, transparent 46%, color-mix(in oklch, #ffffff 82%, #a855f7) 49%, color-mix(in oklch, #ffffff 82%, #a855f7) 51%, transparent 54%) !important;
-  opacity: 1 !important;
-  animation: magic-cast-sparkle 820ms cubic-bezier(0.18, 0.7, 0.2, 1) !important;
+    linear-gradient(90deg, transparent 46%, color-mix(in oklch, #ffffff 82%, #a855f7) 49%, color-mix(in oklch, #ffffff 82%, #a855f7) 51%, transparent 54%);
+  animation: magic-cast-sparkle 820ms cubic-bezier(0.18, 0.7, 0.2, 1);
 }
 @keyframes magic-cast-sparkle {
   0% {
     opacity: 1;
-    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(0.3) rotate(0deg);
+    transform: scale(0.3) rotate(0deg);
     filter: brightness(2.4) drop-shadow(0 0 12px color-mix(in oklch, #a855f7 90%, transparent));
   }
   55% {
@@ -6617,8 +6406,13 @@ a.mobile-handoff__link:hover {
   }
   100% {
     opacity: 0;
-    transform: translate(var(--shell-float-glow-x, 0px), -14px) scale(5) rotate(45deg);
+    transform: scale(2.4) rotate(45deg);
     filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-top-toggle.magic-cast::after {
+    animation: none;
   }
 }
 

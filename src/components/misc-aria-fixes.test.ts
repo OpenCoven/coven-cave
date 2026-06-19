@@ -21,14 +21,14 @@ function read(file: string) {
   );
 }
 
-// 2. Sidebar collapse moved to the shell's floating top-left toggle, which
-// exposes aria-expanded (covered by shell-edge-rails.test.ts). The sidebar
-// header itself is now a static wordmark with no collapse button.
+// 2. Sidebar collapse moved to the top-bar nav toggle, which exposes
+// aria-expanded (covered by shell-edge-rails.test.ts). The sidebar header
+// itself is now a static wordmark with no collapse button.
 {
   const shell = read("shell.tsx");
   assert.ok(
-    /shell-panel-float--left[\s\S]*?aria-expanded=\{navOpen\}/.test(shell),
-    "the floating left toggle exposes aria-expanded (in shell.tsx)",
+    /shell-top-toggle--nav[\s\S]*?aria-expanded=\{navOpen\}/.test(shell),
+    "the top-bar nav toggle exposes aria-expanded (in shell.tsx)",
   );
 }
 
