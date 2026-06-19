@@ -4,13 +4,13 @@ import "@xyflow/react/dist/style.css";
 import "@/styles/canvas.css";
 
 import {
-  applyNodeChanges,
   Background,
   Controls,
   MiniMap,
   Panel,
   ReactFlow,
   ReactFlowProvider,
+  useNodesState,
   useViewport,
   type Node,
   type NodeChange,
@@ -163,7 +163,7 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const [cards, setCards] = useState<Card[]>([]);
   const [positions, setPositions] = useState<CanvasPositions>({});
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodes, setNodes, applyNodesChange] = useNodesState<Node>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [artifactView, setArtifactView] = useState<Record<string, "preview" | "code">>({});
@@ -488,8 +488,8 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
       // the drag tracks the cursor smoothly even as it passes over a live preview.
       setIsResizing(resizingNodeIds.current.size > 0);
     }
-    setNodes((prev) => applyNodeChanges(changes, prev));
-  }, [layer, nodes, positions, savePosition]);
+    applyNodesChange(changes);
+  }, [applyNodesChange, layer, nodes, positions, savePosition]);
 
   const patchStatus = useCallback(async (id: string, status: CardStatus) => {
     const prevStatus = cards.find((c) => c.id === id)?.status;

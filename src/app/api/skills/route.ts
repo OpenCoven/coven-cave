@@ -17,7 +17,6 @@ export async function GET() {
   if (!res.ok || !res.data) {
     return NextResponse.json(
       { ok: false, error: res.error ?? `daemon http ${res.status}`, skills: [] },
-      { status: 503 },
     );
   }
   return NextResponse.json({ ok: true, skills: res.data });

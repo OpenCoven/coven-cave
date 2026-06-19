@@ -22,6 +22,25 @@ function normalizeLegacyCovenWorkspacePath(value: string): string {
   return path.join(path.resolve(path.join(covenHome(), "workspaces")), path.relative(legacyRoot, resolved));
 }
 
+function caveProjectsFilePath(): string {
+  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(homedir(), ".coven", "cave-projects.json");
+}
+
+function savedCaveProjectRoots(): string[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(caveProjectsFilePath(), "utf8")) as {
+      projects?: Array<{ root?: unknown }>;
+    };
+    if (!Array.isArray(parsed.projects)) return [];
+    return parsed.projects
+      .map((project) => project.root)
+      .filter((root): root is string => typeof root === "string" && path.isAbsolute(root.trim()))
+      .map((root) => root.trim());
+  } catch {
+    return [];
+  }
+}
+
 const ALLOWED_ROOTS = Array.from(
   new Set(
     [
@@ -32,6 +51,7 @@ const ALLOWED_ROOTS = Array.from(
       process.env.OPENCLAW_WORKSPACE_ROOT,
       path.join(homedir(), ".openclaw", "workspace"),
       process.cwd(),
+      ...savedCaveProjectRoots(),
     ]
       .filter((value): value is string => Boolean(value))
       .map(realpathOrResolve),

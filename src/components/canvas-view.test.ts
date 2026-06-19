@@ -35,6 +35,7 @@ assert.match(view, /setActionError/, "a failed mutation must surface an error to
 
 assert.match(view, /fetch\("\/api\/canvas",\s*\{\s*method:\s*"PUT"/, "moved nodes must persist to /api/canvas");
 assert.match(view, /resolvePositions/, "nodes must be built from resolved (saved + auto-placed) positions");
+assert.match(view, /useNodesState<Node>\(\[\]\)/, "canvas should use React Flow's managed node-state hook");
 assert.match(view, /change\.type !== "dimensions"[\s\S]*?const \{ width,\s*height \} = change\.dimensions/, "artifact resize changes must capture dimensions");
 assert.match(view, /savePosition\(change\.id,\s*\{[\s\S]*?width,[\s\S]*?height[\s\S]*?\}\)/, "resized artifacts must persist width/height");
 assert.match(view, /const resizingNodeIds = useRef<Set<string>>\(new Set\(\)\)/, "canvas must track user-initiated artifact resizes");
