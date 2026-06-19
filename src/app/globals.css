@@ -3771,8 +3771,10 @@ button:active > .edge-rail-chip {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 12px;
-  height: 44px;
+  padding: 6px 12px;
+  /* min-height (not a fixed height) so the bar grows with scaled-up content
+     under screen magnification instead of clipping the search row. */
+  min-height: 44px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-hairline);
   font-size: var(--text-sm);
@@ -3830,6 +3832,12 @@ button:active > .edge-rail-chip {
 
 .menu-bar__search-icon {
   flex-shrink: 0;
+  /* Center the icon on the search row and size it relative to the text so it
+     scales together with the input under screen magnification (rem fonts)
+     instead of staying a tiny fixed-px glyph pinned to the top. */
+  align-self: center;
+  width: 1.15em;
+  height: 1.15em;
 }
 
 .menu-bar__search-input {
@@ -3840,6 +3848,7 @@ button:active > .edge-rail-chip {
   background: transparent;
   color: var(--text-primary);
   font: inherit;
+  line-height: 1.4;
 }
 
 .menu-bar__search-input::placeholder {
