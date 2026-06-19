@@ -161,6 +161,8 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const [artifactView, setArtifactView] = useState<Record<string, "preview" | "code">>({});
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState("");
+  // True while a user is dragging an artifact resize handle (see onNodesChange).
+  const [isResizing, setIsResizing] = useState(false);
   // Template dropdown (where the Blank button lives).
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const templatesAnchorRef = useRef<HTMLButtonElement | null>(null);
@@ -450,10 +452,16 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
         resizingNodeIds.current.delete(change.id);
         const { width, height } = change.dimensions;
         if (!Number.isFinite(width) || !Number.isFinite(height)) continue;
-        const saved = positions[change.id] ?? nodes.find((node) => node.id === change.id)?.position;
+        // Resizing from the top/left edge moves the node as well as sizing it, so
+        // persist the node's CURRENT position — the stale saved entry would snap the
+        // window back to its pre-resize origin on reload.
+        const saved = nodes.find((node) => node.id === change.id)?.position ?? positions[change.id];
         if (!saved) continue;
         savePosition(change.id, { x: saved.x, y: saved.y, width, height });
       }
+      // While any artifact is actively resizing, suppress iframe pointer capture so
+      // the drag tracks the cursor smoothly even as it passes over a live preview.
+      setIsResizing(resizingNodeIds.current.size > 0);
     }
     setNodes((prev) => applyNodeChanges(changes, prev));
   }, [layer, nodes, positions, savePosition]);
@@ -510,7 +518,7 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const sketchEmpty = hasLoaded && isSketch && artifacts.length === 0;
 
   return (
-    <div className="canvas-view" data-mode="canvas" data-layer={layer}>
+    <div className={`canvas-view${isResizing ? " is-resizing" : ""}`} data-mode="canvas" data-layer={layer}>
       <ReactFlow
         nodes={nodes}
         edges={[]}
