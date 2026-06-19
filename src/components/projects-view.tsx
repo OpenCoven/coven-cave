@@ -77,7 +77,7 @@ function ProjectChatRow({
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpen();
         }}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
         <button
           type="button"
@@ -383,7 +383,7 @@ function ProjectRow({
       {chats.length > 0 ? (
         <>
           <SortableContext items={visibleChats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <ul className="mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
+            <ul className="-mx-2 mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
               {visibleChats.map((session) => (
                 <ProjectChatRow
                   key={session.id}
