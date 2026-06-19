@@ -22,8 +22,15 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Retry once everywhere: the dev server compiles routes on first hit, so under
+  // parallel load a cold route can exceed a test's timeout on the first try and
+  // pass once warm. A genuinely broken spec still fails both attempts.
+  retries: 1,
   workers: process.env.CI ? 2 : undefined,
+  // The webServer is `next dev`, which compiles routes on demand; under parallel
+  // load the first interactive paint can run past Playwright's 30s default. Give
+  // each test 60s so a busy machine doesn't read slow-compile as a real failure.
+  timeout: 60_000,
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: BASE_URL,

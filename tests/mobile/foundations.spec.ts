@@ -64,7 +64,7 @@ test.describe("mobile foundations", () => {
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    const surfaces = ["Home", "Chat", "Board", "Automations", "Library", "Browser", "Terminal"];
+    const surfaces = ["Home", "Familiars", "Board", "Calendar", "Browser", "Terminal", "Code"];
     const sidebar = page.locator(".sidebar-nav-scroll");
 
     for (const surface of surfaces) {
@@ -123,6 +123,15 @@ test.describe("mobile foundations", () => {
       });
     });
 
+    // The Library surface is an addon, gated out of the sidebar by default —
+    // enable it (passthrough-patch the config) so the nav entry renders.
+    await page.route("**/api/config**", async (route) => {
+      const res = await route.fetch();
+      const json = await res.json().catch(() => ({}));
+      const config = { ...(json.config ?? {}), addons: { ...(json.config?.addons ?? {}), library: true } };
+      await route.fulfill({ json: { ...json, ok: true, config } });
+    });
+
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
@@ -174,7 +183,11 @@ test.describe("mobile foundations", () => {
       const frameRect = frame?.getBoundingClientRect();
       return {
         scale: document.documentElement.getAttribute("data-screen-scale"),
-        bodyZoom: getComputedStyle(document.body).zoom,
+        // Magnification is rem-based root font scaling (not an app-wide zoom,
+        // which broke getBoundingClientRect math): :root sets --cave-screen-scale
+        // and html font-size = calc(16px * var). 125% → 20px root font.
+        scaleVar: getComputedStyle(document.documentElement).getPropertyValue("--cave-screen-scale").trim(),
+        rootFontSize: getComputedStyle(document.documentElement).fontSize,
         documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
         bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
         frameBottom: frameRect?.bottom ?? 0,
@@ -183,7 +196,8 @@ test.describe("mobile foundations", () => {
     });
 
     expect(metrics.scale).toBe("125");
-    expect(metrics.bodyZoom).toBe("1.25");
+    expect(metrics.scaleVar).toBe("1.25");
+    expect(metrics.rootFontSize).toBe("20px");
     expect(metrics.documentOverflow, "document should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
     expect(metrics.bodyOverflow, "body should not be vertically scrollable at 125%").toBeLessThanOrEqual(1);
     expect(metrics.frameBottom, "magnified app frame should still fit the viewport").toBeLessThanOrEqual(metrics.viewportHeight + 1);

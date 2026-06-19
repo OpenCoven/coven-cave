@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the Codex-style chat thread rail (chat-project-sidebar) renders
-// every chat flat, exposes the mode filters, and launches new chats.
-// Desktop only — the rail is `hidden lg:flex`. Demo mode supplies familiars;
-// /api/sessions/list is mocked so the rail content is deterministic.
+// Verifies the chat thread rail (chat-project-sidebar) — the desktop session
+// navigator reached via ⌘2. The rail groups sessions under their project
+// folders (expanded), exposes an "All sessions" scope and a session search that
+// surfaces a flat "Results" section. Desktop only — the rail is `hidden lg:flex`.
+// Demo mode supplies familiars; /api/sessions/list is mocked for determinism.
 
 const ISO = "2026-06-12T10:00:00.000Z";
 const SESSIONS = [
@@ -38,46 +39,37 @@ async function gotoChat(page: Page) {
   await page.waitForSelector(".chat-thread-rail", { timeout: 30_000 });
 }
 
-test.describe("chat thread rail (Codex-style visibility)", () => {
-  test("lists every chat flat with mode filters and a New launcher", async ({ page }) => {
+test.describe("chat thread rail (session navigator)", () => {
+  test("groups every session under its project with all-sessions + search controls", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(".chat-thread-rail");
 
-    // Every session is visible in the flat list — no folder expansion needed.
+    // Scope + search controls.
+    await expect(rail.getByRole("button", { name: "All sessions" })).toBeVisible();
+    await expect(rail.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
+
+    // One folder per project root (basename), expanded by default. Target the
+    // folder toggle (aria-label "Collapse/Expand <name> sessions"), not the
+    // per-folder "New session in <name>" button which also contains the name.
+    await expect(rail.getByRole("button", { name: /(Collapse|Expand) alpha sessions/ })).toBeVisible();
+    await expect(rail.getByRole("button", { name: /(Collapse|Expand) beta sessions/ })).toBeVisible();
+
+    // Every session is visible in its project group — no expansion needed.
     for (const s of SESSIONS) {
       await expect(rail.getByText(s.title, { exact: false }).first()).toBeVisible();
     }
-
-    // Mode filter chips exist (All / Active / Tasks / Pinned).
-    for (const label of ["All", "Active", "Tasks", "Pinned"]) {
-      await expect(rail.getByRole("tab", { name: new RegExp(label) })).toBeVisible();
-    }
-
-    // Prominent New launcher.
-    await expect(rail.getByRole("button", { name: "New chat", exact: true })).toBeVisible();
   });
 
-  test("Active filter narrows to running chats; Tasks to board-originated", async ({ page }) => {
+  test("search surfaces matching sessions in a Results section, with an empty state", async ({ page }) => {
     await gotoChat(page);
     const rail = page.locator(".chat-thread-rail");
+    const search = rail.getByRole("textbox", { name: "Search sessions" });
 
-    await rail.getByRole("tab", { name: /Active/ }).click();
-    await expect(rail.getByText("Refactor auth flow")).toBeVisible(); // running
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible(); // running
-    await expect(rail.getByText("Fix eslint config")).toHaveCount(0); // completed
-    await expect(rail.getByText("Write API docs")).toHaveCount(0); // completed
+    await search.fill("deploy");
+    await expect(rail.getByText("Results")).toBeVisible();
+    await expect(rail.getByText("Wire deploy pipeline").first()).toBeVisible();
 
-    await rail.getByRole("tab", { name: /Tasks/ }).click();
-    await expect(rail.getByText("Fix eslint config")).toBeVisible(); // board
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible(); // board
-    await expect(rail.getByText("Refactor auth flow")).toHaveCount(0); // chat origin
-  });
-
-  test("search filters the flat list by title", async ({ page }) => {
-    await gotoChat(page);
-    const rail = page.locator(".chat-thread-rail");
-    await rail.getByRole("textbox", { name: "Search chats" }).fill("deploy");
-    await expect(rail.getByText("Wire deploy pipeline")).toBeVisible();
-    await expect(rail.getByText("Refactor auth flow")).toHaveCount(0);
+    await search.fill("no-such-session-xyz");
+    await expect(rail.getByText("No sessions match your search")).toBeVisible();
   });
 });

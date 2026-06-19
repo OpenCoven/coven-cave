@@ -23,7 +23,11 @@ async function expectNoHorizontalOverflow(page: Page, label: string) {
 }
 
 test.describe("mobile command center pages", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    // This spec asserts phone geometry against the mobile bottom-tab chrome,
+    // which only renders under the mobile breakpoint — skip it on the desktop
+    // project (the pixel-5 / iphone-13 projects cover it).
+    test.skip(testInfo.project.name === "desktop", "mobile-only: requires .mobile-bottom-tabs");
     await page.addInitScript(() => {
       window.localStorage.setItem("cave:active-familiar", "nova");
     });
@@ -48,7 +52,7 @@ test.describe("mobile command center pages", () => {
   });
 
   test("Chat index and new chat detail keep stable mobile geometry", async ({ page }) => {
-    await page.getByRole("tab", { name: "Chat" }).click();
+    await page.getByRole("tab", { name: "Familiars" }).click();
     await page.waitForSelector(".chat-surface");
 
     await expectNoHorizontalOverflow(page, "Chat index");
@@ -60,7 +64,7 @@ test.describe("mobile command center pages", () => {
     expect(chatTabs.top, "Chat tabs should sit below the app top bar").toBeGreaterThanOrEqual(topBar.bottom - 1);
     expect(chatTabs.bottom, "Chat tabs should not run into bottom tabs").toBeLessThan(bottomTabs.top);
 
-    await page.locator(".chat-scope-tabs button").filter({ hasText: /^\s*New\s*$/ }).click();
+    await page.locator(".chat-surface").getByRole("button", { name: "Session", exact: true }).first().click();
     await page.waitForSelector(".cave-chat-linear");
 
     await expectNoHorizontalOverflow(page, "Chat detail");
