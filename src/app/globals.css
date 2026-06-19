@@ -3980,6 +3980,84 @@ button:active > .edge-rail-chip {
   background: var(--color-warning);
 }
 
+/* New-chat quick-compose dropdown (anchored to the "New chat" button). The
+   popover container carries `.ui-popover .menu-bar__compose`. */
+.menu-bar__compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.menu-bar__compose-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-bar__compose-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.menu-bar__compose-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+}
+
+.menu-bar__compose-input {
+  width: 100%;
+  max-height: 160px;
+  resize: none;
+  padding: 8px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.menu-bar__compose-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
+.menu-bar__compose-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.menu-bar__compose-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 26%, transparent);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.menu-bar__compose-send:hover {
+  background: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+}
+
+.menu-bar__compose-kbd {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 .top-bar {
   display: none;
   grid-template-columns: 1fr minmax(auto, 560px) 1fr;

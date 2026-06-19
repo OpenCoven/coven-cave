@@ -36,10 +36,39 @@ assert.match(
   /computePresence\(\{/,
   "avatars compute presence for the status dot",
 );
+// The New chat button opens a quick-compose dropdown (a popover) rather than
+// starting a chat on the first click.
 assert.match(
   source,
-  /className="menu-bar__new focus-ring"[\s\S]*onClick=\{\(\) => onChatWithFamiliar\(activeFamiliarId\)\}/,
-  "the New chat button starts a chat with the active familiar",
+  /className="menu-bar__new focus-ring"[\s\S]*aria-haspopup="dialog"/,
+  "the New chat button opens a dropdown",
+);
+assert.match(
+  source,
+  /<Popover[\s\S]*className="menu-bar__compose"/,
+  "the dropdown is a popover anchored to the New chat button",
+);
+assert.match(
+  source,
+  /className="menu-bar__compose-select"/,
+  "the dropdown has a familiar selector",
+);
+assert.match(
+  source,
+  /className="menu-bar__compose-input"/,
+  "the dropdown has a compose box",
+);
+// Submitting with text starts a composed chat; submitting empty opens a blank
+// chat with the selected familiar.
+assert.match(
+  source,
+  /if \(prompt\) onComposeChat\(selectedId, prompt\);/,
+  "typed text starts a chat that auto-sends the message",
+);
+assert.match(
+  source,
+  /else onChatWithFamiliar\(selectedId\);/,
+  "an empty box opens a blank chat with the selected familiar",
 );
 
 // Right group — tasks. A Tasks button (board) and an Inbox button, each with a
@@ -71,6 +100,11 @@ assert.match(
   workspace,
   /<FamiliarMenuBar[\s\S]*onChatWithFamiliar=\{\(id\) => startFamiliarChat\(id\)\}/,
   "the bar's chat handler starts a real familiar chat",
+);
+assert.match(
+  workspace,
+  /onComposeChat=\{\(id, prompt\) => startFamiliarChat\(id, null, prompt\)\}/,
+  "the compose handler starts a familiar chat with an initial prompt",
 );
 assert.match(
   workspace,
