@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "positions": {
+    "scan-items": {
+      "x": 80,
+      "y": 80
+    },
+    "normalize-metadata": {
+      "x": 80,
+      "y": 220
+    },
+    "choose-tags": {
+      "x": 80,
+      "y": 360
+    },
+    "conflict-check": {
+      "x": 80,
+      "y": 500
+    },
+    "deletion-gate": {
+      "x": 80,
+      "y": 640
+    },
+    "write-library": {
+      "x": 80,
+      "y": 780
+    }
+  }
+}

@@ -48,7 +48,14 @@ export function ArtifactNode({ data, selected }: NodeProps<ArtifactFlowNode>) {
 
   return (
     <div className={`canvas-artifact${selected ? " is-selected" : ""}`}>
-      <NodeResizer minWidth={260} minHeight={200} isVisible={selected} />
+      <NodeResizer
+        minWidth={260}
+        minHeight={200}
+        isVisible
+        handleClassName="canvas-artifact-resizer__handle"
+        lineClassName="canvas-artifact-resizer__line"
+        color="var(--accent, #6b8fbf)"
+      />
       {/* Drag handle — the iframe swallows pointer events, so the node is only
           draggable by this header (see dragHandle wiring in canvas-view). */}
       <div className="canvas-artifact__grip">

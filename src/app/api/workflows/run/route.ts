@@ -131,7 +131,7 @@ async function runViaSession(body: RunBody) {
     );
   }
 
-  const prompt = buildWorkflowRunPrompt(workflow);
+  const prompt = buildWorkflowRunPrompt(workflow, body.inputs);
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",

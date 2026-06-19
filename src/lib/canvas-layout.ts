@@ -10,7 +10,7 @@
 
 import type { CardStatus } from "@/lib/cave-board-types";
 
-export type CanvasPosition = { x: number; y: number };
+export type CanvasPosition = { x: number; y: number; width?: number; height?: number };
 export type CanvasPositions = Record<string, CanvasPosition>;
 
 // Triage flow, left → right. New work lands in Inbox and moves rightward as it

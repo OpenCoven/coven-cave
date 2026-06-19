@@ -402,6 +402,22 @@ function scanFenceFilenames(markdown: string): Array<string | null> {
   return filenames;
 }
 
+function coalesceAdjacentNumberedLists(blocks: Block[]): Block[] {
+  const coalesced: Block[] = [];
+  for (const block of blocks) {
+    const normalizedBlock = block.children.length
+      ? { ...block, children: coalesceAdjacentNumberedLists(block.children) }
+      : block;
+    const previous = coalesced[coalesced.length - 1];
+    if (previous?.type === "numberedList" && normalizedBlock.type === "numberedList") {
+      previous.children = [...previous.children, ...normalizedBlock.children];
+      continue;
+    }
+    coalesced.push(normalizedBlock);
+  }
+  return coalesced;
+}
+
 // ---------------------------------------------------------------------------
 // Table cells: @create-markdown/preview emits header/row cells as escaped
 // plain text, so `**bold**`, `_em_`, `` `code` `` and [links] inside a table
@@ -499,7 +515,7 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   const fenceFilenames = scanFenceFilenames(markdown);
   const normalized = markdown.replace(/^(\s*```\s*[\w+.-]+):\S+/gm, "$1");
 
-  const blocks: Block[] = parse(normalized);
+  const blocks: Block[] = coalesceAdjacentNumberedLists(parse(normalized));
 
   // Precompute each async code renderer result. Index-keyed (not pushed)
   // so codeReplacements[i] corresponds to the i-th code block in parse order

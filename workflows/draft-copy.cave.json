@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "positions": {
+    "define-brief": {
+      "x": 80,
+      "y": 80
+    },
+    "generate-options": {
+      "x": 320,
+      "y": 80
+    },
+    "filter-claims": {
+      "x": 560,
+      "y": 80
+    },
+    "revise-tone": {
+      "x": 800,
+      "y": 80
+    },
+    "approval-notes": {
+      "x": 1040,
+      "y": 80
+    }
+  }
+}

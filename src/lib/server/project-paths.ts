@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { covenWorkspaceRoot } from "@/lib/coven-paths";
+import { covenHome, covenWorkspaceRoot } from "@/lib/coven-paths";
 
 function realpathOrResolve(value: string): string {
   const resolved = path.resolve(value);
@@ -10,6 +10,16 @@ function realpathOrResolve(value: string): string {
   } catch {
     return resolved;
   }
+}
+
+function normalizeLegacyCovenWorkspacePath(value: string): string {
+  const resolved = path.resolve(value);
+  const legacyRoot = path.resolve(path.join(covenHome(), "workspace"));
+  if (resolved !== legacyRoot && !resolved.startsWith(legacyRoot + path.sep)) {
+    return value;
+  }
+
+  return path.join(path.resolve(path.join(covenHome(), "workspaces")), path.relative(legacyRoot, resolved));
 }
 
 const ALLOWED_ROOTS = Array.from(
@@ -45,7 +55,7 @@ function relativeWithinRoot(candidate: string, root: string): string | null {
 }
 
 export function resolveAllowedProjectSubpath(value: string): { root: string; relativePath: string } | null {
-  const candidate = realpathOrResolve(value);
+  const candidate = realpathOrResolve(normalizeLegacyCovenWorkspacePath(value));
   for (const root of ALLOWED_ROOTS) {
     if (isWithinRoot(candidate, root)) {
       const relativePath = relativeWithinRoot(candidate, root);

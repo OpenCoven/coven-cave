@@ -35,6 +35,13 @@ assert.match(view, /setActionError/, "a failed mutation must surface an error to
 
 assert.match(view, /fetch\("\/api\/canvas",\s*\{\s*method:\s*"PUT"/, "moved nodes must persist to /api/canvas");
 assert.match(view, /resolvePositions/, "nodes must be built from resolved (saved + auto-placed) positions");
+assert.match(view, /change\.type !== "dimensions"[\s\S]*?const \{ width,\s*height \} = change\.dimensions/, "artifact resize changes must capture dimensions");
+assert.match(view, /savePosition\(change\.id,\s*\{[\s\S]*?width,[\s\S]*?height[\s\S]*?\}\)/, "resized artifacts must persist width/height");
+assert.match(view, /const resizingNodeIds = useRef<Set<string>>\(new Set\(\)\)/, "canvas must track user-initiated artifact resizes");
+assert.match(view, /change\.type === "dimensions" && change\.resizing[\s\S]*?resizingNodeIds\.current\.add\(change\.id\)/, "active resize changes mark the artifact as user-resized");
+assert.match(view, /change\.type !== "dimensions" \|\| change\.resizing \|\| !change\.dimensions \|\| !resizingNodeIds\.current\.has\(change\.id\)/, "ResizeObserver dimension measurements must not persist to /api/canvas");
+assert.match(view, /width:\s*saved\.width \?\? ARTIFACT_W/, "artifact nodes must restore saved width");
+assert.match(view, /height:\s*saved\.height \?\? ARTIFACT_H/, "artifact nodes must restore saved height");
 
 // ── Familiar scoping mirrors the Board ─────────────────────────────────────
 
@@ -82,6 +89,12 @@ assert.match(artifactNode, /addEventListener\("message"/, "the node listens for 
 assert.match(artifactNode, /e\.source !== frameRef\.current\?\.contentWindow/, "errors are matched to this node's iframe");
 assert.match(artifactNode, /sandbox-error/, "the node handles the runtime's sandbox-error message");
 assert.match(artifactNode, /canvas-artifact__error/, "a runtime error renders an overlay");
+assert.match(artifactNode, /canvas-artifact-resizer/, "artifact resize controls must use canvas-scoped handle classes");
+assert.match(
+  artifactNode,
+  /handleClassName="canvas-artifact-resizer__handle"/,
+  "artifact resize handles must be targetable for larger hit areas",
+);
 
 // Generated kind is plumbed through to the stored artifact.
 assert.match(view, /kind\s*=\s*result\.kind/, "generation records the extracted artifact kind");
@@ -98,5 +111,15 @@ assert.match(view, /nodes\.length > 0 \? <MiniMap/, "MiniMap only renders when t
 const canvasCss = await readFile(new URL("../styles/canvas.css", import.meta.url), "utf8");
 assert.match(canvasCss, /\.canvas-view \.react-flow__minimap\s*\{/, "canvas themes the React Flow minimap");
 assert.match(canvasCss, /\.canvas-view \.react-flow__controls-button\s*\{/, "canvas themes the React Flow controls");
+assert.match(
+  canvasCss,
+  /\.canvas-artifact-resizer__handle\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/,
+  "artifact resize handles must expose a forgiving 28px hit target",
+);
+assert.match(
+  canvasCss,
+  /\.canvas-artifact-resizer__line\s*\{[\s\S]*?border-width:\s*8px;/,
+  "artifact resize edges must expose a forgiving edge hit target",
+);
 
 console.log("canvas-view.test.ts ✓");

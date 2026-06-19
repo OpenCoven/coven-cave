@@ -25,16 +25,23 @@ export type CanvasFile = {
 
 const EMPTY: CanvasFile = { version: 1, positions: {}, artifacts: [] };
 
-/** Coerce an unknown value into a finite {x,y}, or null if unusable. */
+/** Coerce an unknown value into a finite {x,y[,width,height]}, or null if unusable. */
 function asPosition(value: unknown): CanvasPosition | null {
   if (!value || typeof value !== "object") return null;
-  const { x, y } = value as { x?: unknown; y?: unknown };
+  const { x, y, width, height } = value as { x?: unknown; y?: unknown; width?: unknown; height?: unknown };
   if (typeof x !== "number" || typeof y !== "number") return null;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { x, y };
+  const out: CanvasPosition = { x, y };
+  if (width !== undefined || height !== undefined) {
+    if (typeof width !== "number" || typeof height !== "number") return null;
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+    out.width = width;
+    out.height = height;
+  }
+  return out;
 }
 
-/** Sanitize a raw positions map, dropping any entry that isn't a finite point. */
+/** Sanitize a raw positions map, dropping any entry that isn't finite geometry. */
 export function sanitizePositions(raw: unknown): CanvasPositions {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: CanvasPositions = {};

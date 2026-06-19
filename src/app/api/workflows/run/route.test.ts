@@ -23,7 +23,7 @@ assert.match(source, /executor:\s*"engine"/, "a native-engine run is tagged exec
 assert.match(source, /engine\.status === 404[\s\S]{0,80}runViaSession\(body\)/, "a 404 from the engine hands off to the session executor");
 
 // The session executor compiles the manifest and spawns a real agent session.
-assert.match(source, /buildWorkflowRunPrompt\(workflow\)/, "session executor compiles the manifest into a run prompt");
+assert.match(source, /buildWorkflowRunPrompt\(workflow, body\.inputs\)/, "session executor compiles the manifest and runtime inputs into a run prompt");
 assert.match(source, /path:\s*"\/api\/v1\/sessions"/, "session executor spawns a daemon agent session");
 assert.match(source, /harness:\s*binding\.harness/, "session executor honors the familiar's harness binding");
 assert.match(source, /\{\s*familiarId\s*\}/, "session executor passes the familiar to the daemon natively (camelCase familiarId, as the daemon keys on)");

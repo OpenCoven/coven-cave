@@ -41,6 +41,26 @@ const dependent: WorkflowSummary = {
   assert.match(prompt, /destructive or irreversible/);
 }
 
+// Runtime inputs should appear in a clear block, and missing required context
+// should explicitly prompt the agent to ask for it before continuing.
+{
+  const prompt = buildWorkflowRunPrompt(dependent, {
+    topic: "OpenCoven release notes",
+    audience: "maintainers",
+    empty: "",
+  });
+  assert.match(prompt, /Workflow input/);
+  assert.match(prompt, /topic: OpenCoven release notes/);
+  assert.match(prompt, /audience: maintainers/);
+  assert.doesNotMatch(prompt, /empty:/);
+  assert.doesNotMatch(prompt, /If required workflow input is missing/);
+
+  const missing = buildWorkflowRunPrompt(dependent, {});
+  assert.match(missing, /Workflow input/);
+  assert.match(missing, /No explicit input was provided/);
+  assert.match(missing, /If required workflow input is missing, ask Val for the specific value/);
+}
+
 // A manifest with no steps still produces a usable prompt (no crash, no step block).
 {
   const bare: WorkflowSummary = { id: "empty", version: "1.0.0", name: "Empty" };

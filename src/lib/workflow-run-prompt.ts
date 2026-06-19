@@ -22,6 +22,37 @@ function stepLine(step: WorkflowStepSummary, index: number): string {
   return detail ? `${head}\n   ${detail}` : head;
 }
 
+function formatInputValue(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value === null || value === undefined) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function workflowInputLines(inputs: Record<string, unknown> | undefined): string[] {
+  const entries = Object.entries(inputs ?? {})
+    .map(([key, value]) => [key.trim(), formatInputValue(value)] as const)
+    .filter(([key, value]) => key.length > 0 && value.length > 0);
+
+  if (entries.length === 0) {
+    return [
+      "Workflow input:",
+      "No explicit input was provided. If required workflow input is missing, ask Val for the specific value before continuing.",
+      "",
+    ];
+  }
+
+  return [
+    "Workflow input:",
+    ...entries.map(([key, value]) => `- ${key}: ${value}`),
+    "",
+  ];
+}
+
 /** Order the manifest's steps the way a run would activate them (dependency depth, then authored order). */
 export function orderedWorkflowSteps(workflow: WorkflowSummary): WorkflowStepSummary[] {
   const steps = workflow.steps ?? [];
@@ -34,7 +65,7 @@ export function orderedWorkflowSteps(workflow: WorkflowSummary): WorkflowStepSum
   return ordered;
 }
 
-export function buildWorkflowRunPrompt(workflow: WorkflowSummary): string {
+export function buildWorkflowRunPrompt(workflow: WorkflowSummary, inputs?: Record<string, unknown>): string {
   const title = workflow.name ?? workflow.id;
   const lines: string[] = [
     `You are executing the "${title}" workflow.`,
@@ -53,6 +84,8 @@ export function buildWorkflowRunPrompt(workflow: WorkflowSummary): string {
   if (limits?.timeout_s) meta.push(`Timeout: ${limits.timeout_s}s`);
   if (limits?.cost_ceiling_usd) meta.push(`Cost ceiling: $${limits.cost_ceiling_usd}`);
   if (meta.length > 0) lines.push(...meta, "");
+
+  lines.push(...workflowInputLines(inputs));
 
   const steps = orderedWorkflowSteps(workflow);
   if (steps.length > 0) {

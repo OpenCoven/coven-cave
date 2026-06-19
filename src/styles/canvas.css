@@ -383,7 +383,7 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--bg-panel);
   border: 1px solid var(--border-hairline);
   border-radius: 12px;
@@ -401,6 +401,7 @@
   padding: 6px 8px 6px 10px;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border-hairline);
+  border-radius: 12px 12px 0 0;
   cursor: grab;
 }
 
@@ -458,7 +459,50 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   background: #fff;
+  border-radius: 0 0 12px 12px;
+}
+
+.canvas-artifact-resizer__handle {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: transparent !important;
+  border: 0 !important;
+  opacity: 0.55;
+  z-index: 12;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.canvas-artifact-resizer__handle::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--bg-panel);
+  border: 2px solid var(--accent, #6b8fbf);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+.canvas-artifact-resizer__line {
+  border-color: rgba(107, 143, 191, 0.32) !important;
+  border-width: 8px;
+  opacity: 0;
+  z-index: 11;
+  transition: opacity 120ms ease;
+}
+
+.canvas-artifact:hover .canvas-artifact-resizer__handle,
+.canvas-artifact.is-selected .canvas-artifact-resizer__handle,
+.canvas-artifact:hover .canvas-artifact-resizer__line,
+.canvas-artifact.is-selected .canvas-artifact-resizer__line {
+  opacity: 1;
+}
+
+.canvas-artifact-resizer__handle:hover {
+  transform: scale(1.08);
 }
 
 .canvas-artifact__frame {

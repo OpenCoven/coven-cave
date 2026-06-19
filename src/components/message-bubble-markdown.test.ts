@@ -60,6 +60,25 @@ assert.doesNotMatch(
   "Chat markdown should not post-process preview-rendered <table> blocks with regex replacement",
 );
 
+// @create-markdown/core splits blank-line-separated `1.` shorthand items into
+// adjacent one-item numberedList blocks. Without coalescing, the browser sees
+// separate <ol> elements and every visible marker renders as "1.".
+assert.match(
+  source,
+  /function coalesceAdjacentNumberedLists\(blocks: Block\[\]\): Block\[\]/,
+  "Adjacent numberedList blocks should be normalized before preview rendering",
+);
+assert.match(
+  source,
+  /previous\.children = \[\.\.\.previous\.children, \.\.\.normalizedBlock\.children\]/,
+  "Blank-line-separated ordered-list items should share one numberedList block so numbering increments",
+);
+assert.match(
+  source,
+  /const blocks: Block\[\] = coalesceAdjacentNumberedLists\(parse\(normalized\)\)/,
+  "mdToHtml should render the coalesced ordered-list block tree",
+);
+
 // ── CHAT-D7-08: wide tables scroll, they don't word-shatter ───────────────
 // Every substituted table is wrapped in a horizontal scroll container; cells
 // undo .cave-md's overflow-wrap: anywhere so unbreakable tokens grow the

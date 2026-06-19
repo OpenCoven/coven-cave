@@ -170,6 +170,7 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
     artifactsRef.current = artifacts;
   }, [artifacts]);
   const editTimers = useRef<Record<string, number>>({});
+  const resizingNodeIds = useRef<Set<string>>(new Set());
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
 
@@ -411,24 +412,27 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
       return;
     }
     setNodes(
-      artifacts.map((art, i) => ({
-        id: art.id,
-        type: "artifact" as const,
-        position: positions[art.id] ?? placementFor(i),
-        dragHandle: ".canvas-artifact__grip",
-        style: { width: ARTIFACT_W, height: ARTIFACT_H },
-        data: {
-          artifact: art,
-          view: artifactView[art.id] ?? "preview",
-          generating: generating.has(art.id),
-          onToggleView,
-          onRefine,
-          onDuplicate,
-          onDelete: onDeleteArtifact,
-          onEditCode,
-          onOpenInBrowser,
-        },
-      })) as ArtifactFlowNode[],
+      artifacts.map((art, i) => {
+        const saved = positions[art.id] ?? placementFor(i);
+        return {
+          id: art.id,
+          type: "artifact" as const,
+          position: saved,
+          dragHandle: ".canvas-artifact__grip",
+          style: { width: saved.width ?? ARTIFACT_W, height: saved.height ?? ARTIFACT_H },
+          data: {
+            artifact: art,
+            view: artifactView[art.id] ?? "preview",
+            generating: generating.has(art.id),
+            onToggleView,
+            onRefine,
+            onDuplicate,
+            onDelete: onDeleteArtifact,
+            onEditCode,
+            onOpenInBrowser,
+          },
+        };
+      }) as ArtifactFlowNode[],
     );
   }, [
     layer, filtered, positions, familiarsById, onOpenCard, onOpenUrl, artifacts, artifactView,
@@ -436,8 +440,23 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   ]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
+    if (layer === "sketch") {
+      for (const change of changes) {
+        if (change.type === "dimensions" && change.resizing) {
+          resizingNodeIds.current.add(change.id);
+          continue;
+        }
+        if (change.type !== "dimensions" || change.resizing || !change.dimensions || !resizingNodeIds.current.has(change.id)) continue;
+        resizingNodeIds.current.delete(change.id);
+        const { width, height } = change.dimensions;
+        if (!Number.isFinite(width) || !Number.isFinite(height)) continue;
+        const saved = positions[change.id] ?? nodes.find((node) => node.id === change.id)?.position;
+        if (!saved) continue;
+        savePosition(change.id, { x: saved.x, y: saved.y, width, height });
+      }
+    }
     setNodes((prev) => applyNodeChanges(changes, prev));
-  }, []);
+  }, [layer, nodes, positions, savePosition]);
 
   const patchStatus = useCallback(async (id: string, status: CardStatus) => {
     const prevStatus = cards.find((c) => c.id === id)?.status;

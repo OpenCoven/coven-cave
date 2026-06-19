@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "positions": {
+    "collect-context": {
+      "x": 80,
+      "y": 80
+    },
+    "separate-records": {
+      "x": 80,
+      "y": 220
+    },
+    "identify-candidates": {
+      "x": 80,
+      "y": 360
+    },
+    "review-gate": {
+      "x": 80,
+      "y": 500
+    },
+    "write-archive": {
+      "x": 80,
+      "y": 640
+    }
+  }
+}

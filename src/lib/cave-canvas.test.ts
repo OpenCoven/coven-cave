@@ -12,6 +12,12 @@ assert.deepEqual(
   "well-formed finite points pass through",
 );
 
+assert.deepEqual(
+  sanitizePositions({ art: { x: 10, y: 20, width: 640, height: 420 } }),
+  { art: { x: 10, y: 20, width: 640, height: 420 } },
+  "artifact positions may persist finite resized dimensions",
+);
+
 assert.deepEqual(sanitizePositions(null), {}, "null is coerced to an empty map");
 assert.deepEqual(sanitizePositions([1, 2, 3]), {}, "arrays are rejected (positions is an object map)");
 assert.deepEqual(sanitizePositions("nope"), {}, "primitives are rejected");
@@ -19,15 +25,18 @@ assert.deepEqual(sanitizePositions("nope"), {}, "primitives are rejected");
 assert.deepEqual(
   sanitizePositions({
     good: { x: 3, y: 4 },
+    goodSize: { x: 3, y: 4, width: 500, height: 300 },
     nanX: { x: NaN, y: 0 },
     infY: { x: 0, y: Infinity },
+    nanWidth: { x: 1, y: 2, width: NaN, height: 300 },
+    infHeight: { x: 1, y: 2, width: 500, height: Infinity },
     missing: { x: 1 },
     stringy: { x: "1", y: "2" },
     nested: { x: { z: 1 }, y: 2 },
     notObj: 5,
   }),
-  { good: { x: 3, y: 4 } },
-  "only the finite numeric point survives the mixed bag",
+  { good: { x: 3, y: 4 }, goodSize: { x: 3, y: 4, width: 500, height: 300 } },
+  "only finite numeric points and finite optional dimensions survive the mixed bag",
 );
 
 console.log("cave-canvas.test.ts ✓");
