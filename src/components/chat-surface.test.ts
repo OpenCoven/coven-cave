@@ -85,10 +85,13 @@ assert.match(
   /\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}/,
   "ChatSurface should label the secondary primary tab Memory instead of Traces",
 );
-assert.match(
+// Familiar selection now lives in the global top menu bar (and the sidebar /
+// mobile top-bar switcher), so the chat header carries only its scope tabs —
+// no duplicate switcher here.
+assert.doesNotMatch(
   chatSurface,
-  /<FamiliarSwitcher[\s\S]*activeFamiliarId=\{activeFamiliarId\}[\s\S]*onSelectFamiliar=\{\(id\) => \{/,
-  "ChatSurface should move familiar selection into the page header",
+  /<FamiliarSwitcher/,
+  "ChatSurface should not duplicate the global familiar switcher in its header",
 );
 assert.match(
   chatSurface,

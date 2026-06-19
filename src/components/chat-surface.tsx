@@ -13,7 +13,6 @@ import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { CodeInlineToolbar } from "@/components/code-inline-toolbar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -530,29 +529,9 @@ export function ChatSurface({
         {/* ── Ultra-minimalist header ────────────────────────────────────── */}
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           <div className="flex min-w-0 items-center gap-3">
-            {/* Code mode crowds this row with layout presets + the panel toggle,
-                so the familiar scope collapses to a compact avatar there. */}
-            <div
-              className={`chat-surface__familiar-scope flex min-w-0 shrink-0 py-1.5 ${
-                isCodeSurface ? "" : "w-[min(220px,34vw)] max-sm:w-[min(168px,42vw)]"
-              }`}
-            >
-              <FamiliarSwitcher
-                familiars={resolvedFamiliars}
-                activeFamiliarId={activeFamiliarId}
-                sessions={sessions}
-                onSelectFamiliar={(id) => {
-                  onSetActiveFamiliar(id);
-                  setScope("conversation");
-                  window.setTimeout(() => routerRef.current?.goToList(), 0);
-                }}
-                placement="bottom-start"
-                labeled={!isCodeSurface}
-              />
-            </div>
-            <span aria-hidden className="h-5 w-px shrink-0 bg-[var(--border-hairline)]" />
-            {/* Tabs flush left — Vercel-style underline tabs. The header row
-                already draws the divider, so the tablist itself is borderless. */}
+            {/* The active familiar is selected from the global top menu bar /
+                switcher now, so the chat header carries only its scope tabs.
+                Vercel-style borderless underline tabs, flush left. */}
             <Tabs<FamiliarsScope>
               bordered={false}
               value={scope}

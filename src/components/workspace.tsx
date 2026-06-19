@@ -68,6 +68,7 @@ import {
 } from "@/lib/demo-mode";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
+import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
@@ -188,6 +189,7 @@ export function Workspace() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
+  const [boardTaskCount, setBoardTaskCount] = useState(0);
   const [inboxPrefs, setInboxPrefs] = useState<InboxPrefs>({
     version: 1,
     mutedFamiliars: [],
@@ -762,6 +764,33 @@ export function Workspace() {
     };
     void tick();
     const t = setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+
+  // Poll the board for the count of open task cards (anything not yet "done")
+  // — drives the desktop menu bar's Tasks badge. Cheap GET every 60s.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/board", { cache: "no-store" });
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok && Array.isArray(json.cards)) {
+          const open = (json.cards as Array<{ status?: string }>).filter(
+            (c) => c.status !== "done",
+          ).length;
+          setBoardTaskCount(open);
+        }
+      } catch {
+        /* keep last value on transient failure */
+      }
+    };
+    void tick();
+    const t = setInterval(tick, 60_000);
     return () => {
       cancelled = true;
       clearInterval(t);
@@ -1652,7 +1681,20 @@ export function Workspace() {
           if (activeId) setRailOpen(activeId, open);
         }}
         topBar={({ navDrawerOpen, listDrawerOpen, familiarDrawerOpen }) => (
-          <TopBar
+          <>
+            <FamiliarMenuBar
+              familiars={resolvedFamiliars}
+              activeFamiliarId={activeId}
+              sessions={sessions}
+              responseNeeded={responseNeeded}
+              taskCount={boardTaskCount}
+              inboxCount={inboxBadgeCount}
+              onChatWithFamiliar={(id) => startFamiliarChat(id)}
+              onSelectFamiliar={selectFamiliarScope}
+              onViewTasks={() => setMode("board")}
+              onViewInbox={() => setMode("inbox")}
+            />
+            <TopBar
             onOpenPalette={() => setPaletteOpen(true)}
             onOpenInbox={() => setMode("inbox")}
             onOpenSettings={() => nextRouter.push("/settings")}
@@ -1685,6 +1727,7 @@ export function Workspace() {
                 : undefined
             }
           />
+          </>
         )}
         nav={sidebar}
         list={list}
