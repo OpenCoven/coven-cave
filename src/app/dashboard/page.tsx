@@ -24,6 +24,8 @@ export default async function DashboardPage() {
   const todaysReport = reports.find((report) => report.slug === todaySlug) ?? null;
   const latestReport = reports[0] ?? null;
   const featuredReport = todaysReport ?? latestReport;
+  // The featured report already headlines the page — don't repeat it in the list.
+  const otherReports = reports.filter((report) => report.slug !== featuredReport?.slug);
   const openCount = breakdown.openItems.length;
 
   return (
@@ -120,6 +122,7 @@ export default async function DashboardPage() {
             label="Reminders today"
             caption="Fired today"
             accent="amber"
+            href="/"
           />
           <MetricCard
             icon="ph:chat-circle-dots"
@@ -127,6 +130,7 @@ export default async function DashboardPage() {
             label="Responses waiting"
             caption="Need your reply"
             accent="rose"
+            href="/"
           />
           <MetricCard
             icon="ph:sparkle"
@@ -134,6 +138,7 @@ export default async function DashboardPage() {
             label="Familiar updates"
             caption="From your agents"
             accent="lavender"
+            href="/"
           />
           <MetricCard
             icon="ph:newspaper"
@@ -141,69 +146,75 @@ export default async function DashboardPage() {
             label="Daily reports"
             caption="Archived snapshots"
             accent="blue"
+            href="#recent-reports"
           />
         </section>
 
-        {/* Needs attention — actionable, live. */}
-        <section className="dr-section" aria-label="Needs attention">
-          <SectionHead
-            icon="ph:warning-circle"
-            title="Needs attention"
-            count={openCount}
-            hint="Click to jump back in"
-          />
-          {openCount > 0 ? (
-            <div className="dr-list">
-              {breakdown.openItems.slice(0, 8).map((open) => (
-                <ItemRow key={open.id} item={open} now={now} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState icon="ph:check-circle">
-              Nothing needs you right now. Your reminders and responses are all handled.
-            </EmptyState>
-          )}
-        </section>
+        {/* Needs-attention + recent reports sit side-by-side on wide screens. */}
+        <div className="dr-columns">
+          {/* Needs attention — actionable, live. */}
+          <section className="dr-section" aria-label="Needs attention">
+            <SectionHead
+              icon="ph:warning-circle"
+              title="Needs attention"
+              count={openCount}
+              hint={openCount > 0 ? "Click to jump back in" : undefined}
+            />
+            {openCount > 0 ? (
+              <div className="dr-list">
+                {breakdown.openItems.slice(0, 8).map((open) => (
+                  <ItemRow key={open.id} item={open} now={now} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon="ph:check-circle">
+                Nothing needs you right now — reminders and responses are all handled.
+              </EmptyState>
+            )}
+          </section>
 
-        {/* Recent daily reports. */}
-        <section className="dr-section" aria-label="Recent daily reports">
-          <SectionHead icon="ph:newspaper" title="Recent daily reports" count={reports.length} />
-          {reports.length > 0 ? (
-            <div className="dr-list">
-              {reports.slice(0, 7).map((report) => {
-                const reportDate = new Date(`${report.slug}T00:00:00`);
-                return (
-                  <a key={report.slug} className="dr-row" href={report.href}>
-                    <span className="dr-row__icon" style={{ ["--row-accent" as string]: "var(--color-info)" }}>
-                      <Icon name="ph:newspaper" aria-hidden />
-                    </span>
-                    <span className="dr-row__body dr-report-row">
-                      <span style={{ minWidth: 0, flex: 1 }}>
-                        <span className="dr-row__title">{relativeDayLabel(reportDate, now)}</span>
-                        <span className="dr-row__sub">{report.title}</span>
+          {/* Recent daily reports (excludes the one featured above). */}
+          <section className="dr-section" id="recent-reports" aria-label="Recent daily reports">
+            <SectionHead icon="ph:newspaper" title="Recent daily reports" count={otherReports.length} />
+            {otherReports.length > 0 ? (
+              <div className="dr-list">
+                {otherReports.slice(0, 7).map((report) => {
+                  const reportDate = new Date(`${report.slug}T00:00:00`);
+                  return (
+                    <a key={report.slug} className="dr-row" href={report.href}>
+                      <span className="dr-row__icon" style={{ ["--row-accent" as string]: "var(--color-info)" }}>
+                        <Icon name="ph:newspaper" aria-hidden />
                       </span>
-                      {report.stats ? (
-                        <span className="dr-report-row__stats">
-                          <span className="dr-mini-stat"><b>{report.stats.reminders}</b> rem</span>
-                          <span className="dr-mini-stat"><b>{report.stats.responses}</b> resp</span>
-                          <span className="dr-mini-stat"><b>{report.stats.sessions}</b> sess</span>
+                      <span className="dr-row__body dr-report-row">
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span className="dr-row__title">{relativeDayLabel(reportDate, now)}</span>
+                          <span className="dr-row__sub">{report.title}</span>
                         </span>
-                      ) : null}
-                    </span>
-                    <span className="dr-row__open">
-                      <span>Open</span>
-                      <Icon name="ph:arrow-right-bold" aria-hidden />
-                    </span>
-                  </a>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState icon="ph:newspaper">
-              No daily reports yet. They&apos;re generated automatically as you use the cave.
-            </EmptyState>
-          )}
-        </section>
+                        {report.stats ? (
+                          <span className="dr-report-row__stats">
+                            <span className="dr-mini-stat"><b>{report.stats.reminders}</b> rem</span>
+                            <span className="dr-mini-stat"><b>{report.stats.responses}</b> resp</span>
+                            <span className="dr-mini-stat"><b>{report.stats.sessions}</b> sess</span>
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="dr-row__open">
+                        <span>Open</span>
+                        <Icon name="ph:arrow-right-bold" aria-hidden />
+                      </span>
+                    </a>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState icon="ph:newspaper">
+                {featuredReport
+                  ? "Older reports will appear here as new daily summaries are generated."
+                  : "No daily reports yet. They're generated automatically as you use the cave."}
+              </EmptyState>
+            )}
+          </section>
+        </div>
 
         {/* Jump-off quick links into the app shell. */}
         <section className="dr-section" aria-label="Workspaces">

@@ -31,27 +31,45 @@ export function MetricCard({
   label,
   caption,
   accent = "lavender",
+  href,
 }: {
   icon: IconName;
   value: number | string;
   label: string;
   caption?: string;
   accent?: Accent;
+  href?: string;
 }) {
   const muted = value === 0 || value === "0";
-  return (
-    <div
-      className={`dr-metric${muted ? " dr-metric--muted" : ""}`}
-      style={{ ["--metric-accent" as string]: ACCENT_VAR[accent] }}
-    >
+  const className = `dr-metric${muted ? " dr-metric--muted" : ""}${href ? " dr-metric--link" : ""}`;
+  const style = { ["--metric-accent" as string]: ACCENT_VAR[accent] };
+  const inner = (
+    <>
       <div className="dr-metric__top">
         <span className="dr-metric__icon">
           <Icon name={icon} aria-hidden />
         </span>
+        {href ? (
+          <span className="dr-metric__go" aria-hidden>
+            <Icon name="ph:arrow-right-bold" aria-hidden />
+          </span>
+        ) : null}
       </div>
       <div className="dr-metric__value">{value}</div>
       <div className="dr-metric__label">{label}</div>
       {caption ? <div className="dr-metric__caption">{caption}</div> : null}
+    </>
+  );
+  if (href) {
+    return (
+      <a className={className} style={style} href={href}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <div className={className} style={style}>
+      {inner}
     </div>
   );
 }
