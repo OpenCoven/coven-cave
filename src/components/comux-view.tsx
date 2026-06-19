@@ -296,6 +296,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // toolbar's Projects toggle and its layout presets over window events. Lives
   // here because comux owns the column; code-view only mirrors the boolean.
   const [projectListCollapsed, setProjectListCollapsed] = useState(false);
+  const [projectDetailCollapsed, setProjectDetailCollapsed] = useState(false);
+  const [filePreviewCollapsed, setFilePreviewCollapsed] = useState(false);
   // Right pane view: the file preview, or the project's git changes/diff review.
   const [rightView, setRightView] = useState<"files" | "changes">("files");
   // Diff-first review: auto-switch to Changes the first time an agent run
@@ -531,6 +533,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const openFilePreview = useCallback(async (path: string, line?: number) => {
     setPreviewPath(path);
     setPreviewLine(line);
+    setFilePreviewCollapsed(false);
     setPreviewLoading(true);
     setPreview(null);
     setPreviewRaw(false);
@@ -642,6 +645,16 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     setProjectListCollapsed(!visible);
     writeProjectListCollapsed(!visible);
   }, []);
+
+  const setProjectDetailVisible = useCallback((visible: boolean) => {
+    if (!visible && filePreviewCollapsed) setFilePreviewCollapsed(false);
+    setProjectDetailCollapsed(!visible);
+  }, [filePreviewCollapsed]);
+
+  const setFilePreviewVisible = useCallback((visible: boolean) => {
+    if (!visible && projectDetailCollapsed) setProjectDetailCollapsed(false);
+    setFilePreviewCollapsed(!visible);
+  }, [projectDetailCollapsed]);
 
   const copyPreview = useCallback(() => {
     if (!preview || preview.kind !== "text") return;
@@ -1147,43 +1160,68 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           {/* Project detail */}
           <div className="flex min-w-0 min-h-0 flex-1 flex-col">
             {selectedProject ? (
-              <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-2">
-                <div className="flex min-h-0 min-w-0 flex-col border-b border-[var(--border-hairline)] xl:border-b-0 xl:border-r">
-                  <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Icon name="ph:folder-open" width={15} className="shrink-0 text-[var(--text-muted)]" />
-                          <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
-                            {selectedProject.name}
-                          </h2>
+              <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
+                {projectDetailCollapsed ? (
+                  <button
+                    type="button"
+                    aria-label="Show project details"
+                    title="Show project details"
+                    onClick={() => setProjectDetailVisible(true)}
+                    className="flex min-h-[34px] shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] xl:min-h-0 xl:w-[34px] xl:flex-col xl:self-stretch xl:border-b-0 xl:border-r xl:py-2"
+                  >
+                    <span className="grid h-7 w-7 shrink-0 place-items-center">
+                      <Icon name="ph:sidebar-simple" width={15} />
+                    </span>
+                    <span className="comux-detail-rail-label text-[10px] font-semibold uppercase tracking-widest xl:mt-1">
+                      Details
+                    </span>
+                  </button>
+                ) : (
+                  <div className="flex min-h-0 min-w-0 flex-col border-b border-[var(--border-hairline)] xl:flex-1 xl:border-b-0 xl:border-r">
+                    <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <Icon name="ph:folder-open" width={15} className="shrink-0 text-[var(--text-muted)]" />
+                            <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+                              {selectedProject.name}
+                            </h2>
+                          </div>
+                          <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">
+                            {selectedProject.root}
+                          </p>
                         </div>
-                        <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]">
-                          {selectedProject.root}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => addSession(selectedProject.root)}
-                          className="flex items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                        >
-                          <Icon name="ph:plus" width={12} />
-                          Terminal
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onNewChat(selectedProject.root)}
-                          className="flex items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-85"
-                        >
-                          <Icon name="ph:chat-circle-dots" width={12} />
-                          New chat
-                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addSession(selectedProject.root)}
+                            className="flex items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                          >
+                            <Icon name="ph:plus" width={12} />
+                            Terminal
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onNewChat(selectedProject.root)}
+                            className="flex items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-white hover:opacity-85"
+                          >
+                            <Icon name="ph:chat-circle-dots" width={12} />
+                            New chat
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="Hide project details"
+                            title="Hide project details"
+                            onClick={() => setProjectDetailVisible(false)}
+                            className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                          >
+                            <Icon name="ph:sidebar-simple-fill" width={14} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    <div className="min-h-0 flex-1 overflow-y-auto p-3">
                     {/* Project-wide code search (CODE-SEARCH-01) */}
                     <div className="mb-3">
                       <div className="relative">
@@ -1377,10 +1415,27 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         onFileClick={openFilePreview}
                       />
                     </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
+                {filePreviewCollapsed ? (
+                  <button
+                    type="button"
+                    aria-label="Show file preview"
+                    title="Show file preview"
+                    onClick={() => setFilePreviewVisible(true)}
+                    className="flex min-h-[34px] shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] xl:min-h-0 xl:w-[34px] xl:flex-col xl:self-stretch xl:border-b-0 xl:border-l xl:py-2"
+                  >
+                    <span className="grid h-7 w-7 shrink-0 place-items-center">
+                      <Icon name="ph:sidebar-simple" width={15} />
+                    </span>
+                    <span className="comux-detail-rail-label text-[10px] font-semibold uppercase tracking-widest xl:mt-1">
+                      Preview
+                    </span>
+                  </button>
+                ) : (
+                  <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
                   {/* Files / Changes toggle — review the familiar's working-tree
                       diffs (revert + checkpoints) without leaving the surface. */}
                   <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5">
@@ -1402,6 +1457,15 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         Changes
                       </button>
                     </div>
+                    <button
+                      type="button"
+                      aria-label="Hide file preview"
+                      title="Hide file preview"
+                      onClick={() => setFilePreviewVisible(false)}
+                      className="ml-auto mr-8 grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] xl:mr-9"
+                    >
+                      <Icon name="ph:sidebar-simple-fill" width={14} />
+                    </button>
                   </div>
                   {rightView === "changes" ? (
                     <div className="min-h-0 flex-1 overflow-hidden">
@@ -1557,7 +1621,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       <p>Select a file to preview</p>
                     </div>
                   )}
-                </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">

@@ -2342,6 +2342,14 @@ select {
   background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   box-shadow: inset 2px 0 0 var(--accent-presence);
 }
+.comux-detail-rail-label {
+  writing-mode: horizontal-tb;
+}
+@media (min-width: 1280px) {
+  .comux-detail-rail-label {
+    writing-mode: vertical-rl;
+  }
+}
 
 /* ---- ThinkingIndicator ------------------------------------- */
 .ui-thinking {
