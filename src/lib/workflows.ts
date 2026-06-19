@@ -8,7 +8,15 @@ export type WorkflowPattern =
   | "sequential"
   | "custom";
 
-export type WorkflowStepKind = "agent" | "skill" | "tool" | "human-gate" | "workflow" | string;
+export type WorkflowStepKind =
+  | "input"
+  | "agent"
+  | "skill"
+  | "tool"
+  | "human-gate"
+  | "workflow"
+  | "output"
+  | string;
 
 export type WorkflowStepSummary = {
   id: string;
@@ -338,6 +346,39 @@ export async function scheduleWorkflow(
     },
     fetchImpl,
   );
+}
+
+/** Steps that declare the workflow's required input(s). */
+export function workflowInputSteps(workflow: WorkflowSummary): WorkflowStepSummary[] {
+  return (workflow.steps ?? []).filter((step) => step.kind === "input");
+}
+
+/** Steps that declare the artifact(s) the workflow produces. */
+export function workflowOutputSteps(workflow: WorkflowSummary): WorkflowStepSummary[] {
+  return (workflow.steps ?? []).filter((step) => step.kind === "output");
+}
+
+/**
+ * Why a workflow may not be run, or null when it is structurally complete.
+ * A workflow needs a declared **input** node (it can't run without a defined
+ * input) and an **output** node (it can't finish without producing an
+ * artifact). This is the single source of truth the Studio's Play gate and the
+ * run route both consult.
+ */
+export function workflowRunBlockReason(workflow: WorkflowSummary | null): string | null {
+  if (!workflow) return "Select a workflow first.";
+  const hasInput = workflowInputSteps(workflow).length > 0;
+  const hasOutput = workflowOutputSteps(workflow).length > 0;
+  if (!hasInput && !hasOutput) {
+    return "Add an input node and an output node before running.";
+  }
+  if (!hasInput) {
+    return "Add an input node — a workflow can't run without a defined input.";
+  }
+  if (!hasOutput) {
+    return "Add an output node — a workflow can't finish without producing an artifact.";
+  }
+  return null;
 }
 
 export function workflowIssueSummary(issues: WorkflowValidationIssue[]): string {

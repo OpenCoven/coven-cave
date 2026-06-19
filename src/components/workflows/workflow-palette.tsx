@@ -9,11 +9,13 @@ type WorkflowPaletteProps = {
 };
 
 const PALETTE: Array<{ kind: WorkflowStepKind; label: string; icon: IconName; tone: string }> = [
+  { kind: "input", label: "Input", icon: "ph:tray", tone: "input" },
   { kind: "agent", label: "Agent", icon: "ph:brain", tone: "agent" },
   { kind: "skill", label: "Skill", icon: "ph:sparkle", tone: "tool" },
   { kind: "tool", label: "Tool", icon: "ph:wrench", tone: "tool" },
   { kind: "human-gate", label: "Human gate", icon: "ph:hand", tone: "gate" },
   { kind: "workflow", label: "Workflow", icon: "ph:graph", tone: "workflow" },
+  { kind: "output", label: "Output", icon: "ph:package-bold", tone: "output" },
 ];
 
 /** Node palette: one click appends a step of the given CWF-01 kind. */

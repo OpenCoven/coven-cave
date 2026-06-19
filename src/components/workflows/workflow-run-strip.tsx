@@ -7,7 +7,7 @@ import {
   playbackSummary,
   type WorkflowPlaybackState,
 } from "@/lib/workflow-playback";
-import { isPublicTemplate, workflowIssueSummary, type WorkflowValidationIssue, type WorkflowSummary } from "@/lib/workflows";
+import { isPublicTemplate, workflowIssueSummary, workflowRunBlockReason, type WorkflowValidationIssue, type WorkflowSummary } from "@/lib/workflows";
 import type { WorkflowStudioActionState } from "./workflow-studio";
 
 type WorkflowRunStripProps = {
@@ -76,6 +76,9 @@ export function WorkflowRunStrip({
   // Templates are read-only; saving an edit forks a personal copy to ~/.coven.
   const forking = workflow ? isPublicTemplate(workflow) : false;
   const saveLabel = saveBusy ? (forking ? "Forking" : "Saving") : forking ? "Fork & Save" : "Save";
+  // The I/O contract gate: no input node (no defined input) or no output node
+  // (no produced artifact) ⇒ the workflow can't be run.
+  const ioBlock = workflowRunBlockReason(workflow);
 
   // Playback transport: when a plan/run is walking the graph, surface progress,
   // the live step, and a stop control. Cleared by switching workflows or stop.
@@ -137,14 +140,16 @@ export function WorkflowRunStrip({
           type="button"
           className="workflow-play-button"
           aria-label="Play workflow"
-          disabled={!workflow || anyBusy || dirty}
+          disabled={!workflow || anyBusy || dirty || ioBlock !== null}
           onClick={() => workflow && onPlay(workflow)}
           title={
-            dirty
-              ? "Save before running"
-              : engineUnavailable
-                ? "Daemon offline — plays the plan as a preview, no execution"
-                : "Run the workflow as a live agent session"
+            ioBlock
+              ? ioBlock
+              : dirty
+                ? "Save before running"
+                : engineUnavailable
+                  ? "Daemon offline — plays the plan as a preview, no execution"
+                  : "Run the workflow as a live agent session"
           }
         >
           <Icon name="ph:lightning-bold" width={14} />
@@ -207,7 +212,9 @@ export function WorkflowRunStrip({
                 ? `${action.kind === "validate" ? "Validation" : "Dry-run"} ${action.result.ok ? "ready" : "blocked"} · ${
                     action.result.error ?? workflowIssueSummary(issues)
                   }`
-                : "Validate to check the manifest · Dry-run previews · Play runs it as a live agent session."}
+                : ioBlock
+                  ? ioBlock
+                  : "Validate to check the manifest · Dry-run previews · Play runs it as a live agent session."}
           </p>
         </>
       )}

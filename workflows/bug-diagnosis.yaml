@@ -20,11 +20,17 @@ visibility:
   coven_cave: true
   coven_code: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: reproduce
     kind: agent
     name: Reproduce failure
     uses: cody
     summary: Run or inspect the failing path before proposing a cause.
+    requires:
+      - input
   - id: trace
     kind: agent
     name: Trace root cause
@@ -60,3 +66,9 @@ steps:
     summary: Report root cause, changed files, verification, and residual risk.
     requires:
       - verify
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - handoff

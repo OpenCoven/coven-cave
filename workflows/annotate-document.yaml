@@ -18,11 +18,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: intake
     kind: agent
     name: Document intake
     uses: sage
     summary: Identify the document, requested angle, citation needs, and output location.
+    requires:
+      - input
   - id: read-pass
     kind: agent
     name: Read for structure
@@ -51,3 +57,9 @@ steps:
     summary: Write the annotation packet to the library with tags and retrieval metadata.
     requires:
       - verify-citations
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - save-notes

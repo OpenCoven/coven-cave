@@ -39,8 +39,10 @@ const workflow: WorkflowSummary = {
   path: "release-review",    // cave-only, must NOT serialize
   storage: "public",         // cave-only, must NOT serialize
   steps: [
-    { id: "gate", kind: "human-gate", name: "Approval", uses: "valentina" },
+    { id: "input", kind: "input", name: "Input", summary: "The change to review." },
+    { id: "gate", kind: "human-gate", name: "Approval", uses: "valentina", requires: ["input"] },
     { id: "review", kind: "agent", uses: "nova", requires: ["gate"] },
+    { id: "output", kind: "output", name: "Output", summary: "The reviewed result.", requires: ["review"] },
   ],
   limits: { max_agents: 4 },
 };
@@ -54,8 +56,9 @@ assert.equal(manifest.summary, undefined, "absent fields are stripped, not seria
 const yamlText = workflowToYaml(workflow);
 const reparsed = parseYaml(yamlText) as Record<string, unknown>;
 assert.equal(reparsed.id, "release-review");
+const reparsedReview = (reparsed.steps as Array<Record<string, unknown>>).find((s) => s.id === "review");
 assert.deepEqual(
-  (reparsed.steps as Array<Record<string, unknown>>)[1].requires,
+  reparsedReview?.requires,
   ["gate"],
   "requires edges survive the YAML round-trip",
 );

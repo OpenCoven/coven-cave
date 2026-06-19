@@ -103,45 +103,60 @@ function step(
 }
 
 /**
- * Starter step scaffolds per CWF-01 pattern. Each template validates clean so
- * a freshly created workflow is immediately saveable and runnable-by-plan.
+ * Starter step scaffolds per CWF-01 pattern. Each template is bracketed by an
+ * `input` node (the required input) and an `output` node (the produced
+ * artifact) so a freshly created workflow already satisfies the I/O contract and
+ * is immediately saveable, validatable, and runnable-by-plan.
  */
 export const WORKFLOW_TEMPLATES: Record<WorkflowPattern, WorkflowStepSummary[]> = {
   "sequential": [
-    step("plan", "agent", "Plan", "Break the goal into ordered work."),
+    step("input", "input", "Input", "The goal and any context the workflow needs to start."),
+    step("plan", "agent", "Plan", "Break the goal into ordered work.", ["input"]),
     step("execute", "agent", "Execute", "Carry out the plan.", ["plan"]),
     step("review", "human-gate", "Review", "Hold for human sign-off on the result.", ["execute"]),
+    step("output", "output", "Output", "The reviewed deliverable.", ["review"]),
   ],
   "fan-out-and-synthesize": [
-    step("fan-out", "agent", "Fan out", "Dispatch parallel workers over the input set."),
+    step("input", "input", "Input", "The input set to fan workers out over."),
+    step("fan-out", "agent", "Fan out", "Dispatch parallel workers over the input set.", ["input"]),
     step("synthesize", "agent", "Synthesize", "Merge worker results into one deliverable.", ["fan-out"]),
-    step("deliver", "tool", "Deliver", "Emit the synthesized output.", ["synthesize"]),
+    step("output", "output", "Output", "The synthesized deliverable.", ["synthesize"]),
   ],
   "classify-and-act": [
-    step("classify", "agent", "Classify", "Label each input with its handling route."),
+    step("input", "input", "Input", "The items to classify and act on."),
+    step("classify", "agent", "Classify", "Label each input with its handling route.", ["input"]),
     step("act", "agent", "Act", "Apply the route-specific action per item.", ["classify"]),
+    step("output", "output", "Output", "The acted-on result per item.", ["act"]),
   ],
   "adversarial-verification": [
-    step("propose", "agent", "Propose", "Produce candidate findings or output."),
+    step("input", "input", "Input", "The claim or material to verify."),
+    step("propose", "agent", "Propose", "Produce candidate findings or output.", ["input"]),
     step("refute", "agent", "Refute", "Adversarially attack each candidate.", ["propose"]),
     step("verdict", "agent", "Verdict", "Keep only candidates that survive refutation.", ["refute"]),
+    step("output", "output", "Output", "The verified findings.", ["verdict"]),
   ],
   "generate-and-filter": [
-    step("generate", "agent", "Generate", "Produce a wide pool of candidates."),
+    step("input", "input", "Input", "The brief the candidates should satisfy."),
+    step("generate", "agent", "Generate", "Produce a wide pool of candidates.", ["input"]),
     step("filter", "agent", "Filter", "Score and keep the best candidates.", ["generate"]),
+    step("output", "output", "Output", "The selected best candidates.", ["filter"]),
   ],
   "tournament": [
-    step("seed", "agent", "Seed", "Generate bracket entrants."),
+    step("input", "input", "Input", "The pool to seed the bracket from."),
+    step("seed", "agent", "Seed", "Generate bracket entrants.", ["input"]),
     step("rounds", "agent", "Rounds", "Run pairwise elimination rounds.", ["seed"]),
-    step("champion", "tool", "Champion", "Emit the winning entry.", ["rounds"]),
+    step("output", "output", "Output", "The winning entry.", ["rounds"]),
   ],
   "loop-until-done": [
-    step("attempt", "agent", "Attempt", "Run one iteration toward the goal."),
+    step("input", "input", "Input", "The goal and the done-condition."),
+    step("attempt", "agent", "Attempt", "Run one iteration toward the goal.", ["input"]),
     step("check", "agent", "Check", "Decide whether the goal is met or another loop is needed.", ["attempt"]),
+    step("output", "output", "Output", "The completed result once the goal is met.", ["check"]),
   ],
   "custom": [
-    step("start", "agent", "Start", "First step of the custom flow."),
-    step("finish", "tool", "Finish", "Emit the final output.", ["start"]),
+    step("input", "input", "Input", "What this workflow needs to start."),
+    step("work", "agent", "Work", "Do the workflow's main work.", ["input"]),
+    step("output", "output", "Output", "The artifact this workflow produces.", ["work"]),
   ],
 };
 

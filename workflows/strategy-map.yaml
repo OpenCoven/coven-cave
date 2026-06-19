@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: clarify-goal
     kind: agent
     name: Clarify goal
     uses: astra
     summary: State the desired outcome, constraints, timing, and decision owner.
+    requires:
+      - input
   - id: map-options
     kind: agent
     name: Map options
@@ -52,3 +58,9 @@ steps:
     summary: Emit owners, lane handoffs, stopping points, and immediate next steps.
     requires:
       - recommend-route
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - next-moves

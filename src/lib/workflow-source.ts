@@ -278,6 +278,41 @@ export function validateManifest(raw: unknown, source?: string): WorkflowValidat
         }
       }
     }
+
+    // I/O contract: a workflow can't run without a defined input, and can't
+    // finish without producing an output artifact. Both are hard errors.
+    const kinds = steps.map((step) =>
+      asString((step && typeof step === "object" ? (step as Record<string, unknown>) : {}).kind),
+    );
+    if (!kinds.includes("input")) {
+      hardError = true;
+      issues.push(issue("semantic", "missing_input", "Workflow must declare an input node — it can't run without a defined input.", {
+        path: "steps",
+        suggestion: "Add a step with kind: input describing the required input.",
+      }));
+    }
+    if (!kinds.includes("output")) {
+      hardError = true;
+      issues.push(issue("semantic", "missing_output", "Workflow must declare an output node — it can't finish without producing an artifact.", {
+        path: "steps",
+        suggestion: "Add a step with kind: output describing the produced artifact.",
+      }));
+    }
+    // Nudge (non-blocking): input/output nodes should describe their contract.
+    for (const [index, step] of steps.entries()) {
+      const s = (step && typeof step === "object" ? step : {}) as Record<string, unknown>;
+      const kind = asString(s.kind);
+      if (kind === "input" && !asString(s.summary)) {
+        issues.push(issue("preflight", "input_undocumented", `Describe what input \`${asString(s.id) ?? index}\` requires.`, {
+          path: `steps[${index}].summary`,
+        }));
+      }
+      if (kind === "output" && !asString(s.summary)) {
+        issues.push(issue("preflight", "output_undocumented", `Describe the artifact \`${asString(s.id) ?? index}\` produces.`, {
+          path: `steps[${index}].summary`,
+        }));
+      }
+    }
   }
 
   const pattern = asString(obj.pattern);
@@ -336,8 +371,17 @@ export function planDryRun(workflow: WorkflowSummary): WorkflowDryRunPlan {
     ...new Set(steps.flatMap((step) => step.permissions ?? []).concat(workflow.permissions ?? [])),
   ];
 
+  // I/O gate: no run is "ready" without an input node and an output node.
+  const structuralBlockers: WorkflowValidationIssue[] = [];
+  if (!steps.some((step) => step.kind === "input")) {
+    structuralBlockers.push(issue("semantic", "missing_input", "Add an input node — a workflow can't run without a defined input."));
+  }
+  if (!steps.some((step) => step.kind === "output")) {
+    structuralBlockers.push(issue("semantic", "missing_output", "Add an output node — a workflow can't finish without producing an artifact."));
+  }
+
   return {
-    ok: planSteps.every((step) => step.status === "ready"),
+    ok: planSteps.every((step) => step.status === "ready") && structuralBlockers.length === 0,
     workflowId: workflow.id,
     version: workflow.version,
     steps: planSteps,
@@ -348,7 +392,7 @@ export function planDryRun(workflow: WorkflowSummary): WorkflowDryRunPlan {
       requiredCapabilities: requiredCapabilities.length > 0 ? requiredCapabilities : undefined,
       humanGates: humanGates.length > 0 ? humanGates : undefined,
     },
-    issues: planSteps.flatMap((step) => step.blockers ?? []),
+    issues: [...structuralBlockers, ...planSteps.flatMap((step) => step.blockers ?? [])],
   };
 }
 

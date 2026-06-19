@@ -19,11 +19,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: plan
     kind: agent
     name: Scope the question
     uses: sage
     summary: Decompose the research question into independent search angles.
+    requires:
+      - input
   - id: gather-web
     kind: agent
     name: Web sweep
@@ -53,3 +59,9 @@ steps:
     summary: Synthesize the surviving findings into a cited brief.
     requires:
       - verify
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - synthesize

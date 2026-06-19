@@ -34,8 +34,10 @@ async function exists(file: string): Promise<boolean> {
     pattern: "sequential",
     limits: { max_agents: 4 },
     steps: [
-      { id: "gate", kind: "human-gate" },
+      { id: "input", kind: "input", summary: "The change to review." },
+      { id: "gate", kind: "human-gate", requires: ["input"] },
       { id: "review", kind: "agent", requires: ["gate"] },
+      { id: "output", kind: "output", summary: "The reviewed result.", requires: ["review"] },
     ],
   };
   const result = validateManifest(raw);
@@ -44,7 +46,7 @@ async function exists(file: string): Promise<boolean> {
 
   const summary = coerceManifest(raw, "nova-release-review");
   assert.equal(summary.validation_state, "valid", "clean manifest is valid");
-  assert.equal(summary.steps?.length, 2, "steps are coerced");
+  assert.equal(summary.steps?.length, 4, "steps are coerced");
   assert.equal(summary.path, "nova-release-review", "source becomes the path");
 }
 
@@ -83,7 +85,11 @@ async function exists(file: string): Promise<boolean> {
     id: "wf",
     version: "1.0.0",
     pattern: "made-up",
-    steps: [{ id: "a", kind: "agent" }],
+    steps: [
+      { id: "input", kind: "input", summary: "in" },
+      { id: "a", kind: "agent", requires: ["input"] },
+      { id: "output", kind: "output", summary: "out", requires: ["a"] },
+    ],
   };
   const result = validateManifest(raw);
   assert.equal(result.ok, true, "unknown pattern is a soft warning");
@@ -99,8 +105,10 @@ async function exists(file: string): Promise<boolean> {
       version: "1.0.0",
       limits: { max_agents: 6, timeout_s: 120 },
       steps: [
-        { id: "gate", kind: "human-gate" },
+        { id: "input", kind: "input", summary: "in" },
+        { id: "gate", kind: "human-gate", requires: ["input"] },
         { id: "go", kind: "agent", requires: ["gate"] },
+        { id: "output", kind: "output", summary: "out", requires: ["go"] },
       ],
     },
     "wf",
@@ -126,12 +134,47 @@ async function exists(file: string): Promise<boolean> {
     id: "draft",
     version: "0.1.0",
     steps: [
-      { id: "a", kind: "agent" },
+      { id: "input", kind: "input", summary: "in" },
+      { id: "a", kind: "agent", requires: ["input"] },
       { id: "b", kind: "agent", requires: ["a"] },
+      { id: "output", kind: "output", summary: "out", requires: ["b"] },
     ],
   });
   assert.equal(plan.ok, true, "draft manifest plans ok");
-  assert.equal(plan.steps?.length, 2);
+  assert.equal(plan.steps?.length, 4);
+}
+
+// I/O contract: a workflow can't validate or plan without an input + output.
+{
+  const noInput = validateManifest({
+    id: "wf",
+    version: "1.0.0",
+    steps: [
+      { id: "a", kind: "agent" },
+      { id: "output", kind: "output", summary: "out", requires: ["a"] },
+    ],
+  });
+  assert.equal(noInput.ok, false, "no input node fails validation");
+  assert.ok(noInput.issues.some((i) => i.code === "missing_input"), "flags missing input");
+
+  const noOutput = validateManifest({
+    id: "wf",
+    version: "1.0.0",
+    steps: [
+      { id: "input", kind: "input", summary: "in" },
+      { id: "a", kind: "agent", requires: ["input"] },
+    ],
+  });
+  assert.equal(noOutput.ok, false, "no output node fails validation");
+  assert.ok(noOutput.issues.some((i) => i.code === "missing_output"), "flags missing output");
+
+  // The dry-run plan is likewise blocked without the I/O pair.
+  const plan = planDryRun(coerceManifest({ id: "wf", version: "1.0.0", steps: [{ id: "a", kind: "agent" }] }, "wf"));
+  assert.equal(plan.ok, false, "plan is blocked without input/output");
+  assert.ok(
+    plan.issues?.some((i) => i.code === "missing_input") && plan.issues?.some((i) => i.code === "missing_output"),
+    "plan reports both missing-I/O blockers",
+  );
 }
 
 // Save and delete round-trip against a temp workflows dir.
@@ -150,8 +193,10 @@ await (async () => {
       pattern: "sequential",
       visibility: { public: true, coven_cave: true },
       steps: [
-        { id: "plan", kind: "agent" },
+        { id: "input", kind: "input", summary: "in" },
+        { id: "plan", kind: "agent", requires: ["input"] },
         { id: "go", kind: "agent", requires: ["plan"] },
+        { id: "output", kind: "output", summary: "out", requires: ["go"] },
       ],
     };
 

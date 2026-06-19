@@ -18,11 +18,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: define-brief
     kind: agent
     name: Define brief
     uses: charm
     summary: Capture audience, surface, desired outcome, voice, constraints, and source material.
+    requires:
+      - input
   - id: generate-options
     kind: agent
     name: Generate options
@@ -51,3 +57,9 @@ steps:
     summary: Save the final draft, alternates, assumptions, and approval needs.
     requires:
       - revise-tone
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - approval-notes

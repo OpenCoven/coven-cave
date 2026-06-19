@@ -18,11 +18,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: brief
     kind: agent
     name: Social brief
     uses: charm
     summary: Identify platform, audience, target action, constraints, and source truth.
+    requires:
+      - input
   - id: draft-posts
     kind: agent
     name: Draft posts
@@ -51,3 +57,9 @@ steps:
     summary: Save approved draft, target platform, approval status, and posting notes.
     requires:
       - approval-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - store-state

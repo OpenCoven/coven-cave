@@ -20,11 +20,17 @@ visibility:
   coven_cave: true
   coven_code: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: inspect-scope
     kind: agent
     name: Inspect scope
     uses: cody
     summary: Read requirements, current code, conventions, and unrelated dirty work.
+    requires:
+      - input
   - id: failing-test
     kind: skill
     name: Write failing test
@@ -60,3 +66,9 @@ steps:
     summary: Summarize files changed, proof, caveats, and next safe action.
     requires:
       - approval-gate
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - handoff

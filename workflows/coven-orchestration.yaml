@@ -20,11 +20,17 @@ visibility:
   public: true
   coven_cave: true
 steps:
+  - id: input
+    kind: input
+    name: Input
+    summary: The input this workflow needs to start.
   - id: define-goal
     kind: agent
     name: Define goal and gates
     uses: nova
     summary: Capture Val's goal, hard constraints, approval gates, and completion proof.
+    requires:
+      - input
   - id: route-lanes
     kind: workflow
     name: Route lanes
@@ -67,3 +73,9 @@ steps:
     summary: Report outcome, evidence, remaining risks, and whether the work can be archived.
     requires:
       - preserve-memory
+  - id: output
+    kind: output
+    name: Output
+    summary: The artifact this workflow produces.
+    requires:
+      - completion-report
