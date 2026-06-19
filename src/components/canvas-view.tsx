@@ -11,32 +11,17 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useNodesState,
-  useViewport,
   type Node,
   type NodeChange,
-  type NodeProps,
   type NodeTypes,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
-import { type Card, type CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
-import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
-import {
-  autoArrange,
-  bandForX,
-  bandLeft,
-  BAND_LABELS,
-  BAND_WIDTH,
-  CANVAS_BANDS,
-  CANVAS_NODE_WIDTH,
-  resolvePositions,
-  type CanvasPosition,
-  type CanvasPositions,
-} from "@/lib/canvas-layout";
+import { type CanvasPosition, type CanvasPositions } from "@/lib/canvas-layout";
 import {
   buildPreviewSrcDoc,
   buildRefinePrompt,
@@ -52,23 +37,14 @@ import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
 import { ArtifactNode, type ArtifactFlowNode } from "@/components/canvas-artifact-node";
 
-type CanvasLayer = "triage" | "sketch";
-
 type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
+  // Accepted for call-site compatibility with the workspace; the sketch canvas
+  // doesn't render board cards, so they're unused here.
   onOpenCard?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
 };
-
-type IssueNodeData = {
-  card: Card;
-  familiarName: string | null;
-  onOpenCard?: (cardId: string) => void;
-  onOpenUrl?: (url: string) => void;
-};
-
-type IssueFlowNode = Node<IssueNodeData & Record<string, unknown>, "issue">;
 
 const ARTIFACT_W = 420;
 const ARTIFACT_H = 320;
@@ -81,86 +57,11 @@ const TRANSFORM_SUGGESTIONS = [
   { label: "Color pass", prompt: "Refine the color system so the interface feels more intentional and cohesive." },
 ];
 
-function loadLayer(): CanvasLayer {
-  if (typeof window === "undefined") return "triage";
-  const v = localStorage.getItem("cave:canvas:layer");
-  return v === "sketch" ? "sketch" : "triage";
-}
-
-// ── Issue node (triage) ─────────────────────────────────────────────────────
-
-function IssueNode({ data }: NodeProps<IssueFlowNode>) {
-  const { card, familiarName, onOpenCard, onOpenUrl } = data;
-  const gh = card.github?.[0];
-  const ghUrl = gh?.url ?? card.links?.[0];
-  return (
-    <div className={`canvas-issue canvas-issue--${card.status}`}>
-      <div className="canvas-issue__top">
-        <span className={`canvas-issue__prio canvas-issue__prio--${card.priority}`} aria-hidden />
-        <span className="canvas-issue__status">{BAND_LABELS[card.status]}</span>
-        {gh?.number ? <span className="canvas-issue__num">#{gh.number}</span> : null}
-      </div>
-      <button
-        type="button"
-        className="canvas-issue__title nodrag"
-        title="Open this card"
-        onClick={() => onOpenCard?.(card.id)}
-      >
-        {card.title || "Untitled"}
-      </button>
-      <div className="canvas-issue__meta">
-        {familiarName ? <span className="canvas-issue__familiar">{familiarName}</span> : null}
-        {card.labels?.slice(0, 3).map((label) => (
-          <span key={label} className="canvas-issue__label">
-            {label}
-          </span>
-        ))}
-      </div>
-      {ghUrl ? (
-        <button
-          type="button"
-          className="canvas-issue__open nodrag"
-          title="Open link"
-          aria-label="Open link"
-          onClick={() => onOpenUrl?.(ghUrl)}
-        >
-          <Icon name="ph:arrow-square-out" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-const nodeTypes: NodeTypes = { issue: IssueNode, artifact: ArtifactNode };
-
-// ── Band guides (triage only) ───────────────────────────────────────────────
-//
-// The triage bands live in world space but are drawn as a screen overlay that
-// re-projects on every pan/zoom (React Flow keeps node DOM in a transformed
-// layer we can't inject into, so we mirror the transform ourselves).
-
-function BandGuides() {
-  const { x, zoom } = useViewport();
-  return (
-    <div className="canvas-bands" aria-hidden>
-      {CANVAS_BANDS.map((status, i) => {
-        const left = bandLeft(i) * zoom + x;
-        const width = BAND_WIDTH * zoom;
-        return (
-          <div key={status} className="canvas-band" style={{ left, width }}>
-            <div className="canvas-band__header">{BAND_LABELS[status]}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+const nodeTypes: NodeTypes = { artifact: ArtifactNode };
 
 // ── Surface ───────────────────────────────────────────────────────────────--
 
-function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: Props) {
-  const [layer, setLayer] = useState<CanvasLayer>(loadLayer);
-  const [cards, setCards] = useState<Card[]>([]);
+function CanvasSurface({ familiars, activeFamiliarId }: Props) {
   const [positions, setPositions] = useState<CanvasPositions>({});
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
   const [nodes, setNodes, applyNodesChange] = useNodesState<Node>([]);
@@ -184,38 +85,22 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const editTimers = useRef<Record<string, number>>({});
   const resizingNodeIds = useRef<Set<string>>(new Set());
 
-  const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-
-  const filtered = useMemo(
-    () => cards.filter((c) => activeFamiliarId === null || c.familiarId === activeFamiliarId),
-    [cards, activeFamiliarId],
-  );
   const transformArtifact = useMemo(
     () => artifacts.find((artifact) => artifact.id === transformArtifactId) ?? null,
     [artifacts, transformArtifactId],
   );
 
-  const setLayerPersisted = useCallback((next: CanvasLayer) => {
-    setLayer(next);
-    setActionError(null);
-    if (typeof window !== "undefined") localStorage.setItem("cave:canvas:layer", next);
-  }, []);
-
   const load = useCallback(async () => {
     if (isDemoModeEnabled()) {
-      setCards(DEMO_BOARD_CARDS as Card[]);
+      // Demo mode has no persisted artifacts — start from the empty state.
+      setArtifacts([]);
       setPositions({});
       setHasLoaded(true);
       return;
     }
     try {
-      const [boardRes, canvasRes] = await Promise.all([
-        fetch("/api/board", { cache: "no-store" }),
-        fetch("/api/canvas", { cache: "no-store" }),
-      ]);
-      const boardJson = await boardRes.json();
+      const canvasRes = await fetch("/api/canvas", { cache: "no-store" });
       const canvasJson = await canvasRes.json().catch(() => ({}));
-      if (boardJson?.ok) setCards(boardJson.cards as Card[]);
       setPositions((canvasJson?.positions as CanvasPositions) ?? {});
       setArtifacts((canvasJson?.artifacts as CanvasArtifact[]) ?? []);
     } catch {
@@ -231,12 +116,8 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
 
   useEffect(() => {
     const onReload = () => load();
-    window.addEventListener("cave:board:reload", onReload);
     window.addEventListener(DEMO_MODE_EVENT, onReload);
-    return () => {
-      window.removeEventListener("cave:board:reload", onReload);
-      window.removeEventListener(DEMO_MODE_EVENT, onReload);
-    };
+    return () => window.removeEventListener(DEMO_MODE_EVENT, onReload);
   }, [load]);
 
   // ── Artifact persistence ──────────────────────────────────────────────────
@@ -418,26 +299,9 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
     }
   }, []);
 
-  // ── Node assembly (per layer) ──────────────────────────────────────────────
+  // ── Node assembly ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (layer === "triage") {
-      const resolved = resolvePositions(filtered, positions);
-      setNodes(
-        filtered.map((card) => ({
-          id: card.id,
-          type: "issue" as const,
-          position: resolved[card.id] ?? { x: 0, y: 0 },
-          data: {
-            card,
-            familiarName: card.familiarId ? familiarsById.get(card.familiarId)?.name ?? null : null,
-            onOpenCard,
-            onOpenUrl,
-          },
-        })),
-      );
-      return;
-    }
     setNodes(
       artifacts.map((art, i) => {
         const saved = positions[art.id] ?? placementFor(i);
@@ -462,75 +326,39 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
       }) as ArtifactFlowNode[],
     );
   }, [
-    layer, filtered, positions, familiarsById, onOpenCard, onOpenUrl, artifacts, artifactView,
-    generating, placementFor, onToggleView, onRefine, onDuplicate, onDeleteArtifact, onEditCode, onOpenInBrowser,
+    positions, artifacts, artifactView, generating, placementFor,
+    onToggleView, onRefine, onDuplicate, onDeleteArtifact, onEditCode, onOpenInBrowser,
   ]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    if (layer === "sketch") {
-      for (const change of changes) {
-        if (change.type === "dimensions" && change.resizing) {
-          resizingNodeIds.current.add(change.id);
-          continue;
-        }
-        if (change.type !== "dimensions" || change.resizing || !change.dimensions || !resizingNodeIds.current.has(change.id)) continue;
-        resizingNodeIds.current.delete(change.id);
-        const { width, height } = change.dimensions;
-        if (!Number.isFinite(width) || !Number.isFinite(height)) continue;
-        // Resizing from the top/left edge moves the node as well as sizing it, so
-        // persist the node's CURRENT position — the stale saved entry would snap the
-        // window back to its pre-resize origin on reload.
-        const saved = nodes.find((node) => node.id === change.id)?.position ?? positions[change.id];
-        if (!saved) continue;
-        savePosition(change.id, { x: saved.x, y: saved.y, width, height });
+    for (const change of changes) {
+      if (change.type === "dimensions" && change.resizing) {
+        resizingNodeIds.current.add(change.id);
+        continue;
       }
-      // While any artifact is actively resizing, suppress iframe pointer capture so
-      // the drag tracks the cursor smoothly even as it passes over a live preview.
-      setIsResizing(resizingNodeIds.current.size > 0);
+      if (change.type !== "dimensions" || change.resizing || !change.dimensions || !resizingNodeIds.current.has(change.id)) continue;
+      resizingNodeIds.current.delete(change.id);
+      const { width, height } = change.dimensions;
+      if (!Number.isFinite(width) || !Number.isFinite(height)) continue;
+      // Resizing from the top/left edge moves the node as well as sizing it, so
+      // persist the node's CURRENT position — the stale saved entry would snap the
+      // window back to its pre-resize origin on reload.
+      const saved = nodes.find((node) => node.id === change.id)?.position ?? positions[change.id];
+      if (!saved) continue;
+      savePosition(change.id, { x: saved.x, y: saved.y, width, height });
     }
+    // While any artifact is actively resizing, suppress iframe pointer capture so
+    // the drag tracks the cursor smoothly even as it passes over a live preview.
+    setIsResizing(resizingNodeIds.current.size > 0);
     applyNodesChange(changes);
-  }, [applyNodesChange, layer, nodes, positions, savePosition]);
-
-  const patchStatus = useCallback(async (id: string, status: CardStatus) => {
-    const prevStatus = cards.find((c) => c.id === id)?.status;
-    if (!prevStatus || prevStatus === status) return;
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
-    setActionError(null);
-    try {
-      const res = await fetch(`/api/board/${id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error(String(res.status));
-    } catch {
-      setCards((prev) => prev.map((c) => (c.id === id ? { ...c, status: prevStatus } : c)));
-      setActionError("Couldn't move that card — change reverted.");
-    }
-  }, [cards]);
+  }, [applyNodesChange, nodes, positions, savePosition]);
 
   const onNodeDragStop = useCallback(
     (_e: unknown, node: Node) => {
       savePosition(node.id, { x: node.position.x, y: node.position.y });
-      // Triage cards retriage by which band they land in; artifacts are free.
-      if (node.type === "issue") {
-        const centerX = node.position.x + CANVAS_NODE_WIDTH / 2;
-        void patchStatus(node.id, bandForX(centerX));
-      }
     },
-    [savePosition, patchStatus],
+    [savePosition],
   );
-
-  const arrange = useCallback(() => {
-    const next = autoArrange(filtered);
-    setPositions((prev) => ({ ...prev, ...next }));
-    if (isDemoModeEnabled()) return;
-    void fetch("/api/canvas", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ positions: next }),
-    }).catch(() => undefined);
-  }, [filtered]);
 
   const submitComposer = useCallback(() => {
     if (!composer.trim()) return;
@@ -538,12 +366,10 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
     setComposer("");
   }, [composer, createArtifact]);
 
-  const isSketch = layer === "sketch";
-  const triageEmpty = hasLoaded && !isSketch && filtered.length === 0;
-  const sketchEmpty = hasLoaded && isSketch && artifacts.length === 0;
+  const sketchEmpty = hasLoaded && artifacts.length === 0;
 
   return (
-    <div className={`canvas-view${isResizing ? " is-resizing" : ""}`} data-mode="canvas" data-layer={layer}>
+    <div className={`canvas-view${isResizing ? " is-resizing" : ""}`} data-mode="canvas" data-layer="sketch">
       <ReactFlow
         nodes={nodes}
         edges={[]}
@@ -557,7 +383,6 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
         maxZoom={1.5}
         proOptions={{ hideAttribution: true }}
       >
-        {isSketch ? null : <BandGuides />}
         <Background gap={24} size={1} />
         <Controls showInteractive={false} />
         {/* Nothing to map on an empty canvas — the minimap would just render a
@@ -568,41 +393,7 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
           <span className="canvas-toolbar__title">
             <Icon name="ph:bounding-box" /> Canvas
           </span>
-          <div className="canvas-segmented" role="tablist" aria-label="Canvas mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!isSketch}
-              className={`canvas-segmented__btn${!isSketch ? " is-active" : ""}`}
-              onClick={() => setLayerPersisted("triage")}
-            >
-              Triage
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={isSketch}
-              className={`canvas-segmented__btn${isSketch ? " is-active" : ""}`}
-              onClick={() => setLayerPersisted("sketch")}
-            >
-              Sketch
-            </button>
-          </div>
-          {isSketch ? (
-            <span className="canvas-toolbar__count">{artifacts.length} examples</span>
-          ) : (
-            <>
-              <span className="canvas-toolbar__count">{filtered.length} issues</span>
-              <button
-                type="button"
-                className="canvas-toolbar__btn"
-                onClick={arrange}
-                title="Tidy cards into their status bands"
-              >
-                <Icon name="ph:arrows-clockwise" /> Auto-arrange
-              </button>
-            </>
-          )}
+          <span className="canvas-toolbar__count">{artifacts.length} examples</span>
         </Panel>
 
         {actionError ? (
@@ -611,85 +402,74 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
           </Panel>
         ) : null}
 
-        {isSketch ? (
-          <Panel position="bottom-center" className="canvas-composer">
-            <textarea
-              className="canvas-composer__input"
-              placeholder="Describe a UI to spin up — e.g. “a pricing page with three tiers and a toggle”"
-              value={composer}
-              rows={2}
-              onChange={(e) => setComposer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  submitComposer();
-                }
-              }}
-            />
-            <div className="canvas-composer__actions">
-              <span className="canvas-composer__new">
-                <button
-                  ref={templatesAnchorRef}
-                  type="button"
-                  className="canvas-composer__blank"
-                  title="Start from a blank sketch or a template"
-                  aria-haspopup="menu"
-                  aria-expanded={templatesOpen}
-                  onClick={() => setTemplatesOpen((v) => !v)}
-                >
-                  <Icon name="ph:plus" /> Blank
-                  <Icon name="ph:caret-down" width={11} />
-                </button>
-                <Popover
-                  open={templatesOpen}
-                  onOpenChange={setTemplatesOpen}
-                  anchorRef={templatesAnchorRef}
-                  placement="top-start"
-                  minWidth={232}
-                >
-                  <PopoverBody>
-                    <PopoverItem
-                      icon="ph:file-dashed"
-                      onSelect={() => { createArtifact("", { blank: true }); setTemplatesOpen(false); }}
-                    >
-                      Blank sketch
-                    </PopoverItem>
-                    <PopoverSeparator />
-                    <PopoverLabel>Templates</PopoverLabel>
-                    {CANVAS_TEMPLATES.map((t) => (
-                      <PopoverItem
-                        key={t.id}
-                        icon={t.icon}
-                        onSelect={() => { createArtifact("", { template: t }); setTemplatesOpen(false); }}
-                      >
-                        {t.label}
-                      </PopoverItem>
-                    ))}
-                  </PopoverBody>
-                </Popover>
-              </span>
+        <Panel position="bottom-center" className="canvas-composer">
+          <textarea
+            className="canvas-composer__input"
+            placeholder="Describe a UI to spin up — e.g. “a pricing page with three tiers and a toggle”"
+            value={composer}
+            rows={2}
+            onChange={(e) => setComposer(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submitComposer();
+              }
+            }}
+          />
+          <div className="canvas-composer__actions">
+            <span className="canvas-composer__new">
               <button
+                ref={templatesAnchorRef}
                 type="button"
-                className="canvas-composer__send"
-                disabled={!composer.trim()}
-                onClick={submitComposer}
+                className="canvas-composer__blank"
+                title="Start from a blank sketch or a template"
+                aria-haspopup="menu"
+                aria-expanded={templatesOpen}
+                onClick={() => setTemplatesOpen((v) => !v)}
               >
-                <Icon name="ph:sparkle" /> Generate
+                <Icon name="ph:plus" /> Blank
+                <Icon name="ph:caret-down" width={11} />
               </button>
-            </div>
-          </Panel>
-        ) : null}
+              <Popover
+                open={templatesOpen}
+                onOpenChange={setTemplatesOpen}
+                anchorRef={templatesAnchorRef}
+                placement="top-start"
+                minWidth={232}
+              >
+                <PopoverBody>
+                  <PopoverItem
+                    icon="ph:file-dashed"
+                    onSelect={() => { createArtifact("", { blank: true }); setTemplatesOpen(false); }}
+                  >
+                    Blank sketch
+                  </PopoverItem>
+                  <PopoverSeparator />
+                  <PopoverLabel>Templates</PopoverLabel>
+                  {CANVAS_TEMPLATES.map((t) => (
+                    <PopoverItem
+                      key={t.id}
+                      icon={t.icon}
+                      onSelect={() => { createArtifact("", { template: t }); setTemplatesOpen(false); }}
+                    >
+                      {t.label}
+                    </PopoverItem>
+                  ))}
+                </PopoverBody>
+              </Popover>
+            </span>
+            <button
+              type="button"
+              className="canvas-composer__send"
+              disabled={!composer.trim()}
+              onClick={submitComposer}
+            >
+              <Icon name="ph:sparkle" /> Generate
+            </button>
+          </div>
+        </Panel>
       </ReactFlow>
 
-      {triageEmpty ? (
-        <div className="canvas-empty">
-          <Icon name="ph:bounding-box" />
-          <p className="canvas-empty__title">No issues to triage</p>
-          <p className="canvas-empty__hint">
-            Cards from the Board appear here. Drag a card across a band to retriage it, or switch to Sketch to build UIs.
-          </p>
-        </div>
-      ) : null}
       {sketchEmpty ? (
         <div className="canvas-empty">
           <Icon name="ph:sparkle" />
