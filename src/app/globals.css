@@ -6389,10 +6389,18 @@ a.mobile-handoff__link:hover {
 /* ── Chat next-path suggestion chips ─────────────────────────────────────────
    Clickable next-step chips under an assistant reply (parsed from the
    <coven:next-paths> block); clicking sends the suggestion as the next turn. */
-.cave-next-paths { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cave-next-paths {
+  display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; width: 100%;
+}
+@container chatturn (min-width: 540px) {
+  .cave-next-paths { grid-template-columns: repeat(2, 1fr); }
+}
+@container chatturn (min-width: 760px) {
+  .cave-next-paths { grid-template-columns: repeat(3, 1fr); }
+}
 .cave-next-path {
-  display: inline-flex; align-items: center; max-width: 100%;
-  padding: 5px 11px; border-radius: 999px;
+  display: inline-flex; align-items: center; width: 100%; max-width: 100%;
+  padding: 7px 12px; border-radius: 8px;
   border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
   color: var(--text-secondary); font-size: 12px; line-height: 1.2;
