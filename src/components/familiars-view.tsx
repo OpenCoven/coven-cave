@@ -6,6 +6,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry } from "@/components/familiars-memory-view";
+import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { Modal } from "@/components/ui/modal";
 import {
   buildFamiliarCardStats,
@@ -521,7 +522,14 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview, onBack
 // FamiliarDetailPanel — right-side panel with Memory / Files / Sessions tabs
 // ────────────────────────────────────────────────────────────────────────────
 
-type DetailTab = "memory" | "files" | "sessions";
+type DetailTab = "memory" | "daily-notes" | "files" | "sessions";
+
+const DETAIL_TABS: { id: DetailTab; label: string }[] = [
+  { id: "memory", label: "Memory" },
+  { id: "daily-notes", label: "Daily Notes" },
+  { id: "files", label: "Files" },
+  { id: "sessions", label: "Sessions" },
+];
 
 type AgentDetailPanelProps = {
   familiar: ResolvedFamiliar;
@@ -611,19 +619,19 @@ function FamiliarDetailPanel({
       </header>
 
       <div className="flex shrink-0 border-b border-[var(--border-hairline)] px-3">
-        {(["memory", "files", "sessions"] as const).map((id) => (
+        {DETAIL_TABS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`focus-ring familiars-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] capitalize transition-colors ${
+            className={`focus-ring familiars-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] transition-colors ${
               tab === id
                 ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
                 : "border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             }`}
             aria-current={tab === id ? "page" : undefined}
           >
-            {id}
+            {label}
           </button>
         ))}
       </div>
@@ -636,6 +644,8 @@ function FamiliarDetailPanel({
             lockToFamiliar
             onOpenMemoryFile={onOpenMemoryFile}
           />
+        ) : tab === "daily-notes" ? (
+          <FamiliarDailyNotes familiar={familiar} />
         ) : tab === "files" ? (
           <div className="flex min-h-0 flex-1 flex-col p-4">
             <div className="mb-2 flex shrink-0 items-center justify-between">
