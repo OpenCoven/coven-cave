@@ -388,17 +388,33 @@
    inverts per mode. Applied to every eyebrow section label in this sidebar so
    they read as headers and stay consistent with each other. */
 .sidebar-section-label {
-  margin: 0 6px 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 6px 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--bg-base) 70%, var(--foreground) 30%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 95%, var(--foreground) 5%);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--text-primary);
   user-select: none;
+}
+
+/* A short accent tick before the label so each section reads as a deliberate
+   header rather than faint eyebrow text. */
+.sidebar-section-label::before {
+  content: "";
+  width: 3px;
+  align-self: stretch;
+  margin: 1px 0;
+  border-radius: 999px;
+  background: var(--accent, currentColor);
+  opacity: 0.85;
+  flex: none;
 }
 
 .sidebar-divider {
@@ -902,9 +918,10 @@
    Superconductor activity sidebar: stacked cards with title · project · model ·
    +N -N diff · relative time, the active session marked by a left accent bar. */
 .recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0 2px; }
-.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 4px 8px; border: 0; border-radius: 6px; background: color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%);
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 75%, transparent); cursor: pointer; color: var(--text-primary); }
-.recent-activity__label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 6px 10px; border: 0; border-radius: 7px; background: color-mix(in oklch, var(--bg-base) 70%, var(--foreground) 30%);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 95%, var(--foreground) 5%); cursor: pointer; color: var(--text-primary); }
+.recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: 0.11em; text-transform: uppercase; }
+.recent-activity__label::before { content: ""; width: 3px; height: 12px; border-radius: 999px; background: var(--accent, currentColor); opacity: 0.85; flex: none; }
 .recent-activity__chevron { transition: transform 140ms ease; }
 .recent-activity__chevron--collapsed { transform: rotate(-90deg); }
 .recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
