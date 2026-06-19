@@ -27,6 +27,15 @@ type Props = {
   activeFamiliar?: ResolvedFamiliar | null;
   familiarOptions?: ResolvedFamiliar[];
   onSelectFamiliar?: (id: string | null) => void;
+  /** Mobile quick actions folded in from the desktop menu bar: start a chat
+   *  with the active familiar and jump to the task board. The top bar is the
+   *  one mobile bar (it's `display:none` on desktop, where the dedicated
+   *  `FamiliarMenuBar` carries these), so these render only on mobile. Omit
+   *  either handler to hide that button. */
+  onStartChat?: () => void;
+  onViewTasks?: () => void;
+  /** Open task count (board cards not yet done) — drives the Tasks badge. */
+  taskCount?: number;
   /** Live session rows + reply-needed set drive the menu's presence dots and
    *  reply badges (and the unread dot on the collapsed profile button). */
   sessions?: SessionRow[];
@@ -65,6 +74,9 @@ export function TopBar(props: Props) {
     activeFamiliar,
     familiarOptions,
     onSelectFamiliar,
+    onStartChat,
+    onViewTasks,
+    taskCount,
     sessions,
     responseNeeded,
     familiarSwitcherLabeled,
@@ -131,6 +143,31 @@ export function TopBar(props: Props) {
             placement="bottom-end"
             labeled={familiarSwitcherLabeled}
           />
+        ) : null}
+        {onStartChat ? (
+          <button
+            type="button"
+            className="top-bar__icon-btn"
+            onClick={onStartChat}
+            aria-label="New chat"
+            title="New chat"
+          >
+            <Icon name="ph:chat-circle-dots" width={15} />
+          </button>
+        ) : null}
+        {onViewTasks ? (
+          <button
+            type="button"
+            className="top-bar__icon-btn top-bar__tasks"
+            onClick={onViewTasks}
+            aria-label={taskCount && taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
+            title="View tasks"
+          >
+            <Icon name="ph:kanban" width={15} />
+            {taskCount && taskCount > 0 ? (
+              <span className="top-bar__tasks-badge">{taskCount > 99 ? "99+" : taskCount}</span>
+            ) : null}
+          </button>
         ) : null}
         <button
           type="button"
