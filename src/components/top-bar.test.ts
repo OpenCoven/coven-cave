@@ -37,7 +37,37 @@ assert.doesNotMatch(
 assert.match(
   source,
   /top-bar__search/,
-  "Search button is retained (now centered)",
+  "Search control is retained in the top bar",
+);
+
+assert.match(
+  source,
+  /<form[\s\S]*className="top-bar__search"[\s\S]*role="search"/,
+  "Top bar search should be a real search form at the top of the shell",
+);
+
+assert.match(
+  source,
+  /<input[\s\S]*type="search"[\s\S]*className="top-bar__search-input"/,
+  "Top bar search should expose a real search input, not only a button",
+);
+
+assert.match(
+  source,
+  /value=\{searchQuery\}/,
+  "Top bar search input should be controlled by Workspace search state",
+);
+
+assert.match(
+  source,
+  /onSearchQueryChange\(e\.target\.value\)/,
+  "Typing in the top search input should update the shared palette query",
+);
+
+assert.match(
+  source,
+  /onFocus=\{onOpenPalette\}/,
+  "Focusing the top search input should open the context-aware palette",
 );
 
 assert.match(

@@ -36,6 +36,42 @@ assert.match(source, /aria-controls=/, "input is linked to results via aria-cont
 // Active item announced via aria-activedescendant on input.
 assert.match(source, /aria-activedescendant=/, "input uses aria-activedescendant for selection");
 
+assert.match(
+  source,
+  /initialQuery\?: string/,
+  "CommandPalette accepts an initial query from the top-bar search",
+);
+
+assert.match(
+  source,
+  /onQueryChange\?: \(query: string\) => void/,
+  "CommandPalette reports query edits back to the top-bar search",
+);
+
+assert.match(
+  source,
+  /kind:\s*"salem-answer"/,
+  "Command palette includes a Salem AI answer row",
+);
+
+assert.match(
+  source,
+  /fetch\("\/api\/salem"[\s\S]*body: JSON\.stringify\(\{[\s\S]*message:\s*query\.trim\(\)[\s\S]*context:/,
+  "Salem answer row posts the query plus local search context to /api/salem",
+);
+
+assert.match(
+  source,
+  /buildSalemSearchContext\(rows,\s*query\.trim\(\)\)/,
+  "Salem answer payload should be grounded in the current local search rows",
+);
+
+assert.match(
+  source,
+  /salem\.opencoven\.ai/,
+  "Salem answer row should make the remote Salem brain explicit to the user",
+);
+
 // The non-standard aria-current="true" pattern on result items is gone.
 const optionBlocks = source.match(/role="option"[\s\S]{0,300}/g) ?? [];
 for (const block of optionBlocks) {

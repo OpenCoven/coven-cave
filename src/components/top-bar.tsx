@@ -10,6 +10,8 @@ import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 
 type Props = {
   onOpenPalette: () => void;
+  searchQuery: string;
+  onSearchQueryChange: (query: string) => void;
   onOpenInbox: () => void;
   onOpenSettings: () => void;
   onOpenMobileHandoff: () => void;
@@ -47,6 +49,8 @@ type Props = {
 export function TopBar(props: Props) {
   const {
     onOpenPalette,
+    searchQuery,
+    onSearchQueryChange,
     onOpenInbox,
     onOpenSettings,
     onOpenMobileHandoff,
@@ -109,16 +113,28 @@ export function TopBar(props: Props) {
         ) : null}
       </div>
 
-      <button
-        type="button"
+      <form
         className="top-bar__search"
-        onClick={onOpenPalette}
-        aria-label="Search and jump to anything"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onOpenPalette();
+        }}
       >
-        <Icon name="ph:magnifying-glass" width={12} />
-        <span>Jump to anything…</span>
+        <Icon name="ph:magnifying-glass" width={12} className="top-bar__search-icon" />
+        <input
+          type="search"
+          className="top-bar__search-input"
+          value={searchQuery}
+          onChange={(e) => onSearchQueryChange(e.target.value)}
+          onFocus={onOpenPalette}
+          placeholder="Search or ask Salem..."
+          aria-label="Search anything or ask Salem"
+          autoComplete="off"
+          spellCheck={false}
+        />
         <kbd>⌘K</kbd>
-      </button>
+      </form>
 
       <div className="top-bar__actions">
         {showFamiliarSwitcher && onSelectFamiliar ? (

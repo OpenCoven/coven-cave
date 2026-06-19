@@ -3801,6 +3801,67 @@ button:active > .edge-rail-chip {
   flex: 0 0 auto;
 }
 
+.menu-bar__search {
+  flex: 1 1 420px;
+  min-width: 220px;
+  max-width: 620px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-muted);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.menu-bar__search:hover,
+.menu-bar__search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.menu-bar__search:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+}
+
+.menu-bar__search-icon {
+  flex-shrink: 0;
+}
+
+.menu-bar__search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.menu-bar__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.menu-bar__search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.menu-bar__search kbd {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+}
+
 /* The labeled switcher trigger is full-width in the sidebar; in the menu bar it
    should size to its content so the avatar strip takes the flexible space. */
 .menu-bar__group--chat .familiar-switcher__trigger {
@@ -4033,19 +4094,41 @@ button:active > .edge-rail-chip {
   border-radius: var(--radius-control);
   color: var(--text-muted);
   font-size: var(--text-sm);
-  cursor: pointer;
   transition: border-color var(--duration-fast) var(--ease-standard),
               color var(--duration-fast) var(--ease-standard);
 }
 
-.top-bar__search:hover {
+.top-bar__search:hover,
+.top-bar__search:focus-within {
   border-color: var(--border-strong);
   color: var(--text-secondary);
 }
 
-.top-bar__search:focus-visible {
+.top-bar__search:focus-within {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 2px;
+}
+
+.top-bar__search-icon {
+  flex-shrink: 0;
+}
+
+.top-bar__search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.top-bar__search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.top-bar__search-input::-webkit-search-cancel-button {
+  display: none;
 }
 
 .top-bar__search kbd {
@@ -5386,6 +5469,9 @@ a.mobile-handoff__link:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .top-bar__search-input {
+    min-height: var(--touch-target);
   }
   .top-bar__search kbd {
     display: none;

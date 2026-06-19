@@ -6,12 +6,39 @@ const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url),
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-// The bar has exactly two jobs: chat with familiars (left) and view tasks
-// (right). It is a labelled landmark so screen readers can find it.
+// The bar provides desktop top chrome: chat with familiars, global
+// context-aware search, and view tasks/inbox. It is a labelled landmark so
+// screen readers can find it.
 assert.match(
   source,
   /<nav className="menu-bar" aria-label="Chat with familiars and view tasks">/,
   "renders a labelled menu-bar landmark",
+);
+
+assert.match(
+  source,
+  /<form[\s\S]*className="menu-bar__search"[\s\S]*role="search"/,
+  "desktop menu bar should host the global top search form",
+);
+assert.match(
+  source,
+  /<input[\s\S]*type="search"[\s\S]*className="menu-bar__search-input"/,
+  "desktop menu bar search should be a real input",
+);
+assert.match(
+  source,
+  /value=\{searchQuery\}/,
+  "desktop menu bar search should be controlled by Workspace search state",
+);
+assert.match(
+  source,
+  /onSearchQueryChange\(e\.target\.value\)/,
+  "typing in desktop menu bar search should update the shared palette query",
+);
+assert.match(
+  source,
+  /onFocus=\{onOpenSearch\}/,
+  "focusing desktop menu bar search should open the context-aware palette",
 );
 
 // Left group — chat. Includes the full switcher plus a one-click avatar strip
@@ -120,6 +147,11 @@ assert.match(
   workspace,
   /taskCount=\{boardTaskCount\}[\s\S]*inboxCount=\{inboxBadgeCount\}/,
   "the bar is fed the live board task count and inbox badge count",
+);
+assert.match(
+  workspace,
+  /<FamiliarMenuBar[\s\S]*searchQuery=\{topSearchQuery\}[\s\S]*onSearchQueryChange=\{\(query\) => \{[\s\S]*setTopSearchQuery\(query\);[\s\S]*setPaletteOpen\(true\);/,
+  "desktop menu bar search shares the same palette query/open wiring as mobile top bar",
 );
 
 // The board task count is polled from /api/board (open = not done).

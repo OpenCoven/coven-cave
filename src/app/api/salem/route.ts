@@ -26,6 +26,18 @@ const CHAT_API_URL = (
 const CHAT_API_CONNECT_TIMEOUT_MS = 20_000;
 const CHAT_API_TIMEOUT_MS = 45_000;
 
+type SalemSearchContextItem = {
+  type?: unknown;
+  title?: unknown;
+  detail?: unknown;
+};
+
+type SalemSearchContext = {
+  source?: unknown;
+  query?: unknown;
+  matches?: unknown;
+};
+
 /**
  * Ask the upstream opencoven-chat-api and aggregate its streamed text/plain
  * response into a single reply string. Returns null on any failure so the
@@ -68,6 +80,37 @@ async function askChatApi(message: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function cleanContextText(value: unknown, max = 180): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function formatSearchContextForPrompt(context: SalemSearchContext | undefined): string | null {
+  if (!context || typeof context !== "object") return null;
+  const rawMatches = Array.isArray(context.matches) ? context.matches : [];
+  const matches = rawMatches
+    .slice(0, 8)
+    .map((raw): string | null => {
+      if (!raw || typeof raw !== "object") return null;
+      const item = raw as SalemSearchContextItem;
+      const type = cleanContextText(item.type, 40) || "result";
+      const title = cleanContextText(item.title);
+      const detail = cleanContextText(item.detail, 240);
+      if (!title) return null;
+      return `- [${type}] ${title}${detail ? ` — ${detail}` : ""}`;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  if (matches.length === 0) return null;
+  const query = cleanContextText(context.query);
+  return [
+    "Use this local Cave search context when it helps answer the user. Do not invent details beyond the context.",
+    query ? `Local search query: ${query}` : "",
+    "Local matches:",
+    ...matches,
+  ].filter(Boolean).join("\n");
 }
 
 // ── Module-level cache ────────────────────────────────────────────────────────
@@ -208,7 +251,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { message?: string };
+    const body = (await req.json()) as { message?: string; context?: SalemSearchContext };
     const message = (body.message ?? "").trim();
 
     if (!message) {
@@ -221,14 +264,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ reply: quick, preloadSummary: summarizePreload(), source: "static" });
     }
 
+    const context = body.context;
+    const searchContext = formatSearchContextForPrompt(context);
+    const messageForApi = searchContext ? `${message}\n\n${searchContext}` : message;
+
     // Primary path: ask the real opencoven-chat-api for a grounded, LLM-written
     // answer. Falls through to local token-overlap retrieval if unreachable.
-    const apiReply = await askChatApi(message);
+    const apiReply = await askChatApi(messageForApi);
     if (apiReply) {
       return NextResponse.json({
         reply: apiReply,
         preloadSummary: summarizePreload(),
         source: "chat-api",
+        localContextUsed: Boolean(searchContext),
       });
     }
 
@@ -243,7 +291,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const topChunks = retrieveTopK(chunks, message, TOP_K);
+    const topChunks = retrieveTopK(chunks, messageForApi, TOP_K);
 
     if (topChunks.length === 0) {
       return NextResponse.json({
@@ -276,6 +324,7 @@ export async function POST(req: Request) {
       reply,
       preloadSummary: summarizePreload(),
       source: "retrieval",
+      localContextUsed: Boolean(searchContext),
       context: topChunks.map((c) => ({ heading: c.heading, source: c.source })),
       fetchError: fetchError ?? null,
     });

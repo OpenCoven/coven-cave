@@ -8,6 +8,7 @@ import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
+import { MarkdownBlock } from "@/components/message-bubble";
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -53,6 +54,8 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliarId: string | null;
+  initialQuery?: string;
+  onQueryChange?: (query: string) => void;
   onIntent: (intent: PaletteIntent) => void;
 };
 
@@ -64,7 +67,20 @@ type Row =
   | { id: string; kind: "fs-memory"; entry: FsMemoryEntry }
   | { id: string; kind: "command"; name: string; hint: string; intent: PaletteIntent }
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
-  | { id: string; kind: "create-task"; title: string };
+  | { id: string; kind: "create-task"; title: string }
+  | { id: string; kind: "salem-answer"; query: string };
+
+type SalemSearchContextItem = {
+  type: string;
+  title: string;
+  detail?: string;
+};
+
+type SalemSearchContext = {
+  source: "top-search";
+  query: string;
+  matches: SalemSearchContextItem[];
+};
 
 const RESULT_LIMITS = {
   familiar: 6,
@@ -74,6 +90,59 @@ const RESULT_LIMITS = {
   fsMemory: 8,
   command: 6,
 };
+
+const SALEM_CONTEXT_LIMIT = 8;
+
+function buildSalemSearchContext(rows: Row[], query: string): SalemSearchContext {
+  const matches = rows
+    .filter((row) =>
+      row.kind === "familiar" ||
+      row.kind === "session" ||
+      row.kind === "card" ||
+      row.kind === "coven-memory" ||
+      row.kind === "fs-memory",
+    )
+    .slice(0, SALEM_CONTEXT_LIMIT)
+    .map((row): SalemSearchContextItem => {
+      if (row.kind === "familiar") {
+        return {
+          type: "familiar",
+          title: row.familiar.display_name,
+          detail: row.familiar.role,
+        };
+      }
+      if (row.kind === "session") {
+        return {
+          type: "chat",
+          title: row.session.title || "(untitled chat)",
+          detail: `${row.familiar?.display_name ?? row.session.familiarId ?? "Unknown familiar"} · ${row.session.harness}`,
+        };
+      }
+      if (row.kind === "card") {
+        return {
+          type: "task",
+          title: row.card.title,
+          detail: [row.card.status, row.card.priority, row.familiar?.display_name, ...row.card.labels]
+            .filter(Boolean)
+            .join(" · "),
+        };
+      }
+      if (row.kind === "coven-memory") {
+        return {
+          type: "memory",
+          title: row.entry.title,
+          detail: [row.entry.familiar_id, row.entry.excerpt].filter(Boolean).join(" · "),
+        };
+      }
+      return {
+        type: "memory-file",
+        title: row.entry.relPath,
+        detail: row.entry.rootLabel,
+      };
+    });
+
+  return { source: "top-search", query, matches };
+}
 
 // ── @familiar query parsing ────────────────────────────────────────────────
 // Users can scope the palette to a single familiar by typing `@<name>` anywhere
@@ -100,6 +169,8 @@ export function CommandPalette({
   familiars,
   sessions,
   activeFamiliarId,
+  initialQuery = "",
+  onQueryChange,
   onIntent,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -107,18 +178,30 @@ export function CommandPalette({
   const [cards, setCards] = useState<Card[]>([]);
   const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
   const [fsMemory, setFsMemory] = useState<FsMemoryEntry[]>([]);
+  const [salemLoading, setSalemLoading] = useState(false);
+  const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
+  const [salemError, setSalemError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const keys = useKeySymbols();
 
   useFocusTrap(open, dialogRef, { onEscape: onClose });
 
+  const updateQuery = (next: string) => {
+    setQuery(next);
+    onQueryChange?.(next);
+    setSalemAnswer(null);
+    setSalemError(null);
+  };
+
   // Fetch the searchable corpora once on first open. Cheap calls; refreshed
   // every time the palette opens so the index doesn't go stale.
   useEffect(() => {
     if (!open) return;
-    setQuery("");
+    setQuery(initialQuery);
     setActiveIdx(0);
+    setSalemAnswer(null);
+    setSalemError(null);
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
     void (async () => {
@@ -141,6 +224,14 @@ export function CommandPalette({
 
     return () => clearTimeout(t);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery(initialQuery);
+    setActiveIdx(0);
+    setSalemAnswer(null);
+    setSalemError(null);
+  }, [initialQuery, open]);
 
   const rows: Row[] = useMemo(() => {
     const { token, rest } = parseFamiliarToken(query);
@@ -351,7 +442,7 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    return [
+    const localRows: Row[] = [
       ...familiarRows,
       ...sessionRows,
       ...cardRows,
@@ -362,6 +453,12 @@ export function CommandPalette({
       ...shortcutRows,
       ...createRows,
     ];
+
+    const salemRows: Row[] = query.trim() && !slashCanonical
+      ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
+      : [];
+
+    return [...salemRows, ...localRows];
   }, [familiars, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId]);
 
   useEffect(() => {
@@ -379,7 +476,35 @@ export function CommandPalette({
     return { token, matched, isBare: token === "" };
   }, [query, familiars]);
 
+  const askSalem = async () => {
+    if (!query.trim() || salemLoading) return;
+    setSalemLoading(true);
+    setSalemAnswer(null);
+    setSalemError(null);
+    try {
+      const res = await fetch("/api/salem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: query.trim(),
+          context: buildSalemSearchContext(rows, query.trim()),
+        }),
+      });
+      const data = (await res.json()) as { reply?: string; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "Salem could not answer.");
+      setSalemAnswer(data.reply ?? "Salem did not return an answer.");
+    } catch (err) {
+      setSalemError(err instanceof Error ? err.message : "Salem could not answer.");
+    } finally {
+      setSalemLoading(false);
+    }
+  };
+
   const fire = (row: Row) => {
+    if (row.kind === "salem-answer") {
+      void askSalem();
+      return;
+    }
     if (row.kind === "familiar") {
       onIntent({ kind: "switch-familiar", familiarId: row.familiar.id });
     } else if (row.kind === "session") {
@@ -443,7 +568,7 @@ export function CommandPalette({
           ref={inputRef}
           value={query}
           onChange={(e) => {
-            setQuery(e.target.value);
+            updateQuery(e.target.value);
             setActiveIdx(0);
           }}
           onKeyDown={onComposerKey}
@@ -455,6 +580,23 @@ export function CommandPalette({
           }
           className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
+        {salemLoading || salemAnswer || salemError ? (
+          <div
+            role={salemLoading ? "status" : salemError ? "alert" : "region"}
+            aria-label="Salem AI response"
+            className="border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
+          >
+            {salemLoading ? (
+              <span>Asking Salem through salem.opencoven.ai...</span>
+            ) : salemError ? (
+              <span className="text-[var(--color-danger)]">{salemError}</span>
+            ) : (
+              <div className="salem-msg__md">
+                <MarkdownBlock text={salemAnswer ?? ""} />
+              </div>
+            )}
+          </div>
+        ) : null}
         {scopeInfo ? (
           <div
             role="status"
@@ -600,6 +742,18 @@ export function CommandPalette({
                         </span>
                       </span>
                       <span className="text-[10px] text-[var(--text-muted)]">create</span>
+                    </>
+                  ) : null}
+                  {row.kind === "salem-answer" ? (
+                    <>
+                      <Icon name="ph:sparkle-bold" className="text-[var(--accent-presence)]" width="1.1rem" height="1.1rem" />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[var(--text-primary)]">Ask Salem: {row.query}</span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                          Context-aware AI answer via salem.opencoven.ai
+                        </span>
+                      </span>
+                      <span className="text-[10px] text-[var(--text-muted)]">ask</span>
                     </>
                   ) : null}
                 </button>

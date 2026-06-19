@@ -328,3 +328,19 @@ assert.match(
   /\.library-reader-body\s*\{[\s\S]*?flex:\s*1;[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/,
   "Reader modal body should keep long documents inside the modal scrollport",
 );
+
+assert.match(
+  libraryCss,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.library-rail-item\s*\{[\s\S]*?border-radius:\s*6px;/,
+  "Mobile Library tabs should use compact Vercel-style radius instead of oversized pills",
+);
+assert.match(
+  libraryCss,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.library-rail-item--active\s*\{[\s\S]*?box-shadow:\s*inset 0 -2px 0/,
+  "Active mobile Library tab should use a Vercel-style bottom indicator",
+);
+assert.doesNotMatch(
+  libraryCss,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.library-rail-item\s*\{[^}]*border-radius:\s*999px;/,
+  "Mobile Library tabs must not render as oversized pill tabs",
+);

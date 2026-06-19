@@ -2668,16 +2668,16 @@ h3:hover .library-heading-anchor,
 
   .library-rail {
     width: 100%;
-    min-height: 48px;
+    min-height: 44px;
     flex: 0 0 auto;
     flex-direction: row;
     align-items: stretch;
-    gap: 12px;
+    gap: 8px;
     overflow-x: auto;
     overflow-y: hidden;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border-hairline);
-    background: color-mix(in oklch, var(--bg-raised) 84%, transparent);
+    background: var(--bg-panel);
     scrollbar-width: none;
   }
 
@@ -2695,24 +2695,25 @@ h3:hover .library-heading-anchor,
     flex: 0 0 auto;
     flex-direction: row;
     align-items: center;
-    gap: 6px;
+    gap: 2px;
   }
 
   .library-rail-item {
-    min-height: var(--touch-target);
+    min-height: 34px;
     width: auto;
     flex: 0 0 auto;
-    border: 1px solid var(--border-hairline);
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--bg-base) 76%, transparent);
-    padding: 0 11px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    padding: 0 10px;
     font-size: 12px;
     white-space: nowrap;
   }
 
   .library-rail-item--active {
-    border-color: color-mix(in oklch, var(--accent-presence) 44%, var(--border-hairline));
-    background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-raised));
+    border-color: var(--border-hairline);
+    background: var(--bg-hover);
+    box-shadow: inset 0 -2px 0 var(--text-primary);
   }
 
   .library-rail-icon-wrap {
