@@ -131,7 +131,7 @@ function buildSalemSearchContext(rows: Row[], query: string): SalemSearchContext
         return {
           type: "memory",
           title: row.entry.title,
-          detail: [row.entry.familiar_id, row.entry.excerpt].filter(Boolean).join(" · "),
+          detail: [row.familiar?.display_name ?? row.entry.familiar_id, row.entry.path].filter(Boolean).join(" · "),
         };
       }
       return {
