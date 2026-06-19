@@ -73,6 +73,14 @@ type IssueFlowNode = Node<IssueNodeData & Record<string, unknown>, "issue">;
 const ARTIFACT_W = 420;
 const ARTIFACT_H = 320;
 
+const TRANSFORM_SUGGESTIONS = [
+  { label: "Polish", prompt: "Polish the visual hierarchy, spacing, and typography without changing the content." },
+  { label: "More data", prompt: "Add richer dashboard data, charts, and useful operational context." },
+  { label: "Simplify", prompt: "Simplify the layout and make the most important information easier to scan." },
+  { label: "Mobile", prompt: "Make this work better on a narrow mobile viewport." },
+  { label: "Color pass", prompt: "Refine the color system so the interface feels more intentional and cohesive." },
+];
+
 function loadLayer(): CanvasLayer {
   if (typeof window === "undefined") return "triage";
   const v = localStorage.getItem("cave:canvas:layer");
@@ -161,6 +169,8 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const [artifactView, setArtifactView] = useState<Record<string, "preview" | "code">>({});
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState("");
+  const [transformArtifactId, setTransformArtifactId] = useState<string | null>(null);
+  const [transformAsk, setTransformAsk] = useState("");
   // True while a user is dragging an artifact resize handle (see onNodesChange).
   const [isResizing, setIsResizing] = useState(false);
   // Template dropdown (where the Blank button lives).
@@ -179,6 +189,10 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
   const filtered = useMemo(
     () => cards.filter((c) => activeFamiliarId === null || c.familiarId === activeFamiliarId),
     [cards, activeFamiliarId],
+  );
+  const transformArtifact = useMemo(
+    () => artifacts.find((artifact) => artifact.id === transformArtifactId) ?? null,
+    [artifacts, transformArtifactId],
   );
 
   const setLayerPersisted = useCallback((next: CanvasLayer) => {
@@ -328,12 +342,23 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
     (id: string) => {
       const art = artifactsRef.current.find((a) => a.id === id);
       if (!art) return;
-      const ask = window.prompt("How should this change?", "");
-      if (ask === null || !ask.trim()) return;
-      void runGeneration(id, ask.trim(), art);
+      setTransformArtifactId(id);
+      setTransformAsk("");
     },
-    [runGeneration],
+    [],
   );
+
+  const closeTransform = useCallback(() => {
+    setTransformArtifactId(null);
+    setTransformAsk("");
+  }, []);
+
+  const submitTransform = useCallback(() => {
+    const ask = transformAsk.trim();
+    if (!ask || !transformArtifact) return;
+    void runGeneration(transformArtifact.id, ask, transformArtifact);
+    closeTransform();
+  }, [closeTransform, runGeneration, transformArtifact, transformAsk]);
 
   const onDuplicate = useCallback(
     (id: string) => {
@@ -672,6 +697,85 @@ function CanvasSurface({ familiars, activeFamiliarId, onOpenCard, onOpenUrl }: P
           <p className="canvas-empty__hint">
             Describe a component or page below and a familiar will generate it as a live, editable preview. Add several to compare side by side.
           </p>
+        </div>
+      ) : null}
+      {transformArtifact ? (
+        <div
+          className="canvas-transform"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="canvas-transform-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeTransform();
+          }}
+        >
+          <form
+            className="canvas-transform__panel"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitTransform();
+            }}
+          >
+            <div className="canvas-transform__header">
+              <span className="canvas-transform__icon" aria-hidden>
+                <Icon name="ph:magic-wand-fill" />
+              </span>
+              <div className="canvas-transform__title-wrap">
+                <h2 id="canvas-transform-title">Transform {transformArtifact?.title ?? "artifact"}</h2>
+                <p>
+                  {transformArtifact.kind?.toUpperCase() ?? "HTML"} · describe the change and keep iterating on this node.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="canvas-transform__close"
+                aria-label="Cancel transform"
+                onClick={closeTransform}
+              >
+                <Icon name="ph:x" />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              className="canvas-transform__input"
+              rows={4}
+              value={transformAsk}
+              placeholder="Make the cards denser, add a revenue trend chart, or use a quieter operations dashboard style..."
+              onChange={(event) => setTransformAsk(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeTransform();
+                }
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  submitTransform();
+                }
+              }}
+            />
+            <div className="canvas-transform__suggestions" aria-label="Suggested transforms">
+              {TRANSFORM_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion.label}
+                  type="button"
+                  onClick={() => setTransformAsk(suggestion.prompt)}
+                >
+                  {suggestion.label}
+                </button>
+              ))}
+            </div>
+            <div className="canvas-transform__footer">
+              <span>Cmd+Enter to apply</span>
+              <div className="canvas-transform__actions">
+                <button type="button" className="canvas-transform__cancel" onClick={closeTransform}>
+                  Cancel
+                </button>
+                <button type="submit" className="canvas-transform__apply" disabled={!transformAsk.trim()}>
+                  <Icon name="ph:sparkle" /> Apply change
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       ) : null}
     </div>

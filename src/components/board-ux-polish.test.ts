@@ -22,6 +22,28 @@ assert.match(
 assert.match(view, /catch \{\s*setActionError\([\s\S]*?await load\(\);/, "patchCard must handle network failure with feedback + revert");
 assert.match(view, /\{actionError && \(/, "actionError must render a banner");
 
+// ───────── Desktop board toolbar stays one row ─────────
+assert.match(
+  styles,
+  /\.board-header\s*\{[\s\S]*flex-wrap:\s*nowrap/,
+  "Desktop board header should keep title, search, and controls on one row",
+);
+assert.match(
+  styles,
+  /\.board-header-controls\s*\{[\s\S]*flex-wrap:\s*nowrap/,
+  "Desktop board controls should not wrap under the search field",
+);
+assert.match(
+  styles,
+  /\.board-search-wrap\s*\{[\s\S]*min-width:\s*0/,
+  "Desktop board search should be allowed to shrink before forcing toolbar wrapping",
+);
+assert.match(
+  styles,
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-header\s*\{[\s\S]*flex-wrap:\s*wrap/,
+  "Mobile board header should keep its stacked layout",
+);
+
 // ───────── Crash-guard + card a11y ─────────
 assert.doesNotMatch(kanban, /PRIORITIES\.find\(\(p\) => p\.id === card\.priority\)!/, "PRIORITIES.find non-null assertion must be gone");
 assert.match(
