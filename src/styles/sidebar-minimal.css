@@ -18,7 +18,7 @@
 }
 
 .shell-nav-panel--open .sidebar-minimal {
-  transform: translateX(8px);
+  transform: translateX(0);
 }
 
 /* ── Panel toggle (Dia-style) ────────────────────────────────────────────── */
