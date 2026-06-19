@@ -1,0 +1,74 @@
+/* In-chat artifact viewer — Canvas/Code tabs embedded in an assistant bubble.
+   Sibling to the Canvas page's sketch node (same dots + segmented pill). */
+.chat-artifact {
+  margin: 8px 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.chat-artifact__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.chat-artifact__dots { display: inline-flex; gap: 5px; }
+.chat-artifact__dots i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.chat-artifact__seg {
+  display: inline-flex; gap: 2px; padding: 2px;
+  background: var(--bg-base); border: 1px solid var(--border-hairline); border-radius: 8px;
+}
+.chat-artifact__tab {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 11px; font-size: var(--text-xs); font-weight: 600;
+  color: var(--text-muted); background: none; border: none; border-radius: 6px; cursor: pointer;
+}
+.chat-artifact__tab.is-active { color: var(--text-primary); background: var(--bg-panel); box-shadow: inset 0 0 0 1px var(--border-hairline); }
+.chat-artifact__title { font-size: var(--text-xs); color: var(--text-secondary); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-artifact__spacer { flex: 1; }
+.chat-artifact__actions { display: inline-flex; gap: 6px; align-items: center; }
+.chat-artifact__btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 26px; min-width: 26px; padding: 0 6px;
+  color: var(--text-muted); background: var(--bg-base);
+  border: 1px solid var(--border-hairline); border-radius: 6px; cursor: pointer; font-size: var(--text-xs);
+}
+.chat-artifact__btn:hover { color: var(--text-primary); }
+.chat-artifact__btn:disabled { opacity: 0.55; cursor: default; }
+.chat-artifact__btn--text { padding: 0 10px; color: var(--text-secondary); }
+.chat-artifact__body { position: relative; }
+.chat-artifact__preview-wrap { position: relative; height: 360px; background: #fff; }
+.chat-artifact__frame { width: 100%; height: 100%; border: 0; display: block; }
+.chat-artifact__code, .chat-artifact__code-edit {
+  margin: 0; width: 100%; height: 360px; box-sizing: border-box;
+  padding: 12px 14px; overflow: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.6;
+  color: var(--text-primary); background: var(--bg-base); border: 0;
+}
+.chat-artifact__code-edit { resize: vertical; white-space: pre; }
+.chat-artifact__error {
+  position: absolute; left: 10px; right: 10px; bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; font-size: var(--text-xs);
+  color: #fff; background: #b95050; border-radius: 8px;
+}
+.chat-artifact__error-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chat-artifact__error-fix { color: #fff; background: rgba(0,0,0,0.2); border: 0; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.chat-artifact__refine {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-top: 1px solid var(--border-hairline); background: var(--bg-raised);
+}
+.chat-artifact__refine-icon { color: var(--text-muted); flex: none; }
+.chat-artifact__refine-input {
+  flex: 1; min-width: 0; font-size: var(--text-xs);
+  color: var(--text-primary); background: var(--bg-base);
+  border: 1px solid var(--border-hairline); border-radius: 7px; padding: 6px 10px; outline: none;
+}
+.chat-artifact__refine-go {
+  flex: none; font-size: var(--text-xs); font-weight: 600; color: #fff;
+  background: var(--accent, #6b8fbf); border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer;
+}
+.chat-artifact__refine-go:disabled { opacity: 0.5; cursor: default; }

@@ -427,6 +427,7 @@ export const SUITES = {
     "src/components/chat-list-mobile-command-center.test.ts",
     "src/components/chat-list-mobile-rail-port.test.ts",
     "src/components/library-mobile-command-center.test.ts",
+    "src/components/chat-artifact-viewer.test.ts",
   ],
 };
 
