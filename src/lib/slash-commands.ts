@@ -37,6 +37,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/sessions", hint: "all sessions", description: "Open all sessions across familiars and runtimes.", section: "view" },
   { name: "/attach", hint: "open session", description: "Open a specific daemon session by id.", argPlaceholder: "session-id", section: "view" },
   { name: "/tui", hint: "open in Coven Code", description: "Open the current session in the external Coven Code TUI.", section: "view" },
+  { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline (or open the Canvas page with no prompt).", argPlaceholder: "describe a UI…", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
   { name: "/inbox", hint: "Schedules", description: "Open Schedules.", section: "view" },

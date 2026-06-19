@@ -31,5 +31,23 @@ export async function resolve(specifier, context, nextResolve) {
     // error names the missing file rather than masking it.
     return nextResolve(target.href, context);
   }
+  // Extensionless relative imports (e.g. slash-commands.ts → "./keyboard-shortcuts").
+  // Node's default resolver requires the extension; TS does not. Resolve the way
+  // the TS resolver would, but only when the bare specifier doesn't already exist.
+  if (
+    (specifier.startsWith("./") || specifier.startsWith("../")) &&
+    context.parentURL &&
+    !/\.[mc]?[jt]sx?$/.test(specifier)
+  ) {
+    const target = new URL(specifier, context.parentURL);
+    if (!existsSync(fileURLToPath(target))) {
+      for (const suffix of SUFFIXES.slice(1)) {
+        const candidate = new URL(target.href + suffix);
+        if (existsSync(fileURLToPath(candidate))) {
+          return nextResolve(candidate.href, context);
+        }
+      }
+    }
+  }
   return nextResolve(specifier, context);
 }

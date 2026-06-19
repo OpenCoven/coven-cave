@@ -120,8 +120,10 @@ export const SUITES = {
     "src/lib/canvas-templates.test.ts",
     "src/lib/canvas-react-harness.test.ts",
     "src/lib/canvas-generate.test.ts",
+    "src/lib/slash-commands.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/canvas-view.test.ts",
+    "src/components/chat-canvas-command.test.ts",
     "src/components/canvas-templates-ui.test.ts",
     "src/components/calendar-actions.test.ts",
     "src/components/calendar-keyboard.test.ts",
@@ -440,6 +442,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/slash-commands.test.ts",
   "src/lib/canvas-generate.test.ts",
   "src/lib/cave-canvas.test.ts",
   "src/lib/task-archive-nudge.test.ts",

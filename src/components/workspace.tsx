@@ -1118,6 +1118,9 @@ export function Workspace() {
       case "/board":
         setMode("board");
         return true;
+      case "/canvas":
+        setMode("canvas");
+        return true;
       case "/chats":
       case "/agents":
       case "/chat":

@@ -5,7 +5,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
-import { extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
+import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
@@ -2265,6 +2265,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       void runCovenExec(command === "/doctor" ? "doctor" : "daemon");
       return true;
     }
+    if (command === "/canvas") {
+      if (!args.trim()) {
+        // No prompt → open the full Canvas page via the workspace.
+        if (onSlashCommand?.("/canvas", "")) { setInput(""); return true; }
+        return true;
+      }
+      setInput("");
+      const wrapped = buildSketchPrompt(args);
+      setTimeout(() => void sendRaw(args, [], [], { promptOverride: wrapped }), 0);
+      return true;
+    }
     // Workspace-level commands routed through the parent
     if (onSlashCommand?.(command, args)) {
       setInput("");
@@ -2323,8 +2334,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return true;
   };
 
-  const sendRaw = async (text: string, outgoingAttachments: ChatAttachment[] = [], outgoingMentions: string[] = []) => {
+  const sendRaw = async (
+    text: string,
+    outgoingAttachments: ChatAttachment[] = [],
+    outgoingMentions: string[] = [],
+    opts?: { promptOverride?: string },
+  ) => {
     const trimmed = text.trim();
+    const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if ((!trimmed && outgoingAttachments.length === 0) || busy) return;
     const request: FailedSend = {
       text: trimmed,
@@ -2371,7 +2388,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           familiarId: familiar.id,
-          prompt: trimmed,
+          prompt: submitPrompt,
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           sessionId: currentSessionRef.current,
           projectRoot: activeProjectRoot,
