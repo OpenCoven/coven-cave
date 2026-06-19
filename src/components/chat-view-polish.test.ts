@@ -105,8 +105,14 @@ assert.match(
 
 assert.match(
   turnRow,
-  /segments=\{showTools \? bubbleSegments : undefined\}/,
-  "Hiding tools should fall back to plain prose rendering instead of segment interleaving",
+  /segments=\{renderSegments\}/,
+  "MessageBubble renders the artifact-aware renderSegments",
+);
+
+assert.match(
+  turnRow,
+  /renderSegments = split\.some\(\(s\) => s\.kind === "block"\) \? split : undefined/,
+  "Hiding tools still falls back to plain prose unless the message has a renderable artifact",
 );
 
 assert.match(

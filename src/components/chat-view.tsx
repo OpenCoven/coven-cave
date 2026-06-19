@@ -3809,7 +3809,7 @@ function TurnRow({
         },
   );
 
-  // Auto-detect renderable artifacts and inject the tabbed viewer. Runs on
+  // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
   // SETTLED turns only (streaming shows plain code until the fence closes), and
   // independently of showTools so the viewer appears even when tools are hidden.
   const artifactCtx = { familiarId: familiar.id };
