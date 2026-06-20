@@ -337,10 +337,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     [grouped, effectiveSelection],
   );
 
-  // Focus search on Cmd+F / Ctrl+F
+  // Focus search on Cmd+F / Ctrl+F, or "/" (GitHub-style) when the user isn't
+  // already typing in a field or holding a modifier.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const t = e.target as HTMLElement | null;
+        if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -692,6 +700,14 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               placeholder="Search sessions…"
               className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
             />
+            {!search && (
+              <kbd
+                aria-hidden
+                className="pointer-events-none shrink-0 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
+              >
+                /
+              </kbd>
+            )}
             {search && (
               <button
                 type="button"
