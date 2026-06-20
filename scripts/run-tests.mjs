@@ -100,6 +100,7 @@ export const SUITES = {
     "src/components/surface-loading-states.test.ts",
     "src/components/chat-header-row.test.ts",
     "src/components/sidebar-minimal.test.ts",
+    "src/components/recent-activity-rollup.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",
     "src/components/workflows-view.test.ts",

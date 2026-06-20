@@ -19,6 +19,8 @@ import type { SessionRow } from "@/lib/types";
 
 const POLL_MS = 15_000;
 const MAX_ROWS = 8;
+// Remember whether the roll-up is collapsed across reloads and remounts.
+const OPEN_STORAGE_KEY = "cave:recent-activity:open";
 
 function projectLabel(root: string | undefined): string {
   if (!root) return "";
@@ -33,8 +35,31 @@ type Props = {
 
 export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  // Default open for SSR + first paint, then hydrate the saved preference after
+  // mount so the server and client markup match.
   const [open, setOpen] = useState(true);
   const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(OPEN_STORAGE_KEY);
+      if (stored != null) setOpen(stored !== "false");
+    } catch {
+      // ignore unavailable storage
+    }
+  }, []);
+
+  const toggleOpen = () => {
+    setOpen((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem(OPEN_STORAGE_KEY, String(next));
+      } catch {
+        // ignore unavailable storage
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +93,7 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
         type="button"
         className="recent-activity__head"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
       >
         <span className="recent-activity__label">Recent</span>
         <Icon
