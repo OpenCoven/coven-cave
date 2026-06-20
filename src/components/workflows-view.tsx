@@ -351,10 +351,12 @@ export function WorkflowsView({
     }
   };
 
-  const runPlay = async (workflow: WorkflowSummary) => {
+  const runPlay = async (workflow: WorkflowSummary, inputs?: Record<string, string>) => {
     setBusyId(`${workflow.id}:play`);
     try {
-      const result = await runWorkflow({ id: workflow.id });
+      // Captured input values (from the run-inputs dialog) ride into the run so
+      // the compiled agent prompt carries them instead of asking for them.
+      const result = await runWorkflow({ id: workflow.id, ...(inputs ? { inputs } : {}) });
       if (result.unavailable) {
         setEngineUnavailable(true);
         // Daemon unreachable, so no agent session can be spawned: rather than
@@ -617,7 +619,7 @@ export function WorkflowsView({
       onClearNode={() => setSelectedNodeId(null)}
       onValidate={(workflow) => void runValidate(workflow)}
       onDryRun={(workflow) => void runDryRun(workflow)}
-      onPlay={(workflow) => void runPlay(workflow)}
+      onPlay={(workflow, inputs) => void runPlay(workflow, inputs)}
       onSave={(workflow) => void runSave(workflow)}
       onUndo={() => dispatchDraft({ type: "undo" })}
       onRedo={() => dispatchDraft({ type: "redo" })}

@@ -8,22 +8,23 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
 import type { WorkflowGraphNode, WorkflowLayoutDirection, WorkflowNodePositions } from "@/lib/workflow-graph";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
-import type {
-  WorkflowDryRunPlan,
-  WorkflowPattern,
-  WorkflowRoleSummary,
-  WorkflowRunRecord,
-  WorkflowScheduleRecurrence,
-  WorkflowStepKind,
-  WorkflowStepSummary,
-  WorkflowSummary,
-  WorkflowValidationResult,
+import {
+  workflowInputSteps,
+  type WorkflowDryRunPlan,
+  type WorkflowPattern,
+  type WorkflowRoleSummary,
+  type WorkflowRunRecord,
+  type WorkflowScheduleRecurrence,
+  type WorkflowStepKind,
+  type WorkflowStepSummary,
+  type WorkflowSummary,
+  type WorkflowValidationResult,
 } from "@/lib/workflows";
 import { WorkflowAttachments } from "./workflow-attachments";
 import type { WorkflowFamiliarOption } from "./workflow-attachments";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { WorkflowStepList } from "./workflow-step-list";
-import { WorkflowCreateDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
+import { WorkflowCreateDialog, WorkflowRunInputsDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
 import { WorkflowInspector } from "./workflow-inspector";
 import { WorkflowLibrary } from "./workflow-library";
 import { WorkflowManifestPreview } from "./workflow-manifest-preview";
@@ -97,7 +98,7 @@ export type WorkflowStudioProps = {
   onClearNode: () => void;
   onValidate: (workflow: WorkflowSummary) => void;
   onDryRun: (workflow: WorkflowSummary) => void;
-  onPlay: (workflow: WorkflowSummary) => void;
+  onPlay: (workflow: WorkflowSummary, inputs?: Record<string, string>) => void;
   onSave: (workflow: WorkflowSummary) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -128,6 +129,18 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
   } = props;
   const [createOpen, setCreateOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [runInputsOpen, setRunInputsOpen] = useState(false);
+  // Clicking Play captures the workflow's declared input(s) first when it has
+  // any (a runnable workflow always does — the gate requires an input node), so
+  // the run carries real input instead of an empty payload. No input nodes ⇒
+  // run straight through.
+  const requestRun = (workflow: WorkflowSummary) => {
+    if (workflowInputSteps(workflow).length > 0) {
+      setRunInputsOpen(true);
+      return;
+    }
+    props.onPlay(workflow);
+  };
   // Below the shell breakpoint the React Flow canvas (pan/zoom/drag-connect) is
   // awkward on touch, so we swap it for a linear, scrollable step list that reads
   // from the same graph source.
@@ -252,7 +265,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           playback={props.playback}
           onValidate={props.onValidate}
           onDryRun={props.onDryRun}
-          onPlay={props.onPlay}
+          onPlay={requestRun}
           onSave={props.onSave}
           onUndo={props.onUndo}
           onRedo={props.onRedo}
@@ -375,6 +388,17 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           onSchedule={(fireAt, recurrence) => {
             setScheduleOpen(false);
             props.onSchedule(fireAt, recurrence);
+          }}
+        />
+      )}
+      {runInputsOpen && selectedWorkflow && (
+        <WorkflowRunInputsDialog
+          workflow={selectedWorkflow}
+          inputSteps={workflowInputSteps(selectedWorkflow)}
+          onClose={() => setRunInputsOpen(false)}
+          onRun={(inputs) => {
+            setRunInputsOpen(false);
+            props.onPlay(selectedWorkflow, inputs);
           }}
         />
       )}

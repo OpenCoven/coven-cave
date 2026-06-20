@@ -1202,6 +1202,100 @@
   gap: 8px;
 }
 
+/* Run-readiness contract banner (workflow inspector). Reads the input → steps →
+   output gate the runner enforces, tinted green when runnable and amber when a
+   node is missing. */
+.workflow-run-readiness {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+}
+
+.workflow-run-readiness > .iconify {
+  flex: none;
+  margin-top: 1px;
+}
+
+.workflow-run-readiness.is-ready {
+  border-color: color-mix(in oklch, var(--color-success, #57c878) 45%, var(--border));
+  background: color-mix(in oklch, var(--color-success, #57c878) 9%, transparent);
+}
+
+.workflow-run-readiness.is-ready > .iconify {
+  color: var(--color-success, #57c878);
+}
+
+.workflow-run-readiness.is-blocked {
+  border-color: color-mix(in oklch, var(--color-warning, #d9a13c) 45%, var(--border));
+  background: color-mix(in oklch, var(--color-warning, #d9a13c) 10%, transparent);
+}
+
+.workflow-run-readiness.is-blocked > .iconify {
+  color: var(--color-warning, #d9a13c);
+}
+
+.workflow-run-readiness-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.workflow-run-readiness-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.workflow-run-readiness-contract {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-readiness-contract .iconify {
+  flex: none;
+  opacity: 0.7;
+}
+
+/* Run-inputs dialog: one capture field per declared input node. */
+.workflow-run-inputs-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workflow-run-input-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+
+.workflow-run-input-field {
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  color: var(--text-primary, inherit);
+}
+
+.workflow-run-input-field:focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--accent-presence) 65%, transparent);
+}
+
 .workflow-issue-list {
   margin: 6px 0 0;
   padding: 0;

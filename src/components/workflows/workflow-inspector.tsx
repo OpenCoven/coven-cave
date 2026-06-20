@@ -3,7 +3,11 @@
 import { Icon } from "@/lib/icon";
 import type { WorkflowGraphNode } from "@/lib/workflow-graph";
 import {
+  workflowInputSteps,
   workflowIssueSummary,
+  workflowOutputSteps,
+  workflowRunBlockReason,
+  type WorkflowStepKind,
   type WorkflowStepSummary,
   type WorkflowSummary,
   type WorkflowValidationIssue,
@@ -19,7 +23,24 @@ type WorkflowInspectorProps = {
   onRemoveStep: (id: string) => void;
 };
 
-const STEP_KINDS = ["agent", "skill", "tool", "human-gate", "workflow"];
+// The canonical CWF-01 step-kind vocabulary, in execution order so the dropdown
+// mirrors the palette (Input first, Output last). Kept in sync with the palette
+// and the run gate (workflowRunBlockReason) — input/output belong here so a step
+// can be reclassified into the I/O kinds the runner requires, not just the
+// middle kinds. Labels match the palette's casing ("Human gate", not the raw id).
+const STEP_KINDS: Array<{ value: WorkflowStepKind; label: string }> = [
+  { value: "input", label: "Input" },
+  { value: "agent", label: "Agent" },
+  { value: "skill", label: "Skill" },
+  { value: "tool", label: "Tool" },
+  { value: "human-gate", label: "Human gate" },
+  { value: "workflow", label: "Workflow" },
+  { value: "output", label: "Output" },
+];
+
+function stepKindLabel(kind: WorkflowStepKind): string {
+  return STEP_KINDS.find((entry) => entry.value === kind)?.label ?? kind;
+}
 
 const PATTERNS = [
   "sequential",
@@ -89,12 +110,23 @@ export function WorkflowInspector({
     ? workflow?.steps?.find((entry) => entry.id === selectedNode.id) ?? null
     : null;
 
+  // Run readiness reads the input → steps → output contract the runner enforces
+  // (workflowRunBlockReason). Surfacing it here — where the workflow is built —
+  // makes the execution contract legible without hovering the disabled Play
+  // button. The counts split the graph into its declared input(s), the work
+  // between, and the produced output(s).
+  const runBlock = workflowRunBlockReason(workflow);
+  const inputCount = workflow ? workflowInputSteps(workflow).length : 0;
+  const outputCount = workflow ? workflowOutputSteps(workflow).length : 0;
+  const middleCount = Math.max(0, (workflow?.steps?.length ?? 0) - inputCount - outputCount);
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
   return (
     <section className="workflow-panel workflow-inspector" aria-label="Workflow inspector">
       <div className="workflow-panel-heading">
         <div className="workflow-heading-lead">
           <div>
-            <p className="workflow-eyebrow">{step ? "Selected node" : "Workflow"}</p>
+            <p className="workflow-eyebrow">{step ? `Selected node · ${stepKindLabel(step.kind)}` : "Workflow"}</p>
             <h2>{step ? (step.name ?? step.id) : (workflow?.name ?? workflow?.id ?? "No workflow")}</h2>
           </div>
         </div>
@@ -127,11 +159,13 @@ export function WorkflowInspector({
             <span>Kind</span>
             <select value={step.kind} onChange={(event) => onUpdateStep(step.id, { kind: event.target.value })}>
               {STEP_KINDS.map((kind) => (
-                <option key={kind} value={kind}>
-                  {kind}
+                <option key={kind.value} value={kind.value}>
+                  {kind.label}
                 </option>
               ))}
-              {!STEP_KINDS.includes(step.kind) && <option value={step.kind}>{step.kind}</option>}
+              {!STEP_KINDS.some((entry) => entry.value === step.kind) && (
+                <option value={step.kind}>{step.kind}</option>
+              )}
             </select>
           </label>
           <Field
@@ -164,6 +198,28 @@ export function WorkflowInspector({
         </div>
       ) : workflow ? (
         <div className="workflow-editor">
+          <div
+            className={`workflow-run-readiness${runBlock ? " is-blocked" : " is-ready"}`}
+            role="status"
+          >
+            <Icon name={runBlock ? "ph:warning-circle" : "ph:check-circle-bold"} width={14} />
+            <div className="workflow-run-readiness-text">
+              <span className="workflow-run-readiness-label">
+                {runBlock ? "Not runnable yet" : "Ready to run"}
+              </span>
+              <span className="workflow-run-readiness-contract">
+                {runBlock ?? (
+                  <>
+                    {count(inputCount, "input")}
+                    <Icon name="ph:arrow-right-bold" width={11} aria-hidden />
+                    {count(middleCount, "step")}
+                    <Icon name="ph:arrow-right-bold" width={11} aria-hidden />
+                    {count(outputCount, "output")}
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
           <Field label="Name" value={workflow.name ?? ""} onCommit={(next) => onUpdateMeta({ name: next || undefined })} />
           <Field label="Version" value={workflow.version} onCommit={(next) => onUpdateMeta({ version: next || workflow.version })} />
           <label className="workflow-field">
