@@ -321,6 +321,18 @@ assert.match(
   "Root layout should mount the global screen magnification controller",
 );
 
+// Familiar switcher style — choose the top-bar control (avatar strip vs dropdown).
+assert.match(
+  settings,
+  /Familiar switcher/,
+  "Appearance settings should expose a Familiar switcher style control",
+);
+assert.match(
+  settings,
+  /setFamiliarSwitcherStyle\(option\)/,
+  "the familiar-switcher control writes the chosen style preference",
+);
+
 // Corner radius drives the shared --radius tokens app-wide, so its boot block
 // must run before paint (ThemeScript) and its controller must mount in layout.
 assert.match(
