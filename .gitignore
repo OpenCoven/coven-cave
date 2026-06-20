@@ -98,3 +98,4 @@ package-lock.json
 
 # Generated Canvas Sketch sandbox runtime (built in prebuild)
 /public/sandbox/
+/docs/audits
