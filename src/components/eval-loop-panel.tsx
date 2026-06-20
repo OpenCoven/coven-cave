@@ -18,6 +18,7 @@ import type { IconName } from "@/lib/icon";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
+import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -240,7 +241,7 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
                         className="mt-px shrink-0 text-[var(--text-muted)]"
                         width="0.7rem"
                       />
-                      <span className="truncate text-[var(--text-primary)]">
+                      <span className="truncate text-[var(--text-primary)]" title={it.change_summary}>
                         {it.change_summary}
                       </span>
                     </div>
@@ -262,7 +263,7 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
                     <span className="text-[var(--text-muted)]">
                       {it.metric_before.toFixed(1)} → {it.metric_after.toFixed(1)}
                     </span>
-                    <span className="ml-auto text-[var(--text-muted)]">
+                    <span className="ml-auto text-[var(--text-muted)]" title={formatTimestamp(it.timestamp, readDateTimePrefs())}>
                       {age(it.timestamp)}
                     </span>
                   </div>
