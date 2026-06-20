@@ -1,0 +1,32 @@
+name: CovenCave
+options:
+  bundleIdPrefix: ai.opencoven
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: "9LR8Z8UQ9X"
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  CovenCave:
+    type: application
+    platform: iOS
+    sources:
+      - path: CovenCave
+    settings:
+      base:
+        INFOPLIST_FILE: CovenCave/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: ai.opencoven.cave
+        PRODUCT_NAME: CovenCave
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ENABLE_PREVIEWS: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
