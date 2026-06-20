@@ -997,8 +997,11 @@ export function Workspace() {
   }, [startFamiliarChat]);
 
   useEffect(() => {
+    // ⌘1..⌘8 in the order surfaces appear top-to-bottom in the left sidebar
+    // (Work group, then Tools group). ⌘9 is Projects and ⌘0 is Library (handled
+    // below); Journal/Roles/Workflows are unshortcut.
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",
+      "home", "chat", "board", "calendar", "inbox", "browser", "terminal", "code",
     ];
 
     const onKey = (e: KeyboardEvent) => {
@@ -1023,10 +1026,10 @@ export function Workspace() {
         return;
       }
 
-      // ⌘0 -> Code workspace (chat beside files + terminal)
+      // ⌘0 -> Library (the last Tools surface in the sidebar)
       if (meta && !alt && e.key === "0") {
         e.preventDefault();
-        setMode("code");
+        setMode("library");
         return;
       }
 

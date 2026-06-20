@@ -60,8 +60,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "calendar", "inbox", "library", "browser", "terminal",/,
-  "SURFACE_ORDER should omit the Familiars surface from Work shortcuts",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "calendar", "inbox", "browser", "terminal", "code",/,
+  "SURFACE_ORDER ascends with the sidebar top-to-bottom order (⌘1..⌘8)",
 );
 
 // After the top-bar streamline: no breadcrumb, no Home button, no brand
@@ -137,14 +137,14 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description:/,
-  "Sidebar Browser shifts to ⌘7 after removing Familiars from Work",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description:/,
+  "Sidebar Browser is the first Tools shortcut, on ⌘6",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8", description:/,
-  "Sidebar Terminal takes the final ⌘8 shortcut",
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description:/,
+  "Sidebar Terminal follows Browser on ⌘7",
 );
 
 console.log("workspace-familiars-landing: all assertions passed");

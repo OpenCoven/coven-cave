@@ -100,8 +100,8 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘6", description:/,
-  "Library is now a Tools surface keeping its ⌘6 shortcut",
+  /\{ id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description:/,
+  "Library is the last shortcut Tools surface, on ⌘0 (shortcuts ascend with sidebar order)",
 );
 
 // Library is a gated add-on (default off): the nav filter hides it until the
@@ -115,14 +115,14 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description:/,
-  "Browser remains a Tools surface and moves to ⌘7",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description:/,
+  "Browser is the first Tools surface, on ⌘6",
 );
 
 assert.match(
   source,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8", description:/,
-  "Terminal remains a Tools surface and takes ⌘8",
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description:/,
+  "Terminal follows Browser on ⌘7",
 );
 
 assert.match(
