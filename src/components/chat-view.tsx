@@ -3994,6 +3994,14 @@ function TurnRowImpl({
             ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
+            {/* Designated "Tool activity" section: on every settled turn that
+                used tools, collect them into one collapsed group below the prose
+                (which renders uninterrupted above). Streaming turns show tools
+                inline instead — see renderSegments. */}
+            {!turn.pending && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+            {/* Suggested follow-ups render LAST — they're the most actionable
+                element (click to send), so they sit closest to the composer and
+                aren't pushed up the turn by the tool-activity section. */}
             {nextPaths.length > 0 && !turn.pending ? (
               <div className="cave-next-paths">
                 {nextPaths.map((s, i) => (
@@ -4003,11 +4011,6 @@ function TurnRowImpl({
                 ))}
               </div>
             ) : null}
-            {/* Designated "Tool activity" section: on every settled turn that
-                used tools, collect them into one collapsed group below the prose
-                (which renders uninterrupted above). Streaming turns show tools
-                inline instead — see renderSegments. */}
-            {!turn.pending && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
           </div>
         </div>
       </div>
