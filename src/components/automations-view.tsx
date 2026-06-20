@@ -423,10 +423,20 @@ function ReminderTaskRow({
   onSelect: (item: InboxItem) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
+  // A one-shot reminder still pending after its fire time never fired (e.g. the
+  // daemon was offline) — surface that instead of a quiet "3h ago".
+  const isOverdue =
+    item.kind !== "daily-summary" &&
+    (item.recurrence?.type ?? "none") === "none" &&
+    item.status === "pending" &&
+    !!item.fireAt &&
+    new Date(item.fireAt).getTime() < Date.now();
   const schedule = item.kind === "daily-summary"
     ? "Daily summary"
     : item.recurrence?.type !== "none"
     ? humanSchedule(item.recurrence)
+    : isOverdue
+    ? "Overdue"
     : item.fireAt
     ? relTime(item.fireAt)
     : "Paused";
@@ -458,7 +468,7 @@ function ReminderTaskRow({
             </span>
           )}
         </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: isOverdue ? "var(--color-warning)" : "var(--text-muted)" }}>
           {schedule}
         </span>
       </button>
