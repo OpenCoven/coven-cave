@@ -1,4 +1,5 @@
 import { COVEN_IDENTITY_CANON_HEADER } from "./coven-identity-canon.ts";
+import { relativeTime } from "./daily-report.ts";
 
 type SessionLike = {
   id: string;
@@ -98,13 +99,14 @@ export function sanitizeSessionTitle(title: string | null | undefined): string |
   return normalized;
 }
 
-export function defaultChatTitleForSession(sessionId: string | null | undefined): string {
-  const normalized = normalizeChatTitle(sessionId);
-  const compactId = (normalized?.replace(/^session[-_:\s]*/i, "") || normalized || "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 8);
-  const shortId = compactId || normalized?.slice(0, 8);
-  return shortId ? `New Session ${shortId}` : "New Session";
+/**
+ * Neutral title for an untitled session. We intentionally do NOT encode the
+ * session id (the old "New Session <first-8-of-id>" was pure noise); rows are
+ * disambiguated at display time by `disambiguateSessionTitles`. `sessionId` is
+ * kept in the signature for call-site stability.
+ */
+export function defaultChatTitleForSession(_sessionId?: string | null): string {
+  return "New chat";
 }
 
 export function mergeSessionTitleOverrides<T extends SessionLike>(
@@ -115,4 +117,27 @@ export function mergeSessionTitleOverrides<T extends SessionLike>(
     const title = normalizeChatTitle(titles[session.id]);
     return title ? { ...session, title } : session;
   });
+}
+
+/**
+ * Within one rendered session list, suffix any title shared by 2+ rows with its
+ * relative time so the rows stay distinguishable (two "New chat" or two
+ * "Workflow: Annotate Document" sessions). Titles appearing once are returned
+ * unchanged. Pure — returns a map keyed by row id.
+ */
+export function disambiguateSessionTitles(
+  rows: { id: string; title: string; updated_at?: string | null }[],
+): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.title, (counts.get(r.title) ?? 0) + 1);
+  const out = new Map<string, string>();
+  for (const r of rows) {
+    if ((counts.get(r.title) ?? 0) > 1) {
+      const when = relativeTime(r.updated_at ?? undefined);
+      out.set(r.id, when ? `${r.title} · ${when}` : r.title);
+    } else {
+      out.set(r.id, r.title);
+    }
+  }
+  return out;
 }
