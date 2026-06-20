@@ -390,6 +390,8 @@ export function NewReminderModal({
                     day: "numeric",
                     hour: "numeric",
                     minute: "2-digit",
+                    // Match the fire-time preview above — honor the 12h/24h pref.
+                    hour12: readDateTimePrefs().clock !== "24h",
                   })}`
                 : "Try “0 9 * * 1-5” for weekdays at 9am."}
             </div>
