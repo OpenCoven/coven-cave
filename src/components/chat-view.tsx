@@ -49,6 +49,7 @@ import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
+import { formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
 import { computeContextMeter } from "@/lib/context-meter";
 import {
   formatRuntime,
@@ -358,15 +359,6 @@ function lifecycleLabel(lifecycle: ChatTurnLifecycle): string {
       return "Failed";
     case "complete":
       return "Complete";
-  }
-}
-
-function fmtTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  } catch {
-    return "";
   }
 }
 
@@ -891,27 +883,6 @@ function ChatTitleEditable({
     >
       {display}
     </button>
-  );
-}
-
-function ResponseMetadataText({ metadata }: { metadata?: ChatResponseMetadata }) {
-  const model = responseMetadataModel(metadata);
-  const dir = formatRuntime(metadata?.runtime);
-  if (!model && !dir) return null;
-  return (
-    <span
-      className="font-mono text-[10px] text-[var(--text-muted)] inline-flex items-center gap-1"
-      title={[metadata?.harness, model, dir?.title].filter(Boolean).join(" · ") || undefined}
-    >
-      {model}
-      {model && dir ? " · " : null}
-      {dir ? (
-        <span className="inline-flex items-center gap-1">
-          <Icon name="ph:folder" width={10} aria-hidden />
-          {dir.label}
-        </span>
-      ) : null}
-    </span>
   );
 }
 
@@ -3715,6 +3686,10 @@ function TurnRow({
   // collapses tools on its own because the settled default is hidden.
   const [showToolsOverride, setShowToolsOverride] = useState<boolean | null>(null);
   const showTools = turn.pending ? true : (showToolsOverride ?? false);
+  // Chat timestamp format (12h/24h clock + MM.DD/DD.MM/Off date) — a user
+  // preference; the model/cwd/duration that used to sit here now live only in
+  // the debug pane's per-turn JSON.
+  const dtPrefs = useDateTimePrefs();
 
   // Click-away dismissal for the inline familiar card. Hooks are placed here
   // (before any early return) so React's rules-of-hooks are never violated.
@@ -3758,7 +3733,9 @@ function TurnRow({
             {turn.role === "system" ? (
               <span className="font-medium text-[var(--text-secondary)]">System</span>
             ) : null}
-            {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
+            {showTimestamp && turn.createdAt ? (
+              <span className="opacity-60">{formatTimestamp(turn.createdAt, dtPrefs)}</span>
+            ) : null}
             {turn.attachments?.length ? <span className="opacity-60">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
           </div>
           <MessageBubble
@@ -3884,9 +3861,9 @@ function TurnRow({
                 Retry
               </button>
             ) : null}
-            {showTimestamp && turn.createdAt ? <span className="opacity-60">{fmtTime(turn.createdAt)}</span> : null}
-            <ResponseMetadataText metadata={turn.responseMetadata} />
-            <DurationText durationMs={turn.durationMs} />
+            {showTimestamp && turn.createdAt ? (
+              <span className="opacity-60">{formatTimestamp(turn.createdAt, dtPrefs)}</span>
+            ) : null}
             <UsageText usage={turn.usage} costUsd={turn.costUsd} />
             {/* CHAT-D13-01: settled turns hide tool activity by default —
                 this chip is the only way back to it, so it must not be
