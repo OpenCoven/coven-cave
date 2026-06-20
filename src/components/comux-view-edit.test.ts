@@ -45,4 +45,11 @@ assert.match(
   "edit mode must render CodeEditor wired to the edit state (value/onChange/onSave/onCancel)",
 );
 
+// Save is guarded against re-entrancy: Cmd-S in the editor calls onSave directly,
+// bypassing the Save button's disabled={saving}, so a synchronous ref blocks
+// concurrent POSTs. The save error is announced via role=alert.
+assert.ok(source.includes("if (!previewPath || savingRef.current) return;"), "saveEdit guards against concurrent saves");
+assert.ok(source.includes("savingRef.current = true;"), "saveEdit marks the in-flight ref synchronously");
+assert.ok(source.includes('<span role="alert" className="shrink-0 truncate text-[10px] text-[var(--color-danger,#f87171)]"'), "save error is announced via role=alert");
+
 console.log("comux-view-edit.test.ts: ok");

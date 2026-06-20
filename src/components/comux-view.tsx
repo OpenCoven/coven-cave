@@ -693,8 +693,13 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     setSaveError(null);
   }, []);
 
+  // Synchronous in-flight guard: Cmd-S in the editor calls onSave directly,
+  // bypassing the Save button's disabled={saving}. A ref (not the saving state,
+  // which would be stale in this callback) blocks concurrent POSTs.
+  const savingRef = useRef(false);
   const saveEdit = useCallback(async () => {
-    if (!previewPath) return;
+    if (!previewPath || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setSaveError(null);
     try {
@@ -716,6 +721,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setSaveError(String(err));
     } finally {
       setSaving(false);
+      savingRef.current = false;
     }
   }, [previewPath, editValue]);
 
@@ -1556,7 +1562,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         {editing ? (
                           <>
                             {saveError && (
-                              <span className="shrink-0 truncate text-[10px] text-[var(--color-danger,#f87171)]" title={saveError}>
+                              <span role="alert" className="shrink-0 truncate text-[10px] text-[var(--color-danger,#f87171)]" title={saveError}>
                                 {saveError}
                               </span>
                             )}
