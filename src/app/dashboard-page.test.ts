@@ -3,21 +3,19 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 const pageUrl = new URL("./dashboard/page.tsx", import.meta.url);
-
 assert.equal(existsSync(pageUrl), true, "dashboard route should exist at /dashboard");
-
-const page = existsSync(pageUrl) ? readFileSync(pageUrl, "utf8") : "";
+const page = readFileSync(pageUrl, "utf8");
 
 assert.match(page, /loadInbox/, "dashboard should load persisted inbox data");
-assert.match(page, /liveSnapshot/, "dashboard should compute a live snapshot");
-assert.match(page, /recentReports/, "dashboard should list recent daily reports");
-assert.match(
-  page,
-  /href=\{(featuredReport|report)\.href\}/,
-  "dashboard should link to a daily report via the report href",
-);
-assert.match(page, /dr-cta/, "dashboard should feature a primary report CTA");
-assert.match(page, /Needs attention/, "dashboard should surface an actionable needs-attention list");
+assert.match(page, /buildDashboardModel/, "dashboard should build the view-model");
+assert.match(page, /DashboardView/, "dashboard should render the adaptive view");
 assert.match(page, /dr-page/, "dashboard should use the shared surface styling");
+
+const viewUrl = new URL("../components/dashboard/dashboard-view.tsx", import.meta.url);
+assert.equal(existsSync(viewUrl), true, "DashboardView component should exist");
+const view = readFileSync(viewUrl, "utf8");
+assert.match(view, /dashboardLayout/, "view should order zones via dashboardLayout");
+assert.match(view, /ActionInbox/, "view should include the action inbox zone");
+assert.match(view, /LauncherGrid/, "view should include the launcher zone");
 
 console.log("dashboard-page.test.ts: ok");
