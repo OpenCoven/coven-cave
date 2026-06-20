@@ -13,6 +13,7 @@ import {
 } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
+import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import { highlightToHtml } from "@/components/message-bubble";
 
 type Props = {
@@ -35,8 +36,18 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
   const [generating, setGenerating] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [refineText, setRefineText] = useState("");
+  const [refineOpen, setRefineOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const refineRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Context-aware ideas derived from the artifact itself; recomputed only when
+  // the code/kind changes (cheap string scans). Paired with the static defaults
+  // so the refine space always offers a starting point.
+  const generatedSuggestions = useMemo(
+    () => generateRefineSuggestions(code, kind),
+    [code, kind],
+  );
 
   const srcDoc = useMemo(
     () => (kind === "react" ? buildReactSrcDoc(code) : buildPreviewSrcDoc(code)),
@@ -84,6 +95,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
       setCode(clampArtifactCode(result.code));
       if (result.kind) setKind(result.kind);
       setRefineText("");
+      setRefineOpen(false);
       setEditing(false);
       setTab("canvas");
       setSaveState("idle");
@@ -91,6 +103,25 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
       setRuntimeError(result.error || "Refine failed — try a different description.");
     }
   }, [refineText, familiarId, generating, code, kind]);
+
+  const openRefine = useCallback(() => {
+    if (!familiarId) return;
+    setRefineOpen(true);
+    // Focus after the panel mounts so the cursor lands in the textarea.
+    requestAnimationFrame(() => refineRef.current?.focus());
+  }, [familiarId]);
+
+  // Tapping a suggestion seeds the textarea (replacing any draft) and refocuses,
+  // so the user can run it as-is or tweak it first.
+  const applySuggestion = useCallback((text: string) => {
+    setRefineText(text);
+    requestAnimationFrame(() => {
+      const el = refineRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, []);
 
   const saveToCanvas = useCallback(async () => {
     if (saveState === "saving") return;
@@ -215,21 +246,99 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
         )}
       </div>
 
-      <div className="chat-artifact__refine">
-        <Icon name="ph:sparkle" width={14} className="chat-artifact__refine-icon" />
-        <input
-          className="chat-artifact__refine-input"
-          aria-label="Refine artifact"
-          placeholder={familiarId ? "Refine — describe a change…" : "Pick a familiar to refine"}
-          value={refineText}
-          disabled={!familiarId || generating}
-          onChange={(e) => setRefineText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void runRefine(); } }}
-        />
-        <button type="button" className="chat-artifact__refine-go" disabled={!familiarId || generating || !refineText.trim()} onClick={() => void runRefine()}>
-          {generating ? "Refining…" : "Refine"}
+      {refineOpen ? (
+        <div className="chat-artifact__refine-panel" role="group" aria-label="Refine artifact">
+          <div className="chat-artifact__refine-head">
+            <Icon name="ph:sparkle" width={14} className="chat-artifact__refine-icon" />
+            <span className="chat-artifact__refine-title">Refine</span>
+            <span className="chat-artifact__spacer" />
+            <button
+              type="button"
+              className="chat-artifact__btn"
+              title="Close refine"
+              aria-label="Close refine"
+              onClick={() => setRefineOpen(false)}
+            >
+              <Icon name="ph:x" width={13} />
+            </button>
+          </div>
+          <textarea
+            ref={refineRef}
+            className="chat-artifact__refine-text"
+            aria-label="Describe the optimization you want"
+            placeholder="Describe the optimization you want…"
+            rows={2}
+            value={refineText}
+            disabled={generating}
+            onChange={(e) => setRefineText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void runRefine(); }
+              if (e.key === "Escape") { e.preventDefault(); setRefineOpen(false); }
+            }}
+          />
+          <div className="chat-artifact__suggests">
+            <p className="chat-artifact__suggests-label">Suggestions</p>
+            <div className="chat-artifact__chips">
+              {DEFAULT_REFINE_SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="chat-artifact__chip"
+                  disabled={generating}
+                  onClick={() => applySuggestion(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            {generatedSuggestions.length ? (
+              <>
+                <p className="chat-artifact__suggests-label">
+                  <Icon name="ph:sparkle" width={11} /> From this artifact
+                </p>
+                <div className="chat-artifact__chips">
+                  {generatedSuggestions.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className="chat-artifact__chip chat-artifact__chip--gen"
+                      disabled={generating}
+                      onClick={() => applySuggestion(s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+          <div className="chat-artifact__refine-foot">
+            <span className="chat-artifact__refine-hint">⌘↵ to refine</span>
+            <span className="chat-artifact__spacer" />
+            <button type="button" className="chat-artifact__btn chat-artifact__btn--text" onClick={() => setRefineOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="chat-artifact__refine-go"
+              disabled={generating || !refineText.trim()}
+              onClick={() => void runRefine()}
+            >
+              {generating ? "Refining…" : "Refine"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="chat-artifact__refine-trigger"
+          disabled={!familiarId}
+          onClick={openRefine}
+        >
+          <Icon name="ph:sparkle" width={14} className="chat-artifact__refine-icon" />
+          {familiarId ? "Refine the artifact…" : "Pick a familiar to refine"}
         </button>
-      </div>
+      )}
     </div>
   );
 }

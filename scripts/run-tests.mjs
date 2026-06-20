@@ -120,6 +120,7 @@ export const SUITES = {
     "src/lib/calendar-layout.test.ts",
     "src/lib/canvas-layout.test.ts",
     "src/lib/canvas-artifacts.test.ts",
+    "src/lib/refine-suggestions.test.ts",
     "src/lib/canvas-templates.test.ts",
     "src/lib/canvas-react-harness.test.ts",
     "src/lib/canvas-generate.test.ts",
