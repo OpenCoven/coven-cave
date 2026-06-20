@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { buildDashboardModel, dashboardLayout } from "./dashboard-model.ts";
+import { nextItemsAfterAction } from "./dashboard-model.ts";
 
 const ISO = "2026-06-20T09:00:00.000Z";
 const now = new Date(ISO);
@@ -73,6 +74,24 @@ function summary(slug) {
   assert.equal(model.todaysReport, null);
   assert.equal(model.featuredReport?.slug, "2026-06-19");
   assert.deepEqual(model.recentReports.map((r) => r.slug), ["2026-06-18"]);
+}
+
+// acting on an item removes exactly it, preserving the order of the rest
+{
+  const list = [
+    item({ id: "a", kind: "response-needed", status: "pending" }),
+    item({ id: "b", kind: "response-needed", status: "pending" }),
+    item({ id: "c", kind: "response-needed", status: "pending" }),
+  ];
+  const after = nextItemsAfterAction(list, "b");
+  assert.deepEqual(after.map((i) => i.id), ["a", "c"], "removes acted item, keeps order");
+  assert.equal(list.length, 3, "does not mutate input");
+}
+
+// unknown id is a no-op
+{
+  const list = [item({ id: "a" })];
+  assert.equal(nextItemsAfterAction(list, "zzz").length, 1, "unknown id => unchanged");
 }
 
 console.log("dashboard-model.test.ts: ok");

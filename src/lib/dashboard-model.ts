@@ -52,3 +52,12 @@ export function dashboardLayout(model: DashboardModel): DashboardZone[] {
   }
   return ["actionInbox", "reportCallout", "launcher"];
 }
+
+/**
+ * Optimistic transition for the action inbox: snooze/done/dismiss all remove
+ * the item from the "needs you" list. Pure — returns a new array, never
+ * mutates. The caller keeps the previous array to revert on a failed POST.
+ */
+export function nextItemsAfterAction(items: InboxItem[], id: string): InboxItem[] {
+  return items.filter((item) => item.id !== id);
+}
