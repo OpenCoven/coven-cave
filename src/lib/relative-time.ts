@@ -24,3 +24,12 @@ export function relativeTime(
   if (days < 7) return `${days}d ago`;
   return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(then);
 }
+
+/**
+ * True when `relativeTime`'s output is a relative phrase ("just now" / "… ago")
+ * rather than its ≥7-day absolute "Mon D" fallback. Lets a caller that already
+ * shows an absolute date suppress the relative span when it would just repeat it.
+ */
+export function isRelativePhrase(value: string): boolean {
+  return value === "just now" || value.endsWith(" ago");
+}
