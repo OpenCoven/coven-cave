@@ -24,7 +24,6 @@ assert.doesNotMatch(card, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "no emoji g
 // Panel integration
 assert.match(widget, /import \{ SalemPathfinderCard \}/, "panel imports the card");
 assert.match(widget, /\/api\/salem\/pathfinder/, "panel posts to the pathfinder route");
-assert.match(widget, /Find your next path/, "panel exposes a Find-your-next-path trigger");
 assert.match(widget, /<SalemPathfinderCard /, "panel renders the card when present");
 
 console.log("salem-pathfinder-card.test.ts OK");

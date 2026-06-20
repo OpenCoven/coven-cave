@@ -7,9 +7,6 @@ import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { SalemPathfinderCard } from "./salem-pathfinder-card";
 import type { SalemPathfinderCard as SalemPathfinderCardData } from "@/lib/salem/pathfinder-types";
-// Salem's 2D cat avatar. Replaced the former Three.js scene to drop the heavy
-// WebGL `three` dependency.
-import { SalemCat } from "./salem-cat";
 
 type Message = { role: "user" | "salem"; text: string };
 
@@ -152,7 +149,6 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
       {/* Header */}
       <div className="salem-panel__header">
         <div className="salem-panel__header-identity">
-          <SalemCat mood={mood} size={40} />
           <div>
             <div className="salem-panel__name">Salem</div>
             <div className="salem-panel__subtitle">
@@ -161,17 +157,6 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
           </div>
         </div>
         <div className="salem-panel__header-actions">
-          <button
-            type="button"
-            className="salem-panel__pathfind"
-            onClick={findPath}
-            disabled={pathfinding}
-            aria-label="Find your next path"
-            title="Find your next path"
-          >
-            <Icon name="ph:sparkle" width={13} aria-hidden />
-            <span className="salem-panel__pathfind-text">Find your next path</span>
-          </button>
           <Icon name="ph:book-open" width={14} />
         </div>
       </div>
