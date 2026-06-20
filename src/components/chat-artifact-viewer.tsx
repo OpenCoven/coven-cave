@@ -3,6 +3,7 @@
 import "@/styles/chat-artifact.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import {
   buildPreviewSrcDoc,
@@ -38,6 +39,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
   const [refineText, setRefineText] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [fullscreen, setFullscreen] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const refineRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -67,6 +69,16 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [srcDoc]);
+
+  // Escape exits the expanded (fullscreen) artifact view.
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fullscreen]);
 
   const copyCode = useCallback(() => {
     void navigator.clipboard?.writeText(code).catch(() => undefined);
@@ -162,8 +174,8 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
     window.dispatchEvent(new Event("cave:board:reload"));
   }, []);
 
-  return (
-    <div className="chat-artifact">
+  const shell = (
+    <div className={`chat-artifact${fullscreen ? " chat-artifact--fullscreen" : ""}`}>
       <div className="chat-artifact__head">
         <span className="chat-artifact__dots" aria-hidden>
           <i style={{ background: "#e0666b" }} />
@@ -200,6 +212,16 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
           ) : null}
           <button type="button" className="chat-artifact__btn" title="Copy code" aria-label="Copy code" onClick={copyCode}>
             <Icon name="ph:copy" width={14} />
+          </button>
+          <button
+            type="button"
+            className={`chat-artifact__btn${fullscreen ? " is-active" : ""}`}
+            title={fullscreen ? "Exit fullscreen" : "Expand fullscreen"}
+            aria-label={fullscreen ? "Exit fullscreen" : "Expand artifact fullscreen"}
+            aria-pressed={fullscreen}
+            onClick={() => setFullscreen((v) => !v)}
+          >
+            <Icon name={fullscreen ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={14} />
           </button>
           <button type="button" className="chat-artifact__btn" title="Open in browser" aria-label="Open in browser" onClick={openInBrowser}>
             <Icon name="ph:arrow-square-out" width={14} />
@@ -341,6 +363,16 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
       )}
     </div>
   );
+
+  // When expanded, portal the shell to <body> so it escapes the chat turn's
+  // containing block. The turn row (.cave-linear-turn) uses
+  // `content-visibility: auto`, which implies `contain: layout paint` — that
+  // makes it a containing block for position:fixed descendants, so an inline
+  // `.chat-artifact--fullscreen` overlay would be clipped to the turn's box
+  // instead of filling the viewport. Inline (non-fullscreen) stays in place.
+  return fullscreen && typeof document !== "undefined"
+    ? createPortal(shell, document.body)
+    : shell;
 }
 
 /**

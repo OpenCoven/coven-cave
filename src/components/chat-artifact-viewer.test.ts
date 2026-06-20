@@ -17,4 +17,17 @@ assert.match(src, /buildRefinePrompt/, "refine wraps with the refine prompt");
 assert.match(src, /\/api\/canvas/, "save posts to the canvas store");
 assert.match(src, /cave:navigate-mode/, "open-in-canvas navigates to the canvas page");
 
+// Expand-to-fullscreen: a toggle action enters a fullscreen overlay, Escape
+// exits, and — critically — the overlay is PORTALED to document.body so it
+// escapes the chat turn's content-visibility containing block. Without the
+// portal the fixed overlay would be clipped to the turn row and "expand"
+// wouldn't visibly expand.
+assert.match(src, /fullscreen,\s*setFullscreen/, "tracks fullscreen artifact state");
+assert.match(src, /aria-label=\{fullscreen \? "Exit fullscreen" : "Expand artifact fullscreen"\}/, "renders a fullscreen toggle action");
+assert.match(src, /Icon name=\{fullscreen \? "ph:arrows-in-simple" : "ph:arrows-out-simple"\}/, "fullscreen toggle uses expand/collapse icons");
+assert.match(src, /e\.key === "Escape"[\s\S]*?setFullscreen\(false\)/, "Escape exits fullscreen mode");
+assert.match(src, /chat-artifact--fullscreen/, "fullscreen state applies the overlay class");
+assert.match(src, /import \{ createPortal \} from "react-dom"/, "imports createPortal");
+assert.match(src, /createPortal\(shell, document\.body\)/, "fullscreen overlay is portaled to document.body to escape the turn's containing block");
+
 console.log("chat-artifact-viewer source contract: ok");
