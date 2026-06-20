@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
+import { SettingsGroup } from "@/components/ui/settings-group";
 import {
   DEFAULT_FONT_ID,
   FONT_OPTIONS,
@@ -148,7 +149,7 @@ function ReadingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2.5">
       <div className="min-w-0">
         <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
         {hint ? <div className="text-[11px] text-[var(--text-muted)]">{hint}</div> : null}
@@ -317,46 +318,39 @@ export function FontSettings() {
 
   return (
     <section className="flex flex-col gap-5">
-      <div>
-        <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Typography</h3>
-        <p className="text-[11px] text-[var(--text-muted)]">
-          Choose the interface and code fonts and how text is sized. Changes apply immediately.
-        </p>
-      </div>
-
-      {/* Fonts — paired side by side, each with a live preview. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FontField slot="sans" label="Interface" options={SANS_OPTIONS} value={sansId} onChange={(id) => select("sans", id)} />
-        <FontField slot="mono" label="Code &amp; terminal" options={MONO_OPTIONS} value={monoId} onChange={(id) => select("mono", id)} />
-      </div>
-
-      {/* Text size — the one control that scales the whole UI, not just prose. */}
-      <div className="flex flex-col gap-1.5">
-        <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text size</label>
-        <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Scale all text and UI.</p>
-        <div className={segWrap}>
-          {SCREEN_SCALE_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setTextSize(option)}
-              aria-pressed={scale === option}
-              aria-label={`Text size ${option}%`}
-              className={segBtn(scale === option, "min-w-12")}
-            >
-              {option}%
-            </button>
-          ))}
+      <SettingsGroup
+        label="Typography"
+        description="Choose the interface and code fonts and how text is sized. Changes apply immediately."
+      >
+        {/* Fonts — paired side by side, each with a live preview. */}
+        <div className="grid grid-cols-1 gap-4 px-4 py-3 sm:grid-cols-2">
+          <FontField slot="sans" label="Interface" options={SANS_OPTIONS} value={sansId} onChange={(id) => select("sans", id)} />
+          <FontField slot="mono" label="Code &amp; terminal" options={MONO_OPTIONS} value={monoId} onChange={(id) => select("mono", id)} />
         </div>
-      </div>
+
+        {/* Text size — the one control that scales the whole UI, not just prose. */}
+        <div className="flex flex-col gap-1.5 px-4 py-3">
+          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text size</label>
+          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Scale all text and UI.</p>
+          <div className={segWrap}>
+            {SCREEN_SCALE_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setTextSize(option)}
+                aria-pressed={scale === option}
+                aria-label={`Text size ${option}%`}
+                className={segBtn(scale === option, "min-w-12")}
+              >
+                {option}%
+              </button>
+            ))}
+          </div>
+        </div>
+      </SettingsGroup>
 
       {/* Reading text — one shared caption, then compact label/control rows. */}
-      <div className="flex flex-col gap-2">
-        <div>
-          <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Reading text</h4>
-          <p className="text-[11px] text-[var(--text-muted)]">Applies to chat, library, and memory.</p>
-        </div>
-        <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] px-3">
+      <SettingsGroup label="Reading text" description="Applies to chat, library, and memory.">
           <ReadingRow label="Line spacing">
             <div className={segWrap}>
               {READING_LEADING_OPTIONS.map((option) => (
@@ -469,20 +463,15 @@ export function FontSettings() {
               ))}
             </div>
           </ReadingRow>
-        </div>
-      </div>
+      </SettingsGroup>
 
       {/* Date & time — the Clock setting applies to every time shown in the app
           (calendar, capabilities, debug, …); the Date format applies to the chat
           message timestamp, where model/cwd/duration used to sit (now in debug). */}
-      <div className="flex flex-col gap-2">
-        <div>
-          <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Date &amp; time</h4>
-          <p className="text-[11px] text-[var(--text-muted)]">
-            Clock applies across the app; the date format applies to chat message timestamps.
-          </p>
-        </div>
-        <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] px-3">
+      <SettingsGroup
+        label="Date & time"
+        description="Clock applies across the app; the date format applies to chat message timestamps."
+      >
           <ReadingRow label="Clock" hint="Across the app">
             <div className={segWrap}>
               {CLOCK_OPTIONS.map((option) => (
@@ -515,8 +504,7 @@ export function FontSettings() {
               ))}
             </div>
           </ReadingRow>
-        </div>
-      </div>
+      </SettingsGroup>
 
       <div>
         <button
