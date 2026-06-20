@@ -9,6 +9,7 @@ import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { VaultPanel } from "@/components/vault-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
@@ -329,19 +330,19 @@ function InboxTab({
 
   if (items.length === 0) {
     return (
-      <div className="text-xs">
+      <div className="flex h-full min-h-0 flex-col text-xs">
         {header}
-        <div className="p-4 text-[var(--text-muted)]">
-          Nothing scheduled for {familiar.display_name}.
-          {onCreateReminder ? (
-            <button
-              type="button"
-              onClick={() => onCreateReminder(familiar.id)}
-              className="ml-1 text-[var(--accent-presence)] hover:text-[var(--text-primary)]"
-            >
-              Create one
-            </button>
-          ) : null}
+        <div className="min-h-0 flex-1">
+          <InspectorEmpty
+            icon="ph:calendar-blank"
+            title="Nothing scheduled"
+            hint={`No reminders or follow-ups for ${familiar.display_name} yet.`}
+            action={
+              onCreateReminder
+                ? { label: "Create one", onClick: () => onCreateReminder(familiar.id) }
+                : undefined
+            }
+          />
         </div>
       </div>
     );
@@ -350,8 +351,12 @@ function InboxTab({
     <div className="text-xs">
       {header}
       {error ? (
-        <div className="border-b border-[color-mix(in_oklch,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-3 py-1.5 text-[10px] text-[var(--color-danger)]">
-          {error}
+        <div
+          role="alert"
+          className="flex items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-3 py-1.5 text-[10px] text-[var(--color-danger)]"
+        >
+          <Icon name="ph:warning-circle" width={12} className="shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">{error}</span>
         </div>
       ) : null}
       <ul className="space-y-1.5 p-2">
@@ -1030,11 +1035,7 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
   }
 
   if (loading) {
-    return (
-      <div className="flex h-full min-h-0 items-center justify-center text-[11px] text-[var(--text-muted)]">
-        Loading capabilities…
-      </div>
-    );
+    return <SkeletonRows count={6} className="p-3" />;
   }
 
   // ── Derive inheritance layers ────────────────────────────────────────────────
@@ -1074,10 +1075,16 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
 
       {/* Error banner */}
       {errors.length > 0 ? (
-        <div className="rounded border border-[color-mix(in_oklch,var(--color-warning)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2 py-1.5">
-          {errors.map((e, i) => (
-            <p key={i} className="text-[10px] text-[var(--color-warning)]">{e}</p>
-          ))}
+        <div
+          role="alert"
+          className="flex items-start gap-1.5 rounded border border-[color-mix(in_oklch,var(--color-warning)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2 py-1.5"
+        >
+          <Icon name="ph:warning-circle" width={12} className="mt-px shrink-0 text-[var(--color-warning)]" aria-hidden />
+          <div className="min-w-0">
+            {errors.map((e, i) => (
+              <p key={i} className="text-[10px] text-[var(--color-warning)]">{e}</p>
+            ))}
+          </div>
         </div>
       ) : null}
 
