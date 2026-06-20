@@ -95,8 +95,13 @@ assert.match(
 );
 assert.match(
   source,
-  /e\.key === "Escape"[\s\S]{0,40}onClose\(\)/,
-  "full-size preview should close on Escape",
+  /useFocusTrap\(true, dialogRef, \{ onEscape: onClose \}\)/,
+  "full-size preview traps focus and closes on Escape via the shared useFocusTrap hook",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*setCopiedKey\(null\);\s*\}, \[selectionId\]\)/,
+  "the 'Copied' feedback resets when switching capabilities (not field-keyed across items)",
 );
 assert.match(
   source,

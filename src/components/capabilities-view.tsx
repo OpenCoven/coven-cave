@@ -6,7 +6,8 @@ import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/clipboard";
-import { formatClock } from "@/lib/datetime-format";
+import { relativeTime } from "@/lib/relative-time";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
@@ -232,6 +233,13 @@ export function CapabilitiesViewSurface({
     [operatorView.items, selectionId],
   );
 
+  // Clear the transient "Copied" feedback when switching capabilities — the
+  // copy state is keyed by field ("id"/"path"/"command"), so without this a
+  // copy on one item would briefly show "Copied" on the next one.
+  useEffect(() => {
+    setCopiedKey(null);
+  }, [selectionId]);
+
   // Load the selected capability markdown so the inspector can render a styled
   // Markdown preview. Skills are normalized to SKILL.md; instructions report a
   // CLAUDE.md/AGENTS.md file directly. Out-of-tree paths (403) fall back to the
@@ -334,7 +342,7 @@ export function CapabilitiesViewSurface({
               <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                 {scannedAt && (
                   <span title={scannedAt}>
-                    Scanned {formatClock(scannedAt)}
+                    Scanned {relativeTime(scannedAt)}
                   </span>
                 )}
                 <button
@@ -700,7 +708,7 @@ function CapabilityDetails({
         {item.sourcePath ? <InspectorMetaItem label="Path" value={item.sourcePath} mono /> : null}
         {item.command ? <InspectorMetaItem label="Command" value={item.command} mono /> : null}
         {item.tags?.length ? <InspectorMetaItem label="Tags" value={item.tags.join(", ")} /> : null}
-        {item.scannedAt ? <InspectorMetaItem label="Scanned" value={new Date(item.scannedAt).toLocaleString()} /> : null}
+        {item.scannedAt ? <InspectorMetaItem label="Scanned" value={relativeTime(item.scannedAt)} /> : null}
       </div>
 
       <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
@@ -903,13 +911,11 @@ function CapabilityPreviewModal({
   body: string;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Focus trap: keep keyboard focus inside the dialog, focus it on open, wire
+  // Escape, and restore focus to the trigger on close — matching every other
+  // modal in the app (board-inspector, library-doc-preview, …).
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   const heading = title ?? path?.split("/").pop() ?? "Preview";
 
@@ -922,6 +928,7 @@ function CapabilityPreviewModal({
       aria-label={`Preview: ${heading}`}
     >
       <div
+        ref={dialogRef}
         className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
