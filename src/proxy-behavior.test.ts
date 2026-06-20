@@ -194,17 +194,24 @@ assert.equal(
 
 // ─── Native iOS app (tokenless, over Tailscale Serve) contract ─────────────
 // The native SwiftUI client (pnpm mobile:tailscale:app) is NOT a browser: it
-// sends no Origin and no Referer, and Tailscale Serve forwards Host: 127.0.0.1
-// to the loopback server. With neither COVEN_CAVE_ACCESS_TOKEN nor
-// COVEN_CAVE_AUTH_TOKEN configured (and not bundled), proxy() falls through to
-// NextResponse.next() AFTER these source gates pass. These assertions pin the
-// gate-level behavior that flow depends on; the proxy() body ordering is pinned
-// by middleware.test.ts. A malicious same-machine BROWSER page is still blocked
-// because it always carries a cross-origin Origin (rejected just above).
+// sends no Origin and no Referer. IMPORTANT (verified against a real tailnet,
+// 2026-06-20): Tailscale Serve forwards the request's `<host>.ts.net` Host —
+// NOT 127.0.0.1 — so the loopback host gate alone 403s every tailnet request.
+// The tokenless app mode therefore sets COVEN_CAVE_TAILNET_TRUST=1, which proxy()
+// feeds into the host gate as `mobileAccessAuthenticated || tailnetTrusted`, so
+// the ts.net Host is accepted. The CSRF Origin/Referer gate still applies (a
+// malicious same-machine BROWSER page carries a cross-origin Origin and is
+// rejected); a native client sends none and passes. Ordering is pinned by
+// middleware.test.ts.
 assert.equal(
-  isAllowedApiHost("127.0.0.1:3000", false),
+  isAllowedApiHost("mb-black.example.ts.net:8443", false),
+  false,
+  "tokenless app: without trust, the forwarded ts.net Host is NOT a loopback host",
+);
+assert.equal(
+  isAllowedApiHost("mb-black.example.ts.net:8443", true),
   true,
-  "tokenless app: Tailscale Serve forwards loopback Host, which is allowed",
+  "tokenless app: COVEN_CAVE_TAILNET_TRUST feeds `true` so the ts.net Host is accepted",
 );
 assert.equal(
   isAllowedRequestSource(null, expected),
@@ -214,7 +221,7 @@ assert.equal(
 assert.equal(
   isAllowedRequestSource(null, "http://127.0.0.1:3000"),
   true,
-  "tokenless app: absent Referer at the loopback Serve backend passes",
+  "tokenless app: absent Referer passes the source gate",
 );
 
 // ─── shouldRequireMobileAccessCredential ──────────────────────────────────
