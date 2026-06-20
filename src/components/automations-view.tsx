@@ -11,7 +11,7 @@ import type {
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
-import { formatTimestamp, formatClock } from "@/lib/datetime-format";
+import { formatTimestamp, formatClock, readDateTimePrefs } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/project-tree";
@@ -108,7 +108,7 @@ function relTime(iso: string | undefined | null): string {
   if (d <= 6) return delta > 0 ? `in ${d}d` : `${d}d ago`;
   // Beyond a week the relative form ("in 42d") is hard to parse — show the
   // actual date + time, honoring the user's clock and date preferences.
-  return formatTimestamp(iso);
+  return formatTimestamp(iso, readDateTimePrefs());
 }
 
 function parseCodexRrule(rrule: string | null): {
@@ -340,14 +340,22 @@ function DetailPanel({
           {!isDailySummary && (
             <div>
               <FieldLabel>Next run</FieldLabel>
-              <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
+              <p
+                className="text-[12px]"
+                style={{ color: "var(--text-primary)" }}
+                title={item.fireAt ? formatTimestamp(item.fireAt, readDateTimePrefs()) : undefined}
+              >
                 {relTime(item.fireAt)}
               </p>
             </div>
           )}
           <div>
             <FieldLabel>{isDailySummary ? "Sent" : "Last run"}</FieldLabel>
-            <p className="text-[12px]" style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
+            <p
+              className="text-[12px]"
+              style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
+              title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
+            >
               {item.firedAt ? relTime(item.firedAt) : "Never"}
             </p>
           </div>
