@@ -4,9 +4,8 @@
  * User preference for how the familiar control renders in the top bars:
  *
  *   • "avatars"  — a row of one-tap avatars (pinned + most-recent) beside the
- *                  switcher menu (see FamiliarQuickSwitch).
- *   • "dropdown" — just the account-style switcher menu, no avatar strip
- *                  (the default).
+ *                  switcher menu (the default; see FamiliarQuickSwitch).
+ *   • "dropdown" — just the account-style switcher menu, no avatar strip.
  *
  * Cave-local, persisted in localStorage under `cave:familiar-switcher-style`.
  * Reactive via useSyncExternalStore so the top bars re-render the moment the
@@ -21,7 +20,7 @@ export const FAMILIAR_SWITCHER_STYLE_OPTIONS = ["avatars", "dropdown"] as const;
 
 export type FamiliarSwitcherStyle = (typeof FAMILIAR_SWITCHER_STYLE_OPTIONS)[number];
 
-export const DEFAULT_FAMILIAR_SWITCHER_STYLE = "dropdown" as const;
+export const DEFAULT_FAMILIAR_SWITCHER_STYLE = "avatars" as const;
 
 export const FAMILIAR_SWITCHER_STYLE_LABELS: Record<FamiliarSwitcherStyle, string> = {
   avatars: "Avatars",
