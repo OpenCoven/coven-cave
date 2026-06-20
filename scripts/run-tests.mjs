@@ -55,6 +55,7 @@ export const SUITES = {
     "src/lib/daily-report.test.ts",
     "src/lib/daily-note.test.ts",
     "src/components/familiar-daily-notes.test.ts",
+    "src/lib/dashboard-model.test.ts",
     "src/app/dashboard-page.test.ts",
     "src/lib/daily-summary-notifications.test.ts",
     "src/components/dev-cache-reset-script.test.ts",
@@ -447,6 +448,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/dashboard-model.test.ts",
   "src/lib/slash-commands.test.ts",
   "src/lib/canvas-generate.test.ts",
   "src/lib/cave-canvas.test.ts",
