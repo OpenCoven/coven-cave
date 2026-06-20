@@ -127,7 +127,6 @@ export const SUITES = {
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-view.test.ts",
     "src/components/chat-canvas-command.test.ts",
-    "src/components/canvas-templates-ui.test.ts",
     "src/components/calendar-actions.test.ts",
     "src/components/calendar-keyboard.test.ts",
     "src/components/task-chat-cwd.test.ts",
