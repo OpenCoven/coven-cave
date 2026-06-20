@@ -109,6 +109,18 @@ function repoName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+/** Most-recent-first by last activity. The merge layer already sorts globally,
+ *  but the flat "All" view flattens per-project groups (concatenating them),
+ *  which loses that order — a recent chat in one project would sink below older
+ *  chats in another. Re-sorting the flattened rows restores global recency. */
+function sortByRecency(rows: SessionRow[]): SessionRow[] {
+  return [...rows].sort((a, b) => {
+    const at = Date.parse(a.updated_at || a.created_at) || 0;
+    const bt = Date.parse(b.updated_at || b.created_at) || 0;
+    return bt - at;
+  });
+}
+
 const STATUS_STYLES: Record<string, { dot: string; label: string; preview: string }> = {
   running: { dot: "bg-[var(--color-success)] animate-pulse", label: "running", preview: "text-[var(--color-success)]" },
   completed: { dot: "bg-[var(--text-muted)]", label: "done", preview: "text-[var(--text-muted)]" },
@@ -406,7 +418,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     if (effectiveSelection === "all") {
       let rows = scopedGroups.flatMap((group) => group.sessions);
       rows = sessionOrder.length === 0
-        ? partitionPinnedFirst(rows, pinnedIds)
+        ? partitionPinnedFirst(sortByRecency(rows), pinnedIds)
         : applyManualOrder(rows, sessionOrder);
       const latest = rows[0] ?? null;
       return [{

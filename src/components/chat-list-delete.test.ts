@@ -119,7 +119,7 @@ assert.match(source, /<SortableContext items=\{displayIds\} strategy=\{verticalL
 assert.match(source, /useSortable\(\{ id \}\)/, "ChatList rows should be individually sortable by session id");
 assert.match(source, /setSessionOrder\(readSessionOrder\(\)\)/, "ChatList should hydrate the persisted manual order after mount");
 assert.match(source, /if \(effectiveSelection === "all"\) \{[\s\S]*scopedGroups\.flatMap\(\(group\) => group\.sessions\)/, "All chats should flatten groups so cross-project drag order can stick");
-assert.match(source, /partitionPinnedFirst\(rows, pinnedIds\)/, "Pinned rows should still float in the flat All chats view until manual drag order exists");
+assert.match(source, /partitionPinnedFirst\(sortByRecency\(rows\), pinnedIds\)/, "Pinned rows still float, over a recency-sorted rest, in the flat All chats view until manual drag order exists");
 assert.match(source, /applyManualOrder\(group\.sessions, sessionOrder\)/, "ChatList should apply the manual order inside visible project groups");
 assert.match(source, /mergeVisibleOrder\(prev\.length > 0 \? prev : fallbackOrderIds, nextVisible\)/, "ChatList should merge dragged visible rows back into the full saved order");
 assert.match(source, /const pruned = merged\.filter\(\(id\) => liveSessionIds\.has\(id\)\)/, "ChatList should prune stale session ids before persisting drag order");
@@ -301,6 +301,16 @@ assert.doesNotMatch(
   source,
   /touch-always-visible shrink-0 rounded border border-\[var\(--border-hairline\)\] px-1\.5 py-0\.5/,
   "Old non-uniform px-1.5 py-0.5 action-button chrome must be gone",
+);
+
+// The flat "All" view sorts by recency (most-recent-first), restoring the
+// global order the per-project flatMap drops — while still honoring an explicit
+// manual drag order and floating pinned sessions first.
+assert.match(source, /function sortByRecency\(rows: SessionRow\[\]\)/, "a recency sorter exists");
+assert.match(
+  source,
+  /sessionOrder\.length === 0\s*\?\s*partitionPinnedFirst\(sortByRecency\(rows\), pinnedIds\)\s*:\s*applyManualOrder\(rows, sessionOrder\)/,
+  "the All view sorts by recency by default, defers to manual order when the user has dragged, and keeps pinned-first",
 );
 
 console.log("chat-list-delete.test.ts: ok");
