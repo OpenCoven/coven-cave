@@ -120,6 +120,7 @@ export function CapabilitiesViewSurface({
   const [typeFilter, setTypeFilter] = useState<CapabilityType | "all">("all");
   const [statusFilter, setStatusFilter] = useState<CapabilityStatus | "all">("all");
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [urlFiltersHydrated, setUrlFiltersHydrated] = useState(false);
   const [selectionId, setSelectionId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -162,6 +163,22 @@ export function CapabilitiesViewSurface({
   useEffect(() => {
     void load(false);
   }, [load]);
+
+  // "/" jumps to the search (GitHub-style) while this surface is shown, unless
+  // the user is already typing in a field or holding a modifier.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const el = searchRef.current;
+      if (!el) return;
+      e.preventDefault();
+      el.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (urlFiltersHydrated) return;
@@ -375,6 +392,7 @@ export function CapabilitiesViewSurface({
                 <label className="focus-within:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] focus-within:ring-1">
                   <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-muted-foreground" />
                   <input
+                    ref={searchRef}
                     type="search"
                     aria-label="Search capabilities"
                     value={query}
@@ -388,6 +406,14 @@ export function CapabilitiesViewSurface({
                     placeholder="Search skills, plugins, paths, commands"
                     className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
                   />
+                  {!query && (
+                    <kbd
+                      aria-hidden
+                      className="pointer-events-none shrink-0 rounded border border-border bg-muted px-1 font-mono text-[10px] leading-tight text-muted-foreground"
+                    >
+                      /
+                    </kbd>
+                  )}
                 </label>
                 <select
                   value={statusFilter}
