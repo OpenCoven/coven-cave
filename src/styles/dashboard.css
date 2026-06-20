@@ -1,0 +1,71 @@
+/* Dashboard-only layout classes. Reuses the shared .dr-* primitives in
+   globals.css; these add only what the adaptive triage/launcher surface needs.
+   Namespaced .dash-* so they never collide with /daily-report. */
+
+.dash-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.86rem;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
+}
+.dash-strip svg { width: 18px; height: 18px; flex: 0 0 auto; }
+
+.dash-inbox__error {
+  margin-bottom: 10px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+}
+
+.dash-inbox__row { align-items: center; }
+
+.dash-inbox__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.dash-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.dash-act:hover { border-color: var(--accent-presence); }
+.dash-act--primary {
+  color: var(--bg-base);
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+}
+.dash-act--ghost { padding: 5px 8px; color: var(--text-muted); }
+.dash-act--ghost svg { width: 15px; height: 15px; }
+
+/* Compact launcher (busy state): single dense row, hide subtitles. */
+.dr-quicklinks.dash-launcher--compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.dr-quicklinks.dash-launcher--compact .dr-quicklink { padding: 10px 12px; }
+
+@media (max-width: 720px) {
+  .dash-inbox__actions { flex-wrap: wrap; justify-content: flex-end; }
+  .dr-quicklinks.dash-launcher--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
