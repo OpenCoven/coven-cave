@@ -185,6 +185,12 @@ test.describe("mobile foundations", () => {
     });
     await page.reload();
     await page.waitForSelector(".shell-frame");
+    // Wait for the ScreenMagnificationController effect to fire and stamp the
+    // data-screen-scale attribute on <html> before reading metrics.
+    await page.waitForFunction(
+      () => document.documentElement.hasAttribute("data-screen-scale"),
+      { timeout: 5000 },
+    );
 
     const metrics = await page.evaluate(() => {
       const frame = document.querySelector(".shell-frame");
