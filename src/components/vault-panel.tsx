@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -134,6 +138,7 @@ function AddMappingForm({
 export function VaultPanel() {
   const [mappings, setMappings]     = useState<Mapping[]>([]);
   const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
   const [adding, setAdding]         = useState(false);
   const [editing, setEditing]       = useState<Mapping | null>(null);
   const [deleting, setDeleting]     = useState<string | null>(null);
@@ -142,9 +147,15 @@ export function VaultPanel() {
     setLoading(true);
     try {
       const res = await fetch("/api/vault", { cache: "no-store" });
-      const j = await res.json() as { ok: boolean; mappings?: Mapping[] };
-      if (j.ok) setMappings(j.mappings ?? []);
-    } catch { /**/ }
+      const j = await res.json() as { ok: boolean; mappings?: Mapping[]; error?: string };
+      if (!j.ok) throw new Error(j.error ?? "Couldn't load vault mappings.");
+      setMappings(j.mappings ?? []);
+      setError(null);
+    } catch (e) {
+      // Previously swallowed — a failed fetch left a bare "No mappings yet"
+      // that read as "you have none" rather than "something broke".
+      setError(e instanceof Error ? e.message : "Couldn't load vault mappings.");
+    }
     finally { setLoading(false); }
   }
 
@@ -206,11 +217,35 @@ export function VaultPanel() {
 
       {/* Mapping list */}
       {loading ? (
-        <div className="vault-empty">Loading…</div>
+        <SkeletonRows count={3} className="vault-skeleton" />
+      ) : error ? (
+        <ErrorState
+          compact
+          headline="Couldn't load the vault"
+          subtitle={error}
+          actions={
+            <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+              Retry
+            </Button>
+          }
+        />
       ) : mappings.length === 0 ? (
-        <div className="vault-empty">
-          No mappings yet. Add one to pull secrets from 1Password automatically.
-        </div>
+        <EmptyState
+          compact
+          icon="ph:vault"
+          headline="No mappings yet"
+          subtitle="Add one to pull secrets from 1Password automatically."
+          actions={
+            <Button
+              size="xs"
+              leadingIcon="ph:plus"
+              onClick={() => { setAdding(true); setEditing(null); }}
+              disabled={adding}
+            >
+              Add mapping
+            </Button>
+          }
+        />
       ) : (
         <div className="vault-list">
           {mappings.map((m) => (

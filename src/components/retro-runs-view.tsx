@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/relative-time";
 import type { RetroOutcome, RetroRun, RetroRunsSnapshot, RetroTrack } from "@/lib/retro-runs";
 
@@ -259,9 +262,18 @@ export function RetroRunsView({
       </div>
 
       {error ? (
-        <div className="retro-callout" role="status">
+        <div className="retro-callout" role="alert">
           <Icon name="ph:warning-circle" aria-hidden />
           <span>{error}</span>
+          <Button
+            size="xs"
+            variant="ghost"
+            leadingIcon="ph:arrow-clockwise"
+            onClick={() => void load()}
+            className="retro-callout-retry"
+          >
+            Retry
+          </Button>
         </div>
       ) : null}
 
@@ -290,16 +302,15 @@ export function RetroRunsView({
 
         <div className="retro-runs-list" aria-busy={loading || refreshing}>
           {loading ? (
-            Array.from({ length: 4 }, (_, index) => (
-              <div key={index} className="retro-skeleton" />
-            ))
+            <SkeletonRows count={4} />
           ) : filteredRuns.length > 0 ? (
             filteredRuns.map((run) => <RunRow key={run.id} run={run} />)
           ) : (
-            <div className="retro-empty">
-              <Icon name="ph:lock-simple-bold" aria-hidden />
-              <span>No matching retro runs.</span>
-            </div>
+            <EmptyState
+              compact
+              icon="ph:lock-simple-bold"
+              headline="No matching retro runs."
+            />
           )}
         </div>
       </div>
