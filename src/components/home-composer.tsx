@@ -22,6 +22,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { ChatModelControl } from "@/components/chat-model-control";
 import type { ChatModelState } from "@/lib/chat-model-state";
 import { draftReminderFromText } from "@/lib/reminder-draft";
+import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,6 +67,8 @@ const SEED_SUGGESTIONS = [
 // Persist the in-progress prompt so a page reload doesn't eat what you were
 // typing on the home screen (mirrors the chat composer's draft persistence).
 const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
+// Persisted ↑/↓ prompt-history recall stack for the home composer.
+const HOME_HISTORY_KEY = "cave:home-composer-history:v1";
 
 function readHomeDraft(): string {
   if (typeof window === "undefined") return "";
@@ -104,7 +107,7 @@ export function HomeComposer({
   const [sending, setSending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>(() => readComposerHistory(HOME_HISTORY_KEY));
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const [slashIdx, setSlashIdx] = useState(0);
   // Stable per-mount listbox id — the chat composer mounts its own slash menu,
@@ -184,6 +187,11 @@ export function HomeComposer({
   useEffect(() => {
     writeHomeDraft(text);
   }, [text]);
+
+  // Persist the ↑/↓ prompt-history so past prompts survive a reload.
+  useEffect(() => {
+    writeComposerHistory(HOME_HISTORY_KEY, history);
+  }, [history]);
 
   // Focus on mount
   useEffect(() => {

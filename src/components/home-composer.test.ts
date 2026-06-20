@@ -171,3 +171,15 @@ assert.match(
   /if \(text\) window\.localStorage\.setItem\(HOME_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(HOME_DRAFT_KEY\)/,
   "an emptied home draft removes the key (sent prompts don't reappear on reload)",
 );
+
+// The ↑/↓ prompt-history also survives a reload.
+assert.match(
+  source,
+  /const \[history, setHistory\] = useState<string\[\]>\(\(\) => readComposerHistory\(HOME_HISTORY_KEY\)\)/,
+  "home prompt history initialises from the persisted recall stack",
+);
+assert.match(
+  source,
+  /writeComposerHistory\(HOME_HISTORY_KEY, history\)/,
+  "home prompt history is persisted when it changes",
+);

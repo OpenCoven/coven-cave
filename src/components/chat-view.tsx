@@ -66,6 +66,7 @@ import { toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
+import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 
 type ToolEvent = {
   id: string;
@@ -184,6 +185,8 @@ const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
 // half-written message. The composer is a single shared input (it isn't
 // remounted per session), so one key mirrors the in-memory behaviour.
 const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
+// Persisted ↑/↓ prompt-history recall stack for the chat composer.
+const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
 const THINKING_OPTIONS: Array<{ value: ComposerThinkingEffort; label: string }> = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -1543,7 +1546,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readComposerPrefs().responseSpeed);
   const [input, setInput] = useState(() => readComposerDraft());
   // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
-  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const [inputHistory, setInputHistory] = useState<string[]>(() => readComposerHistory(COMPOSER_HISTORY_KEY));
   const [inputHistoryIdx, setInputHistoryIdx] = useState<number>(-1);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   // Reply to Chat: the turn the next message quotes, shown as a composer chip
@@ -2934,6 +2937,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     writeComposerDraft(input);
   }, [input]);
+
+  // Persist the ↑/↓ prompt-history so past prompts survive a reload.
+  useEffect(() => {
+    writeComposerHistory(COMPOSER_HISTORY_KEY, inputHistory);
+  }, [inputHistory]);
 
   // Disarm a pending delete confirmation and sync the selected project when
   // switching sessions. Drop staged file mentions because they are scoped to
