@@ -9,6 +9,8 @@ import {
 } from "@/components/skill-detail-drawer";
 import { listWorkflows, type WorkflowSummary } from "@/lib/workflows";
 import { Icon } from "@/lib/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 
 type Tab = "roles" | "workflows" | "skills" | "capabilities";
@@ -390,7 +392,7 @@ function RolesTab({
   onOpenWorkflow?: (id: string) => void;
 }) {
   if (!loaded) return <ListSkeleton />;
-  if (roles.length === 0) return <EmptyPanel title="No roles found" body="Add ROLE.md files to a familiar workspace to populate this view." />;
+  if (roles.length === 0) return <EmptyPanel icon={ICONS.tabRoles} title="No roles found" body="Add ROLE.md files to a familiar workspace to populate this view." />;
 
   return (
     <div className="flex flex-col gap-2">
@@ -516,7 +518,7 @@ function WorkflowsTab({
   onOpenWorkflow?: (id: string) => void;
 }) {
   if (!loaded) return <ListSkeleton />;
-  if (workflows.length === 0) return <EmptyPanel title="No workflows found" body="Workflow manifests will appear here once the library scan succeeds." />;
+  if (workflows.length === 0) return <EmptyPanel icon={ICONS.tabWorkflows} title="No workflows found" body="Workflow manifests will appear here once the library scan succeeds." />;
 
   return (
     <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)]">
@@ -558,7 +560,7 @@ function SkillsTab({
 }) {
   if (!loaded) return <ListSkeleton />;
   if (skills.length === 0) {
-    return <EmptyPanel title="No local skills found" body="Create or install skills to make them available to familiars." actionLabel="Open Capabilities" onAction={onCreateSkill} />;
+    return <EmptyPanel icon={ICONS.tabSkills} title="No local skills found" body="Create or install skills to make them available to familiars." actionLabel="Open Capabilities" onAction={onCreateSkill} />;
   }
 
   return (
@@ -584,30 +586,29 @@ function SkillsTab({
 }
 
 function EmptyPanel({
+  icon,
   title,
   body,
   actionLabel,
   onAction,
 }: {
+  icon: IconName;
   title: string;
   body: string;
   actionLabel?: string;
   onAction?: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-5 py-8 text-center">
-      <p className="text-[14px] font-medium text-[var(--text-primary)]">{title}</p>
-      <p className="mx-auto mt-1 max-w-md text-[12px] text-[var(--text-muted)]">{body}</p>
-      {actionLabel && onAction ? (
-        <button
-          type="button"
-          onClick={onAction}
-          className="focus-ring mt-4 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-        >
-          {actionLabel}
-        </button>
-      ) : null}
-    </div>
+    <EmptyState
+      icon={icon}
+      headline={title}
+      subtitle={body}
+      actions={
+        actionLabel && onAction ? (
+          <Button onClick={onAction}>{actionLabel}</Button>
+        ) : undefined
+      }
+    />
   );
 }
 
