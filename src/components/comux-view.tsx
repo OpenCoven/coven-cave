@@ -1179,7 +1179,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 ) : (
                   <div className="flex min-h-0 min-w-0 flex-col border-b border-[var(--border-hairline)] xl:flex-1 xl:border-b-0 xl:border-r">
                     <div className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                      {/* Top row: project identity + the project-details toggle,
+                          pinned to the topmost row so it never wraps below the
+                          Terminal / New chat actions. */}
+                      <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <Icon name="ph:folder-open" width={15} className="shrink-0 text-[var(--text-muted)]" />
@@ -1191,33 +1194,34 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             {selectedProject.root}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => addSession(selectedProject.root)}
-                            className="flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                          >
-                            <Icon name="ph:plus" width={12} />
-                            Terminal
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onNewChat(selectedProject.root)}
-                            className="flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-85"
-                          >
-                            <Icon name="ph:chat-circle-dots" width={12} />
-                            New chat
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="Hide project details"
-                            title="Hide project details"
-                            onClick={() => setProjectDetailVisible(false)}
-                            className="grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                          >
-                            <Icon name="ph:sidebar-simple-fill" width={14} />
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          aria-label="Hide project details"
+                          title="Hide project details"
+                          onClick={() => setProjectDetailVisible(false)}
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                        >
+                          <Icon name="ph:sidebar-simple-fill" width={14} />
+                        </button>
+                      </div>
+                      {/* Actions row */}
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => addSession(selectedProject.root)}
+                          className="flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                        >
+                          <Icon name="ph:plus" width={12} />
+                          Terminal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onNewChat(selectedProject.root)}
+                          className="flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-85"
+                        >
+                          <Icon name="ph:chat-circle-dots" width={12} />
+                          New chat
+                        </button>
                       </div>
                     </div>
 
