@@ -95,6 +95,10 @@ export function BottomTerminal({
   const projectRootRef = useRef<string | undefined>(projectRoot);
   useEffect(() => { projectRootRef.current = projectRoot; }, [projectRoot]);
   const [unavailable, setUnavailable] = useState(false);
+  // Goes true once the xterm is open and the PTY (native or WS) has connected.
+  // Until then the pane shows a "Starting terminal…" overlay instead of looking
+  // blank during the lazy xterm import + WebSocket handshake (~a few seconds).
+  const [ready, setReady] = useState(false);
   // useTauriPlatform() resolves async and starts at "unknown". Desktop uses
   // Tauri IPC; browser dev/prod AND Tauri-mobile use the WebSocket PTY
   // bridge — the mobile webview is served by a remote Cave server, and the
@@ -174,6 +178,7 @@ export function BottomTerminal({
     // The pty.* Tauri commands are only registered on desktop. Browser and
     // Tauri-mobile use the WebSocket-bridge effect below instead.
     if (platform !== "desktop") return;
+    setReady(false);
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
@@ -315,6 +320,7 @@ export function BottomTerminal({
       } else {
         log("pty_start: skipped, already in pty_list");
       }
+      if (!disposed) setReady(true);
       term.focus();
 
       const doResize = () => {
@@ -373,6 +379,7 @@ export function BottomTerminal({
     // Browser and Tauri-mobile both reach the shell through the WebSocket
     // bridge served by the Cave server the page was loaded from.
     if (platform !== "browser" && platform !== "ios" && platform !== "android") return;
+    setReady(false);
 
     let disposed = false;
     let cleanup: (() => void) | null = null;
@@ -486,6 +493,7 @@ export function BottomTerminal({
         const failMsg = `\r\n\x1b[31mTerminal connection failed: ${detail}\x1b[0m\r\n`;
         term.write(failMsg);
         pushToMirror(new TextEncoder().encode(failMsg));
+        if (!disposed) setReady(true); // clear the overlay so the error is visible
         return;
       }
       if (disposed) {
@@ -493,6 +501,7 @@ export function BottomTerminal({
         term.dispose();
         return;
       }
+      setReady(true);
 
       const onDataDispose = term.onData((data) => {
         if (!bridge.isOpen) {
@@ -584,7 +593,7 @@ export function BottomTerminal({
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
+    <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div
         ref={wrapRef}
         className="min-h-0 w-full flex-1 overflow-hidden"
@@ -594,6 +603,22 @@ export function BottomTerminal({
         // on the cursor.
         onClick={() => termRef.current?.focus()}
       />
+      {/* Overlay while the xterm lazy-loads and the PTY (native or WebSocket)
+          connects — without it the pane reads as blank for a few seconds. */}
+      {!ready ? (
+        <div
+          className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[11px] text-[var(--text-muted)]"
+          style={{ background: "oklch(0.11 0.022 293)" }}
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+            aria-hidden
+          />
+          Starting terminal…
+        </div>
+      ) : null}
       {/* Touch accessory bar — only on coarse pointers (phones/tablets), where
           the soft keyboard can't produce Esc/Tab/Ctrl/arrows. */}
       {isCoarse ? (
