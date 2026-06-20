@@ -297,6 +297,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Brief "Saved" confirmation after a successful write (auto-clears).
+  const [justSaved, setJustSaved] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   // Projects list (the 200px column) visibility, driven by the Code workspace
   // toolbar's Projects toggle and its layout presets over window events. Lives
@@ -677,6 +679,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     if (!preview || preview.kind !== "text") return;
     setEditValue(preview.content);
     setSaveError(null);
+    setJustSaved(false);
     setPreviewRaw(true);
     setEditing(true);
   }, [preview]);
@@ -704,12 +707,20 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       // Commit the edit into the preview so a cancel/reopen shows saved text.
       setPreview({ kind: "text", content: editValue, size: json.size });
       setEditing(false);
+      setJustSaved(true);
     } catch (err) {
       setSaveError(String(err));
     } finally {
       setSaving(false);
     }
   }, [previewPath, editValue]);
+
+  // Auto-clear the "Saved" confirmation a moment after it shows.
+  useEffect(() => {
+    if (!justSaved) return;
+    const t = window.setTimeout(() => setJustSaved(false), 1800);
+    return () => window.clearTimeout(t);
+  }, [justSaved]);
 
   // A redacted .env (server refuses writes) and error placeholders aren't
   // editable; everything else text is.
@@ -1329,7 +1340,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                           key={`${file.path}:${match.line}:${i}`}
                                           type="button"
                                           onClick={() => openSearchMatch(file.path, match.line)}
-                                          className="flex w-full items-baseline gap-2 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+                                          className="focus-ring-inset flex w-full items-baseline gap-2 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
                                           title={`${file.path}:${match.line}`}
                                         >
                                           <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--text-muted)]">
@@ -1542,7 +1553,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                               type="button"
                               onClick={cancelEditing}
                               disabled={saving}
-                              className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                              className="focus-ring flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
                             >
                               Cancel
                             </button>
@@ -1550,7 +1561,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                               type="button"
                               onClick={() => void saveEdit()}
                               disabled={saving}
-                              className="flex shrink-0 items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--accent-presence,var(--bg-raised))] px-2 py-0.5 text-[10px] text-[var(--text-primary)] transition-colors hover:opacity-90 disabled:opacity-40"
+                              className="focus-ring flex shrink-0 items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--accent-presence,var(--bg-raised))] px-2 py-0.5 text-[10px] text-[var(--text-primary)] transition-colors hover:opacity-90 disabled:opacity-40"
                             >
                               <Icon name={saving ? "ph:arrow-clockwise" : "ph:floppy-disk-bold"} width={11} className={saving ? "animate-spin" : ""} />
                               {saving ? "Saving…" : "Save"}
@@ -1558,11 +1569,17 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           </>
                         ) : (
                           <>
+                            {justSaved && (
+                              <span className="flex shrink-0 items-center gap-1 text-[10px] text-[var(--color-success)]">
+                                <Icon name="ph:check" width={11} aria-hidden />
+                                Saved
+                              </span>
+                            )}
                             {previewEditable && (
                               <button
                                 type="button"
                                 onClick={startEditing}
-                                className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                                className="focus-ring flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
                               >
                                 <Icon name="ph:pencil-simple" width={11} />
                                 Edit
@@ -1572,7 +1589,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                               type="button"
                               onClick={copyPreview}
                               disabled={!preview || preview.kind !== "text"}
-                              className="flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
+                              className="focus-ring flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:opacity-30"
                             >
                               <Icon name="ph:copy" width={11} />
                               {copied ? "Copied" : "Copy"}

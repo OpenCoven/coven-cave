@@ -236,7 +236,7 @@ function TreeRow({
       <button
         type="button"
         onClick={handleClick}
-        className={`group flex w-full items-center gap-0 rounded-[5px] py-[3px] text-left transition-colors ${
+        className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[5px] py-[3px] text-left transition-colors ${
           isSelected
             ? "bg-[var(--accent-presence)] text-white"
             : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
