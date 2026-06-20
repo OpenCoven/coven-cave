@@ -24,12 +24,17 @@ export function normalizeChatTitle(input: unknown): string | null {
 const MAX_PROMPT_TITLE_LENGTH = 64;
 
 /** Default title for a chat session started from a user prompt: the prompt
- *  itself, whitespace-collapsed and truncated to a title-sized string. */
+ *  itself, whitespace-collapsed and truncated to a title-sized string. The cut
+ *  backs up to the last word boundary (unless that would lose too much) so the
+ *  title doesn't end mid-word — "…the changes we made" not "…the changes we ma". */
 export function chatTitleFromPrompt(prompt: string | null | undefined): string | null {
   const normalized = normalizeChatTitle(prompt);
   if (!normalized) return null;
   if (normalized.length <= MAX_PROMPT_TITLE_LENGTH) return normalized;
-  return `${normalized.slice(0, MAX_PROMPT_TITLE_LENGTH - 1).trimEnd()}…`;
+  const slice = normalized.slice(0, MAX_PROMPT_TITLE_LENGTH - 1);
+  const lastSpace = slice.lastIndexOf(" ");
+  const trimmed = lastSpace >= MAX_PROMPT_TITLE_LENGTH * 0.6 ? slice.slice(0, lastSpace) : slice;
+  return `${trimmed.trimEnd()}…`;
 }
 
 // Matches the current header ("Coven identity canon:") and legacy variants
@@ -41,13 +46,23 @@ const CANON_TITLE_LEAK_RE = new RegExp(
   `^${COVEN_IDENTITY_CANON_HEADER.replace(/:$/, "")}\\s*(\\([^)]*\\))?\\s*:`,
 );
 
-/** Reject harness-derived titles that leaked the identity-canon preamble the
- *  chat route prepends to every harness prompt. Returns the normalized title,
- *  or null when the caller should fall back to a default. */
+// The other preamble the chat route prepends to every harness prompt is the
+// runtime filesystem boundary (see buildRuntimeScopePreamble in
+// chat-runtime-scope.ts, kept server-only — hence the literal here, tied to the
+// source by session-title-canon.test.ts). Daemon-derived titles leak it as
+// "Runtime filesystem boundary: - This is the local…", duplicated across every
+// chat in a project. Reject it so those fall back to a neutral title.
+const RUNTIME_SCOPE_TITLE_LEAK_RE = /^Runtime filesystem boundary\s*:/;
+
+/** Reject harness-derived titles that leaked one of the preambles the chat
+ *  route prepends to every harness prompt (identity canon or runtime scope).
+ *  Returns the normalized title, or null when the caller should fall back to a
+ *  default. */
 export function sanitizeSessionTitle(title: string | null | undefined): string | null {
   const normalized = normalizeChatTitle(title);
   if (!normalized) return null;
   if (CANON_TITLE_LEAK_RE.test(normalized)) return null;
+  if (RUNTIME_SCOPE_TITLE_LEAK_RE.test(normalized)) return null;
   return normalized;
 }
 

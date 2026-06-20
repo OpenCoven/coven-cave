@@ -13,6 +13,7 @@ import {
 } from "./cave-chat-titles.ts";
 import { mergeSessionRows } from "./session-list-merge.ts";
 import { buildPromptWithCovenIdentityCanon } from "./coven-identity-canon.ts";
+import { buildRuntimeScopePreamble } from "./chat-runtime-scope.ts";
 
 // ── chatTitleFromPrompt ──
 assert.equal(
@@ -31,6 +32,18 @@ assert.ok(
   "long prompts truncate to a title-sized string",
 );
 assert.equal(chatTitleFromPrompt("   "), null, "blank prompts yield no title");
+// Long multi-word prompts truncate at a word boundary, never mid-word.
+const longSentence = "please commit and push and open a pull request for the changes we made to the runtime";
+const truncated = chatTitleFromPrompt(longSentence) ?? "";
+const kept = truncated.slice(0, -1); // drop the trailing ellipsis
+assert.ok(truncated.length <= 64, "stays title-sized");
+assert.ok(truncated.endsWith("…"), "marks the truncation");
+assert.ok(longSentence.startsWith(kept), "the kept portion is a clean prefix of the prompt");
+assert.equal(
+  longSentence[kept.length],
+  " ",
+  "the cut lands on a word boundary — the next prompt char is a space, so no word is split",
+);
 
 // ── sanitizeSessionTitle ──
 const canonPrompt = buildPromptWithCovenIdentityCanon("hello", "nova");
@@ -54,6 +67,24 @@ assert.equal(
   sanitizeSessionTitle("Coven identity canon (binding)"),
   "Coven identity canon (binding)",
   "a colon-less canon-themed name is a legitimate human title and passes through",
+);
+// The runtime-scope preamble is the other prompt prefix that leaks into daemon
+// titles ("Runtime filesystem boundary: - This is the local…", duplicated per
+// project). Tie the rejection to the real builder so the literal can't drift.
+assert.equal(
+  sanitizeSessionTitle(buildRuntimeScopePreamble({ kind: "local", root: "/Users/buns/proj" })),
+  null,
+  "titles that leaked the runtime-scope preamble are rejected",
+);
+assert.equal(
+  sanitizeSessionTitle(buildRuntimeScopePreamble({ kind: "ssh", host: "beacon", root: "/srv/app" })),
+  null,
+  "the remote runtime-scope preamble is rejected too",
+);
+assert.equal(
+  sanitizeSessionTitle("Runtime filesystem boundaries between teams"),
+  "Runtime filesystem boundaries between teams",
+  "a human title that merely starts with similar words (no colon) passes through",
 );
 
 // ── merge layer falls back when the daemon title is canon-leaked ──
@@ -112,6 +143,31 @@ const rows2 = mergeSessionRows({
   includeArchived: false,
 });
 assert.equal(rows2[0].title, "My chat", "explicit title overrides still win");
+
+// runtime-scope leak falls back at the merge layer too
+const rows3 = mergeSessionRows({
+  daemonSessions: [
+    {
+      id: "def67890-dead-beef-0000-000000000000",
+      project_root: "/Users/buns/proj",
+      harness: "claude",
+      title: "Runtime filesystem boundary: - This is the local runtime boundary for this Cave",
+      status: "completed",
+      exit_code: 0,
+      archived_at: null,
+      created_at: "2026-06-11T00:00:00Z",
+      updated_at: "2026-06-11T00:00:00Z",
+    },
+  ],
+  localConversations: [],
+  state,
+  includeArchived: false,
+});
+assert.equal(
+  rows3[0].title,
+  defaultChatTitleForSession("def67890-dead-beef-0000-000000000000"),
+  "runtime-scope-leaked daemon titles fall back to the default session title",
+);
 
 // ── chat/send route titles sessions from the user prompt, early ──
 const route = await readFile(
