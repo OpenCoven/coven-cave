@@ -67,6 +67,15 @@ import {
   readReadingDropcap,
   type ReadingDropcap,
 } from "@/lib/reading-dropcap";
+import {
+  CLOCK_LABEL,
+  CLOCK_OPTIONS,
+  DATE_LABEL,
+  DATE_OPTIONS,
+  setClockFormat,
+  setDateFormat,
+  useDateTimePrefs,
+} from "@/lib/datetime-format";
 
 const DROPCAP_LABEL: Record<ReadingDropcap, string> = {
   off: "Off",
@@ -200,6 +209,9 @@ export function FontSettings() {
   const [weight, setWeight] = useState<ReadingWeight>(DEFAULT_READING_WEIGHT);
   const [hyphens, setHyphens] = useState<ReadingHyphens>(DEFAULT_READING_HYPHENS);
   const [dropcap, setDropcap] = useState<ReadingDropcap>(DEFAULT_READING_DROPCAP);
+  // Chat timestamp format prefs come straight from the reactive store (no local
+  // mirror needed) — the segmented controls write through to it on click.
+  const dtPrefs = useDateTimePrefs();
 
   useEffect(() => {
     const sans = readFontPref("sans");
@@ -453,6 +465,50 @@ export function FontSettings() {
                   className={segBtn(dropcap === option)}
                 >
                   {DROPCAP_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+        </div>
+      </div>
+
+      {/* Chat timestamps — how the per-message time/date renders in chat. The
+          model, working directory, and duration that used to sit alongside it
+          live in the debug pane now. */}
+      <div className="flex flex-col gap-2">
+        <div>
+          <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Chat timestamps</h4>
+          <p className="text-[11px] text-[var(--text-muted)]">Shown on each chat message.</p>
+        </div>
+        <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] px-3">
+          <ReadingRow label="Clock">
+            <div className={segWrap}>
+              {CLOCK_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setClockFormat(option)}
+                  aria-pressed={dtPrefs.clock === option}
+                  aria-label={`Clock ${CLOCK_LABEL[option]}`}
+                  className={segBtn(dtPrefs.clock === option)}
+                >
+                  {CLOCK_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Date">
+            <div className={segWrap}>
+              {DATE_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setDateFormat(option)}
+                  aria-pressed={dtPrefs.date === option}
+                  aria-label={`Date ${DATE_LABEL[option]}`}
+                  className={segBtn(dtPrefs.date === option)}
+                >
+                  {DATE_LABEL[option]}
                 </button>
               ))}
             </div>
