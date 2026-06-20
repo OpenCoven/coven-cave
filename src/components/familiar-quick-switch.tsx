@@ -6,6 +6,7 @@ import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { computeQuickSwitch, QUICK_SWITCH_MAX } from "@/lib/familiar-quick-switch";
 import { useFamiliarLastUsed, useFamiliarPins } from "@/lib/use-familiar-quick-switch";
+import { useFamiliarSwitcherStyle } from "@/lib/familiar-switcher-style";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -44,6 +45,7 @@ export function FamiliarQuickSwitch({
 }: Props) {
   const pins = useFamiliarPins();
   const lastUsed = useFamiliarLastUsed();
+  const switcherStyle = useFamiliarSwitcherStyle();
   const pinnedSet = useMemo(() => new Set(pins), [pins]);
 
   const quick = useMemo(
@@ -51,9 +53,12 @@ export function FamiliarQuickSwitch({
     [familiars, pins, lastUsed, activeFamiliarId, max],
   );
 
+  // "dropdown" preference hides the avatar strip, leaving only the switcher menu.
+  const showStrip = switcherStyle === "avatars" && quick.length > 1;
+
   return (
     <div className="familiar-quickswitch">
-      {quick.length > 1 ? (
+      {showStrip ? (
         <ul className="familiar-quickswitch__strip" role="listbox" aria-label="Quick switch familiar">
           {quick.map((f) => {
             const isActive = f.id === activeFamiliarId;

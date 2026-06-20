@@ -40,6 +40,20 @@ assert.match(
   "pinned familiars show a pin badge in the strip",
 );
 
+// The strip honors the user's preference — "dropdown" hides it, leaving only
+// the switcher menu.
+assert.match(
+  source,
+  /useFamiliarSwitcherStyle\(\)/,
+  "reads the familiar-switcher style preference",
+);
+assert.match(
+  source,
+  /const showStrip = switcherStyle === "avatars" && quick\.length > 1/,
+  "the avatar strip only renders in the 'avatars' style with 2+ familiars",
+);
+assert.match(source, /\{showStrip \? \(/, "the strip render is gated on showStrip");
+
 // The full switcher (full list, pinning, create/manage/reorder) sits beside the
 // strip — the strip is a shortcut, not a replacement.
 assert.match(source, /<FamiliarSwitcher/, "embeds the full FamiliarSwitcher menu beside the strip");

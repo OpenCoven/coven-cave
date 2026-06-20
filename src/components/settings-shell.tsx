@@ -26,6 +26,12 @@ import {
   type CornerRadius,
 } from "@/lib/appearance-corner-radius";
 import {
+  FAMILIAR_SWITCHER_STYLE_OPTIONS,
+  FAMILIAR_SWITCHER_STYLE_LABELS,
+  setFamiliarSwitcherStyle,
+  useFamiliarSwitcherStyle,
+} from "@/lib/familiar-switcher-style";
+import {
   DEMO_MODE_EVENT,
   clearDemoModeData,
   demoModeFetchHeaders,
@@ -823,6 +829,7 @@ function AppearanceSection() {
   // colorEditorBase: the preset that seeds the color editor; null = editor hidden.
   const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
   const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
+  const familiarSwitcherStyle = useFamiliarSwitcherStyle();
 
   // Read persisted theme + mode on mount
   useEffect(() => {
@@ -1090,6 +1097,45 @@ function AppearanceSection() {
       </SettingsGroup>
 
       <FontSettings />
+
+      {/* ── Familiar switcher ── choose the top-bar familiar control: a row of
+          quick-switch avatars, or just the switcher dropdown. */}
+      <SettingsGroup label="Familiar switcher">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-[var(--text-secondary)]">
+              Top-bar style
+            </div>
+            <div className="text-[11px] text-[var(--text-muted)]">
+              Show recent &amp; pinned familiars as a row of avatars, or just the switcher dropdown.
+            </div>
+          </div>
+          <div
+            role="group"
+            aria-label="Familiar switcher style"
+            className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
+          >
+            {FAMILIAR_SWITCHER_STYLE_OPTIONS.map((option) => {
+              const active = familiarSwitcherStyle === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setFamiliarSwitcherStyle(option)}
+                  className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  {FAMILIAR_SWITCHER_STYLE_LABELS[option]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </SettingsGroup>
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}
