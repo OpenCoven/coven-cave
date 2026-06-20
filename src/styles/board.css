@@ -1174,21 +1174,66 @@
   text-align: center;
   color: var(--text-muted);
 }
+/* Title / timeline / dates columns are fixed so the header axis and the "today"
+   overlay (which reuse this exact grid) line up with the bar tracks. */
 .board-gantt-header {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 10px 8px 180px;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 132px;
+  gap: 10px;
+  /* 11px = a row's 1px border + 10px padding, so the axis column starts exactly
+     where the tracks below it do. */
+  padding: 0 11px 8px;
   color: var(--text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+/* The timeline axis cell carries the start/end labels and the "today" caption,
+   positioned by the same percentage the overlay line uses. */
+.board-gantt-axis {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+}
+.board-gantt-axis__today {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--accent-presence);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.board-gantt-plot {
+  position: relative;
 }
 .board-gantt-list {
   display: grid;
   gap: 4px;
 }
+/* Full-height vertical "today" guide over the whole list. Mirrors a row's grid
+   + 11px inset so its middle column maps onto the bar tracks. */
+.board-gantt-today {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 132px;
+  gap: 10px;
+  padding: 0 11px;
+  pointer-events: none;
+  z-index: 1;
+}
+.board-gantt-today__col {
+  position: relative;
+}
+.board-gantt-today__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed color-mix(in oklch, var(--accent-presence) 60%, transparent);
+}
 .board-gantt-row {
   display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr) minmax(96px, auto);
+  grid-template-columns: 180px minmax(0, 1fr) 132px;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -1239,6 +1284,9 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
 }
 .board-gantt-unscheduled {
   margin-top: 10px;
