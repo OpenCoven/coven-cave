@@ -51,6 +51,16 @@ export function isSameLocalDay(iso: string | null | undefined, day: Date): boole
   return value.getTime() >= start && value.getTime() < start + 24 * 60 * 60 * 1000;
 }
 
+/** Time-of-day greeting for the dashboard hero. */
+export function greeting(date: Date): string {
+  const h = date.getHours();
+  if (h < 5) return "Still up";
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  if (h < 21) return "Good evening";
+  return "Good night";
+}
+
 /** Long human label, e.g. "Thursday, June 18, 2026". */
 export function longDateLabel(date: Date): string {
   return new Intl.DateTimeFormat([], {

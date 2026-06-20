@@ -86,3 +86,60 @@
   .dash-inbox__actions { flex-wrap: wrap; justify-content: flex-end; }
   .dr-quicklinks.dash-launcher--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── Unified dashboard: today's daily summary, folded inline ───────────────
+   The narrative panel sits beside its generated illustration on wide screens
+   and stacks on narrow ones. Reuses the shared .dr-panel / .dr-cardimg look. */
+.dash-today__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (min-width: 720px) {
+  .dash-today__grid--media {
+    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.9fr);
+  }
+}
+.dash-today__panel { display: flex; flex-direction: column; gap: 16px; }
+.dash-today__img {
+  width: 100%;
+  height: 100%;
+  max-height: 360px;
+  object-fit: cover;
+  border-radius: 14px;
+  border: 1px solid var(--border-hairline);
+}
+.dash-today__placeholder { color: var(--text-muted); font-style: italic; }
+
+.dash-today__sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-hairline);
+}
+.dash-today__sessions-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.dash-today__chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.dash-today__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+}
+
+/* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
+.dr-eyebrow__icon { font-size: 0.85rem; color: var(--accent-presence); }

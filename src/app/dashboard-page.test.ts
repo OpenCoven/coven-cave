@@ -17,5 +17,7 @@ const view = readFileSync(viewUrl, "utf8");
 assert.match(view, /dashboardLayout/, "view should order zones via dashboardLayout");
 assert.match(view, /ActionInbox/, "view should include the action inbox zone");
 assert.match(view, /LauncherGrid/, "view should include the launcher zone");
+assert.match(view, /MetricsStrip/, "view should include the day-at-a-glance metrics");
+assert.match(view, /TodaySummary/, "view folds today's daily summary into the dashboard");
 
 console.log("dashboard-page.test.ts: ok");
