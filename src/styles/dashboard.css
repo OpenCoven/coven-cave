@@ -115,6 +115,11 @@
   cursor: pointer;
 }
 .dash-snooze__opt:hover { background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent)); }
+.dash-snooze__opt:focus-visible {
+  background: var(--bg-hover, color-mix(in oklch, var(--foreground) 8%, transparent));
+  outline: 2px solid var(--accent-presence);
+  outline-offset: -2px;
+}
 
 /* Compact launcher (busy state): single dense row, hide subtitles. */
 .dr-quicklinks.dash-launcher--compact {
