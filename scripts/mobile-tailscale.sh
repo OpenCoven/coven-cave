@@ -193,12 +193,10 @@ start_with_tmux() {
     # still blocks any drive-by browser request (those always carry an Origin);
     # a native client sends none, so it passes the gate, and with neither
     # COVEN_CAVE_ACCESS_TOKEN nor COVEN_CAVE_AUTH_TOKEN set (and not bundled) the
-    # /api/ proxy falls through to NextResponse.next(). COVEN_CAVE_TAILNET_TRUST=1
-    # relaxes the loopback host gate because Tailscale Serve forwards the
-    # <host>.ts.net Host (not 127.0.0.1). Tailnet membership is the trust
-    # boundary — see docs/ios-native-rebuild.md.
+    # /api/ proxy falls through to NextResponse.next(). Tailnet membership is the
+    # trust boundary — see docs/ios-native-rebuild.md.
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE; export COVEN_CAVE_TAILNET_TRUST=1; exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
+      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE; exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
     tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
     return 0
   fi
@@ -223,7 +221,6 @@ start_with_nohup() {
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
     # Tokenless native-app server. See start_with_tmux for the trust rationale.
     nohup env -u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE \
-      COVEN_CAVE_TAILNET_TRUST=1 \
       pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
     echo "$!" >"$PID_FILE"
     return 0
