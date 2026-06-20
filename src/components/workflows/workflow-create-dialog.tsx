@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { slugifyWorkflowId } from "@/lib/workflow-edit";
 import type {
   WorkflowPattern,
   WorkflowScheduleRecurrence,
+  WorkflowStepSummary,
   WorkflowSummary,
 } from "@/lib/workflows";
 
@@ -127,6 +128,104 @@ function defaultFireAt(): string {
   next.setSeconds(0, 0);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T${pad(next.getHours())}:${pad(next.getMinutes())}`;
+}
+
+type WorkflowRunInputsDialogProps = {
+  workflow: WorkflowSummary;
+  /** The workflow's declared `input` steps — one capture field per node. */
+  inputSteps: WorkflowStepSummary[];
+  onClose: () => void;
+  onRun: (inputs: Record<string, string>) => void;
+};
+
+/** The label a captured value is keyed by in the run prompt (name wins over id). */
+function inputKey(step: WorkflowStepSummary): string {
+  return step.name?.trim() || step.id;
+}
+
+/**
+ * Capture the value(s) for a workflow's declared input node(s) before running.
+ * A runnable workflow always has at least one `input` node (the run gate
+ * requires it), so this is the moment its input is actually supplied — the
+ * compiled run prompt carries these values instead of asking the agent to chase
+ * them down. Every field is optional: leaving one blank falls back to the
+ * prompt's existing "ask for the missing value" behaviour, so this never blocks
+ * a quick run.
+ */
+export function WorkflowRunInputsDialog({ workflow, inputSteps, onClose, onRun }: WorkflowRunInputsDialogProps) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
+
+  const filledCount = useMemo(
+    () => Object.values(values).filter((value) => value.trim().length > 0).length,
+    [values],
+  );
+
+  const submit = () => {
+    const inputs: Record<string, string> = {};
+    for (const step of inputSteps) {
+      const value = values[step.id]?.trim();
+      if (value) inputs[inputKey(step)] = value;
+    }
+    onRun(inputs);
+  };
+
+  return (
+    <div className="workflow-dialog-backdrop" role="presentation" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="workflow-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Run inputs"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="workflow-panel-heading">
+          <div>
+            <p className="workflow-eyebrow">Run inputs</p>
+            <h2>{workflow.name ?? workflow.id}</h2>
+          </div>
+          <button type="button" className="workflow-icon-button" onClick={onClose} aria-label="Close">
+            <Icon name="ph:x" width={14} />
+          </button>
+        </div>
+        <p className="workflow-muted">
+          Supply the value for each input node. Anything left blank, the agent will ask for as it runs.
+        </p>
+        <div className="workflow-run-inputs-list">
+          {inputSteps.map((step, index) => (
+            <label className="workflow-field" key={step.id}>
+              <span>{step.name?.trim() || step.id}</span>
+              {step.summary?.trim() && (
+                <span className="workflow-run-input-hint">{step.summary.trim()}</span>
+              )}
+              <textarea
+                className="workflow-run-input-field"
+                rows={2}
+                autoFocus={index === 0}
+                placeholder="Value for this input…"
+                value={values[step.id] ?? ""}
+                onChange={(event) =>
+                  setValues((current) => ({ ...current, [step.id]: event.target.value }))
+                }
+              />
+            </label>
+          ))}
+        </div>
+        <div className="workflow-dialog-actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="workflow-play-button workflow-primary-button" onClick={submit}>
+            <Icon name="ph:lightning-bold" width={13} />
+            {filledCount > 0 ? `Run with ${filledCount} input${filledCount === 1 ? "" : "s"}` : "Run"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**

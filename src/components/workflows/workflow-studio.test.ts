@@ -345,4 +345,27 @@ assert.match(css, /\.workflow-studio-main\.is-run-preview-split\s*\{[\s\S]*grid-
 assert.match(css, /\.workflow-dialog/, "CSS should style dialogs");
 assert.match(css, /\.workflow-field/, "CSS should style editor fields");
 
+// --- Standardized step-kind vocabulary + I/O run contract ---
+
+// The inspector's Kind dropdown must offer the full CWF-01 vocabulary, including
+// the input/output kinds the run gate requires — not just the middle kinds.
+assert.match(inspector, /value:\s*"input"/, "Inspector kind dropdown should offer the input kind (the run gate requires an input node)");
+assert.match(inspector, /value:\s*"output"/, "Inspector kind dropdown should offer the output kind (the run gate requires an output node)");
+assert.match(inspector, /value:\s*"human-gate",\s*label:\s*"Human gate"/, "Inspector kind labels should match the palette's casing");
+
+// The workflow inspector surfaces the input → steps → output run contract where
+// the workflow is built, not only on the disabled Play button's tooltip.
+assert.match(inspector, /workflowRunBlockReason/, "Inspector should read the run gate for its readiness banner");
+assert.match(inspector, /workflow-run-readiness/, "Inspector should render a run-readiness contract banner");
+assert.match(inspector, /Ready to run/, "Inspector readiness banner should confirm a runnable workflow");
+assert.match(css, /\.workflow-run-readiness/, "CSS should style the run-readiness banner");
+
+// Play captures the workflow's declared input(s) before running so the run
+// carries real input instead of an empty payload.
+assert.match(dialogs, /export function WorkflowRunInputsDialog/, "A run-inputs dialog should capture declared input values before a run");
+assert.match(studio, /WorkflowRunInputsDialog/, "Studio should wire the run-inputs dialog");
+assert.match(studio, /workflowInputSteps\(workflow\)\.length > 0/, "Play should capture inputs when the workflow declares input nodes");
+assert.match(studio, /onPlay\(selectedWorkflow,\s*inputs\)/, "Captured run inputs should flow into the play handler");
+assert.match(css, /\.workflow-run-input-field/, "CSS should style run-input capture fields");
+
 console.log("workflow-studio.test.ts: ok");
