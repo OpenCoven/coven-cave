@@ -147,16 +147,18 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
         data-video-strip={videoStrip ? "" : undefined}
       >
         {/* Collapsed-strip affordance: when the rail is peeking as a rotated
-            video, the tab strip is hidden (CSS) and this slim button re-expands
-            the panel. Rendered whenever video is on so toggling collapse never
-            remounts the iframe; CSS shows it only in strip mode. */}
+            video, the tab strip is hidden (CSS) and this button becomes a
+            full-area transparent overlay so tapping anywhere on the video
+            re-expands the panel (a caret hint sits at the top). Rendered
+            whenever video is on so toggling collapse never remounts the iframe;
+            CSS shows it only in strip mode. */}
         {youtubeOpen && onExpandRail ? (
           <button
             type="button"
             className="companion-rail__strip-expand"
             onClick={onExpandRail}
             aria-label="Expand video panel"
-            title="Expand"
+            title="Tap to expand"
           >
             <Icon name="ph:caret-left" width={13} />
           </button>

@@ -3308,6 +3308,7 @@ button:active > .edge-rail-chip {
 .companion-rail {
   display: flex;
   flex-direction: column;
+  position: relative;
   height: 100%;
   min-height: 0;
   background: var(--bg-raised);
@@ -3570,7 +3571,9 @@ button:active > .edge-rail-chip {
    so it runs top→bottom. The YouTube iframe stays mounted across the
    collapse (CSS-only restyle, no remount) so playback continues. */
 
-/* Slim re-expand button — hidden until the rail is a strip. */
+/* Re-expand affordance — hidden until the rail is a strip, where it becomes a
+   full-area transparent overlay so tapping anywhere on the video expands the
+   panel (a caret hint sits at the top for discoverability). */
 .companion-rail__strip-expand {
   display: none;
 }
@@ -3596,22 +3599,31 @@ button:active > .edge-rail-chip {
 
 .companion-rail--video-strip .companion-rail__strip-expand {
   display: flex;
-  align-items: center;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  align-items: flex-start;
   justify-content: center;
-  flex-shrink: 0;
-  width: 100%;
-  height: 26px;
+  padding-top: 7px;
   border: 0;
-  border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-panel);
-  color: var(--text-muted);
+  /* A soft top fade keeps the caret legible over a bright video; the rest of
+     the overlay stays transparent so the video shows through. */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--bg-base) 70%, transparent),
+    transparent 38px
+  );
+  color: #fff;
   cursor: pointer;
-  transition: color 0.1s, background 0.1s;
+  transition: background 0.12s;
 }
 
 .companion-rail--video-strip .companion-rail__strip-expand:hover {
-  background: var(--bg-raised);
-  color: var(--text-primary);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--bg-base) 80%, transparent),
+    color-mix(in oklch, var(--bg-base) 22%, transparent)
+  );
 }
 
 .companion-rail--video-strip #companion-rail-youtube {

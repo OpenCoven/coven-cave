@@ -86,5 +86,10 @@ assert.match(
   /\.companion-rail--video-strip\s+\.youtube-viewer__frame\s*\{[\s\S]*?container-type:\s*size/,
   "the strip uses a size container so the rotated iframe fills it",
 );
+assert.match(
+  css,
+  /\.companion-rail--video-strip\s+\.companion-rail__strip-expand\s*\{[\s\S]*?position:\s*absolute[\s\S]*?inset:\s*0/,
+  "the re-expand affordance is a full-area overlay so tapping the video expands it",
+);
 
 console.log("right-panel-expand.test.ts: ok");
