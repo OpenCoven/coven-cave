@@ -821,3 +821,11 @@ assert.match(
   /const mentionedFiles = imagesSupported\s*\n\s*\? await resolveMentionedFiles\(\s*\n\s*body\.mentionedFiles,\s*\n\s*resolvedFamiliarWorkspace,/,
   "Mentions are only delivered to harnesses that can Read this machine's filesystem, against the validated familiar workspace",
 );
+
+// The top suggested follow-up is flagged as the recommendation (green pulsing
+// border + leading dot), so the most useful next step stands out.
+assert.match(
+  source,
+  /cave-next-path--recommended/,
+  "the first follow-up is marked as the recommended next step",
+);
