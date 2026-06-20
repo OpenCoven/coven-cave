@@ -11,6 +11,7 @@ import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
@@ -76,22 +77,6 @@ type Props = {
    *  companion panel (e.g. the Browser right-rail). */
   compact?: boolean;
 };
-
-function age(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  if (h < 48) return "Yesterday";
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} days ago`;
-  if (d < 14) return "1 week ago";
-  if (d < 21) return "2 weeks ago";
-  return `${Math.floor(d / 7)} weeks ago`;
-}
 
 function chatDate(iso: string): string {
   const date = new Date(iso);
@@ -900,6 +885,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <ul className="divide-y divide-[var(--border-hairline)]">
                   {rows.map((s, idx) => {
                     const st = statusStyle(s.status);
+                    const rel = relativeTime(s.updated_at);
                     const project = repoName(s.project_root ?? "");
                     const isActive = activeId === s.id;
                     const rowFamiliar = s.familiarId ? familiarsById.get(s.familiarId) : null;
@@ -992,8 +978,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               </span>
                               <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
                                 <span>{chatDate(s.updated_at)}</span>
-                                <span aria-hidden>·</span>
-                                <span>{age(s.updated_at)}</span>
+                                {isRelativePhrase(rel) ? (
+                                  <>
+                                    <span aria-hidden>·</span>
+                                    <span>{rel}</span>
+                                  </>
+                                ) : null}
                               </span>
                             </span>
 
