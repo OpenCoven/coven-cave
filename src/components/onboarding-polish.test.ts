@@ -85,4 +85,22 @@ assert.match(
   "Onboarding demo activation should use the shared local-only demo mode toggle",
 );
 
+// Install polling gives up after a failure budget so a network drop mid-install
+// surfaces an error instead of an "Installing…" spinner that never resolves.
+assert.match(
+  source,
+  /MAX_POLL_FAILURES\s*=\s*30/,
+  "install poll caps consecutive failures (~1 min) before giving up",
+);
+assert.match(
+  source,
+  /Install timed out — server unreachable\. Try again\./,
+  "a timed-out install surfaces a clear, retryable error",
+);
+assert.match(
+  source,
+  /\+\+failures >= MAX_POLL_FAILURES\) giveUp\(\)/,
+  "both error responses and network throws count toward the give-up budget",
+);
+
 console.log("onboarding-polish.test.ts: ok");

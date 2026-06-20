@@ -612,13 +612,38 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     if (!runningInstallKey) return;
     const targets = runningInstallKey.split(",") as InstallTarget[];
     let cancelled = false;
+    // Give up after ~1 min of consecutive unreachable/errored polls so a network
+    // drop mid-install surfaces a failure (via the existing result/retry UI)
+    // instead of an "Installing…" spinner that never resolves.
+    const MAX_POLL_FAILURES = 30; // 30 × 2s ≈ 1 minute
+    let failures = 0;
+    const giveUp = () => {
+      if (cancelled) return;
+      setInstallResults((prev) => {
+        const next = { ...prev };
+        for (const t of targets) {
+          next[t] = { ok: false, detail: "Install timed out — server unreachable. Try again." };
+        }
+        return next;
+      });
+      setInstallJobs((prev) => {
+        const next = { ...prev };
+        for (const t of targets) delete next[t];
+        return next;
+      });
+    };
     const tick = async () => {
       for (const target of targets) {
         try {
           const res = await fetch(
             `/api/onboarding/install?target=${encodeURIComponent(target)}`,
           );
-          if (!res.ok || cancelled) continue;
+          if (cancelled) return;
+          if (!res.ok) {
+            if (++failures >= MAX_POLL_FAILURES) giveUp();
+            continue;
+          }
+          failures = 0;
           const json = (await res.json()) as
             | { status: "idle" }
             | InstallJobView;
@@ -651,7 +676,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             await loadHarnesses();
           }
         } catch {
-          // Transient poll failure — next tick retries.
+          // Network failure — retry next tick, but give up once the budget is
+          // spent so the install doesn't spin forever.
+          if (!cancelled && ++failures >= MAX_POLL_FAILURES) giveUp();
         }
       }
     };
@@ -1412,7 +1439,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               }
               onDismiss();
             }}
-            className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            className="focus-ring rounded text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
             Skip for now
           </button>
@@ -1845,7 +1872,7 @@ function StepFamiliar(props: {
                   key={adapter.id}
                   onClick={() => props.onSelectHarness(adapter)}
                   disabled={!adapter.installed}
-                  className={`rounded-lg border p-2.5 text-left ${
+                  className={`focus-ring rounded-lg border p-2.5 text-left ${
                     active
                       ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
                       : adapter.installed
@@ -1907,7 +1934,7 @@ function StepFamiliar(props: {
                   <button
                     key={agent.id}
                     onClick={() => props.onSelectAgent(agent)}
-                    className={`rounded-lg border p-2.5 text-left ${
+                    className={`focus-ring rounded-lg border p-2.5 text-left ${
                       active
                         ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
                         : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
@@ -2288,7 +2315,7 @@ function MaintenancePanel({
                   });
                 }
               }}
-              className="rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              className="focus-ring rounded border border-[var(--border-strong)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             >
               Check
             </button>
