@@ -245,6 +245,19 @@ export function FamiliarsView({
               onOpenMemoryFile={onOpenMemoryFile}
             />
           </div>
+        ) : visibleFamiliars.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              icon="ph:magnifying-glass"
+              headline="No familiars match your search"
+              subtitle={`Nothing matches “${query.trim()}”. Try a different name or clear the search.`}
+              actions={
+                <Button leadingIcon="ph:x" onClick={() => setQuery("")}>
+                  Clear search
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <div className="p-4">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
