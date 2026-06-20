@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
@@ -29,6 +30,7 @@ export function JournalEntries({
 }) {
   const today = dateSlug(new Date());
   const [days, setDays] = useState<JournalSummary[]>([]);
+  const [daysLoaded, setDaysLoaded] = useState(false);
   const [selected, setSelected] = useState<string>(today);
   const [day, setDay] = useState<JournalDay | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -52,6 +54,8 @@ export function JournalEntries({
       if (json.ok) setDays(Array.isArray(json.days) ? json.days : []);
     } catch {
       /* keep prior */
+    } finally {
+      setDaysLoaded(true);
     }
   }, [selectedFamiliarId]);
 
@@ -185,7 +189,9 @@ export function JournalEntries({
           </div>
         ) : null}
         <div className="journal-list__cap">Your days</div>
-        {days.length === 0 ? (
+        {!daysLoaded && days.length === 0 ? (
+          <SkeletonRows count={4} className="journal-list__loading" />
+        ) : days.length === 0 ? (
           <div className="journal-empty">No journal entries yet. Generate today's above.</div>
         ) : (
           <ul className="journal-list__items">
