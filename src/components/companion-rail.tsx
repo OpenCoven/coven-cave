@@ -27,6 +27,16 @@ type Props = {
    * render a second redundant CTA. */
   suppressEmpty?: boolean;
   hideChatTab?: boolean;
+  /** Whether the YouTube ("Video") pane is on. Lift this to the parent so the
+   *  shell can keep the rail peeking (as a rotated video strip) when collapsed.
+   *  Uncontrolled (local state) when omitted. */
+  youtubeActive?: boolean;
+  onYoutubeActiveChange?: (active: boolean) => void;
+  /** True when the rail is collapsed to its peek strip while video is on — the
+   *  rail then shows only the video, rotated to run top→bottom. */
+  videoStrip?: boolean;
+  /** Re-expand the rail from the collapsed video strip. */
+  onExpandRail?: () => void;
 };
 
 // forwardRef handle is wired in Task 2.3; ref is forwarded to the chatSlot consumer.
@@ -44,12 +54,22 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       onTabChange,
       suppressEmpty = false,
       hideChatTab = false,
+      youtubeActive,
+      onYoutubeActiveChange,
+      videoStrip = false,
+      onExpandRail,
     } = props;
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
     // The Video tab is a toggle, not a mutually-exclusive section: when on, the
     // YouTube viewer drops into a resizable bottom pane below the active tab's
-    // content rather than replacing it.
-    const [youtubeOpen, setYoutubeOpen] = useState(false);
+    // content rather than replacing it. The on/off state can be lifted to the
+    // parent (controlled) so the shell can keep the rail peeking when collapsed.
+    const [localYoutubeOpen, setLocalYoutubeOpen] = useState(false);
+    const youtubeOpen = youtubeActive ?? localYoutubeOpen;
+    const setYoutubeOpen = (next: boolean) => {
+      setLocalYoutubeOpen(next);
+      onYoutubeActiveChange?.(next);
+    };
     const requestedTab = activeTab ?? tab;
     const fallbackTab: CompanionTab = browserSlot ? "browser" : salemSlot ? "salem" : "memory";
     const selectedTab =
@@ -122,7 +142,25 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
     );
 
     return (
-      <aside className="companion-rail">
+      <aside
+        className={`companion-rail${videoStrip ? " companion-rail--video-strip" : ""}`}
+        data-video-strip={videoStrip ? "" : undefined}
+      >
+        {/* Collapsed-strip affordance: when the rail is peeking as a rotated
+            video, the tab strip is hidden (CSS) and this slim button re-expands
+            the panel. Rendered whenever video is on so toggling collapse never
+            remounts the iframe; CSS shows it only in strip mode. */}
+        {youtubeOpen && onExpandRail ? (
+          <button
+            type="button"
+            className="companion-rail__strip-expand"
+            onClick={onExpandRail}
+            aria-label="Expand video panel"
+            title="Expand"
+          >
+            <Icon name="ph:caret-left" width={13} />
+          </button>
+        ) : null}
         {/* Familiar header removed — the tab strip is the panel's top row and
             its trigger band aligns with the left sidebar's floating toggle. */}
         <nav className="companion-rail__tabs" aria-label="Companion sections">
@@ -173,7 +211,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
           <button
             type="button"
             className={`companion-rail__tab${youtubeOpen ? " companion-rail__tab--active" : ""}`}
-            onClick={() => setYoutubeOpen((open) => !open)}
+            onClick={() => setYoutubeOpen(!youtubeOpen)}
             aria-pressed={youtubeOpen}
             title="Video"
           >
@@ -187,7 +225,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
                 id="companion-rail-main"
                 minSize={20}
                 defaultSize={58}
-                className="companion-rail__split-pane"
+                className="companion-rail__split-pane companion-rail__split-pane--main"
               >
                 {panes}
               </Panel>
@@ -198,7 +236,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
                 id="companion-rail-youtube"
                 minSize={20}
                 defaultSize={42}
-                className="companion-rail__split-pane"
+                className="companion-rail__split-pane companion-rail__split-pane--video"
               >
                 <YoutubeViewer />
               </Panel>

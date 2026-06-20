@@ -3564,6 +3564,78 @@ button:active > .edge-rail-chip {
   border: 0;
 }
 
+/* ── Collapsed video strip ──────────────────────────────────────────────
+   When the companion rail is collapsed to its peek width while the Video
+   pane is on, it becomes a thin sliver showing only the video, rotated 90°
+   so it runs top→bottom. The YouTube iframe stays mounted across the
+   collapse (CSS-only restyle, no remount) so playback continues. */
+
+/* Slim re-expand button — hidden until the rail is a strip. */
+.companion-rail__strip-expand {
+  display: none;
+}
+
+.companion-rail--video-strip {
+  overflow: hidden;
+}
+
+/* Drop the tab strip + the top (chat/memory/etc.) pane and its resizer;
+   the video pane fills the whole strip. The split panes are sized by
+   react-resizable-panels via inline `flex` on the id'd wrappers, so we
+   override those with `!important` (and hide the unused pane outright). */
+.companion-rail--video-strip .companion-rail__tabs,
+.companion-rail--video-strip .youtube-viewer__bar,
+.companion-rail--video-strip .youtube-viewer__error {
+  display: none;
+}
+
+.companion-rail--video-strip #companion-rail-main,
+.companion-rail--video-strip .companion-rail__resize {
+  display: none !important;
+}
+
+.companion-rail--video-strip .companion-rail__strip-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 100%;
+  height: 26px;
+  border: 0;
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.companion-rail--video-strip .companion-rail__strip-expand:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.companion-rail--video-strip #companion-rail-youtube {
+  flex: 1 1 auto !important;
+}
+
+/* Rotate the video to run top→bottom and fill the tall, narrow strip.
+   `container-type: size` lets the iframe size off the frame's box: its
+   pre-rotation width = frame height, height = frame width, so after a 90°
+   turn it covers the frame exactly. */
+.companion-rail--video-strip .youtube-viewer__frame {
+  container-type: size;
+}
+
+.companion-rail--video-strip .youtube-viewer__frame iframe {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: 100cqh;
+  height: 100cqw;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center;
+}
+
 /* ────────────────────────────────────────────────
    Rail-pane empty + memory styles
    (Phase 2, shell-ia-redesign)

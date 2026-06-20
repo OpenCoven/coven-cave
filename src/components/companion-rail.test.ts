@@ -46,3 +46,36 @@ assert.doesNotMatch(
   /new CustomEvent\("cave:familiar-panel-toggle"\)/,
   "rail no longer dispatches the cave:familiar-panel-toggle collapse event",
 );
+
+// Video ("Video" toggle) state is liftable to the parent so the shell can keep
+// the rail peeking as a rotated video strip when it's collapsed.
+assert.match(
+  source,
+  /youtubeActive\?: boolean/,
+  "rail accepts a controlled youtubeActive prop",
+);
+assert.match(
+  source,
+  /onYoutubeActiveChange\?:/,
+  "rail reports Video on/off changes to the parent",
+);
+assert.match(
+  source,
+  /const youtubeOpen = youtubeActive \?\? localYoutubeOpen/,
+  "Video state is controlled when youtubeActive is provided, else local",
+);
+assert.match(
+  source,
+  /companion-rail--video-strip/,
+  "rail applies the collapsed-video-strip class when videoStrip is set",
+);
+assert.match(
+  source,
+  /companion-rail__split-pane--video/,
+  "the YouTube split pane is tagged so the strip CSS can target it",
+);
+assert.match(
+  source,
+  /companion-rail__strip-expand/,
+  "rail renders a re-expand affordance for the collapsed video strip",
+);
