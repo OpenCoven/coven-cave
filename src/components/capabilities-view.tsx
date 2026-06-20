@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/clipboard";
 import { formatClock } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -1087,18 +1089,16 @@ function CapabilitiesError({ error, onRefresh }: { error: string; onRefresh: () 
 
 function CapabilitiesEmpty({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-      <p className="text-[13px] text-muted-foreground">
-        No runtime capabilities found. Start the daemon or add a local runtime to see its instructions, skills, and plugins.
-      </p>
-      <button
-        type="button"
-        onClick={onRefresh}
-        className="focus-ring mt-3 rounded-md border border-border px-3 py-1.5 text-[12px] text-foreground hover:bg-muted"
-      >
-        Refresh
-      </button>
-    </div>
+    <EmptyState
+      icon="ph:lightning-bold"
+      headline="No runtime capabilities found"
+      subtitle="Start the daemon or add a local runtime to see its instructions, skills, and plugins."
+      actions={
+        <Button leadingIcon="ph:arrow-clockwise" onClick={onRefresh}>
+          Refresh
+        </Button>
+      }
+    />
   );
 }
 
