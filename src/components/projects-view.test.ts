@@ -127,9 +127,10 @@ assert.match(projectsView, /No projects match/, "a no-match message shows when t
 // running, danger when the most-recent session failed.
 assert.match(
   projectsView,
-  /const projectStatus[\s\S]*?status === "running"[\s\S]*?\? "running"[\s\S]*?\? "failed"/,
-  "row status is running (any) > failed (most recent) > idle",
+  /const projectStatus = deriveProjectStatus\(chats\)/,
+  "row status comes from the shared deriveProjectStatus helper",
 );
+assert.match(projectsView, /import \{ deriveProjectStatus \} from "@\/lib\/project-status"/, "imports the status helper");
 assert.match(projectsView, /projectStatus \? \(/, "the status dot renders only when running or failed");
 
 // Paths are home-collapsed + truncated so the identical absolute prefix stops
