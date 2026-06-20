@@ -116,10 +116,10 @@ assert.doesNotMatch(
   "The misleading 'model:'/'runtime:' label helpers should be gone — openclaw-local is not a model and the runtime is a cwd",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatView,
-  /<ResponseMetadataText metadata=\{turn\.responseMetadata\} \/>/,
-  "Assistant turn rows should show the model/runtime metadata for each response",
+  /ResponseMetadataText/,
+  "The model/runtime metadata no longer renders inline in the turn meta row — it lives in the debug pane's per-turn JSON",
 );
 
 assert.match(
