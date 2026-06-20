@@ -55,23 +55,52 @@ struct ChatView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message", text: $draft, axis: .vertical)
-                .lineLimit(1...6)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
-                .focused($composerFocused)
-
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? Color.accentColor : Color.secondary.opacity(0.5))
+        HStack(alignment: .bottom, spacing: 10) {
+            // Attachment / app drawer (wired in Phase 2).
+            Button(action: {}) {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .background(Color(.secondarySystemBackground), in: Circle())
             }
-            .disabled(!canSend)
+            .accessibilityLabel("Add attachment")
+
+            // Hairline capsule with the field and a trailing control inside it:
+            // a mic when empty, a filled send button once there's text.
+            HStack(alignment: .bottom, spacing: 4) {
+                TextField("Message", text: $draft, axis: .vertical)
+                    .lineLimit(1...6)
+                    .padding(.leading, 14)
+                    .padding(.vertical, 7)
+                    .focused($composerFocused)
+
+                Group {
+                    if canSend {
+                        Button(action: send) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 29))
+                                .foregroundStyle(Color.accentColor)
+                                .background(Circle().fill(.white).padding(3))
+                        }
+                        .padding(.trailing, 3)
+                        .padding(.bottom, 2)
+                        .transition(.scale.combined(with: .opacity))
+                    } else {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 17))
+                            .foregroundStyle(.secondary)
+                            .padding(.trailing, 12)
+                            .padding(.bottom, 8)
+                    }
+                }
+            }
+            .overlay(Capsule().strokeBorder(Color(.separator), lineWidth: 1))
+            .animation(.snappy(duration: 0.18), value: canSend)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
         .background(.bar)
     }
 
