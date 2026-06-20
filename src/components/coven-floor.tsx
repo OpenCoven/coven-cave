@@ -4,6 +4,7 @@ import "@/styles/board.css";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { formatClock } from "@/lib/datetime-format";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
@@ -311,7 +312,7 @@ export function CovenFloor() {
           </span>
           {computedAt ? (
             <span className="text-[10px] text-[var(--text-muted)]">
-              updated {new Date(computedAt).toLocaleTimeString()}
+              updated {formatClock(computedAt)}
             </span>
           ) : null}
           <button

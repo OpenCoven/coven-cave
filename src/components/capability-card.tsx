@@ -1,6 +1,7 @@
 "use client";
 
 import { Icon } from "@/lib/icon";
+import { formatClock } from "@/lib/datetime-format";
 
 export type GlobalInstructions = {
   present: boolean;
@@ -148,10 +149,7 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
           </p>
         </div>
         <span className="text-[10px] text-muted-foreground sm:ml-auto">
-          {new Date(manifest.scanned_at).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {formatClock(manifest.scanned_at)}
         </span>
       </div>
 

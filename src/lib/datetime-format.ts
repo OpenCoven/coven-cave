@@ -144,19 +144,37 @@ function pad2(n: number): string {
 }
 
 /**
+ * Time only ("1:31 AM" / "13:31"), honoring the clock (12h/24h) preference.
+ * This is the app-wide entry point: any surface that shows a time (calendar
+ * events, capability scan times, debug events, …) routes through here so the
+ * clock setting is global, not chat-only. `prefs` defaults to the persisted
+ * preference, so callers outside a React tree can use it directly; pass
+ * `{ seconds: true }` where second precision matters (e.g. the debug log).
+ */
+export function formatClock(
+  iso: string,
+  prefs: DateTimePrefs = readDateTimePrefs(),
+  opts: { seconds?: boolean } = {},
+): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(opts.seconds ? { second: "2-digit" } : {}),
+    hour12: prefs.clock === "12h",
+  });
+}
+
+/**
  * Format an ISO timestamp per the given prefs. The date portion is built from
  * the local month/day (so it's locale-stable: "06.19"), and the time portion
- * uses the platform locale's clock with `hour12` driven by the pref. Returns
- * "" for an unparseable input.
+ * uses {@link formatClock}. Returns "" for an unparseable input.
  */
 export function formatTimestamp(iso: string, prefs: DateTimePrefs = DEFAULT_PREFS): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const time = d.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: prefs.clock === "12h",
-  });
+  const time = formatClock(iso, prefs);
   const mm = pad2(d.getMonth() + 1);
   const dd = pad2(d.getDate());
   const datePart = prefs.date === "mmdd" ? `${mm}.${dd}` : prefs.date === "ddmm" ? `${dd}.${mm}` : "";

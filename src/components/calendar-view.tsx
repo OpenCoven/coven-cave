@@ -5,6 +5,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+import { formatClock } from "@/lib/datetime-format";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SnoozeMenu } from "@/components/snooze-menu";
@@ -69,10 +70,7 @@ function isSameDay(a: Date, b: Date): boolean {
 }
 
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return formatClock(iso);
 }
 
 function fmtDateHeading(d: Date): string {

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   DEFAULT_CLOCK,
   DEFAULT_DATE,
+  formatClock,
   formatTimestamp,
   normalizeClock,
   normalizeDate,
@@ -48,4 +49,24 @@ test("date Off returns the time only", () => {
 test("unparseable input renders nothing", () => {
   assert.equal(formatTimestamp("not-a-date"), "");
   assert.equal(formatTimestamp(""), "");
+});
+
+test("formatClock honors the clock pref, time only (app-wide entry point)", () => {
+  const twelve = formatClock(ISO, { clock: "12h", date: "mmdd" });
+  assert.match(twelve, /1:31/);
+  assert.match(twelve, /[AP]M/i);
+  assert.ok(!twelve.includes("06.19"), "formatClock never emits a date even if the date pref is set");
+
+  const twentyFour = formatClock(ISO, { clock: "24h", date: "mmdd" });
+  assert.match(twentyFour, /13:31/);
+  assert.doesNotMatch(twentyFour, /[AP]M/i);
+});
+
+test("formatClock can include seconds (debug log)", () => {
+  assert.match(formatClock(ISO, { clock: "24h", date: "off" }, { seconds: true }), /13:31:00/);
+  assert.doesNotMatch(formatClock(ISO, { clock: "24h", date: "off" }), /:00\b/);
+});
+
+test("formatClock renders nothing for bad input", () => {
+  assert.equal(formatClock("not-a-date", { clock: "24h", date: "off" }), "");
 });

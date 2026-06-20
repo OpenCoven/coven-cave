@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
+import { formatClock } from "@/lib/datetime-format";
 import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
@@ -167,7 +168,7 @@ function EventRow({ event }: { event: CovenEvent }) {
         <span className="w-10 shrink-0 font-mono text-[var(--text-muted)]">{event.seq}</span>
         <span className="min-w-0 flex-1 truncate font-medium text-[var(--text-secondary)]">{event.kind}</span>
         <span className="shrink-0 font-mono text-[var(--text-muted)]">
-          {new Date(event.created_at).toLocaleTimeString()}
+          {formatClock(event.created_at, undefined, { seconds: true })}
         </span>
       </button>
       {open ? (

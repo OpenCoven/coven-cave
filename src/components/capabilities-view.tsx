@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
+import { formatClock } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
@@ -331,10 +332,7 @@ export function CapabilitiesViewSurface({
               <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                 {scannedAt && (
                   <span title={scannedAt}>
-                    Scanned {new Date(scannedAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    Scanned {formatClock(scannedAt)}
                   </span>
                 )}
                 <button

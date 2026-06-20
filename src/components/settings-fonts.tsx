@@ -472,16 +472,18 @@ export function FontSettings() {
         </div>
       </div>
 
-      {/* Chat timestamps — how the per-message time/date renders in chat. The
-          model, working directory, and duration that used to sit alongside it
-          live in the debug pane now. */}
+      {/* Date & time — the Clock setting applies to every time shown in the app
+          (calendar, capabilities, debug, …); the Date format applies to the chat
+          message timestamp, where model/cwd/duration used to sit (now in debug). */}
       <div className="flex flex-col gap-2">
         <div>
-          <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Chat timestamps</h4>
-          <p className="text-[11px] text-[var(--text-muted)]">Shown on each chat message.</p>
+          <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Date &amp; time</h4>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Clock applies across the app; the date format applies to chat message timestamps.
+          </p>
         </div>
         <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] px-3">
-          <ReadingRow label="Clock">
+          <ReadingRow label="Clock" hint="Across the app">
             <div className={segWrap}>
               {CLOCK_OPTIONS.map((option) => (
                 <button
@@ -497,7 +499,7 @@ export function FontSettings() {
               ))}
             </div>
           </ReadingRow>
-          <ReadingRow label="Date">
+          <ReadingRow label="Date" hint="Chat messages">
             <div className={segWrap}>
               {DATE_OPTIONS.map((option) => (
                 <button
