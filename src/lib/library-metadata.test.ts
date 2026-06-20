@@ -69,8 +69,25 @@ assert.ok(taglined, "metadata after a single bold tagline is detected");
 assert.deepEqual(taglined.entries.map((e) => e.key), ["A", "B"]);
 assert.match(taglined.rest, /^\*\*A bold tagline\*\*/, "bold tagline stays in the body");
 
-// But only ONE leading block is skipped — metadata buried under real prose
-// (subtitle + a prose paragraph) is NOT swallowed.
+// ── An italic tagline subtitle before the metadata is allowed ────
+const italic = parseLeadingMetadata("*A working synthesis on agent memory.*\n\n**Author:** Sage **Started:** 2026-05-30\n\nbody");
+assert.ok(italic, "metadata after a single italic tagline is detected");
+assert.deepEqual(italic.entries.map((e) => e.key), ["Author", "Started"]);
+assert.match(italic.rest, /^\*A working synthesis on agent memory\.\*/, "italic tagline stays in the body");
+
+// ── A stack of leading headings before the metadata is allowed ───
+const stacked = parseLeadingMetadata("## Internal Synthesis Note\n### 2026-06-13\n\n**Prepared by:** Sage **Status:** Definitive\n\nbody");
+assert.ok(stacked, "metadata after stacked headings is detected");
+assert.deepEqual(stacked.entries.map((e) => e.key), ["Prepared by", "Status"]);
+assert.match(stacked.rest, /^## Internal Synthesis Note\n### 2026-06-13/, "stacked headings stay in the body");
+
+// ── Two separate subtitle blocks (heading then italic tagline) are skipped ──
+const twoBlocks = parseLeadingMetadata("## Heading\n\n*tagline*\n\n**A:** one **B:** two");
+assert.ok(twoBlocks, "metadata after two separate subtitle blocks is detected");
+assert.deepEqual(twoBlocks.entries.map((e) => e.key), ["A", "B"]);
+
+// Only subtitle/heading blocks are skipped — metadata buried under real prose
+// (subtitle + a PROSE paragraph) is NOT swallowed; skipping stops at prose.
 assert.equal(
   parseLeadingMetadata("## Heading\n\nSome intro prose.\n\n**A:** one **B:** two"),
   null,
