@@ -366,7 +366,7 @@ function AllDayStrip({
               <button
                 key={item.id}
                 onClick={() => onOpenItem?.(item)}
-                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
+                className="focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
               >
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
                 <span className="truncate text-[var(--text-primary)]">{item.title}</span>
@@ -375,7 +375,7 @@ function AllDayStrip({
             {col.items.length > MAX_ALLDAY_VISIBLE && (
               <button
                 onClick={() => onDayClick?.(col.date)}
-                className="text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
+                className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
                 title={`${col.items.length - MAX_ALLDAY_VISIBLE} more — click to see all`}
               >
                 +{col.items.length - MAX_ALLDAY_VISIBLE} more
@@ -491,7 +491,7 @@ function TimeGrid({
                   data-calendar-event="true"
                   onClick={() => onOpenItem?.(ev.item)}
                   title={ev.item.title}
-                  className={`absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
+                  className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
                       : "border-[var(--accent-presence)]/30 bg-[var(--accent-presence)]/15 hover:bg-[var(--accent-presence)]/25"
