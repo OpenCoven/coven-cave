@@ -8,6 +8,7 @@ import { formatClock } from "@/lib/datetime-format";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
+import { SkeletonRows } from "@/components/ui/skeleton";
 
 const MAX_VISIBLE_SESSIONS = 12;
 
@@ -326,7 +327,7 @@ export function CovenFloor() {
         </div>
 
         {loading && sortedFamiliars.length === 0 ? (
-          <div className="flex items-center justify-center py-16 text-sm text-[var(--text-muted)]">Loading…</div>
+          <SkeletonRows count={4} className="py-2" />
         ) : sortedFamiliars.length === 0 ? (
           <div className="flex items-center justify-center rounded-lg border border-dashed border-[var(--border-hairline)] py-16 text-sm text-[var(--text-secondary)]">
             No familiar activity found.
