@@ -48,10 +48,14 @@ assert.match(
   "Embedded Library link viewer should expose a collapsed header class",
 );
 
+// The link viewer redesign (#797a1507) replaced the sandboxed browser-fallback
+// iframe with a native read-only webview surface plus, where that is unavailable,
+// a non-embedding fallback card that links out externally. The native path stays
+// read-only (asserted above + in browser.rs); the web fallback embeds nothing.
 assert.match(
   preview,
-  /<iframe[\s\S]*className="library-link-viewer-frame"[\s\S]*sandbox="allow-same-origin allow-scripts allow-forms"/,
-  "Browser fallback should use a sandboxed iframe without top-navigation permission",
+  /library-link-viewer-fallback__card[\s\S]{0,500}href=\{url\}[\s\S]{0,160}rel="noreferrer"/,
+  "When the native webview is unavailable, the link viewer falls back to a safe external link (no embedded iframe)",
 );
 
 assert.doesNotMatch(
@@ -66,10 +70,12 @@ assert.match(
   "Bookmark selections should render the embedded Library link viewer",
 );
 
+// Reading items get a dedicated metadata/notes detail view (with the source as a
+// link), not the embedded viewer; bookmarks and GitHub items keep <LibraryLinkViewer>.
 assert.match(
   preview,
-  /function ReadingDetail[\s\S]*if \(item\.url\)[\s\S]*<LibraryLinkViewer/,
-  "Reading URL selections should render the embedded Library link viewer",
+  /function ReadingDetail[\s\S]*library-reading-detail__url" href=\{item\.url\}/,
+  "Reading items render a structured detail view exposing the source URL as a link",
 );
 
 assert.match(
