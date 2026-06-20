@@ -142,6 +142,17 @@ export function VaultPanel() {
   const [adding, setAdding]         = useState(false);
   const [editing, setEditing]       = useState<Mapping | null>(null);
   const [deleting, setDeleting]     = useState<string | null>(null);
+  const [copiedKey, setCopiedKey]   = useState<string | null>(null);
+
+  async function handleCopyRef(key: string, ref: string) {
+    try {
+      await navigator.clipboard.writeText(ref);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1600);
+    } catch {
+      // Clipboard blocked (insecure context / permissions) — no-op.
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -266,6 +277,17 @@ export function VaultPanel() {
                 <div className="vault-row-error">{m.error}</div>
               )}
               <div className="vault-row-actions">
+                {m.ref && (
+                  <button
+                    type="button"
+                    className="vault-action-btn"
+                    title={copiedKey === m.key ? "Copied" : "Copy reference"}
+                    aria-label={`Copy the 1Password reference for ${m.key}`}
+                    onClick={() => void handleCopyRef(m.key, m.ref!)}
+                  >
+                    <Icon name={copiedKey === m.key ? "ph:check" : "ph:copy"} width={11} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="vault-action-btn"
