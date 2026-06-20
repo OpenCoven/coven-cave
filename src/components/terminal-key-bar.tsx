@@ -38,7 +38,7 @@ export function TerminalKeyBar({ onKey, ctrlActive, onToggleCtrl }: Props) {
       role="toolbar"
       aria-label="Terminal keys"
     >
-      <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.esc)}>
+      <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.esc)} aria-label="Escape">
         esc
       </button>
       <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.tab)} aria-label="Tab">

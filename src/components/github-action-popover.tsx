@@ -139,6 +139,7 @@ function BoardMode({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search open cards…"
+            aria-label="Search open cards"
             className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
           />
           <ul className="max-h-40 overflow-y-auto space-y-0.5">

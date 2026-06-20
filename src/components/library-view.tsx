@@ -456,6 +456,8 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
             type="button"
             className="library-list-toggle-btn"
             onClick={() => setListPinned((v) => !v)}
+            aria-label={listPinned ? "Collapse list" : "Pin list open"}
+            aria-pressed={listPinned}
             title={listPinned ? "Collapse list" : "Pin list open"}
           >
             <Icon
