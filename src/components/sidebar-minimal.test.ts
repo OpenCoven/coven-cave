@@ -249,11 +249,20 @@ assert.match(
   "Recent Activity must receive activeSessionId to highlight the open session",
 );
 
-// PR #322 wrapped the New Chat ActionRow in .sidebar-new-chat-row so desktop
-// CSS could hide it (the FamiliarSwitcher had its own + button to dedupe
-// against). PR #304 replaced the switcher with a plain dropdown that has no
-// + button, so the New Chat ActionRow is the sole new-chat affordance now —
-// no wrapper, no responsive hide.
+// "New chat" is the left panel's top CTA: it sits directly under the wordmark
+// (above the nav scroll) and calls onNewChat. It moved here from the desktop
+// menu bar and the mobile top bar, so the sidebar now owns the only new-chat
+// affordance on every breakpoint.
+assert.match(
+  source,
+  /<div className="sidebar-actions">\s*<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\}>/,
+  "the sidebar renders a New chat CTA at the top, wired to onNewChat",
+);
+assert.match(
+  source,
+  /<Icon name="ph:note-pencil"[\s\S]*?<span>New chat<\/span>/,
+  "the New chat CTA is labelled and iconed",
+);
 
 // The sidebar header is a static wordmark — collapsing the panel is owned by
 // the shell's floating top-left toggle (and ⌘B), so the header is no longer a

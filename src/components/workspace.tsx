@@ -1707,8 +1707,6 @@ export function Workspace() {
               responseNeeded={responseNeeded}
               taskCount={boardTaskCount}
               inboxCount={inboxBadgeCount}
-              onChatWithFamiliar={(id) => startFamiliarChat(id)}
-              onComposeChat={(id, prompt) => startFamiliarChat(id, null, prompt)}
               onOpenSearch={() => setPaletteOpen(true)}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {

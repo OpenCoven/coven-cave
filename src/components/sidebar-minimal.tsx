@@ -193,6 +193,7 @@ function FolderRow({
 export function SidebarMinimal(props: SidebarMinimalProps) {
   const {
     mode,
+    onNewChat,
     onOpenSettings,
     onOpenMobileHandoff,
     onModeChange,
@@ -228,11 +229,18 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {/* Familiar scope selection and New session live in the desktop top
-          menu bar (FamiliarMenuBar) and the mobile top bar — the left panel is
-          pure navigation now, so the nav flows straight under the wordmark. */}
+      {/* Familiar scope selection lives in the desktop top menu bar
+          (FamiliarMenuBar) and the mobile top bar. "New chat" is the left
+          panel's top CTA, so the nav flows under it. */}
       <div className="sidebar-header sidebar-header--static">
         <span className="sidebar-title">Coven Cave</span>
+      </div>
+
+      <div className="sidebar-actions">
+        <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat}>
+          <Icon name="ph:note-pencil" width={16} aria-hidden />
+          <span>New chat</span>
+        </button>
       </div>
 
       <div className="sidebar-nav-scroll">

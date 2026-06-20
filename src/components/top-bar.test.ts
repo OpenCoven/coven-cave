@@ -138,24 +138,18 @@ assert.match(
   "Selection handler is nullable so the menu can scope to all familiars",
 );
 
-// Mobile quick actions folded in from the desktop menu bar: New chat + Tasks.
-// (The top bar is the single mobile bar — display:none on desktop — so these
-// render only on mobile; the inbox stays on the NotificationBell, the switcher
-// is already present, so nothing is duplicated.)
-assert.match(
-  source,
-  /onStartChat\?: \(\) => void/,
-  "Top bar accepts a New chat handler for the mobile quick action",
-);
+// Mobile quick actions: Tasks. New chat now lives at the top of the left
+// sidebar (SidebarMinimal) for both desktop and mobile, so the top bar no
+// longer renders a New chat button.
 assert.match(
   source,
   /onViewTasks\?: \(\) => void/,
   "Top bar accepts a View tasks handler for the mobile quick action",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /onStartChat \?[\s\S]*aria-label="New chat"[\s\S]*ph:chat-circle-dots/,
-  "Top bar renders a New chat button when wired",
+  /aria-label="New chat"/,
+  "the New chat button has moved out of the mobile top bar to the sidebar",
 );
 assert.match(
   source,

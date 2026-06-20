@@ -78,7 +78,6 @@ export function TopBar(props: Props) {
     activeFamiliar,
     familiarOptions,
     onSelectFamiliar,
-    onStartChat,
     onViewTasks,
     taskCount,
     sessions,
@@ -163,17 +162,6 @@ export function TopBar(props: Props) {
             placement="bottom-end"
             labeled={familiarSwitcherLabeled}
           />
-        ) : null}
-        {onStartChat ? (
-          <button
-            type="button"
-            className="top-bar__icon-btn"
-            onClick={onStartChat}
-            aria-label="New chat"
-            title="New chat"
-          >
-            <Icon name="ph:chat-circle-dots" width={15} />
-          </button>
         ) : null}
         {onViewTasks ? (
           <button
