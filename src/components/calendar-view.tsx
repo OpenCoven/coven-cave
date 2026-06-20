@@ -77,6 +77,19 @@ function fmtDateHeading(d: Date): string {
   return formatDate(d, undefined, { weekday: true, month: "long" });
 }
 
+// Agenda group headers read better with a relative day word for the days right
+// around now ("Today" / "Tomorrow" / "Yesterday"), falling back to the full
+// weekday + date for anything further out.
+function agendaDayLabel(date: Date): string {
+  const days = Math.round(
+    (startOfDay(date).getTime() - startOfDay(new Date()).getTime()) / 86_400_000,
+  );
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days === -1) return "Yesterday";
+  return fmtDateHeading(date);
+}
+
 function fmtHourLabel(h: number): string {
   // Honor the 24-hour clock preference for the time axis. Wrapped so the
   // helper still works if prefs are unavailable (SSR / isolated unit runs),
@@ -274,7 +287,7 @@ function AgendaView({
                   : "text-[var(--text-primary)]"
               }`}
             >
-              {isSameDay(date, new Date()) ? "Today" : fmtDateHeading(date)}
+              {agendaDayLabel(date)}
             </span>
             <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
               {groupItems.length} item{groupItems.length !== 1 ? "s" : ""}
