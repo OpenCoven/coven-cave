@@ -66,7 +66,8 @@ type Props = {
 
 type ProjectFilePreview =
   | { kind: "text"; content: string; size?: number }
-  | { kind: "image"; dataUrl: string; mimeType: string; size?: number };
+  | { kind: "image"; dataUrl: string; mimeType: string; size?: number }
+  | { kind: "error"; message: string };
 
 const STORAGE_SESSIONS = "cave:comux:sessions";
 const STORAGE_LAYOUT = "cave:comux:terminal-layout:v1";
@@ -565,12 +566,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       } else if (json.ok && typeof json.content === "string") {
         setPreview({ kind: "text", content: json.content, size: json.size });
       } else {
-        // Previously the error was rendered AS file content (`// Error: …`),
-        // which read like a real file. Surface it as a proper error state.
-        setPreviewError(json.error ?? "Couldn't open this file.");
+        setPreview({ kind: "error", message: json.error ?? "Could not load this file." });
       }
     } catch (err) {
-      setPreviewError(err instanceof Error ? err.message : "Couldn't reach the server.");
+      setPreview({ kind: "error", message: `Could not load this file. ${String(err)}` });
     } finally {
       setPreviewLoading(false);
     }
@@ -1611,7 +1610,15 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             />
                           </div>
                         ) : (
-                          preview?.kind === "image" ? (
+                          preview?.kind === "error" ? (
+                            <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)] p-4 text-center" role="alert">
+                              <Icon name="ph:warning-circle" width={28} className="text-[var(--color-danger)] opacity-80" />
+                              <p className="text-[12px] text-[var(--text-secondary)]">{preview.message}</p>
+                              {previewPath ? (
+                                <p className="font-mono text-[10px] text-[var(--text-muted)]">{previewPath.split("/").pop()}</p>
+                              ) : null}
+                            </div>
+                          ) : preview?.kind === "image" ? (
                             <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4">
                               <img
                                 src={preview.dataUrl}
