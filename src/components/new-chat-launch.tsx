@@ -2,6 +2,7 @@
 
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime } from "@/lib/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
 
@@ -24,12 +25,15 @@ export function NewChatLaunch({
   onResume: (sessionId: string) => void;
   pendingProjectRoot?: string | null;
 }) {
+  // Resolve glyphs/avatars/order the same way the rest of the app does so the
+  // cards match the switcher (and FamiliarAvatar gets a ResolvedFamiliar).
+  const resolved = useResolvedFamiliars(familiars);
   const recents = [...sessions]
     .filter((s) => !s.archived_at)
     .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
     .slice(0, 5);
   const famName = (id?: string | null) =>
-    id ? familiars.find((f) => f.id === id)?.display_name : undefined;
+    id ? resolved.find((f) => f.id === id)?.display_name : undefined;
 
   return (
     <section className="cave-launch" aria-label="Start a new chat">
@@ -49,7 +53,7 @@ export function NewChatLaunch({
         <div className="cave-launch__section" aria-label="Familiars">
           <p className="cave-launch__label">Familiars</p>
           <div className="cave-launch__grid">
-            {familiars.map((f) => (
+            {resolved.map((f) => (
               <button
                 key={f.id}
                 type="button"
