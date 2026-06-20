@@ -404,7 +404,16 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
               {groups.map(({ key, label, items: gi }) => (
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
-                    <tr className="board-table-group-row" onClick={() => toggleGroup(key)}>
+                    <tr
+                      className="board-table-group-row focus-ring-inset"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={!collapsed.has(key)}
+                      onClick={() => toggleGroup(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(key); }
+                      }}
+                    >
                       <td colSpan={4}>
                         <span className="board-table-group-caret">
                           <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
