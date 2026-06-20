@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
+import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
@@ -20,23 +21,6 @@ const SECTIONS: { id: CardStatus; label: string }[] = [
   { id: "blocked", label: "Blocked" },
   { id: "done", label: "Done" },
 ];
-
-function formatBoardDate(value: string | null | undefined): string {
-  if (!value) return "";
-  const [year, month, day] = value.split("-");
-  if (!year || !month || !day) return value;
-  return `${month}/${day}`;
-}
-
-function scheduleLabel(startDate: string | null | undefined, endDate: string | null | undefined): string {
-  if (startDate && endDate) {
-    if (startDate === endDate) return formatBoardDate(startDate);
-    return `${formatBoardDate(startDate)}-${formatBoardDate(endDate)}`;
-  }
-  if (startDate) return `Starts ${formatBoardDate(startDate)}`;
-  if (endDate) return `Ends ${formatBoardDate(endDate)}`;
-  return "";
-}
 
 type FilterValue = "all" | CardStatus;
 
@@ -74,6 +58,9 @@ export function BoardCardStack({
   chatLinkingId,
 }: Props) {
   const [filter, setFilter] = useState<FilterValue>("all");
+  // Resolved after mount so schedule-urgency colors stay hydration-safe.
+  const [todayMs, setTodayMs] = useState<number | null>(null);
+  useEffect(() => setTodayMs(Date.now()), []);
 
   const counts = useMemo(() => {
     const acc: Record<CardStatus, number> = {
@@ -141,6 +128,7 @@ export function BoardCardStack({
                   isSelected={card.id === selectedCardId}
                   onSelect={() => onSelect(card.id)}
                   onMoveStatus={(status) => onMoveStatus(card.id, status)}
+                  todayMs={todayMs}
                   onJumpToSession={onJumpToSession}
                   onOpenTaskChat={onOpenTaskChat}
                   chatLinking={chatLinkingId === card.id}
@@ -161,6 +149,7 @@ function BoardCardStackRow({
   isSelected,
   onSelect,
   onMoveStatus,
+  todayMs,
   onJumpToSession,
   onOpenTaskChat,
   chatLinking,
@@ -169,6 +158,7 @@ function BoardCardStackRow({
   familiars: Familiar[];
   sessions: SessionRow[];
   isSelected: boolean;
+  todayMs: number | null;
   onSelect: () => void;
   onMoveStatus: (status: CardStatus) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
@@ -186,6 +176,7 @@ function BoardCardStackRow({
   const resolvedFamiliar = resolvedFamiliars[0] ?? null;
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const schedule = scheduleLabel(card.startDate, card.endDate);
+  const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
 
   return (
     <li
@@ -223,8 +214,23 @@ function BoardCardStackRow({
             </span>
           </span>
           {schedule ? (
-            <span className="board-card-stack__row-schedule" title={`Scheduled ${schedule}`}>
-              <Icon name="ph:calendar-blank" width={11} />
+            <span
+              className={`board-card-stack__row-schedule${
+                urgency === "overdue"
+                  ? " board-card-stack__row-schedule--overdue"
+                  : urgency === "due-soon"
+                  ? " board-card-stack__row-schedule--due-soon"
+                  : ""
+              }`}
+              title={
+                urgency === "overdue"
+                  ? `Overdue \u2014 was due ${schedule}`
+                  : urgency === "due-soon"
+                  ? `Due soon \u2014 ${schedule}`
+                  : `Scheduled ${schedule}`
+              }
+            >
+              <Icon name={urgency === "overdue" ? "ph:warning-circle" : "ph:calendar-blank"} width={11} />
               {schedule}
             </span>
           ) : null}
