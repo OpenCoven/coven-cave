@@ -12,12 +12,10 @@ import {
   buildSketchPrompt,
   clampArtifactCode,
   titleFromPrompt,
-  type ArtifactKind,
   type CanvasArtifact,
 } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
-import { highlightToHtml } from "@/components/message-bubble";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Familiar } from "@/lib/types";
 
@@ -32,36 +30,6 @@ const STARTER_SKETCH_PROMPTS: readonly string[] = [
 
 function srcDocFor(art: CanvasArtifact): string {
   return art.kind === "react" ? buildReactSrcDoc(art.code) : buildPreviewSrcDoc(art.code);
-}
-
-/**
- * The Code tab's read-only view: Shiki-highlighted to match the app's other code
- * surfaces (chat code blocks, the in-chat artifact viewer). Falls back to plain
- * text until the lazy highlighter resolves and on any failure, so the code is
- * always shown. React artifacts highlight as TSX; everything else as HTML.
- */
-function SketchCode({ code, kind }: { code: string; kind: ArtifactKind }) {
-  const [html, setHtml] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setHtml(null);
-    void highlightToHtml(code, kind === "react" ? "tsx" : "html")
-      .then((h) => { if (!cancelled) setHtml(h); })
-      .catch(() => { if (!cancelled) setHtml(null); });
-    return () => { cancelled = true; };
-  }, [code, kind]);
-
-  if (!html) {
-    return <pre className="journal-detail__code"><code>{code}</code></pre>;
-  }
-  return (
-    <div
-      className="journal-detail__code journal-detail__code--hl"
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
 }
 
 export function CanvasList({
@@ -83,6 +51,7 @@ export function CanvasList({
   const composerRef = useRef<HTMLInputElement | null>(null);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleDraft, setEditingTitleDraft] = useState("");
+  const [codeDraft, setCodeDraft] = useState("");
   // Transient "Copied" confirmation for the Code tab's copy button.
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -242,6 +211,11 @@ export function CanvasList({
   const selected = artifacts.find((a) => a.id === selectedId) ?? null;
   const canGenerate = Boolean(activeFamiliarId ?? familiars[0]?.id);
   const selectedBusy = selected ? generating.has(selected.id) : false;
+  const codeDirty = Boolean(selected && codeDraft !== selected.code);
+
+  useEffect(() => {
+    setCodeDraft(selected?.code ?? "");
+  }, [selected?.id, selected?.code]);
 
   // Context-aware refine ideas for the selected sketch (cheap string scan).
   const generatedSuggestions = useMemo(
@@ -278,6 +252,22 @@ export function CanvasList({
     setRefineText("");
     setRefineOpen(false);
   }, [refineText, selected, generating, runGeneration]);
+
+  function revertCodeEdit() {
+    setCodeDraft(selected?.code ?? "");
+  }
+
+  function saveCodeEdit() {
+    if (!selected || !codeDirty) return;
+    const next: CanvasArtifact = {
+      ...selected,
+      code: clampArtifactCode(codeDraft),
+      updatedAt: new Date().toISOString(),
+    };
+    setArtifacts((prev) => prev.map((artifact) => (artifact.id === next.id ? next : artifact)));
+    setCodeDraft(next.code);
+    persist(next);
+  }
 
   return (
     <div className="journal-list">
@@ -395,19 +385,39 @@ export function CanvasList({
               </div>
               <div className="journal-detail__actions">
                 {view === "code" ? (
-                  <button
-                    type="button"
-                    className={`journal-act${copied ? " journal-act--on" : ""}`}
-                    aria-label={copied ? "Copied" : "Copy code"}
-                    onClick={async () => {
-                      if (!(await copyText(selected.code))) return;
-                      setCopied(true);
-                      if (copiedTimer.current) clearTimeout(copiedTimer.current);
-                      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
-                    }}
-                  >
-                    <Icon name={copied ? "ph:check" : "ph:copy"} aria-hidden /> {copied ? "Copied" : "Copy"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={`journal-act${copied ? " journal-act--on" : ""}`}
+                      aria-label={copied ? "Copied" : "Copy code"}
+                      onClick={async () => {
+                        if (!(await copyText(codeDraft))) return;
+                        setCopied(true);
+                        if (copiedTimer.current) clearTimeout(copiedTimer.current);
+                        copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      <Icon name={copied ? "ph:check" : "ph:copy"} aria-hidden /> {copied ? "Copied" : "Copy"}
+                    </button>
+                    <button
+                      type="button"
+                      className="journal-act"
+                      aria-label="Revert canvas code edits"
+                      disabled={!codeDirty}
+                      onClick={revertCodeEdit}
+                    >
+                      <Icon name="ph:arrow-counter-clockwise" aria-hidden /> Revert
+                    </button>
+                    <button
+                      type="button"
+                      className="journal-act journal-act--on"
+                      aria-label="Save canvas code"
+                      disabled={!codeDirty}
+                      onClick={saveCodeEdit}
+                    >
+                      <Icon name="ph:floppy-disk-bold" aria-hidden /> Save
+                    </button>
+                  </>
                 ) : null}
                 <button
                   type="button"
@@ -482,7 +492,24 @@ export function CanvasList({
                 srcDoc={srcDocFor(selected)}
               />
             ) : (
-              <SketchCode code={selected.code} kind={selected.kind ?? "html"} />
+              <textarea
+                className="journal-detail__code journal-detail__code--editor"
+                aria-label="Edit canvas code"
+                spellCheck={false}
+                value={codeDraft}
+                disabled={selectedBusy}
+                onChange={(e) => setCodeDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                    e.preventDefault();
+                    saveCodeEdit();
+                  }
+                  if (e.key === "Escape" && codeDirty) {
+                    e.preventDefault();
+                    revertCodeEdit();
+                  }
+                }}
+              />
             )}
             <div className="journal-detail__prompt">Prompt: “{selected.prompt}”</div>
           </>

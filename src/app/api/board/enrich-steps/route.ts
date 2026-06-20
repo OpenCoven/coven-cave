@@ -4,11 +4,13 @@ import {
   PRIORITIES,
   STATUSES,
   type Card,
+  type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
   type CardStatus,
   type CardStep,
 } from "@/lib/cave-board-types";
+import { normalizeTaskGitHubLinks } from "@/lib/task-github";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { familiarWorkspace } from "@/lib/coven-paths";
@@ -27,9 +29,15 @@ const PRIORITY_VALUES = new Set<CardPriority>(PRIORITIES);
 
 type TaskEnrichment = {
   steps?: string[];
+  notes?: string;
   status?: CardStatus;
   lifecycle?: CardLifecycle;
   priority?: CardPriority;
+  startDate?: string | null;
+  endDate?: string | null;
+  links?: string[];
+  github?: CardGitHubLink[];
+  sessionId?: string | null;
   needsHuman?: boolean;
   lifecycleReason?: string;
 };
@@ -93,6 +101,52 @@ function cleanReason(value: unknown): string | undefined {
   return trimmed ? trimmed.slice(0, 240) : undefined;
 }
 
+function cleanNotes(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 2_000) : undefined;
+}
+
+function cleanBoardDate(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return undefined;
+  const date = new Date(`${trimmed}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString().slice(0, 10) === trimmed ? trimmed : undefined;
+}
+
+function cleanLinks(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const links = value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => {
+      try {
+        const url = new URL(item);
+        return url.protocol === "http:" || url.protocol === "https:";
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, 16);
+  return [...new Set(links)];
+}
+
+function cleanGitHubLinks(value: unknown): CardGitHubLink[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return normalizeTaskGitHubLinks(
+    value.map((item) => typeof item === "string" ? { url: item } : item),
+  ).slice(0, 16);
+}
+
+function cleanSessionId(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return /^[a-z0-9_.:-]{1,160}$/i.test(trimmed) ? trimmed : undefined;
+}
+
 function enrichPrompt(card: Card): string {
   const labels = card.labels?.length
     ? `\nLabels: ${card.labels.join(", ")}`
@@ -104,17 +158,27 @@ function enrichPrompt(card: Card): string {
         .join("\n")}`
     : "";
   return [
-    `You are refreshing a board task so it reflects the current best plan and state.`,
+    `You are the assigned familiar refreshing your board task so it reflects the current best plan, ownership, links, schedule, and state.`,
     `Task: ${card.title.trim()}${labels}${notes}`,
     `Current status: ${card.status}`,
     `Current lifecycle: ${card.lifecycle}`,
     `Current priority: ${card.priority}`,
+    `Current startDate: ${card.startDate ?? "none"}`,
+    `Current endDate: ${card.endDate ?? "none"}`,
+    `Current sessionId: ${card.sessionId ?? "none"}`,
+    `Current links: ${card.links.length ? card.links.join(", ") : "none"}`,
+    `Current GitHub items: ${card.github.length ? card.github.map((item) => item.url).join(", ") : "none"}`,
     `Needs human: ${card.needsHuman ? "yes" : "no"}${steps}`,
     ``,
     `Output ONLY one JSON object with these keys:`,
-    `{"steps":["short action"],"status":"backlog|inbox|running|review|blocked|done","lifecycle":"queued|dispatched|running|review|completed|failed|cancelled","priority":"low|medium|high|urgent","needsHuman":false,"lifecycleReason":"short reason"}`,
-    `Produce 3-8 steps that reflect your role, skills, and the ideal current process.`,
-    `Each step must be a short, actionable sentence under 80 characters.`,
+    `{"notes":"concise task description","steps":["short subtask"],"status":"backlog|inbox|running|review|blocked|done","lifecycle":"queued|dispatched|running|review|completed|failed|cancelled","priority":"low|medium|high|urgent","startDate":"YYYY-MM-DD|null","endDate":"YYYY-MM-DD|null","links":["https://..."],"github":[{"url":"https://github.com/owner/repo/issues/123","title":"issue title","repo":"owner/repo","kind":"issue|pr|repo|discussion|review_request|notification","number":123,"state":"open|closed|merged","labels":[]}],"sessionId":"linked-chat-session-id|null","needsHuman":false,"lifecycleReason":"short reason"}`,
+    `Simplify the description into concise task notes without losing constraints.`,
+    `Create or update subtasks for the assigned task; include 3-8 short action steps.`,
+    `Set startDate and endDate when the task has clear timing or sequence; use null only to clear a wrong date.`,
+    `Update status, lifecycle, priority, needsHuman, and lifecycleReason to match the current reality.`,
+    `Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats that belong on this task.`,
+    `Preserve useful existing links and GitHub/chat assignments unless they are clearly wrong.`,
+    `Each subtask must be a short, actionable sentence under 80 characters.`,
     `Use status, lifecycle, priority, needsHuman, and lifecycleReason to reflect the task's current reality.`,
     `Return no explanation, no markdown, and no extra text.`,
   ].join("\n");
@@ -270,8 +334,14 @@ function parseTaskEnrichment(raw: string): TaskEnrichment | null {
     const parsed = parseJsonObject(haystack);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const candidate = parsed as Record<string, unknown>;
+      const startDate = cleanBoardDate(candidate.startDate);
+      const endDate = cleanBoardDate(candidate.endDate);
+      const links = cleanLinks(candidate.links);
+      const github = cleanGitHubLinks(candidate.github);
+      const sessionId = cleanSessionId(candidate.sessionId);
       return {
         steps: cleanStepStrings(candidate.steps),
+        notes: cleanNotes(candidate.notes ?? candidate.description),
         status: STATUS_VALUES.has(candidate.status as CardStatus)
           ? candidate.status as CardStatus
           : undefined,
@@ -281,6 +351,11 @@ function parseTaskEnrichment(raw: string): TaskEnrichment | null {
         priority: PRIORITY_VALUES.has(candidate.priority as CardPriority)
           ? candidate.priority as CardPriority
           : undefined,
+        ...(startDate !== undefined ? { startDate } : {}),
+        ...(endDate !== undefined ? { endDate } : {}),
+        ...(links !== undefined ? { links } : {}),
+        ...(github !== undefined ? { github } : {}),
+        ...(sessionId !== undefined ? { sessionId } : {}),
         needsHuman: typeof candidate.needsHuman === "boolean" ? candidate.needsHuman : undefined,
         lifecycleReason: cleanReason(candidate.lifecycleReason),
       };
@@ -306,10 +381,16 @@ function normalizeTaskEnrichment(card: Card, enrichment: TaskEnrichment, now: st
   const priority = enrichment.priority ?? card.priority;
   const needsHuman = enrichment.needsHuman ?? (status === "blocked" && lifecycle !== "cancelled");
   return {
+    notes: enrichment.notes ?? card.notes,
     steps: mergeSteps(card, enrichment.steps ?? [], now),
     status,
     lifecycle,
     priority,
+    startDate: enrichment.startDate !== undefined ? enrichment.startDate : card.startDate ?? null,
+    endDate: enrichment.endDate !== undefined ? enrichment.endDate : card.endDate ?? null,
+    links: enrichment.links ?? card.links,
+    github: enrichment.github ?? card.github,
+    sessionId: enrichment.sessionId !== undefined ? enrichment.sessionId : card.sessionId,
     needsHuman,
     lifecycleReason: enrichment.lifecycleReason ?? card.lifecycleReason,
     lifecycleAt: lifecycle !== card.lifecycle ? now : card.lifecycleAt,
@@ -402,10 +483,16 @@ export async function POST(req: Request) {
         const now = new Date().toISOString();
         const normalized = normalizeTaskEnrichment(card, enrichment, now);
         const updated = await updateCard(card.id, {
+          notes: normalized.notes,
           steps: normalized.steps,
           status: normalized.status,
           lifecycle: normalized.lifecycle,
           priority: normalized.priority,
+          startDate: normalized.startDate,
+          endDate: normalized.endDate,
+          links: normalized.links,
+          github: normalized.github,
+          sessionId: normalized.sessionId,
           needsHuman: normalized.needsHuman,
           lifecycleReason: normalized.lifecycleReason,
           lifecycleAt: normalized.lifecycleAt,

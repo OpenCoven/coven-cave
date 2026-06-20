@@ -5836,15 +5836,63 @@ a.mobile-handoff__link:hover {
 
 /* Inline Familiar Studio — Settings → Familiars master-detail (non-modal).
    Reuses the drawer's tab-body, __body and __footer styles; only the shell,
-   roster rail and horizontal tabstrip are new here. */
+   familiar selector and horizontal tabstrip are new here. */
 .familiar-studio-inline {
   display: grid;
-  grid-template-columns: 232px 1fr;
+  grid-template-rows: auto 1fr;
   min-height: 540px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: var(--bg-base);
   overflow: hidden;
+}
+.familiar-studio-inline__selector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 50px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 50%, transparent);
+}
+.familiar-studio-inline__selector-label {
+  flex: 0 0 auto;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.familiar-studio-inline__select-wrap {
+  position: relative;
+  min-width: min(320px, 70%);
+}
+.familiar-studio-inline__select {
+  width: 100%;
+  height: 32px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  padding: 0 32px 0 10px;
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+}
+.familiar-studio-inline__select:focus-visible {
+  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 55%, var(--border-hairline));
+  box-shadow: 0 0 0 2px var(--ring-focus);
+}
+.familiar-studio-inline__select-caret {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
 }
 .familiar-studio-inline__list {
   display: flex;
@@ -5942,13 +5990,13 @@ a.mobile-handoff__link:hover {
 
 @media (max-width: 640px) {
   .familiar-studio-inline { grid-template-columns: 1fr; min-height: 0; }
-  .familiar-studio-inline__list {
-    flex-direction: row;
-    border-right: none;
-    border-bottom: 1px solid var(--border-hairline);
-    overflow-x: auto;
+  .familiar-studio-inline__selector {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
   }
-  .familiar-studio-inline__item { width: auto; flex-shrink: 0; max-width: 180px; }
+  .familiar-studio-inline__select-wrap { min-width: 0; width: 100%; }
   .familiar-studio-inline__body { max-height: none; }
 }
 .familiar-studio-identity { display: flex; flex-direction: column; gap: var(--space-4); }

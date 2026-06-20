@@ -104,6 +104,11 @@ assert.match(
   /className="gh-glass-panel"/,
   "detail panel uses the glass panel styling hook",
 );
+assert.match(
+  source,
+  /<div className="gh-glass-panel-scroll">[\s\S]*?<\/div>\s*<\/aside>/,
+  "GitHub detail sidepanel keeps scrolling inside an inner body, not on the glass shell",
+);
 assert.doesNotMatch(
   source,
   /gh-issue-labels|gh-issue-label|gh-issue-label-dot|No labels on this item\.|gh-badge--label|item\.labels\?\.slice/,
@@ -116,13 +121,18 @@ assert.doesNotMatch(
 );
 assert.match(
   boardCss,
-  /\.gh-glass-panel \{[\s\S]*?scrollbar-width:none;[\s\S]*?-ms-overflow-style:none;/,
-  "GitHub detail sidepanel scrolls without the hover-only scrollbar rail",
+  /\.gh-glass-panel-scroll \{[\s\S]*?overflow-y:auto;[\s\S]*?scrollbar-width:none;[\s\S]*?-ms-overflow-style:none;/,
+  "GitHub detail sidepanel scrolls inside an inner body without the hover-only scrollbar rail",
 );
 assert.match(
   boardCss,
-  /\.gh-glass-panel::(?:-webkit-scrollbar) \{ width:0; height:0; \}/,
-  "GitHub detail sidepanel hides WebKit scrollbar chrome on hover",
+  /\.gh-glass-panel-scroll::(?:-webkit-scrollbar) \{ width:0; height:0; \}/,
+  "GitHub detail sidepanel inner body hides WebKit scrollbar chrome on hover",
+);
+assert.match(
+  boardCss,
+  /\.gh-glass-panel \{[\s\S]*?overflow:hidden;/,
+  "GitHub detail sidepanel shell clips glass effects instead of becoming the scrollport",
 );
 assert.match(
   boardCss,
@@ -130,9 +140,24 @@ assert.match(
   "GitHub workspace height is container-bound so the detail sidepanel does not make the parent scroll on hover",
 );
 assert.match(
+  source,
+  /className="github-surface-body min-h-0 flex-1 overflow-hidden"/,
+  "GitHub surface body should not be a parent scrollport that exposes hover-only scroll chrome over the sidepanel",
+);
+assert.doesNotMatch(
+  source,
+  /github-surface[\s\S]{0,2600}<div className="min-h-0 flex-1 overflow-y-auto">/,
+  "GitHub surface body should leave scrolling to the list panel and detail panel internals",
+);
+assert.match(
   boardCss,
   /@media \(min-width: 1041px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:100%;/,
   "GitHub detail sidepanel keeps a stable container height while async detail content loads",
+);
+assert.match(
+  boardCss,
+  /@media \(max-width: 1040px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:min\(460px,52dvh\);/,
+  "GitHub detail sidepanel stays height-constrained in the single-column layout so hover cannot scroll-jump it",
 );
 assert.doesNotMatch(
   source,

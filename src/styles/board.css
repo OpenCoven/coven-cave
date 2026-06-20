@@ -617,6 +617,8 @@
   top:14px;
   align-self:start;
   min-width:0;
+  display:flex;
+  flex-direction:column;
   overflow:hidden;
   border:1px solid color-mix(in oklab,var(--border-hairline) 70%,transparent);
   border-radius:8px;
@@ -784,13 +786,15 @@
 
 /* ── Faithful issue/PR detail view (GitHub-style) ───────────────────────────── */
 /* Keep the rich body from running off-screen without drawing a hover-only rail. */
-.gh-glass-panel {
-  max-height:100%;
+.gh-glass-panel-scroll {
+  position:relative;
+  flex:1 1 auto;
+  min-height:0;
   overflow-y:auto;
   scrollbar-width:none;
   -ms-overflow-style:none;
 }
-.gh-glass-panel::-webkit-scrollbar { width:0; height:0; }
+.gh-glass-panel-scroll::-webkit-scrollbar { width:0; height:0; }
 
 @media (min-width: 1041px) {
   .gh-glass-panel:not(.gh-glass-panel--empty) {
@@ -888,7 +892,15 @@
 
 @media (max-width: 1040px) {
   .gh-workspace { grid-template-columns:1fr; }
-  .gh-glass-panel { position:relative; top:auto; order:-1; }
+  .gh-glass-panel {
+    position:relative;
+    top:auto;
+    order:-1;
+    align-self:stretch;
+  }
+  .gh-glass-panel:not(.gh-glass-panel--empty) {
+    height:min(460px,52dvh);
+  }
 }
 
 @media (max-width: 760px) {

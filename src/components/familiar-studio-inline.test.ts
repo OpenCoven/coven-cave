@@ -6,14 +6,20 @@ const source = readFileSync(new URL("./familiar-studio-inline.tsx", import.meta.
 
 assert.match(source, /export function FamiliarStudioInlinePanel/, "Must export the inline panel");
 
-// Master-detail shell: roster rail + detail pane.
-assert.match(source, /familiar-studio-inline__list/, "Renders the familiar roster rail");
+// Master-detail shell: a compact familiar dropdown + detail pane.
+assert.doesNotMatch(source, /familiar-studio-inline__list/, "Settings should not render a familiar roster rail");
+assert.match(source, /familiar-studio-inline__selector/, "Renders the familiar dropdown selector");
+assert.match(source, /aria-label="Choose familiar to edit"/, "Settings familiar dropdown is labelled");
 assert.match(source, /familiar-studio-inline__detail/, "Renders the detail pane");
 
 // Reuses the Studio context for selection + tab persistence, NOT local state,
 // so deep-link openFamiliarStudio(id, tab) and last-tab memory carry over.
 assert.match(source, /useFamiliarStudio\(\)/, "Uses the Familiar Studio context for selection");
-assert.match(source, /openFamiliarStudio\(f\.id, activeTab\)/, "Selecting a roster row opens that familiar at the current tab");
+assert.match(
+  source,
+  /openFamiliarStudio\(e\.currentTarget\.value, activeTab\)/,
+  "Selecting from the dropdown opens that familiar at the current tab",
+);
 
 // Non-modal: it must NOT render the drawer chrome (scrim / fixed drawer root).
 assert.doesNotMatch(source, /familiar-studio__scrim/, "Inline panel must not render the modal scrim");

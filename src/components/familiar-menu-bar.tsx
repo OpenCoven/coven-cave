@@ -32,6 +32,9 @@ type Props = {
   onViewInbox: () => void;
 };
 
+const ENRICH_TASKS_TITLE =
+  "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
+
 function fmtBadge(n: number): string {
   return n > 99 ? "99+" : String(n);
 }
@@ -63,7 +66,7 @@ export function FamiliarMenuBar({
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
       : "Starting..."
-    : "Enrich";
+    : "Enhance";
 
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
@@ -113,11 +116,11 @@ export function FamiliarMenuBar({
             className="menu-bar__task focus-ring"
             onClick={onEnrichTasks}
             disabled={enrichingTasks || !activeFamiliarId}
-            aria-label={enrichingTasks ? `Enriching tasks ${enrichLabel}` : activeFamiliarId ? "Enrich selected familiar tasks" : "Select a familiar to enrich tasks"}
-            title={activeFamiliarId ? "Enrich selected familiar tasks" : "Select a familiar to enrich tasks"}
+            aria-label={enrichingTasks ? `Enhancing tasks ${enrichLabel}` : activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
+            title={activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
           >
             <Icon name="ph:sparkle" width={15} aria-hidden />
-            <span>{enrichingTasks ? enrichLabel : "Enrich"}</span>
+            <span>{enrichingTasks ? enrichLabel : "Enhance"}</span>
           </button>
         ) : null}
         <button
@@ -146,4 +149,3 @@ export function FamiliarMenuBar({
     </nav>
   );
 }
-

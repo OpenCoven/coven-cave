@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
@@ -31,7 +31,13 @@ export type SelectedItem =
 
 export type DocNav = { index: number; total: number; onPrev: () => void; onNext: () => void };
 
-type Props = { selected: SelectedItem; loading: boolean; activeSection?: LibrarySectionKind; docNav?: DocNav };
+type Props = {
+  selected: SelectedItem;
+  loading: boolean;
+  activeSection?: LibrarySectionKind;
+  docNav?: DocNav;
+  onBackToList?: () => void;
+};
 
 const EMPTY_TEXT: Record<LibrarySectionKind, string> = {
   all: "Select an item to preview",
@@ -353,12 +359,23 @@ function LibraryLinkViewer({
             <span className="library-preview-empty-text">Unsafe URL blocked.</span>
           </div>
         ) : unavailable ? (
-          <iframe
-            src={url}
-            title={title || hostnameLabel(url)}
-            className="library-link-viewer-frame"
-            sandbox="allow-same-origin allow-scripts allow-forms"
-          />
+          <div className="library-link-viewer-fallback">
+            <div className="library-link-viewer-fallback__card">
+              <Icon name={openKind === "github" ? "ph:github-logo" : "ph:globe"} width={24} className="library-link-viewer-fallback__icon" />
+              <div className="library-link-viewer-fallback__title">{hostnameLabel(url)}</div>
+              <p className="library-link-viewer-fallback__copy">
+                Inline preview is available in the desktop app. Open this link externally to inspect the source.
+              </p>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="library-link-viewer-fallback__url"
+              >
+                {url}
+              </a>
+            </div>
+          </div>
         ) : (
           <div ref={surfaceRef} className="library-link-viewer-surface" aria-label={title || url} />
         )}
@@ -496,61 +513,81 @@ function ReadingDetail({ item }: { item: LibraryReadingItem }) {
   if (item.localPath && item.localPath.toLowerCase().endsWith(".pdf")) {
     return <PdfViewer localPath={item.localPath} title={item.title} />;
   }
-  if (item.url) {
-    return (
-      <LibraryLinkViewer
-        id={item.id}
-        title={item.title}
-        url={item.url}
-        meta={<><span className="library-status-badge" style={statusStyle(item.status)}>{item.status.replace(/-/g, " ")}</span><span className="library-preview-sep">·</span><span className="library-doclist-tag">{item.sourceType}</span></>}
-      />
-    );
-  }
+
   return (
     <div className="library-preview">
       <div className="library-preview-header">
         <div className="library-preview-title">{item.title}</div>
-        <div className="library-preview-meta">
-          <span className="library-status-badge" style={statusStyle(item.status)}>
-            {item.status.replace(/-/g, " ")}
+        <div className="library-preview-meta library-preview-meta--with-actions">
+          <span className="library-preview-meta-left">
+            <span className="library-status-badge" style={statusStyle(item.status)}>
+              {item.status.replace(/-/g, " ")}
+            </span>
+            <span className="library-preview-sep">·</span>
+            <span className="library-doclist-tag">{item.sourceType}</span>
+            {item.author && <><span className="library-preview-sep">·</span><span className="library-preview-date">{item.author}</span></>}
           </span>
-          <span className="library-preview-sep">·</span>
-          <span className="library-doclist-tag">{item.sourceType}</span>
-          {item.author && <><span className="library-preview-sep">·</span><span className="library-preview-date">{item.author}</span></>}
-        </div>
-        {item.tags.length > 0 && (
-          <div className="library-preview-tags">
-            {item.tags.map((t: string) => <span key={t} className="library-doclist-tag">{t}</span>)}
-          </div>
-        )}
-        <div className="library-preview-actions">
-          {item.url && <OpenBtn url={item.url} />}
+          {item.url && (
+            <span className="library-preview-meta-actions">
+              <TranslateButton source={{ kind: "url", title: item.title, url: item.url }} compact />
+              <OpenBtn url={item.url} label="Open external" />
+              <CopyButton text={item.url} label="Copy URL" compact />
+            </span>
+          )}
         </div>
       </div>
       <div className="library-preview-body">
-        {item.status === "reading" && item.progress != null && (
-          <FieldRow label="Progress">
-            <div className="library-progress-bar library-progress-bar--lg">
-              <div className="library-progress-fill" style={{ width: `${item.progress}%` }} />
+        <div className="library-reading-detail">
+          <section className="library-reading-detail__main" aria-label="Reading details">
+            {item.notes ? (
+              <div className="library-reading-detail__note">{item.notes}</div>
+            ) : (
+              <p className="library-reading-detail__empty">
+                No notes saved yet. Use this space for a summary, extraction goals, or follow-up questions.
+              </p>
+            )}
+            {item.url && (
+              <FieldRow label="Source">
+                <a className="library-preview-link library-reading-detail__url" href={item.url} target="_blank" rel="noreferrer">
+                  {item.url}
+                </a>
+              </FieldRow>
+            )}
+          </section>
+
+          <aside className="library-reading-detail__aside" aria-label="Reading metadata">
+            <div className="library-reading-detail__card">
+              {item.status === "reading" && item.progress != null && (
+                <FieldRow label="Progress">
+                  <div className="library-progress-bar library-progress-bar--lg">
+                    <div className="library-progress-fill" style={{ width: `${item.progress}%` }} />
+                  </div>
+                  <div className="library-reading-detail__percent">{item.progress}%</div>
+                </FieldRow>
+              )}
+              <FieldRow label="Added">
+                <div>{fmtDate(item.addedAt)}</div>
+              </FieldRow>
+              {item.finishedAt && (
+                <FieldRow label="Finished">
+                  <div>{fmtDate(item.finishedAt)}</div>
+                </FieldRow>
+              )}
+              {item.author && (
+                <FieldRow label="Author">
+                  <div>{item.author}</div>
+                </FieldRow>
+              )}
+              {item.tags.length > 0 && (
+                <FieldRow label="Tags">
+                  <div className="library-preview-tags">
+                    {item.tags.map((t: string) => <span key={t} className="library-doclist-tag">{t}</span>)}
+                  </div>
+                </FieldRow>
+              )}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{item.progress}%</div>
-          </FieldRow>
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-          <FieldRow label="Added">
-            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{fmtDate(item.addedAt)}</div>
-          </FieldRow>
-          {item.finishedAt && (
-            <FieldRow label="Finished">
-              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{fmtDate(item.finishedAt)}</div>
-            </FieldRow>
-          )}
+          </aside>
         </div>
-        {item.notes && (
-          <FieldRow label="Notes">
-            <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>{item.notes}</div>
-          </FieldRow>
-        )}
       </div>
     </div>
   );
@@ -1176,7 +1213,25 @@ function SkillDetail({ skill }: { skill: Skill }) {
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────
-export function LibraryDocPreview({ selected, loading, activeSection, docNav }: Props) {
+function SelectedPreviewFrame({ onBackToList, children }: { onBackToList?: () => void; children: ReactNode }) {
+  if (!onBackToList) return <>{children}</>;
+  return (
+    <div className="library-preview-stack">
+      <button
+        type="button"
+        className="library-preview-return"
+        onClick={onBackToList}
+        aria-label="Back to library list"
+      >
+        <Icon name="ph:arrow-left" width={14} />
+        <span>Back to list</span>
+      </button>
+      {children}
+    </div>
+  );
+}
+
+export function LibraryDocPreview({ selected, loading, activeSection, docNav, onBackToList }: Props) {
   // Stale-while-loading: when something is already selected, keep it
   // mounted during the next fetch instead of swapping to a loading shell.
   // Unmounting here would tear down DocDetail mid-navigation and close an
@@ -1198,10 +1253,40 @@ export function LibraryDocPreview({ selected, loading, activeSection, docNav }: 
       </div>
     );
   }
-  if (selected.kind === "doc")      return <DocDetail doc={selected.doc} docNav={docNav} />;
-  if (selected.kind === "bookmark") return <BookmarkDetail item={selected.item} />;
-  if (selected.kind === "reading")  return <ReadingDetail item={selected.item} />;
-  if (selected.kind === "github")   return <GitHubDetail item={selected.item} />;
-  if (selected.kind === "skill")    return <SkillDetail skill={selected.skill} />;
+  if (selected.kind === "doc") {
+    return (
+      <SelectedPreviewFrame onBackToList={onBackToList}>
+        <DocDetail doc={selected.doc} docNav={docNav} />
+      </SelectedPreviewFrame>
+    );
+  }
+  if (selected.kind === "bookmark") {
+    return (
+      <SelectedPreviewFrame onBackToList={onBackToList}>
+        <BookmarkDetail item={selected.item} />
+      </SelectedPreviewFrame>
+    );
+  }
+  if (selected.kind === "reading") {
+    return (
+      <SelectedPreviewFrame onBackToList={onBackToList}>
+        <ReadingDetail item={selected.item} />
+      </SelectedPreviewFrame>
+    );
+  }
+  if (selected.kind === "github") {
+    return (
+      <SelectedPreviewFrame onBackToList={onBackToList}>
+        <GitHubDetail item={selected.item} />
+      </SelectedPreviewFrame>
+    );
+  }
+  if (selected.kind === "skill") {
+    return (
+      <SelectedPreviewFrame onBackToList={onBackToList}>
+        <SkillDetail skill={selected.skill} />
+      </SelectedPreviewFrame>
+    );
+  }
   return null;
 }

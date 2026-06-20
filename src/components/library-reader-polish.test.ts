@@ -8,6 +8,10 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("./library-doc-preview.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./library-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/library.css", import.meta.url), "utf8");
+const mobileCssStart = css.indexOf("@media (max-width: 767px) {");
+const mobileCssEnd = css.indexOf("/* ── Undo delete toast", mobileCssStart);
+assert.ok(mobileCssStart >= 0 && mobileCssEnd > mobileCssStart, "Library CSS should expose a mobile override block");
+const mobileCss = css.slice(mobileCssStart, mobileCssEnd);
 
 // ── P0: scrollbars ──
 assert.match(
@@ -71,6 +75,11 @@ assert.match(
 assert.match(css, /rgba\(0, 0, 0, 0\.95\);\s*backdrop-filter: blur\(10px\)/, "Backdrop dims harder + blurs more so the page can't bleed through");
 assert.match(
   css,
+  /\.library-reader-backdrop\s*\{[\s\S]*?z-index:\s*320;/,
+  "Reader backdrop should sit above mobile shell chrome and transient toasts",
+);
+assert.match(
+  css,
   /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.library-reader-modal \{\s*animation: none;/,
   "Reader entrance animation respects prefers-reduced-motion",
 );
@@ -113,6 +122,31 @@ assert.match(
   css,
   /\.library-reader-modal--wide \.library-reader-body--with-toc \.library-preview-md\s*\{[\s\S]*?flex-basis:\s*100%;[\s\S]*?width:\s*100%;/,
   "Wide mode makes synthesis/paper markdown span the full reader width even when a ToC is present",
+);
+assert.match(
+  mobileCss,
+  /\.library-reader-backdrop\s*\{[\s\S]*?padding:\s*0;/,
+  "Mobile reader backdrop should remove desktop inset padding so expanded mode can use the full phone viewport",
+);
+assert.match(
+  mobileCss,
+  /\.library-reader-modal--wide\s*\{[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;[\s\S]*?max-height:\s*100dvh;[\s\S]*?border-radius:\s*0;/,
+  "Mobile reader expanded mode should fill the viewport instead of keeping desktop margins",
+);
+assert.match(
+  mobileCss,
+  /\.library-reader-header\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+  "Mobile reader header should use normal grid flow so title and controls cannot overlap",
+);
+assert.match(
+  mobileCss,
+  /\.library-reader-actions\s*\{[\s\S]*?position:\s*static;[\s\S]*?justify-content:\s*flex-end;/,
+  "Mobile reader actions should be in-flow and right aligned instead of absolutely overlaying the title",
+);
+assert.match(
+  mobileCss,
+  /\.library-reader-title\s*\{[\s\S]*?padding-right:\s*0;[\s\S]*?overflow-wrap:\s*anywhere;/,
+  "Mobile reader title should own its full line and wrap safely for long document names",
 );
 
 // ── P2: prev/next document nav ──

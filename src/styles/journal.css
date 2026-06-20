@@ -284,6 +284,13 @@
   overflow-wrap: anywhere;
 }
 .journal-detail__code--hl code { font: inherit; white-space: inherit; overflow-wrap: inherit; }
+.journal-detail__code--editor {
+  resize: none;
+  outline: none;
+}
+.journal-detail__code--editor:focus {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+}
 .journal-detail__prompt { font-size: 11px; color: var(--text-muted); }
 .journal-empty {
   display: flex;

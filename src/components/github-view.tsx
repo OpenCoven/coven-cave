@@ -697,139 +697,139 @@ function GitHubItemGlassPanel({
   return (
     <aside className="gh-glass-panel" aria-label={`${detailLabel} details`}>
       <div className="gh-glass-aura" aria-hidden />
+      <div className="gh-glass-panel-scroll">
+        <div className="gh-glass-stat-grid" aria-label="GitHub activity counts">
+          <div className="gh-glass-stat">
+            <span>PRs</span>
+            <strong>{counts.pr}</strong>
+          </div>
+          <div className="gh-glass-stat">
+            <span>Reviews</span>
+            <strong>{counts.review_request}</strong>
+          </div>
+          <div className="gh-glass-stat">
+            <span>Issues</span>
+            <strong>{counts.issue}</strong>
+          </div>
+        </div>
 
-      <div className="gh-glass-stat-grid" aria-label="GitHub activity counts">
-        <div className="gh-glass-stat">
-          <span>PRs</span>
-          <strong>{counts.pr}</strong>
-        </div>
-        <div className="gh-glass-stat">
-          <span>Reviews</span>
-          <strong>{counts.review_request}</strong>
-        </div>
-        <div className="gh-glass-stat">
-          <span>Issues</span>
-          <strong>{counts.issue}</strong>
-        </div>
-      </div>
-
-      <div className="gh-glass-hero">
-        <span className="gh-glass-kind" style={{ color: kindColor }}>
-          <Icon name={KIND_ICON[item.kind] ?? "ph:github-logo"} width={15} />
-          {detailLabel}
-        </span>
-        <h3>{detail?.title ?? item.title}</h3>
-        <div className="gh-issue-subline">
-          {item.number != null && (
-            <span className="gh-issue-number">
-              #{item.number}
-              <CopyButton value={`#${item.number}`} label={`Copy #${item.number}`} />
+        <div className="gh-glass-hero">
+          <span className="gh-glass-kind" style={{ color: kindColor }}>
+            <Icon name={KIND_ICON[item.kind] ?? "ph:github-logo"} width={15} />
+            {detailLabel}
+          </span>
+          <h3>{detail?.title ?? item.title}</h3>
+          <div className="gh-issue-subline">
+            {item.number != null && (
+              <span className="gh-issue-number">
+                #{item.number}
+                <CopyButton value={`#${item.number}`} label={`Copy #${item.number}`} />
+              </span>
+            )}
+            <span className={`gh-issue-state gh-issue-state--${stateKind}`} title={stateLabel}>
+              <span className="gh-issue-state-dot" aria-hidden />
+              {stateLabel}
             </span>
+          </div>
+          <div className="gh-issue-opened">
+            {detail?.author && <PersonChip person={detail.author} />}
+            <span className="gh-issue-opened-text">
+              {detail?.author ? "opened this " : ""}
+              {openedNoun}
+              {" · "}
+              {item.repo}
+              {" · "}
+              {relativeTime(detail?.createdAt ?? item.updatedAt)}
+            </span>
+          </div>
+        </div>
+
+        <div className="gh-glass-section">
+          <div className="gh-glass-section-title">Assignees</div>
+          {detail?.assignees && detail.assignees.length > 0 ? (
+            <div className="gh-issue-people">
+              {detail.assignees.map((p) => (
+                <PersonChip key={p.login} person={p} />
+              ))}
+            </div>
+          ) : (
+            <p className="gh-glass-muted">No one assigned.</p>
           )}
-          <span className={`gh-issue-state gh-issue-state--${stateKind}`} title={stateLabel}>
-            <span className="gh-issue-state-dot" aria-hidden />
-            {stateLabel}
-          </span>
         </div>
-        <div className="gh-issue-opened">
-          {detail?.author && <PersonChip person={detail.author} />}
-          <span className="gh-issue-opened-text">
-            {detail?.author ? "opened this " : ""}
-            {openedNoun}
-            {" · "}
-            {item.repo}
-            {" · "}
-            {relativeTime(detail?.createdAt ?? item.updatedAt)}
-          </span>
+        <div className="gh-glass-section">
+          <div className="gh-glass-section-title">Description</div>
+          {detailState.status === "loading" ? (
+            <p className="gh-glass-muted">Loading description…</p>
+          ) : detailState.status === "error" ? (
+            <p className="gh-glass-muted">Couldn’t load the description — open on GitHub for the full thread.</p>
+          ) : detail?.body?.trim() ? (
+            <MarkdownBlock text={detail.body} className="gh-issue-body" />
+          ) : (
+            <p className="gh-glass-muted">No description provided.</p>
+          )}
         </div>
-      </div>
 
-      <div className="gh-glass-section">
-        <div className="gh-glass-section-title">Assignees</div>
-        {detail?.assignees && detail.assignees.length > 0 ? (
-          <div className="gh-issue-people">
-            {detail.assignees.map((p) => (
-              <PersonChip key={p.login} person={p} />
-            ))}
-          </div>
-        ) : (
-          <p className="gh-glass-muted">No one assigned.</p>
-        )}
-      </div>
+        <div className="gh-glass-section">
+          <div className="gh-glass-section-title">Linked work</div>
+          {linkedCards.length > 0 ? (
+            <div className="gh-glass-linked">
+              {linkedCards.slice(0, 4).map((card) => (
+                <LinkedTaskChip
+                  key={card.id}
+                  card={card}
+                  familiar={
+                    card.familiarId
+                      ? familiars.find((familiar) => familiar.id === card.familiarId) ?? null
+                      : null
+                  }
+                  onFocusCard={onFocusCard}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="gh-glass-muted">No Cave tasks linked yet.</p>
+          )}
 
-      <div className="gh-glass-section">
-        <div className="gh-glass-section-title">Description</div>
-        {detailState.status === "loading" ? (
-          <p className="gh-glass-muted">Loading description…</p>
-        ) : detailState.status === "error" ? (
-          <p className="gh-glass-muted">Couldn’t load the description — open on GitHub for the full thread.</p>
-        ) : detail?.body?.trim() ? (
-          <MarkdownBlock text={detail.body} className="gh-issue-body" />
-        ) : (
-          <p className="gh-glass-muted">No description provided.</p>
-        )}
-      </div>
+          {rowFamiliars.length > 0 && (
+            <div className="gh-glass-familiars" aria-label="Linked familiars">
+              {rowFamiliars.slice(0, 5).map((familiarId) => {
+                const familiar = resolvedById.get(familiarId);
+                if (!familiar) return null;
+                return (
+                  <span key={familiarId} title={familiar.display_name}>
+                    <FamiliarAvatar familiar={familiar} size="sm" />
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-      <div className="gh-glass-section">
-        <div className="gh-glass-section-title">Linked work</div>
-        {linkedCards.length > 0 ? (
-          <div className="gh-glass-linked">
-            {linkedCards.slice(0, 4).map((card) => (
-              <LinkedTaskChip
-                key={card.id}
-                card={card}
-                familiar={
-                  card.familiarId
-                    ? familiars.find((familiar) => familiar.id === card.familiarId) ?? null
-                    : null
-                }
-                onFocusCard={onFocusCard}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="gh-glass-muted">No Cave tasks linked yet.</p>
-        )}
-
-        {rowFamiliars.length > 0 && (
-          <div className="gh-glass-familiars" aria-label="Linked familiars">
-            {rowFamiliars.slice(0, 5).map((familiarId) => {
-              const familiar = resolvedById.get(familiarId);
-              if (!familiar) return null;
-              return (
-                <span key={familiarId} title={familiar.display_name}>
-                  <FamiliarAvatar familiar={familiar} size="sm" />
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="gh-glass-actions">
-        <OpenChatAction
-          item={item}
-          linkedCards={linkedCards}
-          familiars={familiars}
-          cards={cards}
-          onJumpToSession={onJumpToSession}
-          onAfterLink={onAfterLink}
-        />
-        <AddToBoardAction
-          item={item}
-          familiars={familiars}
-          cards={cards}
-          onAfterLink={onAfterLink}
-        />
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noreferrer"
-          className="gh-action-btn"
-        >
-          <Icon name="ph:arrow-square-out" width={12} />
-          <span className="gh-action-btn-label">GitHub</span>
-        </a>
+        <div className="gh-glass-actions">
+          <OpenChatAction
+            item={item}
+            linkedCards={linkedCards}
+            familiars={familiars}
+            cards={cards}
+            onJumpToSession={onJumpToSession}
+            onAfterLink={onAfterLink}
+          />
+          <AddToBoardAction
+            item={item}
+            familiars={familiars}
+            cards={cards}
+            onAfterLink={onAfterLink}
+          />
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noreferrer"
+            className="gh-action-btn"
+          >
+            <Icon name="ph:arrow-square-out" width={12} />
+            <span className="gh-action-btn-label">GitHub</span>
+          </a>
+        </div>
       </div>
     </aside>
   );
@@ -1213,7 +1213,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       </div>
 
       {/* ── Body ── */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="github-surface-body min-h-0 flex-1 overflow-hidden">
 
         {loading ? (
           <div className="flex h-full items-center justify-center">

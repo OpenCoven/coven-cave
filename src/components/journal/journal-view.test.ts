@@ -42,17 +42,26 @@ assert.match(list, /aria-label=\{`Rename \$\{a\.title \|\| "Untitled sketch"\}`\
 assert.match(list, /commitRename/, "CanvasList persists renamed canvas item titles");
 
 // The Code tab offers a Copy button (only while the code view is active) that
-// copies the artifact source via the robust clipboard helper.
+// copies the current editable source via the robust clipboard helper.
 assert.match(list, /import \{ copyText \} from "@\/lib\/clipboard"/, "CanvasList imports the clipboard helper");
 assert.match(list, /view === "code" \? \(/, "Copy button is gated to the Code tab");
-assert.match(list, /copyText\(selected\.code\)/, "Copy button copies the selected artifact's code");
+assert.match(list, /copyText\(codeDraft\)/, "Copy button copies the current code draft");
 assert.match(list, /name=\{copied \? "ph:check" : "ph:copy"\}/, "Copy button shows a copied confirmation icon");
 assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Enter"[\s\S]*?commitRename/, "Canvas item rename input commits on Enter");
 assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelRename/, "Canvas item rename input cancels on Escape");
+assert.match(list, /codeDraft,\s*setCodeDraft/, "Canvas Code tab tracks an editable source draft");
+assert.match(list, /function saveCodeEdit\(\)/, "Canvas Code tab exposes a save action for edited source");
+assert.match(list, /persist\(next\)/, "Canvas Code tab saves edited source through the existing canvas artifact store");
+assert.match(list, /aria-label="Edit canvas code"/, "Canvas Code tab renders an editable code textarea");
+assert.match(list, /aria-label="Save canvas code"/, "Canvas Code tab renders a save-code action");
+assert.match(list, /aria-label="Revert canvas code edits"/, "Canvas Code tab renders a revert action");
+assert.match(list, /e\.key === "s"[\s\S]*?saveCodeEdit/, "Canvas Code tab supports Cmd/Ctrl+S save");
+assert.match(list, /e\.key === "Escape"[\s\S]*?revertCodeEdit/, "Canvas Code tab supports Escape to revert unsaved edits");
 assert.match(css, /\.journal-list \{[\s\S]*?min-width:\s*0;/, "Journal master-detail shell can shrink inside the workspace");
 assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal detail pane contains overflowing code surfaces");
 assert.match(css, /\.journal-detail__code \{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Canvas Code tab wraps long source lines instead of overflowing horizontally");
 assert.match(css, /\.journal-detail__code--hl pre\.shiki \{[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Highlighted Canvas code wraps long Shiki lines too");
+assert.match(css, /\.journal-detail__code--editor\s*\{[\s\S]*?resize:\s*none;[\s\S]*?outline:\s*none;/, "Canvas Code tab editor keeps the same contained code pane geometry");
 
 // JournalEntries can be edited and deleted through the persisted journal API.
 assert.match(entries, /editing,\s*setEditing/, "JournalEntries tracks edit mode for daily reflections");

@@ -354,6 +354,12 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const selectedReadId = selectedItem?.kind === "reading"  ? selectedItem.item.id : null;
   const selectedGhId =   selectedItem?.kind === "github"   ? selectedItem.item.id : null;
   const showBrowseCanvas = selectedItem === null && activeSection !== "skills" && activeSection !== "projects";
+  const showDetailCanvas = selectedItem !== null && activeSection !== "skills" && activeSection !== "projects";
+
+  const handleBackToList = useCallback(() => {
+    setSelectedItem(null);
+    setTimelineSelectedId(null);
+  }, []);
 
   function renderLibraryListContent() {
     if (activeSection === "all") {
@@ -467,11 +473,17 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           </div>
         </div>
       ) : (
-        <LibraryDocPreview selected={selectedItem} loading={previewLoading} activeSection={activeSection} docNav={docNav} />
+        <LibraryDocPreview
+          selected={selectedItem}
+          loading={previewLoading}
+          activeSection={activeSection}
+          docNav={docNav}
+          onBackToList={showDetailCanvas ? handleBackToList : undefined}
+        />
       )}
 
       {/* Collapsible list panel — hidden when skills or projects are active (these sections own the full canvas) */}
-      {activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas && <div
+      {activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas && !showDetailCanvas && <div
         className={[
           "library-list-panel",
           "transition-[width] duration-200 ease-out",

@@ -78,6 +78,7 @@ const mobileLibraryCssStart = libraryCss.indexOf("@media (max-width: 767px) {");
 const mobileLibraryCssEnd = libraryCss.indexOf("/* ── Undo delete toast", mobileLibraryCssStart);
 assert.ok(mobileLibraryCssStart >= 0 && mobileLibraryCssEnd > mobileLibraryCssStart, "Library CSS should expose a mobile override block");
 const mobileLibraryCss = libraryCss.slice(mobileLibraryCssStart, mobileLibraryCssEnd);
+const readingPreview = await readFile(new URL("./library-doc-preview.tsx", import.meta.url), "utf8");
 assert.match(
   reading,
   /className="board-table-title library-reading-title"/,
@@ -132,6 +133,51 @@ assert.match(
   libraryCss,
   /@container \(max-width: 430px\) \{[\s\S]*?\.library-reading-add-form\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
   "Reading add form should collapse to one column in the narrowest side-panel view",
+);
+assert.doesNotMatch(
+  readingPreview,
+  /if \(item\.url\) \{[\s\S]*?<LibraryLinkViewer/,
+  "URL-backed reading items should render native reading details instead of a blank-prone embedded web viewer",
+);
+assert.match(
+  readingPreview,
+  /className="library-reading-detail"/,
+  "Reading detail preview should expose a dedicated full-width native detail surface",
+);
+assert.match(
+  readingPreview,
+  /<TranslateButton source=\{\{ kind: "url", title: item\.title, url: item\.url \}\}/,
+  "URL-backed reading details should keep the translate action",
+);
+assert.match(
+  readingPreview,
+  /<CopyButton text=\{item\.url\} label="Copy URL"/,
+  "URL-backed reading details should keep the copy URL action",
+);
+assert.match(
+  libraryCss,
+  /\.library-reading-detail\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1\.1fr\)\s*minmax\(260px,\s*\.9fr\);/,
+  "Reading detail should use a responsive native two-column layout on wide canvases",
+);
+assert.match(
+  libraryCss,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.library-reading-detail\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
+  "Reading detail should collapse to one column on phones",
+);
+assert.doesNotMatch(
+  readingPreview,
+  /unavailable \? \([\s\S]*?<iframe[\s\S]*?className="library-link-viewer-frame"/,
+  "Bookmark and GitHub previews should not fall back to a blank-prone iframe in non-native browsers",
+);
+assert.match(
+  readingPreview,
+  /className="library-link-viewer-fallback"/,
+  "Bookmark and GitHub previews should render a native fallback card when the embedded browser is unavailable",
+);
+assert.match(
+  libraryCss,
+  /\.library-link-viewer-fallback\s*\{[\s\S]*?display:\s*grid;[\s\S]*?place-items:\s*center;/,
+  "Native link fallback should be centered inside the viewer viewport",
 );
 
 // github — title, repo, savedAt

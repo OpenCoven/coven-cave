@@ -54,9 +54,14 @@ assert.match(
 );
 assert.match(source, /\{showStrip \? \(/, "the strip render is gated on showStrip");
 
-// The full switcher (full list, pinning, create/manage/reorder) sits beside the
-// strip — the strip is a shortcut, not a replacement.
-assert.match(source, /<FamiliarSwitcher/, "embeds the full FamiliarSwitcher menu beside the strip");
+// The full dropdown appears only when the strip is not accessible. In avatar
+// mode the row itself is the familiar selector; in dropdown mode the switcher
+// remains the selector.
+assert.match(
+  source,
+  /\{!showStrip \? \([\s\S]*?<FamiliarSwitcher/,
+  "renders the FamiliarSwitcher dropdown only when the avatar strip is hidden",
+);
 
 // CSS: the strip scrolls horizontally so it never overflows the bar.
 assert.match(globals, /\.familiar-quickswitch__strip \{/, "strip has styles");

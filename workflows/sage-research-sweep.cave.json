@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "positions": {
+    "input": {
+      "x": 80,
+      "y": 80
+    },
+    "plan": {
+      "x": 80,
+      "y": 220
+    },
+    "gather-web": {
+      "x": 80,
+      "y": 360
+    },
+    "gather-library": {
+      "x": 320,
+      "y": 360
+    },
+    "verify": {
+      "x": 80,
+      "y": 500
+    },
+    "synthesize": {
+      "x": 80,
+      "y": 640
+    },
+    "output": {
+      "x": 80,
+      "y": 780
+    }
+  }
+}

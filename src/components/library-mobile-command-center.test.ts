@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const styles = readFileSync(new URL("../styles/library.css", import.meta.url), "utf8");
+const view = readFileSync(new URL("./library-view.tsx", import.meta.url), "utf8");
+const preview = readFileSync(new URL("./library-doc-preview.tsx", import.meta.url), "utf8");
+const mobileStyles = styles.slice(styles.lastIndexOf("@media (max-width: 767px)"));
 
 assert.match(
   styles,
@@ -17,9 +20,66 @@ assert.match(
 );
 
 assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.library-preview\s*\{[\s\S]*display\s*:\s*none/,
-  "Library preview pane should not squeeze the list on phones",
+  mobileStyles,
+  /\.library-rail-header--actions\s*\{[\s\S]*?display\s*:\s*flex[\s\S]*?position\s*:\s*sticky[\s\S]*?left\s*:\s*0/,
+  "Library mobile rail should keep Search, Back, and Refresh visible as a sticky action cluster",
+);
+
+assert.match(
+  mobileStyles,
+  /\.library-rail-header-actions\s*\{[\s\S]*?display\s*:\s*flex/,
+  "Library mobile rail action group should stay visible instead of inheriting the hidden header rule",
+);
+
+assert.match(
+  mobileStyles,
+  /\.library-rail-action\s*\{[\s\S]*?min-width\s*:\s*var\(--touch-target\)[\s\S]*?height\s*:\s*var\(--touch-target\)/,
+  "Library mobile rail icon actions should meet the 44px touch target",
+);
+
+const mobileLibraryPreviewRule = mobileStyles.match(/\.library-preview\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+const mobileRailItemRule = mobileStyles.match(/\.library-rail-item\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+const mobileSkillToggleRule = mobileStyles.match(/\.library-rail-header--skills \.library-rail-section-toggle\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";
+assert.doesNotMatch(
+  mobileLibraryPreviewRule,
+  /display\s*:\s*none/,
+  "Library mobile preview should not be blanket-hidden after a row is selected",
+);
+
+assert.match(
+  mobileLibraryPreviewRule,
+  /display\s*:\s*flex[\s\S]*width\s*:\s*100%[\s\S]*flex\s*:\s*1 1 auto/,
+  "Library selected-item preview should claim the full phone canvas when mounted",
+);
+
+assert.match(
+  view,
+  /const showDetailCanvas = selectedItem !== null && activeSection !== "skills" && activeSection !== "projects"/,
+  "Selected Library items should own the center canvas instead of sharing width with the side list",
+);
+
+assert.match(
+  view,
+  /const handleBackToList = useCallback\(\(\) => \{[\s\S]{0,160}setSelectedItem\(null\)[\s\S]{0,120}setTimelineSelectedId\(null\)/,
+  "Library back-to-list should use a stable callback instead of an inline preview prop",
+);
+
+assert.match(
+  view,
+  /onBackToList=\{showDetailCanvas \? handleBackToList : undefined\}/,
+  "Library back-to-list should only appear when a selected library item replaced a list, not in Skills or Projects",
+);
+
+assert.match(
+  preview,
+  /className="library-preview-return"[\s\S]{0,240}aria-label="Back to library list"/,
+  "Library selected-item preview should render a mobile back-to-list affordance",
+);
+
+assert.match(
+  mobileStyles,
+  /\.library-preview-return\s*\{[\s\S]*?display\s*:\s*flex[\s\S]*?min-height\s*:\s*var\(--touch-target\)/,
+  "Library mobile selected-item previews should show a 44px back-to-list row above detail content",
 );
 
 assert.match(
@@ -47,9 +107,15 @@ assert.match(
 );
 
 assert.match(
-  styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.library-rail-item\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
+  mobileRailItemRule,
+  /min-height\s*:\s*var\(--touch-target\)/,
   "Library rail filter chips should meet the 44px mobile touch target",
+);
+
+assert.match(
+  mobileSkillToggleRule,
+  /min-height\s*:\s*var\(--touch-target\)/,
+  "Library mobile Skills toggle should meet the 44px touch target like the other rail chips",
 );
 
 assert.match(

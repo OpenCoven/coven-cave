@@ -27,8 +27,8 @@ type Props = {
 
 /**
  * The top-bar familiar control: a strip of one-tap avatars for the user's
- * pinned + most-recently-used familiars, followed by the full {@link FamiliarSwitcher}
- * (the account-style menu for the complete list, pinning, create/manage/reorder).
+ * pinned + most-recently-used familiars. If the user has selected dropdown
+ * style or the strip cannot render, it falls back to the full {@link FamiliarSwitcher}.
  *
  * Pinned familiars lead the strip; the rest fill by recency (`computeQuickSwitch`).
  * Pinning itself is done from the switcher menu rows.
@@ -94,15 +94,17 @@ export function FamiliarQuickSwitch({
           })}
         </ul>
       ) : null}
-      <FamiliarSwitcher
-        familiars={familiars}
-        activeFamiliarId={activeFamiliarId}
-        sessions={sessions}
-        responseNeeded={responseNeeded}
-        onSelectFamiliar={onSelectFamiliar}
-        placement={placement}
-        labeled={labeled}
-      />
+      {!showStrip ? (
+        <FamiliarSwitcher
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
+          onSelectFamiliar={onSelectFamiliar}
+          placement={placement}
+          labeled={labeled}
+        />
+      ) : null}
     </div>
   );
 }

@@ -57,6 +57,9 @@ type Props = {
   familiarDrawerOpen?: boolean;
 };
 
+const ENRICH_TASKS_TITLE =
+  "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
+
 export function TopBar(props: Props) {
   const {
     onOpenPalette,
@@ -98,7 +101,7 @@ export function TopBar(props: Props) {
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
       : "Starting..."
-    : "Enrich tasks";
+    : "Enhance tasks";
 
   return (
     <header className="top-bar">
@@ -179,8 +182,8 @@ export function TopBar(props: Props) {
             className="top-bar__icon-btn top-bar__tasks-enrich"
             onClick={onEnrichTasks}
             disabled={enrichingTasks || !activeFamiliar}
-            aria-label={activeFamiliar ? enrichLabel : "Select a familiar to enrich tasks"}
-            title={activeFamiliar ? "Enrich selected familiar tasks" : "Select a familiar to enrich tasks"}
+            aria-label={activeFamiliar ? enrichLabel : "Select a familiar to enhance tasks"}
+            title={activeFamiliar ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
           >
             <Icon name="ph:sparkle" width={15} />
           </button>

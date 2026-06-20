@@ -8,7 +8,7 @@ import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarPinOrder } from "@/components/familiar-pin-order";
 import { DEMO_FAMILIARS } from "@/lib/demo-seed";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
@@ -517,12 +517,8 @@ function AddonsSection() {
 
 function FamiliarsSection() {
   // Settings is a standalone route with no workspace context, so this panel
-  // sources its own data: the familiar roster (resolved with cave overrides)
-  // plus live sessions for presence/counts. `responseNeeded` is a live-triage
-  // concern owned by the workspace inbox, not a configuration view — so the
-  // reply badge is intentionally omitted here (empty set).
+  // sources its own familiar roster and resolves cave overrides locally.
   const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const familiars = useResolvedFamiliars(rawFamiliars);
 
@@ -549,23 +545,9 @@ function FamiliarsSection() {
         if (!cancelled) setLoaded(true);
       }
     };
-    const loadSessions = async () => {
-      try {
-        const res = await fetch("/api/sessions/list", { cache: "no-store" });
-        const json = await res.json();
-        if (!cancelled && json.ok) {
-          setSessions((json.sessions ?? []) as SessionRow[]);
-        }
-      } catch {
-        /* transient */
-      }
-    };
     void loadFamiliars();
-    void loadSessions();
-    const t = setInterval(loadSessions, 4000);
     return () => {
       cancelled = true;
-      clearInterval(t);
     };
   }, []);
 
@@ -583,7 +565,6 @@ function FamiliarsSection() {
     <FamiliarStudioInlinePanel
       familiars={rawFamiliars}
       resolved={familiars}
-      sessions={sessions}
     />
   );
 }

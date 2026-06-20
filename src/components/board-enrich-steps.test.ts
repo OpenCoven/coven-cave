@@ -39,8 +39,14 @@ assert.match(
 
 assert.match(
   menuBar,
-  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*<span>\{enrichingTasks \? enrichLabel : "Enrich"\}<\/span>[\s\S]*onClick=\{onViewTasks\}/,
-  "Desktop menu bar should place Enrich next to Tasks and disable it without a selected familiar",
+  /onEnrichTasks \? \([\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliarId\}[\s\S]*aria-label=\{enrichingTasks[\s\S]*<span>\{enrichingTasks \? enrichLabel : "Enhance"\}<\/span>[\s\S]*onClick=\{onViewTasks\}/,
+  "Desktop menu bar should place Enhance next to Tasks and disable it without a selected familiar",
+);
+
+assert.match(
+  menuBar,
+  /Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats/,
+  "Desktop enrich affordance should explain that the assigned familiar performs full task enhancement",
 );
 
 assert.match(
@@ -53,4 +59,16 @@ assert.match(
   topBar,
   /onEnrichTasks \? \([\s\S]*className="top-bar__icon-btn top-bar__tasks-enrich"[\s\S]*onClick=\{onEnrichTasks\}[\s\S]*disabled=\{enrichingTasks \|\| !activeFamiliar\}[\s\S]*onViewTasks \?/,
   "Mobile top bar should render Enrich immediately before the Tasks button",
+);
+
+assert.match(
+  topBar,
+  /Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats/,
+  "Mobile enrich affordance should expose the same full task enhancement tooltip",
+);
+
+assert.match(
+  topBar,
+  /: "Enhance tasks"/,
+  "Mobile enrich affordance should expose Enhance task copy when idle",
 );

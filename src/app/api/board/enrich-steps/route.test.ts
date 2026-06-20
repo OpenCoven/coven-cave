@@ -60,6 +60,12 @@ assert.match(
 
 assert.match(
   source,
+  /type TaskEnrichment = \{[\s\S]*notes\?: string[\s\S]*startDate\?: string \| null[\s\S]*endDate\?: string \| null[\s\S]*links\?: string\[\][\s\S]*github\?: CardGitHubLink\[\][\s\S]*sessionId\?: string \| null/,
+  "Enrich route should accept simplified notes, schedule dates, associated links/issues, and linked chat assignment",
+);
+
+assert.match(
+  source,
   /const STATUS_VALUES = new Set<CardStatus>\(/,
   "Enrich route should validate returned status values against board statuses",
 );
@@ -92,4 +98,16 @@ assert.match(
   source,
   /await updateCard\(card\.id, \{[\s\S]*steps:[\s\S]*status:[\s\S]*lifecycle:[\s\S]*priority:[\s\S]*needsHuman:[\s\S]*lifecycleReason:/,
   "Enrich route should update steps, status, lifecycle, priority, and human/lifecycle metadata together",
+);
+
+assert.match(
+  source,
+  /await updateCard\(card\.id, \{[\s\S]*notes:[\s\S]*startDate:[\s\S]*endDate:[\s\S]*links:[\s\S]*github:[\s\S]*sessionId:/,
+  "Enrich route should persist simplified description, dates, associated issue links, and chat assignment together",
+);
+
+assert.match(
+  source,
+  /Simplify the description into concise task notes[\s\S]*Create or update subtasks[\s\S]*Set startDate and endDate[\s\S]*Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats/,
+  "Enrich prompt should explicitly instruct the assigned familiar to clean up subtasks, dates, description, status/priority, and issue/chat links",
 );

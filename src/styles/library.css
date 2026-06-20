@@ -893,6 +893,24 @@
   overflow: hidden;
 }
 
+.library-preview-stack {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.library-preview-stack > .library-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.library-preview-return {
+  display: none;
+}
+
 .library-preview--empty {
   align-items: center;
   justify-content: center;
@@ -1251,6 +1269,62 @@
   background: var(--bg-base);
 }
 
+.library-link-viewer-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(520px 220px at 50% 18%, color-mix(in oklch, var(--accent-presence) 12%, transparent), transparent 70%),
+    var(--bg-base);
+}
+
+.library-link-viewer-fallback__card {
+  width: min(520px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.library-link-viewer-fallback__icon {
+  color: var(--text-muted);
+}
+
+.library-link-viewer-fallback__title {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.library-link-viewer-fallback__copy {
+  max-width: 34rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.library-link-viewer-fallback__url {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent-presence);
+  font-size: 11px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-link-viewer-fallback__url:hover {
+  text-decoration: underline;
+}
+
 .library-preview-body,
 .library-preview-body--with-toc,
 .library-reader-body--with-toc {
@@ -1273,6 +1347,61 @@
   min-height: 0;
   overflow-y: auto;
   padding: 28px 32px;
+}
+
+.library-reading-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, .9fr);
+  gap: 18px;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.library-reading-detail__main,
+.library-reading-detail__card {
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 78%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-raised) 52%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--text-primary) 4%, transparent);
+}
+
+.library-reading-detail__main {
+  padding: 18px;
+}
+
+.library-reading-detail__card {
+  padding: 14px;
+}
+
+.library-reading-detail__note,
+.library-reading-detail__empty {
+  margin: 0 0 18px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.library-reading-detail__empty {
+  color: var(--text-muted);
+}
+
+.library-reading-detail__url {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-reading-detail__percent {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .library-reading-title {
@@ -2114,7 +2243,7 @@ html[data-reading-dropcap="on"] .library-preview-md.cave-md p:first-of-type::fir
 .library-reader-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 320;
   background: rgba(0, 0, 0, 0.95);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -2831,6 +2960,22 @@ h3:hover .library-heading-anchor,
   line-height: 1;
 }
 
+/* ── Reader expanded mode ───────────────────────────────────────────
+   Reader view always opens expanded: the modal spans the viewport and the
+   prose measure unlocks from 68ch to fill it. */
+.library-reader-modal--wide {
+  width: calc(100vw - 64px);
+  max-width: none;
+}
+.library-reader-modal--wide .library-reader-body .cave-md.library-preview-md {
+  max-width: 100%;
+  width: 100%;
+}
+.library-reader-modal--wide .library-reader-body--with-toc .library-preview-md {
+  flex-basis: 100%;
+  width: 100%;
+}
+
 /* ── Mobile command center layout ─────────────────────────────────
    The desktop Library is a rail + preview + list workbench. On phones that
    crushes the useful list into a sliver, so the rail becomes a horizontal
@@ -2871,6 +3016,38 @@ h3:hover .library-heading-anchor,
     display: none;
   }
 
+  .library-rail-header--actions {
+    display: flex;
+    position: sticky;
+    left: 0;
+    z-index: 12;
+    min-width: max-content;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 6px 0 0;
+    background:
+      linear-gradient(90deg, var(--bg-panel) 82%, color-mix(in oklch, var(--bg-panel) 0%, transparent));
+  }
+
+  .library-rail-header-title {
+    display: none;
+  }
+
+  .library-rail-header-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .library-rail-action {
+    min-width: var(--touch-target);
+    width: var(--touch-target);
+    height: var(--touch-target);
+    border: 1px solid var(--border-hairline);
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+    color: var(--text-secondary);
+  }
+
   .library-rail-header--skills {
     display: flex;
     min-width: max-content;
@@ -2904,7 +3081,7 @@ h3:hover .library-heading-anchor,
   }
 
   .library-rail-item {
-    min-height: 34px;
+    min-height: var(--touch-target);
     width: auto;
     flex: 0 0 auto;
     border: 1px solid transparent;
@@ -2916,7 +3093,7 @@ h3:hover .library-heading-anchor,
   }
 
   .library-rail-header--skills .library-rail-section-toggle {
-    min-height: 34px;
+    min-height: var(--touch-target);
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
@@ -2949,13 +3126,108 @@ h3:hover .library-heading-anchor,
   }
 
   .library-preview {
-    display: none;
-  }
-
-  .library-preview--full-canvas {
     display: flex;
     width: 100%;
     flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .library-preview-meta--with-actions {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .library-preview-meta-actions {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .library-preview-meta-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .library-reading-detail {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    max-width: none;
+  }
+
+  .library-reading-detail__main {
+    padding: 16px;
+  }
+
+  .library-preview-stack {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .library-preview-return {
+    display: flex;
+    min-height: var(--touch-target);
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 1px solid var(--border-hairline);
+    background: var(--bg-raised);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .library-preview-return:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .library-reader-backdrop {
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .library-reader-modal--wide {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .library-reader-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    padding: 18px 16px 14px;
+  }
+
+  .library-reader-title {
+    padding-right: 0;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+
+  .library-reader-actions {
+    position: static;
+    justify-content: flex-end;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .library-reader-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .library-reader-body {
+    padding: 24px 18px 36px;
+  }
+
+  .library-preview--empty,
+  .library-preview--full-canvas {
     min-height: 0;
   }
 
@@ -3581,23 +3853,6 @@ h3:hover .library-heading-anchor,
   .library-list-shell .board-table-title {
     max-width: none;
   }
-}
-
-
-/* ── Reader expanded mode ───────────────────────────────────────────
-   Reader view always opens expanded: the modal spans the viewport and the
-   prose measure unlocks from 68ch to fill it. */
-.library-reader-modal--wide {
-  width: calc(100vw - 64px);
-  max-width: none;
-}
-.library-reader-modal--wide .library-reader-body .cave-md.library-preview-md {
-  max-width: 100%;
-  width: 100%;
-}
-.library-reader-modal--wide .library-reader-body--with-toc .library-preview-md {
-  flex-basis: 100%;
-  width: 100%;
 }
 
 @container (max-width: 400px) {
