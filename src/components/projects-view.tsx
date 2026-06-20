@@ -695,6 +695,12 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && query) {
+                  event.preventDefault();
+                  setQuery("");
+                }
+              }}
               placeholder="Filter projects by name or path…"
               aria-label="Filter projects"
               className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-2.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
