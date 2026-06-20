@@ -99,8 +99,8 @@ assert.doesNotMatch(
 
 assert.match(
   topBar,
-  /<FamiliarSwitcher/,
-  "The top bar renders the familiar profile switcher",
+  /<FamiliarQuickSwitch/,
+  "The top bar renders the familiar quick-switch strip (recent/pinned avatars + switcher)",
 );
 
 assert.match(

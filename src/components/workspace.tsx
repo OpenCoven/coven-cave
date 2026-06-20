@@ -32,6 +32,7 @@ import {
   getRailOpen,
   setRailOpen,
 } from "@/lib/familiar-memory";
+import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
@@ -445,6 +446,8 @@ export function Workspace() {
   const selectFamiliarScope = useCallback((id: string | null) => {
     setActiveId(id);
     if (!id) return;
+    // Stamp recency so the top-bar quick-switch strip reflects real usage.
+    recordFamiliarUsed(id);
     const last = getLastSurface(id);
     // Guard against retired/unknown persisted modes (e.g. the removed
     // "projects" standalone surface). Only restore if the stored string is

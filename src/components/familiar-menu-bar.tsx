@@ -1,7 +1,7 @@
 "use client";
 
 import { Icon } from "@/lib/icon";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -68,7 +68,7 @@ export function FamiliarMenuBar({
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
       <div className="menu-bar__group menu-bar__group--chat">
-        <FamiliarSwitcher
+        <FamiliarQuickSwitch
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
           sessions={sessions}

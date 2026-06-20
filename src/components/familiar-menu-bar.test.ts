@@ -47,27 +47,24 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Left group — chat. The top panel should keep only the dropdown selector and
-// compose control; individual familiar bubbles live elsewhere.
+// Left group — chat. The bar embeds FamiliarQuickSwitch: a strip of recent +
+// pinned familiar avatars for one-tap switching, plus the full switcher menu.
 assert.match(
   source,
-  /<FamiliarSwitcher[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
-  "embeds the familiar switcher for scope/full list",
+  /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
+  "embeds the quick-switch strip + switcher for scope/full list",
 );
+// The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
+// here — the menu bar must not hand-roll its own bubble/presence markup.
 assert.doesNotMatch(
   source,
   /menu-bar__familiars|menu-bar__familiar|MAX_QUICK_CHAT|quickChat/,
-  "desktop top panel should not render quick familiar avatar bubbles",
+  "menu bar delegates bubbles to FamiliarQuickSwitch rather than its own markup",
 );
 assert.doesNotMatch(
   source,
   /computePresence\(|<FamiliarAvatar/,
-  "familiar presence/avatar bubbles should not be computed for the top panel",
-);
-assert.doesNotMatch(
-  globals,
-  /\.menu-bar__(familiars|familiar|presence|familiar-unread)\b/,
-  "unused top-panel familiar bubble styles should be removed",
+  "presence/avatar computation lives in FamiliarQuickSwitch, not the menu bar",
 );
 // The New chat control now lives at the top of the left sidebar
 // (SidebarMinimal), not the desktop menu bar — the bar keeps only the switcher.

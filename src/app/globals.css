@@ -4476,6 +4476,16 @@ button:active > .edge-rail-chip {
   max-width: 180px;
 }
 
+/* Desktop top bar: cap the quick-switch strip so the labeled switcher and
+   search keep their room; overflow scrolls within the strip. */
+.menu-bar__group--chat .familiar-quickswitch {
+  min-width: 0;
+}
+
+.menu-bar__group--chat .familiar-quickswitch__strip {
+  max-width: 280px;
+}
+
 .menu-bar__new,
 .menu-bar__task {
   display: inline-flex;
@@ -4997,9 +5007,146 @@ button:active > .edge-rail-chip {
   color: var(--text-primary);
 }
 
+/* Per-row pin toggle → adds/removes the familiar from the top-bar quick-switch
+   strip. Sits just left of the gear. Hidden until row hover/focus, EXCEPT when
+   pinned — a pinned row keeps a filled pin visible so the state is legible. */
+.familiar-switcher__pin {
+  position: absolute;
+  right: 32px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-switcher__row:hover .familiar-switcher__pin,
+.familiar-switcher__row:focus-within .familiar-switcher__pin,
+.familiar-switcher__pin:focus-visible,
+.familiar-switcher__pin.is-pinned {
+  opacity: 1;
+}
+
+.familiar-switcher__pin:hover {
+  color: var(--text-primary);
+}
+
+.familiar-switcher__pin.is-pinned {
+  color: var(--accent-presence);
+  background: transparent;
+}
+
 .familiar-switcher__grip {
   color: var(--text-muted);
   cursor: grab;
+}
+
+/* ── Quick-switch strip ─────────────────────────────────────────────────────
+   A row of one-tap familiar avatars (pinned first, then most-recent) shown in
+   the top bars beside the full familiar switcher. The strip scrolls
+   horizontally so it never blows out the bar on narrow screens. */
+.familiar-quickswitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.familiar-quickswitch__strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.familiar-quickswitch__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.familiar-quickswitch__item {
+  flex: 0 0 auto;
+}
+
+.familiar-quickswitch__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-quickswitch__btn:hover {
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
+}
+
+.familiar-quickswitch__btn.is-active {
+  border-color: var(--familiar-accent, var(--accent-presence));
+  box-shadow: 0 0 0 1px var(--familiar-accent, var(--accent-presence));
+}
+
+.familiar-quickswitch__avatar {
+  display: inline-flex;
+}
+
+.familiar-quickswitch__btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--radius-control) - 1px);
+}
+
+.familiar-quickswitch__presence {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+/* Filled pin badge marking a pinned familiar in the strip. */
+.familiar-quickswitch__pin {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+.familiar-quickswitch__unread {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-warning);
+  box-shadow: 0 0 0 2px var(--bg-base);
 }
 
 .familiar-switcher__sortable[data-dragging] {
@@ -6084,6 +6231,21 @@ a.mobile-handoff__link:hover {
     width: auto;
     max-width: min(132px, 36vw);
     padding-inline: 6px 8px;
+  }
+  /* The quick-switch strip stays compact on phones — a few avatars that scroll
+     horizontally — so it never crowds out the rest of the action cluster. The
+     full list is always one tap away in the switcher menu beside it. */
+  .top-bar__actions .familiar-quickswitch {
+    min-width: 0;
+    gap: 4px;
+  }
+  .top-bar__actions .familiar-quickswitch__strip {
+    max-width: min(118px, 30vw);
+  }
+  .top-bar__actions .familiar-quickswitch__btn {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
   }
   .top-bar__actions .notification-bell {
     position: static;

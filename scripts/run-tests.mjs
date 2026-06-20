@@ -324,6 +324,8 @@ export const SUITES = {
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
+    "src/components/familiar-quick-switch.test.ts",
+    "src/lib/familiar-quick-switch.test.ts",
     "src/lib/salem/happy-paths.test.ts",
     "src/lib/salem/pathfinder-match.test.ts",
     "src/lib/salem/pathfinder-card.test.ts",

@@ -100,22 +100,23 @@ assert.match(
 );
 
 // Active-familiar profile switcher: the top bar delegates to the dedicated
-// FamiliarSwitcher component (account-style profile button + menu), passing the
-// scope, options, live sessions, and reply set. Rendered only when wired.
+// FamiliarQuickSwitch (a strip of recent/pinned avatars + the account-style
+// switcher menu), passing the scope, options, live sessions, and reply set.
+// Rendered only when wired.
 assert.match(
   source,
-  /import \{ FamiliarSwitcher \} from "@\/components\/familiar-switcher"/,
-  "Top bar imports the dedicated FamiliarSwitcher",
+  /import \{ FamiliarQuickSwitch \} from "@\/components\/familiar-quick-switch"/,
+  "Top bar imports the FamiliarQuickSwitch strip",
 );
 assert.match(
   source,
-  /<FamiliarSwitcher[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
-  "Top bar renders FamiliarSwitcher wired to the selection handler",
+  /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
+  "Top bar renders FamiliarQuickSwitch wired to the selection handler",
 );
 assert.match(
   source,
-  /<FamiliarSwitcher[\s\S]*sessions=\{sessions \?\? \[\]\}[\s\S]*responseNeeded=\{responseNeeded\}/,
-  "Switcher receives live sessions + reply set for presence and badges",
+  /<FamiliarQuickSwitch[\s\S]*sessions=\{sessions \?\? \[\]\}[\s\S]*responseNeeded=\{responseNeeded\}/,
+  "Quick switch receives live sessions + reply set for presence and badges",
 );
 assert.match(
   source,
@@ -125,7 +126,7 @@ assert.match(
 assert.match(
   source,
   /labeled=\{familiarSwitcherLabeled\}/,
-  "Top bar forwards the page-specific labeled mode into FamiliarSwitcher",
+  "Top bar forwards the page-specific labeled mode into the quick switch",
 );
 assert.match(
   source,
