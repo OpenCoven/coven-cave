@@ -17,6 +17,7 @@ import {
 import { applyProjectOverrides, setProjectOverride } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
+import { deriveProjectStatus } from "@/lib/project-status";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -46,6 +47,7 @@ const CHAT_CAP = 8;
 function chatDotClass(status: string): string {
   if (status === "running") return "bg-[var(--accent-presence)]";
   if (status === "failed" || status === "error") return "bg-[var(--color-danger)]";
+  if (status === "recent") return "bg-[var(--color-success)]";
   return "bg-[var(--text-muted)]";
 }
 
@@ -202,19 +204,17 @@ function ProjectRow({
   const lastActiveIso =
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
   const lastActiveLabel = relativeTime(lastActiveIso);
-  // Glanceable status: a session running anywhere in the project → accent dot;
-  // otherwise the most-recent session having failed → danger dot; idle → none.
-  const mostRecentChat = chats.reduce<SessionRow | null>(
-    (acc, s) => (!acc || s.updated_at > acc.updated_at ? s : acc),
-    null,
-  );
-  const projectStatus: "running" | "failed" | null = chats.some((s) => s.status === "running")
-    ? "running"
-    : mostRecentChat && (mostRecentChat.status === "failed" || mostRecentChat.status === "error")
-      ? "failed"
-      : null;
+  // Glanceable status: running (any) > failed (most recent) > recently active
+  // (≤24h) > dormant (no dot). Derivation is pure + unit-tested.
+  const projectStatus = deriveProjectStatus(chats);
   const statusLabel =
-    projectStatus === "running" ? ", a session is running" : projectStatus === "failed" ? ", last session failed" : "";
+    projectStatus === "running"
+      ? ", a session is running"
+      : projectStatus === "failed"
+        ? ", last session failed"
+        : projectStatus === "recent"
+          ? ", active recently"
+          : "";
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const chatTitles = useMemo(() => disambiguateSessionTitles(chats), [chats]);
@@ -297,7 +297,13 @@ function ProjectRow({
               className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-[var(--bg-base)] ${chatDotClass(
                 projectStatus,
               )}${projectStatus === "running" ? " animate-pulse" : ""}`}
-              title={projectStatus === "running" ? "A session is running" : "Last session failed"}
+              title={
+                projectStatus === "running"
+                  ? "A session is running"
+                  : projectStatus === "failed"
+                    ? "Last session failed"
+                    : "Active recently"
+              }
               aria-hidden
             />
           ) : null}
