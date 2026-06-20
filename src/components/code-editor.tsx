@@ -12,7 +12,7 @@ import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-lang
 const appTheme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "var(--bg-base)",
+      backgroundColor: "var(--code-surface)",
       color: "var(--text-primary)",
       height: "100%",
       fontSize: "12px",
@@ -22,7 +22,7 @@ const appTheme = EditorView.theme(
       caretColor: "var(--accent-presence)",
     },
     ".cm-gutters": {
-      backgroundColor: "var(--bg-base)",
+      backgroundColor: "var(--code-surface)",
       color: "var(--text-muted)",
       border: "none",
     },
