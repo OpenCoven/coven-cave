@@ -122,17 +122,23 @@
   color: var(--text-primary);
 }
 
-/* "New chat" is the top CTA — give it a subtle pill feel */
-.sidebar-actions:first-child .sidebar-action-row {
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-hairline);
+/* "New chat" is the top CTA — make it the highest-contrast action in the
+   panel with a solid accent fill so it reads as the primary thing to do. */
+.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
+  background: var(--accent-presence);
+  color: #fff;
+  border: 1px solid transparent;
+  font-weight: 600;
 }
 
-.sidebar-actions:first-child .sidebar-action-row:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
+.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
+  background: color-mix(in oklch, var(--accent-presence) 88%, #000);
+  color: #fff;
+  border-color: transparent;
+}
+
+.sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row .sidebar-action-icon {
+  opacity: 1;
 }
 
 .sidebar-action-icon {
