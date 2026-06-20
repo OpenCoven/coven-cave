@@ -128,7 +128,7 @@
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
   background: transparent;
   color: var(--accent-presence);
-  border: 1px solid var(--accent-presence);
+  border: 2px solid var(--accent-presence);
   font-weight: 600;
 }
 
