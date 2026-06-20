@@ -104,7 +104,7 @@ assert.equal(
 const quoted = parseLeadingMetadata("> **Document type:** Design spec\n> **Status:** Draft\n> **Author:** Sage 🌿\n\nbody prose");
 assert.ok(quoted, "blockquoted metadata is detected");
 assert.deepEqual(quoted.entries.map((e) => e.key), ["Document type", "Status", "Author"]);
-assert.equal(quoted.entries.find((e) => e.key === "Status").value, "Draft");
+assert.equal(quoted.entries.find((e) => e.key === "Status")?.value, "Draft");
 assert.ok(!quoted.rest.includes("Document type"), "blockquote metadata removed from body");
 assert.match(quoted.rest, /body prose/, "body content preserved");
 
