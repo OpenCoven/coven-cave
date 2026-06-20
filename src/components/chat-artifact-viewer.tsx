@@ -122,11 +122,12 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
 
   const openInCanvas = useCallback(() => {
     try {
-      localStorage.setItem("cave:canvas:layer", "sketch");
+      localStorage.setItem("cave:journal:tab", "canvas");
     } catch {
       /* storage may be unavailable */
     }
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "canvas" } }));
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } }));
+    window.dispatchEvent(new CustomEvent("cave:journal-set-tab", { detail: { tab: "canvas" } }));
     window.dispatchEvent(new Event("cave:board:reload"));
   }, []);
 
