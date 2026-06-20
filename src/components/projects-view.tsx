@@ -194,8 +194,6 @@ type ProjectRowProps = {
   onNewChat?: (projectRoot: string) => void;
   onOpenSession?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
-  /** Start expanded — used to open the most-recently-active project by default. */
-  defaultExpanded?: boolean;
 };
 
 function ProjectRow({
@@ -207,12 +205,11 @@ function ProjectRow({
   onNewChat,
   onOpenSession,
   onDeleteSession,
-  defaultExpanded = false,
 }: ProjectRowProps) {
   const chatCount = chats.length;
-  // Projects collapse to a single scannable row by default; expanding reveals
-  // the path + its sessions. The most-recent project starts open.
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  // Every project starts collapsed to a single scannable row; expanding reveals
+  // the path + its sessions.
+  const [expanded, setExpanded] = useState(false);
   const lastActiveIso =
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
   const lastActiveLabel = relativeAge(lastActiveIso);
@@ -755,7 +752,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
               </div>
             ) : null}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              {sortedProjects.map((project, index) => (
+              {sortedProjects.map((project) => (
                 <ProjectRow
                   key={project.id}
                   project={project}
@@ -766,7 +763,6 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
                   onNewChat={onNewChat}
                   onOpenSession={openSessionById}
                   onDeleteSession={handleDeleteSession}
-                  defaultExpanded={index === 0}
                 />
               ))}
             </DndContext>
