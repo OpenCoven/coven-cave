@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen } from "@/lib/parse-when";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readDateTimePrefs } from "@/lib/datetime-format";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { ReminderLinkField } from "@/components/reminder-link-field";
@@ -160,14 +161,10 @@ export function NewReminderModal({
     setError(null);
   }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle, editing]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  // Trap focus inside the dialog and close on Escape (replaces the old
+  // window-level Escape listener; adds Tab containment).
+  useFocusTrap(open, dialogRef, { onEscape: onClose });
 
   const parsed = useMemo(() => {
     const w = whenText.trim();
@@ -269,15 +266,21 @@ export function NewReminderModal({
   return (
     <div
       onClick={onClose}
+      role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
     >
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-reminder-title"
+        tabIndex={-1}
         className="w-[560px] max-w-[94vw] max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-6 shadow-2xl"
       >
         <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            <h2 id="new-reminder-title" className="text-lg font-semibold text-[var(--text-primary)]">
               {isEditing ? "Edit reminder" : "New reminder"}
             </h2>
             <p className="text-[12px] text-[var(--text-muted)]">
@@ -285,8 +288,9 @@ export function NewReminderModal({
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="grid h-7 w-7 place-items-center rounded border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+            className="focus-ring grid h-7 w-7 place-items-center rounded border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
             aria-label="Close"
           >
             <Icon name="ph:x-bold" />

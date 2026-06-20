@@ -125,7 +125,6 @@ export function TopBar(props: Props) {
             onClick={onToggleList}
             aria-label={listDrawerOpen ? "Close list" : "Open list (⌘\\)"}
             aria-expanded={Boolean(listDrawerOpen)}
-            aria-pressed={Boolean(listDrawerOpen)}
             aria-controls="list"
             title={listDrawerOpen ? "Close list" : "Open list"}
           >

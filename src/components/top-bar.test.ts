@@ -163,4 +163,7 @@ assert.match(
   "Tasks button shows an open-task count badge, hidden at zero",
 );
 
+// The list-drawer toggle is a disclosure (aria-expanded only), not a toggle button.
+assert.ok(!source.includes("aria-pressed={Boolean(listDrawerOpen)}"), "list toggle drops redundant aria-pressed");
+
 console.log("top-bar.test.ts: ok");
