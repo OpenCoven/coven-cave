@@ -8315,32 +8315,19 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top
-   suggested next step gets a green, gently pulsing border as a recommendation
-   indicator (static green under reduced-motion). A leading dot pairs with the
-   color so the signal isn't color-only. */
+   suggested next step gets a green border that pulses subtly — the only
+   difference from the other chips (same background) — so it reads as a quiet
+   recommendation. Static green under reduced-motion. */
 .cave-next-path--recommended {
   border-color: var(--color-success);
-  background: color-mix(in oklch, var(--color-success) 12%, transparent);
-  color: var(--text-primary);
   animation: cave-next-path-pulse 2.8s ease-in-out infinite;
 }
 .cave-next-path--recommended:hover {
   border-color: var(--color-success);
-  background: color-mix(in oklch, var(--color-success) 20%, transparent);
-}
-.cave-next-path__dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--color-success); flex: 0 0 auto; margin-right: 7px;
 }
 @keyframes cave-next-path-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 0%, transparent);
-    border-color: color-mix(in oklch, var(--color-success) 55%, var(--border-hairline));
-  }
-  50% {
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-success) 24%, transparent);
-    border-color: var(--color-success);
-  }
+  0%, 100% { border-color: color-mix(in oklch, var(--color-success) 55%, var(--border-hairline)); }
+  50% { border-color: var(--color-success); }
 }
 @media (prefers-reduced-motion: reduce) {
   .cave-next-path--recommended { animation: none; border-color: var(--color-success); }

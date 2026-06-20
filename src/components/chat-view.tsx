@@ -4022,7 +4022,6 @@ function TurnRowImpl({
                       aria-label={recommended ? `Recommended: ${s}` : undefined}
                       title={recommended ? "Recommended next step" : undefined}
                     >
-                      {recommended ? <span className="cave-next-path__dot" aria-hidden /> : null}
                       {s}
                     </button>
                   );
