@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { SettingsGroup } from "@/components/ui/settings-group";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { DEMO_FAMILIARS } from "@/lib/demo-seed";
@@ -1194,16 +1195,6 @@ function SettingsPage({ title, description, children }: { title: string; descrip
   );
 }
 
-function SettingsGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">{label}</p>
-      <div className="divide-y divide-[var(--border-hairline)] rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] overflow-hidden">
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function SettingsRow({ label, description, comingSoon, children }: { label: string; description?: string; comingSoon?: boolean; children?: React.ReactNode }) {
   return (
