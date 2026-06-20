@@ -29,4 +29,11 @@ assert.match(source, /Select a memory to read/, "empty state when no row selecte
 assert.match(source, /onOpenFile/, "reader exposes an open-file callback");
 assert.match(source, /onExpand/, "reader exposes an expand callback");
 
+// Shared state primitives: no-selection / loading / error states use
+// ui/EmptyState, ui/Skeleton, and ui/ErrorState instead of bare text.
+assert.match(source, /<EmptyState[\s\S]*?Select a memory to read/, "no-selection state uses the shared EmptyState");
+assert.match(source, /isFileLoading \?[\s\S]*?<Skeleton[^>]*variant="text"/, "loading shows skeleton text lines, not a bare 'Loading…'");
+assert.doesNotMatch(source, />Loading memory…</, "reader no longer shows a bare 'Loading memory…' line");
+assert.match(source, /fileError \?[\s\S]*?<ErrorState/, "file load failure uses the shared ErrorState");
+
 console.log("familiars-memory-reader: all assertions passed");
