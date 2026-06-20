@@ -100,27 +100,13 @@ settings. **Verified on the iPhone 16 Pro simulator** against a mock implementin
 above: native render (no webview), familiars loaded tokenlessly, group thread with attributed
 replies.
 
-### Phase 1b — tokenless server, DONE (with a correction)
-`pnpm mobile:tailscale:app` starts the loopback Next server with no token (no
-`COVEN_CAVE_ACCESS_TOKEN`/`COVEN_CAVE_AUTH_TOKEN`, not bundled) and `tailscale serve`s it.
-
-**Correction (verified against a real tailnet, 2026-06-20):** an earlier draft claimed this
-needed *no* proxy change because Serve forwards `Host: 127.0.0.1`. That is **false** for current
-Tailscale — Serve forwards the request's `<host>.ts.net` Host, so `isAllowedApiHost` returned
-**403 "forbidden host"** for every tokenless tailnet request. The fix: the app mode sets
-`COVEN_CAVE_TAILNET_TRUST=1`, which `proxy.ts` feeds into the host gate as
-`isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)`. The CSRF
-Origin/Referer gate still blocks cross-site browser requests; a native client sends no Origin and
-passes. The packaged desktop app does **not** set the flag, so its gate is unchanged. Pinned by
-`middleware.test.ts` + `proxy-behavior.test.ts`.
-
-End-to-end verified: the iOS app on the simulator loaded the real 11 familiars (incl. avatar
-images) and a real `claude` harness session was driven via `POST /api/chat/send`, all tokenless
-over `https://<host>.ts.net:<port>`.
-
-### Remaining (next, separate PRs)
-- **Live streaming send in-app** end-to-end against a real desktop (the SSE client is built and
-  the path is proven via curl; needs in-app verification, blocked locally by lack of tap tooling).
+### Remaining for Phase 1 (next, separate PRs)
+- **Server: drop the token gate for tailnet traffic.** Relax `proxy.ts` `mobileAccessGate` /
+  sidecar-token enforcement so requests arriving over the Tailscale interface need no token,
+  and update `middleware.test.ts` accordingly. Security-sensitive + touches shared code → its
+  own focused PR (Phase 1b), not bundled with this additive scaffold.
+- **Live streaming send** wired against a real desktop (the SSE client is built; needs the
+  server change above to connect tokenlessly).
 - History load on thread open (client method exists; wire into `ChatView.onAppear`).
 
 ## Phased rollout

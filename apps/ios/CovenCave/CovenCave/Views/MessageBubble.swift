@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MessageBubble: View {
     let message: DisplayMessage
@@ -33,13 +34,13 @@ struct MessageBubble: View {
         if message.text.isEmpty && message.streaming {
             TypingIndicator()
                 .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(bubbleBackground, in: BubbleShape(isUser: isUser))
         } else {
             Text(message.text.isEmpty ? " " : message.text)
                 .textSelection(.enabled)
                 .foregroundStyle(isUser ? Color.white : Color.primary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(bubbleBackground, in: BubbleShape(isUser: isUser))
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming {
                         StreamingDot().padding(6)
@@ -52,6 +53,32 @@ struct MessageBubble: View {
         if message.isError { return Color.red.opacity(0.85) }
         if isUser { return Color.accentColor }
         return Color(.secondarySystemBackground)
+    }
+}
+
+/// Rounded message bubble with one squared "tail" corner on the sender's side,
+/// iMessage-style.
+struct BubbleShape: Shape {
+    var isUser: Bool
+    func path(in rect: CGRect) -> Path {
+        let r: CGFloat = 18
+        let tail: CGFloat = 5
+        let corners: UIRectCorner = isUser
+            ? [.topLeft, .topRight, .bottomLeft]   // squared bottom-right tail
+            : [.topLeft, .topRight, .bottomRight]  // squared bottom-left tail
+        let path = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: r, height: r)
+        )
+        // Soften the tail corner instead of a hard 90°.
+        let tailPath = UIBezierPath(
+            roundedRect: rect,
+            byRoundingCorners: isUser ? [.bottomRight] : [.bottomLeft],
+            cornerRadii: CGSize(width: tail, height: tail)
+        )
+        path.append(tailPath)
+        return Path(path.cgPath)
     }
 }
 
