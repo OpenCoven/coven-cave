@@ -22,6 +22,9 @@ import {
 } from "@/lib/memory-management";
 import { buildMemoryRows, groupMemoryRows, type MemoryRow } from "@/lib/memory-rows";
 import { MemoryRowItem } from "@/components/familiars-memory-row";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { MemoryReaderPane } from "@/components/familiars-memory-reader";
 import "@/styles/library.css";
 
@@ -470,19 +473,29 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             </button>
           </div>
         )}
-        {error ? <div className="mt-2 text-[11px] text-[var(--color-warning)]">{error}</div> : null}
+        {error ? (
+          <div
+            role="alert"
+            className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)]"
+          >
+            <Icon name="ph:warning-circle" width={13} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
+            <span className="min-w-0 flex-1">{error}</span>
+            <Button size="xs" variant="ghost" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <div className={`min-h-0 flex-1 ${contentClass}`}>
         {compact && loaded && !error && visibleCoven.length === 0 && visibleFiles.length === 0 ? (
-          <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-10 text-center">
-            <Icon name="ph:brain" width={22} className="text-[var(--text-muted)]" />
-            <div className="mt-3 text-[13px] font-medium text-[var(--text-primary)]">
-              No memories yet for {selectedFamiliar?.display_name ?? "this familiar"}
-            </div>
-            <p className="mt-1 max-w-[280px] text-[11px] leading-5 text-[var(--text-muted)]">
-              Familiar memories are saved during chats. Memory files appear when the familiar's harness writes to disk.
-            </p>
+          <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 px-4 py-6">
+            <EmptyState
+              compact
+              icon="ph:brain"
+              headline={`No memories yet for ${selectedFamiliar?.display_name ?? "this familiar"}`}
+              subtitle="Familiar memories are saved during chats. Memory files appear when the familiar's harness writes to disk."
+            />
           </div>
         ) : (
           !compact ? (
@@ -509,9 +522,15 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               </div>
               <div onScroll={onListScroll} className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--border-hairline)]">
                 {unifiedRows.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-                    {loaded ? (error ? "Couldn't load memories. See the error above and try again." : "No memories match this view.") : "Loading memories…"}
-                  </div>
+                  !loaded ? (
+                    <SkeletonRows count={6} className="p-3" />
+                  ) : error ? (
+                    <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+                      Couldn't load memories. See the error above and try again.
+                    </div>
+                  ) : (
+                    <EmptyState compact icon="ph:brain" headline="No memories match this view." />
+                  )
                 ) : groupMode === "none" ? (
                   <ul className="divide-y divide-[var(--border-hairline)]">
                     {pagedRows.map((row, i) => {
@@ -578,9 +597,15 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             <span className="text-[10px] text-[var(--text-muted)]">{visibleCoven.length} visible</span>
           </div>
           {visibleCoven.length === 0 ? (
-            <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
-              {loaded ? (error ? "Couldn’t load familiar memories. See the error above and try again." : "No familiar memories match this view.") : "Loading memories..."}
-            </div>
+            !loaded ? (
+              <SkeletonRows count={4} className="p-2" />
+            ) : error ? (
+              <div className="grid place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">
+                Couldn’t load familiar memories. See the error above and try again.
+              </div>
+            ) : (
+              <EmptyState compact icon="ph:brain" headline="No familiar memories match this view." />
+            )
           ) : (
             <div className="flex flex-col divide-y divide-[var(--border-hairline)] border-t border-[var(--border-hairline)]">
               {visibleCoven.slice(0, effectiveLimit).map((entry) => {
@@ -878,13 +903,15 @@ export function MemoryFilesList({
       ].join(" ")}
     >
       {sliced.length === 0 ? (
-        <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
-          {loaded
-            ? error
-              ? "Couldn't load memory files. See the error above and try again."
-              : "No memory files match this view."
-            : "Loading files..."}
-        </div>
+        !loaded ? (
+          <SkeletonRows count={5} className="p-3" />
+        ) : error ? (
+          <div className="px-3 py-8 text-center text-[12px] text-[var(--text-muted)]">
+            Couldn't load memory files. See the error above and try again.
+          </div>
+        ) : (
+          <EmptyState compact icon="ph:file-text" headline="No memory files match this view." />
+        )
       ) : (
         <ul className={listClassName ?? "max-h-[640px] divide-y divide-[var(--border-hairline)] overflow-y-auto"}>
           {sliced.map((entry) => {
