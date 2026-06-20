@@ -5,6 +5,9 @@ import { copyText } from "@/lib/clipboard";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import type { MemoryRow } from "@/lib/memory-rows";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");
@@ -40,12 +43,12 @@ export function MemoryReaderPane({
 
   if (!row) {
     return (
-      <div className="grid h-full min-h-0 place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8 text-center">
-        <div>
-          <Icon name="ph:book-open" width={24} className="mx-auto text-[var(--text-muted)]" aria-hidden />
-          <p className="mt-3 text-[13px] font-medium text-[var(--text-primary)]">Select a memory to read</p>
-          <p className="mt-1 text-[11px] text-[var(--text-muted)]">Pick an entry on the left to view its contents.</p>
-        </div>
+      <div className="grid h-full min-h-0 place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 p-8">
+        <EmptyState
+          icon="ph:book-open"
+          headline="Select a memory to read"
+          subtitle="Pick an entry on the left to view its contents."
+        />
       </div>
     );
   }
@@ -156,9 +159,17 @@ export function MemoryReaderPane({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {fileError ? (
-          <p className="text-[12px] text-[var(--color-warning)]">{fileError}</p>
+          <ErrorState
+            compact
+            headline="Couldn't load this memory"
+            subtitle={fileError}
+          />
         ) : isFileLoading ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Loading memory…</p>
+          <div className="space-y-2.5" aria-label="Loading memory" aria-busy="true">
+            {["92%", "85%", "97%", "78%", "90%", "70%"].map((w, i) => (
+              <Skeleton key={i} variant="text" width={w} />
+            ))}
+          </div>
         ) : content.trim() === "" ? (
           <p className="text-[12px] text-[var(--text-muted)]">{emptyMsg}</p>
         ) : mode === "rendered" ? (
