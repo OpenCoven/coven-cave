@@ -180,6 +180,10 @@ type ComposerResponseSpeed = "fast" | "balanced" | "careful";
 
 const COMPOSER_MAX_HEIGHT = 220;
 const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
+// Persist the in-progress composer text so a page reload doesn't eat a
+// half-written message. The composer is a single shared input (it isn't
+// remounted per session), so one key mirrors the in-memory behaviour.
+const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 const THINKING_OPTIONS: Array<{ value: ComposerThinkingEffort; label: string }> = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -218,6 +222,25 @@ function writeComposerPrefs(prefs: {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* best effort */
+  }
+}
+
+function readComposerDraft(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(COMPOSER_DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeComposerDraft(text: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (text) window.localStorage.setItem(COMPOSER_DRAFT_KEY, text);
+    else window.localStorage.removeItem(COMPOSER_DRAFT_KEY);
   } catch {
     /* best effort */
   }
@@ -1518,7 +1541,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readComposerPrefs().thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readComposerPrefs().responseSpeed);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => readComposerDraft());
   // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [inputHistoryIdx, setInputHistoryIdx] = useState<number>(-1);
@@ -2905,6 +2928,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelSend();
     }
   };
+
+  // Persist the composer draft so a reload restores a half-written message.
+  // Cleared (key removed) when the input empties — e.g. after a send.
+  useEffect(() => {
+    writeComposerDraft(input);
+  }, [input]);
 
   // Disarm a pending delete confirmation and sync the selected project when
   // switching sessions. Drop staged file mentions because they are scoped to

@@ -412,4 +412,22 @@ assert.match(
   "Elapsed ticker uses tabular digits so the meta line doesn't jitter (CHAT-D3-06)",
 );
 
+// The composer draft survives a reload: input initialises from localStorage
+// and is written back on change (and cleared when emptied, e.g. after a send).
+assert.match(
+  source,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(\)\)/,
+  "composer input initialises from the persisted draft",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*writeComposerDraft\(input\);\s*\}, \[input\]\)/,
+  "the draft is persisted whenever the composer input changes",
+);
+assert.match(
+  source,
+  /if \(text\) window\.localStorage\.setItem\(COMPOSER_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(COMPOSER_DRAFT_KEY\)/,
+  "an emptied draft removes the key (sent messages don't reappear on reload)",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");
