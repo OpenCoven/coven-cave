@@ -102,9 +102,14 @@ function ProjectChatRow({
         tabIndex={0}
         onClick={onOpen}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onOpen();
+          // ARIA button pattern: Enter and Space both activate. preventDefault on
+          // Space stops the page from scrolling when the row has focus.
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
         }}
-        className="flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        className="focus-ring flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
       >
         <button
           type="button"
