@@ -276,7 +276,7 @@ assert.match(
 
 // The readout lives in the assistant turn's meta row, after the timestamp.
 const usageTurnRow =
-  source.match(/function TurnRow[\s\S]*?\n}\n\nfunction AttachmentLightbox/)?.[0] ?? "";
+  source.match(/function TurnRowImpl[\s\S]*?\n}\n\ntype TurnRowProps/)?.[0] ?? "";
 assert.ok(usageTurnRow, "TurnRow body should be extractable (CHAT-D12-02)");
 assert.match(
   usageTurnRow,

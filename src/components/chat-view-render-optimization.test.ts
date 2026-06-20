@@ -86,4 +86,24 @@ assert.match(
 // during normal render; the main win is replacing the per-row indexOf(t) in the
 // render loop (lines 2570, 2601) which is called for every turn on every render.
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 4: TurnRow is memoized (CHAT-D3-07) so a streamed token re-renders only
+// the streaming row, not every settled row in the thread.
+// ─────────────────────────────────────────────────────────────────────────────
+
+assert.match(
+  chatViewSource,
+  /const TurnRow = memo\(TurnRowImpl, areTurnRowPropsEqual\);/,
+  "TurnRow wraps TurnRowImpl in React.memo with a custom comparator",
+);
+
+// The comparator must ignore callback identity (those closures are recreated on
+// every parent render) and instead track the stable turn ref + action presence,
+// or memoization would never bail out during streaming.
+assert.match(
+  chatViewSource,
+  /function areTurnRowPropsEqual\(prev: TurnRowProps, next: TurnRowProps\): boolean \{[\s\S]*?prev\.turn === next\.turn[\s\S]*?Boolean\(prev\.onRegenerate\) === Boolean\(next\.onRegenerate\)/,
+  "memo comparator compares the stable turn ref and action availability, not callback identity",
+);
+
 console.log("✓ All render optimization tests pass");

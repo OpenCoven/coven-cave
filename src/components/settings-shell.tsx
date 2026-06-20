@@ -575,6 +575,15 @@ function FamiliarsSection() {
 type PresetTheme = ThemeId;
 type ActiveTheme = PresetTheme | "custom";
 
+const THEME_OWNED_APPEARANCE_KEYS = [
+  "cave:font:sans",
+  "cave:font:mono",
+  "cave:corner-radius",
+  "cave:reading-leading",
+  "cave:reading-tracking",
+  "cave:reading-weight",
+] as const;
+
 interface CustomThemeData {
   name: string;
   cssVars: {
@@ -594,6 +603,9 @@ function clearCustomCssVars(html: HTMLElement) {
 function applyPreset(theme: PresetTheme) {
   const html = document.documentElement;
   clearCustomCssVars(html);
+  for (const key of THEME_OWNED_APPEARANCE_KEYS) {
+    localStorage.removeItem(key);
+  }
   html.setAttribute("data-theme", theme);
   localStorage.setItem(COVEN_THEME_KEY, theme);
 }

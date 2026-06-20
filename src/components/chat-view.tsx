@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, Fragment, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { forwardRef, Fragment, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
@@ -3648,7 +3648,11 @@ function splitTextForArtifacts(
   return out;
 }
 
-function TurnRow({
+// CHAT-D3-07 perf: the implementation is memoized as `TurnRow` below, so a
+// streamed token re-renders only the streaming row rather than every settled
+// row in the thread (settled turns keep a stable `turn` reference because
+// setTurns replaces just the changed turn). See `areTurnRowPropsEqual`.
+function TurnRowImpl({
   turn,
   familiar,
   showTimestamp = true,
@@ -4113,6 +4117,32 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     </details>
   );
 }
+
+type TurnRowProps = Parameters<typeof TurnRowImpl>[0];
+
+/**
+ * Memo comparator for {@link TurnRow}. Callback props are recreated on every
+ * parent render (e.g. `onRegenerate={regenerateFor(t)}`), so comparing them by
+ * identity would defeat memoization entirely. Instead we compare the stable
+ * data (`turn` ref, familiar, the booleans) and the *presence* of each action —
+ * the Edit / Regenerate / Reply buttons appear and disappear based on whether
+ * the callback is defined (e.g. Regenerate hides while busy), and that flip is
+ * what a row must re-render for. Returns true to skip the re-render.
+ */
+function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
+  return (
+    prev.turn === next.turn &&
+    prev.familiar === next.familiar &&
+    prev.showTimestamp === next.showTimestamp &&
+    prev.found === next.found &&
+    prev.expanded === next.expanded &&
+    Boolean(prev.onEdit) === Boolean(next.onEdit) &&
+    Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
+    Boolean(prev.onReply) === Boolean(next.onReply)
+  );
+}
+
+const TurnRow = memo(TurnRowImpl, areTurnRowPropsEqual);
 
 function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachment; onClose: () => void }) {
   const isImage = (attachment.mimeType ?? attachment.type)?.startsWith("image/");

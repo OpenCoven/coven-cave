@@ -112,7 +112,13 @@ function RunRow({ run }: { run: RetroRun }) {
   );
 }
 
-export function RetroRunsView({ standalone = false }: { standalone?: boolean }) {
+export function RetroRunsView({
+  standalone = false,
+  familiarId = null,
+}: {
+  standalone?: boolean;
+  familiarId?: string | null;
+}) {
   const [snapshot, setSnapshot] = useState<RetroRunsSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,12 +126,13 @@ export function RetroRunsView({ standalone = false }: { standalone?: boolean }) 
   const [query, setQuery] = useState("");
   const [track, setTrack] = useState<TrackFilter>("all");
   const [outcome, setOutcome] = useState<OutcomeFilter>("all");
+  const apiPath = familiarId ? `/api/retro-runs?familiarId=${encodeURIComponent(familiarId)}` : "/api/retro-runs";
 
   async function load({ quiet = false } = {}) {
     if (quiet) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await fetch("/api/retro-runs", { cache: "no-store" });
+      const res = await fetch(apiPath, { cache: "no-store" });
       const json = (await res.json()) as RetroApiResponse;
       setSnapshot(json.snapshot ?? EMPTY_SNAPSHOT);
       setError(json.ok ? null : json.error ?? "retro runs unavailable");
@@ -139,7 +146,7 @@ export function RetroRunsView({ standalone = false }: { standalone?: boolean }) 
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [apiPath]);
 
   const filteredRuns = useMemo(() => {
     const q = query.trim().toLowerCase();

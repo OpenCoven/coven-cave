@@ -99,6 +99,10 @@ function discoverCollections(researchRoot: string): LibraryCollection[] {
     }));
 }
 
+function collectionHasViewableFiles(collection: LibraryCollection): boolean {
+  return walkMdFiles(collection.path).length > 0;
+}
+
 // ── Build final collection list ──────────────────────────────────────────────
 // 1. Start with auto-discovered subdirs
 // 2. Apply manifest overrides (label, icon, hidden, order)
@@ -131,6 +135,8 @@ function buildCollections(familiar: typeof FAMILIAR_WORKSPACES[number]): Library
     // No manifest — use discovery order (alphabetical from readdir)
     ordered = discovered;
   }
+
+  ordered = ordered.filter(collectionHasViewableFiles);
 
   // Prepend "All" (always first)
   return [

@@ -1303,6 +1303,8 @@ export function Workspace() {
   };
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
+  const calendarFamiliarId = activeId ?? familiars[0]?.id ?? null;
+  const retroFamiliarId = activeId ?? familiars[0]?.id ?? null;
 
   // Tasks badge count: scoped to the active familiar's open cards, or the grand
   // total of all open cards when "All familiars" (activeId === null) is selected.
@@ -1638,12 +1640,12 @@ export function Workspace() {
         onDeepLinkConsumed={() => setWorkflowDeepLink(null)}
       />
     ) : mode === "retro" ? (
-      <RetroRunsView />
+      <RetroRunsView familiarId={retroFamiliarId} />
     ) : mode === "calendar" ? (
       <CalendarView
         items={inboxItems}
         familiars={familiars}
-        activeFamiliarId={activeId}
+        activeFamiliarId={calendarFamiliarId}
         onAddEntry={(defaults) => {
           openReminderModal(
             defaults?.title ?? "",

@@ -8,7 +8,7 @@
  *   2. App destinations grouped by purpose:
  *      Work  (Home / Familiars / Board / Calendar / Schedules)
  *      Knowledge (Library)
- *      Tools (Browser / Terminal / Roles / Workflows / Capabilities / GitHub)
+ *      Tools (Browser / Terminal / Code / Roles / Workflows / GitHub)
  *   3. Footer: Notifications, mobile handoff, Settings
  */
 
@@ -33,7 +33,6 @@ export type FolderMode =
   | "github"
   | "roles"
   | "workflows"
-  | "retro"
   | "library"
   | "capabilities"
   | "canvas";
@@ -74,8 +73,7 @@ const FOLDER_MODES: Array<{
   group: "work" | "knowledge" | "tools" | "addons";
   kbd?: string;
   // One-line hover/long-press help. Differentiates the surfaces that read
-  // alike at a glance — especially Roles (who) vs Workflows (steps) vs
-  // Capabilities (what tools).
+  // alike at a glance — especially Roles (who) vs Workflows (steps).
   description: string;
 }> = [
   // Work
@@ -93,7 +91,6 @@ const FOLDER_MODES: Array<{
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘0", description: "Chat with a familiar beside your files and terminal" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
-  { id: "retro", label: "Retro", iconName: "ph:arrows-clockwise-bold", group: "tools", description: "Review eval-loop runs with sanitized snapshots" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you" },
 ];
@@ -294,8 +291,20 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
-      {/* Bottom: Notifications + Settings */}
+      {/* Bottom: Dashboard + Notifications + Settings */}
       <div className="sidebar-foot">
+        {/* Dashboard is a standalone Next route (/dashboard), not a workspace
+            mode — navigate with a real link rather than onModeChange. */}
+        <a
+          className="sidebar-foot-btn"
+          href="/dashboard"
+          title="Dashboard — activity overview and daily reports"
+        >
+          <span className="sidebar-foot-icon-cell" aria-hidden="true">
+            <Icon name="ph:squares-four" width={14} className="sidebar-foot-icon" />
+          </span>
+          <span className="sidebar-foot-label">Dashboard</span>
+        </a>
         {onOpenInbox ? (
           <button
             type="button"
