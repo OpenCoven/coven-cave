@@ -19,6 +19,19 @@ A coding-experience arc: turning the Projects/Code surfaces into a Codex/Cursor-
 ### Fixed
 - **Code workspace** — the unified surface now shows the coding panes (file tree, editor, search, change review), not just a terminal (#949).
 
+## [0.0.107] - 2026-06-19
+
+Patch release: a desktop UX pass on the left sidebar and the top menu bar, plus an in-panel YouTube viewer.
+
+### Added
+- **Companion-rail video tab** — a "Video" toggle in the right companion panel splits it into a resizable bottom pane with a YouTube viewer; the editable bar accepts any YouTube link, video ID, or playlist (#1025).
+
+### Changed
+- **Left sidebar declutter** — the familiar scope switcher and "New session" button moved out of the left panel (they already live in the desktop top menu bar and the mobile top bar), so the nav flows directly under the wordmark and sits flush against the panel edge (#1029). The panel now opens at the same width as the right companion panel, and the WORK/KNOWLEDGE/TOOLS section labels are widened (#1032).
+
+### Fixed
+- **Top search bar** — the desktop menu-bar search no longer clips or strands its icon under screen magnification: the bar grows to fit and the search icon scales with the text and stays centered (#1034).
+
 ## [0.0.104] - 2026-06-18
 
 Patch release: the Workflow Studio's **Play** now actually runs a workflow, plus terminal-split survival, a fullscreen diagram viewer, and assorted UI polish.
