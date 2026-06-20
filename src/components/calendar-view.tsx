@@ -5,7 +5,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
-import { formatClock, formatDate } from "@/lib/datetime-format";
+import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-format";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SnoozeMenu } from "@/components/snooze-menu";
@@ -78,6 +78,12 @@ function fmtDateHeading(d: Date): string {
 }
 
 function fmtHourLabel(h: number): string {
+  // Honor the 24-hour clock preference for the time axis. Wrapped so the
+  // helper still works if prefs are unavailable (SSR / isolated unit runs),
+  // falling back to the 12-hour AM/PM labels.
+  try {
+    if (readDateTimePrefs().clock === "24h") return String(h).padStart(2, "0");
+  } catch { /* no prefs available — use the 12-hour labels below */ }
   if (h === 0) return "12 AM";
   if (h < 12) return `${h} AM`;
   if (h === 12) return "12 PM";
