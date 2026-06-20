@@ -221,15 +221,21 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }, [activeFamiliar?.id]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
+  const effectiveFamiliarFilter = lockToFamiliar && activeFamiliar?.id ? activeFamiliar.id : familiarFilter;
   const q = query.trim().toLowerCase();
 
   const visibleCoven = useMemo(
     () =>
       covenEntries
-        .filter((entry) => entry.familiar_id === familiarFilter)
+        .filter((entry) => entry.familiar_id === effectiveFamiliarFilter)
         .filter((entry) => memoryMatches(entry, q))
         .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)),
-    [covenEntries, familiarFilter, q],
+    [covenEntries, effectiveFamiliarFilter, q],
+  );
+
+  const familiarScopedFiles = useMemo(
+    () => fileEntries.filter((entry) => entry.familiarId == null || entry.familiarId === effectiveFamiliarFilter),
+    [fileEntries, effectiveFamiliarFilter],
   );
 
   const visibleFiles = useMemo(() => {
@@ -241,15 +247,15 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       staleFirst: (a, b) =>
         Number(detectStale(normalizeFileEntry(b)).stale) - Number(detectStale(normalizeFileEntry(a)).stale),
     };
-    return fileEntries
+    return familiarScopedFiles
       .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
       .filter((entry) => memoryMatches(entry, q))
       .filter((entry) => !staleOnly || detectStale(normalizeFileEntry(entry)).stale)
       .sort(cmp[sortMode]);
-  }, [fileEntries, q, sourceFilter, sortMode, staleOnly]);
+  }, [familiarScopedFiles, q, sourceFilter, sortMode, staleOnly]);
 
   // Lib-backed normalized files, used by the suggestions/stale section.
-  const normalizedFiles = useMemo(() => fileEntries.map(normalizeFileEntry), [fileEntries]);
+  const normalizedVisibleFiles = useMemo(() => visibleFiles.map(normalizeFileEntry), [visibleFiles]);
 
   // Unified master list backing the full-view two-pane layout.
   const unifiedRows = useMemo(
@@ -257,14 +263,14 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       buildMemoryRows({
         coven: covenEntries as unknown as RawCovenEntry[],
         files: fileEntries as unknown as RawFileEntry[],
-        familiarFilter,
+        familiarFilter: effectiveFamiliarFilter,
         query: q,
         sourceFilter,
         sortMode,
         staleOnly,
         familiarLabel: (id) => familiarById.get(id)?.display_name ?? id,
       }),
-    [covenEntries, fileEntries, familiarFilter, q, sourceFilter, sortMode, staleOnly, familiarById],
+    [covenEntries, fileEntries, effectiveFamiliarFilter, q, sourceFilter, sortMode, staleOnly, familiarById],
   );
   const selectedRow = useMemo(
     () => unifiedRows.find((r) => r.rowId === selectedRowId) ?? null,
@@ -290,9 +296,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
   // Stale entries across BOTH sources, powering the Stale pill + bulk delete.
   const suggestions = useMemo(() => {
-    const all = [...covenEntries.map((e) => normalizeCovenEntry(e)), ...normalizedFiles];
+    const all = [...visibleCoven.map((e) => normalizeCovenEntry(e)), ...normalizedVisibleFiles];
     return all.filter((e) => detectStale(e).stale);
-  }, [covenEntries, normalizedFiles]);
+  }, [visibleCoven, normalizedVisibleFiles]);
   // bulk-selectable = suggestions that are NOT protected from bulk
   const bulkDeletable = useMemo(
     () => suggestions.filter((e) => e.protection === "normal"),
@@ -300,22 +306,19 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   );
 
   // Reset pagination whenever the result set changes underneath the user.
-  useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, familiarFilter, staleOnly, sortMode]);
+  useEffect(() => { setFileLimit(FILE_PAGE); }, [q, sourceFilter, effectiveFamiliarFilter, staleOnly, sortMode]);
 
   const familiarsWithMemory = useMemo(() => {
     const ids = new Set(covenEntries.map((entry) => entry.familiar_id));
     return familiars.filter((familiar) => ids.has(familiar.id));
   }, [covenEntries, familiars]);
 
-  // These pools are coven-wide / shared (no familiar owner). Count only the
-  // ownerless entries so the header reflects the shared pool, not other
-  // familiars' workspace files — keeping the header isolated to the selected
-  // familiar's own memory + the shared coven pools.
+  // Count the scoped file pool so source chips match the selected familiar view.
   const fileSourceCounts = useMemo(() => ({
-    covenOrigin: fileEntries.filter((entry) => entry.familiarId == null && entry.sourceKind === "coven-origin").length,
-    externalHarnesses: fileEntries.filter((entry) => entry.familiarId == null && entry.sourceKind === "external-harness").length,
-    runtimeMemory: fileEntries.filter((entry) => entry.familiarId == null && entry.sourceKind === "runtime").length,
-  }), [fileEntries]);
+    covenOrigin: familiarScopedFiles.filter((entry) => entry.sourceKind === "coven-origin").length,
+    externalHarnesses: familiarScopedFiles.filter((entry) => entry.sourceKind === "external-harness").length,
+    runtimeMemory: familiarScopedFiles.filter((entry) => entry.sourceKind === "runtime").length,
+  }), [familiarScopedFiles]);
 
   useEffect(() => {
     const familiarIds = new Set(familiars.map((familiar) => familiar.id));
@@ -337,7 +340,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
     if (next && next !== familiarFilter) setFamiliarFilter(next);
   }, [activeFamiliar?.id, covenEntries, familiarFilter, familiars]);
 
-  const selectedFamiliar = familiarById.get(familiarFilter) ?? null;
+  const selectedFamiliar =
+    familiarById.get(effectiveFamiliarFilter) ??
+    (activeFamiliar?.id === effectiveFamiliarFilter ? activeFamiliar : null);
   const familiarOptions = useMemo(() => {
     const options = familiarsWithMemory.length > 0 ? familiarsWithMemory : familiars;
     if (!selectedFamiliar || options.some((familiar) => familiar.id === selectedFamiliar.id)) return options;
@@ -387,7 +392,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             >
               <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
-              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Coven-wide</span>
+              <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
               <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
               <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
               <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
@@ -641,7 +646,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             loaded={loaded}
             error={error}
             limit={effectiveLimit}
-            activeFamiliarId={familiarFilter}
+            activeFamiliarId={effectiveFamiliarFilter}
             onSelect={undefined}
             selectedRowId={null}
             onDelete={undefined}

@@ -22,14 +22,12 @@ for (const label of ["Familiar memories", "Coven origin", "External runtimes", "
   assert.ok(source.includes(label), `Inline stats row must keep label: ${label}`);
 }
 
-// The file-source pools are shared/global — the header groups them under a
-// "Coven-wide" label (not "Files"), and the counts only include ownerless
-// (shared) entries, so the header stays isolated to the selected familiar.
-assert.ok(source.includes(">Coven-wide<"), "File-source chips are grouped under a 'Coven-wide' label");
+// The file-source chips count the selected familiar's scoped file pool.
+assert.ok(source.includes(">Sources<"), "File-source chips are grouped under a scoped 'Sources' label");
 assert.match(
   source,
-  /entry\.familiarId == null && entry\.sourceKind === "coven-origin"/,
-  "Source counts must only include ownerless (shared/coven-wide) entries",
+  /familiarScopedFiles\.filter\(\(entry\) => entry\.sourceKind === "coven-origin"\)/,
+  "Source counts must derive from the selected familiar's scoped file pool",
 );
 
 // ───────── Graph-absence guards ─────────

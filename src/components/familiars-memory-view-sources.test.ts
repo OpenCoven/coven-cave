@@ -28,10 +28,16 @@ assert.match(
   "FamiliarsMemoryView should separately count runtime memory files",
 );
 
-assert.doesNotMatch(
+assert.match(
   source,
-  /fileEntries\s*\n\s*\.filter\(\(entry\) => entry\.familiarId === familiarFilter\)/,
-  "Memory files list should include files across all harnesses and runtimes, not only the selected familiar",
+  /entry\.familiarId == null \|\| entry\.familiarId === effectiveFamiliarFilter/,
+  "Memory files list should show only the selected familiar's files plus shared files",
+);
+
+assert.match(
+  source,
+  /familiarFilter:\s*effectiveFamiliarFilter/,
+  "Unified memory rows should use the same selected familiar filter as the compact file list",
 );
 
 console.log("familiars-memory-view-sources.test.ts: ok");

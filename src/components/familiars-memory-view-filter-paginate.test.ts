@@ -66,7 +66,7 @@ assert.match(
 // Pagination resets when the result set changes underneath the user.
 assert.match(
   source,
-  /useEffect\(\(\) => \{ setFileLimit\(FILE_PAGE\); \}, \[q, sourceFilter, familiarFilter, staleOnly, sortMode\]\);/,
+  /useEffect\(\(\) => \{ setFileLimit\(FILE_PAGE\); \}, \[q, sourceFilter, effectiveFamiliarFilter, staleOnly, sortMode\]\);/,
   "File pagination must reset on query / filter / familiar change",
 );
 

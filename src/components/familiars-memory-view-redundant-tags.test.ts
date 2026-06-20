@@ -28,8 +28,8 @@ assert.match(
 // The internal call site in FamiliarsMemoryView must thread the filter through.
 assert.match(
   source,
-  /<MemoryFilesList[\s\S]*?activeFamiliarId=\{familiarFilter\}/,
-  "FamiliarsMemoryView must pass familiarFilter as activeFamiliarId to MemoryFilesList",
+  /<MemoryFilesList[\s\S]*?activeFamiliarId=\{effectiveFamiliarFilter\}/,
+  "FamiliarsMemoryView must pass the effective familiar filter as activeFamiliarId to MemoryFilesList",
 );
 
 console.log("familiars-memory-view-redundant-tags.test.ts: ok");
