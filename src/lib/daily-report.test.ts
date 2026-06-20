@@ -9,6 +9,7 @@ import {
   longDateLabel,
   parseDateSlug,
   parseRecentSessions,
+  parseStatsFromBody,
   recentReports,
   relativeDayLabel,
   relativeTime,
@@ -147,6 +148,29 @@ function item(overrides) {
   assert.deepEqual(sessions, ["Fix auth (+12 -3)", "Polish board"]);
   assert.deepEqual(parseRecentSessions("no recent line"), []);
   assert.deepEqual(parseRecentSessions(undefined), []);
+}
+
+// parseStatsFromBody --------------------------------------------------------
+{
+  const body = "0 reminders fired\n0 responses waiting\n1 familiar updates\n8 sessions updated\nRecent: a · b";
+  assert.deepEqual(parseStatsFromBody(body), { reminders: 0, responses: 0, familiars: 1, sessions: 8 });
+  // tolerant of singular/plural wording
+  assert.deepEqual(parseStatsFromBody("1 reminder fired\n1 session updated"), { reminders: 1, responses: 0, familiars: 0, sessions: 1 });
+  // no count lines → null (don't fabricate zeros for a non-summary body)
+  assert.equal(parseStatsFromBody("just some prose, nothing countable"), null);
+  assert.equal(parseStatsFromBody(undefined), null);
+
+  // recentReports recovers stats from the body when media.stats is absent
+  const reports = recentReports([
+    item({
+      id: "d",
+      kind: "daily-summary",
+      auto: "daily-summary:2026-06-18",
+      title: "Daily summary · Jun 18",
+      body: "0 reminders fired\n0 responses waiting\n0 familiar updates\n5 sessions updated",
+    }),
+  ]);
+  assert.equal(reports[0].stats.sessions, 5, "stats recovered from body when media.stats absent");
 }
 
 console.log("daily-report.test.ts: ok");

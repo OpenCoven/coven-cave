@@ -7,6 +7,7 @@ import {
   longDateLabel,
   parseDateSlug,
   parseRecentSessions,
+  parseStatsFromBody,
   relativeTime,
 } from "@/lib/daily-report";
 
@@ -59,7 +60,7 @@ export default async function DailyReportPage({ params }: Props) {
     );
   }
 
-  const stats = item.media?.stats;
+  const stats = item.media?.stats ?? parseStatsFromBody(item.body);
   const breakdown = breakdownForDay(inbox.items, parsedDate ?? new Date());
   const recentSessions = parseRecentSessions(item.body);
   const generatedAt = item.firedAt ?? item.updatedAt ?? null;
