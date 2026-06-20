@@ -56,20 +56,61 @@ function gatherParagraph(
   return { start, end: i, text: para.join(" ").trim() };
 }
 
-// A "subtitle" line: a markdown heading (`## …`), a bold tagline (`**…**`), or
-// an italic tagline (`*…*`). Research notes place these between the title and
-// the metadata run.
-const SUBTITLE_LINE_RE = /^(?:#{1,6}\s|\*\*[^*].*\*\*$|\*[^*].*\*$)/;
+// A leading blockquote marker (`> `), tolerated so blockquoted metadata
+// (`> **Document type:** …`) and blockquoted taglines are recognized.
+const BLOCKQUOTE_RE = /^\s*>\s?/;
+const stripQuote = (line: string): string => line.replace(BLOCKQUOTE_RE, "");
 
-/** A subtitle block: every line is a heading/bold/italic tagline (a block may
- *  be multi-line, e.g. a stacked `## …` + `### …`). Used to skip the
- *  subtitle/heading region notes place before the metadata run. */
+/** A `**Label:**` metadata label line (blockquote prefix tolerated). */
+function isLabelLine(line: string): boolean {
+  return /^\*\*\s*[^*\n]+?\s*:\s*\*\*/.test(stripQuote(line).trim());
+}
+
+/** A "subtitle" line — a heading (`## …`), a bold tagline (`**…**`), or an
+ *  italic tagline (`*…*`) — but NOT a metadata label. Covers the subtitles and
+ *  bylines notes place between the title and the metadata run. */
+function isSubtitleLine(line: string): boolean {
+  const l = stripQuote(line).trim();
+  if (isLabelLine(line)) return false;
+  return /^#{1,6}\s/.test(l) || /^\*\*[^*].*\*\*$/.test(l) || /^\*[^*].*\*$/.test(l);
+}
+
+/** Block text with blockquote markers stripped, for metadata detection. */
+function blockText(lines: string[], start: number, end: number): string {
+  return lines.slice(start, end).map(stripQuote).join(" ").trim();
+}
+
+/** Every line of the block is a subtitle line (heading/tagline) — a block to
+ *  skip while looking for the metadata run (may be multi-line, e.g. stacked
+ *  `## …` + `### …`). */
 function isSubtitleBlock(lines: string[], start: number, end: number): boolean {
   if (end <= start) return false;
-  for (let i = start; i < end; i++) {
-    if (!SUBTITLE_LINE_RE.test(lines[i].trim())) return false;
-  }
+  for (let i = start; i < end; i++) if (!isSubtitleLine(lines[i])) return false;
   return true;
+}
+
+/** Extract metadata from a single block, blockquote-aware and peeling any
+ *  leading subtitle/byline LINES that precede the first label within the block
+ *  (e.g. `**Research note by Sage · …**` then `**Requested by:** …`). Returns
+ *  the entries plus the peeled leading lines (kept for `rest`), or null. */
+function metadataFromBlock(
+  lines: string[],
+  start: number,
+  end: number,
+): { entries: MetaEntry[]; peeled: string[] } | null {
+  const whole = metadataEntries(blockText(lines, start, end));
+  if (whole) return { entries: whole, peeled: [] };
+
+  // Peel leading non-label lines, but only if each is a subtitle/byline line.
+  let j = start;
+  while (j < end && !isLabelLine(lines[j])) {
+    if (!isSubtitleLine(lines[j])) return null;
+    j++;
+  }
+  if (j === start || j >= end) return null;
+  const entries = metadataEntries(blockText(lines, j, end));
+  if (!entries) return null;
+  return { entries, peeled: lines.slice(start, j) };
 }
 
 // Cap on how many leading subtitle/heading blocks we skip looking for the
@@ -78,47 +119,40 @@ function isSubtitleBlock(lines: string[], start: number, end: number): boolean {
 const MAX_SUBTITLE_SKIP = 3;
 
 /**
- * Detect a leading metadata paragraph and split it into entries.
+ * Detect a leading metadata run and split it into entries.
  *
- * Qualifies when the metadata run is the first paragraph, OR when it follows a
- * short leading run of subtitle/heading blocks — a bold or italic tagline,
- * `## …` headings, or a stack of them — which research notes routinely place
- * between the title and the metadata. The skipped subtitles are kept in `rest`
- * (they render below the lifted grid); only the metadata paragraph is removed.
- * At most MAX_SUBTITLE_SKIP all-subtitle blocks are skipped, and skipping stops
- * at the first non-subtitle block, so a metadata-looking paragraph buried under
- * real prose isn't swallowed. Returns `null` when no leading metadata is found.
+ * Qualifies when the metadata run is the first paragraph, or follows a short
+ * leading run of subtitle blocks (bold/italic taglines, `## …` headings, or a
+ * stack of them). Within a block, a leading byline line (`**… no colon …**`)
+ * before the labels is peeled, and blockquoted metadata (`> **X:** …`) is
+ * recognized. Skipped subtitles and peeled bylines are kept in `rest` (they
+ * render below the lifted grid); only the metadata lines are removed. At most
+ * MAX_SUBTITLE_SKIP all-subtitle blocks are skipped and skipping stops at the
+ * first non-subtitle block, so a metadata-looking paragraph buried under real
+ * prose isn't swallowed. Returns `null` when no leading metadata is found.
  */
 export function parseLeadingMetadata(body: string): LeadingMetadata | null {
   const lines = body.split("\n");
-
-  const first = gatherParagraph(lines, 0);
-  if (!first) return null;
-
-  // Case 1 — metadata is the very first paragraph.
-  const firstEntries = metadataEntries(first.text);
-  if (firstEntries) {
-    const rest = lines.slice(first.end).join("\n").replace(/^\n+/, "");
-    return { entries: firstEntries, rest };
-  }
-
-  // Case 2 — the metadata run follows a short run of leading subtitle blocks.
   const skipped: string[] = [];
-  let block: ReturnType<typeof gatherParagraph> = first;
+  let cursor = 0;
   let skips = 0;
-  while (block && isSubtitleBlock(lines, block.start, block.end) && skips < MAX_SUBTITLE_SKIP) {
-    skipped.push(lines.slice(block.start, block.end).join("\n"));
-    skips++;
-    const next = gatherParagraph(lines, block.end);
-    if (!next) return null;
-    const entries = metadataEntries(next.text);
-    if (entries) {
-      const after = lines.slice(next.end).join("\n").replace(/^\n+/, "");
-      const head = skipped.join("\n\n");
-      const rest = after ? `${head}\n\n${after}` : head;
-      return { entries, rest };
+
+  for (;;) {
+    const block = gatherParagraph(lines, cursor);
+    if (!block) return null;
+
+    const got = metadataFromBlock(lines, block.start, block.end);
+    if (got) {
+      const after = lines.slice(block.end).join("\n").replace(/^\n+/, "");
+      const head = [...skipped, ...(got.peeled.length ? [got.peeled.join("\n")] : [])].join("\n\n");
+      const rest = head ? (after ? `${head}\n\n${after}` : head) : after;
+      return { entries: got.entries, rest };
     }
-    block = next; // not metadata — keep going only if it's another subtitle block
+
+    // Not metadata — only keep looking past an all-subtitle block.
+    if (skips >= MAX_SUBTITLE_SKIP || !isSubtitleBlock(lines, block.start, block.end)) return null;
+    skipped.push(lines.slice(block.start, block.end).join("\n"));
+    cursor = block.end;
+    skips++;
   }
-  return null;
 }

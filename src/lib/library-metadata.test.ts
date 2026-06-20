@@ -100,4 +100,33 @@ assert.equal(
   "a multi-line opening paragraph is not treated as a skippable subtitle",
 );
 
+// ── #2: blockquoted metadata (`> **X:** …`) is lifted ────────────
+const quoted = parseLeadingMetadata("> **Document type:** Design spec\n> **Status:** Draft\n> **Author:** Sage 🌿\n\nbody prose");
+assert.ok(quoted, "blockquoted metadata is detected");
+assert.deepEqual(quoted.entries.map((e) => e.key), ["Document type", "Status", "Author"]);
+assert.equal(quoted.entries.find((e) => e.key === "Status").value, "Draft");
+assert.ok(!quoted.rest.includes("Document type"), "blockquote metadata removed from body");
+assert.match(quoted.rest, /body prose/, "body content preserved");
+
+// A blockquote of plain prose (no labels) is left untouched.
+assert.equal(
+  parseLeadingMetadata("> Just a quoted sentence, not metadata.\n\nbody"),
+  null,
+  "a non-metadata blockquote is not treated as leading metadata",
+);
+
+// ── #3: a byline line before the labels (same paragraph) is peeled ──
+const bylined = parseLeadingMetadata("**Research note by Sage 🌿 · 2026-06-02**\n**Requested by:** Val\n**Type:** Synthesis\n\n---\nbody");
+assert.ok(bylined, "metadata after a same-paragraph byline is detected");
+assert.deepEqual(bylined.entries.map((e) => e.key), ["Requested by", "Type"]);
+assert.match(bylined.rest, /^\*\*Research note by Sage 🌿 · 2026-06-02\*\*/, "the byline is kept in the body");
+assert.ok(!bylined.rest.includes("**Requested by:**"), "metadata removed from body");
+
+// A byline followed by prose (not labels) is NOT treated as metadata.
+assert.equal(
+  parseLeadingMetadata("**A byline**\nthen ordinary prose continues here.\n\nbody"),
+  null,
+  "a byline followed by prose is not treated as leading metadata",
+);
+
 console.log("library-metadata.test.ts: all assertions passed");
