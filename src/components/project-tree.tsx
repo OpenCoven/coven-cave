@@ -28,6 +28,13 @@ type Props = {
   /** Controlled selection — path of the currently open file */
   selectedPath?: string | null;
   onFileClick?: (path: string) => void;
+  /**
+   * When set, folder rows expose an "Add" affordance that picks the directory
+   * (folder-picker mode). Clicking a folder name still expands it for browsing.
+   */
+  onDirSelect?: (path: string) => void;
+  /** Paths already picked — folder-picker mode marks them as added. */
+  selectedDirs?: Set<string>;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -108,7 +115,7 @@ async function fetchChildren(dirPath: string): Promise<TreeEntry[]> {
 // ─── Root component ───────────────────────────────────────────────────────────
 
 export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
-  function ProjectTree({ root: rootProp, selectedPath, onFileClick }, ref) {
+  function ProjectTree({ root: rootProp, selectedPath, onFileClick, onDirSelect, selectedDirs }, ref) {
     const [root, setRoot] = useState<string>("");
     const [entries, setEntries] = useState<TreeEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -164,6 +171,8 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
             root={root}
             selectedPath={selectedPath}
             onFileClick={onFileClick}
+            onDirSelect={onDirSelect}
+            selectedDirs={selectedDirs}
           />
         ))}
       </div>
@@ -179,12 +188,16 @@ function TreeRow({
   root,
   selectedPath,
   onFileClick,
+  onDirSelect,
+  selectedDirs,
 }: {
   entry: TreeEntry;
   depth: number;
   root: string;
   selectedPath?: string | null;
   onFileClick?: (path: string) => void;
+  onDirSelect?: (path: string) => void;
+  selectedDirs?: Set<string>;
 }) {
   const startsExpanded =
     entry.isDir && depth === 0 && !HIDDEN_BY_DEFAULT.has(entry.name);
@@ -197,6 +210,7 @@ function TreeRow({
 
   const isSelected = !entry.isDir && entry.path === selectedPath;
   const isHidden = HIDDEN_BY_DEFAULT.has(entry.name);
+  const added = entry.isDir && (selectedDirs?.has(entry.path) ?? false);
 
   // Indent: 8px base + 16px per depth level; chevron takes 16px, icon takes 16px
   const indentPx = 4 + depth * 16;
@@ -282,6 +296,32 @@ function TreeRow({
         >
           {entry.name}
         </span>
+
+        {/* Folder-picker affordance — pick this directory without leaving the
+            tree. Uses role=button (not <button>) to avoid nesting inside the row
+            button; stops propagation so it doesn't also toggle expand. */}
+        {entry.isDir && onDirSelect ? (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={added ? `${entry.name} added as working directory` : `Use ${entry.name} as working directory`}
+            onClick={(event) => { event.stopPropagation(); onDirSelect(entry.path); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onDirSelect(entry.path);
+              }
+            }}
+            className={`ml-auto mr-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
+              added
+                ? "text-[var(--accent-presence)]"
+                : "text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100"
+            }`}
+          >
+            {added ? "Added" : "Use"}
+          </span>
+        ) : null}
       </button>
 
       {/* Children — no extra wrapper div, rows flow inline */}
@@ -294,6 +334,8 @@ function TreeRow({
             root={root}
             selectedPath={selectedPath}
             onFileClick={onFileClick}
+            onDirSelect={onDirSelect}
+            selectedDirs={selectedDirs}
           />
         ))
       }
