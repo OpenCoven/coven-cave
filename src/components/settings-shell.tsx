@@ -170,6 +170,7 @@ export function SettingsShell() {
                 key={s.id}
                 type="button"
                 onClick={() => openSection(s.id)}
+                aria-current={section === s.id && !showPicker ? "page" : undefined}
                 className={`focus-ring flex w-full items-center rounded-[5px] px-2.5 text-left transition-colors ${
                   showPicker
                     ? "min-h-[var(--touch-target)] gap-3 py-3 text-[14px]"
@@ -419,6 +420,7 @@ function AddonsSection() {
     library: false,
   });
   const [loading, setLoading] = useState(true);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
@@ -439,20 +441,28 @@ function AddonsSection() {
     const newValue = !addons[key];
     // Optimistic update
     setAddons((prev) => ({ ...prev, [key]: newValue }));
+    setToggleError(null);
     try {
-      await fetch("/api/config", {
+      const res = await fetch("/api/config", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ addons: { [key]: newValue } }),
       });
+      // fetch only throws on network errors — a 4xx/5xx still "succeeds", so a
+      // failed save would otherwise leave the toggle stuck in the wrong state.
+      if (!res.ok) throw new Error(`save failed (${res.status})`);
     } catch {
-      // Revert on failure
+      // Revert + surface the failure instead of silently flipping back.
       setAddons((prev) => ({ ...prev, [key]: !newValue }));
+      setToggleError("Couldn't save that change — check the daemon and try again.");
     }
   };
 
   return (
     <SettingsPage title="Add-ons" description="Optional integrations. Disabled add-ons are hidden from the sidebar.">
+      {toggleError && (
+        <p role="alert" className="mb-2 px-1 text-[12px] text-[var(--color-danger)]">{toggleError}</p>
+      )}
       <SettingsGroup label="Integrations">
         {loading ? (
           <div aria-hidden className="animate-pulse space-y-3 px-4 py-3">
@@ -975,7 +985,7 @@ function AppearanceSection() {
                 type="button"
                 onClick={handleResetCustom}
                 className="focus-ring ml-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full opacity-70 hover:opacity-100"
-                aria-label="Reset to Mood C"
+                aria-label={`Reset ${customData.name}`}
               >
                 <Icon name="ph:x-bold" width={9} />
               </button>
