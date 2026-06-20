@@ -133,7 +133,7 @@
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
   color: var(--accent-presence);
   border-color: var(--accent-presence);
 }
