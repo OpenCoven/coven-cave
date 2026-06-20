@@ -7,6 +7,7 @@ import { parseWhen } from "@/lib/parse-when";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
 import { Icon } from "@/lib/icon";
+import { readDateTimePrefs } from "@/lib/datetime-format";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { ReminderLinkField } from "@/components/reminder-link-field";
 import type { LinkRef } from "@/lib/cave-inbox";
@@ -260,6 +261,8 @@ export function NewReminderModal({
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
+        // Honor the user's 12h/24h clock preference for the fire-time preview.
+        hour12: readDateTimePrefs().clock !== "24h",
       })
     : null;
 
