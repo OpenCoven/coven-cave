@@ -6599,11 +6599,6 @@ a.mobile-handoff__link:hover {
   color: var(--text-primary);
   letter-spacing: 0.02em;
 }
-.salem-panel__subtitle {
-  font-size: var(--text-2xs);
-  color: var(--text-secondary);
-  margin-top: 1px;
-}
 .salem-panel__header-actions {
   display: flex;
   align-items: center;
