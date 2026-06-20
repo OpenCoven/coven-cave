@@ -200,6 +200,19 @@ function ProjectRow({
   const lastActiveIso =
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
   const lastActiveLabel = relativeTime(lastActiveIso);
+  // Glanceable status: a session running anywhere in the project → accent dot;
+  // otherwise the most-recent session having failed → danger dot; idle → none.
+  const mostRecentChat = chats.reduce<SessionRow | null>(
+    (acc, s) => (!acc || s.updated_at > acc.updated_at ? s : acc),
+    null,
+  );
+  const projectStatus: "running" | "failed" | null = chats.some((s) => s.status === "running")
+    ? "running"
+    : mostRecentChat && (mostRecentChat.status === "failed" || mostRecentChat.status === "error")
+      ? "failed"
+      : null;
+  const statusLabel =
+    projectStatus === "running" ? ", a session is running" : projectStatus === "failed" ? ", last session failed" : "";
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -264,17 +277,28 @@ function ProjectRow({
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${project.name}${statusLabel}`}
           className="focus-ring -ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
         >
           <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
         </button>
-        <Icon
-          name="ph:folder-open-bold"
-          width={15}
-          className="shrink-0 text-[var(--accent-presence)]"
-          aria-hidden
-        />
+        <span className="relative shrink-0">
+          <Icon
+            name="ph:folder-open-bold"
+            width={15}
+            className="text-[var(--accent-presence)]"
+            aria-hidden
+          />
+          {projectStatus ? (
+            <span
+              className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-[var(--bg-base)] ${chatDotClass(
+                projectStatus,
+              )}${projectStatus === "running" ? " animate-pulse" : ""}`}
+              title={projectStatus === "running" ? "A session is running" : "Last session failed"}
+              aria-hidden
+            />
+          ) : null}
+        </span>
         {editingName ? (
           <input
             autoFocus
@@ -472,6 +496,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
     reload,
   } = useProjects();
   const [showForm, setShowForm] = useState(false);
+  const [query, setQuery] = useState("");
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
   const [creating, setCreating] = useState(false);
@@ -517,6 +542,16 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
       0;
     return [...projects].sort((a, b) => score(b) - score(a));
   }, [projects, chatsByRoot]);
+
+  // Filter by name or path so the (recency-sorted) list stays scannable when
+  // there are many projects.
+  const visibleProjects = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sortedProjects;
+    return sortedProjects.filter(
+      (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
+    );
+  }, [sortedProjects, query]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -588,7 +623,9 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
       <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[12px] text-[var(--text-muted)]">
-            {projects.length} {projects.length === 1 ? "project" : "projects"}
+            {query.trim() && visibleProjects.length !== projects.length
+              ? `${visibleProjects.length} of ${projects.length} projects`
+              : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -611,6 +648,24 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
             </button>
           </div>
         </div>
+        {projects.length > 1 ? (
+          <div className="relative mt-2">
+            <Icon
+              name="ph:magnifying-glass"
+              width={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filter projects by name or path…"
+              aria-label="Filter projects"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-2.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            />
+          </div>
+        ) : null}
       </header>
 
       {showForm ? (
@@ -736,21 +791,27 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
                 </button>
               </div>
             ) : null}
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              {sortedProjects.map((project) => (
-                <ProjectRow
-                  key={project.id}
-                  project={project}
-                  chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
-                  onRename={renameProject}
-                  onUpdateRoot={updateRoot}
-                  onDelete={deleteProject}
-                  onNewChat={onNewChat}
-                  onOpenSession={openSessionById}
-                  onDeleteSession={handleDeleteSession}
-                />
-              ))}
-            </DndContext>
+            {visibleProjects.length === 0 ? (
+              <p className="px-2 py-6 text-center text-[12px] text-[var(--text-muted)]">
+                No projects match “{query.trim()}”.
+              </p>
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                {visibleProjects.map((project) => (
+                  <ProjectRow
+                    key={project.id}
+                    project={project}
+                    chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
+                    onRename={renameProject}
+                    onUpdateRoot={updateRoot}
+                    onDelete={deleteProject}
+                    onNewChat={onNewChat}
+                    onOpenSession={openSessionById}
+                    onDeleteSession={handleDeleteSession}
+                  />
+                ))}
+              </DndContext>
+            )}
           </div>
         )}
       </main>

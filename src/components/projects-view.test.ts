@@ -109,8 +109,28 @@ assert.doesNotMatch(projectsView, /defaultExpanded/, "no project auto-expands â€
 
 // Projects are ordered by most-recent session activity, not API order.
 assert.match(projectsView, /const sortedProjects = useMemo/, "projects are sorted before rendering");
-assert.match(projectsView, /sortedProjects\.map\(\(project\)/, "the sorted list drives the render");
 assert.match(projectsView, /function lastActiveMs/, "recency is derived from each project's latest session");
+
+// A filter box narrows the (sorted) list by name or path; the filtered list
+// drives the render and an empty result shows a no-match message.
+assert.match(projectsView, /const visibleProjects = useMemo/, "projects are filtered after sorting");
+assert.match(
+  projectsView,
+  /p\.name\.toLowerCase\(\)\.includes\(q\) \|\| p\.root\.toLowerCase\(\)\.includes\(q\)/,
+  "the filter matches on project name or path",
+);
+assert.match(projectsView, /visibleProjects\.map\(\(project\)/, "the filtered list drives the render");
+assert.match(projectsView, /aria-label="Filter projects"/, "there is a labeled filter input");
+assert.match(projectsView, /No projects match/, "a no-match message shows when the filter excludes everything");
+
+// Each project row carries a glanceable status dot: accent when a session is
+// running, danger when the most-recent session failed.
+assert.match(
+  projectsView,
+  /const projectStatus[\s\S]*?status === "running"[\s\S]*?\? "running"[\s\S]*?\? "failed"/,
+  "row status is running (any) > failed (most recent) > idle",
+);
+assert.match(projectsView, /projectStatus \? \(/, "the status dot renders only when running or failed");
 
 // Paths are home-collapsed + truncated so the identical absolute prefix stops
 // dominating; the full path stays in the title and the editor.
