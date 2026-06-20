@@ -3208,7 +3208,12 @@ button:active > .edge-rail-chip {
   justify-content: center;
   flex: 0 0 auto;
   width: 40px;
-  height: 44px;
+  /* min-height (not a fixed height) so the parent's `align-items: stretch`
+     grows the toggle to match the menu-bar's height. Under screen
+     magnification the menu-bar's line-height bumps it past 44px; a fixed
+     height would leave the toggle pinned to the top of the row, reading as
+     misaligned against the centered Tasks/Inbox controls. */
+  min-height: 44px;
   border: 0;
   border-bottom: 1px solid var(--border-hairline);
   background: var(--bg-panel);
@@ -4501,8 +4506,8 @@ button:active > .edge-rail-chip {
 
 .top-bar__tasks-badge {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 4px;
+  right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5385,15 +5390,27 @@ a.mobile-handoff__link:hover {
     outline: var(--ring-width) solid var(--ring-focus);
     outline-offset: -2px;
   }
+  /* Unify the action row into one set of equal-height, equally boxed touch
+     targets: every control is a 44px hairline-bordered box with a transparent
+     fill (hover/active and the bell's unread state tint it). The icon buttons
+     (chat, tasks) and the cat drawer toggle are borderless/undersized by
+     default, so they get the box + size here to match the bell/account/avatar.
+     The familiar switcher keeps a content-based width for its avatar + caret. */
   .top-bar__actions .notification-bell__trigger,
-  .top-bar__account {
+  .top-bar__account,
+  .top-bar__actions .top-bar__icon-btn,
+  .top-bar__actions .top-bar__mobile-toggle {
     width: var(--touch-target);
     height: var(--touch-target);
     min-width: var(--touch-target);
     min-height: var(--touch-target);
+    border-radius: var(--radius-control);
+  }
+  .top-bar__actions .top-bar__icon-btn,
+  .top-bar__actions .top-bar__mobile-toggle {
+    border: 1px solid var(--border-hairline);
   }
   .top-bar__account {
-    border-radius: var(--radius-control);
     background: transparent;
   }
   /* Match the familiar switcher's height to the other action buttons so the
@@ -5403,6 +5420,7 @@ a.mobile-handoff__link:hover {
   .top-bar__actions .familiar-switcher__trigger[data-labeled="true"] {
     height: var(--touch-target);
     min-height: var(--touch-target);
+    background: transparent;
   }
   .top-bar__actions .notification-bell {
     position: static;
