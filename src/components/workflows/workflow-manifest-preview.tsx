@@ -8,10 +8,12 @@ import type { WorkflowSummary } from "@/lib/workflows";
 type WorkflowManifestPreviewProps = {
   workflow: WorkflowSummary | null;
   dirty: boolean;
+  /** Top-level fields that differ from the saved manifest (what Save would write). */
+  changedFields?: string[];
 };
 
 /** Live canonical YAML for the current draft — what Save writes to disk. */
-export function WorkflowManifestPreview({ workflow, dirty }: WorkflowManifestPreviewProps) {
+export function WorkflowManifestPreview({ workflow, dirty, changedFields }: WorkflowManifestPreviewProps) {
   const yaml = useMemo(() => (workflow ? workflowToYaml(workflow) : null), [workflow]);
   // The manifest with its schema banner is exactly what Save writes, so copying
   // it hands off a paste-ready manifest (to share, or check in by hand).
@@ -53,6 +55,12 @@ export function WorkflowManifestPreview({ workflow, dirty }: WorkflowManifestPre
           </button>
         )}
       </div>
+      {dirty && changedFields && changedFields.length > 0 && (
+        <p className="workflow-manifest-changes">
+          <Icon name="ph:pencil-simple" width={12} aria-hidden />
+          Unsaved changes: {changedFields.join(", ")}
+        </p>
+      )}
       {manifestText ? (
         <pre className="workflow-manifest-yaml">
           <code>{manifestText}</code>

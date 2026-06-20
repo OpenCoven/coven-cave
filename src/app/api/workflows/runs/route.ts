@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listRuns, recordRun, type WorkflowRunRecord } from "@/lib/workflow-runs";
+import { clearRuns, listRuns, recordRun, type WorkflowRunRecord } from "@/lib/workflow-runs";
 
 export const dynamic = "force-dynamic";
 
@@ -43,4 +43,12 @@ export async function POST(req: Request) {
     source: body.source === "daemon" ? "daemon" : "cave",
   });
   return NextResponse.json({ ok: true, run });
+}
+
+/** Clear run history — one workflow's runs (`?workflowId=`) or the whole store. */
+export async function DELETE(req: Request) {
+  const url = new URL(req.url);
+  const workflowId = url.searchParams.get("workflowId") ?? undefined;
+  const cleared = await clearRuns(workflowId);
+  return NextResponse.json({ ok: true, cleared });
 }

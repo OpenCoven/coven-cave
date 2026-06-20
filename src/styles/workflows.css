@@ -1667,6 +1667,32 @@
   color: var(--muted-foreground);
 }
 
+/* Clear-history action, pinned to the right of the runs heading. */
+.workflow-runs-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.workflow-runs-clear:hover {
+  border-color: color-mix(in oklch, var(--color-danger, #e5484d) 50%, var(--border));
+  color: var(--color-danger, #e5484d);
+}
+
+.workflow-runs-clear:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
 .workflow-runs-list {
   margin: 0;
   padding: 0;
@@ -1859,8 +1885,28 @@
 }
 
 .workflow-manifest-preview .workflow-panel-heading,
+.workflow-manifest-preview .workflow-manifest-changes,
 .workflow-manifest-preview > .workflow-muted:last-child {
   flex-shrink: 0;
+}
+
+/* "Unsaved changes: …" summary above the YAML — what a Save would write. */
+.workflow-manifest-changes {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in oklch, var(--color-warning, #d9a13c) 40%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in oklch, var(--color-warning, #d9a13c) 10%, transparent);
+  color: var(--text-primary);
+  font-size: 11.5px;
+}
+
+.workflow-manifest-changes .iconify {
+  flex: none;
+  color: var(--color-warning, #d9a13c);
 }
 
 .workflow-manifest-preview .workflow-manifest-yaml {

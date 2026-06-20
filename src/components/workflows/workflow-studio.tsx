@@ -81,6 +81,8 @@ export type WorkflowStudioProps = {
   runsLoading: boolean;
   familiarOptions: WorkflowFamiliarOption[];
   usesOptions?: WorkflowUsesOption[];
+  /** Top-level fields the unsaved draft changes vs the saved manifest. */
+  changedFields?: string[];
   roles: WorkflowRoleSummary[];
   engineUnavailable: boolean;
   notice: string | null;
@@ -91,6 +93,7 @@ export type WorkflowStudioProps = {
   onStopPlayback: () => void;
   onOpenSession: (sessionId: string) => void;
   onReplayRun: (run: WorkflowRunRecord) => void;
+  onClearRuns: () => void;
   onResetView: () => void;
   onSwitchLayout: () => void;
   onRefresh: () => void;
@@ -308,6 +311,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
             workflow={selectedWorkflow}
             playback={props.playback}
             onReplayRun={props.onReplayRun}
+            onClearRuns={props.onClearRuns}
           />
         </section>
       </main>
@@ -373,7 +377,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
               />
             )}
             {sidePanelSection === "manifest" && (
-              <WorkflowManifestPreview workflow={selectedWorkflow} dirty={props.dirty} />
+              <WorkflowManifestPreview workflow={selectedWorkflow} dirty={props.dirty} changedFields={props.changedFields} />
             )}
           </div>
         </div>

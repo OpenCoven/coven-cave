@@ -14,6 +14,7 @@ import {
   createWorkflowFromTemplate,
   duplicateWorkflow,
   slugifyWorkflowId,
+  summarizeWorkflowChanges,
   workflowToManifest,
 } from "@/lib/workflow-edit";
 import {
@@ -24,6 +25,7 @@ import {
 } from "@/lib/workflow-draft";
 import {
   attachWorkflowToRole,
+  clearWorkflowRuns,
   isPublicTemplate,
   loadWorkflowLayout,
   saveWorkflowLayout,
@@ -290,6 +292,16 @@ export function WorkflowsView({
     return options;
   }, [capabilityUses, draft?.id, familiars, workflows]);
 
+  // When the draft is dirty, name the top-level fields a Save would write, diffed
+  // against the saved manifest (matched by the selected id, not the draft id —
+  // editing the id field shouldn't lose the baseline).
+  const changedFields = useMemo<string[]>(() => {
+    if (!dirty || !draft) return [];
+    const saved = workflows.find((workflow) => workflow.id === selectedWorkflowId);
+    if (!saved) return [];
+    return summarizeWorkflowChanges(saved, draft);
+  }, [dirty, draft, selectedWorkflowId, workflows]);
+
   useEffect(() => {
     if (!selectedNodeId) return;
     if (!selectedGraph?.nodes.some((node) => node.id === selectedNodeId)) {
@@ -453,6 +465,16 @@ export function WorkflowsView({
       return;
     }
     setPlayback(playbackFromRun(run));
+  }, [showNotice]);
+
+  const clearRuns = useCallback(async (workflowId: string) => {
+    const result = await clearWorkflowRuns(workflowId);
+    if (!result.ok) {
+      showNotice(result.error ?? "couldn't clear run history");
+      return;
+    }
+    setRuns([]);
+    showNotice(result.cleared ? `Cleared ${result.cleared} run${result.cleared === 1 ? "" : "s"}.` : "Run history already empty.");
   }, [showNotice]);
 
   const runSave = async (workflow: WorkflowSummary) => {
@@ -656,6 +678,7 @@ export function WorkflowsView({
       runsLoading={runsLoading}
       familiarOptions={familiarOptions}
       usesOptions={usesOptions}
+      changedFields={changedFields}
       roles={roles}
       engineUnavailable={engineUnavailable}
       notice={notice}
@@ -666,6 +689,7 @@ export function WorkflowsView({
       onStopPlayback={stopPlayback}
       onOpenSession={openWorkflowSession}
       onReplayRun={replayRun}
+      onClearRuns={() => selectedWorkflowId && void clearRuns(selectedWorkflowId)}
       onResetView={resetWorkflowView}
       onSwitchLayout={switchWorkflowLayout}
       onRefresh={() => void load(true)}

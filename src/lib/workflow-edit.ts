@@ -191,3 +191,69 @@ export function duplicateWorkflow(workflow: WorkflowSummary, newId: string): Wor
   copy.name = `${workflow.name ?? workflow.id} copy`;
   return copy;
 }
+
+/** Order-independent signature of a step's editable fields, for change detection. */
+function stepSignature(step: WorkflowStepSummary): string {
+  return JSON.stringify({
+    id: step.id,
+    kind: step.kind,
+    name: step.name ?? null,
+    uses: step.uses ?? null,
+    summary: step.summary ?? null,
+    on_error: step.on_error ?? null,
+    requires: [...(step.requires ?? [])].sort(),
+    permissions: [...(step.permissions ?? [])].sort(),
+  });
+}
+
+/** Human summary of how `draft`'s steps differ from `saved`'s (added/removed/changed). */
+function summarizeStepChanges(saved: WorkflowStepSummary[], draft: WorkflowStepSummary[]): string | null {
+  const savedById = new Map(saved.map((step) => [step.id, step]));
+  const draftIds = new Set(draft.map((step) => step.id));
+  let added = 0;
+  let changed = 0;
+  for (const step of draft) {
+    const prior = savedById.get(step.id);
+    if (!prior) added += 1;
+    else if (stepSignature(prior) !== stepSignature(step)) changed += 1;
+  }
+  const removed = saved.filter((step) => !draftIds.has(step.id)).length;
+  const parts: string[] = [];
+  if (added) parts.push(`${added} added`);
+  if (removed) parts.push(`${removed} removed`);
+  if (changed) parts.push(`${changed} changed`);
+  return parts.length > 0 ? `steps (${parts.join(", ")})` : null;
+}
+
+/**
+ * The list of top-level fields that differ between the saved workflow and the
+ * working draft — what an unsaved Save would write. Pure, so the studio can show
+ * "Unsaved changes: name, permissions, steps (1 added)" without re-deriving it.
+ */
+export function summarizeWorkflowChanges(saved: WorkflowSummary, draft: WorkflowSummary): string[] {
+  const changes: string[] = [];
+  const scalar = (a: unknown, b: unknown, label: string) => {
+    if ((a ?? "") !== (b ?? "")) changes.push(label);
+  };
+  if (saved.id !== draft.id) changes.push("id");
+  scalar(saved.name, draft.name, "name");
+  scalar(saved.version, draft.version, "version");
+  scalar(saved.summary, draft.summary, "summary");
+  scalar(saved.pattern, draft.pattern, "pattern");
+  scalar(saved.familiar, draft.familiar, "familiar");
+
+  const listChanged = (a?: string[], b?: string[]) => (a ?? []).join(" ") !== (b ?? []).join(" ");
+  if (listChanged(saved.tags, draft.tags)) changes.push("tags");
+  if (listChanged(saved.permissions, draft.permissions)) changes.push("permissions");
+
+  const limitChanged = (key: keyof NonNullable<WorkflowSummary["limits"]>) =>
+    (saved.limits?.[key] ?? undefined) !== (draft.limits?.[key] ?? undefined);
+  if (limitChanged("max_agents") || limitChanged("timeout_s") || limitChanged("cost_ceiling_usd")) {
+    changes.push("limits");
+  }
+
+  const stepChange = summarizeStepChanges(saved.steps ?? [], draft.steps ?? []);
+  if (stepChange) changes.push(stepChange);
+
+  return changes;
+}

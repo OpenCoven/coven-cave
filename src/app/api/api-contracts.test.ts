@@ -116,7 +116,7 @@ const contracts: RouteContract[] = [
   { route: "/workflows/dry-run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/workflows/layout", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/workflows/runs", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/workflows/runs", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/save", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/workflows", methods: ["GET"], kind: "json" },

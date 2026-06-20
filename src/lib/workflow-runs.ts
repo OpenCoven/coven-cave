@@ -67,3 +67,21 @@ export async function listRuns(workflowId?: string): Promise<WorkflowRunRecord[]
   if (!workflowId) return file.runs;
   return file.runs.filter((run) => run.workflowId === workflowId);
 }
+
+/**
+ * Drop run history — one workflow's runs when `workflowId` is given, otherwise
+ * the whole store. Returns how many records were removed.
+ */
+export async function clearRuns(workflowId?: string): Promise<number> {
+  return withRunsLock(async () => {
+    const file = await loadRunsFile();
+    const before = file.runs.length;
+    file.runs = workflowId ? file.runs.filter((run) => run.workflowId !== workflowId) : [];
+    const removed = before - file.runs.length;
+    if (removed > 0) {
+      await mkdir(path.dirname(runsPath()), { recursive: true });
+      await writeFile(runsPath(), JSON.stringify(file, null, 2), "utf8");
+    }
+    return removed;
+  });
+}

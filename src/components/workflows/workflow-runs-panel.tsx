@@ -18,6 +18,8 @@ type WorkflowRunsPanelProps = {
   workflow: WorkflowSummary | null;
   playback: WorkflowPlaybackState | null;
   onReplayRun: (run: WorkflowRunRecord) => void;
+  /** Clear this workflow's recorded run history. */
+  onClearRuns: () => void;
 };
 
 
@@ -72,13 +74,19 @@ function summarizeRuns(runs: WorkflowRunRecord[]): string {
 }
 
 /** Run history for the selected workflow: plan snapshots and executions. */
-export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayRun }: WorkflowRunsPanelProps) {
+export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayRun, onClearRuns }: WorkflowRunsPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<WorkflowRunFilter>("all");
   const replaying = playback?.source === "replay" && playback.workflowId === workflow?.id;
 
   const activeFilter = RUN_FILTERS.find((entry) => entry.id === filter) ?? RUN_FILTERS[0];
   const visibleRuns = filter === "all" ? runs : runs.filter(activeFilter.match);
+
+  const handleClear = () => {
+    if (window.confirm("Clear this workflow's run history? Recorded plan snapshots and run records are removed.")) {
+      onClearRuns();
+    }
+  };
 
   return (
     <section className="workflow-runs-panel" aria-label="Workflow run history">
@@ -88,6 +96,17 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
         <span className="workflow-runs-count">
           {loading ? "loading" : summarizeRuns(runs)}
         </span>
+        {workflow && runs.length > 0 && (
+          <button
+            type="button"
+            className="workflow-runs-clear"
+            onClick={handleClear}
+            title="Clear run history for this workflow"
+          >
+            <Icon name="ph:trash" width={12} />
+            Clear
+          </button>
+        )}
       </div>
       {/* Filter history once there's more than a couple of runs — a busy
           workflow's plan snapshots otherwise bury its real executions. */}

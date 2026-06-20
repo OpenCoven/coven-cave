@@ -423,4 +423,18 @@ assert.match(inspector, /multiline\?: boolean/, "Field should support a multilin
 assert.match(inspector, /<textarea/, "Multiline field should render a textarea");
 assert.match(css, /\.workflow-field-textarea/, "CSS should style the multiline field");
 
+// --- Backlog: changed-fields hint + clear run history ---
+// The manifest preview names what an unsaved Save would write.
+assert.match(manifestPreview, /changedFields/, "Manifest preview should accept the changed-field summary");
+assert.match(manifestPreview, /Unsaved changes:/, "Manifest preview should label unsaved changes");
+assert.match(studio, /changedFields=\{props\.changedFields\}/, "Studio should thread changed fields into the manifest preview");
+assert.match(css, /\.workflow-manifest-changes/, "CSS should style the unsaved-changes summary");
+
+// The runs panel can clear this workflow's history.
+assert.match(runsPanel, /onClearRuns/, "Runs panel should accept a clear-history handler");
+assert.match(runsPanel, /workflow-runs-clear/, "Runs panel should render a clear-history button");
+assert.match(runsPanel, /window\.confirm/, "Clearing run history should confirm first");
+assert.match(studio, /onClearRuns=\{props\.onClearRuns\}/, "Studio should thread the clear-history handler");
+assert.match(css, /\.workflow-runs-clear/, "CSS should style the clear-history button");
+
 console.log("workflow-studio.test.ts: ok");

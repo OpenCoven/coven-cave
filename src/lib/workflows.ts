@@ -256,6 +256,16 @@ export async function recordWorkflowRun(
   );
 }
 
+/** Clear run history for one workflow (or all when omitted). */
+export async function clearWorkflowRuns(
+  workflowId?: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<{ ok: boolean; cleared?: number; error?: string }> {
+  const query = workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : "";
+  const res = await fetchImpl(`/api/workflows/runs${query}`, { method: "DELETE", cache: "no-store" });
+  return res.json() as Promise<{ ok: boolean; cleared?: number; error?: string }>;
+}
+
 export type WorkflowNodePositionsMap = Record<string, { x: number; y: number }>;
 
 /** Saved cave-only canvas positions for a workflow. */

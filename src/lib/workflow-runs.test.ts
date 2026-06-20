@@ -8,7 +8,7 @@ const runsPath = path.join(dir, "workflow-runs.json");
 process.env.COVEN_WORKFLOW_RUNS_PATH = runsPath;
 
 // Import AFTER the env override so the module resolves the test path.
-const { listRuns, recordRun, RUNS_HISTORY_CAP } = await import("./workflow-runs.ts");
+const { clearRuns, listRuns, recordRun, RUNS_HISTORY_CAP } = await import("./workflow-runs.ts");
 
 try {
   // --- record assigns an id and newest-first ordering ---
@@ -66,6 +66,17 @@ try {
     source: "cave",
   });
   assert.equal((await listRuns())[0].id, recovered.id, "store recovers after corruption");
+
+  // --- clearRuns drops one workflow's runs, then all ---
+  await recordRun({ workflowId: "keep", kind: "dry-run", status: "plan", startedAt: "2026-06-11T05:00:00.000Z", steps: [], source: "cave" });
+  const demoCount = (await listRuns("demo")).length;
+  const clearedDemo = await clearRuns("demo");
+  assert.equal(clearedDemo, demoCount, "clearRuns returns how many it removed");
+  assert.deepEqual(await listRuns("demo"), [], "scoped clear empties that workflow");
+  assert.ok((await listRuns("keep")).length > 0, "scoped clear leaves other workflows");
+  const total = (await listRuns()).length;
+  assert.equal(await clearRuns(), total, "clearRuns() with no id removes everything");
+  assert.deepEqual(await listRuns(), [], "unscoped clear empties the store");
 } finally {
   delete process.env.COVEN_WORKFLOW_RUNS_PATH;
   await rm(dir, { recursive: true, force: true });

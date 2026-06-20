@@ -4,6 +4,7 @@ import {
   createWorkflowFromTemplate,
   duplicateWorkflow,
   slugifyWorkflowId,
+  summarizeWorkflowChanges,
   WORKFLOW_TEMPLATES,
   workflowToManifest,
   workflowToYaml,
@@ -76,5 +77,55 @@ assert.equal(copy.name, "Release Review copy");
 assert.equal(copy.path, undefined, "duplicate is detached from the source file");
 assert.notEqual(copy.steps, workflow.steps, "duplicate deep-copies steps");
 assert.equal(validateManifest(workflowToManifest(copy)).ok, true);
+
+// --- summarizeWorkflowChanges ---
+const saved: WorkflowSummary = {
+  id: "wf",
+  version: "0.1.0",
+  name: "WF",
+  summary: "do a thing",
+  permissions: ["repo.read"],
+  tags: ["a"],
+  limits: { max_agents: 2 },
+  steps: [
+    { id: "input", kind: "input", name: "Input" },
+    { id: "work", kind: "agent", name: "Work", requires: ["input"] },
+    { id: "output", kind: "output", name: "Output", requires: ["work"] },
+  ],
+};
+assert.deepEqual(summarizeWorkflowChanges(saved, saved), [], "identical workflows report no changes");
+assert.deepEqual(
+  summarizeWorkflowChanges(saved, { ...saved, name: "WF2" }),
+  ["name"],
+  "a changed scalar is named",
+);
+assert.deepEqual(
+  summarizeWorkflowChanges(saved, { ...saved, permissions: ["repo.read", "web.fetch"] }),
+  ["permissions"],
+  "a changed list is named",
+);
+assert.deepEqual(
+  summarizeWorkflowChanges(saved, { ...saved, limits: { max_agents: 4 } }),
+  ["limits"],
+  "a changed limit is named",
+);
+{
+  const draft: WorkflowSummary = {
+    ...saved,
+    steps: [
+      ...saved.steps!.slice(0, 2),
+      { id: "review", kind: "agent", name: "Review", requires: ["work"] },
+      saved.steps![2],
+    ],
+  };
+  assert.deepEqual(summarizeWorkflowChanges(saved, draft), ["steps (1 added)"], "step additions are counted");
+}
+{
+  const draft: WorkflowSummary = {
+    ...saved,
+    steps: saved.steps!.map((step) => (step.id === "work" ? { ...step, uses: "nova" } : step)),
+  };
+  assert.deepEqual(summarizeWorkflowChanges(saved, draft), ["steps (1 changed)"], "step edits are counted");
+}
 
 console.log("workflow-edit.test.ts: ok");
