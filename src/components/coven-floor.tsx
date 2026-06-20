@@ -1,6 +1,7 @@
 "use client";
 
 import "@/styles/board.css";
+import { relativeTime } from "@/lib/relative-time";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
@@ -13,12 +14,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 const MAX_VISIBLE_SESSIONS = 12;
 
 function relTime(iso: string | null): string {
-  if (!iso) return "never";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "just now";
-  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
-  return `${Math.floor(diffMs / 86_400_000)}d ago`;
+  return iso ? relativeTime(iso) : "never";
 }
 
 function fmtRuntime(ms: number | undefined): string | null {

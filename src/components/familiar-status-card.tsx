@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { relativeTime } from "@/lib/relative-time";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { parseGlyphString } from "@/lib/familiar-glyph";
 import { Icon } from "@/lib/icon";
@@ -10,12 +11,7 @@ import { statusColor, statusLabel } from "@/lib/coven-status-types";
 // ── Relative time ─────────────────────────────────────────────────────────────
 
 function relTime(iso: string | null): string {
-  if (!iso) return "never";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "just now";
-  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
-  return `${Math.floor(diffMs / 86_400_000)}d ago`;
+  return iso ? relativeTime(iso) : "never";
 }
 
 // ── Format runtime ────────────────────────────────────────────────────────────
