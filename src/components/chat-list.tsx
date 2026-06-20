@@ -12,6 +12,7 @@ import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
+import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
   deriveChatProjectGroups,
   filterVisibleChatSessions,
@@ -78,14 +79,10 @@ type Props = {
   compact?: boolean;
 };
 
-function chatDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+function chatDate(iso: string, prefs: DateTimePrefs): string {
+  // Absolute session date — honors the user's date-order preference
+  // (month-first "Jun 19, 2026" vs day-first "19 Jun 2026") set in Settings.
+  return formatDate(iso, prefs, { year: true });
 }
 
 /** Repo name — last non-empty path segment. */
@@ -234,6 +231,7 @@ function ChatListSection({
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
   const { projects } = useProjects();
   const projectOverrides = useProjectOverrides();
+  const dtPrefs = useDateTimePrefs();
   const [error, setError] = useState<string | null>(null);
   // Two-step delete: first trash click arms the row (inline Cancel/Delete
   // confirm replaces the row actions); only the explicit Delete commits.
@@ -977,7 +975,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 ) : null}
                               </span>
                               <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
-                                <span>{chatDate(s.updated_at)}</span>
+                                <span>{chatDate(s.updated_at, dtPrefs)}</span>
                                 {isRelativePhrase(rel) ? (
                                   <>
                                     <span aria-hidden>·</span>

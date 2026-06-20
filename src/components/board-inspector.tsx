@@ -21,6 +21,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -817,6 +818,7 @@ function StepsSection({
 }
 
 export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError }: Props) {
+  const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<CardLifecycle | null>(null);
@@ -1149,9 +1151,9 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 </div>
 
                 <div className="board-drawer-stamps">
-                  <span><span className="board-drawer-stamp-label">Created</span> {new Date(card.createdAt).toLocaleString()}</span>
+                  <span><span className="board-drawer-stamp-label">Created</span> {`${formatDate(card.createdAt, dtPrefs, { year: true })} ${formatClock(card.createdAt, dtPrefs)}`}</span>
                   <span className="board-drawer-stamp-sep">·</span>
-                  <span><span className="board-drawer-stamp-label">Updated</span> {new Date(card.updatedAt).toLocaleString()}</span>
+                  <span><span className="board-drawer-stamp-label">Updated</span> {`${formatDate(card.updatedAt, dtPrefs, { year: true })} ${formatClock(card.updatedAt, dtPrefs)}`}</span>
                 </div>
               </>
             )}

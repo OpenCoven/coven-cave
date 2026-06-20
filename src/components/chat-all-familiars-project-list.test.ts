@@ -46,13 +46,13 @@ assert.match(
 
 assert.match(
   chatList,
-  /function chatDate\(iso: string\): string/,
-  "ChatList should expose an absolute chat date formatter for visible metadata",
+  /function chatDate\(iso: string, prefs: DateTimePrefs\): string/,
+  "ChatList should expose an absolute chat date formatter (pref-aware) for visible metadata",
 );
 
 assert.match(
   chatList,
-  /\{chatDate\(s\.updated_at\)\}[\s\S]*\{rel\}/,
+  /\{chatDate\(s\.updated_at, dtPrefs\)\}[\s\S]*\{rel\}/,
   "Chat rows should show the absolute date next to the relative updated age",
 );
 

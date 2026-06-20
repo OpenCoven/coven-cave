@@ -18,6 +18,7 @@ import type {
 } from "@/lib/library-types";
 import type { Skill } from "@/components/library-collection-rail";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { formatDate, readDateTimePrefs } from "@/lib/datetime-format";
 
 // ── Discriminated union ──────────────────────────────────────────
 export type SelectedItem =
@@ -43,10 +44,13 @@ const EMPTY_TEXT: Record<LibrarySectionKind, string> = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────
-const dateFmt = new Intl.DateTimeFormat([], { year: "numeric", month: "short", day: "numeric" });
 function fmtDate(iso?: string): string {
   if (!iso) return "—";
-  try { return dateFmt.format(new Date(iso)); } catch { return iso; }
+  // Honors the user's date-order preference (month-first vs day-first). Reads
+  // the persisted snapshot rather than the hook so the existing call sites in
+  // the preview's sub-components stay unchanged; an already-open preview picks
+  // up a pref change on its next render.
+  return formatDate(iso, readDateTimePrefs(), { year: true }) || iso;
 }
 
 type UrlOpenKind = "web" | "github" | "vscode-file";

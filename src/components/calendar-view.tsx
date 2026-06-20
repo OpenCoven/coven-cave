@@ -969,10 +969,12 @@ function ItemDetailPanel({
           <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
             <Icon name="ph:clock" width={12} />
             <span>
-              {new Date((item.fireAt ?? item.firedAt)!).toLocaleString(undefined, {
-                weekday: "short", month: "short", day: "numeric",
-                hour: "numeric", minute: "2-digit",
-              })}
+              {(() => {
+                const at = (item.fireAt ?? item.firedAt)!;
+                // Short weekday isn't a preference; the date order + clock are.
+                const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
+                return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
+              })()}
             </span>
           </div>
         )}
