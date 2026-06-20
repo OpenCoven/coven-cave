@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { formatTimestamp } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 
@@ -50,7 +51,8 @@ function checkpointLabel(name: string): string {
     "$1T$2:$3:$4.$5Z",
   );
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? name : d.toLocaleString();
+  // Honor the app's clock + date preferences instead of the raw browser locale.
+  return Number.isNaN(d.getTime()) ? name : formatTimestamp(iso);
 }
 
 function formatBytes(n: number): string {
