@@ -259,7 +259,15 @@ export function WorkflowCanvas({
   if (!workflow) {
     return (
       <section className="workflow-canvas workflow-canvas-empty" aria-label="Workflow canvas">
-        <p>Select a workflow to preview its graph.</p>
+        <div className="workflow-canvas-empty-inner">
+          <span className="workflow-canvas-empty-icon" aria-hidden>
+            <Icon name="ph:graph" width={22} />
+          </span>
+          <p className="workflow-canvas-empty-title">No workflow selected</p>
+          <p className="workflow-canvas-empty-hint">
+            Pick a workflow from the library on the left, or create a new one to start building its graph.
+          </p>
+        </div>
       </section>
     );
   }

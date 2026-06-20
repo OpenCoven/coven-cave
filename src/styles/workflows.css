@@ -705,6 +705,38 @@
   font-size: 13px;
 }
 
+.workflow-canvas-empty-inner {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 320px;
+  text-align: center;
+}
+
+.workflow-canvas-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+}
+
+.workflow-canvas-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workflow-canvas-empty-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
 .workflow-node {
   width: 172px;
   border: 1px solid var(--border);
