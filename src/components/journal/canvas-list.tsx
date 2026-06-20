@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { copyText } from "@/lib/clipboard";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
 import { relativeTime } from "@/lib/daily-report";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
@@ -82,6 +83,10 @@ export function CanvasList({
   const composerRef = useRef<HTMLInputElement | null>(null);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleDraft, setEditingTitleDraft] = useState("");
+  // Transient "Copied" confirmation for the Code tab's copy button.
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
 
   // Seed the generate composer from an example prompt and focus it, so the
   // empty-state starters are one tap from a ready-to-run sketch.
@@ -389,6 +394,21 @@ export function CanvasList({
                 </button>
               </div>
               <div className="journal-detail__actions">
+                {view === "code" ? (
+                  <button
+                    type="button"
+                    className={`journal-act${copied ? " journal-act--on" : ""}`}
+                    aria-label={copied ? "Copied" : "Copy code"}
+                    onClick={async () => {
+                      if (!(await copyText(selected.code))) return;
+                      setCopied(true);
+                      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+                      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
+                    }}
+                  >
+                    <Icon name={copied ? "ph:check" : "ph:copy"} aria-hidden /> {copied ? "Copied" : "Copy"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={`journal-act${refineOpen ? " journal-act--on" : ""}`}
