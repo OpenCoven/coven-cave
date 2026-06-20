@@ -276,6 +276,7 @@ function BoardCardStackRow({
         anchorRef={menuButtonRef}
         placement="bottom-end"
         minWidth={180}
+        ariaLabel="Move card to section"
       >
         <PopoverBody>
           <PopoverLabel>Move to</PopoverLabel>

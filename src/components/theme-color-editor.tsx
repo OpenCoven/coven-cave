@@ -194,6 +194,7 @@ function ColorSlot({ label, description, value, onChange, themeSwatches, recents
         anchorRef={anchorRef}
         placement="bottom-start"
         offset={8}
+        ariaLabel="Color picker"
       >
         <div className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-xl">
           <ColorPicker value={pickerHex} onChange={onChange} themeSwatches={themeSwatches} recents={recents} />

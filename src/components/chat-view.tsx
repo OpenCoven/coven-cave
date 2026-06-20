@@ -693,6 +693,7 @@ function SessionOverflowMenu({
         anchorRef={triggerRef}
         placement="bottom-end"
         minWidth={216}
+        ariaLabel="Chat options"
       >
         <PopoverBody>
           <PopoverItem

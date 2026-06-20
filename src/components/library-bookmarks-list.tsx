@@ -288,6 +288,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
               placement="bottom-start"
               className="library-bookmark-selector__popover"
               minWidth={180}
+              ariaLabel="Choose bookmark group"
             >
               <PopoverBody>
                 <PopoverLabel>Group bookmarks</PopoverLabel>

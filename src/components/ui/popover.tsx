@@ -24,6 +24,9 @@ export type PopoverProps = {
   /** Optional minimum width override; defaults to anchor width. */
   minWidth?: number;
   className?: string;
+  /** Accessible name for the dialog. role="dialog" requires a name; without one
+   *  screen readers announce the popover with no title. */
+  ariaLabel?: string;
   children: ReactNode;
 };
 
@@ -40,6 +43,7 @@ export function Popover({
   offset = 6,
   minWidth,
   className,
+  ariaLabel,
   children,
 }: PopoverProps) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -145,6 +149,19 @@ export function Popover({
     };
   }, [open, onOpenChange, anchorRef, compute]);
 
+  // Return focus to the trigger when the popover closes, so keyboard users aren't
+  // stranded (Escape, item-select, or outside-click on empty space all leave focus
+  // on document.body once the popover unmounts). If the user moved focus to another
+  // control, leave it there — only reclaim focus when it would otherwise be lost.
+  useEffect(() => {
+    if (!open) return;
+    const anchor = anchorRef.current;
+    return () => {
+      const active = document.activeElement;
+      if (!active || active === document.body) anchor?.focus?.();
+    };
+  }, [open, anchorRef]);
+
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -154,6 +171,7 @@ export function Popover({
         className={["ui-popover", className ?? ""].filter(Boolean).join(" ")}
         style={style}
         role="dialog"
+        aria-label={ariaLabel}
       >
         {children}
       </div>

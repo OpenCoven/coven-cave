@@ -144,6 +144,7 @@ export function FamiliarSwitcher({
         placement={placement}
         minWidth={264}
         className="familiar-switcher__popover"
+        ariaLabel="Switch familiar"
       >
         <div className="familiar-switcher" role="dialog" aria-label="Familiars">
           {/* Header: the current scope + a path straight into its full profile. */}

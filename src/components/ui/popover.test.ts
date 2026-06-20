@@ -33,4 +33,19 @@ assert.match(
   "recomputes when the visual viewport resizes (keyboard show/hide)",
 );
 
+// role="dialog" requires an accessible name. The popover takes an optional ariaLabel
+// prop and wires it onto the dialog; without it screen readers announce the popover
+// with no title.
+assert.match(src, /ariaLabel\?: string/, "popover accepts an ariaLabel prop");
+assert.match(src, /aria-label=\{ariaLabel\}/, "popover wires aria-label onto the dialog");
+
+// On close the popover returns focus to the trigger when focus would otherwise be
+// lost to document.body (Escape, item-select, outside-click on empty space), so
+// keyboard users aren't stranded — but leaves focus alone if moved to another control.
+assert.match(
+  src,
+  /active === document\.body[\s\S]{0,40}?anchor\?\.focus/,
+  "popover restores focus to the anchor when it would otherwise land on body",
+);
+
 console.log("popover.test.ts: ok");
