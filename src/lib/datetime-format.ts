@@ -180,3 +180,31 @@ export function formatTimestamp(iso: string, prefs: DateTimePrefs = DEFAULT_PREF
   const datePart = prefs.date === "mmdd" ? `${mm}.${dd}` : prefs.date === "ddmm" ? `${dd}.${mm}` : "";
   return datePart ? `${datePart} ${time}` : time;
 }
+
+/**
+ * Verbose date honoring the date preference's ORDERING (month-first vs
+ * day-first), keeping the month name (+ optional year/weekday) — so non-chat
+ * date displays (library list, memory inspector, calendar header) follow the
+ * user's regional date order without being forced into the compact "06.19"
+ * form. `ddmm` → day-first ("19 Jun" / "19 Jun 2026"); anything else (mmdd, the
+ * chat-only "off") → month-first ("Jun 19" / "Jun 19, 2026"). Accepts an ISO
+ * string, epoch ms, or a Date. Returns "" for unparseable input.
+ */
+export function formatDate(
+  input: string | number | Date,
+  prefs: DateTimePrefs = readDateTimePrefs(),
+  opts: { year?: boolean; weekday?: boolean; month?: "short" | "long" } = {},
+): string {
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return "";
+  const dayFirst = prefs.date === "ddmm";
+  const month = d.toLocaleDateString([], { month: opts.month ?? "short" });
+  const day = d.getDate();
+  const dm = dayFirst ? `${day} ${month}` : `${month} ${day}`;
+  const withYear = opts.year
+    ? dayFirst
+      ? `${dm} ${d.getFullYear()}`
+      : `${dm}, ${d.getFullYear()}`
+    : dm;
+  return opts.weekday ? `${d.toLocaleDateString([], { weekday: "long" })}, ${withYear}` : withYear;
+}
