@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { relativeTime } from "@/lib/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -81,17 +82,6 @@ function useCards(): { cards: Card[]; reload: () => void } {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function relTime(iso: string): string {
-  const ts = Date.parse(iso);
-  if (!Number.isFinite(ts)) return "";
-  const s = (Date.now() - ts) / 1000;
-  if (s < 60) return `${Math.round(s)}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m`;
-  if (s < 86400) return `${Math.round(s / 3600)}h`;
-  const d = Math.round(s / 86400);
-  return d < 30 ? `${d}d` : `${Math.round(d / 30)}mo`;
-}
 
 const KIND_ICON: Record<string, "ph:git-pull-request" | "ph:circle-dashed" | "ph:bell" | "ph:github-logo"> = {
   pr: "ph:git-pull-request",
@@ -749,7 +739,7 @@ function GitHubItemGlassPanel({
             {" · "}
             {item.repo}
             {" · "}
-            {relTime(detail?.createdAt ?? item.updatedAt)} ago
+            {relativeTime(detail?.createdAt ?? item.updatedAt)}
           </span>
         </div>
       </div>
@@ -1418,7 +1408,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                         )}
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        <span className="board-table-cell-time">{relTime(item.updatedAt)}</span>
+                        <span className="board-table-cell-time">{relativeTime(item.updatedAt)}</span>
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <div className="gh-actions">

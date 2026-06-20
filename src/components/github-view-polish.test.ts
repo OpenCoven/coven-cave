@@ -209,4 +209,10 @@ assert.match(
   "the sort control is a real keyboard-operable button",
 );
 
+// GitHub timestamps use the app-canonical relativeTime (which formats "2m ago"
+// / "Jun 12" itself), not a local relTime helper with a manually-appended " ago"
+// that disagreed between call sites.
+assert.ok(source.includes('import { relativeTime } from "@/lib/relative-time"'), "imports shared relativeTime");
+assert.ok(!source.includes("relTime"), "local relTime helper and its call sites are gone");
+
 console.log("github-view-polish.test.ts OK");
