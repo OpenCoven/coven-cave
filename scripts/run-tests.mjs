@@ -174,6 +174,7 @@ export const SUITES = {
     "src/components/familiar-roster-card.test.ts",
     "src/components/familiars-view-stats.test.ts",
     "src/components/automations-detail-inputs.test.ts",
+    "src/components/automations-view.test.ts",
     "src/components/schedules-tabs.test.ts",
     "src/lib/daily-summary-notifications.test.ts",
     "src/components/daily-summary-notifications.test.ts",

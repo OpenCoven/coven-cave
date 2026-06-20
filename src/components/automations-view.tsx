@@ -620,6 +620,17 @@ function CodexDetailPanel({
     nextRrule !== (auto.rrule ?? "");
   const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
 
+  // When Save is disabled because the form is invalid (not merely unchanged),
+  // explain why instead of leaving the user with a dead button.
+  const saveBlockedReason =
+    name.trim().length === 0
+      ? "Give the automation a name."
+      : scheduleMode === "weekly" && scheduleDays.length === 0
+        ? "Pick at least one day for a weekly schedule."
+        : !nextRrule.startsWith("RRULE:")
+          ? "Enter a valid schedule."
+          : null;
+
   const toggleDay = (day: string) => {
     setScheduleDays((prev) =>
       prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day],
@@ -916,6 +927,11 @@ function CodexDetailPanel({
       {/* Actions */}
       <div className="border-t px-5 py-4 space-y-2"
         style={{ borderColor: "var(--border-hairline)" }}>
+        {saveBlockedReason ? (
+          <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
+            {saveBlockedReason}
+          </p>
+        ) : null}
         <button
           type="button"
           disabled={!canSave}
