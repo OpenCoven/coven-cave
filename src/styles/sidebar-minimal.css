@@ -297,7 +297,10 @@
 
 .sidebar-foot-utility-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  /* Settings leads in the 1fr column so its icon + label line up exactly with
+     Dashboard/Notifications above; the phone handoff trails as a 34px icon cell
+     on the right rather than indenting Settings. */
+  grid-template-columns: minmax(0, 1fr) 34px;
   gap: 4px;
 }
 
