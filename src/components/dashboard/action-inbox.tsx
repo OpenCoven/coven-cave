@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/lib/daily-report";
 import { nextItemsAfterAction } from "@/lib/dashboard-model";
@@ -92,44 +93,15 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
                   Open
                 </a>
               ) : null}
-              <div className="dash-snooze">
-                <button
-                  type="button"
-                  className="dash-act"
-                  aria-haspopup="menu"
-                  aria-expanded={snoozeOpenId === item.id}
-                  onClick={() => setSnoozeOpenId(snoozeOpenId === item.id ? null : item.id)}
-                >
-                  Snooze
-                  <Icon name="ph:caret-down" aria-hidden />
-                </button>
-                {snoozeOpenId === item.id ? (
-                  <>
-                    <button
-                      type="button"
-                      className="dash-snooze__backdrop"
-                      aria-label="Close snooze menu"
-                      onClick={() => setSnoozeOpenId(null)}
-                    />
-                    <div className="dash-snooze__menu" role="menu" aria-label="Snooze for">
-                      {SNOOZE_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.label}
-                          type="button"
-                          role="menuitem"
-                          className="dash-snooze__opt"
-                          onClick={() => {
-                            setSnoozeOpenId(null);
-                            void act(item, "snooze", opt.minutes());
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : null}
-              </div>
+              <SnoozeMenu
+                open={snoozeOpenId === item.id}
+                onToggle={() => setSnoozeOpenId(snoozeOpenId === item.id ? null : item.id)}
+                onClose={() => setSnoozeOpenId(null)}
+                onPick={(minutes) => {
+                  setSnoozeOpenId(null);
+                  void act(item, "snooze", minutes);
+                }}
+              />
               <button type="button" className="dash-act dash-act--primary" onClick={() => act(item, "done")}>
                 Done
               </button>
@@ -147,5 +119,63 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
         })}
       </div>
     </section>
+  );
+}
+
+/**
+ * Snooze split button + duration menu. Trapping focus inside the open menu
+ * (via the shared useFocusTrap) gives it the keyboard behaviour the rest of
+ * the app's popovers have: the first option is focused on open, Tab/Shift+Tab
+ * cycle the options, Escape closes the menu and returns focus to the trigger.
+ */
+function SnoozeMenu({
+  open,
+  onToggle,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onPick: (minutes: number) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, menuRef, { onEscape: onClose });
+  return (
+    <div className="dash-snooze">
+      <button
+        type="button"
+        className="dash-act"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        Snooze
+        <Icon name="ph:caret-down" aria-hidden />
+      </button>
+      {open ? (
+        <>
+          <button
+            type="button"
+            className="dash-snooze__backdrop"
+            aria-label="Close snooze menu"
+            onClick={onClose}
+          />
+          <div ref={menuRef} className="dash-snooze__menu" role="menu" aria-label="Snooze for">
+            {SNOOZE_OPTIONS.map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                role="menuitem"
+                className="dash-snooze__opt"
+                onClick={() => onPick(opt.minutes())}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
