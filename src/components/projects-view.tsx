@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
@@ -554,6 +554,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
   } = useProjects();
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
   const [creating, setCreating] = useState(false);
@@ -562,6 +563,22 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
   const [order, setOrder] = useState<string[]>([]);
   useEffect(() => {
     setOrder(readSessionOrder());
+  }, []);
+
+  // "/" jumps to the projects filter (GitHub-style) while this surface is shown,
+  // unless the user is already typing in a field or holding a modifier.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const el = searchRef.current;
+      if (!el) return;
+      e.preventDefault();
+      el.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
 
   const sensors = useSensors(
@@ -714,6 +731,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
               aria-hidden
             />
             <input
+              ref={searchRef}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -725,8 +743,16 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
               }}
               placeholder="Filter projects by name or path…"
               aria-label="Filter projects"
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-2.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
+            {!query && (
+              <kbd
+                aria-hidden
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
+              >
+                /
+              </kbd>
+            )}
           </div>
         ) : null}
       </header>
