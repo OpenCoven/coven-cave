@@ -2,6 +2,23 @@
    globals.css; these add only what the adaptive triage/launcher surface needs.
    Namespaced .dash-* so they never collide with /daily-report. */
 
+/* Report callout (today's/latest report) inner layout. */
+.dash-cta--static { cursor: default; }
+.dash-cta__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.dash-cta__text { min-width: 0; }
+
+/* Recent-report rows. */
+.dash-row--info { --row-accent: var(--color-info); }
+.dash-report-row__main {
+  min-width: 0;
+  flex: 1;
+}
+
 .dash-strip {
   display: flex;
   align-items: center;

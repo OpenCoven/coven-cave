@@ -50,7 +50,9 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
         </div>
       ) : null}
       <div className="dr-list">
-        {items.map((item) => (
+        {items.map((item) => {
+          const when = relativeTime(item.firedAt ?? item.updatedAt);
+          return (
           <div
             key={item.id}
             className="dr-row dash-inbox__row"
@@ -64,9 +66,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
               {item.body ? <span className="dr-row__sub">{item.body}</span> : null}
               <span className="dr-row__metaline">
                 <span className="dr-tag">{KIND_LABEL[item.kind]}</span>
-                {relativeTime(item.firedAt ?? item.updatedAt) ? (
-                  <span className="dr-row__time">{relativeTime(item.firedAt ?? item.updatedAt)}</span>
-                ) : null}
+                {when ? <span className="dr-row__time">{when}</span> : null}
               </span>
             </span>
             <span className="dash-inbox__actions">
@@ -91,7 +91,8 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
               </button>
             </span>
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

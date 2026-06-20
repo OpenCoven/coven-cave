@@ -12,12 +12,12 @@ export function ReportCallout({
 }) {
   if (!featured) {
     return (
-      <div className="dr-cta" style={{ cursor: "default" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
+      <div className="dr-cta dash-cta--static">
+        <div className="dash-cta__row">
           <span className="dr-cta__icon">
             <Icon name="ph:newspaper" aria-hidden />
           </span>
-          <span style={{ minWidth: 0 }}>
+          <span className="dash-cta__text">
             <div className="dr-cta__title">No daily report yet</div>
             <div className="dr-cta__sub">
               A daily report is generated automatically once there&apos;s activity to summarize — it&apos;ll appear here.
@@ -29,11 +29,11 @@ export function ReportCallout({
   }
   return (
     <a className="dr-cta" href={featured.href}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
+      <div className="dash-cta__row">
         <span className="dr-cta__icon">
           <Icon name="ph:newspaper" aria-hidden />
         </span>
-        <span style={{ minWidth: 0 }}>
+        <span className="dash-cta__text">
           <div className="dr-cta__title">{isToday ? "Today's daily report is ready" : "Latest daily report"}</div>
           <div className="dr-cta__sub">
             {featured.title}

@@ -20,11 +20,11 @@ export function RecentReports({
             const reportDate = new Date(`${report.slug}T00:00:00`);
             return (
               <a key={report.slug} className="dr-row" href={report.href}>
-                <span className="dr-row__icon" style={{ ["--row-accent" as string]: "var(--color-info)" }}>
+                <span className="dr-row__icon dash-row--info">
                   <Icon name="ph:newspaper" aria-hidden />
                 </span>
                 <span className="dr-row__body dr-report-row">
-                  <span style={{ minWidth: 0, flex: 1 }}>
+                  <span className="dash-report-row__main">
                     <span className="dr-row__title">{relativeDayLabel(reportDate, now)}</span>
                     <span className="dr-row__sub">{report.title}</span>
                   </span>
