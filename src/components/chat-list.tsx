@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState, useEffect, useRef, type CSSProperties, typ
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
+import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
@@ -917,6 +918,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 </span>
                                 {s.origin ? <OriginChip origin={s.origin} /> : null}
                                 <SessionInitiatorChip initiator={s.initiator} />
+                                {s.model ? (
+                                  <span
+                                    className="chat-list-row-model inline-flex shrink-0 items-center gap-0.5 rounded-[4px] bg-[var(--bg-raised)]/70 px-1 py-px text-[10px] font-medium text-[var(--text-muted)]"
+                                    title={`Model: ${s.model}`}
+                                  >
+                                    <Icon name={modelIcon(s.model)} width={10} aria-hidden />
+                                    <span className="truncate">{modelLabel(s.model)}</span>
+                                  </span>
+                                ) : null}
                               </span>
                               <span className="chat-list-row-time flex shrink-0 items-baseline gap-1 text-[11px] text-[var(--text-muted)]">
                                 <span>{chatDate(s.updated_at)}</span>
