@@ -19,6 +19,11 @@ const messageBubbleSource = readFileSync(
   "utf8",
 );
 
+const caveChatCss = readFileSync(
+  new URL("../styles/cave-chat.css", import.meta.url),
+  "utf8",
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 1: Turn index map for O(1) lookup (CHAT-D10-02 fix)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,6 +126,17 @@ assert.match(
   chatViewSource,
   /function replyFor\(turn: Turn\)[\s\S]*?replyableTurnCache\.get\(turn\)[\s\S]*?replyableTurnCache\.set\(turn, canReply\)/,
   "replyFor reads then populates the WeakMap cache instead of re-parsing every render",
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 6: turns are render-virtualized via content-visibility (CHAT-D3-07) so
+// the browser skips layout/paint for rows scrolled out of view on long threads.
+// ─────────────────────────────────────────────────────────────────────────────
+
+assert.match(
+  caveChatCss,
+  /\.cave-linear-turn \{[\s\S]*?content-visibility:\s*auto;[\s\S]*?contain-intrinsic-size:\s*auto 160px;[\s\S]*?\}/,
+  "the turn row sets content-visibility:auto with a contain-intrinsic-size estimate",
 );
 
 console.log("✓ All render optimization tests pass");

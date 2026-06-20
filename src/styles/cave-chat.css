@@ -2422,6 +2422,16 @@ details[open] > .cave-tool-summary::before {
   flex-direction: column;
   padding: 14px 0 12px;
   border-bottom: 1px solid color-mix(in oklch, var(--foreground) 5%, transparent);
+  /* CHAT-D3-07 render virtualization: let the browser skip layout + paint for
+     turns scrolled out of view (the React side is already memoized, so this is
+     the remaining cost on long threads). `contain-intrinsic-size: auto <est>`
+     gives an off-screen row a placeholder height and remembers its real size
+     once rendered, so the scrollbar stays stable. Stick-to-bottom and
+     scroll-to-bottom are unaffected — the on-screen bottom rows always render
+     at their true height; only off-screen rows use the estimate. On-screen
+     rows are not contained, so position:sticky descendants behave normally. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
 }
 
 .cave-linear-turn:last-child {
