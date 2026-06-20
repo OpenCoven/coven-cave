@@ -8,11 +8,28 @@ import { nextItemsAfterAction } from "@/lib/dashboard-model";
 
 type Action = "done" | "dismiss" | "snooze";
 
+/** Snooze durations offered in the per-row menu. `minutes` resolves at click. */
+const SNOOZE_OPTIONS: { label: string; minutes: () => number }[] = [
+  { label: "1 hour", minutes: () => 60 },
+  { label: "3 hours", minutes: () => 180 },
+  { label: "Tomorrow morning", minutes: () => minutesUntilTomorrowMorning() },
+];
+
+/** Whole minutes from now until 9am the next calendar day. */
+function minutesUntilTomorrowMorning(): number {
+  const now = new Date();
+  const target = new Date(now);
+  target.setDate(target.getDate() + 1);
+  target.setHours(9, 0, 0, 0);
+  return Math.max(1, Math.round((target.getTime() - now.getTime()) / 60_000));
+}
+
 export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   const [items, setItems] = useState<InboxItem[]>(initialItems);
   const [error, setError] = useState<string | null>(null);
+  const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
 
-  async function act(item: InboxItem, action: Action) {
+  async function act(item: InboxItem, action: Action, minutes = 60) {
     const prev = items;
     setItems(nextItemsAfterAction(items, item.id)); // optimistic remove
     setError(null);
@@ -22,7 +39,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
           ? {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ minutes: 60 }),
+              body: JSON.stringify({ minutes }),
             }
           : { method: "POST" };
       const res = await fetch(`/api/inbox/${item.id}/${action}`, init);
@@ -75,9 +92,44 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
                   Open
                 </a>
               ) : null}
-              <button type="button" className="dash-act" onClick={() => act(item, "snooze")}>
-                Snooze
-              </button>
+              <div className="dash-snooze">
+                <button
+                  type="button"
+                  className="dash-act"
+                  aria-haspopup="menu"
+                  aria-expanded={snoozeOpenId === item.id}
+                  onClick={() => setSnoozeOpenId(snoozeOpenId === item.id ? null : item.id)}
+                >
+                  Snooze
+                  <Icon name="ph:caret-down" aria-hidden />
+                </button>
+                {snoozeOpenId === item.id ? (
+                  <>
+                    <button
+                      type="button"
+                      className="dash-snooze__backdrop"
+                      aria-label="Close snooze menu"
+                      onClick={() => setSnoozeOpenId(null)}
+                    />
+                    <div className="dash-snooze__menu" role="menu" aria-label="Snooze for">
+                      {SNOOZE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.label}
+                          type="button"
+                          role="menuitem"
+                          className="dash-snooze__opt"
+                          onClick={() => {
+                            setSnoozeOpenId(null);
+                            void act(item, "snooze", opt.minutes());
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </div>
               <button type="button" className="dash-act dash-act--primary" onClick={() => act(item, "done")}>
                 Done
               </button>
