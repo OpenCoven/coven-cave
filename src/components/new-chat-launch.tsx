@@ -4,6 +4,7 @@ import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime } from "@/lib/relative-time";
+import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 /**
@@ -95,7 +96,10 @@ export function NewChatLaunch({
                   )}
                   <span className="cave-launch__recent-copy">
                     <span className="cave-launch__recent-title">{s.title || "New chat"}</span>
-                    <span className="cave-launch__recent-meta">
+                    <span
+                      className="cave-launch__recent-meta"
+                      title={s.updated_at ? formatTimestamp(s.updated_at, readDateTimePrefs()) : undefined}
+                    >
                       {famName(s.familiarId) ? `${famName(s.familiarId)} · ` : ""}
                       {relativeTime(s.updated_at)}
                     </span>
