@@ -12,7 +12,7 @@
 
 import { Icon, type IconName } from "@/lib/icon";
 
-type TabId = "home" | "chat" | "board" | "retro" | "inbox" | "library";
+type TabId = "home" | "chat" | "board" | "inbox" | "library";
 
 type TabDef = {
   id: TabId;
@@ -25,7 +25,6 @@ const TABS: TabDef[] = [
   { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
   { id: "chat", label: "Familiars", ariaLabel: "Familiars", iconName: "ph:chats" },
   { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
-  { id: "retro", label: "Retro", ariaLabel: "Retro Runs", iconName: "ph:arrows-clockwise-bold" },
   { id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" },
   { id: "library", label: "Library", ariaLabel: "Library", iconName: "ph:books" },
 ];

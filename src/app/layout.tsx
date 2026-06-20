@@ -12,6 +12,7 @@ import { ReadingWeightController } from "@/components/reading-weight-controller"
 import { ReadingHyphensController } from "@/components/reading-hyphens-controller";
 import { ReadingDropcapController } from "@/components/reading-dropcap-controller";
 import { CornerRadiusController } from "@/components/corner-radius-controller";
+import { ThemeScript } from "@/components/theme-script";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
 import { PwaRegister } from "@/components/pwa-register";
@@ -57,7 +58,14 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${fontVariables} h-full antialiased`}
+      // ThemeScript sets data-theme/data-mode on <html> before hydration, so the
+      // server markup intentionally differs from the post-script client markup.
+      // Suppress the resulting attribute hydration mismatch (the next-themes pattern).
+      suppressHydrationWarning
     >
+      <head>
+        <ThemeScript />
+      </head>
       <body className="h-full flex flex-col">
         <DevCacheResetScript />
         <SidecarAuthBridge />

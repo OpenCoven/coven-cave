@@ -70,6 +70,18 @@ assert.match(
 );
 
 assert.match(
+  layout,
+  /import\s+\{\s*ThemeScript\s*\}\s+from\s+"@\/components\/theme-script"/,
+  "Root layout should import ThemeScript",
+);
+
+assert.match(
+  layout,
+  /<head>\s*<ThemeScript \/>[\s\S]*<\/head>/,
+  "Root layout should mount ThemeScript in <head> so persisted theme background applies before paint",
+);
+
+assert.match(
   themeScript,
   /name\.indexOf\("--"\) === 0 \? name : "--" \+ name/,
   "ThemeScript should accept tweakcn's bare-name keys by prefixing -- when missing",
@@ -337,6 +349,18 @@ assert.match(
   globals,
   /font-size: calc\(16px \* var\(--cave-screen-scale\)\)/,
   "Global CSS should magnify the app via rem-based root font scaling (not an app-wide zoom, which broke getBoundingClientRect math)",
+);
+
+assert.match(
+  settings,
+  /THEME_OWNED_APPEARANCE_KEYS[\s\S]*localStorage\.removeItem\(key\)/,
+  "Selecting a preset theme should clear stale typography/radius/reading overrides so theme-owned structure applies",
+);
+
+assert.match(
+  globals,
+  /\[data-theme="pastel-dreams"\]\s*\{[\s\S]*--font-sans:\s*var\(--font-open-sans\)[\s\S]*--font-mono:\s*var\(--font-ibm-plex-mono\)[\s\S]*--radius:\s*1\.5rem[\s\S]*--radius-control:\s*18px[\s\S]*--shadow-popover:[\s\S]*--cave-reading-leading:\s*1\.7/,
+  "Pastel Dreams should carry TweakCN typography, radius, shadow, and reading-spacing tokens, not just colors",
 );
 
 assert.match(

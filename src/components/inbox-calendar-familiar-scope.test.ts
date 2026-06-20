@@ -64,8 +64,14 @@ assert.match(
 
 assert.match(
   workspace,
-  /<CalendarView[\s\S]*?activeFamiliarId=\{activeId\}/,
-  "Workspace must pass activeId to CalendarView",
+  /const calendarFamiliarId = activeId \?\? familiars\[0\]\?\.id \?\? null/,
+  "Workspace calendar mode should default All familiars to one familiar",
+);
+
+assert.match(
+  workspace,
+  /<CalendarView[\s\S]*?activeFamiliarId=\{calendarFamiliarId\}/,
+  "Workspace must pass the effective selected familiar to CalendarView",
 );
 
 console.log("inbox-calendar-familiar-scope.test.ts: ok");

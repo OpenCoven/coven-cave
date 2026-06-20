@@ -33,7 +33,6 @@ export type FolderMode =
   | "github"
   | "roles"
   | "workflows"
-  | "retro"
   | "library"
   | "capabilities"
   | "canvas";
@@ -93,7 +92,6 @@ const FOLDER_MODES: Array<{
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘0", description: "Chat with a familiar beside your files and terminal" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Reusable agent personas you can attach to a familiar" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
-  { id: "retro", label: "Retro", iconName: "ph:arrows-clockwise-bold", group: "tools", description: "Review eval-loop runs with sanitized snapshots" },
   { id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools", description: "Skills and tools your familiars can use" },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you" },

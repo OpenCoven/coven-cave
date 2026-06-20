@@ -88,7 +88,7 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="recent-activity__label">Recent activity</span>
+        <span className="recent-activity__label">Recent</span>
         <Icon
           name="ph:caret-down-bold"
           width="0.7rem"

@@ -12,7 +12,8 @@ type DaemonFamiliar = {
   role?: string;
 };
 
-export async function GET() {
+export async function GET(req: Request) {
+  const requestedFamiliarId = new URL(req.url).searchParams.get("familiarId")?.trim() || null;
   const [familiarsRes, config] = await Promise.all([
     callDaemon<DaemonFamiliar[]>({ path: "/api/v1/familiars" }),
     loadConfig(),
@@ -26,15 +27,17 @@ export async function GET() {
     });
   }
 
-  const familiarInputs = familiarsRes.data.map((familiar) => {
-    const safe = redactSecretsDeep(familiar);
-    const binding = bindingFor(config, familiar.id);
-    return {
-      id: familiar.id,
-      displayName: binding.display_name ?? safe.display_name ?? familiar.id,
-      role: binding.role ?? safe.role,
-    };
-  });
+  const familiarInputs = familiarsRes.data
+    .filter((familiar) => !requestedFamiliarId || familiar.id === requestedFamiliarId)
+    .map((familiar) => {
+      const safe = redactSecretsDeep(familiar);
+      const binding = bindingFor(config, familiar.id);
+      return {
+        id: familiar.id,
+        displayName: binding.display_name ?? safe.display_name ?? familiar.id,
+        role: binding.role ?? safe.role,
+      };
+    });
 
   const states = await Promise.all(
     familiarInputs.map(async (familiar) => {
