@@ -268,7 +268,17 @@ export function WorkflowsView({
     return () => clearTimeout(timer);
   }, [playback]);
 
-  const stopPlayback = useCallback(() => setPlayback(null), []);
+  const stopPlayback = useCallback(() => {
+    // A session-executor run spawns a real agent session, so stopping must kill
+    // it on the daemon — clearing the local playback alone would leave the
+    // workflow's agent running. Plan previews/replays have no session to stop.
+    if (playback?.live && playback.sessionId) {
+      void fetch(`/api/sessions/${encodeURIComponent(playback.sessionId)}/kill`, {
+        method: "POST",
+      }).catch(() => undefined);
+    }
+    setPlayback(null);
+  }, [playback]);
 
   // Deep-link into the live agent session a session-executor run spawned. Same
   // `#chat-<sessionId>` idiom the workspace uses to restore a thread; the
