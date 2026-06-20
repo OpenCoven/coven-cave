@@ -7162,7 +7162,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   outline: 0;
   background: transparent;
   color: var(--text-primary);
-  font-size: 13px;
+  /* No font-size override — inherit the global `max(16px, 1em)` rule so iOS
+     Safari doesn't auto-zoom on focus (enforced by composer-zoom-smoke). */
 }
 .retro-tabs {
   display: inline-flex;
