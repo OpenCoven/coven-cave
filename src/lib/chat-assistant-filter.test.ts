@@ -132,3 +132,63 @@ assert.equal(
   "# Plan\nname: the thing we are editing\n---\nThis horizontal rule is part of a normal reply.\n",
   "normal assistant headings, name fields, and markdown rules should remain visible",
 );
+
+// ── Shape-based detection (robust to skill rewording / new skills) ──────────
+
+assert.equal(
+  feed([
+    "codex",
+    "Let me shape this first.",
+    "---",
+    "name: brainstorming",
+    "description: A completely reworded description that matches no hardcoded phrase",
+    "allowed-tools: Read, Edit",
+    "---",
+    "# A Brand New Heading That Was Never In The Allowlist",
+    "Some reworded skill body prose that no longer matches any pinned string.",
+    "```ts",
+    "const leakedCode = true;",
+    "```",
+  ]),
+  "Let me shape this first.\n",
+  "a reworded SKILL.md is detected by its frontmatter shape, not exact phrases",
+);
+
+assert.equal(
+  feed([
+    "codex",
+    "Checking the right skill.",
+    "---",
+    "name: test-driven-development",
+    "description: Use when implementing any feature or bugfix",
+    "---",
+    "# Test-Driven Development",
+    "Write the failing test first.",
+  ]),
+  "Checking the right skill.\n",
+  "an entirely different skill's frontmatter is suppressed too",
+);
+
+assert.equal(
+  feed([
+    "codex",
+    "One moment.",
+    "<NEVER-SKIP-THIS>",
+    "A future skill directive marker that is not in the hardcoded set.",
+    "</NEVER-SKIP-THIS>",
+    "Body that should also stay hidden.",
+  ]),
+  "One moment.\n",
+  "novel hyphenated all-caps marker tags are detected by shape",
+);
+
+assert.equal(
+  feed([
+    "codex",
+    "Here are the options:",
+    "---",
+    "Note: pick the one that fits your budget.",
+  ]),
+  "Here are the options:\n---\nNote: pick the one that fits your budget.\n",
+  "a horizontal rule followed by capitalized prose (Note:) is NOT skill frontmatter",
+);

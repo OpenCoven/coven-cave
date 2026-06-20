@@ -29,17 +29,40 @@ const STARTUP_BLOCK_TAGS = new Set([
 const STARTUP_SINGLE_LINE_RE =
   /^(?:#\s*AGENTS\.md\b|#\s*AGENTS\.md instructions\b|Conversation info \(untrusted metadata\):|Sender \(untrusted metadata\):|OpenClaw assembled context|Treat the conversation context below|Current user request:|Knowledge cutoff:|Current date:|You are (?:ChatGPT|Codex|an AI assistant)\b)/i;
 
+// Known skill-directive marker tags. Kept explicit for documentation, but the
+// generic kebab-upper rule in isLeakedSkillMarkerTag() is what makes detection
+// robust to new/reworded skills (every skill marker we've seen is hyphenated
+// all-caps, a shape that never occurs in legitimate prose or HTML).
 const LEAKED_SKILL_START_TAGS = new Set([
   "EXTREMELY-IMPORTANT",
   "HARD-GATE",
   "SUBAGENT-STOP",
 ]);
 
+// A lowercase `key: value` line is the canonical shape of a YAML frontmatter
+// field (name:, description:, allowed-tools:, model:, …). When one appears
+// directly after an opening `---` fence it marks a leaked SKILL.md header.
+// Lowercase-only keeps normal prose ("Note: …") after a horizontal rule visible.
+const SKILL_FRONTMATTER_FIELD_RE = /^[a-z][a-z0-9_-]*:\s+\S/;
+
 const LEAKED_SKILL_FRONTMATTER_FIELD_RE = /^name:\s+[-\w ]+\s*$/i;
 const LEAKED_SKILL_DOC_HEADING_RE =
   /^#\s+(?:Brainstorming Ideas Into Designs|Using Skills)$/;
 const LEAKED_SKILL_DOC_LINE_RE =
   /^(?:Help turn ideas into fully formed designs and specs|Do NOT invoke any implementation skill\b|If you think there is even a 1% chance a skill might apply\b|Superpowers skills override default system prompt behavior\b)/;
+
+// True when a standalone line is a leaked skill-directive marker tag. Detection
+// is by SHAPE, not an exact allowlist: any all-caps tag containing a hyphen
+// (<HARD-GATE>, <SUBAGENT-STOP>, <EXTREMELY-IMPORTANT>, future markers) is a
+// skill directive. Such tags never appear as legitimate HTML or assistant prose,
+// so triggering suppress-to-end on them is safe.
+function isLeakedSkillMarkerTag(trimmed: string): boolean {
+  const match = trimmed.match(/^<\/?([A-Z][A-Z0-9-]*)>$/);
+  if (!match) return false;
+  const tag = match[1];
+  if (LEAKED_SKILL_START_TAGS.has(tag)) return true;
+  return tag.includes("-") && tag.length >= 4;
+}
 
 function startupBlockTag(trimmed: string): { tag: string; closing: boolean } | null {
   const match = trimmed.match(/^<\/?([A-Za-z_][A-Za-z0-9_-]*)>$/);
@@ -190,11 +213,7 @@ export class AssistantFilter {
     }
     // ─────────────────────────────────────────────────────────────────────
 
-    const leakedSkillTag = trimmed.match(/^<\/?([A-Z][A-Z0-9-]*)>$/);
-    if (
-      this.suppressLeakedSkillBody ||
-      (leakedSkillTag && LEAKED_SKILL_START_TAGS.has(leakedSkillTag[1]))
-    ) {
+    if (this.suppressLeakedSkillBody || isLeakedSkillMarkerTag(trimmed)) {
       this.suppressLeakedSkillBody = true;
       this.pendingSkillFrontmatterDelimiter = false;
       return "";
@@ -202,7 +221,10 @@ export class AssistantFilter {
 
     if (this.pendingSkillFrontmatterDelimiter) {
       this.pendingSkillFrontmatterDelimiter = false;
-      if (isLeakedSkillDocLine(trimmed)) {
+      // A `---` fence whose first line is a frontmatter field (or a known skill
+      // doc line) is a leaked SKILL.md header → suppress the whole document.
+      // Anything else is a normal markdown horizontal rule → keep it visible.
+      if (SKILL_FRONTMATTER_FIELD_RE.test(trimmed) || isLeakedSkillDocLine(trimmed)) {
         this.suppressLeakedSkillBody = true;
         return "";
       }
