@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
@@ -61,6 +62,8 @@ export function BoardCardStack({
   // Resolved after mount so schedule-urgency colors stay hydration-safe.
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
+  // Re-render card dates when the date-format preference changes.
+  useDateTimePrefs();
 
   const counts = useMemo(() => {
     const acc: Record<CardStatus, number> = {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
@@ -82,6 +83,8 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   // mismatch (the server has no "now").
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
+  // Re-render card dates when the date-format preference changes.
+  useDateTimePrefs();
   const { announce } = useAnnouncer();
   const draggingIdRef = useRef<string | null>(null);
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
