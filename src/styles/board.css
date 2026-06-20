@@ -1143,10 +1143,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--color-warning);
+  color: var(--text-secondary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.board-card-stack__row-schedule--due-soon { color: var(--color-warning); }
+.board-card-stack__row-schedule--overdue { color: var(--color-danger); font-weight: 600; }
 .board-card-stack__row-action {
   margin-left: auto;
   display: inline-flex;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
+import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
@@ -26,45 +27,6 @@ const PRIORITIES: { id: CardPriority; label: string }[] = [
   { id: "medium", label: "Medium" },
   { id: "low",    label: "Low" },
 ];
-
-function formatBoardDate(value: string | null | undefined): string {
-  if (!value) return "";
-  const [year, month, day] = value.split("-");
-  if (!year || !month || !day) return value;
-  return `${month}/${day}`;
-}
-
-function scheduleLabel(startDate: string | null | undefined, endDate: string | null | undefined): string {
-  if (startDate && endDate) {
-    if (startDate === endDate) return formatBoardDate(startDate);
-    return `${formatBoardDate(startDate)}-${formatBoardDate(endDate)}`;
-  }
-  if (startDate) return `Starts ${formatBoardDate(startDate)}`;
-  if (endDate) return `Ends ${formatBoardDate(endDate)}`;
-  return "";
-}
-
-type ScheduleUrgency = "overdue" | "due-soon" | "none";
-
-// Whether a card's end date has passed (overdue) or is within two days (due
-// soon), used to color the schedule chip. Done cards never flag, and `todayMs`
-// is null until mount so the first client render matches SSR.
-function scheduleUrgency(
-  endDate: string | null | undefined,
-  status: CardStatus,
-  todayMs: number | null,
-): ScheduleUrgency {
-  if (!endDate || status === "done" || todayMs === null) return "none";
-  const [y, m, d] = endDate.split("-").map(Number);
-  if (!y || !m || !d) return "none";
-  const due = new Date(y, m - 1, d).getTime();
-  const now = new Date(todayMs);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const diffDays = Math.round((due - today) / 86_400_000);
-  if (diffDays < 0) return "overdue";
-  if (diffDays <= 2) return "due-soon";
-  return "none";
-}
 
 type Props = {
   cards: Card[];
