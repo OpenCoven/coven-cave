@@ -64,6 +64,13 @@ assert.match(
   "SURFACE_ORDER ascends with the sidebar top-to-bottom order (⌘1..⌘8)",
 );
 
+// ⌘[ / ⌘] cycle to the previous / next surface through SURFACE_ORDER (wraps).
+assert.match(
+  workspace,
+  /e\.key === "\[" \|\| e\.key === "\]"[\s\S]{0,450}?SURFACE_ORDER\[next\]/,
+  "⌘[ / ⌘] step through SURFACE_ORDER and setMode to the neighbouring surface",
+);
+
 // After the top-bar streamline: no breadcrumb, no Home button, no brand
 // mark. The sidebar carries section + familiar identity instead.
 assert.doesNotMatch(
