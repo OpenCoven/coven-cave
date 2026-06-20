@@ -128,6 +128,11 @@ export function TopBar(props: Props) {
       <form
         className="top-bar__search"
         role="search"
+        // Open the palette on an explicit click (or Enter via onSubmit), NOT on
+        // focus. The palette restores focus to this input when it closes, so
+        // opening on focus would immediately reopen it — making Escape and
+        // click-off impossible to escape.
+        onClick={onOpenPalette}
         onSubmit={(e) => {
           e.preventDefault();
           onOpenPalette();
@@ -139,7 +144,6 @@ export function TopBar(props: Props) {
           className="top-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          onFocus={onOpenPalette}
           placeholder="Search or ask Salem..."
           aria-label="Search anything or ask Salem"
           autoComplete="off"

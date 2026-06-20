@@ -11,6 +11,8 @@ import type {
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
+import { ProjectTree } from "@/components/project-tree";
+import type { CaveProject } from "@/lib/cave-projects-types";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -551,6 +553,9 @@ function CodexDetailPanel({
   const [executionEnvironment, setExecutionEnvironment] = useState(auto.executionEnvironment ?? "worktree");
   const [tagsText, setTagsText] = useState(commaInput(auto.tags));
   const [cwdsText, setCwdsText] = useState(listInput(auto.cwds));
+  // Folder-picker ("browse") state for the Working directories field.
+  const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
+  const [cwdProjects, setCwdProjects] = useState<CaveProject[]>([]);
   const [scheduleMode, setScheduleMode] = useState<"daily" | "weekly" | "raw">(parsedSchedule.mode);
   const [scheduleTime, setScheduleTime] = useState(parsedSchedule.time);
   const [scheduleDays, setScheduleDays] = useState(parsedSchedule.days);
@@ -576,6 +581,28 @@ function CodexDetailPanel({
   const nextRrule = buildCodexRrule(scheduleMode, scheduleTime, scheduleDays, rawRrule);
   const tags = parseListInput(tagsText);
   const cwds = parseListInput(cwdsText);
+  const cwdSet = useMemo(() => new Set(cwds), [cwdsText]); // eslint-disable-line react-hooks/exhaustive-deps
+  const addCwd = useCallback((dir: string) => {
+    const clean = dir.trim();
+    if (!clean) return;
+    setCwdsText((prev) => {
+      const list = parseListInput(prev);
+      if (list.includes(clean)) return prev;
+      return listInput([...list, clean]);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!cwdPickerOpen || cwdProjects.length > 0) return;
+    let alive = true;
+    void fetch("/api/projects")
+      .then((res) => res.json())
+      .then((data: { ok?: boolean; projects?: CaveProject[] }) => {
+        if (alive && data.ok && Array.isArray(data.projects)) setCwdProjects(data.projects);
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [cwdPickerOpen, cwdProjects.length]);
   const promptDirty = goals !== promptParts.goals || deliverables !== promptParts.deliverables;
   const nextPrompt = promptDirty
     ? composeAutomationPrompt(goals, deliverables, promptParts.hasStructuredSections || deliverables.trim().length > 0)
@@ -777,7 +804,16 @@ function CodexDetailPanel({
             </select>
           </div>
           <div>
-            <FieldLabel>Working directories</FieldLabel>
+            <div className="flex items-center justify-between">
+              <FieldLabel>Working directories</FieldLabel>
+              <button
+                type="button"
+                onClick={() => setCwdPickerOpen(true)}
+                className="mb-1 inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:folder-open" width={12} /> Browse…
+              </button>
+            </div>
             <textarea
               value={cwdsText}
               onChange={(event) => setCwdsText(event.target.value)}
@@ -786,6 +822,77 @@ function CodexDetailPanel({
               style={fieldStyle}
             />
           </div>
+
+          {cwdPickerOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Pick working directories"
+              onClick={() => setCwdPickerOpen(false)}
+            >
+              <div
+                className="flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] shadow-xl"
+                style={{ background: "var(--bg-panel)" }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
+                  <span className="text-[13px] font-semibold text-[var(--text-primary)]">Working directories</span>
+                  <button
+                    type="button"
+                    onClick={() => setCwdPickerOpen(false)}
+                    aria-label="Close"
+                    className="grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:x" width={14} />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                  {cwdProjects.length === 0 ? (
+                    <p className="px-2 py-4 text-[12px] text-[var(--text-muted)]">
+                      No projects found. Add a project in the Code workspace first, or type a path into the field.
+                    </p>
+                  ) : (
+                    cwdProjects.map((proj) => (
+                      <div key={proj.root} className="mb-2">
+                        <div className="flex items-center justify-between gap-2 px-1 py-1">
+                          <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                            {proj.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => addCwd(proj.root)}
+                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                              cwdSet.has(proj.root)
+                                ? "text-[var(--accent-presence)]"
+                                : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                            }`}
+                          >
+                            {cwdSet.has(proj.root) ? "Added" : "Use root"}
+                          </button>
+                        </div>
+                        <ProjectTree root={proj.root} onDirSelect={addCwd} selectedDirs={cwdSet} />
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-3 py-2">
+                  <span className="text-[11px] text-[var(--text-muted)]">
+                    {cwds.length} {cwds.length === 1 ? "directory" : "directories"} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCwdPickerOpen(false)}
+                    className="rounded-md px-3 py-1 text-[12px] font-medium text-white"
+                    style={{ background: "var(--accent-presence)" }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <FieldLabel>Tags</FieldLabel>
             <input

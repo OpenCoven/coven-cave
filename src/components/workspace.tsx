@@ -196,7 +196,10 @@ export function Workspace() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
-  const [boardTaskCount, setBoardTaskCount] = useState(0);
+  // Open (not-done) board cards, kept with their familiar so the Tasks badge can
+  // show a per-familiar count when a familiar is scoped, and the grand total
+  // only when "All familiars" is selected.
+  const [openTaskCards, setOpenTaskCards] = useState<{ familiarId: string | null }[]>([]);
   const [inboxPrefs, setInboxPrefs] = useState<InboxPrefs>({
     version: 1,
     mutedFamiliars: [],
@@ -787,10 +790,10 @@ export function Workspace() {
         const json = await res.json();
         if (cancelled) return;
         if (json.ok && Array.isArray(json.cards)) {
-          const open = (json.cards as Array<{ status?: string }>).filter(
-            (c) => c.status !== "done",
-          ).length;
-          setBoardTaskCount(open);
+          const open = (json.cards as Array<{ status?: string; familiarId?: string | null }>)
+            .filter((c) => c.status !== "done")
+            .map((c) => ({ familiarId: c.familiarId ?? null }));
+          setOpenTaskCards(open);
         }
       } catch {
         /* keep last value on transient failure */
@@ -1301,6 +1304,16 @@ export function Workspace() {
   };
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
+
+  // Tasks badge count: scoped to the active familiar's open cards, or the grand
+  // total of all open cards when "All familiars" (activeId === null) is selected.
+  const boardTaskCount = useMemo(
+    () =>
+      activeId === null
+        ? openTaskCards.length
+        : openTaskCards.filter((c) => c.familiarId === activeId).length,
+    [openTaskCards, activeId],
+  );
 
   // Ephemeral bridge: turn each "needs response" familiar into a transient
   // InboxItem so the bell badge, inbox view, and inspector tab all surface it

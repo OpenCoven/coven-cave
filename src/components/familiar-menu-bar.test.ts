@@ -37,8 +37,13 @@ assert.match(
 );
 assert.match(
   source,
+  /onClick=\{onOpenSearch\}/,
+  "clicking desktop menu bar search should open the context-aware palette (open on click, not focus, so the palette's focus-restore on close can't reopen it)",
+);
+assert.doesNotMatch(
+  source,
   /onFocus=\{onOpenSearch\}/,
-  "focusing desktop menu bar search should open the context-aware palette",
+  "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
 // Left group — chat. The top panel should keep only the dropdown selector and
@@ -164,11 +169,20 @@ assert.doesNotMatch(
   "Workspace should not render a floating Salem perch",
 );
 
-// The board task count is polled from /api/board (open = not done).
+// The open (not-done) board cards are polled from /api/board, kept with their
+// familiar so the Tasks badge can scope the count.
 assert.match(
   workspace,
-  /fetch\("\/api\/board"[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)\.length/,
-  "boardTaskCount counts cards that are not yet done",
+  /fetch\("\/api\/board"[\s\S]*\.filter\(\s*\(c\) => c\.status !== "done",?\s*\)[\s\S]*\.map\(\s*\(c\) => \(\{ familiarId: c\.familiarId \?\? null \}\)\s*\)/,
+  "open (not-done) board cards are collected with their familiarId",
+);
+
+// The Tasks badge count is scoped: per-familiar when one is selected, the grand
+// total only when "All familiars" (activeId === null) is selected.
+assert.match(
+  workspace,
+  /boardTaskCount = useMemo\([\s\S]*activeId === null[\s\S]*openTaskCards\.length[\s\S]*openTaskCards\.filter\(\(c\) => c\.familiarId === activeId\)\.length/,
+  "boardTaskCount is the active familiar's open-card count, or the grand total for All familiars",
 );
 
 // Desktop-only: the bar shows ≥1024px (where the mobile .top-bar is hidden).

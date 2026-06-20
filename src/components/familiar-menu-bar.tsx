@@ -84,6 +84,11 @@ export function FamiliarMenuBar({
       <form
         className="menu-bar__search"
         role="search"
+        // Open the palette on an explicit click (or Enter via onSubmit), NOT on
+        // focus. The palette restores focus to this input when it closes, so
+        // opening on focus would immediately reopen it — making Escape and
+        // click-off impossible to escape.
+        onClick={onOpenSearch}
         onSubmit={(e) => {
           e.preventDefault();
           onOpenSearch();
@@ -95,7 +100,6 @@ export function FamiliarMenuBar({
           className="menu-bar__search-input"
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          onFocus={onOpenSearch}
           placeholder="Search or ask Salem..."
           aria-label="Search anything or ask Salem"
           autoComplete="off"

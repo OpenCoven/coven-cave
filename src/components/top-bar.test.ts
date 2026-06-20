@@ -66,8 +66,13 @@ assert.match(
 
 assert.match(
   source,
+  /onClick=\{onOpenPalette\}/,
+  "Clicking the top search should open the context-aware palette (open on click, not focus, so the palette's focus-restore on close can't reopen it)",
+);
+assert.doesNotMatch(
+  source,
   /onFocus=\{onOpenPalette\}/,
-  "Focusing the top search input should open the context-aware palette",
+  "Top search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
 assert.match(
