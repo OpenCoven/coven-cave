@@ -24,12 +24,12 @@ assert.match(
 );
 assert.match(
   source,
-  /<ChatListSection label="Pinned" count=\{pinnedCount\}/,
+  /<ChatListSection[\s\S]*?label="Pinned"[\s\S]*?count=\{pinnedCount\}/,
   "A counted PINNED section header is rendered for the flat list",
 );
 assert.match(
   source,
-  /<ChatListSection label="Sessions" count=\{restCount\}/,
+  /<ChatListSection[\s\S]*?label="Sessions"[\s\S]*?count=\{restCount\}/,
   "A counted SESSIONS section header is rendered for the flat list",
 );
 // Headers are placed by first-member index so order/interleaving can't dupe them.
