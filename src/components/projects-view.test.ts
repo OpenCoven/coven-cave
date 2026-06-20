@@ -116,6 +116,6 @@ assert.match(projectsView, /function lastActiveMs/, "recency is derived from eac
 // dominating; the full path stays in the title and the editor.
 assert.match(projectsView, /\{shortRoot\(project\.root\)\}/, "the displayed path is shortened");
 assert.match(projectsView, /title=\{project\.root\}/, "the full path remains available via the title");
-assert.match(projectsView, /relativeAge\(/, "each row shows a relative last-active label");
+assert.match(projectsView, /relativeTime\(/, "each row shows a relative last-active label (shared relative-time helper)");
 
 console.log("projects-view.test.ts: ok");

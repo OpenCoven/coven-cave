@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 
 import { Icon } from "@/lib/icon";
+import { relativeTime } from "@/lib/relative-time";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import type { SessionRow } from "@/lib/types";
@@ -48,20 +49,6 @@ function chatDotClass(status: string): string {
   return "bg-[var(--text-muted)]";
 }
 
-/** Compact "2m ago" / "3d ago" relative label (older than a week → a short date). */
-function relativeAge(iso: string | null | undefined, now = Date.now()): string {
-  if (!iso) return "";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const mins = Math.round((now - then) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(then);
-}
 
 /** Most-recent activity across a project's sessions (epoch ms; 0 when empty). */
 function lastActiveMs(chats: SessionRow[]): number {
@@ -212,7 +199,7 @@ function ProjectRow({
   const [expanded, setExpanded] = useState(false);
   const lastActiveIso =
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
-  const lastActiveLabel = relativeAge(lastActiveIso);
+  const lastActiveLabel = relativeTime(lastActiveIso);
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const { setNodeRef: setDropRef, isOver } = useDroppable({

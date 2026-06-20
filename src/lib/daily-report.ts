@@ -74,21 +74,10 @@ export function relativeDayLabel(date: Date, now = new Date()): string {
   return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(date);
 }
 
-/** Compact "3h ago" / "2d ago" / clock time relative phrase. */
-export function relativeTime(iso: string | null | undefined, now = new Date()): string {
-  if (!iso) return "";
-  const then = new Date(iso);
-  if (Number.isNaN(then.getTime())) return "";
-  const diffMs = now.getTime() - then.getTime();
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(then);
-}
+// The compact "3h ago" / "2d ago" / short-date phrase now lives in the shared
+// relative-time module; re-export it so existing dashboard/daily-report
+// importers (and the daily-report test) keep working unchanged.
+export { relativeTime } from "./relative-time.ts";
 
 export const KIND_LABEL: Record<ItemKind, string> = {
   reminder: "Reminder",
