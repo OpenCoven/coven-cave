@@ -79,14 +79,20 @@ export function NewChatLaunch({
           <div className="cave-launch__section" aria-label="Recent threads">
             <p className="cave-launch__label">Pick up where you left off</p>
             <div className="cave-launch__recents">
-              {recents.map((s) => (
+              {recents.map((s) => {
+                const fam = s.familiarId ? resolved.find((f) => f.id === s.familiarId) : undefined;
+                return (
                 <button
                   key={s.id}
                   type="button"
                   className="cave-launch__recent"
                   onClick={() => onResume(s.id)}
                 >
-                  <Icon name="ph:chat-circle-dots" width={15} className="cave-launch__recent-icon" aria-hidden />
+                  {fam ? (
+                    <FamiliarAvatar familiar={fam} size="sm" className="cave-launch__recent-icon" />
+                  ) : (
+                    <Icon name="ph:chat-circle-dots" width={15} className="cave-launch__recent-icon" aria-hidden />
+                  )}
                   <span className="cave-launch__recent-copy">
                     <span className="cave-launch__recent-title">{s.title || "New chat"}</span>
                     <span className="cave-launch__recent-meta">
@@ -96,7 +102,8 @@ export function NewChatLaunch({
                   </span>
                   <Icon name="ph:arrow-right-bold" width={12} className="cave-launch__recent-go" aria-hidden />
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : null}
