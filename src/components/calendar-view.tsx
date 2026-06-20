@@ -629,11 +629,13 @@ function MonthView({
   anchor,
   onOpenItem,
   onDayClick,
+  onAddEntry,
 }: {
   items: InboxItem[];
   anchor: Date;
   onOpenItem?: (item: InboxItem) => void;
   onDayClick?: (day: Date) => void;
+  onAddEntry?: (opts: { fireAt: string }) => void;
 }) {
   const today = new Date();
   const monthStart = startOfMonth(anchor);
@@ -690,12 +692,26 @@ function MonthView({
                       onDayClick?.(day);
                     }
                   }}
-                  className={`focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
+                  className={`group relative focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
                   } ${isToday ? "ring-1 ring-inset ring-[var(--accent-presence)]" : ""}`}
                 >
+                  {onAddEntry && isCurrentMonth && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddEntry({ fireAt: defaultEntryFireAt(day) });
+                      }}
+                      aria-label={`Add a reminder on ${fmtDateHeading(day)}`}
+                      title="Add reminder"
+                      className="focus-ring absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-presence)] group-hover:flex group-focus-within:flex"
+                    >
+                      <Icon name="ph:plus" width={10} aria-hidden />
+                    </button>
+                  )}
                   <span
                     className={`mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
                       isToday
@@ -1207,6 +1223,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             items={scopedItems}
             anchor={anchor}
             onOpenItem={(item) => setSelectedItem(item)}
+            onAddEntry={onAddEntry}
             onDayClick={(day) => {
               setAnchor(day);
               setViewMode("day");
