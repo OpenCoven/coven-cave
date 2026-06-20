@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { modelIcon } from "@/lib/model-label";
 import type { SessionRow } from "@/lib/types";
 
@@ -134,7 +135,12 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
                           <span className="recent-activity__del">−{del}</span>
                         </span>
                       ) : null}
-                      <span className="recent-activity__time">{relativeTime(s.updated_at)}</span>
+                      <span
+                        className="recent-activity__time"
+                        title={s.updated_at ? formatTimestamp(s.updated_at, readDateTimePrefs()) : undefined}
+                      >
+                        {relativeTime(s.updated_at)}
+                      </span>
                     </span>
                   </div>
                 </button>
