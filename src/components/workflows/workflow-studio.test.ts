@@ -368,4 +368,30 @@ assert.match(studio, /workflowInputSteps\(workflow\)\.length > 0/, "Play should 
 assert.match(studio, /onPlay\(selectedWorkflow,\s*inputs\)/, "Captured run inputs should flow into the play handler");
 assert.match(css, /\.workflow-run-input-field/, "CSS should style run-input capture fields");
 
+// --- Studio clarity pass: uses autocomplete, navigable issues, runs filter, manifest copy ---
+
+// `uses` autocomplete: the step Uses field offers binding candidates via a native datalist.
+assert.match(inspector, /export type WorkflowUsesOption/, "Inspector should export the uses-option type for the studio to thread");
+assert.match(inspector, /<datalist id=\{listId\}>/, "Inspector should render a datalist for uses autocomplete");
+assert.match(inspector, /suggestions=\{usesOptions\}/, "The Uses field should be fed the uses options");
+assert.match(studio, /usesOptions\?: WorkflowUsesOption\[\]/, "Studio props should carry uses options");
+assert.match(studio, /usesOptions=\{props\.usesOptions\}/, "Studio should thread uses options into the inspector");
+
+// Validation issue → step: an issue that names a step renders as a jump button.
+assert.match(inspector, /function stepIdForIssue/, "Inspector should resolve a validation issue to its step");
+assert.match(inspector, /workflow-issue-jump/, "Inspector should render issues as jump-to-step affordances");
+assert.match(inspector, /onSelectStep/, "Inspector should accept an onSelectStep callback");
+assert.match(studio, /onSelectStep=\{props\.onSelectStep\}/, "Studio should thread onSelectStep into the inspector");
+assert.match(css, /\.workflow-issue-jump/, "CSS should style the issue jump affordance");
+
+// Runs history filter: plan snapshots vs executions vs problems.
+assert.match(runsPanel, /RUN_FILTERS/, "Runs panel should define history filters");
+assert.match(runsPanel, /workflow-runs-filter/, "Runs panel should render filter chips");
+assert.match(runsPanel, /visibleRuns/, "Runs panel should render the filtered run set");
+assert.match(css, /\.workflow-runs-filter-chip/, "CSS should style runs filter chips");
+
+// Manifest copy: hand off the canonical YAML.
+assert.match(manifestPreview, /navigator\.clipboard\.writeText/, "Manifest preview should copy the canonical YAML");
+assert.match(manifestPreview, /Copy manifest YAML/, "Manifest preview should expose a copy affordance");
+
 console.log("workflow-studio.test.ts: ok");

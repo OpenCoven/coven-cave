@@ -14,14 +14,35 @@ import {
 } from "@/lib/workflows";
 import type { WorkflowStudioActionState } from "./workflow-studio";
 
+/** A binding candidate for a step's `uses` field (familiar, skill, tool, sub-workflow). */
+export type WorkflowUsesOption = {
+  value: string;
+  /** Short origin label shown beside the value in the suggestion list. */
+  group: string;
+};
+
 type WorkflowInspectorProps = {
   workflow: WorkflowSummary | null;
   selectedNode: WorkflowGraphNode | null;
   action: WorkflowStudioActionState | null;
+  /** Binding candidates offered as `uses` autocomplete. */
+  usesOptions?: WorkflowUsesOption[];
   onUpdateStep: (id: string, patch: Partial<WorkflowStepSummary>) => void;
   onUpdateMeta: (patch: Partial<WorkflowSummary>) => void;
   onRemoveStep: (id: string) => void;
+  /** Jump to a step by id (e.g. from a validation issue that names it). */
+  onSelectStep?: (id: string) => void;
 };
+
+/** The step a validation issue points at, resolved from its path (longest id wins). */
+function stepIdForIssue(issue: WorkflowValidationIssue, steps: WorkflowStepSummary[]): string | null {
+  if (!issue.path) return null;
+  let best: string | null = null;
+  for (const step of steps) {
+    if (issue.path.includes(step.id) && (!best || step.id.length > best.length)) best = step.id;
+  }
+  return best;
+}
 
 // The canonical CWF-01 step-kind vocabulary, in execution order so the dropdown
 // mirrors the palette (Input first, Output last). Kept in sync with the palette
@@ -71,12 +92,18 @@ function Field({
   value,
   placeholder,
   onCommit,
+  suggestions,
+  listId,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   onCommit: (next: string) => void;
+  /** Optional autocomplete candidates rendered as a native <datalist>. */
+  suggestions?: WorkflowUsesOption[];
+  listId?: string;
 }) {
+  const hasSuggestions = Boolean(listId && suggestions && suggestions.length > 0);
   return (
     <label className="workflow-field">
       <span>{label}</span>
@@ -84,6 +111,7 @@ function Field({
         type="text"
         defaultValue={value}
         placeholder={placeholder}
+        list={hasSuggestions ? listId : undefined}
         key={`${label}:${value}`}
         onBlur={(event) => {
           if (event.target.value !== value) onCommit(event.target.value);
@@ -92,6 +120,15 @@ function Field({
           if (event.key === "Enter") (event.target as HTMLInputElement).blur();
         }}
       />
+      {hasSuggestions && (
+        <datalist id={listId}>
+          {suggestions!.map((option) => (
+            <option key={`${option.group}:${option.value}`} value={option.value}>
+              {option.group}
+            </option>
+          ))}
+        </datalist>
+      )}
     </label>
   );
 }
@@ -101,9 +138,11 @@ export function WorkflowInspector({
   workflow,
   selectedNode,
   action,
+  usesOptions,
   onUpdateStep,
   onUpdateMeta,
   onRemoveStep,
+  onSelectStep,
 }: WorkflowInspectorProps) {
   const issues = issuesForAction(action);
   const step = selectedNode
@@ -172,6 +211,8 @@ export function WorkflowInspector({
             label="Uses"
             value={step.uses ?? ""}
             placeholder="nova · cwf-validator@^1.0.0 · cave.output"
+            suggestions={usesOptions}
+            listId="workflow-uses-options"
             onCommit={(next) => onUpdateStep(step.id, { uses: next || undefined })}
           />
           <Field
@@ -297,15 +338,35 @@ export function WorkflowInspector({
       </p>
       {issues.length > 0 && (
         <ul className="workflow-issue-list">
-          {issues.slice(0, 6).map((issue, index) => (
-            <li key={`${issue.code}:${issue.path ?? index}`}>
-              <span className={`workflow-issue-tier workflow-issue-${issue.tier}`}>{issue.tier}</span>
-              <span>
-                {issue.message ?? issue.code}
-                {issue.suggestion ? ` — ${issue.suggestion}` : ""}
-              </span>
-            </li>
-          ))}
+          {issues.slice(0, 6).map((issue, index) => {
+            const targetStep = onSelectStep ? stepIdForIssue(issue, workflow?.steps ?? []) : null;
+            const body = (
+              <>
+                <span className={`workflow-issue-tier workflow-issue-${issue.tier}`}>{issue.tier}</span>
+                <span>
+                  {issue.message ?? issue.code}
+                  {issue.suggestion ? ` — ${issue.suggestion}` : ""}
+                </span>
+              </>
+            );
+            return (
+              <li key={`${issue.code}:${issue.path ?? index}`}>
+                {targetStep ? (
+                  <button
+                    type="button"
+                    className="workflow-issue-jump"
+                    onClick={() => onSelectStep!(targetStep)}
+                    title={`Go to step ${targetStep}`}
+                  >
+                    {body}
+                    <Icon name="ph:arrow-right-bold" width={10} aria-hidden className="workflow-issue-jump-icon" />
+                  </button>
+                ) : (
+                  body
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       </>
