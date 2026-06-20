@@ -90,4 +90,29 @@ assert.match(
   "comingSoon rows get opacity-50",
 );
 
+// Add-on toggle must treat a non-ok response as a failure (fetch only throws on
+// network errors), revert, and surface the error — not silently stick.
+assert.match(
+  source,
+  /if \(!res\.ok\) throw new Error\(`save failed \(\$\{res\.status\}\)`\)/,
+  "add-on toggle checks res.ok so a 4xx/5xx is treated as a failed save",
+);
+assert.match(
+  source,
+  /setToggleError\("Couldn't save that change/,
+  "a failed add-on toggle surfaces an inline error",
+);
+// Settings section nav exposes the active section to assistive tech.
+assert.match(
+  source,
+  /aria-current=\{section === s\.id && !showPicker \? "page" : undefined\}/,
+  "the active settings section is marked aria-current",
+);
+// The custom-theme reset button is labelled with the actual theme name.
+assert.match(
+  source,
+  /aria-label=\{`Reset \$\{customData\.name\}`\}/,
+  "the custom-theme reset button names the theme it resets",
+);
+
 console.log("settings-shell-polish.test.ts OK");
