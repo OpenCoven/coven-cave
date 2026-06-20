@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { relativeTime } from "@/lib/relative-time";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
@@ -252,18 +253,7 @@ function formatBytes(bytes: number | undefined): string | null {
 }
 
 function shortProjectTime(iso: string | null): string {
-  if (!iso) return "No sessions yet";
-  try {
-    const diffSec = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (diffSec < 60) return "just now";
-    if (diffSec < 3600) return `${Math.round(diffSec / 60)}m ago`;
-    if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
-    const days = Math.round(diffSec / 86400);
-    if (days < 30) return `${days}d ago`;
-    return `${Math.round(days / 30)}mo ago`;
-  } catch {
-    return "No sessions yet";
-  }
+  return iso ? relativeTime(iso) : "No sessions yet";
 }
 
 export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "" }: Props) {

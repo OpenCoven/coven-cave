@@ -25,10 +25,12 @@ assert.equal(pickFamiliarMemory([{ relPath: "m/f.md", modified: "2026-06-12T00:0
 
 // formatRelTime
 assert.equal(formatRelTime(null), "never");
-assert.equal(formatRelTime(new Date(Date.now() - 30_000).toISOString()), "just now");
+assert.equal(formatRelTime(new Date(Date.now() - 10_000).toISOString()), "just now");
 assert.match(formatRelTime(new Date(Date.now() - 5 * 60_000).toISOString()), /^5m ago$/);
 assert.match(formatRelTime(new Date(Date.now() - 3 * 3_600_000).toISOString()), /^3h ago$/);
 assert.match(formatRelTime(new Date(Date.now() - 2 * 86_400_000).toISOString()), /^2d ago$/);
+// Past a week, items show a real date (shared relativeTime), not an ever-growing "Nd ago".
+assert.match(formatRelTime(new Date(Date.now() - 30 * 86_400_000).toISOString()), /^[A-Z][a-z]{2} \d{1,2}$/);
 
 // statusMeta: known status → label + non-empty color; unknown → neutral, no pulse
 const active = statusMeta("active");

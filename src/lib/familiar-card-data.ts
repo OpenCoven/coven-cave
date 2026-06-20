@@ -3,6 +3,8 @@
  * No React, no fetch — unit-tested in familiar-card-data.test.ts.
  */
 
+import { relativeTime } from "@/lib/relative-time";
+
 /** Minimal shape of a /api/memory entry this card consumes. */
 export type RawMemoryEntry = {
   familiarId?: string;
@@ -51,12 +53,7 @@ export function pickFamiliarMemory(
 
 /** Relative time, mirrors familiar-status-card's relTime. */
 export function formatRelTime(iso: string | null | undefined): string {
-  if (!iso) return "never";
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (diffMs < 60_000) return "just now";
-  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)}m ago`;
-  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)}h ago`;
-  return `${Math.floor(diffMs / 86_400_000)}d ago`;
+  return iso ? relativeTime(iso) : "never";
 }
 
 export type StatusMeta = { label: string; color: string; pulse: boolean };

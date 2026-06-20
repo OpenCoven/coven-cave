@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { relativeTime } from "@/lib/relative-time";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import type { InboxPrefs, SoundMode } from "@/lib/cave-inbox-prefs";
@@ -17,14 +18,7 @@ type Props = {
 };
 
 function relTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.round(Math.abs(diff) / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
+  return iso ? relativeTime(iso) : "—";
 }
 
 export function NotificationBell({
