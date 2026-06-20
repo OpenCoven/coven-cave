@@ -238,7 +238,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-actions">
-        <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat}>
+        <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
           <Icon name="ph:note-pencil" width={16} aria-hidden />
           <span>New chat</span>
         </button>
