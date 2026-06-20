@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import "@/styles/journal.css";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { CanvasList } from "./canvas-list";
+import { JournalEntries } from "./journal-entries";
 import type { Familiar } from "@/lib/types";
 
 const TABS = [
@@ -91,10 +92,7 @@ export function JournalView({
         {tab === "canvas" ? (
           <CanvasList familiars={familiars} activeFamiliarId={activeFamiliarId} />
         ) : (
-          <div className="journal-empty journal-empty--pane">
-            Your daily journal lands here next — reflective entries your familiars write about each
-            day, alongside what happened. Coming in the next update.
-          </div>
+          <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} />
         )}
       </div>
     </div>
