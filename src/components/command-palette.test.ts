@@ -10,6 +10,10 @@ const globals = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const workspace = readFileSync(
+  new URL("./workspace.tsx", import.meta.url),
+  "utf8",
+);
 
 // Input is labelled.
 assert.match(
@@ -111,5 +115,38 @@ assert.ok(stripMatch, "create-task title strips a leading /task prefix via repla
   assert.equal(strip("fix /task login"), "fix /task login", "mid-string '/task' untouched");
   assert.equal(strip("/taskforce roster"), "/taskforce roster", "'/taskforce' is not stripped");
 }
+
+// ── Surface navigation ("Go to <surface>") makes ⌘K a launcher ──
+assert.match(
+  source,
+  /kind:\s*"go-to-surface";\s*mode:\s*FolderMode/,
+  "palette exposes a go-to-surface intent",
+);
+assert.match(
+  source,
+  /import \{ FOLDER_MODES[\s\S]*?from "@\/components\/sidebar-minimal"/,
+  "surface rows are built from the shared FOLDER_MODES list (single source of truth)",
+);
+assert.match(
+  source,
+  /name:\s*`Go to \$\{fm\.label\}`/,
+  "each navigable surface renders a 'Go to <label>' row",
+);
+assert.match(
+  source,
+  /fm\.id === "github"[\s\S]{0,80}?addons\?\.github === true/,
+  "surface rows respect the same add-on gating as the sidebar (GitHub)",
+);
+assert.match(
+  source,
+  /\(scoped \|\| slashToken\)\s*\n?\s*\?\s*\[\]/,
+  "surface rows are hidden while typing a familiar scope or a slash command",
+);
+// Consumer: workspace switches surfaces on the intent.
+assert.match(
+  workspace,
+  /intent\.kind === "go-to-surface"[\s\S]{0,80}?setMode\(intent\.mode as WorkspaceMode\)/,
+  "workspace navigates to the chosen surface on a go-to-surface intent",
+);
 
 console.log("command-palette.test.ts OK");

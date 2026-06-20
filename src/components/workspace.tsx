@@ -1185,6 +1185,11 @@ export function Workspace() {
       setMode("board");
       return;
     }
+    if (intent.kind === "go-to-surface") {
+      setMode(intent.mode as WorkspaceMode);
+      shellRef.current?.dismissNavMobile();
+      return;
+    }
     if (intent.kind === "focus-card") {
       // Navigate to the board and signal which card to focus via URL hash.
       // BoardView listens for `#card-<id>` and selects the matching card.
@@ -1909,6 +1914,7 @@ export function Workspace() {
         initialQuery={topSearchQuery}
         onQueryChange={setTopSearchQuery}
         onIntent={onPaletteIntent}
+        addons={addons}
       />
 
       <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

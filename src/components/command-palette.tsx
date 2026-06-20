@@ -9,6 +9,7 @@ import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { FOLDER_MODES, type FolderMode, type AddonsConfig } from "@/components/sidebar-minimal";
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -18,6 +19,7 @@ type PaletteIntent =
   | { kind: "back-to-list" }
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
+  | { kind: "go-to-surface"; mode: FolderMode }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
   | { kind: "open-memory-file"; path: string };
@@ -57,6 +59,8 @@ type Props = {
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onIntent: (intent: PaletteIntent) => void;
+  /** Add-on gating so palette navigation matches the sidebar's visible surfaces. */
+  addons?: AddonsConfig;
 };
 
 type Row =
@@ -172,6 +176,7 @@ export function CommandPalette({
   initialQuery = "",
   onQueryChange,
   onIntent,
+  addons,
 }: Props) {
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
@@ -442,6 +447,31 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
+    // "Go to <surface>" rows make ⌘K a launcher for the sidebar surfaces. Gated
+    // the same way the sidebar gates them, and hidden while typing a slash
+    // command or a familiar scope (where surface nav would be noise).
+    const surfaceRows: Row[] = (scoped || slashToken)
+      ? []
+      : FOLDER_MODES.filter((fm) => {
+          if (fm.id === "github") return addons?.github === true;
+          if (fm.id === "library") return addons?.library === true;
+          return true;
+        })
+          .filter(
+            (fm) =>
+              !q ||
+              fm.label.toLowerCase().includes(q) ||
+              fm.id.includes(q) ||
+              fm.description.toLowerCase().includes(q),
+          )
+          .map((fm) => ({
+            id: `surface:${fm.id}`,
+            kind: "command" as const,
+            name: `Go to ${fm.label}`,
+            hint: fm.kbd ? `${fm.description} · ${fm.kbd}` : fm.description,
+            intent: { kind: "go-to-surface", mode: fm.id },
+          }));
+
     const localRows: Row[] = [
       ...familiarRows,
       ...sessionRows,
@@ -450,6 +480,7 @@ export function CommandPalette({
       ...fsMemoryRows,
       ...saveRows,
       ...cmdRows,
+      ...surfaceRows,
       ...shortcutRows,
       ...createRows,
     ];
