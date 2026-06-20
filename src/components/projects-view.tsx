@@ -7,7 +7,7 @@ import { relativeTime } from "@/lib/relative-time";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import type { SessionRow } from "@/lib/types";
-import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
+import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import {
   applyManualOrder,
   mergeVisibleOrder,
@@ -77,10 +77,12 @@ function shortRoot(p: string): string {
 // deletes the chat with a two-step confirm, mirroring the Chats list.
 function ProjectChatRow({
   session,
+  displayTitle,
   onOpen,
   onDelete,
 }: {
   session: SessionRow;
+  displayTitle?: string;
   onOpen: () => void;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -88,7 +90,7 @@ function ProjectChatRow({
     id: session.id,
   });
   const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
-  const title = stripLeadingTrailingEmoji(session.title || "(untitled chat)");
+  const title = stripLeadingTrailingEmoji(displayTitle ?? (session.title || "(untitled chat)"));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   return (
@@ -215,6 +217,7 @@ function ProjectRow({
     projectStatus === "running" ? ", a session is running" : projectStatus === "failed" ? ", last session failed" : "";
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
+  const chatTitles = useMemo(() => disambiguateSessionTitles(chats), [chats]);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `pcard:${normalizeProjectRoot(project.root)}`,
   });
@@ -456,6 +459,7 @@ function ProjectRow({
                 <ProjectChatRow
                   key={session.id}
                   session={session}
+                  displayTitle={chatTitles.get(session.id)}
                   onOpen={() => onOpenSession?.(session.id)}
                   onDelete={onDeleteSession}
                 />
