@@ -213,6 +213,7 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
   const [groupBy, setGroupBy] = useState<GroupBy>("status");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -247,14 +248,23 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
   }
 
   async function handleAdd(title: string, sourceType: LibraryReadingItem["sourceType"], status: ReadingStatus, url?: string) {
-    setAdding(false);
-    const res = await fetch("/api/library/reading", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, sourceType, status, url: url || undefined }),
-    });
-    const json = await res.json();
-    if (json.ok) setItems((prev) => [json.item, ...prev]);
+    setAddError(null);
+    try {
+      const res = await fetch("/api/library/reading", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title, sourceType, status, url: url || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setAddError(json?.error ?? "Couldn't add to the reading list — try again.");
+        return;
+      }
+      setItems((prev) => [json.item, ...prev]);
+      setAdding(false);
+    } catch {
+      setAddError("Couldn't add to the reading list — network error.");
+    }
   }
 
   async function handleStatusChange(item: LibraryReadingItem, status: ReadingStatus) {
@@ -339,7 +349,12 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
 
       {/* Add form */}
       {adding && (
-        <AddReadingForm onAdd={handleAdd} onCancel={() => setAdding(false)} />
+        <>
+          <AddReadingForm onAdd={handleAdd} onCancel={() => { setAdding(false); setAddError(null); }} />
+          {addError && (
+            <p role="alert" className="px-3 py-1.5 text-[11px] text-[var(--color-danger)]">{addError}</p>
+          )}
+        </>
       )}
 
       {/* Table */}

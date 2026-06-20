@@ -178,6 +178,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
   const [groupSelectorOpen, setGroupSelectorOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [addedToBoardId, setAddedToBoardId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -215,14 +216,23 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
   }
 
   async function handleAdd(url: string, title: string, tags: string[]) {
-    setAdding(false);
-    const res = await fetch("/api/library/bookmarks", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url, title, tags }),
-    });
-    const json = await res.json();
-    if (json.ok) setItems((prev) => [json.item, ...prev]);
+    setAddError(null);
+    try {
+      const res = await fetch("/api/library/bookmarks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url, title, tags }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setAddError(json?.error ?? "Couldn't save the bookmark — try again.");
+        return;
+      }
+      setItems((prev) => [json.item, ...prev]);
+      setAdding(false);
+    } catch {
+      setAddError("Couldn't save the bookmark — network error.");
+    }
   }
 
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryBookmark>();
@@ -335,7 +345,12 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
 
       {/* Add form */}
       {adding && (
-        <AddBookmarkForm onAdd={handleAdd} onCancel={() => setAdding(false)} />
+        <>
+          <AddBookmarkForm onAdd={handleAdd} onCancel={() => { setAdding(false); setAddError(null); }} />
+          {addError && (
+            <p role="alert" className="px-3 py-1.5 text-[11px] text-[var(--color-danger)]">{addError}</p>
+          )}
+        </>
       )}
 
       {/* Table */}

@@ -591,6 +591,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
   const [groupBy, setGroupBy] = useState<GroupBy>("repo");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [attachItem, setAttachItem] = useState<LibraryGitHubItem | null>(null);
   const [handoffItem, setHandoffItem] = useState<LibraryGitHubItem | null>(null);
   const [query, setQuery] = useState("");
@@ -619,14 +620,23 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
   }
 
   async function handleAdd(url: string, title: string) {
-    setAdding(false);
-    const res = await fetch("/api/library/github", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url, title }),
-    });
-    const json = await res.json();
-    if (json.ok) setItems((prev) => [json.item, ...prev]);
+    setAddError(null);
+    try {
+      const res = await fetch("/api/library/github", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url, title }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setAddError(json?.error ?? "Couldn't save the link — try again.");
+        return;
+      }
+      setItems((prev) => [json.item, ...prev]);
+      setAdding(false);
+    } catch {
+      setAddError("Couldn't save the link — network error.");
+    }
   }
 
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryGitHubItem>();
@@ -703,7 +713,12 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
 
       {/* Add form */}
       {adding && (
-        <AddGitHubForm onAdd={handleAdd} onCancel={() => setAdding(false)} />
+        <>
+          <AddGitHubForm onAdd={handleAdd} onCancel={() => { setAdding(false); setAddError(null); }} />
+          {addError && (
+            <p role="alert" className="px-3 py-1.5 text-[11px] text-[var(--color-danger)]">{addError}</p>
+          )}
+        </>
       )}
 
       {/* Table */}
