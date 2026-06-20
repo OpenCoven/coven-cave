@@ -55,11 +55,20 @@ assert.doesNotMatch(mobileScript, /tauri ios dev --device/);
 // in-app SidecarAuthMonitor and gates /api/ over Tailscale.
 assert.match(mobileScript, /SIDECAR_TOKEN_FILE=/);
 assert.match(mobileScript, /load_or_create_sidecar_token\(\)/);
-// The native server is now started WITH the sidecar auth token set (the old
-// behavior unset both token vars together).
+// The native (webview) server is started WITH the sidecar auth token set; it
+// must NOT run tokenless. The ONLY launch path that unsets both token vars is
+// the separate tokenless native-app mode (CAVE_MOBILE_APP /
+// `pnpm mobile:tailscale:app`), which is distinguished by also unsetting
+// COVEN_CAVE_BUNDLE. So: assert the native path keeps the sidecar token, and
+// that every "unset both tokens" occurrence belongs to that app mode.
 assert.match(mobileScript, /COVEN_CAVE_AUTH_TOKEN/);
-assert.doesNotMatch(mobileScript, /unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN/);
-assert.doesNotMatch(mobileScript, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN/);
+assert.match(mobileScript, /export COVEN_CAVE_AUTH_TOKEN=/);
+for (const m of mobileScript.matchAll(/unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN[^\n;]*/g)) {
+  assert.match(m[0], /COVEN_CAVE_BUNDLE/, "only the tokenless app mode may unset both tokens together");
+}
+for (const m of mobileScript.matchAll(/-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN[^\n]*/g)) {
+  assert.match(m[0], /-u COVEN_CAVE_BUNDLE/, "only the tokenless app mode may unset both tokens together");
+}
 // The dev URL handed to the webview carries the token so SidecarAuthBridge
 // stores it and authenticates every /api/ request.
 assert.match(mobileScript, /covenCaveToken/);
