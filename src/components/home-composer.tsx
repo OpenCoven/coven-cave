@@ -63,6 +63,29 @@ const SEED_SUGGESTIONS = [
   "Remind me to review PRs tomorrow at 10 AM",
 ];
 
+// Persist the in-progress prompt so a page reload doesn't eat what you were
+// typing on the home screen (mirrors the chat composer's draft persistence).
+const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
+
+function readHomeDraft(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(HOME_DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeHomeDraft(text: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (text) window.localStorage.setItem(HOME_DRAFT_KEY, text);
+    else window.localStorage.removeItem(HOME_DRAFT_KEY);
+  } catch {
+    /* best effort */
+  }
+}
+
 // ─── HomeComposer ─────────────────────────────────────────────────────────────
 
 export function HomeComposer({
@@ -76,7 +99,7 @@ export function HomeComposer({
   onToast,
   onSlash,
 }: Props) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => readHomeDraft());
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -154,6 +177,12 @@ export function HomeComposer({
 
   useEffect(() => {
     setSlashIdx(0);
+  }, [text]);
+
+  // Persist the draft so a reload restores it; cleared when the input empties
+  // (e.g. after a send), so sent prompts don't reappear.
+  useEffect(() => {
+    writeHomeDraft(text);
   }, [text]);
 
   // Focus on mount

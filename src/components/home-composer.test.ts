@@ -153,3 +153,21 @@ assert.doesNotMatch(
   /scope: "session"/,
   "HomeComposer must not use session scope — there is no session at home",
 );
+
+// The home prompt draft survives a reload: text initialises from localStorage,
+// is written back on change, and is removed when emptied (e.g. after a send).
+assert.match(
+  source,
+  /const \[text, setText\] = useState\(\(\) => readHomeDraft\(\)\)/,
+  "home composer text initialises from the persisted draft",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*writeHomeDraft\(text\);\s*\}, \[text\]\)/,
+  "the home draft is persisted whenever the prompt changes",
+);
+assert.match(
+  source,
+  /if \(text\) window\.localStorage\.setItem\(HOME_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(HOME_DRAFT_KEY\)/,
+  "an emptied home draft removes the key (sent prompts don't reappear on reload)",
+);
