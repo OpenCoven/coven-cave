@@ -18,7 +18,30 @@ for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
 }
 assert.ok(source.includes("setItem"), "writes renamed id back to localStorage");
 
-// 4. Custom theme path applies the mode-matching group.
+// 4. The pre-hydration allowlist accepts every preset theme plus custom.
+for (const id of [
+  "coven",
+  "tide",
+  "grove",
+  "ember",
+  "bloom",
+  "dusk",
+  "mist",
+  "hex",
+  "bane",
+  "slate",
+  "ghosty",
+  "claymorphism",
+  "claude",
+  "pastel-dreams",
+  "meatseeks",
+  "trucker",
+  "custom",
+]) {
+  assert.ok(source.includes(`"${id}"`), `valid theme allowlist contains ${id}`);
+}
+
+// 5. Custom theme path applies the mode-matching group.
 assert.match(
   source,
   /cssVars\.light|cssVars\[\s*["']light["']\s*\]/,
@@ -30,7 +53,7 @@ assert.match(
   "custom path references dark group",
 );
 
-// 5. Reads keys via the COVEN_*_KEY constants (or matches their values).
+// 6. Reads keys via the COVEN_*_KEY constants (or matches their values).
 assert.ok(
   source.includes("coven-theme") && source.includes("coven-mode"),
   "references both storage keys",

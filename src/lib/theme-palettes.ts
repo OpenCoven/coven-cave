@@ -1,5 +1,5 @@
 /**
- * 10-theme roster metadata + swatch lookup for the appearance settings UI.
+ * 16-theme roster metadata + swatch lookup for the appearance settings UI.
  * The actual palette CSS lives in `src/app/globals.css`; this module
  * mirrors the accent values and a representative background swatch
  * per (theme, mode) so the settings grid can preview each card.
@@ -18,6 +18,12 @@ export const THEME_IDS = [
   "hex",
   "bane",
   "slate",
+  "ghosty",
+  "claymorphism",
+  "claude",
+  "pastel-dreams",
+  "meatseeks",
+  "trucker",
 ] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -93,6 +99,42 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     description: "Ink-and-bone monochrome. No color. No mercy.",
     hue: 270, accentDark: "#B8B8C2", accentLight: "#525258",
     bgDark: "oklch(0.05 0.000 0)", bgLight: "oklch(0.985 0.000 0)",
+  },
+  ghosty: {
+    name: "Ghosty",
+    description: "Spectral grayscale. Soft graphite chrome, quiet as a haunt.",
+    hue: 0, accentDark: "#a6a6a6", accentLight: "#808080",
+    bgDark: "#1a1a1a", bgLight: "#fafafa",
+  },
+  claymorphism: {
+    name: "Claymorphism",
+    description: "Soft-molded stone with indigo glaze and lifted clay shadows.",
+    hue: 239, accentDark: "#818cf8", accentLight: "#6366f1",
+    bgDark: "#1e1b18", bgLight: "#e7e5e4",
+  },
+  claude: {
+    name: "Claude",
+    description: "Warm parchment, muted ink, and a burnt-clay primary.",
+    hue: 17, accentDark: "#d97757", accentLight: "#c96442",
+    bgDark: "#262624", bgLight: "#faf9f5",
+  },
+  "pastel-dreams": {
+    name: "Pastel Dreams",
+    description: "Soft violet pastels with lifted white surfaces.",
+    hue: 263, accentDark: "#c0aafd", accentLight: "#a78bfa",
+    bgDark: "#1c1917", bgLight: "#f7f3f9",
+  },
+  meatseeks: {
+    name: "Meatseeks",
+    description: "Supabase green over crisp utility surfaces.",
+    hue: 153, accentDark: "#006239", accentLight: "#72e3ad",
+    bgDark: "#121212", bgLight: "#fcfcfc",
+  },
+  trucker: {
+    name: "Trucker",
+    description: "Roadside evergreen, blacktop panels, and clean cab lights.",
+    hue: 156, accentDark: "#005735", accentLight: "#005735",
+    bgDark: "#020504", bgLight: "#f5fcf9",
   },
 };
 
