@@ -2,6 +2,7 @@
 
 import { Icon } from "@/lib/icon";
 import type { WorkflowGraphNode } from "@/lib/workflow-graph";
+import { wouldCreateCycle } from "@/lib/workflow-draft";
 import {
   workflowInputSteps,
   workflowIssueSummary,
@@ -32,6 +33,10 @@ type WorkflowInspectorProps = {
   onRemoveStep: (id: string) => void;
   /** Jump to a step by id (e.g. from a validation issue that names it). */
   onSelectStep?: (id: string) => void;
+  /** Make `target` require `source` (same edge the canvas draws). */
+  onConnect?: (source: string, target: string) => void;
+  /** Drop the `target`-requires-`source` dependency. */
+  onDisconnect?: (source: string, target: string) => void;
 };
 
 /** The step a validation issue points at, resolved from its path (longest id wins). */
@@ -143,6 +148,8 @@ export function WorkflowInspector({
   onUpdateMeta,
   onRemoveStep,
   onSelectStep,
+  onConnect,
+  onDisconnect,
 }: WorkflowInspectorProps) {
   const issues = issuesForAction(action);
   const step = selectedNode
@@ -232,10 +239,60 @@ export function WorkflowInspector({
             placeholder="retry · halt · escalate"
             onCommit={(next) => onUpdateStep(step.id, { on_error: next || undefined })}
           />
-          <p className="workflow-muted">
-            Requires: {step.requires?.length ? step.requires.join(", ") : "none"} — draw edges on the
-            canvas to change dependencies.
-          </p>
+          {(() => {
+            // Dependency editor — the canvas-free way to wire `requires`, so a
+            // step's prerequisites are editable on mobile (where the React Flow
+            // canvas is swapped for the linear step list) as well as on desktop.
+            // Toggling a chip draws/removes the same edge the canvas would:
+            // making this step require another is connect(other → this). Options
+            // that would close a cycle are disabled (the reducer rejects them
+            // anyway; disabling makes that legible instead of a silent no-op).
+            const steps = workflow?.steps ?? [];
+            const others = steps.filter((entry) => entry.id !== step.id);
+            return (
+              <div className="workflow-field workflow-requires-field">
+                <span>Requires</span>
+                {others.length === 0 ? (
+                  <p className="workflow-muted workflow-requires-empty">No other steps to depend on yet.</p>
+                ) : (
+                  <div className="workflow-requires-options" role="group" aria-label="Step dependencies">
+                    {others.map((other) => {
+                      const active = step.requires?.includes(other.id) ?? false;
+                      const cyclic = !active && wouldCreateCycle(steps, other.id, step.id);
+                      const label = other.name ?? other.id;
+                      return (
+                        <button
+                          key={other.id}
+                          type="button"
+                          className={`workflow-requires-chip${active ? " is-active" : ""}`}
+                          aria-pressed={active}
+                          disabled={cyclic || (!onConnect && !onDisconnect)}
+                          title={
+                            cyclic
+                              ? `Requiring ${label} would create a dependency cycle`
+                              : active
+                                ? `Stop requiring ${label}`
+                                : `Require ${label} to finish first`
+                          }
+                          onClick={() =>
+                            active
+                              ? onDisconnect?.(other.id, step.id)
+                              : onConnect?.(other.id, step.id)
+                          }
+                        >
+                          {active && <Icon name="ph:check-bold" width={10} aria-hidden />}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <p className="workflow-muted workflow-requires-hint">
+                  Pick the steps that must finish first. On desktop you can also draw edges on the canvas.
+                </p>
+              </div>
+            );
+          })()}
         </div>
       ) : workflow ? (
         <div className="workflow-editor">

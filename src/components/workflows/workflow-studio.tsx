@@ -358,6 +358,8 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
                 onUpdateMeta={props.onUpdateMeta}
                 onRemoveStep={props.onRemoveStep}
                 onSelectStep={props.onSelectStep}
+                onConnect={props.onConnect}
+                onDisconnect={props.onDisconnect}
               />
             )}
             {sidePanelSection === "attachments" && (

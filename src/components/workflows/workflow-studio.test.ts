@@ -394,4 +394,15 @@ assert.match(css, /\.workflow-runs-filter-chip/, "CSS should style runs filter c
 assert.match(manifestPreview, /navigator\.clipboard\.writeText/, "Manifest preview should copy the canonical YAML");
 assert.match(manifestPreview, /Copy manifest YAML/, "Manifest preview should expose a copy affordance");
 
+// --- Mobile-friendly dependency editing ---
+// The inspector edits `requires` without the canvas (which mobile swaps for the
+// linear step list), so step prerequisites are editable on every viewport.
+assert.match(inspector, /workflow-requires-options/, "Inspector should render a dependency editor");
+assert.match(inspector, /wouldCreateCycle/, "Dependency editor should disable options that would cycle");
+assert.match(inspector, /onConnect\?\.\(other\.id, step\.id\)/, "Toggling a dependency on should connect other → this step");
+assert.match(inspector, /onDisconnect\?\.\(other\.id, step\.id\)/, "Toggling a dependency off should disconnect it");
+assert.match(studio, /onConnect=\{props\.onConnect\}[\s\S]{0,80}onDisconnect=\{props\.onDisconnect\}\s*\/>/, "Studio should thread connect/disconnect into the inspector");
+assert.match(css, /\.workflow-requires-chip\s*\{/, "CSS should style dependency toggle chips");
+assert.match(css, /\.workflow-requires-chip\s*\{\s*min-height:\s*var\(--touch-target\)/, "Dependency chips should meet the touch target on mobile");
+
 console.log("workflow-studio.test.ts: ok");

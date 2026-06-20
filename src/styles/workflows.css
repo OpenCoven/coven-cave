@@ -1196,6 +1196,71 @@
   margin-top: 4px;
 }
 
+/* Dependency (`requires`) editor — canvas-free way to wire prerequisites, so
+   step dependencies are editable on mobile too. One toggle chip per other step. */
+.workflow-requires-field > span {
+  margin-bottom: 4px;
+}
+
+.workflow-requires-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.workflow-requires-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.workflow-requires-chip:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.workflow-requires-chip.is-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border));
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  color: var(--text-primary);
+}
+
+.workflow-requires-chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.workflow-requires-chip:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.workflow-requires-empty,
+.workflow-requires-hint {
+  margin: 0;
+}
+
+.workflow-requires-hint {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+@media (max-width: 767px) {
+  .workflow-requires-chip {
+    min-height: var(--touch-target);
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 .workflow-limits-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
