@@ -1,13 +1,17 @@
 import type { CardStatus } from "@/lib/cave-board-types";
+import { readDateTimePrefs } from "@/lib/datetime-format";
 
 export type ScheduleUrgency = "overdue" | "due-soon" | "none";
 
-/** Compact "MM/DD" from an ISO date string ("2026-06-19" -> "06/19"). */
+/**
+ * Compact board date from an ISO date string ("2026-06-19"), ordered by the
+ * user's date preference: "06/19" (month-first) or "19/06" (day-first).
+ */
 export function formatBoardDate(value: string | null | undefined): string {
   if (!value) return "";
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;
-  return `${month}/${day}`;
+  return readDateTimePrefs().date === "ddmm" ? `${day}/${month}` : `${month}/${day}`;
 }
 
 /** Compact schedule-window label shown on board cards (kanban + mobile rail). */

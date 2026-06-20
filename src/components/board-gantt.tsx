@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Card } from "@/lib/cave-board-types";
+import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
 
 type Props = {
   cards: Card[];
@@ -22,7 +23,10 @@ function parseDate(value: string | null | undefined): Date | null {
 }
 
 function formatLabel(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(date);
+  const month = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(date);
+  const day = date.getUTCDate();
+  // Order by the user's date preference (month-first vs day-first).
+  return readDateTimePrefs().date === "ddmm" ? `${day} ${month}` : `${month} ${day}`;
 }
 
 function daysBetween(start: Date, end: Date): number {
@@ -35,6 +39,8 @@ export function BoardGantt({ cards, selectedCardId, onSelect }: Props) {
   // after mount — the line simply isn't drawn for the first client render.
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
+  // Re-render axis + row dates when the date-format preference changes.
+  useDateTimePrefs();
 
   const scheduled: ScheduledCard[] = [];
   const unscheduled: Card[] = [];
