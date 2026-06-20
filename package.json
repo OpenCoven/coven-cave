@@ -17,6 +17,7 @@
     "mobile:tailscale:invite": "bash scripts/mobile-tailscale.sh invite",
     "mobile:tailscale:native": "bash scripts/mobile-tailscale.sh native",
     "mobile:tailscale:native:device": "CAVE_MOBILE_DEVICE=1 bash scripts/mobile-tailscale.sh native",
+    "mobile:tailscale:app": "bash scripts/mobile-tailscale.sh app",
     "mobile:tailscale:status": "bash scripts/mobile-tailscale.sh status",
     "mobile:tailscale:stop": "bash scripts/mobile-tailscale.sh stop",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
