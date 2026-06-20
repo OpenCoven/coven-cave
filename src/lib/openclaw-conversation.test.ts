@@ -53,7 +53,7 @@ try {
   assert.equal(conv?.sessionId, "session-1");
   assert.equal(conv?.familiarId, "nova");
   assert.equal(conv?.harness, "openclaw");
-  assert.equal(conv?.title, "New Session 1");
+  assert.equal(conv?.title, "New chat");
   assert.deepEqual(
     conv?.turns.map((turn) => [turn.role, turn.text]),
     [
