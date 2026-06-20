@@ -8326,7 +8326,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border-color: var(--color-success);
 }
 @keyframes cave-next-path-pulse {
-  0%, 100% { border-color: color-mix(in oklch, var(--color-success) 55%, var(--border-hairline)); }
+  0%, 100% { border-color: color-mix(in oklch, var(--color-success) 35%, var(--border-hairline)); }
   50% { border-color: var(--color-success); }
 }
 @media (prefers-reduced-motion: reduce) {
