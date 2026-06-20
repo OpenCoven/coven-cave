@@ -89,18 +89,14 @@ assert.doesNotMatch(
   "Thinking and tool-use disclosures must not default open",
 );
 
-// --- CHAT-D13-01: tool activity hidden by default on settled turns ---
+// --- Tool activity renders in a designated section on settled turns ---
 
-assert.match(
+// No per-turn show/hide toggle: the designated section is always present
+// (collapsed) instead, so prose and tool usage are cleanly separated.
+assert.doesNotMatch(
   turnRow,
-  /const showTools = turn\.pending \? true : \(showToolsOverride \?\? false\)/,
-  "Tool activity should stay visible while streaming and default hidden once the response has fully generated",
-);
-
-assert.match(
-  turnRow,
-  /cave-turn-tools-toggle[\s\S]{0,300}aria-pressed=\{showTools\}/,
-  "Settled turns with tools should expose an always-visible toggle chip with pressed state",
+  /showTools|showToolsOverride|cave-turn-tools-toggle/,
+  "the settled-turn tool show/hide toggle is gone — tools live in a designated section",
 );
 
 assert.match(
@@ -112,13 +108,13 @@ assert.match(
 assert.match(
   turnRow,
   /renderSegments = split\.some\(\(s\) => s\.kind === "block"\) \? split : undefined/,
-  "Hiding tools still falls back to plain prose unless the message has a renderable artifact",
+  "settled turns render prose (+ artifacts) only — tool blocks are not woven into the text",
 );
 
 assert.match(
   turnRow,
-  /showTools && !segments && turn\.tools\?\.length \? <ToolGroup/,
-  "The legacy trailing ToolGroup should honor the same hidden-by-default contract",
+  /!turn\.pending && turn\.tools\?\.length \? <ToolGroup/,
+  "every settled turn that used tools renders the designated ToolGroup section",
 );
 
 assert.match(

@@ -3757,13 +3757,11 @@ function TurnRowImpl({
   expanded?: boolean;
   onToggleAvatar?: () => void;
 }) {
-  // CHAT-D13-01: tool activity stays visible while a turn streams (watching
-  // tools run IS the live feedback), then hides once the response has fully
-  // generated and sent — a "N tools" chip in the meta row toggles it back.
-  // Only an explicit click records an override; the pending→settled flip
-  // collapses tools on its own because the settled default is hidden.
-  const [showToolsOverride, setShowToolsOverride] = useState<boolean | null>(null);
-  const showTools = turn.pending ? true : (showToolsOverride ?? false);
+  // Tool activity renders inline while a turn streams (watching tools run IS the
+  // live feedback). Once the turn settles, the prose is shown uninterrupted and
+  // every tool call is collected into one designated, collapsed "Tool activity"
+  // section below it (the ToolGroup) — so a familiar's response reads cleanly and
+  // its tool usage is clearly separated rather than woven through the text.
   // Chat timestamp format (12h/24h clock + MM.DD/DD.MM/Off date) — a user
   // preference; the model/cwd/duration that used to sit here now live only in
   // the debug pane's per-turn JSON.
@@ -3872,18 +3870,17 @@ function TurnRowImpl({
   );
 
   // Auto-detect renderable artifacts and inject the tabbed viewer. Applies to
-  // SETTLED turns only (streaming shows plain code until the fence closes), and
-  // independently of showTools so the viewer appears even when tools are hidden.
+  // SETTLED turns only (streaming shows plain code until the fence closes).
   const artifactCtx = { familiarId: familiar.id };
-  const expandArtifacts = (segs: MessageBubbleSegment[]): MessageBubbleSegment[] =>
-    segs.flatMap((seg) => (seg.kind === "text" ? splitTextForArtifacts(seg.text, artifactCtx) : [seg]));
 
   let renderSegments: MessageBubbleSegment[] | undefined;
   if (turn.pending) {
-    renderSegments = showTools ? bubbleSegments : undefined;
-  } else if (showTools && bubbleSegments) {
-    renderSegments = expandArtifacts(bubbleSegments);
+    // Streaming: interleave tool blocks inline at their chronological offset so
+    // you can watch them run as live feedback.
+    renderSegments = bubbleSegments;
   } else {
+    // Settled: prose only (+ artifact viewers). Tools are NOT woven into the
+    // text — they render in the designated ToolGroup section below.
     const split = splitTextForArtifacts(visible, artifactCtx);
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
@@ -3960,22 +3957,6 @@ function TurnRowImpl({
                 <Icon name="ph:info" width={11} aria-hidden />
               </span>
             ) : null}
-            {/* CHAT-D13-01: settled turns hide tool activity by default —
-                this chip is the only way back to it, so it must not be
-                hover-gated. Hidden while streaming (tools are inline then). */}
-            {!turn.pending && (turn.tools?.length ?? 0) > 0 ? (
-              <button
-                type="button"
-                className={`cave-turn-tools-toggle${showTools ? " is-active" : ""}`}
-                aria-pressed={showTools}
-                aria-label={showTools ? "Hide tool activity" : "Show tool activity"}
-                title={showTools ? "Hide tool activity" : "Show tool activity"}
-                onClick={() => setShowToolsOverride(!showTools)}
-              >
-                <Icon name="ph:wrench" width={11} aria-hidden />
-                {turn.tools!.length} tool{turn.tools!.length === 1 ? "" : "s"}
-              </button>
-            ) : null}
           </div>
 
           <div className="cave-linear-turn-body">
@@ -4022,10 +4003,11 @@ function TurnRowImpl({
                 ))}
               </div>
             ) : null}
-            {/* Legacy trailing rollup — ONLY for turns whose tools predate
-                textOffset; segmented turns render their tools inline.
-                CHAT-D13-01: same default-hidden contract as inline tools. */}
-            {showTools && !segments && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+            {/* Designated "Tool activity" section: on every settled turn that
+                used tools, collect them into one collapsed group below the prose
+                (which renders uninterrupted above). Streaming turns show tools
+                inline instead — see renderSegments. */}
+            {!turn.pending && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
           </div>
         </div>
       </div>
