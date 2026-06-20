@@ -30,9 +30,9 @@ export function RecentReports({
                   </span>
                   {report.stats ? (
                     <span className="dr-report-row__stats">
-                      <span className="dr-mini-stat"><b>{report.stats.reminders}</b> rem</span>
-                      <span className="dr-mini-stat"><b>{report.stats.responses}</b> resp</span>
-                      <span className="dr-mini-stat"><b>{report.stats.sessions}</b> sess</span>
+                      <span className="dr-mini-stat" title="Reminders fired"><b>{report.stats.reminders}</b> rem</span>
+                      <span className="dr-mini-stat" title="Responses waiting"><b>{report.stats.responses}</b> resp</span>
+                      <span className="dr-mini-stat" title="Sessions updated"><b>{report.stats.sessions}</b> sess</span>
                     </span>
                   ) : null}
                 </span>
