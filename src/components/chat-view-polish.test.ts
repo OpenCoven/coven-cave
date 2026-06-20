@@ -301,6 +301,30 @@ assert.doesNotMatch(
   "Turn meta should drop per-turn duration — the header MetaLine carries the session duration",
 );
 
+// Per-turn provenance peek: model/cwd/duration aren't shown inline (above), but
+// a quiet ⓘ in the meta row reveals them on hover so older turns are
+// inspectable without opening the debug pane.
+assert.match(
+  source,
+  /function turnMetaPeekTitle\(turn: Turn\): string \| null/,
+  "A turnMetaPeekTitle helper assembles a turn's model · cwd · duration · usage line",
+);
+assert.match(
+  turnRow,
+  /const metaPeek = turn\.pending \? null : turnMetaPeekTitle\(turn\)/,
+  "Settled assistant turns compute a meta peek (skipped while streaming)",
+);
+assert.match(
+  turnRow,
+  /className="cave-turn-peek focus-ring"[\s\S]{0,120}title=\{metaPeek\}/,
+  "The peek renders as a focusable cave-turn-peek affordance with the meta as its title tooltip",
+);
+assert.match(
+  styles,
+  /\.cave-turn-peek\s*\{[\s\S]*?opacity:\s*0\.45/,
+  "The peek is faint by default so the turn meta row stays clean",
+);
+
 assert.doesNotMatch(
   source,
   /\{modKey\}↵ to send/,
