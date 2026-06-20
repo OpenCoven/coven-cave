@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { relativeTime } from "./relative-time.ts";
+import { relativeTime, isRelativePhrase } from "./relative-time.ts";
 import { relativeTime as reExported } from "./daily-report.ts";
 
 const NOW = new Date("2026-06-18T12:00:00.000Z");
@@ -33,4 +33,13 @@ test("empty/invalid input renders nothing", () => {
 test("daily-report re-exports the same function (no behavior drift)", () => {
   assert.equal(reExported, relativeTime);
   assert.equal(reExported(ago(2), NOW), "2m ago");
+});
+
+test("isRelativePhrase distinguishes relative phrases from the absolute fallback", () => {
+  assert.equal(isRelativePhrase("just now"), true);
+  assert.equal(isRelativePhrase("5m ago"), true);
+  assert.equal(isRelativePhrase("2h ago"), true);
+  assert.equal(isRelativePhrase("3d ago"), true);
+  assert.equal(isRelativePhrase("Jun 6"), false);
+  assert.equal(isRelativePhrase(""), false);
 });
