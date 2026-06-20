@@ -33,10 +33,12 @@ assert.match(
   'Sidebar Work section must filter on group === "work"',
 );
 
-assert.match(
+// The standalone Knowledge section is gone — Library folded into Tools, so the
+// sidebar renders just Work and Tools (no group === "knowledge" filter remains).
+assert.doesNotMatch(
   source,
-  /fm\.group === "knowledge"/,
-  'Sidebar Knowledge section must filter on group === "knowledge"',
+  /"knowledge"/,
+  "Knowledge section removed — Library now lives in Tools",
 );
 
 assert.match(
@@ -98,24 +100,17 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "library", label: "Library"/,
-  "Library remains the sole Knowledge surface",
+  /\{ id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘6", description:/,
+  "Library is now a Tools surface keeping its ⌘6 shortcut",
 );
 
 // Library is a gated add-on (default off): the nav filter hides it until the
-// add-on is enabled, mirroring GitHub. Without the gate the Knowledge section
-// would always render Library.
+// add-on is enabled, mirroring GitHub. Tools always has non-gated surfaces
+// (Browser/Terminal/Code/Roles/Workflows), so it never renders an empty header.
 assert.match(
   source,
   /if \(fm\.id === "library"\) return addons\?\.library === true;/,
   "Library nav entry is gated on the library add-on",
-);
-
-// The Knowledge section must not render an empty header when Library is hidden.
-assert.match(
-  source,
-  /knowledgeModes\.length > 0 \? \(/,
-  "Knowledge section only renders when it has visible surfaces",
 );
 
 assert.match(

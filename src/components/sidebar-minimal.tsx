@@ -7,8 +7,7 @@
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
  *      Work  (Home / Familiars / Board / Calendar / Schedules)
- *      Knowledge (Library)
- *      Tools (Browser / Terminal / Code / Roles / Workflows / GitHub)
+ *      Tools (Browser / Terminal / Code / Library / Roles / Workflows / GitHub)
  *   3. Footer: Notifications, mobile handoff, Settings
  */
 
@@ -70,7 +69,7 @@ const FOLDER_MODES: Array<{
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
-  group: "work" | "knowledge" | "tools" | "addons";
+  group: "work" | "tools" | "addons";
   kbd?: string;
   // One-line hover/long-press help. Differentiates the surfaces that read
   // alike at a glance — especially Roles (who) vs Workflows (steps).
@@ -83,12 +82,11 @@ const FOLDER_MODES: Array<{
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations" },
-  // Knowledge
-  { id: "library", label: "Library", iconName: "ph:books", group: "knowledge", kbd: "⌘6", description: "Saved docs, links, and reading" },
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘7", description: "Built-in web browser" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘8", description: "Shell session in your project" },
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘0", description: "Chat with a familiar beside your files and terminal" },
+  { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘6", description: "Saved docs, links, and reading" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   // Add-ons (gated)
@@ -221,7 +219,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   });
 
   const workModes = visibleFolderModes.filter((fm) => fm.group === "work");
-  const knowledgeModes = visibleFolderModes.filter((fm) => fm.group === "knowledge");
   const toolsModes = visibleFolderModes.filter((fm) => fm.group === "tools" || fm.group === "addons");
 
   return (
@@ -259,24 +256,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             />
           ))}
         </SidebarSection>
-
-        {knowledgeModes.length > 0 ? (
-          <SidebarSection label="Knowledge">
-            {knowledgeModes.map((fm) => (
-              <FolderRow
-                key={fm.id}
-                id={fm.id}
-                label={fm.label}
-                iconName={fm.iconName}
-                active={mode === fm.id}
-                badge={fm.badge?.(props)}
-                kbd={fm.kbd}
-                description={fm.description}
-                onClick={() => handleModeSelect(fm.id)}
-              />
-            ))}
-          </SidebarSection>
-        ) : null}
 
         <SidebarSection label="Tools">
           {toolsModes.map((fm) => (
