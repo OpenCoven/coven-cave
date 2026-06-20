@@ -80,14 +80,19 @@ function fmtDateHeading(d: Date): string {
 // Agenda group headers read better with a relative day word for the days right
 // around now ("Today" / "Tomorrow" / "Yesterday"), falling back to the full
 // weekday + date for anything further out.
-function agendaDayLabel(date: Date): string {
+// "Today" / "Tomorrow" / "Yesterday" for the days right around now, else null.
+function relDayWord(date: Date): string | null {
   const days = Math.round(
     (startOfDay(date).getTime() - startOfDay(new Date()).getTime()) / 86_400_000,
   );
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days === -1) return "Yesterday";
-  return fmtDateHeading(date);
+  return null;
+}
+
+function agendaDayLabel(date: Date): string {
+  return relDayWord(date) ?? fmtDateHeading(date);
 }
 
 function fmtHourLabel(h: number): string {
@@ -544,6 +549,9 @@ function DayView({
       {/* Header */}
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-3 sm:px-6">
         <h2 className="text-sm font-medium text-[var(--text-primary)]">
+          {relDayWord(anchor) ? (
+            <span className="text-[var(--accent-presence)]">{relDayWord(anchor)} · </span>
+          ) : null}
           {fmtDateHeading(anchor)}
         </h2>
       </div>
