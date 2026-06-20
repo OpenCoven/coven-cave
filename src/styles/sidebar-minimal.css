@@ -122,19 +122,20 @@
   color: var(--text-primary);
 }
 
-/* "New chat" is the top CTA — make it the highest-contrast action in the
-   panel with a solid accent fill so it reads as the primary thing to do. */
+/* "New chat" is the top CTA — an outlined accent button: the accent reads on
+   the border + label rather than a solid fill, so it stays prominent without
+   dominating the panel. A faint accent wash on hover gives press feedback. */
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
-  background: var(--accent-presence);
-  color: #fff;
-  border: 1px solid transparent;
+  background: transparent;
+  color: var(--accent-presence);
+  border: 1px solid var(--accent-presence);
   font-weight: 600;
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
-  background: color-mix(in oklch, var(--accent-presence) 88%, #000);
-  color: #fff;
-  border-color: transparent;
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--accent-presence);
+  border-color: var(--accent-presence);
 }
 
 .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row .sidebar-action-icon {
