@@ -1279,21 +1279,46 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                     {COLS.map((col, i) => (
                       <th
                         key={`${col.label}-${i}`}
-                        style={{
-                          width: col.width,
-                          textAlign: col.align ?? "left",
-                          cursor: col.key ? "pointer" : "default",
-                        }}
+                        style={{ width: col.width, textAlign: col.align ?? "left" }}
                         className={col.key && sortKey === col.key ? "sorted" : ""}
-                        onClick={() => col.key && handleSortClick(col.key)}
+                        aria-sort={
+                          col.key
+                            ? sortKey === col.key
+                              ? sortDir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none"
+                            : undefined
+                        }
                       >
-                        {col.label}
-                        {col.key && (
-                          <span className="board-table-sort-icon">
-                            {sortKey === col.key
-                              ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
-                              : <Icon name="ph:caret-up-down" width={9} />}
-                          </span>
+                        {col.key ? (
+                          // A real <button> so the column is sortable by keyboard;
+                          // styled inline to avoid touching the shared board-table CSS.
+                          <button
+                            type="button"
+                            className="focus-ring"
+                            onClick={() => handleSortClick(col.key!)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 2,
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              font: "inherit",
+                              color: "inherit",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {col.label}
+                            <span className="board-table-sort-icon">
+                              {sortKey === col.key
+                                ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
+                                : <Icon name="ph:caret-up-down" width={9} />}
+                            </span>
+                          </button>
+                        ) : (
+                          col.label
                         )}
                       </th>
                     ))}

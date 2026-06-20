@@ -191,4 +191,17 @@ assert.match(
   "each filter is a tab that reports its selected state",
 );
 
+// Sortable table headers are keyboard-operable (a real <button>) and expose
+// sort state to assistive tech via aria-sort.
+assert.match(
+  source,
+  /aria-sort=\{[\s\S]{0,400}?"ascending"[\s\S]{0,120}?"descending"[\s\S]{0,120}?"none"/,
+  "sortable column headers expose aria-sort (ascending/descending/none)",
+);
+assert.match(
+  source,
+  /<button[\s\S]{0,250}?onClick=\{\(\) => handleSortClick\(col\.key!\)\}/,
+  "the sort control is a real keyboard-operable button",
+);
+
 console.log("github-view-polish.test.ts OK");
