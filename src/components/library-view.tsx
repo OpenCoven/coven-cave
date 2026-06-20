@@ -85,9 +85,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
   const [listPinned, setListPinned] = useState(true);
-  const [listHover, setListHover] = useState(false);
-  const listExpanded = listPinned || listHover;
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listExpanded = listPinned;
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
   const [boardDraft, setBoardDraft] = useState<LibraryBookmark | null>(null);
@@ -96,6 +94,10 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickItems, setQuickItems] = useState<LibraryQuickItem[]>([]);
   const [quickLoading, setQuickLoading] = useState(false);
+  const loadCollectionsRequestRef = useRef(0);
+  const loadDocsRequestRef = useRef(0);
+  const previewRequestRef = useRef(0);
+  const quickOpenRequestRef = useRef(0);
 
   // ── Nav history (powers the rail's Back control) ─────────────────────────
   // A "location" is the section + collection + skill triple. We record the
@@ -141,12 +143,26 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
 
   const [docsError, setDocsError] = useState<string | null>(null);
 
+  const loadCollections = useCallback(async () => {
+    const requestId = ++loadCollectionsRequestRef.current;
+    try {
+      const res = await fetch("/api/library?collection=all&docs=0", { cache: "no-store" });
+      const json = await res.json() as { ok: boolean; collections?: LibraryCollection[] };
+      if (requestId !== loadCollectionsRequestRef.current) return;
+      if (json.ok && json.collections?.length) setCollections(json.collections);
+    } catch { /* collections will populate when docs load */ }
+  }, []);
+
+  useEffect(() => { void loadCollections(); }, [loadCollections]);
+
   const loadDocs = useCallback(async (collectionId: string) => {
+    const requestId = ++loadDocsRequestRef.current;
     setLoading(true);
     setDocsError(null);
     try {
       const res = await fetch(`/api/library?collection=${encodeURIComponent(collectionId)}`, { cache: "no-store" });
       const json = await res.json() as { ok: boolean; docs?: LibraryDoc[]; collections?: LibraryCollection[]; error?: string };
+      if (requestId !== loadDocsRequestRef.current) return;
       if (json.ok) {
         setDocs(json.docs ?? []);
         if (json.collections?.length) setCollections(json.collections);
@@ -155,23 +171,32 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         setDocsError(json.error ?? "Library API returned an error.");
       }
     } catch (err) {
+      if (requestId !== loadDocsRequestRef.current) return;
       setDocs([]);
       setDocsError(err instanceof Error ? err.message : "Network error loading library.");
     } finally {
-      setLoading(false);
+      if (requestId === loadDocsRequestRef.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void loadDocs(activeCollection); }, [activeCollection, loadDocs]);
+  useEffect(() => {
+    if (activeSection !== "docs") return;
+    void loadDocs(activeCollection);
+  }, [activeCollection, activeSection, loadDocs]);
 
   const handleSelectDoc = useCallback(async (doc: LibraryDoc) => {
+    const requestId = ++previewRequestRef.current;
     setPreviewLoading(true);
     try {
       const res = await fetch(`/api/library/doc?id=${encodeURIComponent(doc.id)}`, { cache: "no-store" });
       const json = await res.json() as { ok: boolean; doc?: LibraryDocBody };
-      if (json.ok && json.doc) setSelectedItem({ kind: "doc", doc: json.doc });
+      if (requestId === previewRequestRef.current && json.ok && json.doc) {
+        setSelectedItem({ kind: "doc", doc: json.doc });
+      }
     } catch { /* no-op */ }
-    finally { setPreviewLoading(false); }
+    finally {
+      if (requestId === previewRequestRef.current) setPreviewLoading(false);
+    }
   }, []);
 
   const handleRenameMoveDoc = useCallback(async (doc: LibraryDoc, patch: { title?: string; collection?: string }) => {
@@ -194,7 +219,14 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   // Open the quick-open palette and (re)fetch a global snapshot of everything
   // searchable: all docs (across collections) + every captured link. Fetched on
   // open so it reflects the latest library regardless of the current nav.
+  const closeQuickOpen = useCallback(() => {
+    quickOpenRequestRef.current += 1;
+    setQuickOpen(false);
+    setQuickLoading(false);
+  }, []);
+
   const openQuickOpen = useCallback(async () => {
+    const requestId = ++quickOpenRequestRef.current;
     setQuickOpen(true);
     setQuickLoading(true);
     try {
@@ -220,17 +252,18 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
       if (allJson.ok) {
         for (const [index, e] of (allJson.entries ?? []).entries()) next.push(entryToQuickItem(e, index));
       }
+      if (requestId !== quickOpenRequestRef.current) return;
       setQuickItems(next);
     } catch {
-      setQuickItems([]);
+      if (requestId === quickOpenRequestRef.current) setQuickItems([]);
     } finally {
-      setQuickLoading(false);
+      if (requestId === quickOpenRequestRef.current) setQuickLoading(false);
     }
   }, []);
 
   const handleQuickSelect = useCallback(
     (item: LibraryQuickItem) => {
-      setQuickOpen(false);
+      closeQuickOpen();
       if (item.kind === "doc" && item.doc) {
         const doc = item.doc as LibraryDoc;
         setActiveSection("docs");
@@ -250,7 +283,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         setSelectedItem({ kind: "github", item: entry.item as LibraryGitHubItem });
       }
     },
-    [handleSelectDoc],
+    [closeQuickOpen, handleSelectDoc],
   );
 
   // "/" opens quick-open (when not typing). library-view only mounts on the
@@ -296,12 +329,14 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
     });
   }
 
-  // Reload everything the nav surfaces: collections + docs for the active
-  // collection (loadDocs refreshes both). Skills are owned by the rail, which
-  // re-fetches them from its own Refresh handler alongside this.
+  // Reload the active Library surface without forcing the hidden Docs list to
+  // read markdown files while the user is on Timeline/Bookmarks/Reading/GitHub.
+  // Skills are owned by the rail, which re-fetches them from its own Refresh
+  // handler alongside this.
   const reloadLibrary = useCallback(() => {
-    void loadDocs(activeCollection);
-  }, [loadDocs, activeCollection]);
+    if (activeSection === "docs") void loadDocs(activeCollection);
+    else void loadCollections();
+  }, [activeSection, activeCollection, loadDocs, loadCollections]);
 
   const docCounts: Record<string, number> = { [activeCollection]: docs.length };
   const selectedDocId =  selectedItem?.kind === "doc"      ? selectedItem.doc.id  : null;
@@ -442,13 +477,6 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           "transition-[width] duration-200 ease-out",
           listExpanded ? "library-list-panel--open" : "library-list-panel--closed",
         ].join(" ")}
-        onMouseEnter={() => {
-          if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-          setListHover(true);
-        }}
-        onMouseLeave={() => {
-          hoverTimerRef.current = setTimeout(() => setListHover(false), 120);
-        }}
       >
         {/* Toggle strip — always visible, sits on the left edge of the panel */}
         <div className="library-list-toggle">
@@ -518,7 +546,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           items={quickItems}
           loading={quickLoading}
           onSelect={handleQuickSelect}
-          onClose={() => setQuickOpen(false)}
+          onClose={closeQuickOpen}
         />
       )}
     </div>

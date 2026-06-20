@@ -15,6 +15,7 @@ export type Skill = {
   score?: number;
   description?: string;
 };
+type SkillsStatus = "idle" | "loading" | "loaded" | "error";
 
 type ListSection = {
   id: LibrarySectionKind;
@@ -73,24 +74,39 @@ export function LibraryCollectionRail({
   refreshing = false,
 }: Props) {
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsStatus, setSkillsStatus] = useState<SkillsStatus>("idle");
   const [skillsOpen, setSkillsOpen] = useState(false);
 
-  // Fetch skills from daemon via Cave proxy. Exposed as a callback so the
-  // header Refresh button can re-pull them alongside the parent's reload.
+  // Fetch skills from daemon via Cave proxy. Kept lazy so the first Library
+  // paint does not wait on optional daemon skill metadata.
   const loadSkills = useCallback(async () => {
+    if (skillsStatus === "loading") return;
+    setSkillsStatus("loading");
     try {
       const res = await fetch("/api/skills", { cache: "no-store" });
       const json = await res.json().catch(() => null) as { ok?: boolean; skills?: Skill[] } | null;
-      if (json?.ok && Array.isArray(json.skills)) setSkills(json.skills);
-    } catch { /* daemon unavailable — section stays hidden */ }
-  }, []);
+      if (json?.ok && Array.isArray(json.skills)) {
+        setSkills(json.skills);
+        setSkillsStatus("loaded");
+        return;
+      }
+      setSkills([]);
+      setSkillsStatus("error");
+    } catch {
+      setSkills([]);
+      setSkillsStatus("error");
+    }
+  }, [skillsStatus]);
 
-  useEffect(() => { void loadSkills(); }, [loadSkills]);
+  useEffect(() => {
+    if (activeSection !== "skills" || skillsStatus !== "idle") return;
+    void loadSkills();
+  }, [activeSection, skillsStatus, loadSkills]);
 
   const handleRefresh = useCallback(() => {
     onRefresh?.();
-    void loadSkills();
-  }, [onRefresh, loadSkills]);
+    if (activeSection === "skills" || skillsOpen || skillsStatus === "loaded") void loadSkills();
+  }, [activeSection, skillsOpen, skillsStatus, onRefresh, loadSkills]);
 
   return (
     <div className="library-rail">
@@ -182,57 +198,66 @@ export function LibraryCollectionRail({
         })}
       </div>
 
-      {/* ── Skills (dynamic — only when daemon has skills) ────── */}
-      {skills.length > 0 && (
-        <>
-          <div className="library-rail-divider" />
-          <div className="library-rail-header library-rail-header--skills">
-            <button
-              type="button"
-              className="library-rail-section-toggle"
-              aria-expanded={skillsOpen || activeSection === "skills"}
-              onClick={() => {
-                const next = !skillsOpen;
-                setSkillsOpen(next);
-                if (next) onSelectSection("skills");
-              }}
-            >
-              <Icon
-                name="ph:caret-right-bold"
-                width={10}
-                className={`library-rail-caret${skillsOpen || activeSection === "skills" ? " library-rail-caret--open" : ""}`}
-              />
-              <span>Skills</span>
-              <span className="library-rail-badge" style={{ marginLeft: "auto" }}>{skills.length}</span>
-            </button>
-          </div>
-          {(skillsOpen || activeSection === "skills") && (
-            <div className="library-rail-list library-rail-list--skills">
-              {skills.map((skill) => {
-                const isActive = activeSection === "skills" && activeSkillId === skill.id;
-                return (
-                  <button
-                    key={skill.id}
-                    type="button"
-                    className={`library-rail-item library-rail-item--skill${isActive ? " library-rail-item--active" : ""}`}
-                    onClick={() => {
-                      onSelectSection("skills");
-                      onSelectSkill?.(skill);
-                    }}
-                  >
-                    <span className="library-rail-icon-wrap">
-                      <Icon name="ph:book-bookmark" width={12} />
-                    </span>
-                    <span className="library-rail-label">{skill.name}</span>
-                    {skill.category && (
-                      <span className="library-rail-skill-cat">{skill.category}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+      {/* ── Skills (lazy-loaded on open) ────── */}
+      <div className="library-rail-divider" />
+      <div className="library-rail-header library-rail-header--skills">
+        <button
+          type="button"
+          className="library-rail-section-toggle"
+          aria-expanded={skillsOpen || activeSection === "skills"}
+          onClick={() => {
+            const next = !skillsOpen;
+            setSkillsOpen(next);
+            if (next) {
+              void loadSkills();
+              onSelectSection("skills");
+            }
+          }}
+        >
+          <Icon
+            name="ph:caret-right-bold"
+            width={10}
+            className={`library-rail-caret${skillsOpen || activeSection === "skills" ? " library-rail-caret--open" : ""}`}
+          />
+          <span>Skills</span>
+          {skillsStatus === "loaded" && (
+            <span className="library-rail-badge" style={{ marginLeft: "auto" }}>{skills.length}</span>
           )}
-        </>
+        </button>
+      </div>
+      {(skillsOpen || activeSection === "skills") && (
+        <div className="library-rail-list library-rail-list--skills">
+          {skillsStatus === "loading" ? (
+            <span className="library-rail-empty">Loading skills...</span>
+          ) : skills.length > 0 ? (
+            skills.map((skill) => {
+              const isActive = activeSection === "skills" && activeSkillId === skill.id;
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className={`library-rail-item library-rail-item--skill${isActive ? " library-rail-item--active" : ""}`}
+                  onClick={() => {
+                    onSelectSection("skills");
+                    onSelectSkill?.(skill);
+                  }}
+                >
+                  <span className="library-rail-icon-wrap">
+                    <Icon name="ph:book-bookmark" width={12} />
+                  </span>
+                  <span className="library-rail-label">{skill.name}</span>
+                  {skill.category && (
+                    <span className="library-rail-skill-cat">{skill.category}</span>
+                  )}
+                </button>
+              );
+            })
+          ) : (
+            <span className="library-rail-empty">
+              {skillsStatus === "error" ? "Skills unavailable" : "No skills found"}
+            </span>
+          )}
+        </div>
       )}
 
     </div>

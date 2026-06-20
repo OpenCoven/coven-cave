@@ -126,8 +126,13 @@ assert.match(
 );
 assert.match(
   boardCss,
-  /@media \(min-width: 1041px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:calc\(100dvh - 150px\);/,
-  "GitHub detail sidepanel keeps a stable desktop height while async detail content loads",
+  /\.gh-workspace \{[\s\S]*?height:100%;[\s\S]*?min-height:0;[\s\S]*?overflow:hidden;/,
+  "GitHub workspace height is container-bound so the detail sidepanel does not make the parent scroll on hover",
+);
+assert.match(
+  boardCss,
+  /@media \(min-width: 1041px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:100%;/,
+  "GitHub detail sidepanel keeps a stable container height while async detail content loads",
 );
 assert.doesNotMatch(
   source,

@@ -791,6 +791,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   };
 
   const createFamiliar = async () => {
+    if (!status?.steps.daemon.ok) {
+      setSetupError("Start the daemon before creating or connecting a familiar.");
+      return;
+    }
     const selectedAgent =
       openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
     if (!selectedAgent) {
@@ -839,6 +843,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   };
 
   const createLocalFamiliar = async () => {
+    if (!status?.steps.daemon.ok) {
+      setSetupError("Start the daemon before creating or connecting a familiar.");
+      return;
+    }
     const selectedHarness =
       chatHarnesses.find(
         (adapter) => adapter.id === selectedHarnessId && adapter.installed,
@@ -911,8 +919,24 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     try {
       const res = await fetch("/api/daemon/start", { method: "POST" });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "daemon start failed");
+      if (!res.ok || json.ok === false) {
+        const detail =
+          typeof json.error === "string" && json.error.trim()
+            ? json.error.trim()
+            : "daemon start failed";
+        const diagnostics = [
+          json.exitCode !== undefined ? `exit code: ${json.exitCode}` : null,
+          typeof json.stderr === "string" && json.stderr.trim()
+            ? json.stderr.trim()
+            : null,
+          typeof json.stdout === "string" && json.stdout.trim()
+            ? json.stdout.trim()
+            : null,
+        ].filter(Boolean);
+        throw new Error(
+          diagnostics.length > 0 ? `${detail}\n${diagnostics.join("\n")}` : detail,
+        );
+      }
       await refresh();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "daemon start failed");
@@ -952,18 +976,18 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:terminal-window",
       },
       {
-        key: "binding",
-        title: "Create your familiar",
-        ok: !!s?.binding.ok,
-        detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
-        icon: "ph:sparkle",
-      },
-      {
         key: "daemon",
         title: "Start the daemon",
         ok: !!s?.daemon.ok,
         detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking...",
         icon: "ph:plug",
+      },
+      {
+        key: "binding",
+        title: "Create your familiar",
+        ok: !!s?.binding.ok,
+        detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
+        icon: "ph:sparkle",
       },
       {
         key: "familiars",
@@ -1265,6 +1289,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                         ) : step.key === "binding" ? (
                           <StepFamiliar
                             chatHarnesses={chatHarnesses}
+                            daemonReady={!!status?.steps.daemon.ok}
                             selectedHarnessId={selectedHarnessId}
                             selectedHarness={selectedHarness}
                             openclawAgents={openclawAgents}
@@ -1794,6 +1819,7 @@ function StepRuntimes({
 
 function StepFamiliar(props: {
   chatHarnesses: HarnessReport[];
+  daemonReady: boolean;
   selectedHarnessId: string | null;
   selectedHarness: HarnessReport | null;
   openclawAgents: OpenClawAgent[];
@@ -1830,6 +1856,7 @@ function StepFamiliar(props: {
 }) {
   const {
     chatHarnesses,
+    daemonReady,
     selectedHarnessId,
     selectedHarness,
     openclawAgents,
@@ -1858,6 +1885,11 @@ function StepFamiliar(props: {
         everything stays editable later in the Familiar Studio (Agents &rarr;
         pick a familiar &rarr; Edit).
       </p>
+      {!daemonReady ? (
+        <div className="rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+          Start the daemon first. Familiar creation unlocks once Cave can reach it.
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
@@ -2120,7 +2152,7 @@ function StepFamiliar(props: {
           onChange={(e) =>
             props.setConfirmCreateNewFamiliar(e.currentTarget.checked)
           }
-          disabled={!selectedHarnessId || picking !== null}
+          disabled={!daemonReady || !selectedHarnessId || picking !== null}
           className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
         />
         <span>
@@ -2142,6 +2174,7 @@ function StepFamiliar(props: {
           <button
             onClick={props.onCreateLocal}
             disabled={
+              !daemonReady ||
               picking !== null ||
               !confirmCreateNewFamiliar ||
               (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
@@ -2155,6 +2188,7 @@ function StepFamiliar(props: {
           <button
             onClick={props.onConnectAgent}
             disabled={
+              !daemonReady ||
               picking !== null ||
               familiarName.trim().length === 0 ||
               (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))

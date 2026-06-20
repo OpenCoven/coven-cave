@@ -37,8 +37,8 @@ assert.match(
   "step headers expose their expanded state",
 );
 
-// Step order: CLI → home → runtime → familiar → daemon → meet, then optional git.
-const stepOrder = ["covenCli", "covenHome", "adapters", "binding", "daemon", "familiars", "git"];
+// Step order: CLI -> home -> runtime -> daemon -> familiar -> meet, then optional git.
+const stepOrder = ["covenCli", "covenHome", "adapters", "daemon", "binding", "familiars", "git"];
 let cursor = 0;
 for (const key of stepOrder) {
   const at = source.indexOf(`key: "${key}",`, cursor);
@@ -146,6 +146,48 @@ assert.match(
   source,
   /selectedHarnessId \? \([\s\S]*Create new Coven familiar[\s\S]*\) : selectedAgentId \? \([\s\S]*Connect selected existing agent[\s\S]*\) : null/,
   "the familiar binding step shows only the CTA for the selected setup path",
+);
+
+assert.match(
+  source,
+  /key: "daemon",[\s\S]*key: "binding",/,
+  "the daemon step comes before familiar creation",
+);
+
+assert.match(
+  source,
+  /daemonReady=\{!!status\?\.steps\.daemon\.ok\}/,
+  "the familiar step receives daemon readiness",
+);
+
+assert.match(
+  source,
+  /Start the daemon first\. Familiar creation unlocks once Cave can reach it\./,
+  "the familiar step explains why creation is unavailable while the daemon is offline",
+);
+
+assert.match(
+  source,
+  /exit code: \$\{json\.exitCode\}/,
+  "daemon start errors include the CLI exit code when available",
+);
+
+assert.match(
+  source,
+  /json\.stderr[\s\S]*json\.stdout/,
+  "daemon start errors keep CLI stderr/stdout diagnostics visible",
+);
+
+assert.match(
+  source,
+  /disabled=\{!daemonReady \|\| !selectedHarnessId \|\| picking !== null\}/,
+  "familiar creation confirmation is blocked until the daemon is ready",
+);
+
+assert.match(
+  source,
+  /disabled=\{\s*\n\s*!daemonReady \|\|\s*\n\s*picking !== null \|\|[\s\S]*Create new Coven familiar/,
+  "new familiar creation is disabled until the daemon is ready",
 );
 
 // ── Editable familiars ──────────────────────────────────────────────────────

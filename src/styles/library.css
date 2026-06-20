@@ -2091,6 +2091,13 @@ html[data-reading-dropcap="on"] .library-preview-md.cave-md p:first-of-type::fir
 .library-rail-item--skill .library-rail-label {
   font-size: 12px;
 }
+.library-rail-empty {
+  display: block;
+  padding: 6px 10px 6px 20px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
 
 /* ── Rail: skill category pill ────────────────────────────────── */
 .library-rail-skill-cat {

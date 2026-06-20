@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const bookmarks = await readFile(new URL("./library-bookmarks-list.tsx", import.meta.url), "utf8");
 const reading   = await readFile(new URL("./library-reading-list.tsx",   import.meta.url), "utf8");
 const github    = await readFile(new URL("./library-github-list.tsx",    import.meta.url), "utf8");
+const libraryRoute = await readFile(new URL("../app/api/library/route.ts", import.meta.url), "utf8");
 const bookmarksRoute = await readFile(new URL("../app/api/library/bookmarks/route.ts", import.meta.url), "utf8");
 
 // ───────── Task 1: localeCompare null-guards ─────────
@@ -126,6 +127,26 @@ assert.match(timeline, /title="Search links — try chat: github: sage:"/, "Verb
 assert.doesNotMatch(timeline, /placeholder="Search links — try chat: github: sage:"/, "Old long placeholder must be removed");
 assert.match(timeline, /title="Timeline"/, "Unified Library view header should match the Timeline rail label");
 assert.doesNotMatch(timeline, /title="All"/, "Unified Library view should not keep the old ambiguous All header");
+assert.match(
+  timeline,
+  /const loadRequestRef = useRef\(0\);/,
+  "Timeline should track in-flight loads so stale filter responses cannot overwrite newer entries",
+);
+assert.match(
+  timeline,
+  /const requestId = \+\+loadRequestRef\.current;[\s\S]*?if \(requestId !== loadRequestRef\.current \|\| signal\?\.aborted\) return;/,
+  "Timeline load should drop stale or aborted responses before writing state",
+);
+assert.match(
+  timeline,
+  /fetch\(`\/api\/library\/all\$\{qs\.toString\(\) \? "\?" \+ qs\.toString\(\) : ""\}`, \{ cache: "no-store", signal \}\)/,
+  "Timeline fetch should pass an AbortSignal so filter changes cancel obsolete requests",
+);
+assert.match(
+  timeline,
+  /useEffect\(\(\) => \{[\s\S]*?const ctrl = new AbortController\(\);[\s\S]*?void load\(ctrl\.signal\);[\s\S]*?return \(\) => ctrl\.abort\(\);[\s\S]*?\}, \[load\]\);/,
+  "Timeline effect should abort the previous request on unmount or filter changes",
+);
 assert.match(docsList, /import \{ relativeTime \} from "@\/lib\/relative-time";/, "Document list should use the shared compact modified-date formatter");
 assert.match(docsList, /return relativeTime\(iso\);/, "Recent document modified dates should use the compact relative-time formatter");
 
@@ -161,6 +182,26 @@ assert.match(
   rail,
   /className="library-rail-list library-rail-list--skills"/,
   "Expanded Skills rail list should expose the mobile ordering hook",
+);
+assert.doesNotMatch(
+  rail,
+  /useEffect\(\(\) => \{ void loadSkills\(\); \}, \[loadSkills\]\);/,
+  "Library rail should not fetch skills on initial mount before the Skills section is opened",
+);
+assert.match(
+  rail,
+  /\{\/\* ── Skills \(lazy-loaded on open\) ────── \*\/\}/,
+  "Skills rail section should stay discoverable while deferring its API fetch",
+);
+assert.match(
+  rail,
+  /if \(next\) \{[\s\S]{0,160}void loadSkills\(\);[\s\S]{0,160}onSelectSection\("skills"\);[\s\S]{0,160}\}/,
+  "Opening the Skills rail section should fetch skills on demand",
+);
+assert.match(
+  rail,
+  /if \(activeSection === "skills" \|\| skillsOpen \|\| skillsStatus === "loaded"\) void loadSkills\(\);/,
+  "Refresh should only re-fetch Skills after the section is active, open, or already loaded",
 );
 assert.match(
   rail,
@@ -221,6 +262,16 @@ const view2 = await readFile(new URL("./library-view.tsx", import.meta.url), "ut
 assert.match(view2, /if \(e\.key !== "\["\) return;/, "library-view must filter keydown events for '['");
 assert.match(view2, /setListPinned\(\(v\) => !v\)/, "library-view must call setListPinned((v) => !v)");
 assert.match(view2, /\["input", "textarea", "select"\]\.includes\(tag\)/, "library-view must skip when focus is in an input");
+assert.match(
+  view2,
+  /const listExpanded = listPinned;/,
+  "Library list panel should expand only from the pinned/toggled state",
+);
+assert.doesNotMatch(
+  view2,
+  /listHover|setListHover|hoverTimerRef|onMouseEnter=\{\(\) =>|onMouseLeave=\{\(\) =>/,
+  "Library list panel should not expand on hover or keep hover timers",
+);
 assert.match(
   view2,
   /useProjects\(\{ enabled: boardDraft !== null \}\)/,
@@ -334,6 +385,26 @@ assert.match(
   view,
   /activeSection !== "skills" && activeSection !== "projects" && !showBrowseCanvas &&/,
   "Right list panel should be hidden while the center browse canvas is active",
+);
+assert.match(
+  libraryRoute,
+  /const includeDocs = req\.nextUrl\.searchParams\.get\("docs"\) !== "0";[\s\S]*?if \(!includeDocs\) \{[\s\S]*?docs:\s*\[\],[\s\S]*?collections,/,
+  "Library API should expose a metadata-only docs=0 path for first-load rail data",
+);
+assert.match(
+  view,
+  /const loadCollectionsRequestRef = useRef\(0\);[\s\S]*?fetch\("\/api\/library\?collection=all&docs=0", \{ cache: "no-store" \}\)/,
+  "LibraryView should load collection metadata without reading all document bodies on first mount",
+);
+assert.match(
+  view,
+  /useEffect\(\(\) => \{[\s\S]*?if \(activeSection !== "docs"\) return;[\s\S]*?void loadDocs\(activeCollection\);[\s\S]*?\}, \[activeCollection, activeSection, loadDocs\]\);/,
+  "LibraryView should defer full document loading until the Docs section is active",
+);
+assert.match(
+  view,
+  /if \(activeSection === "docs"\) void loadDocs\(activeCollection\);[\s\S]*?else void loadCollections\(\);/,
+  "Library refresh should not force hidden document reads from non-Docs tabs",
 );
 assert.match(
   libraryCss,

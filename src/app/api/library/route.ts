@@ -214,11 +214,23 @@ function parseTags(fm: Record<string, string>): string[] {
 export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get("collection") ?? "all";
   const familiarId   = req.nextUrl.searchParams.get("familiar") ?? FAMILIAR_WORKSPACES[0].id;
+  const includeDocs = req.nextUrl.searchParams.get("docs") !== "0";
 
   const familiar = FAMILIAR_WORKSPACES.find((f) => f.id === familiarId) ?? FAMILIAR_WORKSPACES[0];
   const researchRoot = path.join(familiar.root, "research");
   const familiarRoot = realpathOrResolve(familiar.root);
   const collections = buildCollections(familiar);
+
+  if (!includeDocs) {
+    return NextResponse.json({
+      ok: true,
+      docs: [],
+      collection: collectionId,
+      familiar: familiarId,
+      collections,
+      familiars: FAMILIAR_WORKSPACES.map(({ id, name, icon }) => ({ id, name, icon })),
+    });
+  }
 
   const col = collections.find((c) => c.id === collectionId) ?? collections[0];
 

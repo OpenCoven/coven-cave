@@ -112,21 +112,32 @@ export function LibraryTimeline({
   const [familiarFilter, setFamiliarFilter] = useState<string>("all");
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [search, setSearch] = useState("");
+  const loadRequestRef = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     try {
       const qs = new URLSearchParams();
       if (familiarFilter !== "all") qs.set("familiar", familiarFilter);
       if (listFilter !== "all") qs.set("list", listFilter);
-      const res = await fetch(`/api/library/all${qs.toString() ? "?" + qs.toString() : ""}`, { cache: "no-store" });
+      const res = await fetch(`/api/library/all${qs.toString() ? "?" + qs.toString() : ""}`, { cache: "no-store", signal });
       const json = await res.json() as { ok: boolean; entries?: TimelineEntry[] };
+      if (requestId !== loadRequestRef.current || signal?.aborted) return;
       if (json.ok) setEntries(json.entries ?? []);
-    } catch { setEntries([]); }
-    finally { setLoading(false); }
+    } catch {
+      if (requestId !== loadRequestRef.current || signal?.aborted) return;
+      setEntries([]);
+    } finally {
+      if (requestId === loadRequestRef.current && !signal?.aborted) setLoading(false);
+    }
   }, [familiarFilter, listFilter]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

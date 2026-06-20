@@ -19,6 +19,18 @@ A coding-experience arc: turning the Projects/Code surfaces into a Codex/Cursor-
 ### Fixed
 - **Code workspace** — the unified surface now shows the coding panes (file tree, editor, search, change review), not just a terminal (#949).
 
+## [0.0.108] - 2026-06-20
+
+Patch release: onboarding daemon readiness, Library loading polish, and GitHub detail-panel scroll containment.
+
+### Changed
+- **Onboarding** — Cave now starts the daemon before familiar creation, keeps the familiar creation actions disabled until daemon health is ready, and surfaces daemon start diagnostics such as exit code, stderr, and stdout.
+- **Library** — the Library rail can load collection metadata without reading document bodies, defers full document loading until the Docs section is active, and avoids stale async updates when closing quick-open or switching previews.
+
+### Fixed
+- **Library** — the right list panel now expands only from the pinned/toggled state instead of hover timers.
+- **GitHub** — the issue/PR detail panel is contained to the workspace height so hover/async content does not make the parent scroll.
+
 ## [0.0.107] - 2026-06-19
 
 Patch release: a desktop UX pass on the left sidebar and the top menu bar, plus an in-panel YouTube viewer.
