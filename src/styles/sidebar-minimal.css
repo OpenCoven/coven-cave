@@ -393,35 +393,35 @@
   padding-top: 4px;
 }
 
-/* Shared mode-aware header band (matches the chat rail / board / GitHub /
-   calendar / schedules / library / roles / capabilities group headers): darker
-   than the page in light mode, lighter in dark — the mix toward --foreground
-   inverts per mode. Applied to every eyebrow section label in this sidebar so
-   they read as headers and stay consistent with each other. */
+/* Quiet eyebrow labels: muted uppercase text with a small accent tick, no
+   fill or border. They group the nav without competing with it, so the active
+   nav item (accent border) stays the loudest thing in the panel. They remain
+   clickable collapse toggles — hover gives a subtle raised background. */
 .sidebar-section-label {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 2px 2px 8px;
-  padding: 6px 10px;
+  margin: 12px 2px 2px;
+  padding: 4px 10px;
   border-radius: 7px;
-  background: color-mix(in oklch, var(--bg-base) 70%, var(--foreground) 30%);
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 95%, var(--foreground) 5%);
+  background: transparent;
+  border: 1px solid transparent;
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.11em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: left;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .sidebar-section-label:hover {
-  background: color-mix(in oklch, var(--bg-base) 58%, var(--foreground) 42%);
+  background: var(--bg-raised);
+  color: var(--text-primary);
 }
 
 .sidebar-section-label:focus-visible {
@@ -444,16 +444,16 @@
   transform: rotate(-90deg);
 }
 
-/* A short accent tick before the label so each section reads as a deliberate
-   header rather than faint eyebrow text. */
+/* A short accent tick before the label gives each section a quiet identity
+   marker without the header competing with the nav items it groups. */
 .sidebar-section-label::before {
   content: "";
-  width: 3px;
-  align-self: stretch;
-  margin: 1px 0;
+  width: 2px;
+  height: 11px;
+  align-self: center;
   border-radius: 999px;
   background: var(--accent, currentColor);
-  opacity: 0.85;
+  opacity: 0.55;
   flex: none;
 }
 
@@ -958,10 +958,13 @@
    Superconductor activity sidebar: stacked cards with title · project · model ·
    +N -N diff · relative time, the active session marked by a left accent bar. */
 .recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0 2px; }
-.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 6px 10px; border: 0; border-radius: 7px; background: color-mix(in oklch, var(--bg-base) 70%, var(--foreground) 30%);
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 95%, var(--foreground) 5%); cursor: pointer; color: var(--text-primary); }
-.recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: 0.11em; text-transform: uppercase; }
-.recent-activity__label::before { content: ""; width: 3px; height: 12px; border-radius: 999px; background: var(--accent, currentColor); opacity: 0.85; flex: none; }
+/* Quiet eyebrow header, matching .sidebar-section-label so RECENT doesn't
+   outweigh the nav items it sits beside. */
+.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin: 12px 2px 2px; padding: 4px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent;
+  cursor: pointer; color: var(--text-secondary); transition: background 0.12s ease, color 0.12s ease; }
+.recent-activity__head:hover { background: var(--bg-raised); color: var(--text-primary); }
+.recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent, currentColor); opacity: 0.55; flex: none; }
 .recent-activity__chevron { transition: transform 140ms ease; }
 .recent-activity__chevron--collapsed { transform: rotate(-90deg); }
 .recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
