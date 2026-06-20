@@ -165,15 +165,32 @@
   flex: 1;
   min-height: 0;
   width: 100%;
-  resize: none;
-  font-family: var(--font-mono, monospace);
+  margin: 0;
+  box-sizing: border-box;
+  overflow: auto;
+  white-space: pre;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
   font-size: 12px;
+  line-height: 1.6;
   padding: 12px;
   border-radius: 10px;
   border: 1px solid var(--border-hairline);
   background: var(--bg-panel, var(--bg-base));
   color: var(--text-primary);
 }
+/* Highlighted (read-only): the wrapper scrolls; Shiki's own <pre> drops its
+   padding/background so the box keeps the surface + spacing above. */
+.journal-detail__code--hl { padding: 0; }
+.journal-detail__code--hl pre.shiki {
+  margin: 0;
+  padding: 12px;
+  min-height: 100%;
+  box-sizing: border-box;
+  background: transparent !important;
+  font: inherit;
+  white-space: pre;
+}
+.journal-detail__code--hl code { font: inherit; }
 .journal-detail__prompt { font-size: 11px; color: var(--text-muted); }
 .journal-empty {
   font-size: 12.5px;
