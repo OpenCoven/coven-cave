@@ -76,4 +76,23 @@ assert.match(
   "Open Brain Studio should persist the Brain tab and leave the side panel for the full Settings surface",
 );
 
+// The drawer traps focus, focuses on open, wires Escape, and restores focus on
+// close via the shared useFocusTrap hook (replacing the ad-hoc Escape listener).
+assert.match(
+  source,
+  /useFocusTrap\(drawerOpen, drawerRef, \{ onEscape: closeFamiliarStudio \}\)/,
+  "Studio drawer uses the shared focus trap",
+);
+assert.doesNotMatch(
+  source,
+  /addEventListener\("keydown"/,
+  "the ad-hoc Escape keydown listener is gone (folded into useFocusTrap)",
+);
+// Inline name edit returns focus to the name button when the input closes.
+assert.match(
+  source,
+  /refocusRef\.current = false;\s*buttonRef\.current\?\.focus\(\)/,
+  "renaming the familiar restores focus to the name button on commit/cancel",
+);
+
 console.log("familiar-studio.test.ts: ok");

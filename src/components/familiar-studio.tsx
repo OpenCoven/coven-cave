@@ -7,6 +7,7 @@ import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-im
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
@@ -68,18 +69,11 @@ export function FamiliarStudio({ familiars }: Props) {
     orientation: "vertical",
   });
 
-  // Esc to close
-  useEffect(() => {
-    if (!drawerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeFamiliarStudio();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen, closeFamiliarStudio]);
+  // Trap keyboard focus inside the open drawer, focus it on open, wire Escape,
+  // and restore focus to the trigger on close — matching every other modal
+  // (capabilities, board-inspector, …). Replaces the ad-hoc Escape listener.
+  const drawerRef = useRef<HTMLElement | null>(null);
+  useFocusTrap(drawerOpen, drawerRef, { onEscape: closeFamiliarStudio });
 
   // Automatic activation: switch activeTab whenever the roving focus lands on
   // a new tab. Studio tab panels are cheap, so APG recommends auto activation.
@@ -106,6 +100,7 @@ export function FamiliarStudio({ familiars }: Props) {
       <>
         <StudioScrim onClose={closeFamiliarStudio} />
       <aside
+        ref={drawerRef}
         role="dialog"
         aria-label="Familiar Studio"
         className="familiar-studio__drawer familiar-studio__drawer--empty"
@@ -128,6 +123,7 @@ export function FamiliarStudio({ familiars }: Props) {
     <>
       <StudioScrim onClose={closeFamiliarStudio} />
     <aside
+      ref={drawerRef}
       role="dialog"
       aria-label={`Familiar Studio${familiar ? ` — ${familiar.display_name}` : ""}`}
       className="familiar-studio__drawer"
@@ -307,6 +303,16 @@ function HeaderName({ familiar }: { familiar: ResolvedFamiliar }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(familiar.display_name);
   const coarse = useIsCoarsePointer();
+  // Return focus to the name button when the edit input closes, so keyboard
+  // focus doesn't drop to <body> after committing/cancelling a rename.
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const refocusRef = useRef(false);
+  useEffect(() => {
+    if (!editing && refocusRef.current) {
+      refocusRef.current = false;
+      buttonRef.current?.focus();
+    }
+  }, [editing]);
 
   function enter() {
     setDraft(familiar.display_name);
@@ -314,6 +320,7 @@ function HeaderName({ familiar }: { familiar: ResolvedFamiliar }) {
   }
 
   function commit() {
+    refocusRef.current = true;
     setEditing(false);
     if (draft.trim() === "") {
       clearFamiliarOverrideField(familiar.id, "display_name");
@@ -323,6 +330,7 @@ function HeaderName({ familiar }: { familiar: ResolvedFamiliar }) {
   }
 
   function cancel() {
+    refocusRef.current = true;
     setDraft(familiar.display_name);
     setEditing(false);
   }
@@ -351,6 +359,7 @@ function HeaderName({ familiar }: { familiar: ResolvedFamiliar }) {
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       className="familiar-studio__name"
       onClick={enter}
