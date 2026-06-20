@@ -455,7 +455,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const renameSession = useCallback((idx: number, label: string) => {
     const session = sessions[idx];
     if (!session) return;
-    dispatchTerminalLayout({ type: "rename", sessionId: session.id, label });
+    // Ignore blank/whitespace-only names so a cleared tab keeps its label
+    // instead of becoming an empty tab.
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    dispatchTerminalLayout({ type: "rename", sessionId: session.id, label: trimmed });
   }, [sessions]);
 
   const visiblePaneSessionIds = useMemo(
@@ -989,9 +993,16 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       if (e.key === "Enter") {
                         e.preventDefault();
                         (e.target as HTMLElement).blur();
+                      } else if (e.key === "Escape") {
+                        // Abort the rename: restore the original label before
+                        // blur so the onBlur save is a no-op.
+                        e.preventDefault();
+                        e.currentTarget.textContent = s.label;
+                        (e.target as HTMLElement).blur();
                       }
                     }}
-                    className="max-w-[120px] truncate outline-none"
+                    title="Click to rename · Enter to save · Esc to cancel"
+                    className="max-w-[120px] truncate rounded-[3px] px-0.5 outline-none focus:bg-[var(--bg-base)] focus:ring-1 focus:ring-[var(--accent-presence)]"
                   >
                     {s.label}
                   </span>
