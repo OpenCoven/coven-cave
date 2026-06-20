@@ -1076,11 +1076,16 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
         case "w": case "W": setViewMode("week");   break;
         case "m": case "M": setViewMode("month");  break;
         case "a": case "A": setViewMode("agenda"); break;
+        case "n": case "N":
+          if (onAddEntry) { e.preventDefault(); onAddEntry({ fireAt: defaultEntryFireAt(anchor) }); }
+          break;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [viewMode]); // re-bind when viewMode changes so navigate() closure is current
+    // re-bind when viewMode/anchor changes so navigate() and the new-entry
+    // shortcut close over the current values.
+  }, [viewMode, anchor, onAddEntry]);
 
   function navigate(dir: -1 | 1) {
     setAnchor((prev) => {
@@ -1247,7 +1252,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
       <footer
         className="hidden shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6 md:block"
       >
-        ← → navigate · T today · D Day · W Week · M Month · A Agenda
+        ← → navigate · T today · D Day · W Week · M Month · A Agenda{onAddEntry ? " · N new" : ""}
       </footer>
       {selectedItem && (
         <ItemDetailPanel
