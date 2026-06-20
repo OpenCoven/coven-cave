@@ -164,3 +164,14 @@ assert.match(
   /@media \(max-width: 767px\) \{[\s\S]*\.calendar-toolbar-icon\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile calendar icon buttons should be square touch targets",
 );
+
+// Calendar event buttons show a visible keyboard focus ring. The time-grid
+// events are arrow-navigable via roving tabindex, so focus must be visible.
+assert.ok(
+  source.includes("focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px]"),
+  "time-grid event buttons have a focus ring",
+);
+assert.ok(
+  source.includes("focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px]"),
+  "all-day event buttons have a focus ring",
+);

@@ -211,7 +211,7 @@ export function recentReports(items: InboxItem[]): RecentReport[] {
         slug,
         title: item.title,
         generatedAt: item.firedAt ?? item.updatedAt ?? null,
-        stats: item.media?.stats ?? null,
+        stats: item.media?.stats ?? parseStatsFromBody(item.body),
         href: `/daily-report/${slug}`,
       };
     })
@@ -247,4 +247,33 @@ export function parseRecentSessions(body: string | undefined): string[] {
     .split("·")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * Recover the headline counts from the summary body text — the lines the
+ * summary builder writes ("N reminders fired", "N responses waiting", "N
+ * familiar updates", "N sessions updated"). Older reports were generated before
+ * the counts were frozen into `media.stats`; this lets the dashboard rows and
+ * the report page still show their stats. Returns null when the body carries
+ * none of the four count lines (so a non-summary body yields no zeros).
+ */
+export function parseStatsFromBody(body: string | undefined): DailyReportStats | null {
+  if (!body) return null;
+  const count = (re: RegExp): number | null => {
+    const m = body.match(re);
+    return m ? Number.parseInt(m[1], 10) : null;
+  };
+  const reminders = count(/(\d+)\s+reminders?\s+fired/i);
+  const responses = count(/(\d+)\s+responses?\s+waiting/i);
+  const familiars = count(/(\d+)\s+familiar\s+updates?/i);
+  const sessions = count(/(\d+)\s+sessions?\s+updated/i);
+  if (reminders === null && responses === null && familiars === null && sessions === null) {
+    return null;
+  }
+  return {
+    reminders: reminders ?? 0,
+    responses: responses ?? 0,
+    familiars: familiars ?? 0,
+    sessions: sessions ?? 0,
+  };
 }

@@ -137,7 +137,15 @@ export async function proxy(req: NextRequest) {
   const mobileAccessAuthenticated = mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
     : false;
-  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated)) {
+  // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
+  // `pnpm mobile:tailscale:app`): the server is reachable only over loopback and
+  // via `tailscale serve`, which forwards the request's `<host>.ts.net` Host —
+  // NOT 127.0.0.1 — so the loopback host gate would otherwise 403 every tailnet
+  // request. Trusting the host here is safe because tailnet membership is the
+  // ingress boundary in this mode; the CSRF Origin/Referer gate below still
+  // blocks cross-site browser requests. The packaged app does NOT set this flag.
+  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
+  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)) {
     return jsonError(403, "forbidden host");
   }
 

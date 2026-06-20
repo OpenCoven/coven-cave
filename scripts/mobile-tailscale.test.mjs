@@ -34,6 +34,10 @@ test("mobile tailscale app mode serves the native client with no token", () => {
   );
   assert.match(script, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE/);
   assert.match(script, /tokenless app mode: do not mint or load any token/);
+  // Tailscale Serve forwards the <host>.ts.net Host, so the tokenless server must
+  // run with COVEN_CAVE_TAILNET_TRUST=1 to relax the loopback host gate.
+  assert.match(script, /export COVEN_CAVE_TAILNET_TRUST=1/);
+  assert.match(script, /COVEN_CAVE_TAILNET_TRUST=1/);
 });
 
 test("mobile tailscale runner persists state for remote invite regeneration", () => {
