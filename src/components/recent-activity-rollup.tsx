@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { modelIcon } from "@/lib/model-label";
 import type { SessionRow } from "@/lib/types";
 
 /**
@@ -23,13 +24,6 @@ function projectLabel(root: string | undefined): string {
   if (!root) return "";
   const parts = root.replace(/\/+$/, "").split("/");
   return parts[parts.length - 1] || root;
-}
-
-function modelIcon(model: string | null | undefined): IconName {
-  const m = (model ?? "").toLowerCase();
-  if (m.includes("gpt") || m.includes("openai") || m.includes("codex")) return "ph:robot";
-  if (m.includes("claude") || m.includes("opus") || m.includes("sonnet") || m.includes("haiku")) return "ph:sparkle";
-  return "ph:cube-bold";
 }
 
 type Props = {
