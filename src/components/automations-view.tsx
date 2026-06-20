@@ -804,23 +804,23 @@ function CodexDetailPanel({
             </select>
           </div>
           <div>
-            <div className="flex items-center justify-between">
-              <FieldLabel>Working directories</FieldLabel>
+            <FieldLabel>Working directories</FieldLabel>
+            <div className="flex items-start gap-2">
+              <textarea
+                value={cwdsText}
+                onChange={(event) => setCwdsText(event.target.value)}
+                rows={3}
+                className={`${automationMonoTextareaClass} min-w-0 flex-1`}
+                style={fieldStyle}
+              />
               <button
                 type="button"
                 onClick={() => setCwdPickerOpen(true)}
-                className="mb-1 inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
               >
                 <Icon name="ph:folder-open" width={12} /> Browse…
               </button>
             </div>
-            <textarea
-              value={cwdsText}
-              onChange={(event) => setCwdsText(event.target.value)}
-              rows={3}
-              className={automationMonoTextareaClass}
-              style={fieldStyle}
-            />
           </div>
 
           {cwdPickerOpen && (
