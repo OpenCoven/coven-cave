@@ -29,7 +29,7 @@ assert.match(editor, /key: "Escape", run: \(\) => \{ onCancel\(\); return true; 
 
 // Editor chrome is themed to the app's CSS tokens (not the generic dark theme).
 assert.match(editor, /const appTheme = EditorView\.theme\(/, "a CodeMirror theme is defined from app tokens");
-assert.match(editor, /backgroundColor: "var\(--bg-base\)"/, "editor background uses the app surface token");
+assert.match(editor, /backgroundColor: "var\(--code-surface\)"/, "editor background matches the read code surface via --code-surface");
 assert.match(editor, /caretColor: "var\(--accent-presence\)"/, "caret uses the app accent token");
 assert.match(editor, /theme=\{appTheme\}/, "the editor uses the app theme");
 

@@ -66,6 +66,9 @@
      Semantic names called out in the spec. Resolve to the same
      palette as above so either vocabulary works. */
   --bg-base: var(--background);
+  /* Fixed near-opaque dark "ink" for code surfaces — read code blocks AND the
+     file editor share it so the Code page's read↔edit toggle keeps one bg. */
+  --code-surface: oklch(0.12 0.012 280 / 92%);
   --bg-panel: oklch(0.10 0.020 293);        /* deepest — app shell / sidebar floor */
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.20 0.028 293);     /* dropdowns / popovers */

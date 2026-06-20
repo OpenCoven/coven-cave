@@ -203,20 +203,34 @@ assert.match(
 
 // The fixed dark surfaces must be near-opaque so they stay self-consistent
 // over a light --bg-base (a 60%-alpha wash goes muddy), and must not mix
-// with theme surfaces.
-for (const selector of [".cave-code-wrap", ".cave-bubble-system"]) {
-  const block = ruleBlock(selector);
-  assert.match(
-    block,
-    /background:\s*oklch\([^)]*\/\s*9\d%\)/,
-    `${selector} surface must be a near-opaque fixed dark oklch`,
-  );
-  assert.doesNotMatch(
-    block,
-    /var\(--bg-/,
-    `${selector} surface must not mix with theme backgrounds`,
-  );
-}
+// with theme surfaces. The code-block read surface (.cave-code-wrap) draws its
+// ink from the shared --code-surface token so the Code page's file editor can
+// match it exactly; the system bubble keeps the literal.
+const codeSurfaceToken = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+assert.match(
+  codeSurfaceToken,
+  /--code-surface:\s*oklch\([^)]*\/\s*9\d%\)/,
+  "--code-surface token must resolve to a near-opaque fixed dark oklch",
+);
+
+const codeWrapSurface = ruleBlock(".cave-code-wrap");
+assert.match(
+  codeWrapSurface,
+  /background:\s*var\(--code-surface\)/,
+  ".cave-code-wrap surface must draw from the shared --code-surface token",
+);
+
+const systemBubble = ruleBlock(".cave-bubble-system");
+assert.match(
+  systemBubble,
+  /background:\s*oklch\([^)]*\/\s*9\d%\)/,
+  ".cave-bubble-system surface must be a near-opaque fixed dark oklch",
+);
+assert.doesNotMatch(
+  systemBubble,
+  /var\(--bg-/,
+  ".cave-bubble-system surface must not mix with theme backgrounds",
+);
 
 // ---------------------------------------------------------------------------
 // CHAT-D7-02 — the code-block header must be sticky inside the block's own

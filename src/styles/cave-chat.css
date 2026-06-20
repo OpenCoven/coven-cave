@@ -452,8 +452,8 @@
   border-radius: 9px;
   border: 1px solid var(--border-hairline);
   /* Near-opaque fixed dark: a 60%-alpha wash went muddy over a light
-     --bg-base (CHAT-D13-01). */
-  background: oklch(0.12 0.012 280 / 92%);
+     --bg-base (CHAT-D13-01). Shared with the file editor via --code-surface. */
+  background: var(--code-surface);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
     inset 0 1px 0 oklch(0.985 0 0 / 4%);
