@@ -11,6 +11,8 @@ import type {
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/project-tree";
 import type { CaveProject } from "@/lib/cave-projects-types";
 
@@ -1326,20 +1328,26 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               ))}
             </div>
           ) : activeTab === "reminders" && remindersEmpty ? (
-            <div className="mt-12 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
-              No reminders yet.{" "}
-              {onNewReminder && (
-                <button type="button" onClick={onNewReminder}
-                  className="underline underline-offset-2 hover:opacity-80"
-                  style={{ color: "var(--text-secondary)" }}>
-                  Create one via chat.
-                </button>
-              )}
-            </div>
+            <EmptyState
+              className="mt-12"
+              icon="ph:bell"
+              headline="No reminders yet"
+              subtitle="Reminders nudge you or a familiar at a scheduled time."
+              actions={
+                onNewReminder ? (
+                  <Button leadingIcon="ph:plus" onClick={onNewReminder}>
+                    Create via chat
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : activeTab === "automations" && automationsEmpty ? (
-            <div className="mt-12 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
-              No automations configured.
-            </div>
+            <EmptyState
+              className="mt-12"
+              icon="ph:robot"
+              headline="No automations configured"
+              subtitle="Automations run a familiar on a schedule — set one up to get started."
+            />
           ) : (
             <>
               {activeTab === "reminders" ? (
