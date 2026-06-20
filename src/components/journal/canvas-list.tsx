@@ -72,7 +72,7 @@ export function CanvasList({
       setError(null);
       setGenerating((prev) => new Set(prev).add(id));
       const sendPrompt = refineOf
-        ? buildRefinePrompt(refineOf.code, refineOf.kind ?? "html")
+        ? buildRefinePrompt(refineOf.code, ask, refineOf.kind ?? "html")
         : buildSketchPrompt(ask);
       const result = await generateArtifactCode({ prompt: sendPrompt, familiarId });
       setGenerating((prev) => {
