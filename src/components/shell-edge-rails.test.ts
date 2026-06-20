@@ -41,7 +41,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--nav[\s\S]*?aria-label=\{navOpen \? "Hide navigation" : "Show navigation"\}/,
+  /shell-top-toggle--nav[\s\S]*?aria-label=\{navOpen \? "Collapse navigation to icons" : "Expand navigation"\}/,
   "nav toggle label reflects nav state",
 );
 assert.match(

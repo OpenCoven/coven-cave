@@ -970,3 +970,73 @@
 .recent-activity__add { color: color-mix(in oklch, #3fb950 80%, var(--text-secondary)); }
 .recent-activity__del { color: color-mix(in oklch, #f85149 80%, var(--text-secondary)); }
 .recent-activity__time { font-size: 10.5px; color: var(--text-muted); }
+
+/* ── Collapsed icon rail (desktop) ───────────────────────────────────────────
+ * When the left nav is collapsed it shrinks to a ~56px rail rather than
+ * vanishing. Strip every text label and section header and center the
+ * destination icons so only the icons remain; each control keeps its native
+ * `title` so hovering names the surface. Mobile is unaffected — it slides the
+ * full drawer in and out (the rail class is only applied on desktop). */
+.shell-nav--rail .sidebar-minimal {
+  padding: 10px 0;
+  gap: 6px;
+  align-items: center;
+}
+
+/* Wordmark, section headers, and the recent-activity rollup have no compact
+   form, so they drop out entirely in the rail. */
+.shell-nav--rail .sidebar-header,
+.shell-nav--rail .sidebar-section-label,
+.shell-nav--rail .recent-activity {
+  display: none;
+}
+
+/* Labels and count pills collapse away; the icon is all that stays per row.
+   (Footer icons live in `.sidebar-foot-icon-cell`, which is preserved.) */
+.shell-nav--rail .sidebar-folder-label,
+.shell-nav--rail .sidebar-action-label,
+.shell-nav--rail .sidebar-actions .sidebar-action-row > span,
+.shell-nav--rail .sidebar-foot-label,
+.shell-nav--rail .sidebar-foot-badge,
+.shell-nav--rail .sidebar-badge {
+  display: none;
+}
+
+/* Drop the horizontal padding so the centered icons sit dead-center in the
+   rail, and let the nav region grow without a scrollbar gutter. */
+.shell-nav--rail .sidebar-actions,
+.shell-nav--rail .sidebar-nav-scroll,
+.shell-nav--rail .sidebar-foot {
+  padding-left: 0;
+  padding-right: 0;
+}
+.shell-nav--rail .sidebar-nav-scroll {
+  gap: 6px;
+  align-items: center;
+  scrollbar-width: none;
+}
+.shell-nav--rail .sidebar-folders {
+  width: 100%;
+  align-items: center;
+}
+
+/* Each row becomes a centered 40px square hit target — comfortable for the
+   icon, still a wide-enough click area. */
+.shell-nav--rail .sidebar-folder-row,
+.shell-nav--rail .sidebar-action-row,
+.shell-nav--rail .sidebar-foot-btn,
+.shell-nav--rail .sidebar-foot-icon-btn {
+  justify-content: center;
+  gap: 0;
+  width: 40px;
+  padding: 0;
+  margin: 0 auto;
+}
+
+/* The footer's "Settings + phone" two-column grid stacks into the single rail
+   column. */
+.shell-nav--rail .sidebar-foot-utility-row {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 4px;
+}

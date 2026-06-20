@@ -80,6 +80,10 @@ function togglePanel(panel: PanelImperativeHandle | null) {
 // (the strip, or 0 when not peeking) read as "panel closed".
 const RAIL_PEEK_PX = 56;
 const RAIL_OPEN_THRESHOLD_PX = RAIL_PEEK_PX + 16;
+// The left nav collapses to an icons-only rail (instead of vanishing) so the
+// destination icons stay reachable. Sizes at/below the rail read as "collapsed".
+const NAV_RAIL_PX = 56;
+const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellNavSection = {
   label?: string;
@@ -443,15 +447,22 @@ function ShellInner({
         minSize="14%"
         maxSize="28%"
         collapsible
-        collapsedSize={0}
+        // Desktop collapses to an icons-only rail; mobile uses the slide-in
+        // drawer (position is CSS-overridden there), so it still collapses to 0.
+        collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
-          setNavOpen((size.asPercentage ?? 0) > 0);
+          setNavOpen((size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX);
         }}
       >
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
-        <aside className="shell-nav" aria-label="Sidebar">{nav}</aside>
+        <aside
+          className={`shell-nav${!isMobile && !navOpen ? " shell-nav--rail" : ""}`}
+          aria-label="Sidebar"
+        >
+          {nav}
+        </aside>
       </Panel>
       <Separator className="shell-separator" />
       {!twoPane && (
@@ -554,9 +565,9 @@ function ShellInner({
     <button
       type="button"
       className={`shell-top-toggle shell-top-toggle--nav focus-ring${navOpen ? " shell-top-toggle--active" : ""}`}
-      aria-label={navOpen ? "Hide navigation" : "Show navigation"}
+      aria-label={navOpen ? "Collapse navigation to icons" : "Expand navigation"}
       aria-expanded={navOpen}
-      title={navOpen ? `Hide navigation (${leftPanelShortcutLabel})` : `Show navigation (${leftPanelShortcutLabel})`}
+      title={navOpen ? `Collapse navigation (${leftPanelShortcutLabel})` : `Expand navigation (${leftPanelShortcutLabel})`}
       onClick={toggleNavPanel}
     >
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />

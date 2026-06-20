@@ -250,7 +250,7 @@ assert.match(
 // affordance on every breakpoint.
 assert.match(
   source,
-  /<div className="sidebar-actions">\s*<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\}>/,
+  /<div className="sidebar-actions">\s*<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\}[^>]*>/,
   "the sidebar renders a New chat CTA at the top, wired to onNewChat",
 );
 assert.match(

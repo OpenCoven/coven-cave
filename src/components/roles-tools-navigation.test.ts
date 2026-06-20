@@ -141,7 +141,7 @@ assert.match(
 
 assert.match(
   shell,
-  /<aside className="shell-nav" aria-label="Sidebar">/,
+  /className=\{`shell-nav\$\{[^}]*\}`\}[\s\S]*?aria-label="Sidebar"/,
   "Shell nav panel must carry a distinct accessible name (axe landmark-unique)",
 );
 assert.match(
