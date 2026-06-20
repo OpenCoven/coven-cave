@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { relativeTime } from "@/lib/relative-time";
 import type { RetroOutcome, RetroRun, RetroRunsSnapshot, RetroTrack } from "@/lib/retro-runs";
 
 type RetroApiResponse = {
@@ -35,17 +36,10 @@ const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   runs: [],
 };
 
-function relativeTime(iso: string | null): string {
-  if (!iso) return "never";
-  const time = new Date(iso).getTime();
-  if (!Number.isFinite(time)) return "unknown";
-  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+// Retro rows fall back to "never" when a familiar has no last run; the time
+// math itself is the shared canonical formatter.
+function lastRunLabel(iso: string | null): string {
+  return relativeTime(iso) || "never";
 }
 
 function scoreLabel(delta: number): string {
@@ -221,7 +215,7 @@ export function RetroRunsView({
         </div>
         <div className="retro-metric">
           <Icon name="ph:clock-countdown" aria-hidden />
-          <span>{relativeTime(snapshot.summary.lastRun)}</span>
+          <span>{lastRunLabel(snapshot.summary.lastRun)}</span>
           <p>Latest run</p>
         </div>
       </div>
@@ -285,7 +279,7 @@ export function RetroRunsView({
                 <li key={familiar.familiarId}>
                   <span>
                     <b>{familiar.familiarName}</b>
-                    <small>{familiar.runs.length} runs · {familiar.running ? "running" : relativeTime(familiar.lastRun)}</small>
+                    <small>{familiar.runs.length} runs · {familiar.running ? "running" : lastRunLabel(familiar.lastRun)}</small>
                   </span>
                   <i aria-hidden={familiar.running ? "false" : "true"} className={familiar.running ? "is-running" : ""} />
                 </li>

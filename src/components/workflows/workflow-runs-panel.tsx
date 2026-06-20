@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { relativeTime } from "@/lib/relative-time";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
   WorkflowRunRecord,
@@ -17,17 +18,6 @@ type WorkflowRunsPanelProps = {
   onReplayRun: (run: WorkflowRunRecord) => void;
 };
 
-function relativeTime(iso: string): string {
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return iso;
-  const seconds = Math.round((Date.now() - then) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 /** Human duration between started/finished, or null when a run never finished. */
 function runDuration(run: WorkflowRunRecord): string | null {

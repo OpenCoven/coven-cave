@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { relativeTime } from "@/lib/relative-time";
 import type { SessionRow } from "@/lib/types";
 
 /**
@@ -22,19 +23,6 @@ function projectLabel(root: string | undefined): string {
   if (!root) return "";
   const parts = root.replace(/\/+$/, "").split("/");
   return parts[parts.length - 1] || root;
-}
-
-function relativeTime(iso: string | undefined): string {
-  if (!iso) return "";
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return "";
-  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
-  if (s < 45) return "now";
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.round(h / 24)}d`;
 }
 
 function modelIcon(model: string | null | undefined): IconName {
