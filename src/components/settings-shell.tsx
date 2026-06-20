@@ -845,8 +845,10 @@ function AppearanceSection() {
     setActiveTheme(id);
     setCustomData(null);
     applyPreset(id);
-    // Open the color editor seeded with this preset.
-    setColorEditorBase(id);
+    // Selecting a preset just applies it. The color editor is opened explicitly
+    // via "Customize colors" so a plain pick doesn't drop into edit mode (which
+    // would flip data-theme to "custom").
+    setColorEditorBase(null);
   };
 
   const handleSetCornerRadius = (next: CornerRadius) => {
@@ -1030,7 +1032,22 @@ function AppearanceSection() {
           ))}
         </div>
 
-        {/* ── Color editor: shown when a preset is selected ── */}
+        {/* Open the color editor explicitly — selecting a preset above only
+            applies it, so this is the way into custom tweaking. */}
+        {!colorEditorBase && (
+          <div className="border-t border-[var(--border-hairline)] px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setColorEditorBase(activeTheme === "custom" ? "coven" : activeTheme)}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            >
+              <Icon name="ph:paint-brush" width={13} />
+              Customize colors
+            </button>
+          </div>
+        )}
+
+        {/* ── Color editor: shown when "Customize colors" is opened ── */}
         {colorEditorBase && (
           <div className="border-t border-[var(--border-hairline)] p-4">
             <ThemeColorEditor
