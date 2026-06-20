@@ -593,10 +593,21 @@ function WeekView({
           {columns.map((col, i) => (
             <div
               key={i}
-              className={`flex-1 min-w-[80px] px-2 py-2 text-center ${
+              className={`group relative flex-1 min-w-[80px] px-2 py-2 text-center ${
                 col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
               }`}
             >
+              {onAddEntry && (
+                <button
+                  type="button"
+                  onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(col.date) })}
+                  aria-label={`Add a reminder on ${fmtDateHeading(col.date)}`}
+                  title="Add reminder"
+                  className="focus-ring absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-presence)] group-hover:flex group-focus-within:flex"
+                >
+                  <Icon name="ph:plus" width={10} aria-hidden />
+                </button>
+              )}
               <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">
                 {WEEKDAYS[col.date.getDay()]}
               </div>
