@@ -12,6 +12,8 @@ import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -536,6 +538,38 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
                 New task
               </button>
             </div>
+          </div>
+        ) : filtered.length === 0 && !error ? (
+          // The board has cards, but the active search/scope hides them all.
+          // Every view mode lands here so the kanban no longer silently shows
+          // empty columns when nothing matches.
+          <div className="flex h-full items-center justify-center p-6">
+            {searchQuery.trim() ? (
+              <EmptyState
+                icon="ph:magnifying-glass"
+                headline="No tasks match your search"
+                subtitle={`Nothing matches “${searchQuery.trim()}”. Try a different term or clear the search.`}
+                actions={
+                  <Button leadingIcon="ph:x" onClick={() => setSearchQuery("")}>
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                icon="ph:kanban"
+                headline="No tasks for this familiar yet"
+                subtitle="Switch scope from the familiar menu, or add a task for this one."
+                actions={
+                  <Button
+                    leadingIcon="ph:plus"
+                    onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
+                  >
+                    New task
+                  </Button>
+                }
+              />
+            )}
           </div>
         ) : isMobile ? (
           <BoardCardStack cards={filtered} familiars={familiars} sessions={sessions}
