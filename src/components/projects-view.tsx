@@ -294,12 +294,10 @@ function ProjectRow({
         ) : (
           <button
             type="button"
-            onClick={() => {
-              setNameDraft(project.name);
-              setEditingName(true);
-            }}
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
             className="focus-ring min-w-0 flex-1 truncate rounded-md px-1 py-0.5 text-left text-[13px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
-            title="Rename project"
+            title={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
           >
             {project.name}
           </button>
