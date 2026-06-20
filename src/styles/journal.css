@@ -241,10 +241,41 @@
 .journal-detail__code--hl code { font: inherit; }
 .journal-detail__prompt { font-size: 11px; color: var(--text-muted); }
 .journal-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
   color: var(--text-muted);
   padding: 16px 4px;
 }
+.journal-empty svg { flex: none; color: var(--accent-presence); opacity: 0.8; }
+
+/* Empty-state starter prompts — one tap seeds the generate composer. */
+.journal-starters {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  max-width: 340px;
+  margin: 4px auto 0;
+}
+.journal-starter {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: 9px;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.journal-starter:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+}
+.journal-starter:disabled { opacity: 0.5; cursor: default; }
 .journal-empty--pane {
   flex: 1;
   display: flex;

@@ -17,7 +17,17 @@ import {
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
 import { highlightToHtml } from "@/components/message-bubble";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { Familiar } from "@/lib/types";
+
+// Example prompts shown in the empty state so the blank Canvas isn't a dead
+// end — tapping one seeds the composer so the user can run or edit it.
+const STARTER_SKETCH_PROMPTS: readonly string[] = [
+  "A pricing page with three tiers and a highlighted plan",
+  "A sign-in form with email, password, and social buttons",
+  "A weather dashboard card with an animated icon",
+  "A kanban column with draggable task cards",
+];
 
 function srcDocFor(art: CanvasArtifact): string {
   return art.kind === "react" ? buildReactSrcDoc(art.code) : buildPreviewSrcDoc(art.code);
@@ -69,6 +79,19 @@ export function CanvasList({
   const [refineOpen, setRefineOpen] = useState(false);
   const [refineText, setRefineText] = useState("");
   const refineRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<HTMLInputElement | null>(null);
+
+  // Seed the generate composer from an example prompt and focus it, so the
+  // empty-state starters are one tap from a ready-to-run sketch.
+  const applyStarter = useCallback((text: string) => {
+    setPrompt(text);
+    requestAnimationFrame(() => {
+      const el = composerRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, []);
 
   const load = useCallback(async () => {
     if (isDemoModeEnabled()) {
@@ -224,6 +247,7 @@ export function CanvasList({
           }}
         >
           <input
+            ref={composerRef}
             className="journal-composer__input"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
@@ -242,7 +266,10 @@ export function CanvasList({
         ) : null}
         <div className="journal-list__cap">Generated sketches</div>
         {artifacts.length === 0 ? (
-          <div className="journal-empty">No sketches yet. Generate one above.</div>
+          <div className="journal-empty">
+            <Icon name="ph:sparkle" width={15} aria-hidden />
+            No sketches yet — describe one above to get started.
+          </div>
         ) : (
           <ul className="journal-list__items">
             {[...artifacts].reverse().map((a) => (
@@ -369,7 +396,34 @@ export function CanvasList({
             <div className="journal-detail__prompt">Prompt: “{selected.prompt}”</div>
           </>
         ) : (
-          <div className="journal-empty journal-empty--pane">Select a sketch to preview it.</div>
+          <div className="journal-empty journal-empty--pane">
+            <EmptyState
+              icon="ph:sparkle"
+              headline={artifacts.length ? "Select a sketch to preview it" : "Sketch a UI with a familiar"}
+              subtitle={
+                artifacts.length
+                  ? "Pick a sketch from the list to preview, refine, and iterate on it."
+                  : "Describe a screen or component and a familiar generates a live, editable preview. Try a starting point:"
+              }
+              actions={
+                artifacts.length ? undefined : (
+                  <div className="journal-starters">
+                    {STARTER_SKETCH_PROMPTS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="journal-starter"
+                        disabled={!canGenerate}
+                        onClick={() => applyStarter(s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )
+              }
+            />
+          </div>
         )}
       </section>
     </div>
