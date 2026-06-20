@@ -192,6 +192,31 @@ assert.equal(
   "normal same-origin browser dev mode remains allowed",
 );
 
+// ─── Native iOS app (tokenless, over Tailscale Serve) contract ─────────────
+// The native SwiftUI client (pnpm mobile:tailscale:app) is NOT a browser: it
+// sends no Origin and no Referer, and Tailscale Serve forwards Host: 127.0.0.1
+// to the loopback server. With neither COVEN_CAVE_ACCESS_TOKEN nor
+// COVEN_CAVE_AUTH_TOKEN configured (and not bundled), proxy() falls through to
+// NextResponse.next() AFTER these source gates pass. These assertions pin the
+// gate-level behavior that flow depends on; the proxy() body ordering is pinned
+// by middleware.test.ts. A malicious same-machine BROWSER page is still blocked
+// because it always carries a cross-origin Origin (rejected just above).
+assert.equal(
+  isAllowedApiHost("127.0.0.1:3000", false),
+  true,
+  "tokenless app: Tailscale Serve forwards loopback Host, which is allowed",
+);
+assert.equal(
+  isAllowedRequestSource(null, expected),
+  true,
+  "tokenless app: native client sends no Origin → source gate passes",
+);
+assert.equal(
+  isAllowedRequestSource(null, "http://127.0.0.1:3000"),
+  true,
+  "tokenless app: absent Referer at the loopback Serve backend passes",
+);
+
 // ─── shouldRequireMobileAccessCredential ──────────────────────────────────
 assert.equal(
   shouldRequireMobileAccessCredential("localhost:3000", false),

@@ -13,13 +13,27 @@ const packageJson = JSON.parse(
 
 test("mobile tailscale runner exposes operator commands", () => {
   assert.match(script, /COMMAND="\$\{1:-start\}"/);
-  assert.match(script, /start\|invite\|native\|status\|stop/);
+  assert.match(script, /start\|invite\|native\|app\|status\|stop/);
   assert.match(packageJson.scripts["mobile:tailscale"], /mobile-tailscale\.sh start/);
   assert.match(packageJson.scripts["mobile:tailscale:invite"], /mobile-tailscale\.sh invite/);
   assert.match(packageJson.scripts["mobile:tailscale:native"], /mobile-tailscale\.sh native/);
   assert.match(packageJson.scripts["mobile:tailscale:native:device"], /CAVE_MOBILE_DEVICE=1/);
+  assert.match(packageJson.scripts["mobile:tailscale:app"], /mobile-tailscale\.sh app/);
   assert.match(packageJson.scripts["mobile:tailscale:status"], /mobile-tailscale\.sh status/);
   assert.match(packageJson.scripts["mobile:tailscale:stop"], /mobile-tailscale\.sh stop/);
+});
+
+test("mobile tailscale app mode serves the native client with no token", () => {
+  // The tokenless native-app path must mint/load NO access or sidecar token and
+  // unset both (plus COVEN_CAVE_BUNDLE) when starting the server.
+  assert.match(script, /CAVE_MOBILE_APP/);
+  assert.match(script, /app\) app_command ;;/);
+  assert.match(
+    script,
+    /unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE/,
+  );
+  assert.match(script, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE/);
+  assert.match(script, /tokenless app mode: do not mint or load any token/);
 });
 
 test("mobile tailscale runner persists state for remote invite regeneration", () => {
