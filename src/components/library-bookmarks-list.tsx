@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { relativeTime } from "@/lib/relative-time";
 import type { LibraryBookmark } from "@/lib/library-types";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 
@@ -24,17 +25,6 @@ const BOOKMARK_GROUP_OPTIONS: Array<{ id: GroupBy; label: string; icon: IconName
   { id: "domain", label: "Group: Domain", icon: "ph:globe" },
   { id: "none", label: "No grouping", icon: "ph:list-bullets" },
 ];
-
-function relTime(iso: string): string {
-  try {
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (s < 60) return `${Math.round(s)}s`;
-    if (s < 3600) return `${Math.round(s / 60)}m`;
-    if (s < 86400) return `${Math.round(s / 3600)}h`;
-    const d = Math.round(s / 86400);
-    return d < 30 ? `${d}d` : `${Math.round(d / 30)}mo`;
-  } catch { return ""; }
-}
 
 function sortItems(items: LibraryBookmark[], key: SortKey, dir: SortDir): LibraryBookmark[] {
   return [...items].sort((a, b) => {
@@ -444,7 +434,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                         </span>
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        <span className="board-table-muted">{relTime(item.savedAt)}</span>
+                        <span className="board-table-muted">{relativeTime(item.savedAt)}</span>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>

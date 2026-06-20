@@ -8,6 +8,7 @@ import { LibraryUndoToast } from "@/components/library-undo-toast";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { relativeTime } from "@/lib/relative-time";
 import type { CardGitHubLink, CardStatus } from "@/lib/cave-board-types";
 import type { LibraryGitHubItem, GitHubItemKind } from "@/lib/library-types";
 import {
@@ -23,17 +24,6 @@ import { useIsCoarsePointer } from "@/lib/use-viewport";
 type SortKey = "title" | "repo" | "savedAt";
 type SortDir = "asc" | "desc";
 type GroupBy = "repo" | "kind" | "none";
-
-function relTime(iso: string): string {
-  try {
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (s < 60) return `${Math.round(s)}s`;
-    if (s < 3600) return `${Math.round(s / 60)}m`;
-    if (s < 86400) return `${Math.round(s / 3600)}h`;
-    const d = Math.round(s / 86400);
-    return d < 30 ? `${d}d` : `${Math.round(d / 30)}mo`;
-  } catch { return ""; }
-}
 
 function sortItems(items: LibraryGitHubItem[], key: SortKey, dir: SortDir): LibraryGitHubItem[] {
   return [...items].sort((a, b) => {
@@ -794,7 +784,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                             <span className="board-table-muted gh-repo-cell">{item.repo}</span>
                           </td>
                           <td className="gh-col-saved">
-                            <span className="board-table-muted">{relTime(item.savedAt)}</span>
+                            <span className="board-table-muted">{relativeTime(item.savedAt)}</span>
                           </td>
                           <td className="gh-col-kind">
                             <span className="board-table-muted library-source-type gh-kind-pill">
