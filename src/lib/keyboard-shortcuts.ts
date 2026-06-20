@@ -38,6 +38,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘\\", description: "Toggle the list panel" },
       { keys: "⌃`", description: "Toggle the integrated terminal (desktop app)" },
       { keys: "⌘1–⌘8", description: "Jump to a sidebar surface (Home … Terminal)" },
+      { keys: "⌘0", description: "Jump to the Code workspace" },
+      { keys: "⌘9", description: "Jump to Projects (Chat surface)" },
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },
       { keys: "⌘↑ / ⌘↓", description: "Cycle through familiars" },
       { keys: "⌘N", description: "New chat (on the Chat surface)" },
@@ -67,6 +69,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     id: "other",
     label: "Other",
     entries: [
+      { keys: "⌘,", description: "Open Settings" },
       { keys: "⌘/", description: "Open this shortcuts sheet" },
       { keys: "?", description: "Open the shortcuts sheet (when not typing in a field)" },
       { keys: "Esc", description: "Close dialogs and modals" },

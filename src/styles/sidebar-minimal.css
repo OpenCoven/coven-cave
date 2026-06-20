@@ -905,20 +905,6 @@
   place-items: center;
 }
 
-.sidebar-folder-kbd {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-secondary);
-  opacity: 0.85;
-  letter-spacing: 0.02em;
-}
-
-.sidebar-folder-row:hover .sidebar-folder-kbd {
-  opacity: 1;
-  color: var(--text-primary);
-}
-
 
 @media (max-height: 760px) {
   .sidebar-minimal {
