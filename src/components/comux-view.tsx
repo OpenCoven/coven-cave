@@ -21,6 +21,10 @@ import {
 } from "@/lib/code-layout-preset";
 import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   deriveComuxProjects,
   projectName,
@@ -280,6 +284,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [preview, setPreview] = useState<ProjectFilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [previewRaw, setPreviewRaw] = useState(false);
   // 1-based line to scroll the preview to (set when opened from a search match,
@@ -536,6 +541,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     setFilePreviewCollapsed(false);
     setPreviewLoading(true);
     setPreview(null);
+    setPreviewError(null);
     setPreviewRaw(false);
     // Leave any prior edit session — opening a new file discards unsaved edits.
     setEditing(false);
@@ -559,10 +565,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       } else if (json.ok && typeof json.content === "string") {
         setPreview({ kind: "text", content: json.content, size: json.size });
       } else {
-        setPreview({ kind: "text", content: `// Error: ${json.error ?? "unknown"}` });
+        // Previously the error was rendered AS file content (`// Error: …`),
+        // which read like a real file. Surface it as a proper error state.
+        setPreviewError(json.error ?? "Couldn't open this file.");
       }
     } catch (err) {
-      setPreview({ kind: "text", content: `// Fetch failed: ${String(err)}` });
+      setPreviewError(err instanceof Error ? err.message : "Couldn't reach the server.");
     } finally {
       setPreviewLoading(false);
     }
@@ -1576,10 +1584,22 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       {/* Preview content */}
                       <div className="comux-file-preview min-h-0 flex-1 overflow-auto p-3">
                         {previewLoading ? (
-                          <div className="flex items-center gap-2 py-4 text-[11px] text-[var(--text-muted)]">
-                            <Icon name="ph:arrow-clockwise" width={12} className="animate-spin" />
-                            Loading…
+                          <div className="space-y-2.5" aria-label="Loading file" aria-busy="true">
+                            {["94%", "88%", "97%", "72%", "90%", "83%", "60%"].map((w, i) => (
+                              <Skeleton key={i} variant="text" width={w} />
+                            ))}
                           </div>
+                        ) : previewError ? (
+                          <ErrorState
+                            compact
+                            headline="Couldn't open this file"
+                            subtitle={previewError}
+                            actions={
+                              <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => { if (previewPath) void openFilePreview(previewPath, previewLine); }}>
+                                Retry
+                              </Button>
+                            }
+                          />
                         ) : editing ? (
                           <div className="h-full overflow-hidden rounded-md border border-[var(--border-hairline)]">
                             <CodeEditor
@@ -1620,17 +1640,24 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       </div>
                     </>
                   ) : (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 text-[12px] text-[var(--text-muted)]">
-                      <Icon name="ph:file" width={28} className="opacity-30" />
-                      <p>Select a file to preview</p>
+                    <div className="flex h-full items-center justify-center">
+                      <EmptyState
+                        icon="ph:file"
+                        headline="Select a file to preview"
+                        subtitle="Pick a file from the tree to read or edit it here."
+                      />
                     </div>
                   )}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="flex h-full items-center justify-center text-xs text-[var(--text-muted)]">
-                No projects found yet.
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon="ph:folder-open"
+                  headline="No projects found yet"
+                  subtitle="Projects appear here once a familiar has worked in a directory."
+                />
               </div>
             )}
           </div>
