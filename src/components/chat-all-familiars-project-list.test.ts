@@ -52,7 +52,7 @@ assert.match(
 
 assert.match(
   chatList,
-  /\{chatDate\(s\.updated_at\)\}[\s\S]*\{age\(s\.updated_at\)\}/,
+  /\{chatDate\(s\.updated_at\)\}[\s\S]*\{rel\}/,
   "Chat rows should show the absolute date next to the relative updated age",
 );
 
