@@ -183,7 +183,11 @@ function FolderRow({
       <Icon name={iconName} width={15} className="sidebar-folder-icon" />
       <span className="sidebar-folder-label">{label}</span>
       {badge && <span className="sidebar-badge">{badge}</span>}
-      {kbd && !badge && <kbd className="sidebar-folder-kbd">{kbd}</kbd>}
+      {/* The ⌘-number shortcut is no longer shown as a chip here: the numbers
+          don't ascend with row position (e.g. ⌘0 Code sits above ⌘6 Library),
+          so a visible column read as scrambled. The binding still works, the
+          hover/title tooltip still names it, and the Shortcuts sheet (⌘/)
+          is the canonical, complete catalog. */}
     </button>
   );
 }
