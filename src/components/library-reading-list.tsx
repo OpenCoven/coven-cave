@@ -483,10 +483,16 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                           <span className="board-table-muted">—</span>
                         )}
                       </td>
-                      <td className="library-reading-col-actions" onClick={(e) => { e.stopPropagation(); handleDelete(item); }}>
-                        <span className="library-row-delete" title="Remove">
+                      <td className="library-reading-col-actions">
+                        <button
+                          type="button"
+                          className="library-row-delete"
+                          title="Remove"
+                          aria-label={`Remove "${item.title}"`}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                        >
                           <Icon name="ph:x" width={11} />
-                        </span>
+                        </button>
                       </td>
                     </tr>
                   ))}

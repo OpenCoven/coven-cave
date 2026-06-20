@@ -452,9 +452,11 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                                 <Icon name="ph:check" width={11} />
                               </span>
                             ) : (
-                              <span
+                              <button
+                                type="button"
                                 className="library-row-delete"
                                 title="Add to Board"
+                                aria-label={`Add "${item.title}" to Board`}
                                 onClick={() => {
                                   onAddToBoard(item);
                                   setAddedToBoardId(item.id);
@@ -462,16 +464,18 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                                 }}
                               >
                                 <Icon name="ph:kanban" width={11} />
-                              </span>
+                              </button>
                             )
                           )}
-                          <span
+                          <button
+                            type="button"
                             className="library-row-delete"
                             title="Remove"
+                            aria-label={`Remove "${item.title}"`}
                             onClick={() => { handleDelete(item); }}
                           >
                             <Icon name="ph:x" width={11} />
-                          </span>
+                          </button>
                         </span>
                       </td>
                     </tr>
