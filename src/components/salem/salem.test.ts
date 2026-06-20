@@ -21,7 +21,7 @@ assert.match(cat, /rim|accent-presence/i, "black cat must keep a colored rim for
 // 2. SalemChatPanel wires chat + API. The floating perch was removed; Salem
 //    stays available through the companion sidepanel and context-aware search.
 const widget = await readFile(path.join(root, "src/components/salem/salem-widget.tsx"), "utf8");
-assert.match(widget, /<SalemCat\b/, "sidepanel must embed the 2D SalemCat");
+assert.doesNotMatch(widget, /<SalemCat\b|from "\.\/salem-cat"/, "sidepanel header no longer embeds the cat avatar");
 assert.doesNotMatch(widget, /SalemCat3D|from "three"/, "widget must not reference the removed 3D cat or three");
 assert.match(widget, /SalemChatPanel/, "must export SalemChatPanel for the right rail");
 assert.doesNotMatch(widget, /export function SalemWidget|type SalemWidgetProps|salem-perch|--salem-proximity/, "floating Salem widget/perch should stay removed");
