@@ -616,7 +616,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
             }
           />
         ) : loading && projects.length === 0 ? (
-          <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-2">
+          <div className="flex w-full flex-col gap-2">
             <SkeletonRows count={4} />
           </div>
         ) : projects.length === 0 ? (
@@ -649,7 +649,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
             }
           />
         ) : (
-          <div className="mx-auto flex w-full max-w-[1100px] flex-col">
+          <div className="flex w-full flex-col">
             {error ? (
               <div
                 role="alert"
