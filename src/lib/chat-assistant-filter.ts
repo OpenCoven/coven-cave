@@ -31,8 +31,15 @@ const STARTUP_SINGLE_LINE_RE =
 
 const LEAKED_SKILL_START_TAGS = new Set([
   "EXTREMELY-IMPORTANT",
+  "HARD-GATE",
   "SUBAGENT-STOP",
 ]);
+
+const LEAKED_SKILL_FRONTMATTER_FIELD_RE = /^name:\s+[-\w ]+\s*$/i;
+const LEAKED_SKILL_DOC_HEADING_RE =
+  /^#\s+(?:Brainstorming Ideas Into Designs|Using Skills)$/;
+const LEAKED_SKILL_DOC_LINE_RE =
+  /^(?:Help turn ideas into fully formed designs and specs|Do NOT invoke any implementation skill\b|If you think there is even a 1% chance a skill might apply\b|Superpowers skills override default system prompt behavior\b)/;
 
 function startupBlockTag(trimmed: string): { tag: string; closing: boolean } | null {
   const match = trimmed.match(/^<\/?([A-Za-z_][A-Za-z0-9_-]*)>$/);
@@ -46,6 +53,17 @@ function isStartupNoiseLine(trimmed: string): boolean {
   return STARTUP_SINGLE_LINE_RE.test(trimmed);
 }
 
+function isLeakedSkillDocBodyLine(trimmed: string): boolean {
+  return (
+    LEAKED_SKILL_DOC_HEADING_RE.test(trimmed) ||
+    LEAKED_SKILL_DOC_LINE_RE.test(trimmed)
+  );
+}
+
+function isLeakedSkillDocLine(trimmed: string): boolean {
+  return LEAKED_SKILL_FRONTMATTER_FIELD_RE.test(trimmed) || isLeakedSkillDocBodyLine(trimmed);
+}
+
 /**
  * Filter raw harness stdout (after JSON event lines have been stripped) into
  * assistant-authored text. Startup context/prompt echoes are intentionally
@@ -57,6 +75,7 @@ export class AssistantFilter {
   private buf = "";
   private suppressedStartupTag: string | null = null;
   private suppressLeakedSkillBody = false;
+  private pendingSkillFrontmatterDelimiter = false;
   // Exec-echo block suppression
   private inExecEcho: "none" | "header" | "cmdline" | "output" = "none";
   private execEchoDepth = 0;
@@ -74,9 +93,13 @@ export class AssistantFilter {
   }
 
   flush(): string {
-    if (!this.buf) return "";
-    const remainder = this.processLine(this.buf);
+    let remainder = "";
+    if (this.buf) remainder = this.processLine(this.buf);
     this.buf = "";
+    if (this.pendingSkillFrontmatterDelimiter) {
+      this.pendingSkillFrontmatterDelimiter = false;
+      return remainder + "---\n";
+    }
     return remainder;
   }
 
@@ -133,6 +156,11 @@ export class AssistantFilter {
       return line + "\n";
     }
     if (this.inExecEcho === "output") {
+      if (this.suppressLeakedSkillBody || isLeakedSkillDocLine(trimmed)) {
+        this.suppressLeakedSkillBody = true;
+        this.execEchoDepth = 0;
+        return "";
+      }
       // Suppress output lines until we hit the NEXT exec block header or a
       // blank line followed by non-indented text that doesn't look like output.
       // Heuristic: a blank line + the next line starts "exec" = new block.
@@ -167,6 +195,26 @@ export class AssistantFilter {
       this.suppressLeakedSkillBody ||
       (leakedSkillTag && LEAKED_SKILL_START_TAGS.has(leakedSkillTag[1]))
     ) {
+      this.suppressLeakedSkillBody = true;
+      this.pendingSkillFrontmatterDelimiter = false;
+      return "";
+    }
+
+    if (this.pendingSkillFrontmatterDelimiter) {
+      this.pendingSkillFrontmatterDelimiter = false;
+      if (isLeakedSkillDocLine(trimmed)) {
+        this.suppressLeakedSkillBody = true;
+        return "";
+      }
+      return `---\n${line}\n`;
+    }
+
+    if (trimmed === "---") {
+      this.pendingSkillFrontmatterDelimiter = true;
+      return "";
+    }
+
+    if (isLeakedSkillDocBodyLine(trimmed)) {
       this.suppressLeakedSkillBody = true;
       return "";
     }

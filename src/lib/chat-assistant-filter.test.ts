@@ -79,3 +79,56 @@ assert.equal(
   "I’m checking the startup skill once, then I’ll keep this lightweight.\n",
   "leaked using-superpowers skill bodies should stay hidden from chat bubbles",
 );
+
+assert.equal(
+  feed([
+    "codex",
+    "I’m using the brainstorming skill to shape this before editing.",
+    "---",
+    "name: brainstorming",
+    "description: You MUST use this before any creative work",
+    "---",
+    "# Brainstorming Ideas Into Designs",
+    "Help turn ideas into fully formed designs and specs through natural collaborative dialogue.",
+    "<HARD-GATE>",
+    "Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it.",
+    "</HARD-GATE>",
+  ]),
+  "I’m using the brainstorming skill to shape this before editing.\n",
+  "leaked markdown skill documents should stay hidden from chat bubbles",
+);
+
+assert.equal(
+  feed([
+    "codex",
+    "I’m checking the relevant skill first.",
+    "exec",
+    "/bin/zsh -lc 'sed -n 1,120p /Users/buns/.agents/skills/brainstorming/SKILL.md' in /repo",
+    " exited 0 in 12ms:",
+    "---",
+    "name: brainstorming",
+    "description: You MUST use this before any creative work",
+    "---",
+    "",
+    "# Brainstorming Ideas Into Designs",
+    "",
+    "Help turn ideas into fully formed designs and specs through natural collaborative dialogue.",
+    "<HARD-GATE>",
+    "Do NOT invoke any implementation skill until approved.",
+    "</HARD-GATE>",
+  ]),
+  "I’m checking the relevant skill first.\n",
+  "tool stdout that contains a skill prompt should stay out of assistant prose even after blank lines",
+);
+
+assert.equal(
+  feed([
+    "codex",
+    "# Plan",
+    "name: the thing we are editing",
+    "---",
+    "This horizontal rule is part of a normal reply.",
+  ]),
+  "# Plan\nname: the thing we are editing\n---\nThis horizontal rule is part of a normal reply.\n",
+  "normal assistant headings, name fields, and markdown rules should remain visible",
+);
