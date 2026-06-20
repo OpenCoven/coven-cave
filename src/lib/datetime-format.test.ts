@@ -8,6 +8,9 @@ import {
   formatTimestamp,
   normalizeClock,
   normalizeDate,
+  normalizeDensity,
+  setDensityFormat,
+  readDateTimePrefs,
 } from "./datetime-format.ts";
 
 // A no-Z ISO is parsed as LOCAL time, so the month/day are timezone-stable.
@@ -92,4 +95,13 @@ test("formatDate supports weekday + long month, and accepts a Date", () => {
 
 test("formatDate renders nothing for bad input", () => {
   assert.equal(formatDate("not-a-date", { clock: "12h", date: "mmdd" }), "");
+});
+
+test("density preference normalizes and round-trips through the store", () => {
+  assert.equal(normalizeDensity("verbose"), "verbose");
+  assert.equal(normalizeDensity("bogus"), "compact");
+  setDensityFormat("verbose");
+  assert.equal(readDateTimePrefs().density, "verbose");
+  setDensityFormat("compact");
+  assert.equal(readDateTimePrefs().density, "compact");
 });

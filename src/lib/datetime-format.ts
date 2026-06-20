@@ -22,6 +22,7 @@ import { useSyncExternalStore } from "react";
 
 export const DATETIME_CLOCK_KEY = "cave:datetime-clock";
 export const DATETIME_DATE_KEY = "cave:datetime-date";
+export const DATETIME_DENSITY_KEY = "cave:datetime-density";
 
 export const CLOCK_OPTIONS = ["12h", "24h"] as const;
 export type ClockFormat = (typeof CLOCK_OPTIONS)[number];
@@ -31,7 +32,11 @@ export const DATE_OPTIONS = ["mmdd", "ddmm", "off"] as const;
 export type DateFormat = (typeof DATE_OPTIONS)[number];
 export const DEFAULT_DATE: DateFormat = "mmdd";
 
-export type DateTimePrefs = { clock: ClockFormat; date: DateFormat };
+export const DENSITY_OPTIONS = ["compact", "verbose"] as const;
+export type DensityFormat = (typeof DENSITY_OPTIONS)[number];
+export const DEFAULT_DENSITY: DensityFormat = "compact";
+
+export type DateTimePrefs = { clock: ClockFormat; date: DateFormat; density?: DensityFormat };
 
 export const CLOCK_LABEL: Record<ClockFormat, string> = {
   "12h": "12-hour",
@@ -44,6 +49,11 @@ export const DATE_LABEL: Record<DateFormat, string> = {
   off: "Off",
 };
 
+export const DENSITY_LABEL: Record<DensityFormat, string> = {
+  compact: "Compact",
+  verbose: "Verbose",
+};
+
 export function normalizeClock(value: unknown): ClockFormat {
   return CLOCK_OPTIONS.includes(value as ClockFormat) ? (value as ClockFormat) : DEFAULT_CLOCK;
 }
@@ -52,9 +62,13 @@ export function normalizeDate(value: unknown): DateFormat {
   return DATE_OPTIONS.includes(value as DateFormat) ? (value as DateFormat) : DEFAULT_DATE;
 }
 
+export function normalizeDensity(value: unknown): DensityFormat {
+  return DENSITY_OPTIONS.includes(value as DensityFormat) ? (value as DensityFormat) : DEFAULT_DENSITY;
+}
+
 // ── In-memory mirror + change broadcaster ──────────────────────────────────────
 
-const DEFAULT_PREFS: DateTimePrefs = Object.freeze({ clock: DEFAULT_CLOCK, date: DEFAULT_DATE });
+const DEFAULT_PREFS: DateTimePrefs = Object.freeze({ clock: DEFAULT_CLOCK, date: DEFAULT_DATE, density: DEFAULT_DENSITY });
 let snapshot: DateTimePrefs | null = null;
 const listeners = new Set<() => void>();
 
@@ -68,6 +82,7 @@ function readFromStorage(): DateTimePrefs {
     return {
       clock: normalizeClock(window.localStorage.getItem(DATETIME_CLOCK_KEY)),
       date: normalizeDate(window.localStorage.getItem(DATETIME_DATE_KEY)),
+      density: normalizeDensity(window.localStorage.getItem(DATETIME_DENSITY_KEY)),
     };
   } catch {
     return DEFAULT_PREFS;
@@ -116,11 +131,24 @@ export function setDateFormat(value: DateFormat): void {
   notify();
 }
 
+export function setDensityFormat(value: DensityFormat): void {
+  const density = normalizeDensity(value);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(DATETIME_DENSITY_KEY, density);
+    } catch {
+      /* storage unavailable — keep the in-memory pick */
+    }
+  }
+  snapshot = { ...getSnapshot(), density };
+  notify();
+}
+
 // ── Cross-tab + cross-component sync ────────────────────────────────────────────
 
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
-    if (e.key === DATETIME_CLOCK_KEY || e.key === DATETIME_DATE_KEY) {
+    if (e.key === DATETIME_CLOCK_KEY || e.key === DATETIME_DATE_KEY || e.key === DATETIME_DENSITY_KEY) {
       snapshot = null;
       notify();
     }

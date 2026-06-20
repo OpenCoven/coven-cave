@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { relativeTime, isRelativePhrase } from "./relative-time.ts";
 import { relativeTime as reExported } from "./daily-report.ts";
+import { readFileSync } from "node:fs";
 
 const NOW = new Date("2026-06-18T12:00:00.000Z");
 const NOW_MS = NOW.getTime();
@@ -25,6 +26,27 @@ test("dates from a prior year include the year (Mon D, YYYY)", () => {
   assert.match(out, /2025/);
   // a same-year date older than a week still omits the year
   assert.doesNotMatch(relativeTime(ago(60 * 24 * 8), NOW), /\d{4}/);
+});
+
+test("density key stays in sync with datetime-format (no drift)", () => {
+  const dt = readFileSync(new URL("./datetime-format.ts", import.meta.url), "utf8");
+  const rt = readFileSync(new URL("./relative-time.ts", import.meta.url), "utf8");
+  const key = dt.match(/DATETIME_DENSITY_KEY = "([^"]+)"/)?.[1];
+  assert.ok(key, "datetime-format defines DATETIME_DENSITY_KEY");
+  assert.ok(rt.includes(`"${key}"`), "relative-time reads the same density key");
+});
+
+test("verbose density spells out phrases and uses long month names", () => {
+  assert.equal(relativeTime(ago(0), NOW, "verbose"), "just now");
+  assert.equal(relativeTime(ago(1), NOW, "verbose"), "1 minute ago");
+  assert.equal(relativeTime(ago(5), NOW, "verbose"), "5 minutes ago");
+  assert.equal(relativeTime(ago(60), NOW, "verbose"), "1 hour ago");
+  assert.equal(relativeTime(ago(180), NOW, "verbose"), "3 hours ago");
+  assert.equal(relativeTime(ago(60 * 24), NOW, "verbose"), "1 day ago");
+  const out = relativeTime(ago(60 * 24 * 8), NOW, "verbose");
+  assert.match(out, /^[A-Za-z]{4,} \d{1,2}$/, `expected a long-month date, got "${out}"`);
+  // compact remains the default when no density is passed
+  assert.equal(relativeTime(ago(5), NOW), "5m ago");
 });
 
 test("now accepts a number (epoch ms) or a Date, identically", () => {

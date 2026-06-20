@@ -73,8 +73,11 @@ import {
   CLOCK_OPTIONS,
   DATE_LABEL,
   DATE_OPTIONS,
+  DENSITY_LABEL,
+  DENSITY_OPTIONS,
   setClockFormat,
   setDateFormat,
+  setDensityFormat,
   useDateTimePrefs,
 } from "@/lib/datetime-format";
 
@@ -500,6 +503,22 @@ export function FontSettings() {
                   className={segBtn(dtPrefs.date === option)}
                 >
                   {DATE_LABEL[option]}
+                </button>
+              ))}
+            </div>
+          </ReadingRow>
+          <ReadingRow label="Relative time" hint="Across the app">
+            <div className={segWrap}>
+              {DENSITY_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setDensityFormat(option)}
+                  aria-pressed={dtPrefs.density === option}
+                  aria-label={`Relative time ${DENSITY_LABEL[option]}`}
+                  className={segBtn(dtPrefs.density === option)}
+                >
+                  {DENSITY_LABEL[option]}
                 </button>
               ))}
             </div>
