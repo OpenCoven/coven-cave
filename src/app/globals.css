@@ -8164,7 +8164,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border-color: var(--color-success);
   background: color-mix(in oklch, var(--color-success) 12%, transparent);
   color: var(--text-primary);
-  animation: cave-next-path-pulse 1.8s ease-in-out infinite;
+  animation: cave-next-path-pulse 2.8s ease-in-out infinite;
 }
 .cave-next-path--recommended:hover {
   border-color: var(--color-success);
