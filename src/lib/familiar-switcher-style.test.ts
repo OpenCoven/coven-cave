@@ -9,7 +9,7 @@ import {
 
 // The two styles the top-bar control toggles between.
 assert.deepEqual([...FAMILIAR_SWITCHER_STYLE_OPTIONS], ["avatars", "dropdown"], "exactly two styles");
-assert.equal(DEFAULT_FAMILIAR_SWITCHER_STYLE, "avatars", "default keeps the new avatar strip");
+assert.equal(DEFAULT_FAMILIAR_SWITCHER_STYLE, "dropdown", "default is the plain switcher dropdown");
 
 // Every option has a human label.
 for (const option of FAMILIAR_SWITCHER_STYLE_OPTIONS) {
