@@ -118,7 +118,19 @@ function defaultEntryFireAt(day: Date): string {
   return fallback.toISOString();
 }
 
+// A reminder still pending after its fire time never fired — flag it so it
+// stands out on the calendar like it does in the Schedules list.
+function isOverdueReminder(item: InboxItem): boolean {
+  return (
+    item.kind === "reminder" &&
+    item.status === "pending" &&
+    !!item.fireAt &&
+    new Date(item.fireAt).getTime() < Date.now()
+  );
+}
+
 function urgencyColor(item: InboxItem): string {
+  if (isOverdueReminder(item)) return "bg-[var(--color-warning)]";
   const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
   if (!meta) return "bg-[var(--text-muted)]";
   if (meta.urgency === "expiring") return "bg-[var(--accent-presence)]";
