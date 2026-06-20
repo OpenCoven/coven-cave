@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp } from "@/lib/datetime-format";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
@@ -77,6 +78,8 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
       </div>
       {!workflow ? (
         <p className="workflow-muted">Select a workflow to see its run history.</p>
+      ) : runs.length === 0 && loading ? (
+        <SkeletonRows count={3} className="workflow-runs-loading" />
       ) : runs.length === 0 && !loading ? (
         <p className="workflow-muted">
           No runs yet — dry-run snapshots and daemon executions land here.
