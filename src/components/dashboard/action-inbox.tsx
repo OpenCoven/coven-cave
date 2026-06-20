@@ -5,6 +5,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/lib/daily-report";
+import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { nextItemsAfterAction } from "@/lib/dashboard-model";
 
 type Action = "done" | "dismiss" | "snooze";
@@ -69,7 +70,9 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
       ) : null}
       <div className="dr-list">
         {items.map((item) => {
-          const when = relativeTime(item.firedAt ?? item.updatedAt);
+          const whenIso = item.firedAt ?? item.updatedAt;
+          const when = relativeTime(whenIso);
+          const whenTitle = whenIso ? formatTimestamp(whenIso, readDateTimePrefs()) : undefined;
           return (
           <div
             key={item.id}
@@ -84,7 +87,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
               {item.body ? <span className="dr-row__sub">{item.body}</span> : null}
               <span className="dr-row__metaline">
                 <span className="dr-tag">{KIND_LABEL[item.kind]}</span>
-                {when ? <span className="dr-row__time">{when}</span> : null}
+                {when ? <span className="dr-row__time" title={whenTitle}>{when}</span> : null}
               </span>
             </span>
             <span className="dash-inbox__actions">
