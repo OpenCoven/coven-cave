@@ -36,4 +36,7 @@ assert.match(source, /isFileLoading \?[\s\S]*?<Skeleton[^>]*variant="text"/, "lo
 assert.doesNotMatch(source, />Loading memory…</, "reader no longer shows a bare 'Loading memory…' line");
 assert.match(source, /fileError \?[\s\S]*?<ErrorState/, "file load failure uses the shared ErrorState");
 
+// Rendered/Raw toggle segments show a visible keyboard focus ring.
+assert.match(source, /focus-ring-inset px-2 py-1 transition-colors/, "rendered/raw toggle has a focus ring");
+
 console.log("familiars-memory-reader: all assertions passed");

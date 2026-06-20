@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
@@ -620,25 +621,21 @@ function FamiliarDetailPanel({
         </div>
       </header>
 
-      <div className="flex shrink-0 border-b border-[var(--border-hairline)] px-3">
-        {DETAIL_TABS.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`focus-ring familiars-view__tab inline-flex h-9 items-center gap-1.5 px-3 text-[12px] transition-colors ${
-              tab === id
-                ? "border-b-2 border-[var(--accent-presence)] text-[var(--text-primary)]"
-                : "border-b-2 border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            }`}
-            aria-current={tab === id ? "page" : undefined}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        items={DETAIL_TABS}
+        value={tab}
+        onChange={setTab}
+        ariaLabel="Familiar details"
+        idPrefix="familiar-detail"
+        className="shrink-0 px-3"
+      />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+        role="tabpanel"
+        id={`familiar-detail-panel-${tab}`}
+        aria-labelledby={`familiar-detail-tab-${tab}`}
+      >
         {tab === "memory" ? (
           <FamiliarsMemoryView
             familiars={familiars}

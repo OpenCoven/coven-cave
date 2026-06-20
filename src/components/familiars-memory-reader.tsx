@@ -95,7 +95,7 @@ export function MemoryReaderPane({
                   type="button"
                   aria-pressed={mode === m}
                   onClick={() => setMode(m)}
-                  className={`px-2 py-1 transition-colors ${
+                  className={`focus-ring-inset px-2 py-1 transition-colors ${
                     mode === m
                       ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"

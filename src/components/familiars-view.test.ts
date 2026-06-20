@@ -222,4 +222,11 @@ assert.match(
   "Daily Notes tab renders FamiliarDailyNotes scoped to the selected familiar",
 );
 
+// Detail tabs use the shared accessible <Tabs> (role=tab/aria-selected/roving),
+// not a hand-rolled button strip with aria-current="page".
+assert.match(source, /import \{ Tabs \} from "@\/components\/ui\/tabs"/, "imports shared Tabs");
+assert.match(source, /<Tabs[\s\S]{0,200}?idPrefix="familiar-detail"/, "detail panel uses shared Tabs with idPrefix");
+assert.match(source, /role="tabpanel"[\s\S]{0,120}?aria-labelledby=\{`familiar-detail-tab-/, "content area is a labelled tabpanel");
+assert.doesNotMatch(source, /aria-current=\{tab === id \? "page"/, "old aria-current=page tab pattern is gone");
+
 console.log("familiars-view: all assertions passed");
