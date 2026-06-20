@@ -78,4 +78,8 @@ assert.match(
   "touch drop should reuse the board status move callback",
 );
 
+// Swimlane collapse is a real <button> with aria-expanded (keyboard-operable).
+assert.match(source, /board-swimlane-toggle/, "swimlane toggle is a button");
+assert.match(source, /aria-expanded=\{!isCollapsed\}/, "swimlane toggle announces expanded state");
+
 console.log("board-kanban-keyboard.test.ts OK");

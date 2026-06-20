@@ -371,10 +371,17 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
         return (
           <div key={key} className={isMultiSwimlane ? "board-swimlane" : ""} style={isMultiSwimlane ? {} : { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
             {showSwimlanes && (
-              <div className="board-swimlane-header" onClick={() => toggleGroup(key)}>
-                <Icon name={isCollapsed ? "ph:caret-right" : "ph:caret-down"} width={10} />
-                {label}
-                <span className="board-swimlane-badge">{gc.length}</span>
+              <div className="board-swimlane-header">
+                <button
+                  type="button"
+                  className="board-swimlane-toggle focus-ring"
+                  onClick={() => toggleGroup(key)}
+                  aria-expanded={!isCollapsed}
+                >
+                  <Icon name={isCollapsed ? "ph:caret-right" : "ph:caret-down"} width={10} />
+                  {label}
+                  <span className="board-swimlane-badge">{gc.length}</span>
+                </button>
                 {isMultiSwimlane && (
                   <div className="board-swimlane-scroll-group">
                     <button

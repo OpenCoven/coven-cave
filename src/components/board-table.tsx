@@ -179,13 +179,15 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
             {COLS.map((col) => (
               <th key={col.key} style={col.width ? { width: col.width } : undefined}
                 className={sortKey === col.key ? "sorted" : ""}
-                onClick={() => handleCol(col.key)}>
-                {col.label}
-                <span className="board-table-sort-icon">
-                  {sortKey === col.key
-                    ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
-                    : <Icon name="ph:caret-up-down" width={9} />}
-                </span>
+                aria-sort={sortKey === col.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+                <button type="button" className="board-table-sort-btn focus-ring" onClick={() => handleCol(col.key)}>
+                  {col.label}
+                  <span className="board-table-sort-icon">
+                    {sortKey === col.key
+                      ? <Icon name={sortDir === "asc" ? "ph:caret-up" : "ph:caret-down-fill"} width={9} />
+                      : <Icon name="ph:caret-up-down" width={9} />}
+                  </span>
+                </button>
               </th>
             ))}
           </tr>
@@ -193,7 +195,10 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
         <tbody ref={tbodyRef}>
           {groups.map(({ key, label, cards: gc }) => (
             <React.Fragment key={key}>
-              <tr key={`g-${key}`} className="board-table-group-row" onClick={() => toggleGroup(key)}>
+              <tr key={`g-${key}`} className="board-table-group-row" role="button" tabIndex={0}
+                aria-expanded={!collapsed.has(key)}
+                onClick={() => toggleGroup(key)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(key); } }}>
                 <td colSpan={COLS.length}>
                   <span className="board-table-group-caret">
                     <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
