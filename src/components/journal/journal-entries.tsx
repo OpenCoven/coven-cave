@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { generateReflection } from "@/lib/journal-generate";
@@ -291,10 +293,26 @@ export function JournalEntries({
                 </div>
               </>
             ) : (
-              <div className="journal-empty">
-                No reflection yet for this day.
-                {day.date === today ? " Use “Generate today's entry” to write one." : ""}
-              </div>
+              <EmptyState
+                icon="ph:book-open"
+                headline="No reflection yet for this day"
+                subtitle={
+                  day.date === today
+                    ? "Generate today's entry to capture what happened."
+                    : "No familiar wrote a reflection for this day."
+                }
+                actions={
+                  day.date === today ? (
+                    <Button
+                      leadingIcon="ph:sparkle"
+                      onClick={generate}
+                      disabled={!canGenerate || generating}
+                    >
+                      {generating ? "Reflecting…" : "Generate today's entry"}
+                    </Button>
+                  ) : undefined
+                }
+              />
             )}
           </>
         ) : (
