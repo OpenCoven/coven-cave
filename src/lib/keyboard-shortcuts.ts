@@ -40,6 +40,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘1–⌘8", description: "Jump to a sidebar surface (Home … Code)" },
       { keys: "⌘0", description: "Jump to the Library" },
       { keys: "⌘9", description: "Jump to Projects (Chat surface)" },
+      { keys: "⌘[ / ⌘]", description: "Previous / next surface" },
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },
       { keys: "⌘↑ / ⌘↓", description: "Cycle through familiars" },
       { keys: "⌘N", description: "New chat (on the Chat surface)" },

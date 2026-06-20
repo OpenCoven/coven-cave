@@ -1033,6 +1033,20 @@ export function Workspace() {
         return;
       }
 
+      // ⌘[ / ⌘] -> previous / next surface, cycling through SURFACE_ORDER in the
+      // same top-to-bottom order as ⌘1..⌘8 (wraps at the ends). From an off-list
+      // surface (Journal/Roles/Workflows), ⌘] lands on the first surface and ⌘[
+      // on the last.
+      if (meta && !alt && (e.key === "[" || e.key === "]")) {
+        e.preventDefault();
+        const step = e.key === "]" ? 1 : -1;
+        const cur = SURFACE_ORDER.indexOf(mode as WorkspaceMode);
+        const base = cur === -1 ? (step === 1 ? -1 : 0) : cur;
+        const next = (base + step + SURFACE_ORDER.length) % SURFACE_ORDER.length;
+        setMode(SURFACE_ORDER[next]);
+        return;
+      }
+
       // ⌘, -> Settings (the TopBar account button advertises this shortcut in
       // its tooltip, but nothing was wired to handle it).
       if (meta && !alt && e.key === ",") {
