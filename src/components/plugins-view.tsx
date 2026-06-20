@@ -338,17 +338,21 @@ export function PluginsView({
             <RolesTab
               roles={filteredRoles}
               loaded={rolesLoaded}
+              query={query}
+              onClearQuery={() => setQuery("")}
               busyRoleKey={busyRoleKey}
               onToggleRole={toggleRole}
               onOpenChat={onOpenChat}
               onOpenWorkflow={onOpenWorkflow}
             />
           ) : tab === "workflows" ? (
-            <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} onOpenWorkflow={onOpenWorkflow} />
+            <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} query={query} onClearQuery={() => setQuery("")} onOpenWorkflow={onOpenWorkflow} />
           ) : (
             <SkillsTab
               skills={filteredSkills}
               loaded={skillsLoaded}
+              query={query}
+              onClearQuery={() => setQuery("")}
               onCreateSkill={openCapabilities}
               onSelectSkill={(skill) =>
                 setSelectedSkill({
@@ -379,6 +383,8 @@ export function PluginsView({
 function RolesTab({
   roles,
   loaded,
+  query,
+  onClearQuery,
   busyRoleKey,
   onToggleRole,
   onOpenChat,
@@ -386,13 +392,18 @@ function RolesTab({
 }: {
   roles: RoleEntry[];
   loaded: boolean;
+  query: string;
+  onClearQuery: () => void;
   busyRoleKey: string | null;
   onToggleRole: (role: RoleEntry) => void;
   onOpenChat: () => void;
   onOpenWorkflow?: (id: string) => void;
 }) {
   if (!loaded) return <ListSkeleton />;
-  if (roles.length === 0) return <EmptyPanel icon={ICONS.tabRoles} title="No roles found" body="Add ROLE.md files to a familiar workspace to populate this view." />;
+  if (roles.length === 0)
+    return query
+      ? <SearchEmpty kind="roles" query={query} onClear={onClearQuery} />
+      : <EmptyPanel icon={ICONS.tabRoles} title="No roles found" body="Add ROLE.md files to a familiar workspace to populate this view." />;
 
   return (
     <div className="flex flex-col gap-2">
@@ -511,14 +522,21 @@ function CapabilityRow({
 function WorkflowsTab({
   workflows,
   loaded,
+  query,
+  onClearQuery,
   onOpenWorkflow,
 }: {
   workflows: WorkflowSummary[];
   loaded: boolean;
+  query: string;
+  onClearQuery: () => void;
   onOpenWorkflow?: (id: string) => void;
 }) {
   if (!loaded) return <ListSkeleton />;
-  if (workflows.length === 0) return <EmptyPanel icon={ICONS.tabWorkflows} title="No workflows found" body="Workflow manifests will appear here once the library scan succeeds." />;
+  if (workflows.length === 0)
+    return query
+      ? <SearchEmpty kind="workflows" query={query} onClear={onClearQuery} />
+      : <EmptyPanel icon={ICONS.tabWorkflows} title="No workflows found" body="Workflow manifests will appear here once the library scan succeeds." />;
 
   return (
     <div className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)]">
@@ -550,17 +568,23 @@ function WorkflowsTab({
 function SkillsTab({
   skills,
   loaded,
+  query,
+  onClearQuery,
   onCreateSkill,
   onSelectSkill,
 }: {
   skills: LocalSkillEntry[];
   loaded: boolean;
+  query: string;
+  onClearQuery: () => void;
   onCreateSkill?: () => void;
   onSelectSkill: (skill: LocalSkillEntry) => void;
 }) {
   if (!loaded) return <ListSkeleton />;
   if (skills.length === 0) {
-    return <EmptyPanel icon={ICONS.tabSkills} title="No local skills found" body="Create or install skills to make them available to familiars." actionLabel="Open Capabilities" onAction={onCreateSkill} />;
+    return query
+      ? <SearchEmpty kind="skills" query={query} onClear={onClearQuery} />
+      : <EmptyPanel icon={ICONS.tabSkills} title="No local skills found" body="Create or install skills to make them available to familiars." actionLabel="Open Capabilities" onAction={onCreateSkill} />;
   }
 
   return (
@@ -582,6 +606,21 @@ function SkillsTab({
         />
       ))}
     </div>
+  );
+}
+
+// Shown when a search hides every item in a tab — distinct from the tab's
+// genuinely-empty panel so the copy doesn't tell you to "add ROLE.md files"
+// when you've simply mistyped a query.
+function SearchEmpty({ kind, query, onClear }: { kind: string; query: string; onClear: () => void }) {
+  return (
+    <EmptyPanel
+      icon="ph:magnifying-glass"
+      title={`No ${kind} match your search`}
+      body={`Nothing matches “${query}”. Try a different term or clear the search.`}
+      actionLabel="Clear search"
+      onAction={onClear}
+    />
   );
 }
 
