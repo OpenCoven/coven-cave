@@ -5,6 +5,9 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { LibraryUndoToast } from "@/components/library-undo-toast";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { CardGitHubLink, CardStatus } from "@/lib/cave-board-types";
 import type { LibraryGitHubItem, GitHubItemKind } from "@/lib/library-types";
 import {
@@ -708,11 +711,20 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
 
       {/* Table */}
       {loading ? (
-        <div className="library-list-empty">Loading…</div>
+        <SkeletonRows count={5} className="library-list-skeleton" />
       ) : items.length === 0 ? (
-        <div className="library-list-empty">No GitHub items saved yet. Add one above.</div>
+        <EmptyState
+          icon="ph:github-logo"
+          headline="No GitHub items yet"
+          subtitle="Save issues, PRs, and repos to attach to tasks or hand off to familiars."
+          actions={
+            <Button size="sm" leadingIcon="ph:plus" onClick={() => setAdding(true)}>
+              Add GitHub item
+            </Button>
+          }
+        />
       ) : filtered.length === 0 ? (
-        <div className="library-list-empty">No results for &quot;{query}&quot;.</div>
+        <EmptyState compact icon="ph:magnifying-glass" headline={`No results for “${query}”`} />
       ) : (
         <div className="board-table-wrap">
           <table className="board-table library-github-table">

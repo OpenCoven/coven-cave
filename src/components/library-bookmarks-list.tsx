@@ -6,6 +6,10 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui
 import { Icon, type IconName } from "@/lib/icon";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { LibraryUndoToast } from "@/components/library-undo-toast";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { LibraryBookmark } from "@/lib/library-types";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 
@@ -357,27 +361,31 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
 
       {/* Table */}
       {loading ? (
-        <div className="library-list-empty">Loading…</div>
+        <SkeletonRows count={5} className="library-list-skeleton" />
       ) : error ? (
-        <div className="library-list-empty" role="alert">
-          <div className="library-list-error-title">
-            <Icon name="ph:warning-circle" width={13} aria-hidden />
-            Couldn&rsquo;t load bookmarks.
-          </div>
-          <div className="library-list-error-message">{error}</div>
-          <button
-            type="button"
-            onClick={() => { void load(); }}
-            className="library-list-retry-btn"
-          >
-            <Icon name="ph:arrow-clockwise" width={11} />
-            Retry
-          </button>
-        </div>
+        <ErrorState
+          icon="ph:warning-circle"
+          headline={<>Couldn&rsquo;t load bookmarks.</>}
+          subtitle={error}
+          actions={
+            <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => { void load(); }}>
+              Retry
+            </Button>
+          }
+        />
       ) : items.length === 0 ? (
-        <div className="library-list-empty">No bookmarks yet. Add one above.</div>
+        <EmptyState
+          icon="ph:bookmark-simple"
+          headline="No bookmarks yet"
+          subtitle="Save links you want to keep close at hand."
+          actions={
+            <Button size="sm" leadingIcon="ph:plus" onClick={() => setAdding(true)}>
+              Add bookmark
+            </Button>
+          }
+        />
       ) : filtered.length === 0 ? (
-        <div className="library-list-empty">No results for &quot;{query}&quot;.</div>
+        <EmptyState compact icon="ph:magnifying-glass" headline={`No results for “${query}”`} />
       ) : (
         <div className="board-table-wrap">
           <table aria-label="Bookmarks" className="board-table library-bookmarks-table">

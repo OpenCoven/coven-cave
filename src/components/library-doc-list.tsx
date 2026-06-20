@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import { formatDate } from "@/lib/datetime-format";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { LibraryCollection, LibraryDoc } from "@/lib/library-types";
 
 type Props = {
@@ -136,35 +140,30 @@ export function LibraryDocList({
       {/* List */}
       <div className="library-doclist-items">
         {loading ? (
-          <div className="library-doclist-empty">Loading…</div>
+          <SkeletonRows count={5} className="library-doclist-skeleton" />
         ) : error ? (
-          <div className="library-doclist-empty" role="alert">
-            <div className="inline-flex items-center gap-1.5 text-[var(--color-danger)]">
-              <Icon name="ph:warning-circle" width={13} aria-hidden />
-              Couldn&rsquo;t load documents.
-            </div>
-            <div className="mt-1 text-[11px] text-[var(--text-muted)]">{error}</div>
-            {onRetry ? (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="mt-3 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:arrow-clockwise" width={11} />
-                Retry
-              </button>
-            ) : null}
-          </div>
+          <ErrorState
+            icon="ph:warning-circle"
+            headline={<>Couldn&rsquo;t load documents.</>}
+            subtitle={error}
+            actions={
+              onRetry ? (
+                <Button size="xs" leadingIcon="ph:arrow-clockwise" onClick={onRetry}>
+                  Retry
+                </Button>
+              ) : undefined
+            }
+          />
         ) : filtered.length === 0 ? (
-          <div className="library-doclist-empty">
-            <Icon name="ph:books" width={18} className="mx-auto mb-2 block text-[var(--text-muted)]" aria-hidden />
-            <div className="text-[13px] font-medium text-[var(--text-primary)]">
-              {searchQuery ? "No documents match your search." : "No documents yet."}
-            </div>
-            <p className="mt-1 text-[11px] leading-5 text-[var(--text-muted)]">
-              {searchQuery ? "Try a shorter query or clear the search." : "Documents your familiars collect or you import will appear here."}
-            </p>
-          </div>
+          <EmptyState
+            icon="ph:books"
+            headline={searchQuery ? "No documents match your search." : "No documents yet."}
+            subtitle={
+              searchQuery
+                ? "Try a shorter query or clear the search."
+                : "Documents your familiars collect or you import will appear here."
+            }
+          />
         ) : (
           filtered.map((doc) => {
             const isEditing = editingId === doc.id;
