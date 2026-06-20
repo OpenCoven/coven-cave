@@ -44,6 +44,28 @@ function scheduleLabel(startDate: string | null | undefined, endDate: string | n
   return "";
 }
 
+type ScheduleUrgency = "overdue" | "due-soon" | "none";
+
+// Whether a card's end date has passed (overdue) or is within two days (due
+// soon), used to color the schedule chip. Done cards never flag, and `todayMs`
+// is null until mount so the first client render matches SSR.
+function scheduleUrgency(
+  endDate: string | null | undefined,
+  status: CardStatus,
+  todayMs: number | null,
+): ScheduleUrgency {
+  if (!endDate || status === "done" || todayMs === null) return "none";
+  const [y, m, d] = endDate.split("-").map(Number);
+  if (!y || !m || !d) return "none";
+  const due = new Date(y, m - 1, d).getTime();
+  const now = new Date(todayMs);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const diffDays = Math.round((due - today) / 86_400_000);
+  if (diffDays < 0) return "overdue";
+  if (diffDays <= 2) return "due-soon";
+  return "none";
+}
+
 type Props = {
   cards: Card[];
   familiars: Familiar[];
@@ -94,6 +116,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [grabbedCardId, setGrabbedCardId] = useState<string | null>(null);
+  // Resolved after mount so schedule-urgency colors never trip a hydration
+  // mismatch (the server has no "now").
+  const [todayMs, setTodayMs] = useState<number | null>(null);
+  useEffect(() => setTodayMs(Date.now()), []);
   const { announce } = useAnnouncer();
   const draggingIdRef = useRef<string | null>(null);
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -456,7 +482,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                             </li>
                           )}
                           {rows.map((card) => (
-                            <KanbanCard key={card.id} card={card} familiars={familiars} sessions={sessions}
+                            <KanbanCard key={card.id} card={card} familiars={familiars} sessions={sessions} todayMs={todayMs}
                               isDragging={draggingId === card.id || touchDragId === card.id}
                               isSelected={selectedCardId === card.id}
                               isGrabbed={grabbedCardId === card.id || touchDragId === card.id}
@@ -491,8 +517,8 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   );
 }
 
-function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
-  card: Card; familiars: Familiar[]; sessions: SessionRow[];
+function KanbanCard({ card, familiars, sessions, todayMs, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
+  card: Card; familiars: Familiar[]; sessions: SessionRow[]; todayMs: number | null;
   isDragging: boolean; isSelected: boolean; isGrabbed: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onPointerDownTouch?: (e: React.PointerEvent) => void;
@@ -510,6 +536,7 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
   const pri = PRIORITIES.find((p) => p.id === card.priority) ?? { id: card.priority, label: card.priority };
   const statusLabel = COLUMNS.find((c) => c.id === card.status)?.label ?? card.status;
   const schedule = scheduleLabel(card.startDate, card.endDate);
+  const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
   const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
 
   return (
@@ -548,8 +575,23 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
             </span>
           )}
           {schedule && (
-            <span className="board-kanban-card-chip board-kanban-card-chip--schedule" title={`Scheduled ${schedule}`}>
-              <Icon name="ph:calendar-blank" width={9} />
+            <span
+              className={`board-kanban-card-chip ${
+                urgency === "overdue"
+                  ? "board-kanban-card-chip--overdue"
+                  : urgency === "due-soon"
+                  ? "board-kanban-card-chip--due-soon"
+                  : "board-kanban-card-chip--schedule"
+              }`}
+              title={
+                urgency === "overdue"
+                  ? `Overdue — was due ${schedule}`
+                  : urgency === "due-soon"
+                  ? `Due soon — ${schedule}`
+                  : `Scheduled ${schedule}`
+              }
+            >
+              <Icon name={urgency === "overdue" ? "ph:warning-circle" : "ph:calendar-blank"} width={9} />
               {schedule}
             </span>
           )}
