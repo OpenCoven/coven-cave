@@ -162,6 +162,7 @@ export function VaultPanel() {
   useEffect(() => { void load(); }, []);
 
   async function handleDelete(key: string) {
+    if (!window.confirm(`Delete the secret “${key}”? Anything mapped to it will stop resolving. This can't be undone.`)) return;
     setDeleting(key);
     try {
       await fetch("/api/vault", {
