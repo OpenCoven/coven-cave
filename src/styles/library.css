@@ -1300,6 +1300,10 @@
   justify-content: center;
   opacity: 0;
   cursor: pointer;
+  /* Reset button chrome so the now-<button> row actions match the old <span>. */
+  border: none;
+  background: none;
+  font: inherit;
   color: var(--text-muted);
   border-radius: 4px;
   padding: 2px;
