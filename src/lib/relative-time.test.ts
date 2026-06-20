@@ -19,6 +19,14 @@ test("buckets: just now / minutes / hours / days, then short date", () => {
   assert.doesNotMatch(out, /ago/);
 });
 
+test("dates from a prior year include the year (Mon D, YYYY)", () => {
+  const out = relativeTime("2025-01-05T12:00:00.000Z", NOW);
+  assert.match(out, /^[A-Za-z]{3} \d{1,2}, \d{4}$/, `expected "Mon D, YYYY", got "${out}"`);
+  assert.match(out, /2025/);
+  // a same-year date older than a week still omits the year
+  assert.doesNotMatch(relativeTime(ago(60 * 24 * 8), NOW), /\d{4}/);
+});
+
 test("now accepts a number (epoch ms) or a Date, identically", () => {
   assert.equal(relativeTime(ago(2), NOW_MS), relativeTime(ago(2), NOW));
 });

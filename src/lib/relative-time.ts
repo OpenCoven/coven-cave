@@ -22,7 +22,12 @@ export function relativeTime(
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(then);
+  // Past a week, show an absolute date. Include the year when it is not the
+  // current year, so e.g. "Jan 5, 2025" is not ambiguous with this year's Jan 5.
+  const sameYear = new Date(then).getFullYear() === new Date(nowMs).getFullYear();
+  return new Intl.DateTimeFormat([], sameYear
+    ? { month: "short", day: "numeric" }
+    : { month: "short", day: "numeric", year: "numeric" }).format(then);
 }
 
 /**
