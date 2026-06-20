@@ -227,8 +227,8 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /\{showTools && !segments && turn\.tools\?\.length \? <ToolGroup tools=\{turn\.tools\} \/> : null\}/,
-  "CHAT-D4-01: trailing ToolGroup rollup survives ONLY for legacy turns without offsets",
+  /\{!turn\.pending && turn\.tools\?\.length \? <ToolGroup tools=\{turn\.tools\} \/> : null\}/,
+  "every settled turn with tools renders the designated trailing ToolGroup section",
 );
 assert.match(
   chatViewSource,
