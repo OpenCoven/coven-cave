@@ -683,6 +683,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && search) {
+                  e.preventDefault();
+                  setSearch("");
+                }
+              }}
               placeholder="Search sessions…"
               className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
             />
