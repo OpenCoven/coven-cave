@@ -251,6 +251,17 @@ function ProjectRow({
   const [rootDraft, setRootDraft] = useState(project.root);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<"name" | "root" | "delete" | null>(null);
+  const [copiedRoot, setCopiedRoot] = useState(false);
+
+  const copyRoot = async () => {
+    try {
+      await navigator.clipboard.writeText(project.root);
+      setCopiedRoot(true);
+      window.setTimeout(() => setCopiedRoot(false), 1600);
+    } catch {
+      // Clipboard blocked (insecure context / permissions) — no-op.
+    }
+  };
 
   const commitName = async () => {
     const next = nameDraft.trim();
@@ -478,6 +489,17 @@ function ProjectRow({
             title={project.root}
           >
             {shortRoot(project.root)}
+          </button>
+        )}
+        {!editingRoot && (
+          <button
+            type="button"
+            onClick={copyRoot}
+            className="focus-ring shrink-0 rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            title={copiedRoot ? "Copied" : "Copy path"}
+            aria-label={`Copy path ${project.root}`}
+          >
+            <Icon name={copiedRoot ? "ph:check" : "ph:copy"} width={12} aria-hidden />
           </button>
         )}
       </div>
