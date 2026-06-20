@@ -127,7 +127,11 @@
   background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   color: color-mix(in oklch, var(--accent-presence) 85%, var(--text-primary));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
-  white-space: nowrap;
+  /* Wrap long inline code gracefully instead of overflowing the bubble.
+     break-word keeps short snippets intact but lets oversized tokens break. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Inline file references linkified by wireFilePathLinks — clickable, with an

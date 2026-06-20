@@ -268,7 +268,9 @@
 .sidebar-foot {
   flex-shrink: 0;
   padding: 8px 6px 0;
-  border-top: 1px solid var(--border-hairline);
+  /* Softer than a full hairline — the footer should read as a calm boundary,
+     not a hard rule competing with the nav. */
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
   display: grid;
   flex-direction: column;
   gap: 4px;
@@ -598,7 +600,7 @@
   padding: 0 0 10px;
   padding-top: 6px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-hairline);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
 }
 
 /* Footer rows slightly smaller/dimmer than header rows */
@@ -619,7 +621,7 @@
 .sidebar-bottom {
   flex-shrink: 0;
   padding: 6px 7px 8px;
-  border-top: 1px solid var(--border-hairline);
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
 }
 
 .sidebar-settings-row {
