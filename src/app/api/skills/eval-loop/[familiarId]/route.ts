@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
+import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +26,11 @@ export async function GET(
     return NextResponse.json(
       {
         ok: false,
-        error: res.error ?? `daemon http ${res.status}`,
+        error: redactSecretText(res.error ?? `daemon http ${res.status}`),
         state: null,
       },
     );
   }
 
-  return NextResponse.json({ ok: true, state: res.data });
+  return NextResponse.json({ ok: true, state: redactSecretsDeep(res.data) });
 }

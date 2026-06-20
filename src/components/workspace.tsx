@@ -42,6 +42,7 @@ import { LibraryView } from "@/components/library-view";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
 import { WorkflowsView } from "@/components/workflows-view";
+import { RetroRunsView } from "@/components/retro-runs-view";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
@@ -90,6 +91,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   github: "GitHub",
   roles: "Roles",
   workflows: "Workflows",
+  retro: "Retro Runs",
   capabilities: "Capabilities",
   canvas: "Canvas",
 };
@@ -1614,6 +1616,8 @@ export function Workspace() {
         initialWorkflowId={workflowDeepLink}
         onDeepLinkConsumed={() => setWorkflowDeepLink(null)}
       />
+    ) : mode === "retro" ? (
+      <RetroRunsView />
     ) : mode === "capabilities" ? (
       <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (

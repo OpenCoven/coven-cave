@@ -224,6 +224,7 @@ export default async function DashboardPage() {
             <QuickLink href="/#card-" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
             <QuickLink href="/" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
             <QuickLink href="/" icon="ph:books-bold" label="Library" sub="Saved knowledge" />
+            <QuickLink href="/dashboard/retro" icon="ph:arrows-clockwise-bold" label="Retro Runs" sub="Eval-loop history" />
             <QuickLink href="/settings" icon="ph:gear-six" label="Settings" sub="Preferences" />
             <QuickLink href="/aesthetic" icon="ph:paint-brush" label="Aesthetic" sub="Design tokens" />
           </div>
