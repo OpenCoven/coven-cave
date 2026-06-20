@@ -11,6 +11,8 @@ import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-mem
 import type { FileMemoryEntry } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { Modal } from "@/components/ui/modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import {
   buildFamiliarCardStats,
   type FamiliarCardStats,
@@ -291,21 +293,17 @@ function emptyStats(): FamiliarCardStats {
 
 function FamiliarsEmptyState({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   return (
-    <div className="familiars-view__empty mx-auto flex max-w-md flex-col items-center px-6 py-16 text-center">
-      <Icon name="ph:sparkle" width={28} className="text-[var(--accent-presence)]" />
-      <h2 className="mt-3 text-[14px] font-semibold text-[var(--text-primary)]">No familiars yet</h2>
-      <p className="mt-1 text-[12px] text-[var(--text-muted)]">
-        Set up your first familiar to populate the roster.
-      </p>
-      <button
-        type="button"
-        onClick={onOpenOnboarding}
-        className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]/80"
-      >
-        <Icon name="ph:plus" width={12} />
-        Set up your first familiar
-      </button>
-    </div>
+    <EmptyState
+      className="familiars-view__empty mx-auto my-16 max-w-md"
+      icon="ph:sparkle"
+      headline="No familiars yet"
+      subtitle="Set up your first familiar to populate the roster."
+      actions={
+        <Button leadingIcon="ph:plus" onClick={onOpenOnboarding}>
+          Set up your first familiar
+        </Button>
+      }
+    />
   );
 }
 
@@ -670,9 +668,12 @@ function FamiliarDetailPanel({
               </span>
             </div>
             {familiarSessions.length === 0 ? (
-              <div className="grid min-h-[120px] place-items-center rounded-lg border border-dashed border-[var(--border-hairline)] text-[12px] text-[var(--text-muted)]">
-                No sessions for this familiar yet.
-              </div>
+              <EmptyState
+                compact
+                icon="ph:chats-circle"
+                headline="No sessions for this familiar yet"
+                subtitle="Sessions started with this familiar will show up here."
+              />
             ) : (
               <ul className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
                 {familiarSessions.map((s) => (
