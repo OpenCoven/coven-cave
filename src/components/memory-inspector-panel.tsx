@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatDate as formatPrefDate } from "@/lib/datetime-format";
 import type { Familiar } from "@/lib/types";
 
 type FailureDistillation = {
@@ -66,7 +67,7 @@ function formatDate(value: string | null): string {
   if (!value) return "missing";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  return formatPrefDate(date, undefined, { year: true });
 }
 
 export function MemoryInspectorPanel({ familiar }: { familiar: Familiar | null }) {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { formatDate } from "@/lib/datetime-format";
 import type { LibraryCollection, LibraryDoc } from "@/lib/library-types";
 
 type Props = {
@@ -30,7 +31,7 @@ function relDate(iso: string): string {
     if (absDiff < 3_600_000) return relDateFmt.format(Math.round(diff / 60_000), "minutes");
     if (absDiff < 86_400_000) return relDateFmt.format(Math.round(diff / 3_600_000), "hours");
     if (absDiff < 86_400_000 * 30) return relDateFmt.format(Math.round(diff / 86_400_000), "days");
-    return new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+    return formatDate(iso);
   } catch {
     return "";
   }
