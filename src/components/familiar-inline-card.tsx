@@ -8,6 +8,7 @@ import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
 import { resolveFamiliar } from "@/lib/familiar-resolve";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Icon } from "@/lib/icon";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import type { Familiar } from "@/lib/types";
 import {
   pickFamiliarMemory,
@@ -187,7 +188,7 @@ export function FamiliarInlineCard({
           </button>
         </div>
         {loading ? (
-          <div className="familiar-inline-card__memory-muted">Loading…</div>
+          <SkeletonRows count={3} className="familiar-inline-card__memory-loading" />
         ) : entries.length === 0 ? (
           <div className="familiar-inline-card__memory-muted">No memory yet</div>
         ) : (
