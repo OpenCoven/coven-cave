@@ -23,15 +23,47 @@ export function normalizeChatTitle(input: unknown): string | null {
 
 const MAX_PROMPT_TITLE_LENGTH = 64;
 
+// High-precision lead-ins that carry no information in a title: politeness and
+// explicit request framing. Stripped (case-insensitively, repeatedly) from the
+// front so "please fix the search bar" → "Fix the search bar" and "can you add
+// a youtube viewer" → "Add a youtube viewer". Deliberately conservative —
+// content-initial words like "now"/"just"/"and" are left alone to avoid eating
+// real titles ("Now and Then is a Beatles song …").
+const LEADING_FILLER_RE =
+  /^(?:please|pls|plz|kindly|can you|could you|would you|will you|can we|could we|would we|let'?s|i (?:want|need|wanna) to|i'?d like to|i would like to|help me(?: to)?|go ahead(?: and)?)\b[\s,:;.!?\-–—]*/i;
+
+// Trailing politeness ("restart it please", "fix this, thanks").
+const TRAILING_FILLER_RE =
+  /[\s,;.!?\-–—]*\b(?:please|pls|plz|kindly|thanks|thank you|thx|ty)\b[\s.!?]*$/i;
+
+/** Strip conversational filler from a prompt so it reads like a title: drop
+ *  leading politeness/request framing and trailing politeness, then capitalize.
+ *  Falls back to the raw (whitespace-collapsed) prompt when stripping would
+ *  leave nothing meaningful. */
+export function cleanPromptForTitle(prompt: string): string {
+  const normalized = prompt.trim().replace(/\s+/g, " ");
+  let s = normalized;
+  let prev = "";
+  while (s && s !== prev) {
+    prev = s;
+    s = s.replace(LEADING_FILLER_RE, "");
+  }
+  s = s.replace(TRAILING_FILLER_RE, "").trim();
+  if (s.length < 3) return normalized;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /** Default title for a chat session started from a user prompt: the prompt
- *  itself, whitespace-collapsed and truncated to a title-sized string. The cut
- *  backs up to the last word boundary (unless that would lose too much) so the
- *  title doesn't end mid-word — "…the changes we made" not "…the changes we ma". */
+ *  cleaned of conversational filler (see cleanPromptForTitle), whitespace-
+ *  collapsed and truncated to a title-sized string. The cut backs up to the
+ *  last word boundary (unless that would lose too much) so the title doesn't end
+ *  mid-word — "…the changes we made" not "…the changes we ma". */
 export function chatTitleFromPrompt(prompt: string | null | undefined): string | null {
   const normalized = normalizeChatTitle(prompt);
   if (!normalized) return null;
-  if (normalized.length <= MAX_PROMPT_TITLE_LENGTH) return normalized;
-  const slice = normalized.slice(0, MAX_PROMPT_TITLE_LENGTH - 1);
+  const cleaned = cleanPromptForTitle(normalized);
+  if (cleaned.length <= MAX_PROMPT_TITLE_LENGTH) return cleaned;
+  const slice = cleaned.slice(0, MAX_PROMPT_TITLE_LENGTH - 1);
   const lastSpace = slice.lastIndexOf(" ");
   const trimmed = lastSpace >= MAX_PROMPT_TITLE_LENGTH * 0.6 ? slice.slice(0, lastSpace) : slice;
   return `${trimmed.trimEnd()}…`;
