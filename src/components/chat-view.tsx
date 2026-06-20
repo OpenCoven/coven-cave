@@ -122,6 +122,15 @@ type Turn = {
   voiceCallId?: string;
 };
 
+// CHAT-D3-07 perf: `replyFor` runs for every row on every render and parses the
+// turn text (strip reasoning + Next paths) to decide whether the Reply action
+// shows. During streaming that would re-parse the whole settled transcript on
+// each token. Cache the boolean decision by the stable turn reference — settled
+// turns keep their object, so they hit; only the streaming turn gets a fresh ref
+// (correct miss). Module-scoped and keyed weakly, so dead turns are GC'd; the
+// value is a pure function of the turn, so sharing across instances is safe.
+const replyableTurnCache = new WeakMap<Turn, boolean>();
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -2509,9 +2518,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   /** Build the Reply action for a settled, non-empty turn (undefined hides it). */
   function replyFor(turn: Turn): (() => void) | undefined {
     if (turn.pending) return undefined;
-    const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
-    if (!source.trim()) return undefined;
-    return () => replyToTurn(turn);
+    // Cache the expensive replyable decision by the stable turn ref (see
+    // `replyableTurnCache`); rebuild the cheap closure fresh so it never
+    // captures a stale `replyToTurn`.
+    let canReply = replyableTurnCache.get(turn);
+    if (canReply === undefined) {
+      const source =
+        turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
+      canReply = source.trim().length > 0;
+      replyableTurnCache.set(turn, canReply);
+    }
+    return canReply ? () => replyToTurn(turn) : undefined;
   }
 
   // CHAT-D6-02: regenerate. Re-sends the PRECEDING user turn (text +

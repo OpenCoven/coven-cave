@@ -106,4 +106,21 @@ assert.match(
   "memo comparator compares the stable turn ref and action availability, not callback identity",
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 5: replyFor caches its parse by the stable turn ref (CHAT-D3-07) so the
+// per-row Reply decision isn't recomputed for the whole transcript each token.
+// ─────────────────────────────────────────────────────────────────────────────
+
+assert.match(
+  chatViewSource,
+  /const replyableTurnCache = new WeakMap<Turn, boolean>\(\);/,
+  "replyFor's parse decision is cached in a turn-keyed WeakMap",
+);
+
+assert.match(
+  chatViewSource,
+  /function replyFor\(turn: Turn\)[\s\S]*?replyableTurnCache\.get\(turn\)[\s\S]*?replyableTurnCache\.set\(turn, canReply\)/,
+  "replyFor reads then populates the WeakMap cache instead of re-parsing every render",
+);
+
 console.log("✓ All render optimization tests pass");
