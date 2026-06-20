@@ -17,9 +17,9 @@ const DOCS_BASE = "https://docs.opencoven.ai";
 const TOP_K = 5;
 const MAX_CHUNK_CHARS = 1200;
 
-// Salem's real brain: the opencoven-chat-api (hybrid RAG + reranking + streamed
-// GPT answers). When reachable, its grounded reply is preferred over the local
-// token-overlap fallback below. Override the origin with SALEM_CHAT_API_URL.
+// Hosted docs retrieval: the opencoven-chat-api owns the vector index and
+// reranking. Cave uses it for context, then synthesizes locally through the
+// selected familiar/model so user-connected providers own billing.
 const CHAT_API_URL = (
   process.env.SALEM_CHAT_API_URL ?? "https://salem.opencoven.ai"
 ).replace(/\/+$/, "");
@@ -38,36 +38,62 @@ type SalemSearchContext = {
   matches?: unknown;
 };
 
+type ChatApiContextResponse = {
+  mode?: unknown;
+  systemPrompt?: unknown;
+  context?: unknown;
+  results?: unknown;
+};
+
 /**
- * Ask the upstream opencoven-chat-api and aggregate its streamed text/plain
- * response into a single reply string. Returns null on any failure so the
- * caller can fall back to local retrieval (Cave stays useful offline).
+ * Ask the upstream opencoven-chat-api for retrieved docs context only. Cave
+ * owns the synthesis call so arbitrary connected user models stay local.
  */
-async function askChatApi(message: string, model?: string | null): Promise<string | null> {
+async function askChatApiContext(message: string): Promise<ChatApiContextResponse | null> {
   try {
     const controller = new AbortController();
     const connectTimer = setTimeout(() => controller.abort(), CHAT_API_CONNECT_TIMEOUT_MS);
 
-    // Forward the local familiar's model so the chat-api generates with it and
-    // the AI credits attribute to that model rather than the chat-api default.
-    // (The chat-api must honor `model` for the credit attribution to take effect.)
-    const payload = model ? { message, model } : { message };
+    const res = await fetch(`${CHAT_API_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, mode: "context" }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(connectTimer));
+
+    if (!res.ok) return null;
+    const json = (await res.json()) as ChatApiContextResponse;
+    return typeof json.systemPrompt === "string" ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * No-regression fallback: ask the hosted chat-api for a fully-written answer
+ * (its legacy streamed text/plain behavior). Used when `mode: "context"` is not
+ * yet supported by the backend, so Salem keeps giving grounded hosted answers
+ * instead of dropping to weak local token-overlap retrieval. Once the backend
+ * serves context mode, the local-familiar synthesis path above takes over.
+ */
+async function askChatApiAnswer(message: string): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const connectTimer = setTimeout(() => controller.abort(), CHAT_API_CONNECT_TIMEOUT_MS);
 
     const res = await fetch(`${CHAT_API_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ message }),
       signal: controller.signal,
     }).finally(() => clearTimeout(connectTimer));
 
     if (!res.ok || !res.body) return null;
 
-    // The chat API streams plain-text deltas; concatenate them.
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     const parts: string[] = [];
     const streamTimer = setTimeout(() => controller.abort(), CHAT_API_TIMEOUT_MS);
-
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -75,6 +101,81 @@ async function askChatApi(message: string, model?: string | null): Promise<strin
         parts.push(decoder.decode(value, { stream: true }));
       }
       parts.push(decoder.decode());
+    } finally {
+      clearTimeout(streamTimer);
+      reader.releaseLock();
+    }
+
+    const trimmed = parts.join("").trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildLocalSalemPrompt(message: string, context: ChatApiContextResponse): string {
+  const systemPrompt = typeof context.systemPrompt === "string" ? context.systemPrompt.trim() : "";
+  const docsContext = typeof context.context === "string" && context.context.trim()
+    ? `\n\nRetrieved documentation context:\n${context.context.trim()}`
+    : "";
+
+  return [
+    systemPrompt,
+    docsContext,
+    "",
+    "Answer the user's question as Salem. Use the retrieved documentation when it is relevant, cite sources as markdown links, and say when the docs do not contain the answer.",
+    "",
+    `User question:\n${message}`,
+  ].filter(Boolean).join("\n");
+}
+
+async function askLocalFamiliar(args: {
+  req: Request;
+  familiarId: string;
+  message: string;
+  model: string | null;
+}): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const streamTimer = setTimeout(() => controller.abort(), CHAT_API_TIMEOUT_MS);
+    const res = await fetch(new URL("/api/chat/send", args.req.url), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        familiarId: args.familiarId,
+        prompt: args.message,
+        ...(args.model ? { modelOverride: args.model, modelOverrideScope: "next-message" } : {}),
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok || !res.body) {
+      clearTimeout(streamTimer);
+      return null;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const parts: string[] = [];
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const line = frame.split(/\r?\n/).find((item) => item.startsWith("data:"));
+          if (!line) continue;
+          try {
+            const event = JSON.parse(line.slice(5).trim()) as { kind?: string; text?: string };
+            if (event.kind === "assistant_chunk" && event.text) parts.push(event.text);
+          } catch {
+            /* ignore malformed SSE frames */
+          }
+        }
+      }
     } finally {
       clearTimeout(streamTimer);
       reader.releaseLock();
@@ -256,10 +357,13 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { message?: string; context?: SalemSearchContext; model?: string };
+    const body = (await req.json()) as { message?: string; context?: SalemSearchContext; model?: string; familiarId?: string };
     const message = (body.message ?? "").trim();
     // The model of the local familiar this ask is scoped to (credit attribution).
     const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
+    const familiarId = typeof body.familiarId === "string" && body.familiarId.trim()
+      ? body.familiarId.trim()
+      : null;
 
     if (!message) {
       return NextResponse.json({ error: "No message provided." }, { status: 400 });
@@ -275,12 +379,41 @@ export async function POST(req: Request) {
     const searchContext = formatSearchContextForPrompt(context);
     const messageForApi = searchContext ? `${message}\n\n${searchContext}` : message;
 
-    // Primary path: ask the real opencoven-chat-api for a grounded, LLM-written
-    // answer. Falls through to local token-overlap retrieval if unreachable.
-    const apiReply = await askChatApi(messageForApi, model);
-    if (apiReply) {
+    // Primary Cave path: use the hosted RAG index for context, then synthesize
+    // through the local familiar so the user's connected model/provider pays.
+    const apiContext = await askChatApiContext(messageForApi);
+    if (apiContext && familiarId) {
+      const apiReply = await askLocalFamiliar({
+        req,
+        familiarId,
+        message: buildLocalSalemPrompt(messageForApi, apiContext),
+        model,
+      });
+      if (apiReply) {
+        return NextResponse.json({
+          reply: apiReply,
+          preloadSummary: summarizePreload(),
+          source: "local-familiar",
+          localContextUsed: Boolean(searchContext),
+        });
+      }
+    }
+
+    if (apiContext && typeof apiContext.context === "string" && apiContext.context.trim()) {
       return NextResponse.json({
-        reply: apiReply,
+        reply: apiContext.context.trim(),
+        preloadSummary: summarizePreload(),
+        source: "chat-api-context",
+        localContextUsed: Boolean(searchContext),
+      });
+    }
+
+    // No-regression fallback: the backend doesn't serve context mode yet, so use
+    // its hosted streamed answer rather than dropping to weak local retrieval.
+    const hostedReply = await askChatApiAnswer(messageForApi);
+    if (hostedReply) {
+      return NextResponse.json({
+        reply: hostedReply,
         preloadSummary: summarizePreload(),
         source: "chat-api",
         localContextUsed: Boolean(searchContext),

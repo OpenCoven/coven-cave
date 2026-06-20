@@ -17,7 +17,7 @@ type SalemMood = "idle" | "thinking" | "happy" | "listening";
 
 const GREETING = "I'm Salem, your Coven docs familiar. Yes, the black-cat-in-the-corner thing is intentional. I'm preloaded with Coven docs, tool context, guide skills, and Cave route awareness. Ask me about familiars, plugins, roles, the marketplace, or how Cave works.";
 
-export function SalemChatPanel({ model }: { model?: string | null } = {}) {
+export function SalemChatPanel({ familiarId, model }: { familiarId?: string | null; model?: string | null } = {}) {
   const [mood, setMood] = useState<SalemMood>("idle");
   const [messages, setMessages] = useState<Message[]>([
     { role: "salem", text: GREETING },
@@ -128,8 +128,11 @@ export function SalemChatPanel({ model }: { model?: string | null } = {}) {
       const res = await fetch("/api/salem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Carry the local familiar's model so the chat-api's credits attribute to it.
-        body: JSON.stringify(model ? { message: text, model } : { message: text }),
+        body: JSON.stringify({
+          message: text,
+          ...(familiarId ? { familiarId } : {}),
+          ...(model ? { model } : {}),
+        }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };
       const raw = data.reply ?? data.error ?? "Hmm, I couldn't find that one. Try rephrasing?";

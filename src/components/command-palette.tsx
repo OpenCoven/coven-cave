@@ -483,8 +483,13 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
     try {
-      // Use the local familiar's model (the one you're scoped to, falling back
-      // to Salem's own) so the chat-api's AI credits attribute to it.
+      // Use the local familiar (the one you're scoped to, falling back to Salem)
+      // so the answer is synthesized through it and the AI credits attribute to
+      // its connected model.
+      const localFamiliarId =
+        activeFamiliarId ??
+        familiars.find((f) => f.id === "salem")?.id ??
+        "salem";
       const localModel =
         familiars.find((f) => f.id === activeFamiliarId)?.model ??
         familiars.find((f) => f.id === "salem")?.model ??
@@ -495,6 +500,7 @@ export function CommandPalette({
         body: JSON.stringify({
           message: query.trim(),
           context: buildSalemSearchContext(rows, query.trim()),
+          familiarId: localFamiliarId,
           model: localModel,
         }),
       });

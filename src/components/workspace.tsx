@@ -1782,6 +1782,7 @@ export function Workspace() {
               }
               salemSlot={
                 <SalemChatPanel
+                  familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
                   model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
                 />
               }

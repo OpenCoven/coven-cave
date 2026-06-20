@@ -1,54 +1,65 @@
-# opencoven-chat-api: honor a `model` field for generation + AI-credit billing
+# opencoven-chat-api: serve a `mode: "context"` retrieval response
 
 > Hand this to the agent/dev working in the **opencoven-chat-api** repo (the
-> service behind `salem.opencoven.ai`). The Coven Cave side already ships the
-> change that sends `model` — see `src/app/api/salem/route.ts` (`askChatApi`
-> posts `{ message, model }`) and PR #1037. This service must read and honor it.
+> service behind `salem.opencoven.ai`). Coven Cave's Salem feature now does its
+> own answer synthesis through the **user's selected familiar/model** (so the
+> user's connected provider owns billing) and only needs this service for the
+> **retrieved docs context**. See `src/app/api/salem/route.ts`
+> (`askChatApiContext` → local `askLocalFamiliar` synthesis via `/api/chat/send`).
 
 ## Task
 
-Honor a `model` field on `POST /api/chat` so the generation step **and** the AI-credit
-billing use the caller-supplied model instead of a hardcoded default.
+Add a `mode: "context"` branch to `POST /api/chat` that returns the **retrieved
+documentation context only** (no generated answer), as JSON, so Cave can
+synthesize the reply locally through the selected familiar.
 
-## Context
+## Why
 
-Coven Cave's Salem feature ("ask Salem" / the docs companion) calls this service for
-grounded, RAG-backed answers. Cave now sends the **local familiar's** model in every
-request so the AI credits attribute to that model rather than this service's default.
-This service currently ignores `model`, so credits still bill the default — fix that.
+Previously Cave forwarded a `model` and let this service generate the answer, so
+AI credits billed this service's default model. Cave now generates locally
+through the user's familiar (their connected model pays). For that, Cave needs
+the **retrieval/RAG context** from this service, not a finished answer.
 
-## Current request contract (must stay backward-compatible)
+## Required: `mode: "context"`
 
-- `POST /api/chat`, `Content-Type: application/json`
-- Body: `{ "message": string }` — and now optionally `{ "message": string, "model": string }`
-- Response: streamed `text/plain` deltas (Cave concatenates them). **Do not** change the
-  response shape.
-- Cave aborts after **20s to first byte** and **45s total**, so keep time-to-first-token fast.
+When the request body contains `"mode": "context"`, respond with **JSON**
+(not the streamed `text/plain` answer):
 
-## Required changes
+```jsonc
+// POST /api/chat   { "message": "...", "mode": "context" }
+{
+  "mode": "context",
+  "systemPrompt": "…the Salem system prompt…",   // string (required)
+  "context": "…retrieved + reranked doc chunks as markdown, with source links…", // string
+  "results": [ /* optional structured matches: {title, url, snippet, ...} */ ]
+}
+```
 
-1. Parse an optional `model: string` from the request body.
-2. When `model` is present and valid, use it for the LLM **generation** step (answer
-   synthesis after retrieval/reranking). Retrieval/index behavior stays the same.
-3. **Attribute usage/billing** (AI credits, token accounting, logs) to the supplied
-   `model` — this is the whole point. Ensure the credit meter reads the per-request
-   model, not a module-level constant.
-4. Validate against an allowlist of supported model IDs. On missing/empty/invalid
-   `model`, fall back to the existing default model and behavior (older callers and the
-   offline/local-fallback case stay unaffected).
-5. Keep the streamed `text/plain` output format identical.
+- `systemPrompt` (string) is **required** — Cave keys off it to decide context
+  mode succeeded (`typeof json.systemPrompt === "string"`).
+- `context` (string) should be the reranked doc passages Cave will ground the
+  local answer on, with markdown source links preserved.
+- Do the vector search + reranking exactly as you do for a normal answer; just
+  stop before generation and return the material instead.
+
+## Keep the existing default behavior
+
+Requests **without** `mode: "context"` (i.e. `{ "message": "..." }`) must keep
+streaming a `text/plain` answer exactly as today. Cave uses that as a
+**no-regression fallback** (`askChatApiAnswer`) until context mode ships, so
+nothing breaks in the meantime — Salem keeps giving good hosted answers and
+automatically upgrades to local-familiar synthesis once this endpoint serves
+context mode.
+
+## Timeouts
+
+Cave aborts the context request after **20s**. Keep it fast (no generation step).
 
 ## Acceptance criteria
 
-- `POST /api/chat` with `{"message":"...","model":"<allowed-id>"}` generates with that
-  model and the credit/usage record shows that model.
-- `POST /api/chat` with `{"message":"..."}` (no model) behaves exactly as today (default model).
-- An unsupported/garbage `model` value cleanly falls back to the default (no 5xx).
-- Streaming response and latency budget unchanged.
-- Add tests covering: model honored, model omitted → default, invalid model → default.
-
-## Model-ID vocabulary
-
-Cave passes the familiar's configured `model` string **verbatim** (e.g. `claude-opus-4-8`,
-`gpt-...`). Confirm this matches what the service expects; if they differ, add a mapping
-layer **here** rather than changing Cave.
+- `POST /api/chat` with `{"message":"...","mode":"context"}` returns JSON with a
+  string `systemPrompt` and a `context` string of reranked doc passages; **no**
+  generated answer.
+- `POST /api/chat` with `{"message":"..."}` (no mode) streams a `text/plain`
+  answer exactly as today.
+- Add tests for both shapes.
