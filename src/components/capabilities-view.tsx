@@ -476,6 +476,12 @@ export function CapabilitiesViewSurface({
                 onCopy={copyCapabilityDetail}
                 onOpenPath={openLocalPath}
                 onSelectHarness={applyHarnessFilter}
+                onClearFilters={() => {
+                  setQuery("");
+                  setHarnessFilter(null);
+                  setTypeFilter("all");
+                  setStatusFilter("all");
+                }}
               />
             </>
           )}
@@ -498,6 +504,7 @@ function CapabilityMap({
   onCopy,
   onOpenPath,
   onSelectHarness,
+  onClearFilters,
 }: {
   items: CapabilityMapItem[];
   selectedId: string | null;
@@ -508,6 +515,7 @@ function CapabilityMap({
   onCopy: (key: string, value?: string) => void;
   onOpenPath: (path?: string) => void;
   onSelectHarness: (id: string | null) => void;
+  onClearFilters: () => void;
 }) {
   const grouped = useMemo(() => {
     const map = new Map<CapabilityType, CapabilityMapItem[]>();
@@ -521,9 +529,16 @@ function CapabilityMap({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-[13px] text-muted-foreground">
-        No capabilities match the current filters.
-      </div>
+      <EmptyState
+        icon="ph:magnifying-glass"
+        headline="No capabilities match"
+        subtitle="Nothing matches the current search and filters. Clear them to see the full operator map."
+        actions={
+          <Button leadingIcon="ph:x" onClick={onClearFilters}>
+            Clear filters
+          </Button>
+        }
+      />
     );
   }
 
