@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView } from "@/components/chat-view";
+import { NewChatLaunch } from "@/components/new-chat-launch";
 import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
 import { caveChatoutCodex } from "@/lib/feature-flags";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -323,16 +324,26 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   if (!chatFamiliar) {
     return (
-      <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
-        <div>
-          <p className="text-[15px] font-medium text-[var(--text-secondary)]">
-            Choose a familiar to start chatting
-          </p>
-          <p className="mt-1 text-[12px]">
-            Pick who should handle the conversation from the sidebar selector.
-          </p>
-        </div>
-      </section>
+      <NewChatLaunch
+        familiars={familiars}
+        sessions={sessions}
+        pendingProjectRoot={pendingProjectRoot}
+        onPick={(familiarId) => {
+          const next = selectFamiliarForChat(familiarId);
+          setView({
+            kind: "chat",
+            sessionId: null,
+            projectRoot: view.kind === "chat" ? view.projectRoot : undefined,
+            initialPrompt: view.kind === "chat" ? view.initialPrompt : undefined,
+            familiarId: next?.id ?? familiarId,
+          });
+        }}
+        onResume={(sessionId) => {
+          const session = sessions.find((entry) => entry.id === sessionId);
+          const next = selectFamiliarForChat(session?.familiarId ?? null);
+          setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
+        }}
+      />
     );
   }
 
