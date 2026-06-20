@@ -331,15 +331,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <div className="sidebar-foot-utility-row">
           <button
             type="button"
-            className="sidebar-foot-icon-btn"
-            onClick={onOpenMobileHandoff}
-            aria-label="Open on phone"
-            title="Open on phone"
-          >
-            <Icon name="ph:device-mobile" width={14} className="sidebar-foot-icon" />
-          </button>
-          <button
-            type="button"
             className="sidebar-foot-btn"
             onClick={onOpenSettings}
             aria-label="Settings"
@@ -349,6 +340,15 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               <Icon name="ph:gear-six" width={14} className="sidebar-foot-icon" />
             </span>
             <span className="sidebar-foot-label">Settings</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-foot-icon-btn"
+            onClick={onOpenMobileHandoff}
+            aria-label="Open on phone"
+            title="Open on phone"
+          >
+            <Icon name="ph:device-mobile" width={14} className="sidebar-foot-icon" />
           </button>
         </div>
       </div>
