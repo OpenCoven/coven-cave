@@ -29,4 +29,11 @@ assert.match(modal, /setLink\(editing\.link \?\? null\)/, "edit prefill should r
 // ── Both paths carry link ────────────────────────────────────────────────────
 assert.match(modal, /link,/, "draft submitted to create/update should include the link");
 
+// Accessible dialog: role/aria-modal/labelled heading + focus trap.
+assert.ok(modal.includes('import { useFocusTrap } from "@/lib/use-focus-trap"'), "imports useFocusTrap");
+assert.ok(modal.includes("useFocusTrap(open, dialogRef, { onEscape: onClose })"), "traps focus + closes on Escape");
+assert.ok(modal.includes('role="dialog"') && modal.includes('aria-modal="true"'), "overlay exposes dialog semantics");
+assert.ok(modal.includes('aria-labelledby="new-reminder-title"'), "dialog labelled by heading");
+assert.ok(modal.includes('id="new-reminder-title"'), "heading carries labelledby id");
+
 console.log("new-reminder-modal.test.ts: ok");

@@ -39,4 +39,8 @@ assert.match(
   "the Save button stays disabled while canSave is false",
 );
 
+// List rows + detail-panel close buttons show a visible keyboard focus ring.
+assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");
+assert.ok(source.includes("focus-ring rounded p-1 transition-colors hover:bg-white/5"), "panel close buttons have a focus ring");
+
 console.log("automations-view.test.ts: ok");

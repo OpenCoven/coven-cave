@@ -296,7 +296,7 @@ function DetailPanel({
           {isDailySummary ? "Daily summary details" : "Reminder details"}
         </h2>
         <button type="button" onClick={onClose}
-          className="rounded p-1 transition-colors hover:bg-white/5"
+          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}>
           <Icon name="ph:x" width={14} />
         </button>
@@ -371,7 +371,7 @@ function DetailPanel({
             <button
               type="button"
               onClick={() => item.link && onOpenLink?.(item.link)}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
+              className="focus-ring inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
               style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
             >
               <Icon name="ph:link" width={12} className="shrink-0" />
@@ -451,7 +451,7 @@ function ReminderTaskRow({
       <button
         type="button"
         onClick={() => onSelect(item)}
-        className="automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
         style={{
           background: selected ? "rgba(255,255,255,0.05)" : "transparent",
         }}
@@ -693,7 +693,7 @@ function CodexDetailPanel({
           Automation details
         </h2>
         <button type="button" onClick={onClose}
-          className="rounded p-1 transition-colors hover:bg-white/5"
+          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}>
           <Icon name="ph:x" width={14} />
         </button>
@@ -885,7 +885,7 @@ function CodexDetailPanel({
                     type="button"
                     onClick={() => setCwdPickerOpen(false)}
                     aria-label="Close"
-                    className="grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                    className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                   >
                     <Icon name="ph:x" width={14} />
                   </button>
@@ -1002,7 +1002,7 @@ function AutomationScheduleRow({
       <button
         type="button"
         onClick={() => onSelect(auto)}
-        className="automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
         style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
         onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
         onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}

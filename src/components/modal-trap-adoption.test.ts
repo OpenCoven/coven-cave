@@ -10,6 +10,7 @@ const FILES = [
   "onboarding-overlay.tsx",
   "workflows/workflow-create-dialog.tsx",
   "github-view.tsx",
+  "new-reminder-modal.tsx",
 ];
 
 for (const file of FILES) {
