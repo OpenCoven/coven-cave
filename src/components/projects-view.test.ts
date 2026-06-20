@@ -100,4 +100,22 @@ assert.match(
   "Project rows should be flat rows separated by a hairline divider",
 );
 
+// Projects collapse to one scannable row by default and expand to reveal the
+// path + sessions; the most-recently-active project opens first.
+assert.match(projectsView, /const \[expanded, setExpanded\] = useState\(defaultExpanded\)/, "each project row owns a collapse/expand state");
+assert.match(projectsView, /aria-expanded=\{expanded\}/, "the disclosure control reports expanded state");
+assert.match(projectsView, /\{expanded \? \(/, "path + sessions render only when the row is expanded");
+assert.match(projectsView, /defaultExpanded=\{index === 0\}/, "the most-recent project starts expanded");
+
+// Projects are ordered by most-recent session activity, not API order.
+assert.match(projectsView, /const sortedProjects = useMemo/, "projects are sorted before rendering");
+assert.match(projectsView, /sortedProjects\.map\(\(project, index\)/, "the sorted list drives the render");
+assert.match(projectsView, /function lastActiveMs/, "recency is derived from each project's latest session");
+
+// Paths are home-collapsed + truncated so the identical absolute prefix stops
+// dominating; the full path stays in the title and the editor.
+assert.match(projectsView, /\{shortRoot\(project\.root\)\}/, "the displayed path is shortened");
+assert.match(projectsView, /title=\{project\.root\}/, "the full path remains available via the title");
+assert.match(projectsView, /relativeAge\(/, "each row shows a relative last-active label");
+
 console.log("projects-view.test.ts: ok");

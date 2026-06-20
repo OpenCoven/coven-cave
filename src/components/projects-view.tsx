@@ -48,6 +48,42 @@ function chatDotClass(status: string): string {
   return "bg-[var(--text-muted)]";
 }
 
+/** Compact "2m ago" / "3d ago" relative label (older than a week → a short date). */
+function relativeAge(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const mins = Math.round((now - then) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(then);
+}
+
+/** Most-recent activity across a project's sessions (epoch ms; 0 when empty). */
+function lastActiveMs(chats: SessionRow[]): number {
+  let max = 0;
+  for (const s of chats) {
+    const t = new Date(s.updated_at).getTime();
+    if (Number.isFinite(t) && t > max) max = t;
+  }
+  return max;
+}
+
+/** Collapse $HOME to ~ and left-truncate long paths to "first/…/repo" so the
+ *  identical absolute prefix stops dominating each row. Full path stays in the
+ *  title attribute (and the inline editor still edits the real root). */
+function shortRoot(p: string): string {
+  const home = p.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, "~");
+  const isAbs = home.startsWith("/");
+  const parts = home.split("/").filter(Boolean);
+  if (parts.length <= 2) return home;
+  return `${isAbs ? "/" : ""}${parts[0]}/…/${parts[parts.length - 1]}`;
+}
+
 // A chat under a project card: click opens it (via the agents-open-session
 // event the chat surface already listens for); the handle drags it to reorder
 // within the project or onto another project card to move it. The trash button
@@ -158,6 +194,8 @@ type ProjectRowProps = {
   onNewChat?: (projectRoot: string) => void;
   onOpenSession?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  /** Start expanded — used to open the most-recently-active project by default. */
+  defaultExpanded?: boolean;
 };
 
 function ProjectRow({
@@ -169,8 +207,15 @@ function ProjectRow({
   onNewChat,
   onOpenSession,
   onDeleteSession,
+  defaultExpanded = false,
 }: ProjectRowProps) {
   const chatCount = chats.length;
+  // Projects collapse to a single scannable row by default; expanding reveals
+  // the path + its sessions. The most-recent project starts open.
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const lastActiveIso =
+    chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
+  const lastActiveLabel = relativeAge(lastActiveIso);
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -231,6 +276,15 @@ function ProjectRow({
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
+          className="focus-ring -ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+        >
+          <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
+        </button>
         <Icon
           name="ph:folder-open-bold"
           width={15}
@@ -270,6 +324,12 @@ function ProjectRow({
         <span className="shrink-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
           {chatCount} {chatCount === 1 ? "session" : "sessions"}
         </span>
+
+        {lastActiveLabel ? (
+          <span className="hidden shrink-0 text-[10px] text-[var(--text-muted)] sm:inline" title={`Last active ${lastActiveLabel}`}>
+            {lastActiveLabel}
+          </span>
+        ) : null}
 
         <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity motion-reduce:transition-none sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
           <button
@@ -342,6 +402,8 @@ function ProjectRow({
         </div>
       </div>
 
+      {expanded ? (
+        <>
       <div className="mt-2 flex min-w-0 items-center gap-2 pl-6">
         <Icon
           name="ph:folder-simple-dashed"
@@ -375,7 +437,7 @@ function ProjectRow({
             className="focus-ring min-w-0 flex-1 truncate rounded-md px-1 py-0.5 text-left font-mono text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             title={project.root}
           >
-            {project.root}
+            {shortRoot(project.root)}
           </button>
         )}
       </div>
@@ -410,6 +472,8 @@ function ProjectRow({
           No sessions yet — drag one here or start a new session.
         </p>
       )}
+        </>
+      ) : null}
     </article>
   );
 }
@@ -461,6 +525,16 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
     for (const [root, list] of chatsByRoot) for (const s of list) map.set(s.id, root);
     return map;
   }, [chatsByRoot]);
+
+  // Surface the projects you're actually working in: order by most-recent
+  // session activity, falling back to the project's own updatedAt.
+  const sortedProjects = useMemo(() => {
+    const score = (p: CaveProject) =>
+      lastActiveMs(chatsByRoot.get(normalizeProjectRoot(p.root)) ?? []) ||
+      new Date(p.updatedAt).getTime() ||
+      0;
+    return [...projects].sort((a, b) => score(b) - score(a));
+  }, [projects, chatsByRoot]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -681,7 +755,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
               </div>
             ) : null}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              {projects.map((project) => (
+              {sortedProjects.map((project, index) => (
                 <ProjectRow
                   key={project.id}
                   project={project}
@@ -692,6 +766,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
                   onNewChat={onNewChat}
                   onOpenSession={openSessionById}
                   onDeleteSession={handleDeleteSession}
+                  defaultExpanded={index === 0}
                 />
               ))}
             </DndContext>
