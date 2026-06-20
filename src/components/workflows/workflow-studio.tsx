@@ -25,7 +25,7 @@ import type { WorkflowFamiliarOption } from "./workflow-attachments";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { WorkflowStepList } from "./workflow-step-list";
 import { WorkflowCreateDialog, WorkflowRunInputsDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
-import { WorkflowInspector } from "./workflow-inspector";
+import { WorkflowInspector, type WorkflowUsesOption } from "./workflow-inspector";
 import { WorkflowLibrary } from "./workflow-library";
 import { WorkflowManifestPreview } from "./workflow-manifest-preview";
 import { WorkflowPalette } from "./workflow-palette";
@@ -80,6 +80,7 @@ export type WorkflowStudioProps = {
   runs: WorkflowRunRecord[];
   runsLoading: boolean;
   familiarOptions: WorkflowFamiliarOption[];
+  usesOptions?: WorkflowUsesOption[];
   roles: WorkflowRoleSummary[];
   engineUnavailable: boolean;
   notice: string | null;
@@ -95,6 +96,7 @@ export type WorkflowStudioProps = {
   onRefresh: () => void;
   onSelectWorkflow: (workflow: WorkflowSummary) => void;
   onSelectNode: (node: WorkflowGraphNode) => void;
+  onSelectStep: (id: string) => void;
   onClearNode: () => void;
   onValidate: (workflow: WorkflowSummary) => void;
   onDryRun: (workflow: WorkflowSummary) => void;
@@ -351,9 +353,11 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
                 workflow={selectedWorkflow}
                 selectedNode={selectedNode}
                 action={action}
+                usesOptions={props.usesOptions}
                 onUpdateStep={props.onUpdateStep}
                 onUpdateMeta={props.onUpdateMeta}
                 onRemoveStep={props.onRemoveStep}
+                onSelectStep={props.onSelectStep}
               />
             )}
             {sidePanelSection === "attachments" && (

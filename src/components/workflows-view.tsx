@@ -48,6 +48,7 @@ import {
   WorkflowStudio,
   type WorkflowStudioActionState,
 } from "./workflows/workflow-studio";
+import type { WorkflowUsesOption } from "./workflows/workflow-inspector";
 
 export function WorkflowsView({
   initialWorkflowId = null,
@@ -72,6 +73,10 @@ export function WorkflowsView({
   const [runs, setRuns] = useState<WorkflowRunRecord[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  // Skill/tool `uses` candidates from the capability registry (daemon-backed, so
+  // best-effort: empty offline, in which case familiars + sub-workflows still
+  // populate the autocomplete).
+  const [capabilityUses, setCapabilityUses] = useState<WorkflowUsesOption[]>([]);
   const [roles, setRoles] = useState<WorkflowRoleSummary[]>([]);
   const [engineUnavailable, setEngineUnavailable] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }> | null>(null);
@@ -160,11 +165,40 @@ export function WorkflowsView({
     }
   }, []);
 
+  // Skills (and harness plugins/tools) discovered by the capability scanner feed
+  // the step `uses` autocomplete. Daemon-backed, so failure is silent — the
+  // field stays freeform and the always-available familiar/sub-workflow options
+  // still suggest.
+  const loadCapabilities = useCallback(async () => {
+    try {
+      const response = await fetch("/api/capabilities", { cache: "no-store" });
+      const result = (await response.json()) as {
+        ok: boolean;
+        coven_skills?: Array<{ id: string }>;
+        harness_capabilities?: Array<{
+          skills?: Array<{ id: string }>;
+          plugins?: Array<{ id: string; kind?: string }>;
+        }>;
+      };
+      if (!result.ok) return;
+      const options: WorkflowUsesOption[] = [];
+      for (const skill of result.coven_skills ?? []) options.push({ value: skill.id, group: "Skill" });
+      for (const manifest of result.harness_capabilities ?? []) {
+        for (const skill of manifest.skills ?? []) options.push({ value: skill.id, group: "Skill" });
+        for (const plugin of manifest.plugins ?? []) options.push({ value: plugin.id, group: "Tool" });
+      }
+      setCapabilityUses(options);
+    } catch {
+      // capability discovery is an enhancement; freeform `uses` still works
+    }
+  }, []);
+
   useEffect(() => {
     void load(false);
     void loadFamiliars();
     void loadRoles();
-  }, [load, loadFamiliars, loadRoles]);
+    void loadCapabilities();
+  }, [load, loadFamiliars, loadRoles, loadCapabilities]);
 
   // Keep a valid selection as the library changes; seed the draft for it.
   useEffect(() => {
@@ -235,6 +269,26 @@ export function WorkflowsView({
       .map(([id, label]) => ({ id, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [draft?.familiar, familiars, roles, workflows]);
+
+  // Step `uses` autocomplete candidates: familiars (agents), other workflows
+  // (sub-workflow refs), and discovered skills/tools. Deduped by value, first
+  // origin wins, sorted within group order so the native datalist reads tidily.
+  const usesOptions = useMemo<WorkflowUsesOption[]>(() => {
+    const seen = new Set<string>();
+    const options: WorkflowUsesOption[] = [];
+    const add = (value: string | undefined | null, group: string) => {
+      const trimmed = value?.trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      options.push({ value: trimmed, group });
+    };
+    for (const familiar of familiars) add(familiar.id, "Familiar");
+    for (const workflow of workflows) {
+      if (workflow.id !== draft?.id) add(workflow.id, "Workflow");
+    }
+    for (const option of capabilityUses) add(option.value, option.group);
+    return options;
+  }, [capabilityUses, draft?.id, familiars, workflows]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -601,6 +655,7 @@ export function WorkflowsView({
       runs={runs}
       runsLoading={runsLoading}
       familiarOptions={familiarOptions}
+      usesOptions={usesOptions}
       roles={roles}
       engineUnavailable={engineUnavailable}
       notice={notice}
@@ -616,6 +671,7 @@ export function WorkflowsView({
       onRefresh={() => void load(true)}
       onSelectWorkflow={selectWorkflow}
       onSelectNode={(node) => setSelectedNodeId(node.id)}
+      onSelectStep={(id) => setSelectedNodeId(id)}
       onClearNode={() => setSelectedNodeId(null)}
       onValidate={(workflow) => void runValidate(workflow)}
       onDryRun={(workflow) => void runDryRun(workflow)}

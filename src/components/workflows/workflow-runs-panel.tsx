@@ -54,6 +54,15 @@ function isProblemRun(run: WorkflowRunRecord): boolean {
   return run.status === "blocked" || run.status === "failed";
 }
 
+type WorkflowRunFilter = "all" | "problems" | "executions" | "plans";
+
+const RUN_FILTERS: Array<{ id: WorkflowRunFilter; label: string; match: (run: WorkflowRunRecord) => boolean }> = [
+  { id: "all", label: "All", match: () => true },
+  { id: "problems", label: "Problems", match: isProblemRun },
+  { id: "executions", label: "Runs", match: (run) => run.kind === "execution" },
+  { id: "plans", label: "Plans", match: (run) => run.kind === "dry-run" },
+];
+
 /** Header rollup: total, problem count, and the most recent run's age. */
 function summarizeRuns(runs: WorkflowRunRecord[]): string {
   if (runs.length === 0) return "0 recorded";
@@ -65,7 +74,11 @@ function summarizeRuns(runs: WorkflowRunRecord[]): string {
 /** Run history for the selected workflow: plan snapshots and executions. */
 export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayRun }: WorkflowRunsPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<WorkflowRunFilter>("all");
   const replaying = playback?.source === "replay" && playback.workflowId === workflow?.id;
+
+  const activeFilter = RUN_FILTERS.find((entry) => entry.id === filter) ?? RUN_FILTERS[0];
+  const visibleRuns = filter === "all" ? runs : runs.filter(activeFilter.match);
 
   return (
     <section className="workflow-runs-panel" aria-label="Workflow run history">
@@ -76,6 +89,28 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
           {loading ? "loading" : summarizeRuns(runs)}
         </span>
       </div>
+      {/* Filter history once there's more than a couple of runs — a busy
+          workflow's plan snapshots otherwise bury its real executions. */}
+      {workflow && runs.length > 2 && (
+        <div className="workflow-runs-filter" role="tablist" aria-label="Filter runs">
+          {RUN_FILTERS.map((entry) => {
+            const matchCount = entry.id === "all" ? runs.length : runs.filter(entry.match).length;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={filter === entry.id}
+                className={`workflow-runs-filter-chip${filter === entry.id ? " is-active" : ""}`}
+                onClick={() => setFilter(entry.id)}
+              >
+                {entry.label}
+                <span className="workflow-runs-filter-count">{matchCount}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {!workflow ? (
         <p className="workflow-muted">Select a workflow to see its run history.</p>
       ) : runs.length === 0 && loading ? (
@@ -84,9 +119,11 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
         <p className="workflow-muted">
           No runs yet — dry-run snapshots and daemon executions land here.
         </p>
+      ) : visibleRuns.length === 0 ? (
+        <p className="workflow-muted">No {activeFilter.label.toLowerCase()} runs in this history.</p>
       ) : (
         <ol className="workflow-runs-list">
-          {runs.map((run) => {
+          {visibleRuns.map((run) => {
             const expanded = expandedId === run.id;
             const duration = runDuration(run);
             const replayable = run.steps.length > 0;

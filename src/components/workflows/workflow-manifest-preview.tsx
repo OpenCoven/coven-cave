@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Icon } from "@/lib/icon";
 import { workflowToYaml } from "@/lib/workflow-edit";
 import type { WorkflowSummary } from "@/lib/workflows";
 
@@ -12,6 +13,21 @@ type WorkflowManifestPreviewProps = {
 /** Live canonical YAML for the current draft — what Save writes to disk. */
 export function WorkflowManifestPreview({ workflow, dirty }: WorkflowManifestPreviewProps) {
   const yaml = useMemo(() => (workflow ? workflowToYaml(workflow) : null), [workflow]);
+  // The manifest with its schema banner is exactly what Save writes, so copying
+  // it hands off a paste-ready manifest (to share, or check in by hand).
+  const manifestText = yaml ? `# schema_version: CWF-01\n${yaml}` : null;
+  const [copied, setCopied] = useState(false);
+
+  const copyManifest = async () => {
+    if (!manifestText) return;
+    try {
+      await navigator.clipboard.writeText(manifestText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // clipboard can be blocked (permissions / insecure context); silently no-op
+    }
+  };
 
   return (
     <section className="workflow-panel workflow-manifest-preview" aria-label="Workflow manifest preview">
@@ -25,10 +41,21 @@ export function WorkflowManifestPreview({ workflow, dirty }: WorkflowManifestPre
             </h2>
           </div>
         </div>
+        {manifestText && (
+          <button
+            type="button"
+            className="workflow-icon-button"
+            onClick={copyManifest}
+            title="Copy manifest YAML"
+            aria-label={copied ? "Manifest copied" : "Copy manifest YAML"}
+          >
+            <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={13} />
+          </button>
+        )}
       </div>
-      {yaml ? (
+      {manifestText ? (
         <pre className="workflow-manifest-yaml">
-          <code>{`# schema_version: CWF-01\n${yaml}`}</code>
+          <code>{manifestText}</code>
         </pre>
       ) : (
         <p className="workflow-muted">Select a workflow to preview its canonical manifest.</p>
