@@ -3,11 +3,6 @@
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import { formatDate } from "@/lib/datetime-format";
-import { relativeTime } from "@/lib/relative-time";
-import { EmptyState } from "@/components/ui/empty-state";
-import { ErrorState } from "@/components/ui/error-state";
-import { SkeletonRows } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import type { LibraryCollection, LibraryDoc } from "@/lib/library-types";
 
 type Props = {
@@ -27,12 +22,17 @@ type Props = {
 };
 
 function relDate(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  // Older than a week → date-pref-aware absolute date; recent → the shared
-  // compact relative time so every Library tab reads identically.
-  if (Date.now() - then >= 7 * 86_400_000) return formatDate(iso);
-  return relativeTime(iso);
+  try {
+    const diff = new Date(iso).getTime() - Date.now();
+    const absDiff = Math.abs(diff);
+    if (absDiff < 60_000) return "just now";
+    if (absDiff < 3_600_000) return relDateFmt.format(Math.round(diff / 60_000), "minutes");
+    if (absDiff < 86_400_000) return relDateFmt.format(Math.round(diff / 3_600_000), "hours");
+    if (absDiff < 86_400_000 * 30) return relDateFmt.format(Math.round(diff / 86_400_000), "days");
+    return formatDate(iso);
+  } catch {
+    return "";
+  }
 }
 
 function filterDocs(docs: LibraryDoc[], query: string): LibraryDoc[] {
