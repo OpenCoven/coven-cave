@@ -37,8 +37,13 @@ assert.match(
 );
 assert.match(
   source,
+  /onClick=\{onOpenSearch\}/,
+  "clicking desktop menu bar search should open the context-aware palette (open on click, not focus, so the palette's focus-restore on close can't reopen it)",
+);
+assert.doesNotMatch(
+  source,
   /onFocus=\{onOpenSearch\}/,
-  "focusing desktop menu bar search should open the context-aware palette",
+  "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
 // Left group — chat. The top panel should keep only the dropdown selector and
