@@ -595,7 +595,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             onOpenTaskChat={onOpenTaskChat}
             chatLinkingId={chatLinkingId} />
         ) : viewMode === "gantt" ? (
-          <BoardGantt cards={filtered}
+          <BoardGantt cards={filtered} familiars={familiars} projects={projects}
             selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} />
         ) : (

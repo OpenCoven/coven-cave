@@ -1329,3 +1329,143 @@
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: -2px;
 }
+
+/* ── Compact Gantt (grouped by project) ──────────────────────────────────────
+   Dense dark timeline: sticky left table (Group/Task · Owner · Start · End ·
+   status dot) + a day/week grid with status-coloured bars, milestone diamonds,
+   a red TODAY line, and a legend. Redefines .board-gantt-row__bar by category. */
+.board-gantt__scroll { overflow-x: auto; overflow-y: visible; }
+.cg {
+  --cg-row-h: 26px;
+  width: max-content;
+  min-width: 100%;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* shared sticky left table block */
+.cg-left {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 416px;
+  display: grid;
+  grid-template-columns: 190px 84px 58px 58px 26px;
+  align-items: center;
+  background: var(--bg-base);
+  border-right: 1px solid var(--border-strong);
+}
+.cg-left > span { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cg-c-owner, .cg-c-date { font-size: 11px; color: var(--text-secondary); }
+.cg-c-date { text-align: right; }
+.cg-c-st { display: flex; justify-content: center; }
+
+/* header */
+.cg-head {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: stretch; height: 30px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-strong);
+}
+.cg-head .cg-left {
+  z-index: 6; background: var(--bg-raised);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted);
+}
+.cg-weeks { position: relative; height: 30px; flex: 0 0 auto; }
+.cg-week {
+  position: absolute; top: 0; bottom: 0;
+  display: flex; align-items: center; padding-left: 7px;
+  font-size: 10px; font-weight: 600; color: var(--text-secondary);
+  border-left: 1px solid var(--border-strong);
+}
+
+/* body */
+.cg-body { position: relative; padding-bottom: 22px; }
+
+/* day (light) + week (strong) gridlines behind every track */
+.cg-track, .cg-grouptl {
+  position: relative; height: var(--cg-row-h); flex: 0 0 auto;
+  background:
+    repeating-linear-gradient(to right, transparent 0, transparent calc(var(--cg-day) - 1px),
+      color-mix(in oklch, var(--border-hairline) 55%, transparent) calc(var(--cg-day) - 1px), color-mix(in oklch, var(--border-hairline) 55%, transparent) var(--cg-day)),
+    repeating-linear-gradient(to right, transparent 0, transparent calc(var(--cg-day) * 7 - 1px),
+      var(--border-strong) calc(var(--cg-day) * 7 - 1px), var(--border-strong) calc(var(--cg-day) * 7));
+}
+
+/* group header row */
+.cg-grouprow { display: flex; align-items: stretch; }
+.cg-grouprow .cg-left {
+  grid-template-columns: 1fr auto; gap: 6px; height: var(--cg-row-h);
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+}
+.cg-grouptl { background-color: color-mix(in oklch, var(--accent-presence) 4%, transparent); }
+.cg-caret { color: var(--text-muted); font-size: 10px; padding-left: 8px; }
+.cg-groupname { font-size: 11px; font-weight: 700; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }
+.cg-count {
+  justify-self: end; margin-right: 8px; align-self: center;
+  min-width: 16px; height: 15px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text-secondary);
+  background: var(--bg-base); border: 1px solid var(--border-hairline); border-radius: 999px;
+}
+
+/* task row */
+.cg-row {
+  display: flex; align-items: stretch; width: 100%;
+  border: 0; border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
+  background: transparent; cursor: pointer; text-align: left; padding: 0;
+}
+.cg-row:hover .cg-left { background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-base)); }
+.cg-row:hover .cg-track { background-color: color-mix(in oklch, var(--accent-presence) 5%, transparent); }
+.cg-row--sel .cg-left { background: color-mix(in oklch, var(--accent-presence) 15%, var(--bg-base)); }
+.cg-c-task { font-size: 12px; font-weight: 600; padding-left: 18px !important; }
+
+/* bars (redefines the legacy .board-gantt-row__bar by status category) */
+.board-gantt-row__bar {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  height: 12px; min-width: var(--cg-day); border-radius: 4px;
+  display: flex; align-items: center; justify-content: flex-end;
+}
+.board-gantt-row__bar--done { background: color-mix(in oklch, var(--text-secondary) 50%, var(--text-muted)); }
+.board-gantt-row__bar--in-progress { background: var(--color-info); }
+.board-gantt-row__bar--pending { background: var(--color-warning); }
+.board-gantt-row__bar--at-risk { background: var(--color-danger); }
+.cg-bar__cap { width: 8px; height: 8px; margin-right: -4px; transform: rotate(45deg); background: var(--text-primary); border-radius: 2px; }
+
+/* milestone diamond (single-day task) */
+.cg-diamond {
+  height: 12px !important; width: 12px; min-width: 12px !important; padding: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 2px; background: var(--text-primary) !important;
+}
+.cg-diamond--leg { position: static; display: inline-block; width: 9px; height: 9px; transform: rotate(45deg); background: var(--text-primary); }
+
+/* today line + flag */
+.cg-today { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--color-danger); z-index: 3; pointer-events: none; }
+.cg-today__flag {
+  position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; color: #fff;
+  background: var(--color-danger); padding: 1px 5px; border-radius: 3px; white-space: nowrap;
+}
+
+/* status dots */
+.cg-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.cg-dot--done { background: color-mix(in oklch, var(--text-secondary) 50%, var(--text-muted)); }
+.cg-dot--in-progress { background: var(--color-info); }
+.cg-dot--pending { background: var(--color-warning); }
+.cg-dot--at-risk { background: var(--color-danger); }
+
+/* legend */
+.cg-legend {
+  position: sticky; left: 0;
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  margin-top: 12px; padding: 10px 8px 2px;
+  font-size: 11px; color: var(--text-secondary);
+}
+.cg-leg { display: inline-flex; align-items: center; gap: 6px; }
+.cg-sw { width: 14px; height: 9px; border-radius: 2px; display: inline-block; }
+.cg-sw--done { background: color-mix(in oklch, var(--text-secondary) 50%, var(--text-muted)); }
+.cg-sw--in-progress { background: var(--color-info); }
+.cg-sw--pending { background: var(--color-warning); }
+.cg-sw--at-risk { background: var(--color-danger); }
+.cg-today-sw { width: 0; height: 12px; border-left: 2px solid var(--color-danger); display: inline-block; }
