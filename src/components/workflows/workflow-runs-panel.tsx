@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { formatTimestamp } from "@/lib/datetime-format";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
   WorkflowRunRecord,
@@ -102,7 +103,7 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
                   <span className={`workflow-run-chip workflow-run-chip-${run.status}`}>{run.status}</span>
                   <span className="workflow-run-kind">{run.kind}</span>
                   <span className="workflow-run-detail">{stepRollup(run)}</span>
-                  <span className="workflow-run-time" title={run.startedAt}>
+                  <span className="workflow-run-time" title={formatTimestamp(run.startedAt)}>
                     {relativeTime(run.startedAt)}
                   </span>
                 </button>
@@ -125,7 +126,7 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
                       </div>
                       <div>
                         <dt>Started</dt>
-                        <dd title={run.startedAt}>{relativeTime(run.startedAt)}</dd>
+                        <dd title={formatTimestamp(run.startedAt)}>{relativeTime(run.startedAt)}</dd>
                       </div>
                     </dl>
                     {run.summary && <p className="workflow-run-summary-line">{run.summary}</p>}
