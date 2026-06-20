@@ -483,7 +483,17 @@
 }
 
 .workflow-library-state-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   color: var(--destructive);
+}
+
+.workflow-library-state-error-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .workflow-health {

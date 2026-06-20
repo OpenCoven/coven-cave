@@ -146,7 +146,16 @@ export function WorkflowLibrary({
       {!loaded ? (
         <div className="workflow-library-state">Loading workflow manifests...</div>
       ) : error ? (
-        <div className="workflow-library-state workflow-library-state-error">Workflows unavailable: {error}</div>
+        <div className="workflow-library-state workflow-library-state-error" role="alert">
+          <span className="workflow-library-state-error-msg">
+            <Icon name="ph:warning-circle" width={13} aria-hidden />
+            Workflows unavailable: {error}
+          </span>
+          <button type="button" className="workflow-primary-button" onClick={onRefresh}>
+            <Icon name="ph:arrow-clockwise" width={13} />
+            Retry
+          </button>
+        </div>
       ) : workflows.length === 0 ? (
         <div className="workflow-library-state">
           No WORKFLOW.md or .workflow.yaml manifests found.
