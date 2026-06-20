@@ -2,7 +2,7 @@
 
 import { Icon } from "@/lib/icon";
 import { NotificationBell } from "@/components/notification-bell";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -163,7 +163,7 @@ export function TopBar(props: Props) {
 
       <div className="top-bar__actions">
         {showFamiliarSwitcher && onSelectFamiliar ? (
-          <FamiliarSwitcher
+          <FamiliarQuickSwitch
             familiars={familiarOptions ?? []}
             activeFamiliarId={activeFamiliar?.id ?? null}
             sessions={sessions ?? []}

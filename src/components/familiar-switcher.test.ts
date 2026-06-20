@@ -75,6 +75,19 @@ assert.match(
   "each row has a gear that opens that familiar's Studio",
 );
 
+// Per-row pin toggle → quick-switch strip membership.
+assert.match(
+  source,
+  /onClick=\{\(\) => togglePin\(f\.id\)\}/,
+  "each row has a pin toggle that pins/unpins the familiar",
+);
+assert.match(
+  source,
+  /name=\{pinnedSet\.has\(f\.id\) \? "ph:push-pin-fill" : "ph:push-pin"\}/,
+  "the pin button reflects pinned state with a filled/outline glyph",
+);
+assert.match(globals, /\.familiar-switcher__pin\.is-pinned \{/, "pinned rows keep the pin visible");
+
 // Footer: create (onboarding), manage (Studio list view), reorder.
 assert.match(
   source,
