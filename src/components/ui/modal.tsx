@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -34,6 +34,7 @@ export function Modal({
   ariaLabel,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const headingId = useId();
 
   useFocusTrap(open, dialogRef, { onEscape: onClose });
 
@@ -51,12 +52,17 @@ export function Modal({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={ariaLabel}
+        // Prefer naming the dialog from its breadcrumb header (the common case —
+        // most call sites pass a breadcrumb and no ariaLabel). Without this the
+        // dialog announces with no accessible name. Fall back to ariaLabel only
+        // when there's no breadcrumb to point at.
+        aria-labelledby={breadcrumb ? headingId : undefined}
+        aria-label={breadcrumb ? undefined : ariaLabel}
         tabIndex={-1}
       >
         {breadcrumb ? (
           <header className="ui-modal-header">
-            <div className="ui-modal-header-breadcrumb">
+            <div className="ui-modal-header-breadcrumb" id={headingId}>
               {breadcrumb.map((segment, i) => (
                 <span key={i} className="contents">
                   {i > 0 ? (

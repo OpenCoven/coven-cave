@@ -1367,6 +1367,11 @@ select {
   color: var(--foreground);
 }
 
+.ui-ai-toggle:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset);
+}
+
 /* When in Agent mode, replace the hairline border with a lavender
    gradient stroke. Implemented as a doubled background so the inner
    tile keeps the bg colour while the outer pseudo carries the
