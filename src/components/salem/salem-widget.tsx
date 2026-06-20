@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
-import type { SalemPreloadContext } from "./salem-context";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { SalemPathfinderCard } from "./salem-pathfinder-card";
@@ -21,7 +20,6 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [preload, setPreload] = useState<SalemPreloadContext | null>(null);
   const [pathfinderCard, setPathfinderCard] = useState<SalemPathfinderCardData | null>(null);
   const [pathfinding, setPathfinding] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -99,19 +97,6 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/salem")
-      .then((res) => res.json())
-      .then((data: { preload?: SalemPreloadContext }) => {
-        if (alive && data.preload) {
-          setPreload(data.preload);
-        }
-      })
-      .catch(() => { if (alive) setPreload(null); });
-    return () => { alive = false; };
-  }, []);
-
   const send = async (e?: FormEvent) => {
     e?.preventDefault();
     const text = input.trim();
@@ -151,9 +136,6 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
         <div className="salem-panel__header-identity">
           <div>
             <div className="salem-panel__name">Salem</div>
-            <div className="salem-panel__subtitle">
-              {preload?.persona.archetype ?? "Male docs familiar"}
-            </div>
           </div>
         </div>
         <div className="salem-panel__header-actions">
