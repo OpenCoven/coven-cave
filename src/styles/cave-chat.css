@@ -1193,10 +1193,12 @@
   border: 1px solid var(--border-hairline);
   border-radius: 8px;
   padding: 10px 13px;
-  /* Wider bubble (2026-06-18): pairs with the full-width thread — the user
-     message uses most of the pane instead of a narrow 640px cap, while still
-     right-aligning so it reads as the user's turn. */
-  max-width: min(85%, 1100px);
+  /* Full-width user turn: the message fills the chat pane (matching the
+     assistant prose) instead of a right-aligned narrow bubble. The left accent
+     stripe + border still mark it as the operator's turn; the action row and
+     timestamp below stay right-aligned via the column's items-end. */
+  max-width: 100%;
+  width: 100%;
   word-break: break-word;
   overflow-wrap: anywhere;
   box-shadow:
