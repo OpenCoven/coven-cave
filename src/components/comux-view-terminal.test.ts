@@ -313,4 +313,18 @@ assert.match(
   /removeSession[\s\S]{0,900}pty_stop/,
   "closing a tab is the one place the desktop PTY is killed",
 );
+
+// Tab rename: Escape aborts (restores the label), and blank/whitespace names
+// are rejected so a cleared tab keeps its label.
+assert.match(
+  source,
+  /e\.key === "Escape"[\s\S]{0,260}?e\.currentTarget\.textContent = s\.label/,
+  "Escape during a tab rename restores the original label (no save)",
+);
+assert.match(
+  source,
+  /const trimmed = label\.trim\(\);\s*if \(!trimmed\) return;/,
+  "renameSession ignores blank/whitespace-only names",
+);
+
 console.log("comux terminal chord/close assertions: ok");

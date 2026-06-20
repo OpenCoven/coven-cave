@@ -24,7 +24,7 @@ type Props = {
 };
 
 const KEY_CLASS =
-  "terminal-key inline-flex min-h-[var(--touch-target)] min-w-[var(--touch-target)] flex-shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 text-[12px] font-medium text-[var(--text-secondary)] active:bg-[var(--bg-hover)]";
+  "terminal-key focus-ring inline-flex min-h-[var(--touch-target)] min-w-[var(--touch-target)] flex-shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 text-[12px] font-medium text-[var(--text-secondary)] active:bg-[var(--bg-hover)]";
 
 /**
  * Touch-only accessory bar for the mobile terminal. iOS/Android soft keyboards
