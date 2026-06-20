@@ -13,6 +13,8 @@
  *   - palette, surfaces, familiars, new chat, this sheet: src/components/workspace.tsx
  *   - composer + slash menu: src/components/chat-view.tsx onComposerKey and
  *     src/components/home-composer.tsx handleKeyDown
+ *   - "/" search focus: each surface's view (familiars-view, projects-view,
+ *     capabilities-view, chat-list); "⌘F" sessions search: chat-list.tsx
  */
 
 export type ShortcutEntry = {
@@ -44,6 +46,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },
       { keys: "⌘↑ / ⌘↓", description: "Cycle through familiars" },
       { keys: "⌘N", description: "New chat (on the Chat surface)" },
+      { keys: "/", description: "Focus the search (Familiars, Projects, Capabilities, Sessions)" },
+      { keys: "⌘F", description: "Focus the sessions search" },
     ],
   },
   {
