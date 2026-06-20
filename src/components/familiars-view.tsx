@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
@@ -72,6 +72,7 @@ export function FamiliarsView({
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
   const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -87,6 +88,22 @@ export function FamiliarsView({
     if (selectedFamiliarId) window.localStorage.setItem(LAST_SELECTED_KEY, selectedFamiliarId);
     else window.localStorage.removeItem(LAST_SELECTED_KEY);
   }, [selectedFamiliarId]);
+
+  // "/" jumps to the search (GitHub-style) while this surface is shown — but
+  // never when the user is already typing in a field or holding a modifier.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const el = searchRef.current;
+      if (!el) return;
+      e.preventDefault();
+      el.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const loadMemory = useCallback(async () => {
     try {
@@ -196,6 +213,7 @@ export function FamiliarsView({
               className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
             />
             <input
+              ref={searchRef}
               type="search"
               aria-label="Search familiars"
               value={query}
@@ -207,8 +225,16 @@ export function FamiliarsView({
                 }
               }}
               placeholder="Search familiars…"
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-3 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
+            {!query && (
+              <kbd
+                aria-hidden
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
+              >
+                /
+              </kbd>
+            )}
           </div>
           {memoryError ? (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2 py-1 text-[11px] text-[var(--color-warning)]">
