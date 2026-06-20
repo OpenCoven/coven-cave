@@ -57,7 +57,8 @@ assert.match(route, /CHAT_API_TIMEOUT_MS\s*=\s*45_000/, "Salem upstream chat API
 assert.doesNotMatch(route, /const connectTimeoutMs = 2_500/, "Salem must not abort the upstream chat API before it can stream");
 assert.match(route, /type SalemSearchContext/, "Salem API should accept structured local search context");
 assert.match(route, /formatSearchContextForPrompt\(context\)/, "Salem API should format top-bar search context into the hosted prompt");
-assert.match(route, /askChatApi\(messageForApi\)/, "Hosted Salem responses should receive the context-aware prompt");
+assert.match(route, /askChatApi\(messageForApi, model\)/, "Hosted Salem responses should receive the context-aware prompt and the local familiar's model");
+assert.match(route, /payload = model \? \{ message, model \} : \{ message \}/, "Salem must forward the local familiar's model to the chat-api so AI credits attribute to it");
 assert.match(route, /localContextUsed/, "Salem API response should disclose whether local context was included");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
@@ -84,7 +85,7 @@ assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
 assert.match(workspace, /import \{ SalemChatPanel \}/, "workspace should import only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /salemSlot=\{<SalemChatPanel \/>\}/, "workspace must render Salem in the companion rail");
+assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel\s+model=\{/, "workspace must render Salem in the companion rail with the local familiar's model");
 assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
 
 // 7. CSS classes present

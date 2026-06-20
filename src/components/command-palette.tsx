@@ -483,12 +483,19 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
     try {
+      // Use the local familiar's model (the one you're scoped to, falling back
+      // to Salem's own) so the chat-api's AI credits attribute to it.
+      const localModel =
+        familiars.find((f) => f.id === activeFamiliarId)?.model ??
+        familiars.find((f) => f.id === "salem")?.model ??
+        undefined;
       const res = await fetch("/api/salem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: query.trim(),
           context: buildSalemSearchContext(rows, query.trim()),
+          model: localModel,
         }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };

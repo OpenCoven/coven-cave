@@ -43,15 +43,20 @@ type SalemSearchContext = {
  * response into a single reply string. Returns null on any failure so the
  * caller can fall back to local retrieval (Cave stays useful offline).
  */
-async function askChatApi(message: string): Promise<string | null> {
+async function askChatApi(message: string, model?: string | null): Promise<string | null> {
   try {
     const controller = new AbortController();
     const connectTimer = setTimeout(() => controller.abort(), CHAT_API_CONNECT_TIMEOUT_MS);
 
+    // Forward the local familiar's model so the chat-api generates with it and
+    // the AI credits attribute to that model rather than the chat-api default.
+    // (The chat-api must honor `model` for the credit attribution to take effect.)
+    const payload = model ? { message, model } : { message };
+
     const res = await fetch(`${CHAT_API_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     }).finally(() => clearTimeout(connectTimer));
 
@@ -251,8 +256,10 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { message?: string; context?: SalemSearchContext };
+    const body = (await req.json()) as { message?: string; context?: SalemSearchContext; model?: string };
     const message = (body.message ?? "").trim();
+    // The model of the local familiar this ask is scoped to (credit attribution).
+    const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
 
     if (!message) {
       return NextResponse.json({ error: "No message provided." }, { status: 400 });
@@ -270,7 +277,7 @@ export async function POST(req: Request) {
 
     // Primary path: ask the real opencoven-chat-api for a grounded, LLM-written
     // answer. Falls through to local token-overlap retrieval if unreachable.
-    const apiReply = await askChatApi(messageForApi);
+    const apiReply = await askChatApi(messageForApi, model);
     if (apiReply) {
       return NextResponse.json({
         reply: apiReply,

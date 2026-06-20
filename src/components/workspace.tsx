@@ -1767,7 +1767,11 @@ export function Workspace() {
               browserSlot={
                 <BrowserPane ref={companionBrowserPaneRef} label="companion" activeFamiliarId={active?.id ?? null} />
               }
-              salemSlot={<SalemChatPanel />}
+              salemSlot={
+                <SalemChatPanel
+                  model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
+                />
+              }
             />
           ) : undefined
         }
