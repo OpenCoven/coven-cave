@@ -10,14 +10,46 @@ import {
   buildSketchPrompt,
   clampArtifactCode,
   titleFromPrompt,
+  type ArtifactKind,
   type CanvasArtifact,
 } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
+import { highlightToHtml } from "@/components/message-bubble";
 import type { Familiar } from "@/lib/types";
 
 function srcDocFor(art: CanvasArtifact): string {
   return art.kind === "react" ? buildReactSrcDoc(art.code) : buildPreviewSrcDoc(art.code);
+}
+
+/**
+ * The Code tab's read-only view: Shiki-highlighted to match the app's other code
+ * surfaces (chat code blocks, the in-chat artifact viewer). Falls back to plain
+ * text until the lazy highlighter resolves and on any failure, so the code is
+ * always shown. React artifacts highlight as TSX; everything else as HTML.
+ */
+function SketchCode({ code, kind }: { code: string; kind: ArtifactKind }) {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHtml(null);
+    void highlightToHtml(code, kind === "react" ? "tsx" : "html")
+      .then((h) => { if (!cancelled) setHtml(h); })
+      .catch(() => { if (!cancelled) setHtml(null); });
+    return () => { cancelled = true; };
+  }, [code, kind]);
+
+  if (!html) {
+    return <pre className="journal-detail__code"><code>{code}</code></pre>;
+  }
+  return (
+    <div
+      className="journal-detail__code journal-detail__code--hl"
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }
 
 export function CanvasList({
@@ -244,7 +276,7 @@ export function CanvasList({
                 srcDoc={srcDocFor(selected)}
               />
             ) : (
-              <textarea className="journal-detail__code" readOnly value={selected.code} aria-label="Sketch code" />
+              <SketchCode code={selected.code} kind={selected.kind ?? "html"} />
             )}
             <div className="journal-detail__prompt">Prompt: “{selected.prompt}”</div>
           </>
