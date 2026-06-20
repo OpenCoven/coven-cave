@@ -298,7 +298,7 @@ function PatSetupModal({
             </a>
             <button
               type="submit"
-              disabled={!pat.trim() || saving}
+              disabled={(!pat.trim() && !usernameInput.trim()) || saving}
               className="rounded-lg bg-[var(--accent-presence)] px-4 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
             >
               {saving ? "Verifying…" : "Save"}
@@ -447,7 +447,7 @@ function OpenChatAction({
         <span className="gh-action-btn-label">{label}</span>
       </button>
 
-      {error && <span className="gh-action-error" title={error}>!</span>}
+      {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
 
       {pickerOpen && linkedCards.length > 1 && (
         <div ref={pickerRef} className="gh-action-popover" onClick={(e) => e.stopPropagation()}>
@@ -1128,7 +1128,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
               reloadCards();
             }}
             title="Refresh (⌘R)"
-            className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+            aria-label="Refresh GitHub activity"
+            className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
           >
             <Icon name="ph:arrows-clockwise" width={13} />
           </button>
@@ -1136,7 +1137,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       </header>
 
       {/* ── Filter tabs ── */}
-      <div className="github-surface-controls flex items-center gap-1 px-4 py-2">
+      <div className="github-surface-controls flex items-center gap-1 px-4 py-2" role="tablist" aria-label="Filter GitHub activity">
         {(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => {
           const labels: Record<Filter, string> = { all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" };
           const isActive = filter === f;
@@ -1145,9 +1146,11 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             <button
               key={f}
               type="button"
+              role="tab"
+              aria-selected={isActive}
               onClick={() => setFilter(f)}
               className={[
-                "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition-colors",
+                "focus-ring flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition-colors",
                 isActive
                   ? "bg-[var(--bg-raised)] text-[var(--text-primary)] font-medium"
                   : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -1413,6 +1416,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             target="_blank"
                             rel="noreferrer"
                             title="Open on GitHub"
+                            aria-label="Open on GitHub"
                             className="gh-action-btn gh-action-btn--icon"
                             onClick={(e) => e.stopPropagation()}
                           >

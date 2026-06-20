@@ -167,4 +167,23 @@ assert.doesNotMatch(
   "GitHub header no longer reserves a gutter for the retired floating panel toggle",
 );
 
+// Setup Save accepts a username-only submission (public data, no PAT) — the
+// disabled gate must mirror save()'s "PAT OR username" rule, not require a PAT.
+assert.match(
+  source,
+  /disabled=\{\(!pat\.trim\(\) && !usernameInput\.trim\(\)\) \|\| saving\}/,
+  "Save is enabled when either a PAT or a username is entered (not PAT-only)",
+);
+// The filter row is an accessible tablist.
+assert.match(
+  source,
+  /role="tablist"[\s\S]{0,120}?aria-label="Filter GitHub activity"/,
+  "the filter row is a labelled tablist",
+);
+assert.match(
+  source,
+  /role="tab"\s*\n?\s*aria-selected=\{isActive\}/,
+  "each filter is a tab that reports its selected state",
+);
+
 console.log("github-view-polish.test.ts OK");
