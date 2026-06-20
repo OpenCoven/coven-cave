@@ -293,8 +293,20 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
-      {/* Bottom: Notifications + Settings */}
+      {/* Bottom: Dashboard + Notifications + Settings */}
       <div className="sidebar-foot">
+        {/* Dashboard is a standalone Next route (/dashboard), not a workspace
+            mode — navigate with a real link rather than onModeChange. */}
+        <a
+          className="sidebar-foot-btn"
+          href="/dashboard"
+          title="Dashboard — activity overview and daily reports"
+        >
+          <span className="sidebar-foot-icon-cell" aria-hidden="true">
+            <Icon name="ph:squares-four" width={14} className="sidebar-foot-icon" />
+          </span>
+          <span className="sidebar-foot-label">Dashboard</span>
+        </a>
         {onOpenInbox ? (
           <button
             type="button"
