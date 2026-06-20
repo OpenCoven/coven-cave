@@ -54,14 +54,10 @@ const RRULE_DAY_LABEL: Record<string, string> = {
   SA: "Sat",
 };
 
-function pad(n: number) {
-  return n.toString().padStart(2, "0");
-}
-
 // Format a schedule's hour:minute honoring the user's 12h/24h clock pref
 // (so "Daily at 14:00" reads as "Daily at 2:00 PM" when 12-hour is selected).
 function scheduleTime(hour: number, minute: number): string {
-  return formatClock(new Date(2000, 0, 1, hour, minute, 0));
+  return formatClock(new Date(2000, 0, 1, hour, minute, 0).toISOString());
 }
 
 function humanSchedule(rec: Recurrence | undefined): string {
