@@ -974,6 +974,26 @@ function metaLineSegments(args: {
   return segs;
 }
 
+/** One-line provenance peek for a settled assistant turn — model · cwd ·
+ *  duration · tokens · cost. These are the same facts the header MetaLine shows
+ *  for the LATEST turn, assembled here for an arbitrary turn so they can hang
+ *  off a per-turn hover affordance — older turns become inspectable without a
+ *  trip through the debug pane. Uses the full cwd path (not the truncated
+ *  label) since it lands in a title tooltip. Returns null when the turn carries
+ *  no such metadata (e.g. a bridge harness that emits no usage/runtime). */
+function turnMetaPeekTitle(turn: Turn): string | null {
+  const parts: string[] = [];
+  const model = responseMetadataModel(turn.responseMetadata);
+  if (model) parts.push(model);
+  const runtime = formatRuntime(turn.responseMetadata?.runtime ?? null);
+  if (runtime) parts.push(runtime.title);
+  const dur = fmtDuration(turn.durationMs);
+  if (dur) parts.push(dur);
+  const usage = usageSummary(turn.usage, turn.costUsd);
+  if (usage) parts.push(usage);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /** In-transcript find bar (CHAT-D9-04). Collapsed: a search icon button in
  *  the meta line. Expanded: query input + `n / m` matching-TURN count +
  *  prev/next/close, styled to extend the meta line without displacing the
@@ -3831,6 +3851,12 @@ function TurnRowImpl({
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
+  // Per-turn provenance peek (see turnMetaPeekTitle): the model/cwd/duration
+  // that used to sit inline here now live only in the debug pane, so a quiet
+  // hover affordance brings them back for THIS turn on demand. Skipped while
+  // streaming (the header MetaLine already narrates the live turn).
+  const metaPeek = turn.pending ? null : turnMetaPeekTitle(turn);
+
   return (
     <div
       data-turn-id={turn.id}
@@ -3886,6 +3912,17 @@ function TurnRowImpl({
               <span className="opacity-60">{formatTimestamp(turn.createdAt, dtPrefs)}</span>
             ) : null}
             <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+            {metaPeek ? (
+              <span
+                className="cave-turn-peek focus-ring"
+                title={metaPeek}
+                tabIndex={0}
+                role="note"
+                aria-label={`Turn details — ${metaPeek}`}
+              >
+                <Icon name="ph:info" width={11} aria-hidden />
+              </span>
+            ) : null}
             {/* CHAT-D13-01: settled turns hide tool activity by default —
                 this chip is the only way back to it, so it must not be
                 hover-gated. Hidden while streaming (tools are inline then). */}

@@ -2536,6 +2536,24 @@ details[open] > .cave-tool-summary::before {
   line-height: 1.4;
 }
 
+/* Per-turn provenance peek: a quiet ⓘ in the turn meta row whose title tooltip
+   reveals model · cwd · duration · tokens · cost for that turn. Faint by
+   default so the row stays clean; brightens on hover/focus. */
+.cave-turn-peek {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  opacity: 0.45;
+  cursor: help;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.cave-turn-peek:hover,
+.cave-turn-peek:focus-visible {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+
 .cave-linear-turn-name {
   font-size: 13px;
   font-weight: 600;
