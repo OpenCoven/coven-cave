@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { formatTimestamp } from "@/lib/datetime-format";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
@@ -369,7 +370,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               </div>
               <div className="flex items-center gap-2.5">
                 {lastLoadedAt ? (
-                  <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${new Date(lastLoadedAt).toLocaleString()}`}>
+                  <span className="text-[10px] text-[var(--text-muted)]" title={`Last refreshed ${formatTimestamp(lastLoadedAt)}`}>
                     Updated {age(lastLoadedAt)}
                   </span>
                 ) : null}
