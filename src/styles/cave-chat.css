@@ -934,13 +934,13 @@
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 26%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
   color: var(--accent-presence);
-  box-shadow:
-    0 10px 28px oklch(0 0 0 / 22%),
-    inset 0 1px 0 oklch(1 0 0 / 7%);
+}
+/* The mark now holds the real familiar avatar/glyph (which carries its own
+   color), so the frame stays neutral — no competing accent box. */
+.cave-chat-empty-mark img,
+.cave-chat-empty-mark > * {
+  border-radius: 9px;
 }
 
 .cave-chat-empty-familiar-copy {

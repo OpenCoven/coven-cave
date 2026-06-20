@@ -537,10 +537,9 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
 // to start a conversation rather than staring at a blank pane.
 
 const STARTER_PROMPTS = [
-  "What are you working on?",
-  "Summarise recent work",
-  "Help me plan something",
-  "Run a quick task",
+  "Review my recent changes",
+  "Plan a feature and break it into board cards",
+  "Summarise what I worked on today",
 ];
 
 function ChatEmptyState({
@@ -562,13 +561,18 @@ function ChatEmptyState({
   fileMentions?: boolean;
 }) {
   const project = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+  // App-contextual starters; the last is project-aware when a root is known.
+  const prompts = [
+    ...STARTER_PROMPTS,
+    project ? `Start a task in ${project.name}` : "Start a focused task",
+  ];
 
   return (
     <div className="cave-chat-empty select-none">
       <div className="cave-chat-empty-shell">
         <div className="cave-chat-empty-familiar">
           <div className="cave-chat-empty-mark">
-            <Icon name="ph:sparkle-bold" width={17} aria-hidden />
+            <FamiliarIcon familiar={familiar} size="lg" />
           </div>
           <div className="cave-chat-empty-familiar-copy">
             <h2 className="cave-chat-empty-title">
@@ -607,7 +611,7 @@ function ChatEmptyState({
 
         {onPrompt && (
           <div className="cave-chat-empty-prompts" aria-label="Starter prompts">
-            {STARTER_PROMPTS.map((p) => (
+            {prompts.map((p) => (
               <button
                 key={p}
                 type="button"
