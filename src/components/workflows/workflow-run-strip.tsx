@@ -194,7 +194,14 @@ export function WorkflowRunStrip({
             type="button"
             className="workflow-playback-stop"
             onClick={onStopPlayback}
-            title={playbackRunning ? "Stop playback" : "Clear playback"}
+            title={
+              activePlayback.live
+                ? "Stop the running workflow — kills its agent session"
+                : playbackRunning
+                  ? "Stop playback"
+                  : "Clear playback"
+            }
+            aria-label={activePlayback.live ? "Stop running workflow" : undefined}
           >
             <Icon name={playbackRunning ? "ph:stop-fill" : "ph:x-bold"} width={12} />
             {playbackRunning ? "Stop" : "Clear"}
