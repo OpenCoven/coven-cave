@@ -1163,7 +1163,8 @@
 }
 
 .workflow-field input,
-.workflow-field select {
+.workflow-field select,
+.workflow-field-textarea {
   width: 100%;
   font-size: 12px;
   padding: 4px 8px;
@@ -1171,6 +1172,13 @@
   border-radius: 6px;
   background: color-mix(in srgb, var(--muted) 55%, transparent);
   color: var(--text-primary, inherit);
+}
+
+.workflow-field-textarea {
+  font-family: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 46px;
 }
 
 /* Compact, engine-consistent selects: native appearance ignores the field
@@ -1187,9 +1195,25 @@
 }
 
 .workflow-field input:focus,
-.workflow-field select:focus {
+.workflow-field select:focus,
+.workflow-field-textarea:focus {
   outline: none;
   border-color: color-mix(in oklch, var(--accent-presence) 65%, transparent);
+}
+
+/* Preflight estimate (from the dry-run plan): a compact two-column key/value
+   grid so "what the run needs" reads at a glance under Validation. */
+.workflow-preflight-lead {
+  margin: 0 0 6px;
+}
+
+.workflow-preflight-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.workflow-preflight-list dd {
+  font-variant-numeric: tabular-nums;
 }
 
 .workflow-field-inline {

@@ -405,4 +405,22 @@ assert.match(studio, /onConnect=\{props\.onConnect\}[\s\S]{0,80}onDisconnect=\{p
 assert.match(css, /\.workflow-requires-chip\s*\{/, "CSS should style dependency toggle chips");
 assert.match(css, /\.workflow-requires-chip\s*\{\s*min-height:\s*var\(--touch-target\)/, "Dependency chips should meet the touch target on mobile");
 
+// --- Preflight estimate + input ergonomics ---
+// The dry-run plan's estimate (cost/agents/capabilities/accounts/gates) is no
+// longer discarded — the inspector surfaces it as a Preflight panel.
+assert.match(inspector, /function estimatesForAction/, "Inspector should read the dry-run estimate");
+assert.match(inspector, /function preflightRows/, "Inspector should flatten the estimate into displayable rows");
+assert.match(inspector, /requiredExternalAccounts/, "Preflight should surface required external accounts");
+assert.match(inspector, /<h3>Preflight<\/h3>/, "Inspector should render a Preflight section");
+assert.match(css, /\.workflow-preflight-list/, "CSS should style the preflight estimate grid");
+
+// On-error is a standardized select (retry/halt/escalate), not freeform text.
+assert.match(inspector, /ON_ERROR_OPTIONS/, "On error should be a standardized select");
+assert.match(inspector, /value:\s*"escalate"/, "On error options should include the CWF-01 dispositions");
+
+// Summaries that feed the run prompt are multi-line.
+assert.match(inspector, /multiline\?: boolean/, "Field should support a multiline (textarea) variant");
+assert.match(inspector, /<textarea/, "Multiline field should render a textarea");
+assert.match(css, /\.workflow-field-textarea/, "CSS should style the multiline field");
+
 console.log("workflow-studio.test.ts: ok");

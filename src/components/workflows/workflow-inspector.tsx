@@ -8,6 +8,7 @@ import {
   workflowIssueSummary,
   workflowOutputSteps,
   workflowRunBlockReason,
+  type WorkflowDryRunPlan,
   type WorkflowStepKind,
   type WorkflowStepSummary,
   type WorkflowSummary,
@@ -79,9 +80,45 @@ const PATTERNS = [
   "custom",
 ];
 
+// The standard CWF-01 on-error dispositions. A blank value means "inherit the
+// workflow default"; an unrecognized manifest value is preserved as a fallback
+// option so editing never silently drops it.
+const ON_ERROR_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "Default" },
+  { value: "retry", label: "Retry" },
+  { value: "halt", label: "Halt" },
+  { value: "escalate", label: "Escalate" },
+];
+
 function issuesForAction(action: WorkflowStudioActionState | null): WorkflowValidationIssue[] {
   if (!action?.result || !("issues" in action.result)) return [];
   return action.result.issues ?? [];
+}
+
+/** The dry-run preflight estimate (what the run will cost / need), if the current action carries one. */
+function estimatesForAction(action: WorkflowStudioActionState | null): WorkflowDryRunPlan["estimates"] | null {
+  if (action?.kind !== "dry-run") return null;
+  return (action.result as WorkflowDryRunPlan).estimates ?? null;
+}
+
+/** Flatten the dry-run estimate into the present (label, value) rows worth showing. */
+function preflightRows(estimates: NonNullable<WorkflowDryRunPlan["estimates"]>): Array<{ label: string; value: string }> {
+  const rows: Array<{ label: string; value: string }> = [];
+  if (typeof estimates.maxAgents === "number") rows.push({ label: "Agents", value: String(estimates.maxAgents) });
+  if (typeof estimates.timeoutS === "number") rows.push({ label: "Timeout", value: `${estimates.timeoutS}s` });
+  if (typeof estimates.costCeilingUsd === "number") {
+    rows.push({ label: "Cost ceiling", value: `$${estimates.costCeilingUsd}` });
+  }
+  if (estimates.requiredCapabilities?.length) {
+    rows.push({ label: "Capabilities", value: estimates.requiredCapabilities.join(", ") });
+  }
+  if (estimates.requiredExternalAccounts?.length) {
+    rows.push({ label: "External accounts", value: estimates.requiredExternalAccounts.join(", ") });
+  }
+  if (estimates.humanGates?.length) {
+    rows.push({ label: "Human gates", value: String(estimates.humanGates.length) });
+  }
+  return rows;
 }
 
 function parseCsv(value: string): string[] | undefined {
@@ -99,6 +136,7 @@ function Field({
   onCommit,
   suggestions,
   listId,
+  multiline,
 }: {
   label: string;
   value: string;
@@ -107,8 +145,27 @@ function Field({
   /** Optional autocomplete candidates rendered as a native <datalist>. */
   suggestions?: WorkflowUsesOption[];
   listId?: string;
+  /** Render a textarea (for prose like summaries that feed the run prompt). */
+  multiline?: boolean;
 }) {
   const hasSuggestions = Boolean(listId && suggestions && suggestions.length > 0);
+  if (multiline) {
+    return (
+      <label className="workflow-field">
+        <span>{label}</span>
+        <textarea
+          className="workflow-field-textarea"
+          rows={2}
+          defaultValue={value}
+          placeholder={placeholder}
+          key={`${label}:${value}`}
+          onBlur={(event) => {
+            if (event.target.value !== value) onCommit(event.target.value);
+          }}
+        />
+      </label>
+    );
+  }
   return (
     <label className="workflow-field">
       <span>{label}</span>
@@ -161,6 +218,8 @@ export function WorkflowInspector({
   // makes the execution contract legible without hovering the disabled Play
   // button. The counts split the graph into its declared input(s), the work
   // between, and the produced output(s).
+  const estimates = estimatesForAction(action);
+  const preflight = estimates ? preflightRows(estimates) : [];
   const runBlock = workflowRunBlockReason(workflow);
   const inputCount = workflow ? workflowInputSteps(workflow).length : 0;
   const outputCount = workflow ? workflowOutputSteps(workflow).length : 0;
@@ -225,6 +284,7 @@ export function WorkflowInspector({
           <Field
             label="Summary"
             value={step.summary ?? ""}
+            multiline
             onCommit={(next) => onUpdateStep(step.id, { summary: next || undefined })}
           />
           <Field
@@ -233,12 +293,22 @@ export function WorkflowInspector({
             placeholder="repo.read, web.fetch"
             onCommit={(next) => onUpdateStep(step.id, { permissions: parseCsv(next) })}
           />
-          <Field
-            label="On error"
-            value={step.on_error ?? ""}
-            placeholder="retry · halt · escalate"
-            onCommit={(next) => onUpdateStep(step.id, { on_error: next || undefined })}
-          />
+          <label className="workflow-field">
+            <span>On error</span>
+            <select
+              value={step.on_error ?? ""}
+              onChange={(event) => onUpdateStep(step.id, { on_error: event.target.value || undefined })}
+            >
+              {ON_ERROR_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              {step.on_error && !ON_ERROR_OPTIONS.some((option) => option.value === step.on_error) && (
+                <option value={step.on_error}>{step.on_error}</option>
+              )}
+            </select>
+          </label>
           {(() => {
             // Dependency editor — the canvas-free way to wire `requires`, so a
             // step's prerequisites are editable on mobile (where the React Flow
@@ -339,6 +409,7 @@ export function WorkflowInspector({
           <Field
             label="Summary"
             value={workflow.summary ?? ""}
+            multiline
             onCommit={(next) => onUpdateMeta({ summary: next || undefined })}
           />
           <Field
@@ -425,6 +496,21 @@ export function WorkflowInspector({
             );
           })}
         </ul>
+      )}
+
+      {preflight.length > 0 && (
+        <>
+          <h3>Preflight</h3>
+          <p className="workflow-muted workflow-preflight-lead">What a run would need, from the dry-run plan.</p>
+          <dl className="workflow-detail-list workflow-preflight-list">
+            {preflight.map((row) => (
+              <div key={row.label}>
+                <dt>{row.label}</dt>
+                <dd>{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
       )}
       </>
     </section>
