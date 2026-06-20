@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useMemo, useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { Icon } from "@/lib/icon";
@@ -193,15 +193,53 @@ function SortableChatListItem({
 
 // Uppercase counted section header — mirrors the desktop rail's RailSection so
 // the phone list reads with the same grouping language (PINNED / SESSIONS).
-function ChatListSection({ label, count }: { label: string; count?: number }) {
-  return (
-    <li className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-4 py-2">
+function ChatListSection({
+  label,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  count?: number;
+  collapsed?: boolean;
+  onToggle?: () => void;
+}) {
+  const inner = (
+    <>
+      {onToggle ? (
+        <Icon
+          name={collapsed ? "ph:caret-right" : "ph:caret-down"}
+          width={11}
+          className="shrink-0 text-[var(--text-muted)]"
+          aria-hidden
+        />
+      ) : null}
       <span className="truncate text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--text-primary)]">
         {label}
       </span>
       {typeof count === "number" ? (
         <span className="font-mono text-[12px] text-[var(--text-secondary)] opacity-80">{count}</span>
       ) : null}
+    </>
+  );
+  if (onToggle) {
+    return (
+      <li className="border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)]">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${label}`}
+          className="focus-ring flex w-full items-center gap-1.5 px-4 py-2 text-left hover:bg-[var(--bg-raised)]/40"
+        >
+          {inner}
+        </button>
+      </li>
+    );
+  }
+  return (
+    <li className="flex items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-4 py-2">
+      {inner}
     </li>
   );
 }
@@ -217,6 +255,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const [unreadsOnly, setUnreadsOnly] = useState(false);
   // Pins are Cave-local UI state (localStorage), same idiom as the project
   // sidebar persistence below — the daemon never learns about them.
@@ -858,16 +905,30 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                     const rowFamiliar = s.familiarId ? familiarsById.get(s.familiarId) : null;
                     const rowFamiliarName = rowFamiliar?.display_name ?? familiar?.display_name ?? "Familiar";
                     const pinned = isSessionPinned(pinnedIds, s.id);
+                    const sectioned = projectRoot === null;
+                    const rowCollapsed =
+                      sectioned && (pinned ? collapsedSections.has("pinned") : collapsedSections.has("sessions"));
                     const rowName = s.title || s.id;
 
                     return (
                       <Fragment key={s.id}>
                       {projectRoot === null && idx === firstPinnedIdx ? (
-                        <ChatListSection label="Pinned" count={pinnedCount} />
+                        <ChatListSection
+                          label="Pinned"
+                          count={pinnedCount}
+                          collapsed={collapsedSections.has("pinned")}
+                          onToggle={() => toggleSection("pinned")}
+                        />
                       ) : null}
                       {projectRoot === null && idx === firstRestIdx ? (
-                        <ChatListSection label="Sessions" count={restCount} />
+                        <ChatListSection
+                          label="Sessions"
+                          count={restCount}
+                          collapsed={collapsedSections.has("sessions")}
+                          onToggle={() => toggleSection("sessions")}
+                        />
                       ) : null}
+                      {!rowCollapsed && (
                       <SortableChatListItem id={s.id}>
                         {({ attributes, listeners }) => (
                         <div
@@ -1050,6 +1111,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                         </div>
                         )}
                       </SortableChatListItem>
+                      )}
                       </Fragment>
                     );
                   })}
