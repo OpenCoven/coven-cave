@@ -4,6 +4,7 @@ import {
   DEFAULT_CLOCK,
   DEFAULT_DATE,
   formatClock,
+  formatDate,
   formatTimestamp,
   normalizeClock,
   normalizeDate,
@@ -69,4 +70,26 @@ test("formatClock can include seconds (debug log)", () => {
 
 test("formatClock renders nothing for bad input", () => {
   assert.equal(formatClock("not-a-date", { clock: "24h", date: "off" }), "");
+});
+
+test("formatDate honors the date ORDERING for verbose dates (keeps month name)", () => {
+  const mmdd = { clock: "12h", date: "mmdd" } as const;
+  const ddmm = { clock: "12h", date: "ddmm" } as const;
+  // month-first vs day-first, short month, no year
+  assert.equal(formatDate(ISO, mmdd), "Jun 19");
+  assert.equal(formatDate(ISO, ddmm), "19 Jun");
+  // with year: US "Jun 19, 2026" vs EU "19 Jun 2026"
+  assert.equal(formatDate(ISO, mmdd, { year: true }), "Jun 19, 2026");
+  assert.equal(formatDate(ISO, ddmm, { year: true }), "19 Jun 2026");
+  // the chat-only "off" behaves as month-first for verbose dates (still shows one)
+  assert.equal(formatDate(ISO, { clock: "12h", date: "off" }), "Jun 19");
+});
+
+test("formatDate supports weekday + long month, and accepts a Date", () => {
+  const out = formatDate(new Date(ISO), { clock: "12h", date: "mmdd" }, { weekday: true, month: "long" });
+  assert.match(out, /^[A-Za-z]+, June 19$/, `expected "Weekday, June 19", got "${out}"`);
+});
+
+test("formatDate renders nothing for bad input", () => {
+  assert.equal(formatDate("not-a-date", { clock: "12h", date: "mmdd" }), "");
 });

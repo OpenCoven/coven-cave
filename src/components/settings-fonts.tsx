@@ -465,12 +465,13 @@ export function FontSettings() {
           </ReadingRow>
       </SettingsGroup>
 
-      {/* Date & time — the Clock setting applies to every time shown in the app
-          (calendar, capabilities, debug, …); the Date format applies to the chat
-          message timestamp, where model/cwd/duration used to sit (now in debug). */}
+      {/* Date & time — both apply across the app: the Clock to every time shown
+          (calendar, capabilities, debug, …), and the Date ordering to every date
+          (library, memory, calendar, chat). "Off" only hides the date on chat
+          timestamps; elsewhere it falls back to month-first. */}
       <SettingsGroup
         label="Date & time"
-        description="Clock applies across the app; the date format applies to chat message timestamps."
+        description="Clock and date format apply across the app. Off hides the date on chat timestamps."
       >
           <ReadingRow label="Clock" hint="Across the app">
             <div className={segWrap}>
@@ -488,7 +489,7 @@ export function FontSettings() {
               ))}
             </div>
           </ReadingRow>
-          <ReadingRow label="Date" hint="Chat messages">
+          <ReadingRow label="Date" hint="Across the app">
             <div className={segWrap}>
               {DATE_OPTIONS.map((option) => (
                 <button
