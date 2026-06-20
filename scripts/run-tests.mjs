@@ -301,6 +301,7 @@ export const SUITES = {
     "src/lib/datetime-format.test.ts",
     "src/lib/relative-time.test.ts",
     "src/lib/model-label.test.ts",
+    "src/lib/composer-history.test.ts",
     "src/lib/appearance-corner-radius.test.ts",
     "src/lib/code-layout-preset.test.ts",
     "src/lib/use-changes-summary.test.ts",

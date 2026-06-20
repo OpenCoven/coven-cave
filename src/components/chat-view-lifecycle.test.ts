@@ -430,4 +430,17 @@ assert.match(
   "an emptied draft removes the key (sent messages don't reappear on reload)",
 );
 
+// The ↑/↓ prompt-history survives a reload: it initialises from localStorage
+// and is persisted whenever it changes.
+assert.match(
+  source,
+  /const \[inputHistory, setInputHistory\] = useState<string\[\]>\(\(\) => readComposerHistory\(COMPOSER_HISTORY_KEY\)\)/,
+  "input history initialises from the persisted recall stack",
+);
+assert.match(
+  source,
+  /writeComposerHistory\(COMPOSER_HISTORY_KEY, inputHistory\)/,
+  "input history is persisted when it changes",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");
