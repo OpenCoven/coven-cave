@@ -301,8 +301,15 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
           <span className="board-table-group-badge">{items.length}</span>
         </span>
         <div className="library-list-header-controls">
-          <button type="button" className="board-toolbar-btn" onClick={() => setAdding((v) => !v)}>
-            <Icon name="ph:plus" width={12} /> Add
+          <button
+            type="button"
+            className="board-toolbar-btn library-list-add-btn"
+            onClick={() => setAdding((v) => !v)}
+            aria-label="Add reading"
+            title="Add reading"
+          >
+            <Icon name="ph:plus" width={12} />
+            <span className="library-list-add-btn__label">Add</span>
           </button>
         </div>
       </div>

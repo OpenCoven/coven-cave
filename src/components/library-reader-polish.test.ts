@@ -37,6 +37,16 @@ assert.match(
   /RenderedMarkdown text=\{renderBody\} containerRef=\{mdRef\}/,
   "Inline preview renders the deduped body as well",
 );
+assert.match(
+  css,
+  /\.library-preview-body \.cave-md\.library-preview-md\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?width:\s*100%;/,
+  "Inline Library previews span the available document pane instead of holding the old narrow measure",
+);
+assert.match(
+  css,
+  /\.library-preview-body--with-toc \.library-preview-md\s*\{[\s\S]*?max-width:\s*100%;/,
+  "Inline Library previews with a ToC fill the space beside the On this page rail",
+);
 
 // ── P0: heading-jump flash is actually styled ──
 assert.match(

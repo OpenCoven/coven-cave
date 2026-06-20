@@ -581,7 +581,7 @@ const COLS: { key: SortKey; label: string; width?: string }[] = [
   { key: "repo",    label: "Repo",    width: "150px" },
   { key: "savedAt", label: "Saved",   width: "80px" },
 ];
-const GITHUB_TABLE_COLUMN_COUNT = COLS.length + 4;
+const GITHUB_TABLE_COLUMN_COUNT = COLS.length + 3;
 
 export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSession }: Props) {
   const [items, setItems] = useState<LibraryGitHubItem[]>([]);
@@ -665,8 +665,15 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
             <option value="kind">Group: Kind</option>
             <option value="none">No grouping</option>
           </select>
-          <button type="button" className="board-toolbar-btn" onClick={() => setAdding((v) => !v)}>
-            <Icon name="ph:plus" width={12} /> Add
+          <button
+            type="button"
+            className="board-toolbar-btn library-list-add-btn"
+            onClick={() => setAdding((v) => !v)}
+            aria-label="Add GitHub item"
+            title="Add GitHub item"
+          >
+            <Icon name="ph:plus" width={12} />
+            <span className="library-list-add-btn__label">Add</span>
           </button>
         </div>
       </div>
@@ -734,7 +741,6 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                 ))}
                 <th className="gh-col-kind" style={{ width: "86px" }}>Kind</th>
                 <th className="gh-col-state" style={{ width: "82px" }}>State</th>
-                <th className="gh-col-labels" style={{ width: "190px" }}>Labels</th>
                 <th className="gh-col-actions" style={{ width: "124px" }} />
               </tr>
             </thead>
@@ -796,16 +802,6 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                             <span className="library-gh-state-dot" style={{ color: st.color }}>
                               ● {st.label}
                             </span>
-                          </td>
-                          <td className="gh-col-labels">
-                            <div className="library-tag-chips">
-                              {item.labels.slice(0, 3).map((l: string) => (
-                                <span key={l} className="library-doclist-tag">{l}</span>
-                              ))}
-                              {item.labels.length > 3 && (
-                                <span className="board-table-muted">+{item.labels.length - 3}</span>
-                              )}
-                            </div>
                           </td>
                           <td className="gh-col-actions">
                             <div className="gh-row-actions" onClick={(e) => e.stopPropagation()}>

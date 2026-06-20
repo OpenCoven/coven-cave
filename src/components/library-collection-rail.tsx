@@ -30,6 +30,13 @@ const STATIC_LIST_SECTIONS: ListSection[] = [
   { id: "projects",  label: "Projects",        icon: "ph:folder" },
 ];
 
+function collectionDisplayLabel(collection: LibraryCollection): string {
+  if (collection.id === "projects" && collection.label.trim().toLowerCase() === "projects") {
+    return "Project docs";
+  }
+  return collection.label;
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -125,10 +132,11 @@ export function LibraryCollectionRail({
           </button>
         </div>
       </div>
-      <div className="library-rail-list">
+      <div className="library-rail-list library-rail-list--collections">
         {collections.map((col) => {
           const count = docCounts[col.id] ?? 0;
           const isActive = activeSection === "docs" && col.id === activeDocCollection;
+          const label = collectionDisplayLabel(col);
           return (
             <button
               key={col.id}
@@ -144,7 +152,7 @@ export function LibraryCollectionRail({
                   <Icon name={col.icon as IconName} width={13} />
                 </span>
               )}
-              <span className="library-rail-label">{col.label}</span>
+              <span className="library-rail-label">{label}</span>
               {count > 0 && <span className="library-rail-badge">{count}</span>}
             </button>
           );
@@ -155,7 +163,7 @@ export function LibraryCollectionRail({
 
       {/* ── Static list sections ─────────────────────────────── */}
       <div className="library-rail-header">Lists</div>
-      <div className="library-rail-list">
+      <div className="library-rail-list library-rail-list--sections">
         {STATIC_LIST_SECTIONS.map((section) => {
           const isActive = activeSection === section.id;
           return (
@@ -178,10 +186,11 @@ export function LibraryCollectionRail({
       {skills.length > 0 && (
         <>
           <div className="library-rail-divider" />
-          <div className="library-rail-header">
+          <div className="library-rail-header library-rail-header--skills">
             <button
               type="button"
               className="library-rail-section-toggle"
+              aria-expanded={skillsOpen || activeSection === "skills"}
               onClick={() => {
                 const next = !skillsOpen;
                 setSkillsOpen(next);
@@ -198,7 +207,7 @@ export function LibraryCollectionRail({
             </button>
           </div>
           {(skillsOpen || activeSection === "skills") && (
-            <div className="library-rail-list">
+            <div className="library-rail-list library-rail-list--skills">
               {skills.map((skill) => {
                 const isActive = activeSection === "skills" && activeSkillId === skill.id;
                 return (

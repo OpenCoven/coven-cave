@@ -89,9 +89,9 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const listExpanded = listPinned || listHover;
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  const { projects } = useProjects();
   const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
   const [boardDraft, setBoardDraft] = useState<LibraryBookmark | null>(null);
+  const { projects } = useProjects({ enabled: boardDraft !== null });
   // Quick-open ("/") palette: a unified search/jump across docs + captured links.
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickItems, setQuickItems] = useState<LibraryQuickItem[]>([]);

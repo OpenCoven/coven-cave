@@ -92,34 +92,16 @@ function initialColor(seed: string): string {
   return INITIAL_COLORS[Math.abs(h) % INITIAL_COLORS.length];
 }
 
-function googleFavicon(url: string): string {
-  try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`; }
-  catch { return ""; }
-}
-
 function ItemFavicon({ url, title }: { url: string; title: string }) {
-  const [failed, setFailed] = React.useState(false);
-  const src = googleFavicon(url);
-  if (!src || failed) {
-    const letter = (title || url).trim().slice(0, 1).toUpperCase() || "?";
-    return (
-      <span
-        className="library-favicon-initial"
-        style={{ background: initialColor(title || url) }}
-      >
-        {letter}
-      </span>
-    );
-  }
+  const letter = (title || url).trim().slice(0, 1).toUpperCase() || "?";
   return (
-    <img
-      src={src}
-      alt=""
-      width={14}
-      height={14}
-      className="library-favicon"
-      onError={() => setFailed(true)}
-    />
+    <span
+      className="library-favicon-initial"
+      style={{ background: initialColor(title || url) }}
+      aria-hidden
+    >
+      {letter}
+    </span>
   );
 }
 
@@ -315,8 +297,15 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
               </PopoverBody>
             </Popover>
           </div>
-          <button type="button" className="board-toolbar-btn" onClick={() => setAdding((v) => !v)}>
-            <Icon name="ph:plus" width={12} /> Add
+          <button
+            type="button"
+            className="board-toolbar-btn library-list-add-btn"
+            onClick={() => setAdding((v) => !v)}
+            aria-label="Add bookmark"
+            title="Add bookmark"
+          >
+            <Icon name="ph:plus" width={12} />
+            <span className="library-list-add-btn__label">Add</span>
           </button>
         </div>
       </div>

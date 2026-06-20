@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./library-timeline.tsx", import.meta.url), "utf8");
+const rowSource = await readFile(new URL("./library-timeline-row.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const libraryCss = await readFile(new URL("../styles/library.css", import.meta.url), "utf8");
 
@@ -36,5 +37,15 @@ assert.match(
   /@container\s+view-header\s+\(min-width:[^)]*\)[\s\S]*\.library-timeline-filters[\s\S]*grid-template-columns:\s*repeat\(3,/,
   "filter options share one row when the header is wide enough",
 );
+assert.doesNotMatch(
+  rowSource,
+  /google\.com\/s2\/favicons|<img|onError/,
+  "Timeline rows should use local list-type icons instead of remote favicon requests that emit console 404s",
+);
+assert.match(
+  rowSource,
+  /name=\{listIcon\(entry\.list\)\}/,
+  "Timeline rows should render deterministic local icons by list type",
+);
 
-console.log("library-timeline wiring: 13 assertions passed");
+console.log("library-timeline wiring: 15 assertions passed");

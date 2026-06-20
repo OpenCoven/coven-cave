@@ -7,7 +7,7 @@ const libraryView = await readFile(new URL("./library-view.tsx", import.meta.url
 
 assert.match(
   source,
-  /const GITHUB_TABLE_COLUMN_COUNT = COLS\.length \+ 4;/,
+  /const GITHUB_TABLE_COLUMN_COUNT = COLS\.length \+ 3;/,
   "GitHub table should define a single column-count constant for full-width rows",
 );
 
@@ -17,6 +17,12 @@ assert.match(
   source,
   /<td className="gh-col-actions">[\s\S]*<div className="gh-row-actions"/,
   "GitHub actions should render in a dedicated trailing actions cell",
+);
+
+assert.doesNotMatch(
+  source,
+  /gh-col-labels|>Labels<|item\.labels\.slice/,
+  "Library GitHub rows should not render visible label columns or chips",
 );
 
 assert.match(

@@ -10,6 +10,7 @@ const sidebar = read("../sidebar-minimal.tsx");
 const view = read("./journal-view.tsx");
 const list = read("./canvas-list.tsx");
 const entries = read("./journal-entries.tsx");
+const css = read("../../styles/journal.css");
 
 // Mode renamed canvas -> journal
 assert.match(mode, /\|\s*"journal"/, "WorkspaceMode includes journal");
@@ -48,6 +49,10 @@ assert.match(list, /copyText\(selected\.code\)/, "Copy button copies the selecte
 assert.match(list, /name=\{copied \? "ph:check" : "ph:copy"\}/, "Copy button shows a copied confirmation icon");
 assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Enter"[\s\S]*?commitRename/, "Canvas item rename input commits on Enter");
 assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelRename/, "Canvas item rename input cancels on Escape");
+assert.match(css, /\.journal-list \{[\s\S]*?min-width:\s*0;/, "Journal master-detail shell can shrink inside the workspace");
+assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal detail pane contains overflowing code surfaces");
+assert.match(css, /\.journal-detail__code \{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Canvas Code tab wraps long source lines instead of overflowing horizontally");
+assert.match(css, /\.journal-detail__code--hl pre\.shiki \{[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Highlighted Canvas code wraps long Shiki lines too");
 
 // JournalEntries can be edited and deleted through the persisted journal API.
 assert.match(entries, /editing,\s*setEditing/, "JournalEntries tracks edit mode for daily reflections");

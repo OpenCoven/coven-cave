@@ -783,6 +783,12 @@
 }
 .gh-glass-panel::-webkit-scrollbar { width:0; height:0; }
 
+@media (min-width: 1041px) {
+  .gh-glass-panel:not(.gh-glass-panel--empty) {
+    height:calc(100dvh - 150px);
+  }
+}
+
 .gh-issue-subline {
   display:flex;
   align-items:center;

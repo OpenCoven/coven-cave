@@ -15,9 +15,13 @@ export type ProjectsState = {
   deleteProject: (id: string) => Promise<boolean>;
 };
 
-export function useProjects(): ProjectsState {
+export type UseProjectsOptions = {
+  enabled?: boolean;
+};
+
+export function useProjects({ enabled = true }: UseProjectsOptions = {}): ProjectsState {
   const [projects, setProjects] = useState<CaveProject[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -49,9 +53,16 @@ export function useProjects(): ProjectsState {
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setLoading(false);
+      return;
+    }
+
     load();
     return () => abortRef.current?.abort();
-  }, [load]);
+  }, [enabled, load]);
 
   const createProject = useCallback(async (name: string, root: string): Promise<CaveProject | null> => {
     const res = await fetch("/api/projects", {

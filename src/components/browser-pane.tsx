@@ -157,6 +157,7 @@ function defaultPinnedTabs(): BrowserTab[] {
     { id: "home", url: HOME_URL, title: "OpenCoven", pinned: true, kind: "pinned" },
     { id: "opencvn-x", url: "https://x.com/OpenCvn", title: "OpenCvn", pinned: true, kind: "pinned" },
     { id: "github", url: "https://github.com/OpenCoven", title: "GitHub", pinned: true, kind: "pinned" },
+    { id: "arcade", url: "https://frymatic.us/FTSArcade", title: "Arcade", pinned: true, kind: "pinned" },
   ];
 }
 

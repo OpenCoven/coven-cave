@@ -60,14 +60,14 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-group-toggle\s*\{[\s\S]*height\s*:\s*calc\(var\(--touch-target\) \+ 8px\)/,
-  "Library timeline segmented control should leave enough room for 44px inner options on phones",
+  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-group-toggle\s*\{[\s\S]*height\s*:\s*var\(--touch-target\)/,
+  "Library timeline segmented control should fit the compact mobile filter row",
 );
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-group-toggle-option\s*\{[\s\S]*min-height\s*:\s*var\(--touch-target\)/,
-  "Library timeline segmented control options should each meet the 44px mobile touch target",
+  /@media \(max-width: 767px\) \{[\s\S]*\.library-timeline-group-toggle-option\s*\{[\s\S]*min-height\s*:\s*calc\(var\(--touch-target\) - 4px\)/,
+  "Library timeline segmented control options should stay compact inside the 44px control",
 );
 
 console.log("library-mobile-command-center.test.ts: ok");

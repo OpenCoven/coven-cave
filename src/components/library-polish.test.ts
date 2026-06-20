@@ -34,6 +34,16 @@ assert.doesNotMatch(
   /<select[\s\S]*?setGroupBy/,
   "Bookmark grouping should not use a native select",
 );
+assert.doesNotMatch(
+  bookmarks,
+  /google\.com\/s2\/favicons|faviconV2|<img[\s\S]*?className="library-favicon"|onError=\{[\s\S]*?setFailed/,
+  "Bookmark rows should use deterministic local favicon initials instead of remote favicon images",
+);
+assert.match(
+  bookmarks,
+  /className="library-favicon-initial"[\s\S]*?style=\{\{ background: initialColor\(title \|\| url\) \}\}/,
+  "Bookmark rows should keep a stable local leading mark",
+);
 assert.match(bookmarksRoute, /function normalizeBookmark\(item: Partial<LibraryBookmark>\): LibraryBookmark/, "bookmarks API normalizes legacy bookmark records");
 assert.match(bookmarksRoute, /const domain = cleanString\(item\.domain\) \|\| \(url \? domainFrom\(url\) : "\(unknown\)"\);/, "bookmarks API backfills missing domains");
 
@@ -43,6 +53,10 @@ assert.match(reading, /\(a\.addedAt \?\? ""\)\.localeCompare\(b\.addedAt \?\? ""
 assert.match(reading, /\(a\.label \?\? ""\)\.localeCompare\(b\.label \?\? ""\)/,     "reading label null-guard");
 
 const libraryCss = await readFile(new URL("../styles/library.css", import.meta.url), "utf8");
+const mobileLibraryCssStart = libraryCss.indexOf("@media (max-width: 767px) {");
+const mobileLibraryCssEnd = libraryCss.indexOf("/* ── Undo delete toast", mobileLibraryCssStart);
+assert.ok(mobileLibraryCssStart >= 0 && mobileLibraryCssEnd > mobileLibraryCssStart, "Library CSS should expose a mobile override block");
+const mobileLibraryCss = libraryCss.slice(mobileLibraryCssStart, mobileLibraryCssEnd);
 assert.match(
   reading,
   /className="board-table-title library-reading-title"/,
@@ -106,17 +120,93 @@ assert.match(github, /\(a\.savedAt \?\? ""\)\.localeCompare\(b\.savedAt \?\? ""\
 
 // ───────── Task 2: Timeline placeholder shortened ─────────
 const timeline = await readFile(new URL("./library-timeline.tsx", import.meta.url), "utf8");
+const docsList = await readFile(new URL("./library-doc-list.tsx", import.meta.url), "utf8");
 assert.match(timeline, /placeholder="Search links…"/, "Timeline placeholder must be 'Search links…'");
 assert.match(timeline, /title="Search links — try chat: github: sage:"/, "Verbose hint must live in title=");
 assert.doesNotMatch(timeline, /placeholder="Search links — try chat: github: sage:"/, "Old long placeholder must be removed");
+assert.match(timeline, /title="Timeline"/, "Unified Library view header should match the Timeline rail label");
+assert.doesNotMatch(timeline, /title="All"/, "Unified Library view should not keep the old ambiguous All header");
+assert.match(docsList, /import \{ relativeTime \} from "@\/lib\/relative-time";/, "Document list should use the shared compact modified-date formatter");
+assert.match(docsList, /return relativeTime\(iso\);/, "Recent document modified dates should use the compact relative-time formatter");
 
 // ───────── Task 3: Lists "All" renamed to "Timeline" ─────────
 const rail = await readFile(new URL("./library-collection-rail.tsx", import.meta.url), "utf8");
 assert.match(rail, /\{ id: "all",\s+label: "Timeline",\s+icon: "ph:link" \}/, "STATIC_LIST_SECTIONS first row label must be 'Timeline'");
+assert.match(
+  rail,
+  /function collectionDisplayLabel\(collection: LibraryCollection\): string \{[\s\S]*?collection\.id === "projects"[\s\S]*?return "Project docs";/,
+  "Document collection named Projects should display as Project docs to avoid colliding with the Projects workspace section",
+);
+assert.match(
+  rail,
+  /const label = collectionDisplayLabel\(col\);[\s\S]*?<span className="library-rail-label">\{label\}<\/span>/,
+  "Collection rail should render the disambiguated collection display label",
+);
+assert.match(
+  rail,
+  /className="library-rail-list library-rail-list--collections"/,
+  "Document collection rail list should expose the mobile ordering hook",
+);
+assert.match(
+  rail,
+  /className="library-rail-list library-rail-list--sections"/,
+  "Primary Library mode rail list should expose the mobile ordering hook",
+);
+assert.match(
+  rail,
+  /className="library-rail-header library-rail-header--skills"/,
+  "Skills rail header should expose the mobile ordering hook",
+);
+assert.match(
+  rail,
+  /className="library-rail-list library-rail-list--skills"/,
+  "Expanded Skills rail list should expose the mobile ordering hook",
+);
+assert.match(
+  rail,
+  /aria-expanded=\{skillsOpen \|\| activeSection === "skills"\}/,
+  "Skills rail toggle should expose its expanded state",
+);
+assert.match(
+  libraryCss,
+  /\.library-rail-action\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border-radius:\s*7px;/,
+  "Library rail header actions should not collapse back to 22px icon targets",
+);
+assert.match(
+  libraryCss,
+  /\.library-rail-section-toggle\s*\{[\s\S]*?min-height:\s*28px;[\s\S]*?padding:\s*0 2px;[\s\S]*?border-radius:\s*6px;/,
+  "Library Skills toggle should have a real desktop hit area",
+);
+assert.match(
+  mobileLibraryCss,
+  /\.library-rail-list--sections\s*\{[\s\S]*?order:\s*1;[\s\S]*?\.library-rail-header--skills\s*\{[\s\S]*?order:\s*2;[\s\S]*?\.library-rail-list--collections\s*\{[\s\S]*?order:\s*3;/,
+  "Mobile Library rail should show list sections first, then Skills, before document collections",
+);
+assert.match(
+  mobileLibraryCss,
+  /\.library-rail-header--skills\s*\{[\s\S]*?display:\s*flex;/,
+  "Mobile Library rail should re-enable the Skills toggle after generic headers are hidden",
+);
+assert.match(
+  mobileLibraryCss,
+  /\.library-timeline-header\.ui-view-header\s*\{[\s\S]*?padding:\s*12px 16px 10px;[\s\S]*?\.library-timeline-filters\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*1fr\)\s*minmax\(128px,\s*0\.8fr\);/,
+  "Mobile Timeline should compact filters into one three-column command row instead of stacking every control",
+);
+assert.match(
+  mobileLibraryCss,
+  /\.library-timeline-group-toggle\s*\{[\s\S]*?grid-column:\s*auto;[\s\S]*?height:\s*var\(--touch-target\);/,
+  "Mobile Timeline group toggle should share the compact filter row",
+);
+assert.match(
+  mobileLibraryCss,
+  /\.library-timeline-filters > \.library-timeline-dropdown:first-child\s*\{[\s\S]*?order:\s*1;[\s\S]*?\.library-timeline-filters > \.library-timeline-dropdown:last-child\s*\{[\s\S]*?order:\s*2;[\s\S]*?\.library-timeline-group-toggle\s*\{[\s\S]*?order:\s*3;/,
+  "Mobile Timeline should place Familiar and List filters side by side before the Date/Source toggle",
+);
 
 // ───────── Task 4: Section-aware preview empty state ─────────
 const preview = await readFile(new URL("./library-doc-preview.tsx", import.meta.url), "utf8");
 const view    = await readFile(new URL("./library-view.tsx",        import.meta.url), "utf8");
+const projectsHook = await readFile(new URL("../lib/use-projects.ts", import.meta.url), "utf8");
 
 assert.match(preview, /LibrarySectionKind[\s\S]{0,200}?from "@\/lib\/library-types"/, "LibrarySectionKind must be imported from library-types");
 assert.match(preview, /const EMPTY_TEXT: Record<LibrarySectionKind, string> = \{/, "EMPTY_TEXT typed Record<LibrarySectionKind, string>");
@@ -131,6 +221,21 @@ const view2 = await readFile(new URL("./library-view.tsx", import.meta.url), "ut
 assert.match(view2, /if \(e\.key !== "\["\) return;/, "library-view must filter keydown events for '['");
 assert.match(view2, /setListPinned\(\(v\) => !v\)/, "library-view must call setListPinned((v) => !v)");
 assert.match(view2, /\["input", "textarea", "select"\]\.includes\(tag\)/, "library-view must skip when focus is in an input");
+assert.match(
+  view2,
+  /useProjects\(\{ enabled: boardDraft !== null \}\)/,
+  "LibraryView should defer project loading until the Add-to-Board modal needs project options",
+);
+assert.match(
+  projectsHook,
+  /export type UseProjectsOptions = \{[\s\S]*?enabled\?: boolean;[\s\S]*?\};/,
+  "useProjects should expose an enabled option for callers that can defer project loading",
+);
+assert.match(
+  projectsHook,
+  /if \(!enabled\) \{[\s\S]*?abortRef\.current\?\.abort\(\);[\s\S]*?setLoading\(false\);[\s\S]*?return;/,
+  "useProjects should skip and cancel the initial fetch while disabled",
+);
 
 console.log("library-polish.test.ts: ok");
 
@@ -274,8 +379,57 @@ assert.match(
 );
 assert.match(
   libraryCss,
-  /@container \(max-width: 460px\) \{[\s\S]*?\.library-list-header\s*\{[\s\S]*?align-items:\s*stretch;[\s\S]*?\.library-list-header-controls\s*\{[\s\S]*?width:\s*100%;/,
-  "Narrow side-panel headers should wrap controls below the title instead of overlapping it",
+  /\.library-doclist-item-excerpt\s*\{[\s\S]*?display:\s*-webkit-box;[\s\S]*?white-space:\s*normal;[\s\S]*?-webkit-line-clamp:\s*2;/,
+  "Document excerpts should use a controlled two-line clamp instead of a single overflowing line",
+);
+assert.match(
+  libraryCss,
+  /\.library-doclist-item-meta\s*\{[\s\S]*?align-items:\s*flex-start;/,
+  "Document metadata rows should align wrapped excerpts from the top",
+);
+assert.match(
+  libraryCss,
+  /\.library-doclist-file-action\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/,
+  "Document row edit controls should not collapse back to 24px desktop targets",
+);
+assert.match(
+  libraryCss,
+  /\.library-doclist-move select\s*\{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*100%;/,
+  "Document row move selects should fill their visible control height",
+);
+assert.match(
+  libraryCss,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.library-doclist-file-action\s*\{[\s\S]*?width:\s*var\(--touch-target\);[\s\S]*?height:\s*var\(--touch-target\);[\s\S]*?\.library-doclist-move\s*\{[\s\S]*?width:\s*var\(--touch-target\);[\s\S]*?min-width:\s*var\(--touch-target\);[\s\S]*?height:\s*var\(--touch-target\);/,
+  "Mobile document row edit and move controls should be real tap targets without a wide folder select",
+);
+assert.match(
+  libraryCss,
+  /@media \(max-width: 767px\) \{[\s\S]*?\.library-doclist-move select\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?width:\s*100%;[\s\S]*?opacity:\s*0;/,
+  "Mobile document row move select should keep the native picker target while rendering as an icon-only control",
+);
+assert.match(
+  libraryCss,
+  /@container \(max-width: 460px\) \{[\s\S]*?\.library-list-header\s*\{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?\.library-list-header-controls\s*\{[\s\S]*?width:\s*auto;/,
+  "Narrow saved-list headers should keep compact command controls in one stable row",
+);
+assert.match(
+  libraryCss,
+  /@container \(max-width: 460px\) \{[\s\S]*?\.library-list-header-controls \.board-toolbar-btn\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?min-width:\s*36px;[\s\S]*?\.library-list-header-controls \.library-list-add-btn__label\s*\{[\s\S]*?display:\s*none;/,
+  "Narrow saved-list Add buttons should override board mobile full-width buttons and collapse the label",
+);
+for (const [source, label] of [
+  [bookmarks, "Add bookmark"],
+  [reading, "Add reading"],
+  [github, "Add GitHub item"],
+] as const) {
+  assert.ok(source.includes('className="board-toolbar-btn library-list-add-btn"'), `${label} button should expose the compact Library Add control hook`);
+  assert.ok(source.includes(`aria-label="${label}"`), `${label} button should expose an accessible label`);
+  assert.ok(source.includes('className="library-list-add-btn__label"'), `${label} button should wrap its visible label for compact mobile layout`);
+}
+assert.match(
+  libraryCss,
+  /\.library-list-header-title\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?flex-basis:\s*auto;/,
+  "Narrow saved-list title cells should stay in the same row as compact controls",
 );
 assert.match(
   libraryCss,
@@ -284,8 +438,8 @@ assert.match(
 );
 assert.match(
   libraryCss,
-  /@container \(max-width: 460px\) \{[\s\S]*?\.library-bookmarks-table th:nth-child\(2\)[\s\S]*?\.library-github-table \.gh-col-labels\s*\{[\s\S]*?display:\s*none;/,
-  "Very narrow saved-list side-panel tables should prioritize title/action columns over metadata",
+  /@container \(max-width: 460px\) \{[\s\S]*?\.library-bookmarks-table th:nth-child\(2\),[\s\S]*?\.library-bookmarks-table td:nth-child\(2\)\s*\{[\s\S]*?display:\s*none;/,
+  "Very narrow bookmark tables should prioritize title/action columns over metadata",
 );
 assert.match(
   libraryCss,
@@ -323,6 +477,11 @@ assert.doesNotMatch(
   /gh-row-action-strip-row/,
   "GitHub saved rows should not render a second full-width action strip row",
 );
+assert.doesNotMatch(
+  github,
+  /gh-col-labels|>Labels<|item\.labels\.slice/,
+  "GitHub saved rows should not render visible label columns or chips",
+);
 assert.match(
   github,
   /className="gh-title-cell"[\s\S]*?className="gh-open-link"[\s\S]*?className="gh-col-actions"[\s\S]*?className="gh-row-actions"/,
@@ -337,6 +496,11 @@ assert.match(
   libraryCss,
   /@container \(max-width: 520px\) \{[\s\S]*?\.library-github-table \.gh-row-main\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-areas:/,
   "Narrow GitHub saved rows should become compact card-style grids",
+);
+assert.doesNotMatch(
+  libraryCss,
+  /gh-col-labels|labels labels actions/,
+  "Library GitHub compact grid should not reserve a visible labels row",
 );
 assert.match(
   libraryCss,

@@ -124,6 +124,11 @@ assert.match(
   /\.gh-glass-panel::(?:-webkit-scrollbar) \{ width:0; height:0; \}/,
   "GitHub detail sidepanel hides WebKit scrollbar chrome on hover",
 );
+assert.match(
+  boardCss,
+  /@media \(min-width: 1041px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:calc\(100dvh - 150px\);/,
+  "GitHub detail sidepanel keeps a stable desktop height while async detail content loads",
+);
 assert.doesNotMatch(
   source,
   /<div className="gh-glass-section-title">Labels<\/div>/,

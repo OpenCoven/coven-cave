@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { TimelineEntry } from "@/app/api/library/all/route";
 import type { Familiar } from "@/lib/types";
@@ -26,25 +25,6 @@ function relTime(iso: string): string {
 }
 
 function EntryIcon({ entry }: { entry: TimelineEntry }) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const favicon = (entry.item as { favicon?: string }).favicon;
-  const url = (entry.item as { url?: string }).url;
-  const faviconSrc = favicon ||
-    (url ? (() => { try { return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(url).hostname)}&sz=32`; } catch { return null; } })() : null);
-
-  if (faviconSrc && !imgFailed) {
-    return (
-      <img
-        src={faviconSrc}
-        alt=""
-        width={16}
-        height={16}
-        className="h-4 w-4 rounded-sm object-contain"
-        onError={() => setImgFailed(true)}
-      />
-    );
-  }
-
   return (
     <Icon
       name={listIcon(entry.list)}
@@ -80,7 +60,7 @@ export function LibraryTimelineRow({
       }`}
       aria-current={selected ? "true" : undefined}
     >
-      {/* icon / favicon */}
+      {/* list icon */}
       <span className="library-timeline-row-icon flex shrink-0 items-center justify-center">
         <EntryIcon entry={entry} />
       </span>

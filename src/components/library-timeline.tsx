@@ -176,7 +176,7 @@ export function LibraryTimeline({
       <ViewHeader
         className="library-timeline-header"
         eyebrow="LIBRARY"
-        title="All"
+        title="Timeline"
         search={
           <SearchInput
             value={search}
