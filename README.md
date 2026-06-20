@@ -8,9 +8,16 @@ Cave is the native workspace for [OpenCoven](https://github.com/OpenCoven/coven)
 
 A familiar is not just a chat window. It has a name, role, runtime, memory, tools, voice settings, workflows, and a place in your day. Cave is where that context becomes visible and usable.
 
+## Screenshots
+
+| Home | Workflows | `/canvas` in chat |
+| --- | --- | --- |
+| <img src="screenshots/home.png" alt="Coven Cave home screen showing the familiar composer, sidebar navigation, and recent activity" width="100%"> | <img src="screenshots/workflows.png" alt="Coven Cave Workflows screen showing Workflow Studio with a research brief workflow graph" width="100%"> | <img src="screenshots/canvas-chat.png" alt="Coven Cave chat showing a canvas artifact rendered from the slash canvas command" width="100%"> |
+| Active familiar selection, primary Coven navigation, the central familiar composer, and recent activity handoff chips. | Workflow Studio with workflow templates, the research brief graph, validation, dry-run, and run controls. | `/canvas` rendering a website or component artifact directly in chat, with refine prompts and a save-to-canvas path. |
+
 ## Status
 
-- Current app version: `0.0.104`
+- Current app version: `0.0.107`
 - Native shell: Tauri 2
 - Frontend: Next.js 16, React 19, Tailwind v4
 - Runtime dependency: a healthy local `coven` CLI/daemon plus at least one runtime source
@@ -71,9 +78,7 @@ NEXT_PUBLIC_DEMO=true pnpm dev
 
 Demo mode is only for local testing, screenshots, and demos. It injects sample familiars and sample activity.
 
-## Screenshots
-
-The old README screenshot set has been removed because it no longer reflects the current Cave UI. New captures can be added after the next visual refresh.
+## Screenshot Capture
 
 Capture guidance remains in [`screenshots/CONTRIBUTING.md`](screenshots/CONTRIBUTING.md). The primary capture helpers are:
 

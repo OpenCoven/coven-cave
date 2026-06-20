@@ -58,4 +58,38 @@ assert.match(
   "expand toggle is hidden again while the panel is expanded",
 );
 
+// ── Collapsed YouTube strip ────────────────────────────────────────────────
+// When a video is playing, "closing" the right panel leaves a thin peek strip
+// (rotated video) instead of collapsing to nothing.
+assert.match(
+  shell,
+  /rightPanelPeek\?:\s*boolean/,
+  "shell accepts a rightPanelPeek prop",
+);
+assert.match(
+  shell,
+  /collapsedSize=\{rightPanelPeek \? `\$\{RAIL_PEEK_PX\}px` : 0\}/,
+  "the agent panel collapses to a peek strip (not 0) while peeking",
+);
+assert.match(
+  shell,
+  /familiarOpen \|\| rightPanelPeek \? agent : null/,
+  "the rail content stays mounted while peeking so the video keeps playing",
+);
+assert.match(
+  css,
+  /\.companion-rail--video-strip[\s\S]*?rotate\(90deg\)/,
+  "the collapsed strip rotates the video 90° to run top→bottom",
+);
+assert.match(
+  css,
+  /\.companion-rail--video-strip\s+\.youtube-viewer__frame\s*\{[\s\S]*?container-type:\s*size/,
+  "the strip uses a size container so the rotated iframe fills it",
+);
+assert.match(
+  css,
+  /\.companion-rail--video-strip\s+\.companion-rail__strip-expand\s*\{[\s\S]*?position:\s*absolute[\s\S]*?inset:\s*0/,
+  "the re-expand affordance is a full-area overlay so tapping the video expands it",
+);
+
 console.log("right-panel-expand.test.ts: ok");

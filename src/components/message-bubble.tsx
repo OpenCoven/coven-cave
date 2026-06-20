@@ -202,6 +202,18 @@ async function renderCodeBlock(
   return `<div class="cave-code-wrap">${headerHtml}${lineWrapped}${expandHtml}</div>`;
 }
 
+/**
+ * Highlight a snippet to a *bare* Shiki `<pre class="shiki">…</pre>` — no
+ * cave-code-wrap header, copy button, or line gutters. For surfaces that
+ * already supply their own chrome (e.g. the in-chat Canvas artifact viewer,
+ * which has its own header + actions) and just want colored code. Reuses the
+ * same lazy singleton as the chat code blocks, so no extra Shiki/WASM load.
+ */
+export async function highlightToHtml(code: string, lang: string): Promise<string> {
+  const hl = await getHighlighter();
+  return hl.codeToHtml(code, { lang: resolveShikiLang(lang), theme: "mood-c-dark" });
+}
+
 // ---------------------------------------------------------------------------
 // SyntaxBlock — exported for tool I/O and other raw-code surfaces
 // ---------------------------------------------------------------------------

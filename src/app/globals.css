@@ -3208,7 +3208,12 @@ button:active > .edge-rail-chip {
   justify-content: center;
   flex: 0 0 auto;
   width: 40px;
-  height: 44px;
+  /* min-height (not a fixed height) so the parent's `align-items: stretch`
+     grows the toggle to match the menu-bar's height. Under screen
+     magnification the menu-bar's line-height bumps it past 44px; a fixed
+     height would leave the toggle pinned to the top of the row, reading as
+     misaligned against the centered Tasks/Inbox controls. */
+  min-height: 44px;
   border: 0;
   border-bottom: 1px solid var(--border-hairline);
   background: var(--bg-panel);
@@ -3308,6 +3313,7 @@ button:active > .edge-rail-chip {
 .companion-rail {
   display: flex;
   flex-direction: column;
+  position: relative;
   height: 100%;
   min-height: 0;
   background: var(--bg-raised);
@@ -3564,6 +3570,89 @@ button:active > .edge-rail-chip {
   border: 0;
 }
 
+/* ── Collapsed video strip ──────────────────────────────────────────────
+   When the companion rail is collapsed to its peek width while the Video
+   pane is on, it becomes a thin sliver showing only the video, rotated 90°
+   so it runs top→bottom. The YouTube iframe stays mounted across the
+   collapse (CSS-only restyle, no remount) so playback continues. */
+
+/* Re-expand affordance — hidden until the rail is a strip, where it becomes a
+   full-area transparent overlay so tapping anywhere on the video expands the
+   panel (a caret hint sits at the top for discoverability). */
+.companion-rail__strip-expand {
+  display: none;
+}
+
+.companion-rail--video-strip {
+  overflow: hidden;
+}
+
+/* Drop the tab strip + the top (chat/memory/etc.) pane and its resizer;
+   the video pane fills the whole strip. The split panes are sized by
+   react-resizable-panels via inline `flex` on the id'd wrappers, so we
+   override those with `!important` (and hide the unused pane outright). */
+.companion-rail--video-strip .companion-rail__tabs,
+.companion-rail--video-strip .youtube-viewer__bar,
+.companion-rail--video-strip .youtube-viewer__error {
+  display: none;
+}
+
+.companion-rail--video-strip #companion-rail-main,
+.companion-rail--video-strip .companion-rail__resize {
+  display: none !important;
+}
+
+.companion-rail--video-strip .companion-rail__strip-expand {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 7px;
+  border: 0;
+  /* A soft top fade keeps the caret legible over a bright video; the rest of
+     the overlay stays transparent so the video shows through. */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--bg-base) 70%, transparent),
+    transparent 38px
+  );
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.companion-rail--video-strip .companion-rail__strip-expand:hover {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklch, var(--bg-base) 80%, transparent),
+    color-mix(in oklch, var(--bg-base) 22%, transparent)
+  );
+}
+
+.companion-rail--video-strip #companion-rail-youtube {
+  flex: 1 1 auto !important;
+}
+
+/* Rotate the video to run top→bottom and fill the tall, narrow strip.
+   `container-type: size` lets the iframe size off the frame's box: its
+   pre-rotation width = frame height, height = frame width, so after a 90°
+   turn it covers the frame exactly. */
+.companion-rail--video-strip .youtube-viewer__frame {
+  container-type: size;
+}
+
+.companion-rail--video-strip .youtube-viewer__frame iframe {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: 100cqh;
+  height: 100cqw;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center;
+}
+
 /* ────────────────────────────────────────────────
    Rail-pane empty + memory styles
    (Phase 2, shell-ia-redesign)
@@ -3771,8 +3860,10 @@ button:active > .edge-rail-chip {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 12px;
-  height: 44px;
+  padding: 6px 12px;
+  /* min-height (not a fixed height) so the bar grows with scaled-up content
+     under screen magnification instead of clipping the search row. */
+  min-height: 44px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-hairline);
   font-size: var(--text-sm);
@@ -3830,6 +3921,12 @@ button:active > .edge-rail-chip {
 
 .menu-bar__search-icon {
   flex-shrink: 0;
+  /* Center the icon on the search row and size it relative to the text so it
+     scales together with the input under screen magnification (rem fonts)
+     instead of staying a tiny fixed-px glyph pinned to the top. */
+  align-self: center;
+  width: 1.15em;
+  height: 1.15em;
 }
 
 .menu-bar__search-input {
@@ -3840,6 +3937,7 @@ button:active > .edge-rail-chip {
   background: transparent;
   color: var(--text-primary);
   font: inherit;
+  line-height: 1.4;
 }
 
 .menu-bar__search-input::placeholder {
@@ -4492,8 +4590,8 @@ button:active > .edge-rail-chip {
 
 .top-bar__tasks-badge {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: 4px;
+  right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5376,15 +5474,27 @@ a.mobile-handoff__link:hover {
     outline: var(--ring-width) solid var(--ring-focus);
     outline-offset: -2px;
   }
+  /* Unify the action row into one set of equal-height, equally boxed touch
+     targets: every control is a 44px hairline-bordered box with a transparent
+     fill (hover/active and the bell's unread state tint it). The icon buttons
+     (chat, tasks) and the cat drawer toggle are borderless/undersized by
+     default, so they get the box + size here to match the bell/account/avatar.
+     The familiar switcher keeps a content-based width for its avatar + caret. */
   .top-bar__actions .notification-bell__trigger,
-  .top-bar__account {
+  .top-bar__account,
+  .top-bar__actions .top-bar__icon-btn,
+  .top-bar__actions .top-bar__mobile-toggle {
     width: var(--touch-target);
     height: var(--touch-target);
     min-width: var(--touch-target);
     min-height: var(--touch-target);
+    border-radius: var(--radius-control);
+  }
+  .top-bar__actions .top-bar__icon-btn,
+  .top-bar__actions .top-bar__mobile-toggle {
+    border: 1px solid var(--border-hairline);
   }
   .top-bar__account {
-    border-radius: var(--radius-control);
     background: transparent;
   }
   /* Match the familiar switcher's height to the other action buttons so the
@@ -5394,6 +5504,7 @@ a.mobile-handoff__link:hover {
   .top-bar__actions .familiar-switcher__trigger[data-labeled="true"] {
     height: var(--touch-target);
     min-height: var(--touch-target);
+    background: transparent;
   }
   .top-bar__actions .notification-bell {
     position: static;

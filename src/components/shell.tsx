@@ -74,6 +74,13 @@ function togglePanel(panel: PanelImperativeHandle | null) {
   else panel.collapse();
 }
 
+// Width of the right-panel "peek" strip — the thin sliver the companion rail
+// collapses to (instead of vanishing) when `rightPanelPeek` is on, e.g. to keep
+// a rotated YouTube video visible while the panel is closed. Sizes below this
+// (the strip, or 0 when not peeking) read as "panel closed".
+const RAIL_PEEK_PX = 56;
+const RAIL_OPEN_THRESHOLD_PX = RAIL_PEEK_PX + 16;
+
 export type ShellNavSection = {
   label?: string;
   items: ShellNavItem[];
@@ -125,6 +132,7 @@ function ShellInner({
   mobileTabs,
   onNavOpenChange,
   onFamiliarOpenChange,
+  rightPanelPeek = false,
   panelShortcutOverrides,
 }: {
   nav: ReactNode;
@@ -139,6 +147,12 @@ function ShellInner({
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
   onFamiliarOpenChange?: (open: boolean) => void;
+  /** When true, "closing" the right (companion) panel leaves a thin peek strip
+   *  instead of collapsing to nothing, and keeps the panel's content mounted so
+   *  e.g. a playing video survives the collapse. Drives the YouTube-in-a-strip
+   *  behaviour: the companion rail renders its minimized (rotated video) view at
+   *  the peek width. */
+  rightPanelPeek?: boolean;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
@@ -474,13 +488,26 @@ function ShellInner({
             minSize="14%"
             maxSize="50%"
             collapsible
-            collapsedSize={0}
+            // When peeking, collapse to a thin strip instead of nothing so the
+            // companion rail can keep e.g. a playing video visible (rotated).
+            collapsedSize={rightPanelPeek ? `${RAIL_PEEK_PX}px` : 0}
             panelRef={familiarRef}
             onResize={(size) => {
-              setFamiliarOpen((size.asPercentage ?? 0) > 0);
+              // The panel is "open" only when it's wider than the peek strip —
+              // at the strip (or fully collapsed) the rail shows its minimized
+              // view, not the full content.
+              setFamiliarOpen((size.inPixels ?? 0) > RAIL_OPEN_THRESHOLD_PX);
             }}
           >
-            <aside className="shell-familiar" aria-label="Companion">{familiarOpen ? agent : null}</aside>
+            {/* Keep the rail mounted while peeking so the video survives the
+                collapse; otherwise unmount it when closed (the default). */}
+            <aside
+              className="shell-familiar"
+              aria-label="Companion"
+              data-rail-peek={rightPanelPeek && !familiarOpen ? "" : undefined}
+            >
+              {familiarOpen || rightPanelPeek ? agent : null}
+            </aside>
           </Panel>
         </>
       )}

@@ -109,9 +109,16 @@ export async function mergeCanvasPositions(
   const clean = sanitizePositions(positions);
   return withLock(async () => {
     const current = await loadCanvas();
+    // Deep-merge per window so a position-only write (e.g. a drag that sends
+    // just {x,y}) preserves the window's saved width/height instead of dropping
+    // it and snapping the window back to its default size on reload.
+    const mergedPositions = { ...current.positions };
+    for (const [id, pos] of Object.entries(clean)) {
+      mergedPositions[id] = { ...mergedPositions[id], ...pos };
+    }
     const merged: CanvasFile = {
       ...current,
-      positions: { ...current.positions, ...clean },
+      positions: mergedPositions,
     };
     await saveCanvas(merged);
     return merged;

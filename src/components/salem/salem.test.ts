@@ -57,7 +57,11 @@ assert.match(route, /CHAT_API_TIMEOUT_MS\s*=\s*45_000/, "Salem upstream chat API
 assert.doesNotMatch(route, /const connectTimeoutMs = 2_500/, "Salem must not abort the upstream chat API before it can stream");
 assert.match(route, /type SalemSearchContext/, "Salem API should accept structured local search context");
 assert.match(route, /formatSearchContextForPrompt\(context\)/, "Salem API should format top-bar search context into the hosted prompt");
-assert.match(route, /askChatApi\(messageForApi\)/, "Hosted Salem responses should receive the context-aware prompt");
+assert.match(route, /askChatApiContext\(messageForApi\)/, "Cave Salem should ask the hosted chat-api for retrieved docs context, not hosted synthesis");
+assert.match(route, /askLocalFamiliar\([\s\S]*?familiarId[\s\S]*?model/, "Cave Salem must synthesize through the local familiar so the user's connected model pays for the run");
+assert.match(route, /modelOverride:\s*args\.model/, "local Salem synthesis must forward the exact selected model as a next-message override");
+assert.match(route, /modelOverrideScope:\s*"next-message"/, "Salem must not persist the one-off model override as a session default");
+assert.match(route, /askChatApiAnswer\(messageForApi\)/, "Salem must keep a hosted-answer fallback when the backend does not serve context mode, so it never regresses to weak local retrieval");
 assert.match(route, /localContextUsed/, "Salem API response should disclose whether local context was included");
 assert.match(route, /familiar|familiar/, "must know about familiars");
 assert.match(route, /role|Role/, "must know about roles");
@@ -84,7 +88,8 @@ assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher
 assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
 assert.match(workspace, /import \{ SalemChatPanel \}/, "workspace should import only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /salemSlot=\{<SalemChatPanel \/>\}/, "workspace must render Salem in the companion rail");
+assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the companion rail with the local familiar id");
+assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the companion rail with the local familiar's model");
 assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
 
 // 7. CSS classes present

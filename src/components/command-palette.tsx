@@ -483,12 +483,25 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
     try {
+      // Use the local familiar (the one you're scoped to, falling back to Salem)
+      // so the answer is synthesized through it and the AI credits attribute to
+      // its connected model.
+      const localFamiliarId =
+        activeFamiliarId ??
+        familiars.find((f) => f.id === "salem")?.id ??
+        "salem";
+      const localModel =
+        familiars.find((f) => f.id === activeFamiliarId)?.model ??
+        familiars.find((f) => f.id === "salem")?.model ??
+        undefined;
       const res = await fetch("/api/salem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: query.trim(),
           context: buildSalemSearchContext(rows, query.trim()),
+          familiarId: localFamiliarId,
+          model: localModel,
         }),
       });
       const data = (await res.json()) as { reply?: string; error?: string };

@@ -151,6 +151,6 @@ assert.match(
 );
 assert.match(
   shell,
-  /<aside className="shell-familiar" aria-label="Companion">/,
+  /<aside\s+className="shell-familiar"[\s\S]*?aria-label="Companion"/,
   "Shell agent panel must carry a distinct accessible name (axe landmark-unique)",
 );

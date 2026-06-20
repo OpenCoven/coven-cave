@@ -187,6 +187,10 @@ export function Workspace() {
     return (stored as CompanionTab) ?? "chat";
   });
   const [familiarPanelOpen, setFamiliarPanelOpen] = useState(false);
+  // YouTube ("Video") toggle state, lifted out of the companion rail so the
+  // shell can keep the right panel peeking as a rotated video strip when the
+  // user collapses it instead of vanishing (and stopping playback).
+  const [railVideoActive, setRailVideoActive] = useState(false);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -1671,6 +1675,9 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}
+        // While a video is playing in the rail, collapsing the right panel
+        // leaves a thin peek strip (rotated video) instead of closing fully.
+        rightPanelPeek={showCompanionRail && railVideoActive}
         onFamiliarOpenChange={(open) => {
           setFamiliarPanelOpen(open);
           if (activeId) setRailOpen(activeId, open);
@@ -1751,6 +1758,12 @@ export function Workspace() {
               onTabChange={setRailTab}
               daemonRunning={daemonRunning}
               onCreateFamiliar={openOnboarding}
+              youtubeActive={railVideoActive}
+              onYoutubeActiveChange={setRailVideoActive}
+              // When the panel is collapsed (peek) with video on, show only the
+              // rotated video strip; the top-bar toggle / this button re-expand.
+              videoStrip={railVideoActive && !familiarPanelOpen}
+              onExpandRail={() => shellRef.current?.openFamiliar()}
               hideChatTab={mode === "chat"}
               // Chat surface already shows a "Choose a familiar" CTA in the
               // detail panel — suppress the rail's duplicate prompt there.
@@ -1771,7 +1784,12 @@ export function Workspace() {
               browserSlot={
                 <BrowserPane ref={companionBrowserPaneRef} label="companion" activeFamiliarId={active?.id ?? null} />
               }
-              salemSlot={<SalemChatPanel />}
+              salemSlot={
+                <SalemChatPanel
+                  familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
+                  model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
+                />
+              }
             />
           ) : undefined
         }

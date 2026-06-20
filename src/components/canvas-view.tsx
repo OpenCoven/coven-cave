@@ -131,7 +131,10 @@ function CanvasSurface({ familiars, activeFamiliarId }: Props) {
   }, []);
 
   const savePosition = useCallback((id: string, pos: CanvasPosition) => {
-    setPositions((prev) => ({ ...prev, [id]: pos }));
+    // Deep-merge so a position-only update (a drag sending just {x,y}) keeps the
+    // window's existing width/height instead of snapping it back to the default
+    // size. The server applies the same per-window merge.
+    setPositions((prev) => ({ ...prev, [id]: { ...prev[id], ...pos } }));
     void fetch("/api/canvas", {
       method: "PUT",
       headers: { "content-type": "application/json" },
