@@ -279,7 +279,7 @@ assert.match(
 // unsupported-extension code block.
 assert.match(
   source,
-  /type ProjectFilePreview =[\s\S]*?\| \{ kind: "image"; dataUrl: string; mimeType: string; size\?: number \};/,
+  /type ProjectFilePreview =[\s\S]*?\| \{ kind: "image"; dataUrl: string; mimeType: string; size\?: number \}/,
   "Projects file preview state tracks image previews separately from text",
 );
 assert.match(
