@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "@/styles/journal.css";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { CanvasList } from "./canvas-list";
@@ -30,8 +30,21 @@ export function JournalView({
   const tablistRef = useRef<HTMLElement | null>(null);
   useRovingTabIndex({ containerRef: tablistRef, itemSelector: '[role="tab"]', orientation: "horizontal" });
 
-  // Land on the persisted/requested tab after mount (hydration-safe). The
-  // /canvas slash and chat "open in canvas" set this key before navigating.
+  // Persist only on an explicit choice (click / deep-link event). We deliberately
+  // do NOT persist in a `[tab]` effect: that would write the default "journal" on
+  // mount and clobber a deep-linked tab before the adopt-effect below settles
+  // (visible under React StrictMode's double-invoked mount effects).
+  const selectTab = useCallback((next: JournalTab) => {
+    setTab(next);
+    try {
+      localStorage.setItem(TAB_KEY, next);
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, []);
+
+  // Adopt the persisted/requested tab after mount (hydration-safe). Read-only —
+  // it never writes, so re-invoking it can't clobber the deep-link.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(TAB_KEY);
@@ -45,19 +58,11 @@ export function JournalView({
   useEffect(() => {
     const onSet = (e: Event) => {
       const t = (e as CustomEvent<{ tab?: string }>).detail?.tab;
-      if (isTab(t)) setTab(t);
+      if (isTab(t)) selectTab(t);
     };
     window.addEventListener("cave:journal-set-tab", onSet as EventListener);
     return () => window.removeEventListener("cave:journal-set-tab", onSet as EventListener);
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(TAB_KEY, tab);
-    } catch {
-      /* ignore */
-    }
-  }, [tab]);
+  }, [selectTab]);
 
   return (
     <div className="journal-view">
@@ -75,7 +80,7 @@ export function JournalView({
                 aria-selected={active}
                 aria-controls={`journal-panel-${t.id}`}
                 className={`journal-tab${active ? " is-active" : ""}`}
-                onClick={() => setTab(t.id)}
+                onClick={() => selectTab(t.id)}
               >
                 {t.label}
               </button>
