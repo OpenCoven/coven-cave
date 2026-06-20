@@ -2,6 +2,9 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+// Shared relative-time formatter, imported as `age` so the call sites read the
+// same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
+import { relativeTime as age } from "@/lib/relative-time";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -59,18 +62,6 @@ type CovenMemoryResponse =
 type FileMemoryResponse =
   | { ok: true; entries: FileMemoryEntry[] }
   | { ok: false; entries?: FileMemoryEntry[]; error?: string };
-
-function age(iso: string | undefined): string {
-  if (!iso) return "";
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms)) return "";
-  if (ms < 60_000) return "just now";
-  const m = Math.floor(ms / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
 
 function compactPath(path: string): string {
   const collapsed = path.replace(/^\/Users\/[^/]+/, "~");

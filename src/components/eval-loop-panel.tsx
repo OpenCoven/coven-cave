@@ -15,6 +15,9 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+// Shared relative-time formatter, imported as `age` so the call sites read the
+// same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
+import { relativeTime as age } from "@/lib/relative-time";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,17 +52,6 @@ type Props = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function age(iso: string): string {
-  const ms = Math.abs(Date.now() - new Date(iso).getTime());
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + "s ago";
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + "m ago";
-  const h = Math.floor(m / 60);
-  if (h < 48) return h + "h ago";
-  return Math.floor(h / 24) + "d ago";
-}
 
 function deltaColor(delta: number): string {
   if (delta > 0) return "text-[var(--color-success)]";
