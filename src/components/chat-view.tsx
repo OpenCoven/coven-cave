@@ -4008,11 +4008,24 @@ function TurnRowImpl({
                 aren't pushed up the turn by the tool-activity section. */}
             {nextPaths.length > 0 && !turn.pending ? (
               <div className="cave-next-paths">
-                {nextPaths.map((s, i) => (
-                  <button key={i} type="button" className="cave-next-path" onClick={() => onSuggestion?.(s)}>
-                    {s}
-                  </button>
-                ))}
+                {nextPaths.map((s, i) => {
+                  // The agent lists next steps best-first, so flag the top one as
+                  // the recommendation (green pulsing border + leading dot).
+                  const recommended = i === 0;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
+                      onClick={() => onSuggestion?.(s)}
+                      aria-label={recommended ? `Recommended: ${s}` : undefined}
+                      title={recommended ? "Recommended next step" : undefined}
+                    >
+                      {recommended ? <span className="cave-next-path__dot" aria-hidden /> : null}
+                      {s}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
           </div>
