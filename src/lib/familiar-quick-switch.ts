@@ -85,6 +85,12 @@ export function togglePin(id: string): void {
   writePins(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
 }
 
+/** Replace the full pin list in a new order (e.g. drag-to-reorder in Settings).
+ *  Deduped on write; the sequence given becomes the strip's pin order. */
+export function setPins(ids: string[]): void {
+  writePins(ids);
+}
+
 // ── last-used recency ────────────────────────────────────────────────────────
 
 let cachedLastUsed: Record<string, number> | null = null;

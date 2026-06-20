@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { computeQuickSwitch, QUICK_SWITCH_MAX } from "./familiar-quick-switch.ts";
+import { computeQuickSwitch, QUICK_SWITCH_MAX, getPins, setPins, togglePin } from "./familiar-quick-switch.ts";
 
 const fam = (id, extra = {}) => ({ id, last_seen: undefined, ...extra });
 
@@ -57,6 +57,22 @@ const fam = (id, extra = {}) => ({ id, last_seen: undefined, ...extra });
   const familiars = [fam("a"), fam("b")];
   const out = computeQuickSwitch(familiars, { pins: ["a"], activeId: "a", lastUsed: { a: 5 } });
   assert.deepEqual(out.map((f) => f.id), ["a", "b"], "an id appears at most once");
+}
+
+// setPins replaces the whole pin list in the given order (drag-to-reorder),
+// deduping; togglePin removes a pin. (No window in Node → state lives in the
+// module cache, which is what the hooks read.)
+{
+  setPins(["c", "a", "b"]);
+  assert.deepEqual(getPins(), ["c", "a", "b"], "setPins establishes a new order");
+  setPins(["b", "c", "a"]);
+  assert.deepEqual(getPins(), ["b", "c", "a"], "setPins reorders");
+  setPins(["a", "a", "b"]);
+  assert.deepEqual(getPins(), ["a", "b"], "setPins dedupes");
+  togglePin("a");
+  assert.deepEqual(getPins(), ["b"], "togglePin removes an existing pin");
+  setPins([]);
+  assert.deepEqual(getPins(), [], "setPins can clear all pins");
 }
 
 console.log("familiar-quick-switch: all assertions passed");

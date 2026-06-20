@@ -326,6 +326,7 @@ export const SUITES = {
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
     "src/components/familiar-quick-switch.test.ts",
+    "src/components/familiar-pin-order.test.ts",
     "src/lib/familiar-quick-switch.test.ts",
     "src/lib/familiar-switcher-style.test.ts",
     "src/lib/salem/happy-paths.test.ts",

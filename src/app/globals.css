@@ -5154,6 +5154,159 @@ button:active > .edge-rail-chip {
   box-shadow: 0 0 0 2px var(--bg-base);
 }
 
+/* ── Settings: pinned-familiar order ───────────────────────────────────────── */
+.familiar-pin-order {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.familiar-pin-order__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.familiar-pin-order__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.familiar-pin-order__row[data-dragging] {
+  opacity: 0.6;
+}
+
+.familiar-pin-order__handle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: grab;
+  text-align: left;
+}
+
+.familiar-pin-order__handle:active {
+  cursor: grabbing;
+}
+
+.familiar-pin-order__grip {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__avatar {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.familiar-pin-order__name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.familiar-pin-order__role {
+  flex-shrink: 0;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__unpin {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-base);
+  color: var(--accent-presence);
+  cursor: pointer;
+}
+
+.familiar-pin-order__unpin:hover {
+  background: var(--bg-hover);
+}
+
+.familiar-pin-order__add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.familiar-pin-order__add-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.familiar-pin-order__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.familiar-pin-order__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 5px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.familiar-pin-order__chip:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
+}
+
+.familiar-pin-order__chip-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .familiar-switcher__sortable[data-dragging] {
   opacity: 0.6;
 }

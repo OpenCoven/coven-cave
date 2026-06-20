@@ -332,6 +332,16 @@ assert.match(
   /setFamiliarSwitcherStyle\(option\)/,
   "the familiar-switcher control writes the chosen style preference",
 );
+assert.match(
+  settings,
+  /Pin order[\s\S]*<FamiliarPinOrder \/>/,
+  "the avatar style exposes a drag-to-reorder pin-order manager",
+);
+assert.match(
+  settings,
+  /familiarSwitcherStyle === "avatars" \?[\s\S]*<FamiliarPinOrder/,
+  "the pin-order manager only shows for the avatar strip style",
+);
 
 // Corner radius drives the shared --radius tokens app-wide, so its boot block
 // must run before paint (ThemeScript) and its controller must mount in layout.

@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { FamiliarPinOrder } from "@/components/familiar-pin-order";
 import { DEMO_FAMILIARS } from "@/lib/demo-seed";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
@@ -1145,6 +1146,22 @@ function AppearanceSection() {
             })}
           </div>
         </div>
+
+        {/* Pin order — only meaningful for the avatar strip, so it follows the
+            style toggle and shows only when that style is active. */}
+        {familiarSwitcherStyle === "avatars" ? (
+          <div className="border-t border-[var(--border-hairline)] px-4 py-3">
+            <div className="mb-2 min-w-0">
+              <div className="text-[12px] font-medium text-[var(--text-secondary)]">
+                Pin order
+              </div>
+              <div className="text-[11px] text-[var(--text-muted)]">
+                Drag to set the order pinned familiars appear in the avatar strip.
+              </div>
+            </div>
+            <FamiliarPinOrder />
+          </div>
+        ) : null}
       </SettingsGroup>
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
