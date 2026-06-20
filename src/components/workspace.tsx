@@ -39,7 +39,6 @@ import { ComuxView } from "@/components/comux-view";
 import { CodeView } from "@/components/code-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
-import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import { PluginsView } from "@/components/plugins-view";
 import { WorkflowsView } from "@/components/workflows-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
@@ -1619,10 +1618,15 @@ export function Workspace() {
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       />
-    ) : mode === "roles" ? (
+    ) : mode === "roles" || mode === "capabilities" ? (
+      // Capabilities is the rightmost tab of the Roles page. The "capabilities"
+      // mode still resolves here (deep links / navigate-mode) but opens that
+      // tab; keying on the mode remounts so the deep link lands on it.
       <PluginsView
-        tabs={["roles", "workflows", "skills"]}
-        initialTab="roles"
+        key={mode}
+        tabs={["roles", "workflows", "skills", "capabilities"]}
+        initialTab={mode === "capabilities" ? "capabilities" : "roles"}
+        activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={() => setMode("chat")}
         onOpenWorkflow={(id) => { setWorkflowDeepLink(id); setMode("workflows"); }}
@@ -1635,8 +1639,6 @@ export function Workspace() {
       />
     ) : mode === "retro" ? (
       <RetroRunsView />
-    ) : mode === "capabilities" ? (
-      <CapabilitiesViewSurface activeHarness={active?.harness ?? null} />
     ) : mode === "calendar" ? (
       <CalendarView
         items={inboxItems}

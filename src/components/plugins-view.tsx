@@ -9,8 +9,9 @@ import {
 } from "@/components/skill-detail-drawer";
 import { listWorkflows, type WorkflowSummary } from "@/lib/workflows";
 import { Icon } from "@/lib/icon";
+import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 
-type Tab = "roles" | "workflows" | "skills";
+type Tab = "roles" | "workflows" | "skills" | "capabilities";
 
 type RoleEntry = {
   id: string;
@@ -46,12 +47,16 @@ type Props = {
   familiars?: FamiliarForSkill[];
   tabs?: Tab[];
   initialTab?: Tab;
+  /** Pre-selects the harness filter on the Capabilities tab (the active
+   *  familiar's harness), mirroring the standalone capabilities surface. */
+  activeHarness?: string | null;
 };
 
 const TAB_LABEL: Record<Tab, string> = {
   roles: "Roles",
   workflows: "Workflows",
   skills: "Skills",
+  capabilities: "Capabilities",
 };
 
 type IconName = Parameters<typeof Icon>[0]["name"];
@@ -62,6 +67,7 @@ const ICONS = {
   tabRoles: "ph:mask-happy",
   tabWorkflows: "ph:graph",
   tabSkills: "ph:sparkle",
+  tabCapabilities: "ph:lightning-bold",
   workflowChip: "ph:lightning-bold",
   workflowItem: "ph:graph",
   workflowOpen: "ph:arrow-right-bold",
@@ -71,6 +77,7 @@ const TAB_ICON: Record<Tab, IconName> = {
   roles: ICONS.tabRoles,
   workflows: ICONS.tabWorkflows,
   skills: ICONS.tabSkills,
+  capabilities: ICONS.tabCapabilities,
 };
 
 function includesQuery(values: Array<string | undefined>, query: string): boolean {
@@ -86,6 +93,7 @@ export function PluginsView({
   familiars = [],
   tabs = ["roles", "workflows", "skills"],
   initialTab,
+  activeHarness = null,
 }: Props) {
   const tabSet = useMemo(() => tabs, [tabs]);
   const [tab, setTab] = useState<Tab>(() => {
@@ -241,8 +249,28 @@ export function PluginsView({
     }
   };
 
+  // The Capabilities tab renders a self-contained surface that owns its own
+  // loading/error UI, so the shared header error is suppressed there.
   const activeError =
-    tab === "roles" ? rolesError : tab === "skills" ? skillsError : workflowsError;
+    tab === "roles"
+      ? rolesError
+      : tab === "skills"
+        ? skillsError
+        : tab === "workflows"
+          ? workflowsError
+          : null;
+
+  // "Open Capabilities" (the Skills empty-state CTA) now switches to the
+  // sibling Capabilities tab when it's present, falling back to the legacy
+  // callback for callers that render the Skills tab on its own.
+  const openCapabilities = useCallback(() => {
+    if (tabSet.includes("capabilities")) {
+      setTab("capabilities");
+      setQuery("");
+    } else {
+      onCreateSkill?.();
+    }
+  }, [tabSet, onCreateSkill]);
 
   return (
     <section className="plugins-view flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
@@ -256,16 +284,18 @@ export function PluginsView({
               Role and capability map
             </h2>
           </div>
-          <label className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 lg:w-80">
-            <Icon name={ICONS.search} width={15} className="shrink-0 text-[var(--text-muted)]" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={`Search ${TAB_LABEL[tab].toLowerCase()}`}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
-            />
-          </label>
+          {tab === "capabilities" ? null : (
+            <label className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 lg:w-80">
+              <Icon name={ICONS.search} width={15} className="shrink-0 text-[var(--text-muted)]" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Search ${TAB_LABEL[tab].toLowerCase()}`}
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+              />
+            </label>
+          )}
         </div>
         <div className="mt-4 flex flex-wrap gap-1">
           {tabSet.map((nextTab) => (
@@ -294,38 +324,46 @@ export function PluginsView({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        {tab === "roles" ? (
-          <RolesTab
-            roles={filteredRoles}
-            loaded={rolesLoaded}
-            busyRoleKey={busyRoleKey}
-            onToggleRole={toggleRole}
-            onOpenChat={onOpenChat}
-            onOpenWorkflow={onOpenWorkflow}
-          />
-        ) : tab === "workflows" ? (
-          <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} onOpenWorkflow={onOpenWorkflow} />
-        ) : (
-          <SkillsTab
-            skills={filteredSkills}
-            loaded={skillsLoaded}
-            onCreateSkill={onCreateSkill}
-            onSelectSkill={(skill) =>
-              setSelectedSkill({
-                id: skill.id,
-                name: skill.name,
-                description: skill.description,
-                version: skill.version,
-                category: skill.kind,
-                owner: skill.familiar,
-                tags: skill.tags,
-                source: skill.path,
-              })
-            }
-          />
-        )}
-      </div>
+      {tab === "capabilities" ? (
+        // Self-contained surface: it owns its own scroll, header, search, and
+        // filters, so it renders full-bleed (no shared padding/scroll wrapper).
+        <div className="flex min-h-0 flex-1 flex-col">
+          <CapabilitiesViewSurface activeHarness={activeHarness} />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          {tab === "roles" ? (
+            <RolesTab
+              roles={filteredRoles}
+              loaded={rolesLoaded}
+              busyRoleKey={busyRoleKey}
+              onToggleRole={toggleRole}
+              onOpenChat={onOpenChat}
+              onOpenWorkflow={onOpenWorkflow}
+            />
+          ) : tab === "workflows" ? (
+            <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} onOpenWorkflow={onOpenWorkflow} />
+          ) : (
+            <SkillsTab
+              skills={filteredSkills}
+              loaded={skillsLoaded}
+              onCreateSkill={openCapabilities}
+              onSelectSkill={(skill) =>
+                setSelectedSkill({
+                  id: skill.id,
+                  name: skill.name,
+                  description: skill.description,
+                  version: skill.version,
+                  category: skill.kind,
+                  owner: skill.familiar,
+                  tags: skill.tags,
+                  source: skill.path,
+                })
+              }
+            />
+          )}
+        </div>
+      )}
 
       <SkillDetailDrawer
         skill={selectedSkill}

@@ -31,8 +31,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "workflows", "skills"\]\}/,
-  "The Roles surface should expose roles, workflows, and skills (plugins retired)",
+  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "workflows", "skills", "capabilities"\]\}/,
+  "The Roles surface should expose roles, workflows, skills, and capabilities (capabilities is the rightmost tab)",
 );
 
 assert.doesNotMatch(

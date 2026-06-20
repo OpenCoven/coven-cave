@@ -142,10 +142,10 @@ assert.match(
   "Workflows should appear as a Tools surface",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /\{ id: "capabilities", label: "Capabilities", iconName: "ph:lightning-bold", group: "tools", description:/,
-  "Capabilities should appear as a Tools surface",
+  /\{ id: "capabilities",/,
+  "Capabilities is no longer a standalone nav entry — it moved to the rightmost tab of the Roles page",
 );
 
 assert.doesNotMatch(
@@ -212,7 +212,8 @@ assert.match(
   "the unread count badge uses the danger treatment",
 );
 
-// Tools-group entries include browser, terminal, roles, workflows, and capabilities.
+// Tools-group entries include browser, terminal, roles, and workflows.
+// (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   source,
   /id:\s*"browser"[^}]*group:\s*"tools"/,
@@ -232,11 +233,6 @@ assert.match(
   source,
   /id:\s*"workflows"[^}]*group:\s*"tools"/,
   "workflows stays in Tools",
-);
-assert.match(
-  source,
-  /id:\s*"capabilities"[^}]*group:\s*"tools"/,
-  "capabilities stays in Tools",
 );
 
 // Recent Activity items must navigate: RecentActivityRollup's onClick calls
@@ -295,21 +291,16 @@ assert.match(
 
 // Every surface carries a one-line description, and FolderRow surfaces it as a
 // title (hover tooltip / touch long-press hint / AT description) — so the
-// look-alike surfaces (Roles vs Workflows vs Capabilities) are differentiated.
+// look-alike surfaces (Roles vs Workflows) are differentiated.
 assert.match(
   source,
-  /id: "roles"[\s\S]*?description: "Reusable agent personas/,
-  "Roles is described as personas, distinct from Workflows/Capabilities",
+  /id: "roles"[\s\S]*?description: "Agent personas/,
+  "Roles is described as personas, distinct from Workflows",
 );
 assert.match(
   source,
   /id: "workflows"[\s\S]*?description: "Multi-step pipelines/,
-  "Workflows is described as pipelines, distinct from Roles/Capabilities",
-);
-assert.match(
-  source,
-  /id: "capabilities"[\s\S]*?description: "Skills and tools/,
-  "Capabilities is described as skills/tools, distinct from Roles/Workflows",
+  "Workflows is described as pipelines, distinct from Roles",
 );
 assert.match(
   source,
