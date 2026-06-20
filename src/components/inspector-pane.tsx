@@ -765,6 +765,8 @@ function MemoryTab({
                     Browse memory files →
                   </button>
                 </span>
+              ) : query.trim() ? (
+                `No coven memory matches “${query.trim()}”.`
               ) : familiar ? (
                 `No coven memory entries for ${familiar.display_name} yet.`
               ) : (
