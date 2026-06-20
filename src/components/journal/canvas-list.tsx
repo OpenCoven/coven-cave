@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
 import { relativeTime } from "@/lib/daily-report";
+import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import {
   buildPreviewSrcDoc,
   buildRefinePrompt,
@@ -65,6 +66,9 @@ export function CanvasList({
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refineText, setRefineText] = useState("");
+  const refineRef = useRef<HTMLTextAreaElement | null>(null);
 
   const load = useCallback(async () => {
     if (isDemoModeEnabled()) {
@@ -170,6 +174,43 @@ export function CanvasList({
 
   const selected = artifacts.find((a) => a.id === selectedId) ?? null;
   const canGenerate = Boolean(activeFamiliarId ?? familiars[0]?.id);
+  const selectedBusy = selected ? generating.has(selected.id) : false;
+
+  // Context-aware refine ideas for the selected sketch (cheap string scan).
+  const generatedSuggestions = useMemo(
+    () => (selected ? generateRefineSuggestions(selected.code, selected.kind ?? "html") : []),
+    [selected],
+  );
+
+  // The refine space resets when switching sketches so a draft doesn't leak
+  // across artifacts.
+  useEffect(() => {
+    setRefineOpen(false);
+    setRefineText("");
+  }, [selectedId]);
+
+  const openRefine = useCallback(() => {
+    setRefineOpen(true);
+    requestAnimationFrame(() => refineRef.current?.focus());
+  }, []);
+
+  const applySuggestion = useCallback((text: string) => {
+    setRefineText(text);
+    requestAnimationFrame(() => {
+      const el = refineRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, []);
+
+  const submitRefine = useCallback(() => {
+    const ask = refineText.trim();
+    if (!selected || !ask || generating.has(selected.id)) return;
+    void runGeneration(selected.id, ask, selected);
+    setRefineText("");
+    setRefineOpen(false);
+  }, [refineText, selected, generating, runGeneration]);
 
   return (
     <div className="journal-list">
@@ -252,11 +293,12 @@ export function CanvasList({
               <div className="journal-detail__actions">
                 <button
                   type="button"
-                  className="journal-act"
-                  disabled={!canGenerate || generating.has(selected.id)}
-                  onClick={() => runGeneration(selected.id, selected.prompt, selected)}
+                  className={`journal-act${refineOpen ? " journal-act--on" : ""}`}
+                  disabled={!canGenerate || selectedBusy}
+                  aria-expanded={refineOpen}
+                  onClick={() => (refineOpen ? setRefineOpen(false) : openRefine())}
                 >
-                  <Icon name="ph:arrows-clockwise" aria-hidden /> Refine
+                  <Icon name="ph:arrows-clockwise" aria-hidden /> {selectedBusy ? "Refining…" : "Refine"}
                 </button>
                 <button
                   type="button"
@@ -268,6 +310,52 @@ export function CanvasList({
                 </button>
               </div>
             </div>
+            {refineOpen ? (
+              <div className="journal-refine" role="group" aria-label="Refine sketch">
+                <textarea
+                  ref={refineRef}
+                  className="journal-refine__text"
+                  aria-label="Describe the optimization you want"
+                  placeholder="Describe the optimization you want…"
+                  rows={2}
+                  value={refineText}
+                  disabled={selectedBusy}
+                  onChange={(e) => setRefineText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitRefine(); }
+                    if (e.key === "Escape") { e.preventDefault(); setRefineOpen(false); }
+                  }}
+                />
+                <p className="journal-refine__label">Suggestions</p>
+                <div className="journal-refine__chips">
+                  {DEFAULT_REFINE_SUGGESTIONS.map((s) => (
+                    <button key={s} type="button" className="journal-refine__chip" disabled={selectedBusy} onClick={() => applySuggestion(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {generatedSuggestions.length ? (
+                  <>
+                    <p className="journal-refine__label"><Icon name="ph:sparkle" width={11} aria-hidden /> From this sketch</p>
+                    <div className="journal-refine__chips">
+                      {generatedSuggestions.map((s) => (
+                        <button key={s} type="button" className="journal-refine__chip journal-refine__chip--gen" disabled={selectedBusy} onClick={() => applySuggestion(s)}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+                <div className="journal-refine__foot">
+                  <span className="journal-refine__hint">⌘↵ to refine</span>
+                  <span style={{ flex: 1 }} />
+                  <button type="button" className="journal-act" onClick={() => setRefineOpen(false)}>Cancel</button>
+                  <button type="button" className="journal-refine__go" disabled={selectedBusy || !refineText.trim()} onClick={submitRefine}>
+                    {selectedBusy ? "Refining…" : "Refine"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {view === "preview" ? (
               <iframe
                 className="journal-detail__frame"
