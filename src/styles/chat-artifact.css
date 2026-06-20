@@ -49,6 +49,15 @@
   color: var(--text-primary); background: var(--bg-base); border: 0;
 }
 .chat-artifact__code-edit { resize: vertical; white-space: pre; }
+/* Highlighted (read-only) code: the wrapper scrolls; Shiki's own <pre> drops
+   its padding/background so the box inherits the artifact's surface + spacing. */
+.chat-artifact__code--hl { padding: 0; }
+.chat-artifact__code--hl pre.shiki {
+  margin: 0; padding: 12px 14px; min-height: 100%; box-sizing: border-box;
+  background: transparent !important;
+  font: inherit; white-space: pre;
+}
+.chat-artifact__code--hl code { font: inherit; }
 .chat-artifact__error {
   position: absolute; left: 10px; right: 10px; bottom: 10px;
   display: flex; align-items: center; gap: 8px;

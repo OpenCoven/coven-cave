@@ -13,6 +13,7 @@ import {
 } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
+import { highlightToHtml } from "@/components/message-bubble";
 
 type Props = {
   initialCode: string;
@@ -209,7 +210,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
             onChange={(e) => { setCode(e.target.value); setSaveState("idle"); }}
           />
         ) : (
-          <pre className="chat-artifact__code"><code>{code}</code></pre>
+          <ArtifactCode code={code} kind={kind} />
         )}
       </div>
 
@@ -229,5 +230,35 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The Code tab's read-only view: the same code, Shiki-highlighted to match the
+ * chat code blocks. Falls back to plain text until the (lazy) highlighter
+ * resolves, and on any highlight failure, so the code is always shown. React
+ * artifacts highlight as TSX; everything else as HTML.
+ */
+function ArtifactCode({ code, kind }: { code: string; kind: ArtifactKind }) {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHtml(null);
+    void highlightToHtml(code, kind === "react" ? "tsx" : "html")
+      .then((h) => { if (!cancelled) setHtml(h); })
+      .catch(() => { if (!cancelled) setHtml(null); });
+    return () => { cancelled = true; };
+  }, [code, kind]);
+
+  if (!html) {
+    return <pre className="chat-artifact__code"><code>{code}</code></pre>;
+  }
+  return (
+    <div
+      className="chat-artifact__code chat-artifact__code--hl"
+      // eslint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
