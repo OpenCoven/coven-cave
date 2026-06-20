@@ -8,7 +8,7 @@ import { LibraryUndoToast } from "@/components/library-undo-toast";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { CardGitHubLink, CardStatus } from "@/lib/cave-board-types";
 import type { LibraryGitHubItem, GitHubItemKind } from "@/lib/library-types";
 import {
@@ -805,7 +805,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                             <span className="board-table-muted gh-repo-cell">{item.repo}</span>
                           </td>
                           <td className="gh-col-saved">
-                            <span className="board-table-muted">{relativeTime(item.savedAt)}</span>
+                            <RelativeTime iso={item.savedAt} className="board-table-muted" />
                           </td>
                           <td className="gh-col-kind">
                             <span className="board-table-muted library-source-type gh-kind-pill">

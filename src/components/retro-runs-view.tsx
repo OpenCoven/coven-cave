@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { RetroOutcome, RetroRun, RetroRunsSnapshot, RetroTrack } from "@/lib/retro-runs";
 
 type RetroApiResponse = {
@@ -95,7 +96,7 @@ function RunRow({ run }: { run: RetroRun }) {
             {scoreLabel(run.delta)}
           </span>
           <span>{run.metricBefore.toFixed(2)} -&gt; {run.metricAfter.toFixed(2)}</span>
-          <span>{relativeTime(run.timestamp)}</span>
+          <RelativeTime iso={run.timestamp} />
         </div>
 
         {run.notes ? <p className="retro-run-row__notes">{run.notes}</p> : null}
