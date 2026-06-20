@@ -80,4 +80,28 @@ assert.match(
   "Settings integrations shows skeleton rows while the daemon status loads",
 );
 
+const vault = read("./vault-panel.tsx");
+assert.doesNotMatch(
+  vault,
+  />Loading…</,
+  "Vault panel no longer shows a bare Loading… line",
+);
+assert.match(
+  vault,
+  /\{loading \? \(\s*<SkeletonRows/,
+  "Vault panel shows skeleton rows while the first /api/vault fetch is in flight",
+);
+
+const retro = read("./retro-runs-view.tsx");
+assert.match(
+  retro,
+  /\{loading \? \(\s*<SkeletonRows/,
+  "Retro runs shows shared skeleton rows on first load instead of hand-rolled divs",
+);
+assert.doesNotMatch(
+  retro,
+  /className="retro-skeleton"/,
+  "Retro runs no longer hand-rolls retro-skeleton placeholder divs",
+);
+
 console.log("surface-loading-states.test.ts: ok");
