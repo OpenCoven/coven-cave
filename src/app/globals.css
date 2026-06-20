@@ -4712,6 +4712,17 @@ button:active > .edge-rail-chip {
               border-color var(--duration-fast) var(--ease-standard);
 }
 
+/* Avatar image fills the trigger square edge-to-edge. FamiliarAvatar renders a
+   fixed 16px img, which sits centered in the 28px button and leaves a dark gap;
+   stretch it to the button's inner box instead. The glyph fallback is a vector
+   icon — intentionally NOT targeted here, so it stays centered at its own size. */
+.familiar-switcher__trigger img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--radius-control) - 1px);
+}
+
 .familiar-switcher__trigger:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
