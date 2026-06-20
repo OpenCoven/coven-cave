@@ -19,6 +19,18 @@ assert.match(projectsView, /chats=\{chatsByRoot\.get\(normalizeProjectRoot\(proj
 // Nested chats are draggable: reorder within a project, move across projects.
 assert.match(projectsView, /<DndContext[\s\S]{0,120}onDragEnd=\{handleDragEnd\}/, "Projects view wraps the cards in a DndContext");
 assert.match(projectsView, /function ProjectChatRow/, "chats render as sortable rows");
+// The chat row is a div role="button"; keep it keyboard-accessible — both Enter
+// and Space activate (ARIA button pattern) and it shows a visible focus ring.
+assert.match(
+  projectsView,
+  /role="button"[\s\S]{0,400}?e\.key === "Enter" \|\| e\.key === " "[\s\S]{0,120}?onOpen\(\)/,
+  "the chat row activates on both Enter and Space",
+);
+assert.match(
+  projectsView,
+  /role="button"[\s\S]{0,700}?className="focus-ring /,
+  "the chat row has a visible keyboard focus ring",
+);
 assert.match(projectsView, /useDroppable\(\{\s*id: `pcard:/, "project cards are drop targets");
 assert.match(projectsView, /applyProjectOverrides\(sessions, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied");
 assert.match(projectsView, /setProjectOverride\(activeId, targetRoot\)/, "cross-project drop moves the chat via an override");
