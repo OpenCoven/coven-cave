@@ -149,4 +149,32 @@ assert.match(
   "workspace navigates to the chosen surface on a go-to-surface intent",
 );
 
+// ── "Open project" navigation ──
+assert.match(
+  source,
+  /kind:\s*"open-project";\s*root:\s*string/,
+  "palette exposes an open-project intent",
+);
+assert.match(
+  source,
+  /const \{ projects \} = useProjects\(\)/,
+  "palette reads the project list to offer project navigation",
+);
+assert.match(
+  source,
+  /name:\s*`Open project \$\{p\.name\}`/,
+  "each project renders an 'Open project <name>' row",
+);
+assert.match(
+  source,
+  /intent:\s*\{ kind: "open-project", root: p\.root \}/,
+  "an open-project row carries the project root",
+);
+// Consumer: workspace opens the Projects tab then focuses the chosen project.
+assert.match(
+  workspace,
+  /intent\.kind === "open-project"[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
+  "workspace opens the Projects tab then focuses the chosen project",
+);
+
 console.log("command-palette.test.ts OK");

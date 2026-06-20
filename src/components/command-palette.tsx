@@ -10,6 +10,12 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { FOLDER_MODES, type FolderMode, type AddonsConfig } from "@/components/sidebar-minimal";
+import { useProjects } from "@/lib/use-projects";
+
+function shortProjectRoot(root: string): string {
+  const parts = root.replace(/\/+$/, "").split("/").filter(Boolean);
+  return parts.length <= 2 ? root : `…/${parts.slice(-2).join("/")}`;
+}
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
@@ -20,6 +26,7 @@ type PaletteIntent =
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
   | { kind: "go-to-surface"; mode: FolderMode }
+  | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
   | { kind: "open-memory-file"; path: string };
@@ -178,6 +185,7 @@ export function CommandPalette({
   onIntent,
   addons,
 }: Props) {
+  const { projects } = useProjects();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
@@ -472,6 +480,21 @@ export function CommandPalette({
             intent: { kind: "go-to-surface", mode: fm.id },
           }));
 
+    // "Open project <name>" rows jump into a project's chats (the Projects tab,
+    // expanded + scrolled to that project). Hidden while scoped or typing slash.
+    const projectRows: Row[] = (scoped || slashToken)
+      ? []
+      : projects
+          .filter((p) => !q || p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q))
+          .slice(0, 6)
+          .map((p) => ({
+            id: `project:${p.id}`,
+            kind: "command" as const,
+            name: `Open project ${p.name}`,
+            hint: shortProjectRoot(p.root),
+            intent: { kind: "open-project", root: p.root },
+          }));
+
     const localRows: Row[] = [
       ...familiarRows,
       ...sessionRows,
@@ -481,6 +504,7 @@ export function CommandPalette({
       ...saveRows,
       ...cmdRows,
       ...surfaceRows,
+      ...projectRows,
       ...shortcutRows,
       ...createRows,
     ];
@@ -490,7 +514,7 @@ export function CommandPalette({
       : [];
 
     return [...salemRows, ...localRows];
-  }, [familiars, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId]);
+  }, [familiars, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId, projects, addons]);
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));

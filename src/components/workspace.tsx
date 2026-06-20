@@ -42,7 +42,7 @@ import { LibraryView } from "@/components/library-view";
 import { PluginsView } from "@/components/plugins-view";
 import { WorkflowsView } from "@/components/workflows-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
@@ -1202,6 +1202,21 @@ export function Workspace() {
     if (intent.kind === "go-to-surface") {
       setMode(intent.mode as WorkspaceMode);
       shellRef.current?.dismissNavMobile();
+      return;
+    }
+    if (intent.kind === "open-project") {
+      // Open the Chat surface's Projects tab, then ask it to expand + scroll the
+      // chosen project into view once it has mounted.
+      setMode("chat");
+      shellRef.current?.dismissNavMobile();
+      const root = intent.root;
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+        window.setTimeout(
+          () => window.dispatchEvent(new CustomEvent(CHAT_FOCUS_PROJECT_EVENT, { detail: { root } })),
+          60,
+        );
+      }, 0);
       return;
     }
     if (intent.kind === "focus-card") {

@@ -151,4 +151,22 @@ assert.match(projectsView, /\{shortRoot\(project\.root\)\}/, "the displayed path
 assert.match(projectsView, /title=\{project\.root\}/, "the full path remains available via the title");
 assert.match(projectsView, /relativeTime\(/, "each row shows a relative last-active label (shared relative-time helper)");
 
+// A project card expands + scrolls into view when the command palette's
+// "Open project" navigation fires CHAT_FOCUS_PROJECT_EVENT for its root.
+assert.match(
+  projectsView,
+  /addEventListener\(CHAT_FOCUS_PROJECT_EVENT/,
+  "project cards listen for the focus-project event",
+);
+assert.match(
+  projectsView,
+  /normalizeProjectRoot\(detail\.root\) !== cardKey[\s\S]{0,120}?setExpanded\(true\)/,
+  "a matching focus event expands the card",
+);
+assert.match(
+  projectsView,
+  /id=\{`pcard-el:\$\{cardKey\}`\}/,
+  "the card carries a stable id so it can be scrolled into view",
+);
+
 console.log("projects-view.test.ts: ok");

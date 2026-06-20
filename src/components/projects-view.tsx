@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
+import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import type { SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import {
@@ -206,6 +207,24 @@ function ProjectRow({
   // Every project starts collapsed to a single scannable row; expanding reveals
   // the path + its sessions.
   const [expanded, setExpanded] = useState(false);
+  const cardKey = normalizeProjectRoot(project.root);
+
+  // The command palette's "Open project" rows expand + scroll a project into
+  // view via this event (the Projects tab is opened first, then focused).
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const detail = (e as CustomEvent<{ root?: string }>).detail;
+      if (!detail?.root || normalizeProjectRoot(detail.root) !== cardKey) return;
+      setExpanded(true);
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById(`pcard-el:${cardKey}`)
+          ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    };
+    window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
+    return () => window.removeEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);
+  }, [cardKey]);
   const lastActiveIso =
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
   const lastActiveLabel = relativeTime(lastActiveIso);
@@ -272,6 +291,7 @@ function ProjectRow({
   return (
     <article
       ref={setDropRef}
+      id={`pcard-el:${cardKey}`}
       data-drop-over={isOver ? "true" : undefined}
       className={[
         "group border-b border-[var(--border-hairline)] px-2 py-3 transition-colors",
