@@ -11,7 +11,7 @@ import type {
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
-import { formatTimestamp } from "@/lib/datetime-format";
+import { formatTimestamp, formatClock } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/project-tree";
@@ -54,8 +54,10 @@ const RRULE_DAY_LABEL: Record<string, string> = {
   SA: "Sat",
 };
 
-function pad(n: number) {
-  return n.toString().padStart(2, "0");
+// Format a schedule's hour:minute honoring the user's 12h/24h clock pref
+// (so "Daily at 14:00" reads as "Daily at 2:00 PM" when 12-hour is selected).
+function scheduleTime(hour: number, minute: number): string {
+  return formatClock(new Date(2000, 0, 1, hour, minute, 0).toISOString());
 }
 
 function humanSchedule(rec: Recurrence | undefined): string {
@@ -68,10 +70,10 @@ function humanSchedule(rec: Recurrence | undefined): string {
     return `Every ${Math.round(h / 24)}d`;
   }
   if (rec.type === "daily")
-    return `Daily at ${pad(rec.hour)}:${pad(rec.minute)}`;
+    return `Daily at ${scheduleTime(rec.hour, rec.minute)}`;
   if (rec.type === "weekly") {
     const days = rec.days.map((d) => WEEKDAY[d] ?? "?").join("/");
-    return `${days}s at ${pad(rec.hour)}:${pad(rec.minute)}`;
+    return `${days}s at ${scheduleTime(rec.hour, rec.minute)}`;
   }
   if (rec.type === "cron") return `Cron: ${rec.expr}`;
   return "Scheduled";
