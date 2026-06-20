@@ -39,6 +39,13 @@ assert.doesNotMatch(list, /@xyflow\/react/, "CanvasList does not use React Flow"
 assert.match(list, /editingTitleId,\s*setEditingTitleId/, "CanvasList tracks which canvas item title is being renamed");
 assert.match(list, /aria-label=\{`Rename \$\{a\.title \|\| "Untitled sketch"\}`\}/, "Canvas item rows expose a rename button");
 assert.match(list, /commitRename/, "CanvasList persists renamed canvas item titles");
+
+// The Code tab offers a Copy button (only while the code view is active) that
+// copies the artifact source via the robust clipboard helper.
+assert.match(list, /import \{ copyText \} from "@\/lib\/clipboard"/, "CanvasList imports the clipboard helper");
+assert.match(list, /view === "code" \? \(/, "Copy button is gated to the Code tab");
+assert.match(list, /copyText\(selected\.code\)/, "Copy button copies the selected artifact's code");
+assert.match(list, /name=\{copied \? "ph:check" : "ph:copy"\}/, "Copy button shows a copied confirmation icon");
 assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Enter"[\s\S]*?commitRename/, "Canvas item rename input commits on Enter");
 assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelRename/, "Canvas item rename input cancels on Escape");
 
