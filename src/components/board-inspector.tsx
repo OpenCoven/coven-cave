@@ -956,6 +956,27 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
               </div>
             </div>
 
+            <div className="board-drawer-grid-2">
+              <div className="board-drawer-field">
+                <div className="board-drawer-field-label">Start date</div>
+                <input
+                  className="board-drawer-field-input"
+                  type="date"
+                  value={card.startDate ?? ""}
+                  onChange={(e) => onPatch(card.id, { startDate: e.target.value || null })}
+                />
+              </div>
+              <div className="board-drawer-field">
+                <div className="board-drawer-field-label">End date</div>
+                <input
+                  className="board-drawer-field-input"
+                  type="date"
+                  value={card.endDate ?? ""}
+                  onChange={(e) => onPatch(card.id, { endDate: e.target.value || null })}
+                />
+              </div>
+            </div>
+
             <div className="board-drawer-field">
               <div className="board-drawer-field-label board-drawer-field-label--split">
                 <span>Project</span>

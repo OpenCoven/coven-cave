@@ -318,6 +318,7 @@ export const SUITES = {
     "src/lib/vault-bundle.test.ts",
     "src/lib/cave-board-atomic.test.ts",
     "src/lib/env-local-bundle.test.ts",
+    "src/lib/cave-board-schedule.test.ts",
     "src/components/ui/tabs.test.ts",
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
@@ -351,6 +352,7 @@ export const SUITES = {
     "src/components/right-panel-expand.test.ts",
     "src/lib/next-paths.test.ts",
     "src/components/board-clear-done.test.ts",
+    "src/components/board-schedule-window.test.ts",
   ],
   api: [
     "scripts/dependency-policy.test.mjs",
@@ -472,6 +474,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-config-state-race.test.ts",
   "src/lib/cave-board-atomic.test.ts",
   "src/lib/cave-board-steps.test.ts",
+  "src/lib/cave-board-schedule.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",
   "src/lib/session-rail-title.test.ts",
   "src/lib/server/familiar-contract-files.test.ts",

@@ -215,6 +215,7 @@
 .board-table-cell-links { display:inline-flex; align-items:center; gap:4px; color:var(--text-secondary); font-size:11px; }
 .board-table-cell-links svg { color:var(--text-muted); }
 .board-table-cell-empty { color:color-mix(in oklch,var(--text-muted) 50%,transparent); font-size:11px; }
+.board-table-cell-date { color:var(--text-secondary); font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .board-table-cell-time { color:var(--text-muted); font-size:11px; font-variant-numeric:tabular-nums; }
 
 .board-swimlane { flex-shrink:0; border-bottom:1px solid var(--border-hairline); }
@@ -309,6 +310,8 @@
 .board-kanban-card-chip--more { color:var(--text-muted); background:transparent; border-color:transparent; padding:1px 2px; }
 .board-kanban-card-chip--chat { color:var(--accent-presence); background:color-mix(in oklch,var(--accent-presence) 12%,transparent); border-color:color-mix(in oklch,var(--accent-presence) 35%,var(--border-hairline)); }
 .board-kanban-card-chip--chat svg { color:var(--accent-presence); }
+.board-kanban-card-chip--schedule { color:var(--color-warning); background:color-mix(in oklch,var(--color-warning) 12%,transparent); border-color:color-mix(in oklch,var(--color-warning) 32%,var(--border-hairline)); }
+.board-kanban-card-chip--schedule svg { color:var(--color-warning); }
 
 .board-kanban-card-footer { display:flex; align-items:center; justify-content:space-between; gap:6px; padding-top:6px; border-top:1px dashed var(--border-hairline); }
 .board-kanban-card-familiar { display:inline-flex; align-items:center; gap:5px; min-width:0; flex:1; }
@@ -1126,6 +1129,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.board-card-stack__row-schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-warning);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .board-card-stack__row-action {
   margin-left: auto;
   display: inline-flex;
@@ -1141,6 +1152,92 @@
 .board-card-stack__row-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Board Gantt */
+.board-gantt {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+.board-gantt--empty {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.board-gantt-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px 8px 180px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.board-gantt-list {
+  display: grid;
+  gap: 8px;
+}
+.board-gantt-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr) minmax(96px, auto);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.board-gantt-row:hover,
+.board-gantt-row--selected {
+  border-color: color-mix(in oklch,var(--accent-presence) 42%,var(--border-hairline));
+  background: color-mix(in oklch,var(--accent-presence) 8%,var(--bg-raised));
+}
+.board-gantt-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.board-gantt-row__track {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  overflow: hidden;
+}
+.board-gantt-row__bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  min-width: 12px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+}
+.board-gantt-row__bar--urgent { background: var(--color-danger); }
+.board-gantt-row__bar--high { background: var(--color-warning); }
+.board-gantt-row__bar--medium { background: var(--accent-presence); }
+.board-gantt-row__bar--low { background: color-mix(in oklch,var(--text-muted) 55%,transparent); }
+.board-gantt-row__dates {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.board-gantt-unscheduled {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .board-card-stack__row-menu-trigger {

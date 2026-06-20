@@ -96,14 +96,23 @@ function normalizeCwd(value: string | null | undefined): string | null {
 
 type LegacyCard = Omit<
   Card,
-  "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
+  "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps"
+      "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
     >
   >;
+
+function normalizeBoardDate(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const date = new Date(`${trimmed}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10) === trimmed ? trimmed : null;
+}
 
 function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
@@ -117,6 +126,8 @@ function backfillCard(c: Card | LegacyCard): Card {
     links,
     github,
     labels: normalizeList(c.labels),
+    startDate: normalizeBoardDate(c.startDate),
+    endDate: normalizeBoardDate(c.endDate),
     lifecycle,
     lifecycleAt: c.lifecycleAt ?? c.updatedAt,
     retryCount: c.retryCount ?? 0,
@@ -214,6 +225,8 @@ export type NewCardInput = {
   links?: string[];
   github?: CardGitHubLink[];
   labels?: string[];
+  startDate?: string | null;
+  endDate?: string | null;
   template?: string | null;
   /** Optional checklist steps to seed the card with (e.g. a Salem path). */
   steps?: { text: string }[];
@@ -238,6 +251,8 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     links: mergeLinksWithGitHub(normalizeLinks(input.links), github),
     github,
     labels: normalizeList(input.labels),
+    startDate: normalizeBoardDate(input.startDate),
+    endDate: normalizeBoardDate(input.endDate),
     template: input.template ?? null,
     createdAt: now,
     updatedAt: now,
@@ -288,6 +303,8 @@ export async function updateCard(
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,
     sessionId: "sessionId" in patch ? patch.sessionId ?? null : current.sessionId,
+    startDate: "startDate" in patch ? normalizeBoardDate(patch.startDate) : current.startDate ?? null,
+    endDate: "endDate" in patch ? normalizeBoardDate(patch.endDate) : current.endDate ?? null,
     steps: patch.steps ?? current.steps,
   };
   if (next.lifecycle === "running" && !next.runningSince) {

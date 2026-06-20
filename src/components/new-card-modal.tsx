@@ -24,6 +24,8 @@ export type NewCardDraft = {
   cwd: string | null;
   links: string[];
   labels: string[];
+  startDate: string | null;
+  endDate: string | null;
   template: null;
 };
 
@@ -66,6 +68,8 @@ export function NewCardModal({
   const [cwd, setCwd] = useState("");
   const [links, setLinks] = useState("");
   const [labels, setLabels] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
@@ -82,6 +86,8 @@ export function NewCardModal({
     setCwd("");
     setLinks(defaultLinks ? defaultLinks.join("\n") : "");
     setLabels(defaultLabels ? defaultLabels.join(", ") : "");
+    setStartDate("");
+    setEndDate("");
     setError(null);
   }, [open, defaultStatus, defaultFamiliarId, defaultTitle, defaultLinks, defaultNotes, defaultLabels]);
 
@@ -105,6 +111,8 @@ export function NewCardModal({
         cwd: cwd.trim() || null,
         links: parseDelimited(links),
         labels: parseDelimited(labels),
+        startDate: startDate || null,
+        endDate: endDate || null,
         template: null,
       });
       onClose();
@@ -247,6 +255,23 @@ export function NewCardModal({
               { value: "", label: "No project" },
               ...projects.map((p) => ({ value: p.id, label: p.name })),
             ]}
+          />
+        </Field>
+
+        <Field label="Start date">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          />
+        </Field>
+        <Field label="End date">
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
       </div>

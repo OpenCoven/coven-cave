@@ -11,7 +11,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 
 export type GroupBy = "status" | "familiar" | "project";
-export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "updatedAt";
+export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "startDate" | "endDate" | "updatedAt";
 export type SortDir = "asc" | "desc";
 
 const STATUS_ORDER: Record<CardStatus, number> = { backlog: 0, inbox: 1, running: 2, review: 3, blocked: 4, done: 5 };
@@ -27,6 +27,8 @@ function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familia
       case "priority": cmp = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]; break;
       case "familiar": cmp = fname(a.familiarId).localeCompare(fname(b.familiarId)); break;
       case "lifecycle": cmp = a.lifecycle.localeCompare(b.lifecycle); break;
+      case "startDate": cmp = (a.startDate ?? "9999-12-31").localeCompare(b.startDate ?? "9999-12-31"); break;
+      case "endDate": cmp = (a.endDate ?? "9999-12-31").localeCompare(b.endDate ?? "9999-12-31"); break;
       case "updatedAt": cmp = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""); break;
     }
     return dir === "asc" ? cmp : -cmp;
@@ -81,6 +83,13 @@ function relTime(iso: string): string {
   } catch { return ""; }
 }
 
+function formatBoardDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${month}/${day}/${year.slice(-2)}`;
+}
+
 type ColDef = { key: SortKey; label: string; width?: string };
 const COLS: ColDef[] = [
   { key: "title",     label: "Title" },
@@ -88,6 +97,8 @@ const COLS: ColDef[] = [
   { key: "priority",  label: "Priority",  width: "90px" },
   { key: "familiar",  label: "Familiar",  width: "130px" },
   { key: "lifecycle", label: "Lifecycle", width: "100px" },
+  { key: "startDate", label: "Start",     width: "84px" },
+  { key: "endDate",   label: "End",       width: "84px" },
   { key: "updatedAt", label: "Updated",   width: "80px" },
 ];
 
@@ -235,6 +246,8 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                       </span>
                     </td>
                     <td><LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} /></td>
+                    <td><span className="board-table-cell-date">{formatBoardDate(card.startDate)}</span></td>
+                    <td><span className="board-table-cell-date">{formatBoardDate(card.endDate)}</span></td>
                     <td style={{ textAlign: "right" }}><span className="board-table-cell-time">{relTime(card.updatedAt)}</span></td>
                   </tr>
                 );
@@ -246,4 +259,3 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
     </div>
   );
 }
-

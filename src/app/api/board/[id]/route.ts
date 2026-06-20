@@ -30,6 +30,8 @@ export async function PATCH(
     links: string[];
     github: CardGitHubLink[];
     labels: string[];
+    startDate: string | null;
+    endDate: string | null;
     needsHuman: boolean;
     runningSince: string | undefined;
     steps: CardStep[];

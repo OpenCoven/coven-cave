@@ -47,6 +47,8 @@ export type Card = {
   links: string[];
   github: CardGitHubLink[];
   labels: string[];
+  startDate?: string | null;
+  endDate?: string | null;
   template?: string | null;
   createdAt: string;
   updatedAt: string;

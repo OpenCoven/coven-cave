@@ -27,6 +27,8 @@ export async function POST(req: Request) {
     links?: string[];
     github?: CardGitHubLink[];
     labels?: string[];
+    startDate?: string | null;
+    endDate?: string | null;
     template?: string | null;
     steps?: { text: string }[];
   };
@@ -50,6 +52,8 @@ export async function POST(req: Request) {
     links: body.links,
     github: body.github,
     labels: body.labels,
+    startDate: body.startDate,
+    endDate: body.endDate,
     template: body.template,
     steps: body.steps,
   });

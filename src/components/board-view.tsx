@@ -10,6 +10,7 @@ import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { BoardKanban } from "@/components/board-kanban";
+import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
@@ -17,7 +18,7 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
 
-type ViewMode = "kanban" | "table";
+type ViewMode = "kanban" | "table" | "gantt";
 
 function loadPref<T extends string>(key: string, fallback: T, valid: T[]): T {
   if (typeof window === "undefined") return fallback;
@@ -42,7 +43,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [hasLoaded, setHasLoaded] = useState(false);
   // Transient feedback when an optimistic mutation fails and is reverted.
   const [actionError, setActionError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table"]));
+  const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
@@ -263,6 +264,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               links: c.links,
               github: c.github,
               labels: c.labels,
+              startDate: c.startDate,
+              endDate: c.endDate,
               template: c.template,
               steps: c.steps.map((s) => ({ text: s.text })),
             }),
@@ -390,6 +393,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
               className={`board-view-toggle-btn${viewMode === "table" ? " board-view-toggle-btn--active" : ""}`}
               onClick={() => setViewMode("table")}>
               <Icon name="ph:rows" width={14} />
+            </button>
+            <button type="button" aria-label="Timeline view"
+              className={`board-view-toggle-btn${viewMode === "gantt" ? " board-view-toggle-btn--active" : ""}`}
+              onClick={() => setViewMode("gantt")}>
+              <Icon name="ph:chart-bar-bold" width={14} />
             </button>
           </div>
 
@@ -546,6 +554,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             onJumpToSession={onJumpToSession}
             onOpenTaskChat={onOpenTaskChat}
             chatLinkingId={chatLinkingId} />
+        ) : viewMode === "gantt" ? (
+          <BoardGantt cards={filtered}
+            selectedCardId={selectedCardId}
+            onSelect={setSelectedCardId} />
         ) : (
           <BoardTable cards={filtered} familiars={familiars} projects={projects}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}

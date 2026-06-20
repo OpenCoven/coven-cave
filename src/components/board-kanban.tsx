@@ -27,6 +27,23 @@ const PRIORITIES: { id: CardPriority; label: string }[] = [
   { id: "low",    label: "Low" },
 ];
 
+function formatBoardDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${month}/${day}`;
+}
+
+function scheduleLabel(startDate: string | null | undefined, endDate: string | null | undefined): string {
+  if (startDate && endDate) {
+    if (startDate === endDate) return formatBoardDate(startDate);
+    return `${formatBoardDate(startDate)}-${formatBoardDate(endDate)}`;
+  }
+  if (startDate) return `Starts ${formatBoardDate(startDate)}`;
+  if (endDate) return `Ends ${formatBoardDate(endDate)}`;
+  return "";
+}
+
 type Props = {
   cards: Card[];
   familiars: Familiar[];
@@ -492,7 +509,8 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
   // must not crash the whole board render.
   const pri = PRIORITIES.find((p) => p.id === card.priority) ?? { id: card.priority, label: card.priority };
   const statusLabel = COLUMNS.find((c) => c.id === card.status)?.label ?? card.status;
-  const hasChips = !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
+  const schedule = scheduleLabel(card.startDate, card.endDate);
+  const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
 
   return (
     <li draggable
@@ -527,6 +545,12 @@ function KanbanCard({ card, familiars, sessions, isDragging, isSelected, isGrabb
             >
               <Icon name="ph:chat-circle-dots" width={9} />
               Chat
+            </span>
+          )}
+          {schedule && (
+            <span className="board-kanban-card-chip board-kanban-card-chip--schedule" title={`Scheduled ${schedule}`}>
+              <Icon name="ph:calendar-blank" width={9} />
+              {schedule}
             </span>
           )}
           {card.cwd && (

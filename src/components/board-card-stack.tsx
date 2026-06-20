@@ -21,6 +21,23 @@ const SECTIONS: { id: CardStatus; label: string }[] = [
   { id: "done", label: "Done" },
 ];
 
+function formatBoardDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${month}/${day}`;
+}
+
+function scheduleLabel(startDate: string | null | undefined, endDate: string | null | undefined): string {
+  if (startDate && endDate) {
+    if (startDate === endDate) return formatBoardDate(startDate);
+    return `${formatBoardDate(startDate)}-${formatBoardDate(endDate)}`;
+  }
+  if (startDate) return `Starts ${formatBoardDate(startDate)}`;
+  if (endDate) return `Ends ${formatBoardDate(endDate)}`;
+  return "";
+}
+
 type FilterValue = "all" | CardStatus;
 
 type Props = {
@@ -168,6 +185,7 @@ function BoardCardStackRow({
   );
   const resolvedFamiliar = resolvedFamiliars[0] ?? null;
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
+  const schedule = scheduleLabel(card.startDate, card.endDate);
 
   return (
     <li
@@ -204,6 +222,12 @@ function BoardCardStackRow({
               {resolvedFamiliar?.display_name ?? "Unassigned"}
             </span>
           </span>
+          {schedule ? (
+            <span className="board-card-stack__row-schedule" title={`Scheduled ${schedule}`}>
+              <Icon name="ph:calendar-blank" width={11} />
+              {schedule}
+            </span>
+          ) : null}
           {session ? (
             <span
               className="board-card-stack__row-action board-card-stack__row-action--chat"
