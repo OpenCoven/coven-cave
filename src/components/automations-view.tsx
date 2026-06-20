@@ -11,6 +11,7 @@ import type {
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
 import { Icon } from "@/lib/icon";
+import { formatTimestamp } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/project-tree";
@@ -90,7 +91,10 @@ function relTime(iso: string | undefined | null): string {
   const h = Math.round(m / 60);
   if (h < 24) return delta > 0 ? `in ${h}h` : `${h}h ago`;
   const d = Math.round(h / 24);
-  return delta > 0 ? `in ${d}d` : `${d}d ago`;
+  if (d <= 6) return delta > 0 ? `in ${d}d` : `${d}d ago`;
+  // Beyond a week the relative form ("in 42d") is hard to parse — show the
+  // actual date + time, honoring the user's clock and date preferences.
+  return formatTimestamp(iso);
 }
 
 function parseCodexRrule(rrule: string | null): {
