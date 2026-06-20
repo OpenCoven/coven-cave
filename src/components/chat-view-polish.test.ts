@@ -829,3 +829,14 @@ assert.match(
   /cave-next-path--recommended/,
   "the first follow-up is marked as the recommended next step",
 );
+
+// File picker resets its value synchronously so re-selecting the same file (or
+// re-attaching after the CSV / 10-cap early returns) still fires onChange.
+assert.ok(
+  source.includes("const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;"),
+  "file input snapshots files before reset",
+);
+assert.ok(
+  source.includes('e.currentTarget.value = "";') && !source.includes('fileInputRef.current.value = ""'),
+  "file input resets value synchronously in onChange, not after the async attach",
+);

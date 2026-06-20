@@ -2668,7 +2668,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (selected.length === 0) return;
     const next = await Promise.all(selected.map(fileToAttachment));
     setAttachments((prev) => [...prev, ...next]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
     inputRef.current?.focus();
   };
 
@@ -3582,7 +3581,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   type="file"
                   multiple
                   className="hidden"
-                  onChange={(e) => void attachFiles(e.currentTarget.files)}
+                  onChange={(e) => {
+                    // Snapshot the files and clear the input synchronously so picking the
+                    // SAME file again still fires onChange (e.g. re-attach after the CSV
+                    // or 10-attachment-cap early returns in attachFiles).
+                    const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
+                    e.currentTarget.value = "";
+                    void attachFiles(files);
+                  }}
                 />
                 <button
                   type="button"
