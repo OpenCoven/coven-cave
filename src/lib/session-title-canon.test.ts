@@ -16,15 +16,17 @@ import { buildPromptWithCovenIdentityCanon } from "./coven-identity-canon.ts";
 import { buildRuntimeScopePreamble } from "./chat-runtime-scope.ts";
 
 // ── chatTitleFromPrompt ──
+// Filler-free prompts pass through unchanged (already capitalized, no lead-in).
 assert.equal(
   chatTitleFromPrompt("Reply with exactly the single word: covenant"),
   "Reply with exactly the single word: covenant",
-  "short prompts become the title verbatim",
+  "filler-free prompts become the title verbatim",
 );
+// Whitespace/newlines collapse; the title is capitalized for a clean look.
 assert.equal(
   chatTitleFromPrompt("  line one\nline two  "),
-  "line one line two",
-  "whitespace and newlines collapse",
+  "Line one line two",
+  "whitespace and newlines collapse and the title is capitalized",
 );
 const long = "x".repeat(200);
 assert.ok(
@@ -32,13 +34,43 @@ assert.ok(
   "long prompts truncate to a title-sized string",
 );
 assert.equal(chatTitleFromPrompt("   "), null, "blank prompts yield no title");
-// Long multi-word prompts truncate at a word boundary, never mid-word.
-const longSentence = "please commit and push and open a pull request for the changes we made to the runtime";
+
+// Conversational filler is stripped so titles read like titles, not chat.
+assert.equal(
+  chatTitleFromPrompt("please fix the search bar"),
+  "Fix the search bar",
+  "leading politeness is stripped and the result is capitalized",
+);
+assert.equal(
+  chatTitleFromPrompt("can you add a youtube viewer"),
+  "Add a youtube viewer",
+  "a polite request lead-in is stripped",
+);
+assert.equal(
+  chatTitleFromPrompt("go ahead and merge it"),
+  "Merge it",
+  "a go-ahead lead-in is stripped",
+);
+assert.equal(
+  chatTitleFromPrompt("restart it please"),
+  "Restart it",
+  "trailing politeness is stripped",
+);
+assert.equal(
+  chatTitleFromPrompt("Now and Then is a Beatles song, summarize it"),
+  "Now and Then is a Beatles song, summarize it",
+  "content-initial words that look like filler are left intact",
+);
+
+// Long multi-word prompts truncate at a word boundary, never mid-word. The
+// cleaned title (no leading filler, already capitalized) is the prefix checked.
+const longSentence =
+  "Commit and push and open a pull request for the changes we made to the runtime files";
 const truncated = chatTitleFromPrompt(longSentence) ?? "";
 const kept = truncated.slice(0, -1); // drop the trailing ellipsis
 assert.ok(truncated.length <= 64, "stays title-sized");
 assert.ok(truncated.endsWith("…"), "marks the truncation");
-assert.ok(longSentence.startsWith(kept), "the kept portion is a clean prefix of the prompt");
+assert.ok(longSentence.startsWith(kept), "the kept portion is a clean prefix of the cleaned prompt");
 assert.equal(
   longSentence[kept.length],
   " ",
