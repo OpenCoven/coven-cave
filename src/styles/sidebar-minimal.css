@@ -8,7 +8,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 10px 8px 10px;
+  padding: 10px 6px 10px;
   font-size: 13px;
   color: var(--text-secondary);
   gap: 10px;
@@ -91,7 +91,7 @@
 
 /* ── Header CTA ──────────────────────────────────────────────────────────── */
 .sidebar-actions {
-  padding: 0 7px 6px;
+  padding: 0 0 6px;
   flex-shrink: 0;
 }
 
@@ -268,7 +268,7 @@
   /* Sections are separated by whitespace alone (no rules) for a calmer,
      Codex-style nav. */
   gap: 16px;
-  padding: 2px 4px 2px;
+  padding: 2px 0 2px;
 }
 
 /* ── Bottom: Notifications + Settings ─────────────────────────────────────── */
@@ -403,7 +403,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin: 12px 2px 2px;
+  margin: 12px 0 2px;
   padding: 4px 10px;
   border-radius: 7px;
   background: transparent;
@@ -944,10 +944,10 @@
    Collapsible "Recent Activity" list in the left panel, styled after the
    Superconductor activity sidebar: stacked cards with title · project · model ·
    +N -N diff · relative time, the active session marked by a left accent bar. */
-.recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0 2px; }
+.recent-activity { display: flex; flex-direction: column; gap: 6px; padding: 0; }
 /* Quiet eyebrow header, matching .sidebar-section-label so RECENT doesn't
    outweigh the nav items it sits beside. */
-.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin: 12px 2px 2px; padding: 4px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent;
+.recent-activity__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; margin: 12px 0 2px; padding: 4px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent;
   cursor: pointer; color: var(--text-secondary); transition: background 0.12s ease, color 0.12s ease; }
 .recent-activity__head:hover { background: var(--bg-raised); color: var(--text-primary); }
 .recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
