@@ -379,6 +379,12 @@ export function CapabilitiesViewSurface({
                     aria-label="Search capabilities"
                     value={query}
                     onChange={(e) => applyQueryFilter(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape" && query) {
+                        e.preventDefault();
+                        applyQueryFilter("");
+                      }
+                    }}
                     placeholder="Search skills, plugins, paths, commands"
                     className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
                   />

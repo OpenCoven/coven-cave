@@ -334,6 +334,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             className="board-search-input"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && searchQuery) {
+                e.preventDefault();
+                setSearchQuery("");
+              }
+            }}
             placeholder='Search tasks or type is:open cwd:coven-cave url:github'
           />
           {searchQuery ? (
