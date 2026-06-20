@@ -53,10 +53,34 @@ assert.equal(
   null,
   "a single label is not enough to qualify",
 );
+// ── A single leading subtitle/heading before the metadata is allowed ──
+// Sage's notes commonly open with a bold tagline or an `## …` subtitle and
+// THEN the metadata run; the grid should still lift the metadata, keeping the
+// subtitle in the body (it renders below the grid).
+const headed = parseLeadingMetadata("## Five products, one shape\n\n**A:** one **B:** two\n\nbody prose");
+assert.ok(headed, "metadata after a single heading subtitle is detected");
+assert.deepEqual(headed.entries.map((e) => e.key), ["A", "B"]);
+assert.match(headed.rest, /^## Five products, one shape/, "subtitle stays at the top of the body");
+assert.ok(!headed.rest.includes("**A:**"), "metadata removed from the body");
+assert.match(headed.rest, /body prose/, "trailing body content is preserved");
+
+const taglined = parseLeadingMetadata("**A bold tagline**\n\n**A:** one **B:** two\n\nrest");
+assert.ok(taglined, "metadata after a single bold tagline is detected");
+assert.deepEqual(taglined.entries.map((e) => e.key), ["A", "B"]);
+assert.match(taglined.rest, /^\*\*A bold tagline\*\*/, "bold tagline stays in the body");
+
+// But only ONE leading block is skipped — metadata buried under real prose
+// (subtitle + a prose paragraph) is NOT swallowed.
 assert.equal(
-  parseLeadingMetadata("# Heading\n\n**A:** one **B:** two"),
+  parseLeadingMetadata("## Heading\n\nSome intro prose.\n\n**A:** one **B:** two"),
   null,
-  "metadata must be the first paragraph, not preceded by other content",
+  "metadata past a subtitle AND a prose paragraph is not treated as leading metadata",
+);
+// A multi-line first block (real prose, not a one-line subtitle) is not skipped.
+assert.equal(
+  parseLeadingMetadata("First line of prose\nsecond line\n\n**A:** one **B:** two"),
+  null,
+  "a multi-line opening paragraph is not treated as a skippable subtitle",
 );
 
 console.log("library-metadata.test.ts: all assertions passed");
