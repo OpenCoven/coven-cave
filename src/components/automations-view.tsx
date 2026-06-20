@@ -1191,6 +1191,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const removeItem = useCallback(async (id: string) => {
     if (id.startsWith("eph:")) return;
+    const target = items.find((i) => i.id === id);
+    const label = target?.title ? `“${target.title}”` : "this reminder";
+    if (!window.confirm(`Delete ${label}? This can't be undone.`)) return;
     setBusyId(id);
     try {
       const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
@@ -1200,7 +1203,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally { setBusyId(null); }
-  }, [load]);
+  }, [items, load]);
 
   const runNow = (id: string) =>
     patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
