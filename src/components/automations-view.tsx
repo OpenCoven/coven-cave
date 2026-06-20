@@ -83,6 +83,18 @@ function isScheduleInboxItem(item: InboxItem): boolean {
   return item.kind === "reminder" || item.kind === "daily-summary";
 }
 
+// A one-shot reminder still pending after its fire time never fired (e.g. the
+// daemon was offline) — worth surfacing instead of a quiet "3h ago".
+function isReminderOverdue(item: InboxItem): boolean {
+  return (
+    item.kind !== "daily-summary" &&
+    (item.recurrence?.type ?? "none") === "none" &&
+    item.status === "pending" &&
+    !!item.fireAt &&
+    new Date(item.fireAt).getTime() < Date.now()
+  );
+}
+
 function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
   const delta = new Date(iso).getTime() - Date.now();
@@ -423,14 +435,7 @@ function ReminderTaskRow({
   onSelect: (item: InboxItem) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
-  // A one-shot reminder still pending after its fire time never fired (e.g. the
-  // daemon was offline) — surface that instead of a quiet "3h ago".
-  const isOverdue =
-    item.kind !== "daily-summary" &&
-    (item.recurrence?.type ?? "none") === "none" &&
-    item.status === "pending" &&
-    !!item.fireAt &&
-    new Date(item.fireAt).getTime() < Date.now();
+  const isOverdue = isReminderOverdue(item);
   const schedule = item.kind === "daily-summary"
     ? "Daily summary"
     : item.recurrence?.type !== "none"
@@ -490,6 +495,7 @@ function ReminderTaskSection({
   onSelect: (item: InboxItem) => void;
 }) {
   if (items.length === 0) return null;
+  const overdueCount = items.filter(isReminderOverdue).length;
   return (
     <div className="mb-6">
       <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
@@ -497,6 +503,14 @@ function ReminderTaskSection({
         <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
           {title}
         </span>
+        {overdueCount > 0 && (
+          <span
+            className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            style={{ background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }}
+          >
+            {overdueCount} overdue
+          </span>
+        )}
       </div>
       <ul>
         {items.map((item) => (
