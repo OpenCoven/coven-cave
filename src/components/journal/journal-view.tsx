@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "@/styles/journal.css";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { Tabs } from "@/components/ui/tabs";
 import { CanvasList } from "./canvas-list";
 import { JournalEntries } from "./journal-entries";
 import type { Familiar } from "@/lib/types";
@@ -27,8 +27,6 @@ export function JournalView({
   activeFamiliarId: string | null;
 }) {
   const [tab, setTab] = useState<JournalTab>("journal");
-  const tablistRef = useRef<HTMLElement | null>(null);
-  useRovingTabIndex({ containerRef: tablistRef, itemSelector: '[role="tab"]', orientation: "horizontal" });
 
   // Persist only on an explicit choice (click / deep-link event). We deliberately
   // do NOT persist in a `[tab]` effect: that would write the default "journal" on
@@ -68,25 +66,14 @@ export function JournalView({
     <div className="journal-view">
       <header className="journal-view__head">
         <h1 className="journal-view__title">Journal</h1>
-        <nav ref={tablistRef} role="tablist" aria-label="Journal sections" className="journal-tabs">
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                id={`journal-tab-${t.id}`}
-                aria-selected={active}
-                aria-controls={`journal-panel-${t.id}`}
-                className={`journal-tab${active ? " is-active" : ""}`}
-                onClick={() => selectTab(t.id)}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-        </nav>
+        <Tabs
+          variant="underline"
+          idPrefix="journal"
+          ariaLabel="Journal sections"
+          value={tab}
+          onChange={selectTab}
+          items={TABS}
+        />
       </header>
       <div
         role="tabpanel"

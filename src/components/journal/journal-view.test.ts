@@ -28,7 +28,7 @@ assert.match(sidebar, /id: "journal"/, "sidebar exposes the journal folder");
 assert.doesNotMatch(sidebar, /id: "canvas"/, "sidebar no longer exposes canvas");
 
 // JournalView is a two-tab shell hosting the Canvas list
-assert.match(view, /role="tablist"/, "JournalView renders a tablist");
+assert.match(view, /<Tabs[\s\S]{0,160}variant="underline"/, "JournalView renders the shared underline Tabs");
 assert.match(view, /label: "Journal"/, "has a Journal tab");
 assert.match(view, /label: "Canvas"/, "has a Canvas tab");
 assert.match(view, /<CanvasList/, "renders CanvasList in the Canvas tab");
