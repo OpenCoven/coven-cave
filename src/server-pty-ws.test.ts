@@ -48,6 +48,15 @@ assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
 // Always loopback by default (both dev and prod)
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
 assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSocket hosts by default");
+// The peer address is always loopback-gated, even in tokenless tailnet mode —
+// tailscale serve forwards from 127.0.0.1, so a non-loopback peer is a direct
+// LAN/WAN connection that must never be trusted.
+assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
+// Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1) relaxes ONLY the
+// loopback *host* gate, so the iOS terminal reaches /api/pty-ws over the tailnet
+// (tailscale serve forwards the <host>.ts.net Host). Mirrors the REST gate in
+// proxy.ts; the sameOrigin gate still blocks cross-site browser upgrades.
+assert.match(src, /process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless tailnet app mode relaxes the WebSocket host gate for tailnet-forwarded upgrades");
 assert.match(packageJson.scripts.postinstall ?? "", /fix-node-pty-spawn-helper\.mjs/, "postinstall repairs node-pty spawn-helper mode");
 assert.equal(
   existsSync(new URL("../scripts/fix-node-pty-spawn-helper.mjs", import.meta.url)),

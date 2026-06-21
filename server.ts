@@ -136,8 +136,20 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
 
 function isAllowedUpgradeSource(req: IncomingMessage): boolean {
   const host = req.headers.host;
-  if (!isLoopbackHost(host)) return false;
+  // The peer must always be loopback: `tailscale serve` terminates TLS and
+  // forwards to 127.0.0.1, so a legitimate tailnet client still arrives over
+  // loopback. A non-loopback peer is a direct LAN/WAN connection — never trust.
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
+  // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
+  // `pnpm mobile:tailscale:app`): `tailscale serve` forwards the request's
+  // `<host>.ts.net` Host — NOT 127.0.0.1 — so the loopback host gate would
+  // otherwise 403 the iOS terminal over the tailnet. Trusting the host here is
+  // safe because tailnet membership is the ingress boundary in this mode, and
+  // the sameOrigin gate below still blocks cross-site browser upgrades (a native
+  // WebSocket sends no Origin). This mirrors the REST trust gate in proxy.ts.
+  // By default (no flag) WebSocket upgrades remain loopback-host only.
+  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
+  if (!tailnetTrusted && !isLoopbackHost(host)) return false;
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 

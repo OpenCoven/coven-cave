@@ -84,8 +84,9 @@ function sameOrigin(value, expectedOrigin) {
 }
 function isAllowedUpgradeSource(req) {
   const host = req.headers.host;
-  if (!isLoopbackHost(host)) return false;
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
+  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
+  if (!tailnetTrusted && !isLoopbackHost(host)) return false;
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 function isAuthorized(req, query) {
