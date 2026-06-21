@@ -152,6 +152,7 @@ export const SUITES = {
     "src/lib/terminal-layout.test.ts",
     "src/lib/terminal-nav.test.ts",
     "src/lib/tree-keynav.test.ts",
+    "src/lib/familiar-avatar-src.test.ts",
     "src/lib/terminal-broadcast.test.ts",
     "src/components/comux-broadcast-wiring.test.ts",
     "src/components/comux-chrome-wiring.test.ts",
