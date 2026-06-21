@@ -371,15 +371,46 @@ final class AppModel {
     }
 
     func refreshConnection() async {
-        guard let client else { connectionState = .unconfigured; return }
+        guard let connection else { connectionState = .unconfigured; return }
         connectionState = .checking
-        let reachable = await client.ping()
-        guard reachable else {
+
+        // Try the configured endpoint first, then auto-relocate to a working
+        // port (e.g. the user typed a `.ts.net` host without `:8443`).
+        let configured = connection.baseURL
+        guard let working = await Self.discoverBaseURL(connection.candidateBaseURLs) else {
             connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
             return
         }
+
+        if working != configured {
+            // Relocate: persist the working URL so future launches connect directly.
+            let relocated = CaveConnection(host: working.absoluteString)
+            self.connection = relocated
+            relocated.save()
+            if let port = working.port {
+                showToast("Connected on port \(port)", systemImage: "antenna.radiowaves.left.and.right")
+            }
+        }
         connectionState = .connected
         await loadFamiliars()
+    }
+
+    /// Probe candidate base URLs in order; return the first that answers. Uses a
+    /// short per-candidate timeout so trying a few ports stays snappy.
+    static func discoverBaseURL(_ candidates: [URL]) async -> URL? {
+        for base in candidates where await probe(base) { return base }
+        return nil
+    }
+
+    /// Lightweight reachability check against `<base>/api/familiars`.
+    private static func probe(_ base: URL) async -> Bool {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 6
+        config.waitsForConnectivity = false
+        var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
+        req.timeoutInterval = 6
+        guard let (_, resp) = try? await URLSession(configuration: config).data(for: req) else { return false }
+        return (resp as? HTTPURLResponse).map { (200..<500).contains($0.statusCode) } ?? false
     }
 
     func loadFamiliars() async {
