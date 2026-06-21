@@ -188,3 +188,102 @@
 
 /* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
 .dr-eyebrow__icon { font-size: 0.85rem; color: var(--accent-presence); }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Power cockpit — dense, multi-panel dashboard
+   ════════════════════════════════════════════════════════════════════════════ */
+.cockpit { display: flex; flex-direction: column; gap: 18px; max-width: 1280px; margin: 0 auto; width: 100%; }
+
+/* Header */
+.cockpit-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.cockpit-eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); margin: 0 0 4px; }
+.cockpit-eyebrow svg { color: var(--accent-presence); }
+.cockpit-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; color: var(--text-primary); }
+.cockpit-head__meta { display: flex; gap: 8px; }
+.cockpit-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted);
+  border: 1px solid var(--border-hairline); border-radius: 999px; padding: 4px 10px; background: var(--bg-raised); }
+
+/* KPI rail */
+.cockpit-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+@media (max-width: 1000px) { .cockpit-kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px)  { .cockpit-kpis { grid-template-columns: repeat(2, 1fr); } }
+.cockpit-kpi { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--border-hairline); background: var(--bg-raised); text-decoration: none; transition: border-color .15s, transform .15s; }
+a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.cockpit-kpi__icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; margin-bottom: 4px;
+  color: var(--kpi, var(--accent-presence)); background: color-mix(in oklch, var(--kpi, var(--accent-presence)) 15%, transparent); }
+.cockpit-kpi__value { font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cockpit-kpi__label { font-size: 11.5px; color: var(--text-secondary); }
+
+/* Main grid */
+.cockpit-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .cockpit-grid { grid-template-columns: 1fr; } }
+.cockpit-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Panel */
+.cockpit-panel { border: 1px solid var(--border-hairline); border-radius: 14px; background: var(--bg-raised); overflow: hidden; }
+.cockpit-panel__head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--border-hairline); }
+.cockpit-panel__title { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 650; color: var(--text-primary); }
+.cockpit-panel__icon { color: var(--accent-presence); }
+.cockpit-panel__count { min-width: 18px; height: 17px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 700; border-radius: 999px; background: var(--bg-elevated); color: var(--text-secondary); }
+.cockpit-panel__hint { font-size: 10.5px; color: var(--text-muted); }
+.cockpit-panel__more { margin-left: auto; color: var(--text-muted); display: inline-flex; padding: 2px; border-radius: 6px; }
+.cockpit-panel__more:hover { color: var(--accent-presence); background: var(--bg-hover); }
+.cockpit-panel__body { padding: 12px 14px; }
+.cockpit-panel .dash-inbox, .cockpit-panel .dr-list { margin: 0; }
+
+/* Board snapshot */
+.cockpit-bar { display: flex; height: 9px; border-radius: 999px; overflow: hidden; background: var(--bg-elevated); }
+.cockpit-bar__seg { min-width: 4px; }
+.cockpit-bar__legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 2px; }
+.cockpit-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-secondary); }
+.cockpit-legend b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cockpit-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.cockpit-cards { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.cockpit-cardrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text-primary); }
+.cockpit-cardrow:hover { background: var(--bg-hover); }
+.cockpit-cardrow__title { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-cardrow__who { font-size: 10.5px; color: var(--text-muted); flex: 0 0 auto; }
+.cockpit-muted { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; }
+
+/* Agents */
+.cockpit-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cockpit-agent { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
+.cockpit-agent__avatar { position: relative; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; color: #fff; flex: 0 0 auto; }
+.cockpit-agent__on { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--color-success); border: 2px solid var(--bg-raised); }
+.cockpit-agent__body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cockpit-agent__name { font-size: 12.5px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-agent__role { font-size: 10.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-agent__busy { font-size: 10px; color: var(--color-success); flex: 0 0 auto; }
+
+/* GitHub */
+.cockpit-gh, .cockpit-agenda, .cockpit-reading { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.cockpit-ghrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text-primary); }
+.cockpit-ghrow:hover { background: var(--bg-hover); }
+.cockpit-ghrow__icon { color: var(--text-muted); flex: 0 0 auto; }
+.cockpit-ghrow__title { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-ghrow__meta { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.cockpit-ghrow__repo { font-size: 10.5px; color: var(--text-muted); }
+
+/* Agenda */
+.cockpit-agendarow { display: flex; align-items: baseline; gap: 10px; padding: 6px 4px; }
+.cockpit-agendarow__when { font-size: 10.5px; font-weight: 600; color: var(--accent-presence); flex: 0 0 auto; min-width: 64px; }
+.cockpit-agendarow__title { font-size: 12.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Reading */
+.cockpit-readrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text-primary); }
+.cockpit-readrow:hover { background: var(--bg-hover); }
+.cockpit-readrow__title { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-readrow__host { font-size: 10.5px; color: var(--text-muted); flex: 0 0 auto; }
+
+/* Quick launch + skeleton */
+.cockpit-launch { display: flex; flex-direction: column; gap: 10px; }
+.cockpit-quicklinks { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+@media (max-width: 720px) { .cockpit-quicklinks { grid-template-columns: repeat(2, 1fr); } }
+.cockpit-skel { display: flex; flex-direction: column; gap: 8px; }
+.cockpit-skel__row { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--bg-elevated), var(--bg-hover), var(--bg-elevated));
+  background-size: 200% 100%; animation: cockpit-shimmer 1.3s ease-in-out infinite; }
+@keyframes cockpit-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }

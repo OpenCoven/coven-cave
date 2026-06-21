@@ -1,7 +1,7 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
 import { CopyLinkButton } from "@/components/copy-link-button";
-import { DashboardView } from "@/components/dashboard/dashboard-view";
+import { DashboardCockpit } from "@/components/dashboard/dashboard-cockpit";
 import { buildDashboardModel } from "@/lib/dashboard-model";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <DashboardView model={model} />
+      <DashboardCockpit model={model} />
     </main>
   );
 }
