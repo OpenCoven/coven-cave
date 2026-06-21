@@ -158,6 +158,82 @@ struct CaveClient {
         }
     }
 
+    // MARK: - Slash-command services
+
+    struct DaemonStatus: Decodable {
+        var running: Bool
+        var apiVersion: String?
+        var covenVersion: String?
+        var reason: String?
+        var workspacePath: String?
+    }
+
+    /// `/daemon` — desktop daemon health (`GET /api/daemon/status`).
+    func daemonStatus() async throws -> DaemonStatus {
+        let req = try request("api/daemon/status")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        return try JSONDecoder().decode(DaemonStatus.self, from: data)
+    }
+
+    struct CovenExecResult: Decodable {
+        var ok: Bool
+        var exitCode: Int?
+        var stdout: String?
+        var stderr: String?
+        var error: String?
+
+        /// Combined, trimmed output for inline display.
+        var output: String {
+            [stdout, stderr].compactMap { $0 }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+        }
+    }
+
+    /// `/doctor` — run an allow-listed coven subcommand (`POST /api/coven/exec`).
+    /// The server allow-lists `doctor` and `daemon`; the route can answer 5xx
+    /// with a JSON body, so decode the body regardless of HTTP status.
+    func covenExec(_ command: String) async throws -> CovenExecResult {
+        let payload = try JSONEncoder().encode(["command": command])
+        var req = try request("api/coven/exec", method: "POST", body: payload)
+        req.timeoutInterval = 30
+        let (data, _) = try await session.data(for: req)
+        return try JSONDecoder().decode(CovenExecResult.self, from: data)
+    }
+
+    struct RouteLinkBody: Encodable {
+        struct Source: Encodable {
+            var kind = "slash"
+            var originSessionId: String?
+        }
+        var url: String
+        var familiar: String
+        var source: Source
+        var tags: [String]?
+        var listHint: String?
+    }
+
+    struct RouteLinkResult: Decodable {
+        var ok: Bool
+        var deduped: Bool?
+        var error: String?
+        var item: Item?
+        var classify: Classify?
+        struct Item: Decodable { var title: String? }
+        struct Classify: Decodable { var rule: String? }
+    }
+
+    /// `/save` — route a URL into the library (`POST /api/library/route-link`).
+    func routeLink(_ body: RouteLinkBody) async throws -> RouteLinkResult {
+        let payload = try JSONEncoder().encode(body)
+        let req = try request("api/library/route-link", method: "POST", body: payload)
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        return try JSONDecoder().decode(RouteLinkResult.self, from: data)
+    }
+
     // MARK: - Helpers
 
     private static func check(_ resp: URLResponse) throws {

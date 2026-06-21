@@ -4,7 +4,9 @@ import Observation
 /// A message as shown in the thread UI. For group threads, assistant messages
 /// carry the `familiarId` that produced them so we can attribute + colour them.
 struct DisplayMessage: Identifiable, Codable, Hashable {
-    enum Role: String, Codable { case user, assistant }
+    /// `system` carries inline slash-command output (help, `/daemon`, `/save`
+    /// results) — rendered as a centred note, never sent to a familiar.
+    enum Role: String, Codable { case user, assistant, system }
     var id: String = UUID().uuidString
     var role: Role
     var familiarId: String?
@@ -72,11 +74,19 @@ final class ChatThread: Identifiable, Hashable {
     }
 
     /// Send a user message and stream replies from every familiar in the thread.
-    func send(_ text: String, client: CaveClient, onChange: @escaping () -> Void) {
+    ///
+    /// `displayText` lets a caller show a short label in the user bubble while
+    /// sending a longer prompt to the familiar — e.g. `/canvas` shows the ask
+    /// but sends the full sketch instruction.
+    func send(_ text: String, displayText: String? = nil,
+              client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let shown = (displayText?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? trimmed
 
-        messages.append(DisplayMessage(role: .user, familiarId: nil, text: trimmed))
+        messages.append(DisplayMessage(role: .user, familiarId: nil, text: shown))
         updatedAt = Date()
         onChange()
 
@@ -92,6 +102,28 @@ final class ChatThread: Identifiable, Hashable {
 
     func deleteMessage(_ messageId: String) {
         messages.removeAll { $0.id == messageId }
+        updatedAt = Date()
+    }
+
+    /// Append an inline system note (slash-command output) and return its id so
+    /// callers can stream into it — e.g. `/daemon`'s "running…" → result.
+    @discardableResult
+    func appendSystem(_ text: String, isError: Bool = false) -> String {
+        let message = DisplayMessage(role: .system, familiarId: nil, text: text, isError: isError)
+        messages.append(message)
+        updatedAt = Date()
+        return message.id
+    }
+
+    /// Replace the text of a previously-appended message (by id).
+    func updateText(_ messageId: String, _ text: String, isError: Bool = false) {
+        mutate(messageId) { $0.text = text; if isError { $0.isError = true } }
+        updatedAt = Date()
+    }
+
+    /// Remove every message, keeping the thread (mirrors web `/clear`).
+    func clearMessages() {
+        messages.removeAll()
         updatedAt = Date()
     }
 

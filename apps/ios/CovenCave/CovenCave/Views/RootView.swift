@@ -26,17 +26,17 @@ struct RootView: View {
 /// launch, clobbering any restored value; the value-based `Tab` API honours the
 /// initial selection, so the app reliably reopens on the last-used tab.
 struct MainTabView: View {
-    enum AppTab: String { case chats, tasks }
+    @Environment(AppModel.self) private var app
 
     // @AppStorage holds the durable saved tab (read reliably at view init); the
-    // visible tab is a plain @State the TabView can own without being fought by
-    // the cold-launch reset.
+    // live selection is `app.selectedTab` so slash commands (`/board`, `/chats`)
+    // can drive the tab from inside a pushed chat view.
     @AppStorage("cave.tab") private var savedTab = AppTab.chats.rawValue
-    @State private var selection: AppTab = .chats
     @State private var restored = false
 
     var body: some View {
-        TabView(selection: $selection) {
+        @Bindable var app = app
+        TabView(selection: $app.selectedTab) {
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsHomeView()
             }
@@ -52,13 +52,16 @@ struct MainTabView: View {
         // over the saved value first.
         .task {
             try? await Task.sleep(for: .milliseconds(300))
-            if let saved = AppTab(rawValue: savedTab) { selection = saved }
+            if let saved = AppTab(rawValue: savedTab) { app.selectedTab = saved }
             restored = true
         }
-        .onChange(of: selection) { _, newValue in
+        .onChange(of: app.selectedTab) { _, newValue in
             guard restored else { return }
             savedTab = newValue.rawValue
         }
+        // Command confirmations float above the whole tab bar so they're visible
+        // whether a command stays in chat or jumps to the Tasks tab.
+        .toast($app.toast)
     }
 }
 
