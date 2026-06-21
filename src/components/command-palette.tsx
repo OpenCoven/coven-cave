@@ -43,6 +43,16 @@ function browseGroup(row: Row): string {
   }
 }
 
+// Status → dot class for session rows, mirroring the Sessions tab's colors. Only
+// "notable" states get a dot (running pulses green, failed/queued/paused tint);
+// completed/idle sessions stay dotless so the Recent list doesn't get speckled.
+const SESSION_DOT: Record<string, string> = {
+  running: "bg-[var(--color-success)] animate-pulse",
+  failed: "bg-[var(--color-danger)]",
+  queued: "bg-[var(--color-warning)]",
+  paused: "bg-[var(--accent-presence-soft)]",
+};
+
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
   | { kind: "open-session"; sessionId: string; familiarId?: string | null }
@@ -779,6 +789,8 @@ export function CommandPalette({
               row.kind === "session"
                 ? relativeTime(row.session.updated_at || row.session.created_at)
                 : "";
+            const sessionDot =
+              row.kind === "session" ? SESSION_DOT[row.session.status] : undefined;
             return (
               <Fragment key={row.id}>
                 {showHeader ? (
@@ -820,8 +832,17 @@ export function CommandPalette({
                     <>
                       <Icon name="ph:chat-circle-dots-bold" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" />
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-[var(--text-primary)]">
-                          {row.session.title || "(untitled chat)"}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {sessionDot ? (
+                            <span
+                              role="img"
+                              aria-label={`${row.session.status} session`}
+                              className={`block h-2 w-2 shrink-0 rounded-full ${sessionDot}`}
+                            />
+                          ) : null}
+                          <span className="truncate text-[var(--text-primary)]">
+                            {row.session.title || "(untitled chat)"}
+                          </span>
                         </span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
                           {row.familiar?.display_name ?? row.session.familiarId} ·{" "}
