@@ -293,7 +293,7 @@ export function WorkflowCreateDialog({ familiarOptions, onClose, onCreate, onCre
             </div>
             {genError && <p className="workflow-import-error">{genError}</p>}
             <div className="workflow-dialog-actions">
-              <button type="button" onClick={() => setStep("describe")}>
+              <button type="button" onClick={() => { setGenError(null); setStep("describe"); }}>
                 Back
               </button>
               <button type="button" className="workflow-primary-button" disabled={busy} onClick={() => void runManifest()}>
@@ -324,7 +324,7 @@ export function WorkflowCreateDialog({ familiarOptions, onClose, onCreate, onCre
                 )}
                 {genError && <p className="workflow-import-error">{genError}</p>}
                 <div className="workflow-dialog-actions">
-                  <button type="button" onClick={() => setStep("questions")}>
+                  <button type="button" onClick={() => { setGenError(null); setStep("questions"); }}>
                     Back
                   </button>
                   <button type="button" disabled={busy} onClick={() => void runManifest()}>

@@ -596,6 +596,7 @@ export function WorkflowsView({
       ...(manifest.visibility && typeof manifest.visibility === "object"
         ? (manifest.visibility as Record<string, unknown>)
         : {}),
+      public: false,
       personal: true,
       coven_cave: true,
     };
