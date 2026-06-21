@@ -1744,7 +1744,7 @@ export function Workspace() {
         initialTab={mode === "capabilities" ? "capabilities" : "roles"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
-        onOpenChat={() => setMode("chat")}
+        onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenWorkflow={(id) => { setWorkflowDeepLink(id); setMode("workflows"); }}
         onCreateSkill={() => setMode("capabilities")}
       />

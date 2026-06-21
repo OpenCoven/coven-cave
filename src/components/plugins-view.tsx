@@ -58,7 +58,7 @@ function toSkillDetail(skill: LocalSkillEntry): SkillDetailEntry {
 }
 
 type Props = {
-  onOpenChat: () => void;
+  onOpenChat: (familiarId: string) => void;
   onOpenWorkflow?: (id: string) => void;
   onCreateSkill?: () => void;
   familiars?: FamiliarForSkill[];
@@ -422,7 +422,7 @@ function RolesTab({
   onClearQuery: () => void;
   busyRoleKey: string | null;
   onToggleRole: (role: RoleEntry) => void;
-  onOpenChat: () => void;
+  onOpenChat: (familiarId: string) => void;
   onOpenWorkflow?: (id: string) => void;
   onOpenSkill?: (name: string) => void;
 }) {
@@ -472,7 +472,7 @@ function RolesTab({
                 </button>
                 <button
                   type="button"
-                  onClick={onOpenChat}
+                  onClick={() => onOpenChat(role.familiar)}
                   className="focus-ring rounded-md bg-[var(--text-primary)] px-3 py-1.5 text-[12px] text-[var(--bg-base)]"
                 >
                   Open chat
