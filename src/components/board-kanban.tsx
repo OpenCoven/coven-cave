@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
@@ -183,7 +183,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
     return () => window.removeEventListener("keydown", onKey);
   }, [grabbedCardId, cards, columnIndex, onMoveStatus, announce]);
 
-  const groups = getGroups(cards, groupBy, familiars, projects);
+  const groups = useMemo(() => getGroups(cards, groupBy, familiars, projects), [cards, groupBy, familiars, projects]);
+  // O(1) per-card lookups — replaces familiars.find()/sessions.find() inside every KanbanCard.
+  const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
+  const sessionById = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions]);
   const showSwimlanes = true;
 
   const grouped = (gc: Card[]) => {
@@ -454,7 +457,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                             </li>
                           )}
                           {rows.map((card) => (
-                            <KanbanCard key={card.id} card={card} familiars={familiars} sessions={sessions} todayMs={todayMs}
+                            <KanbanCard key={card.id} card={card} familiarById={familiarById} sessionById={sessionById} todayMs={todayMs}
                               isDragging={draggingId === card.id || touchDragId === card.id}
                               isSelected={selectedCardId === card.id}
                               isGrabbed={grabbedCardId === card.id || touchDragId === card.id}
@@ -489,8 +492,8 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   );
 }
 
-function KanbanCard({ card, familiars, sessions, todayMs, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
-  card: Card; familiars: Familiar[]; sessions: SessionRow[]; todayMs: number | null;
+function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
+  card: Card; familiarById: Map<string, Familiar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
   isDragging: boolean; isSelected: boolean; isGrabbed: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onPointerDownTouch?: (e: React.PointerEvent) => void;
@@ -499,10 +502,10 @@ function KanbanCard({ card, familiars, sessions, todayMs, isDragging, isSelected
   chatLinking?: boolean;
 }) {
   const draggedRef = useRef(false);
-  const rawFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
+  const rawFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
   const resolvedFamiliars = useResolvedFamiliars(rawFamiliar ? [rawFamiliar] : [], { includeArchived: true });
   const resolvedFamiliar = resolvedFamiliars[0] ?? null;
-  const session = sessions.find((s) => s.id === card.sessionId) ?? null;
+  const session = card.sessionId ? sessionById.get(card.sessionId) ?? null : null;
   // Fallback rather than a non-null assertion: an unexpected priority value
   // must not crash the whole board render.
   const pri = PRIORITIES.find((p) => p.id === card.priority) ?? { id: card.priority, label: card.priority };
