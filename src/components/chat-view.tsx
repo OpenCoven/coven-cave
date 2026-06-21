@@ -140,6 +140,10 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** When set (with a changing nonce), opens the in-thread find on this query —
+   *  used by the ⌘K Conversations result to jump to the matched message. */
+  openFindQuery?: string;
+  openFindNonce?: number;
   daemonRunning?: boolean;
   onSessionStarted?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
@@ -1509,7 +1513,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -1811,6 +1815,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     clearFoundHighlightTimer();
     setFoundTurnId(null);
   }, [clearFoundHighlightTimer, sessionId]);
+
+  // Open in-thread find on a query handed in from a ⌘K Conversations hit. Keyed
+  // on the nonce so it fires once per request, and declared AFTER the session
+  // reset above so it wins when both run on the same session switch. The find
+  // effect then auto-scrolls to the first match once the transcript loads.
+  const openFindNonceRef = useRef(0);
+  useEffect(() => {
+    if (!openFindNonce || openFindNonce === openFindNonceRef.current) return;
+    openFindNonceRef.current = openFindNonce;
+    const q = (openFindQuery ?? "").trim();
+    if (!q) return;
+    setFindOpen(true);
+    setFindQuery(q);
+  }, [openFindNonce, openFindQuery]);
 
   // ⌘F/Ctrl+F is scoped to the chat section via this React keydown handler
   // on the section root — NOT a window-level listener — so ChatList's ⌘F

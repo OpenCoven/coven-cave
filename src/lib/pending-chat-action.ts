@@ -8,6 +8,6 @@ export type PendingChatAction =
       initialPrompt?: string | null;
       nonce: number;
     }
-  | { kind: "open"; sessionId: string; familiarId?: string | null; nonce: number }
+  | { kind: "open"; sessionId: string; familiarId?: string | null; findQuery?: string; nonce: number }
   | { kind: "list"; nonce: number }
   | null;

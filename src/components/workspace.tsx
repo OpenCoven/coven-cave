@@ -926,12 +926,13 @@ export function Workspace() {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
   }, []);
 
-  const openFamiliarSession = useCallback((sessionId: string, familiarId?: string | null) => {
+  const openFamiliarSession = useCallback((sessionId: string, familiarId?: string | null, findQuery?: string) => {
     if (familiarId) setActiveId(familiarId);
     setPendingChatAction({
       kind: "open",
       sessionId,
       familiarId,
+      ...(findQuery ? { findQuery } : {}),
       nonce: Date.now(),
     });
     setMode("chat");
@@ -1178,7 +1179,7 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "open-session") {
-      openFamiliarSession(intent.sessionId, intent.familiarId);
+      openFamiliarSession(intent.sessionId, intent.familiarId, intent.findQuery);
       return;
     }
     if (intent.kind === "new-chat") {
