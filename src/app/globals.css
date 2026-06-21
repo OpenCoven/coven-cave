@@ -3941,6 +3941,7 @@ button:active > .edge-rail-chip {
 }
 
 .companion-rail__tab {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 30px;
@@ -3961,6 +3962,18 @@ button:active > .edge-rail-chip {
 .companion-rail__tab--active {
   background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
   color: var(--accent-presence);
+}
+
+/* Needs-attention dot on a rail tab (e.g. Chat when the familiar needs a reply). */
+.companion-rail__tab-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 2px var(--bg-panel);
 }
 
 .companion-rail__body {

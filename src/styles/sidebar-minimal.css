@@ -1006,9 +1006,29 @@
 .shell-nav--rail .sidebar-action-label,
 .shell-nav--rail .sidebar-actions .sidebar-action-row > span,
 .shell-nav--rail .sidebar-foot-label,
-.shell-nav--rail .sidebar-foot-badge,
-.shell-nav--rail .sidebar-badge {
+.shell-nav--rail .sidebar-foot-badge {
   display: none;
+}
+
+/* The collapsed icon rail has no room for the count text, so render the nav
+   badge as a small accent dot in the icon top-right corner — Board/Schedules/
+   GitHub still signal at a glance when the sidebar is collapsed. */
+.shell-nav--rail .sidebar-folder-row {
+  position: relative;
+}
+.shell-nav--rail .sidebar-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-width: 7px;
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  color: transparent;
 }
 
 /* Drop the horizontal padding so the centered icons sit dead-center in the

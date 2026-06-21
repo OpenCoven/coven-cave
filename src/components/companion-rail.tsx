@@ -27,6 +27,8 @@ type Props = {
    * render a second redundant CTA. */
   suppressEmpty?: boolean;
   hideChatTab?: boolean;
+  /** Show a needs-attention dot on the Chat tab (e.g. the familiar needs a reply). */
+  chatBadge?: boolean;
   /** Whether the YouTube ("Video") pane is on. Lift this to the parent so the
    *  shell can keep the rail peeking (as a rotated video strip) when collapsed.
    *  Uncontrolled (local state) when omitted. */
@@ -66,6 +68,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       onTabChange,
       suppressEmpty = false,
       hideChatTab = false,
+      chatBadge = false,
       youtubeActive,
       onYoutubeActiveChange,
       videoStrip = false,
@@ -193,6 +196,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
               title="Chat"
             >
               <Icon name="ph:chats" width={14} />
+              {chatBadge ? <span className="companion-rail__tab-dot" aria-hidden="true" /> : null}
             </button>
           )}
           {familiar ? (

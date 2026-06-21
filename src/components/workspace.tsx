@@ -1928,6 +1928,7 @@ export function Workspace() {
               defaultTab={railTab}
               activeTab={railTab}
               onTabChange={persistRailTab}
+              chatBadge={active ? responseNeeded.has(active.id) : false}
               daemonRunning={daemonRunning}
               onCreateFamiliar={openOnboarding}
               youtubeActive={railVideoActive}
