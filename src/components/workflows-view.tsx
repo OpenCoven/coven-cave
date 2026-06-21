@@ -585,6 +585,38 @@ export function WorkflowsView({
     showNotice(`Imported ${id}.`);
   };
 
+  const handleCreateFromManifest = async (manifest: Record<string, unknown>) => {
+    if (!confirmDiscard()) return;
+    // Same landing rules as import: personal library, unique id, cave-visible.
+    const rawName = typeof manifest.name === "string" && manifest.name.trim() ? manifest.name : "";
+    const rawId = typeof manifest.id === "string" && manifest.id.trim() ? manifest.id : rawName || "workflow";
+    const id = uniqueId(slugifyWorkflowId(rawId) || "workflow");
+    const version = typeof manifest.version === "string" && manifest.version.trim() ? manifest.version : "0.1.0";
+    const visibility = {
+      ...(manifest.visibility && typeof manifest.visibility === "object"
+        ? (manifest.visibility as Record<string, unknown>)
+        : {}),
+      public: false,
+      personal: true,
+      coven_cave: true,
+    };
+    const result = await saveWorkflow({ ...manifest, id, version, visibility });
+    if (!result.ok) {
+      showNotice(result.error ?? "couldn't save the generated workflow — try regenerating");
+      return;
+    }
+    await load(true);
+    const saved = result.workflow;
+    if (saved) {
+      if (result.validation) setAction({ id: saved.id, kind: "validate", result: result.validation });
+      setSelectedWorkflowId(saved.id);
+      setSelectedNodeId(null);
+      setDraftState(initialWorkflowDraft(saved));
+      void loadRuns(saved.id);
+    }
+    showNotice(`Created ${id} with the familiar's help.`);
+  };
+
   const handleDuplicate = async (workflow: WorkflowSummary) => {
     const id = uniqueId(`${slugifyWorkflowId(workflow.id)}-copy`);
     const copy = duplicateWorkflow(workflow, id);
@@ -741,6 +773,7 @@ export function WorkflowsView({
       onDisconnect={(source, target) => dispatchDraft({ type: "disconnect", source, target })}
       onCreate={(input) => void handleCreate(input)}
       onImport={(manifest) => void handleImport(manifest)}
+      onCreateManifest={(manifest) => void handleCreateFromManifest(manifest)}
       onDuplicate={(workflow) => void handleDuplicate(workflow)}
       onDelete={(workflow) => void handleDelete(workflow)}
       onAttachRole={(role, attach) => void handleAttachRole(role, attach)}

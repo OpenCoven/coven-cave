@@ -5,6 +5,7 @@ import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
+import { Icon } from "@/lib/icon";
 
 // Bottom terminal pane — xterm.js in the browser, hooked up to a
 // portable-pty session on the Rust side (see src-tauri/src/pty.rs).
@@ -62,6 +63,13 @@ export function BottomTerminal({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  // In-buffer search (⌘F): the SearchAddon searches the rendered scrollback —
+  // read-only over the buffer, so it never touches the PTY transport.
+  const searchRef = useRef<import("@xterm/addon-search").SearchAddon | null>(null);
+  const findInputRef = useRef<HTMLInputElement | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findInfo, setFindInfo] = useState<{ index: number; count: number }>({ index: 0, count: 0 });
   // Touch accessory key bar: soft keyboards lack Esc/Tab/Ctrl/arrows. Only shown
   // on coarse pointers. Ctrl is sticky — the toggle flips ctrlStickyRef, and the
   // onData handler (set up once at mount) reads the ref to transform the next
@@ -87,6 +95,30 @@ export function BottomTerminal({
       ctrlStickyRef.current = next;
       return next;
     });
+    termRef.current?.focus();
+  }, []);
+  // Highlight every match plus the active one; colors echo the terminal theme.
+  const SEARCH_DECORATIONS = {
+    matchBackground: "#5b4b8a",
+    activeMatchBackground: "#9a8ecd",
+    matchOverviewRuler: "#5b4b8a",
+    activeMatchColorOverviewRuler: "#cdbff5",
+  } as const;
+  const runFind = useCallback((direction: 1 | -1, term?: string) => {
+    const q = term ?? findInputRef.current?.value ?? "";
+    if (!q) {
+      searchRef.current?.clearDecorations();
+      setFindInfo({ index: 0, count: 0 });
+      return;
+    }
+    const opts = { decorations: SEARCH_DECORATIONS };
+    if (direction === 1) searchRef.current?.findNext(q, opts);
+    else searchRef.current?.findPrevious(q, opts);
+  }, []);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    searchRef.current?.clearDecorations();
+    setFindInfo({ index: 0, count: 0 });
     termRef.current?.focus();
   }, []);
   const wsBridgeRef = useRef<PtyWsBridge | null>(null);
@@ -197,10 +229,11 @@ export function BottomTerminal({
 
       // Lazy-load xterm only on the client + only inside Tauri so SSR and
       // the in-browser dev path don't try to pull it in.
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-web-links"),
+        import("@xterm/addon-search"),
       ]);
 
       const term = new Terminal({
@@ -209,6 +242,8 @@ export function BottomTerminal({
         fontSize: 12,
         lineHeight: 1.2,
         cursorBlink: true,
+        // Required for the search addon's match decorations (highlights + count).
+        allowProposedApi: true,
         theme: {
           background: "oklch(0.11 0.022 293)",
           foreground: "#e6e6f0",
@@ -220,6 +255,22 @@ export function BottomTerminal({
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.loadAddon(new WebLinksAddon());
+      const search = new SearchAddon();
+      term.loadAddon(search);
+      searchRef.current = search;
+      search.onDidChangeResults((e) => {
+        setFindInfo({ index: e.resultIndex >= 0 ? e.resultIndex + 1 : 0, count: e.resultCount });
+      });
+      // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
+          e.preventDefault();
+          setFindOpen(true);
+          requestAnimationFrame(() => findInputRef.current?.select());
+          return false;
+        }
+        return true;
+      });
       term.open(wrap);
       try {
         fit.fit();
@@ -385,10 +436,11 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-web-links"),
+        import("@xterm/addon-search"),
       ]);
 
       const term = new Terminal({
@@ -397,6 +449,8 @@ export function BottomTerminal({
         fontSize: 12,
         lineHeight: 1.2,
         cursorBlink: true,
+        // Required for the search addon's match decorations (highlights + count).
+        allowProposedApi: true,
         theme: {
           background: "oklch(0.11 0.022 293)",
           foreground: "#e6e6f0",
@@ -408,6 +462,22 @@ export function BottomTerminal({
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.loadAddon(new WebLinksAddon());
+      const search = new SearchAddon();
+      term.loadAddon(search);
+      searchRef.current = search;
+      search.onDidChangeResults((e) => {
+        setFindInfo({ index: e.resultIndex >= 0 ? e.resultIndex + 1 : 0, count: e.resultCount });
+      });
+      // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
+          e.preventDefault();
+          setFindOpen(true);
+          requestAnimationFrame(() => findInputRef.current?.select());
+          return false;
+        }
+        return true;
+      });
       term.open(wrap);
       try {
         fit.fit();
@@ -603,6 +673,45 @@ export function BottomTerminal({
         // on the cursor.
         onClick={() => termRef.current?.focus()}
       />
+      {/* In-buffer find bar (⌘F) — searches the rendered scrollback. */}
+      {findOpen ? (
+        <div
+          className="bottom-terminal-find absolute right-2 top-2 z-10 flex items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-2 py-1 shadow-lg"
+          role="search"
+          aria-label="Find in terminal"
+        >
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(e) => {
+              setFindQuery(e.target.value);
+              runFind(1, e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+              else if (e.key === "Enter") { e.preventDefault(); runFind(e.shiftKey ? -1 : 1); }
+            }}
+            placeholder="Find in terminal…"
+            aria-label="Find in terminal"
+            className="focus-ring-inset w-44 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          />
+          <span className="min-w-[34px] text-right text-[10px] tabular-nums text-[var(--text-muted)]" aria-live="polite">
+            {findInfo.count > 0 ? `${findInfo.index}/${findInfo.count}` : findQuery ? "0/0" : ""}
+          </span>
+          <button type="button" onClick={() => runFind(-1)} title="Previous match (⇧⏎)" aria-label="Previous match"
+            className="focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]">
+            <Icon name="ph:caret-up" width={11} aria-hidden />
+          </button>
+          <button type="button" onClick={() => runFind(1)} title="Next match (⏎)" aria-label="Next match"
+            className="focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]">
+            <Icon name="ph:caret-down" width={11} aria-hidden />
+          </button>
+          <button type="button" onClick={closeFind} title="Close (Esc)" aria-label="Close find"
+            className="focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]">
+            <Icon name="ph:x-bold" width={11} aria-hidden />
+          </button>
+        </div>
+      ) : null}
       {/* Overlay while the xterm lazy-loads and the PTY (native or WebSocket)
           connects — without it the pane reads as blank for a few seconds. */}
       {!ready ? (

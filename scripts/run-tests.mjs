@@ -40,6 +40,7 @@ export const SUITES = {
     "src/lib/chat-project-overrides.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/lib/workflows.test.ts",
+    "src/lib/workflow-generate.test.ts",
     "src/lib/git-changes.test.ts",
     "src/lib/env-file.test.ts",
     "src/lib/workflow-graph.test.ts",
@@ -104,6 +105,8 @@ export const SUITES = {
     "src/components/sidebar-minimal.test.ts",
     "src/components/sidepanel-badges.test.ts",
     "src/components/sidepanel-badge-dots.test.ts",
+    "src/components/sidepanel-nav-peek.test.ts",
+    "src/components/sidepanel-keyboard-nav.test.ts",
     "src/components/recent-activity-rollup.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",
@@ -428,6 +431,7 @@ export const SUITES = {
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
+    "src/lib/server/theme-store.test.ts",
     "src/app/api/memory-coven-workspaces.test.ts",
     "src/app/api/memory-excerpt.test.ts",
     "src/app/api/memory-mutation-routes.test.ts",
@@ -498,6 +502,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/session-project-roots.test.ts",
   "src/app/api/library/doc/route.test.ts",
   "src/lib/server/familiar-avatar.test.ts",
+  "src/lib/workflow-generate.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

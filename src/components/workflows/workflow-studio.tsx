@@ -116,6 +116,7 @@ export type WorkflowStudioProps = {
   onSavePositions: (positions: WorkflowNodePositions) => void;
   onDisconnect: (source: string, target: string) => void;
   onCreate: (input: { name: string; pattern: WorkflowPattern; familiar?: string }) => void;
+  onCreateManifest: (manifest: Record<string, unknown>) => void;
   onImport: (manifest: Record<string, unknown>) => void;
   onDuplicate: (workflow: WorkflowSummary) => void;
   onDelete: (workflow: WorkflowSummary) => void;
@@ -430,10 +431,15 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
       </aside>
       {createOpen && (
         <WorkflowCreateDialog
+          familiarOptions={props.familiarOptions}
           onClose={() => setCreateOpen(false)}
           onCreate={(input) => {
             setCreateOpen(false);
             props.onCreate(input);
+          }}
+          onCreateManifest={(manifest) => {
+            setCreateOpen(false);
+            props.onCreateManifest(manifest);
           }}
         />
       )}

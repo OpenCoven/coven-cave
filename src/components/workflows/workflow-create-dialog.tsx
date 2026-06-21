@@ -5,6 +5,13 @@ import { parse as parseYaml } from "yaml";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { slugifyWorkflowId } from "@/lib/workflow-edit";
+import {
+  generateWorkflowManifest,
+  generateWorkflowQuestions,
+  type GeneratedAnswer,
+  type GeneratedQuestion,
+} from "@/lib/workflow-generate";
+import type { WorkflowFamiliarOption } from "@/components/workflows/workflow-attachments";
 import type {
   WorkflowPattern,
   WorkflowScheduleRecurrence,
@@ -24,20 +31,108 @@ const PATTERNS: Array<{ id: WorkflowPattern; hint: string }> = [
 ];
 
 type WorkflowCreateDialogProps = {
+  familiarOptions: WorkflowFamiliarOption[];
   onClose: () => void;
   onCreate: (input: { name: string; pattern: WorkflowPattern; familiar?: string }) => void;
+  onCreateManifest: (manifest: Record<string, unknown>) => void;
 };
 
-/** New-workflow dialog: name + CWF-01 pattern template + optional familiar. */
-export function WorkflowCreateDialog({ onClose, onCreate }: WorkflowCreateDialogProps) {
-  const [name, setName] = useState("");
-  const [pattern, setPattern] = useState<WorkflowPattern>("sequential");
-  const [familiar, setFamiliar] = useState("");
-  const id = slugifyWorkflowId(name);
+type CreateMode = "describe" | "pattern";
+type DescribeStep = "describe" | "questions" | "review";
+
+/** Lightweight read of a parsed manifest object for the review summary. */
+function reviewSummary(manifest: Record<string, unknown>): {
+  pattern: string;
+  familiar: string | null;
+  steps: Array<{ id: string; kind: string; name?: string }>;
+} {
+  const rawSteps = Array.isArray(manifest.steps) ? manifest.steps : [];
+  const steps = rawSteps.map((step) => {
+    const s = (step && typeof step === "object" ? step : {}) as Record<string, unknown>;
+    return {
+      id: typeof s.id === "string" ? s.id : "?",
+      kind: typeof s.kind === "string" ? s.kind : "?",
+      name: typeof s.name === "string" ? s.name : undefined,
+    };
+  });
+  return {
+    pattern: typeof manifest.pattern === "string" ? manifest.pattern : "custom",
+    familiar: typeof manifest.familiar === "string" ? manifest.familiar : null,
+    steps,
+  };
+}
+
+/**
+ * New-workflow dialog. Two modes:
+ *  - "describe" (default): the picked familiar asks 2-3 clarifying questions, then
+ *    generates a full manifest the user reviews before creating.
+ *  - "pattern": the original name + CWF-01 template + optional familiar form.
+ */
+export function WorkflowCreateDialog({ familiarOptions, onClose, onCreate, onCreateManifest }: WorkflowCreateDialogProps) {
+  const [mode, setMode] = useState<CreateMode>("describe");
   const dialogRef = useRef<HTMLDivElement>(null);
-  // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
-  // so the Name input's autoFocus keeps the initial focus.
   useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
+
+  // Shared name field (used by both modes).
+  const [name, setName] = useState("");
+  const id = slugifyWorkflowId(name);
+
+  // Pattern-mode state.
+  const [pattern, setPattern] = useState<WorkflowPattern>("sequential");
+  const [patternFamiliar, setPatternFamiliar] = useState("");
+
+  // Describe-mode state.
+  const [step, setStep] = useState<DescribeStep>("describe");
+  const [goal, setGoal] = useState("");
+  const [familiarId, setFamiliarId] = useState("");
+  const [questions, setQuestions] = useState<GeneratedQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [manifest, setManifest] = useState<Record<string, unknown> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const familiarName = useMemo(
+    () => familiarOptions.find((option) => option.id === familiarId)?.label ?? familiarId,
+    [familiarId, familiarOptions],
+  );
+
+  const runQuestions = async () => {
+    setBusy(true);
+    setGenError(null);
+    const result = await generateWorkflowQuestions({ goal, familiarId });
+    setBusy(false);
+    if (!result.questions) {
+      setGenError(result.error ?? "couldn't get questions — try again");
+      return;
+    }
+    setQuestions(result.questions);
+    setStep("questions");
+  };
+
+  const runManifest = async () => {
+    setBusy(true);
+    setGenError(null);
+    const payload: GeneratedAnswer[] = questions.map((question) => ({
+      id: question.id,
+      question: question.question,
+      answer: answers[question.id]?.trim() ?? "",
+    }));
+    const result = await generateWorkflowManifest({
+      goal,
+      answers: payload,
+      familiarId,
+      suggestedName: name.trim() || undefined,
+    });
+    setBusy(false);
+    if (!result.manifest) {
+      setGenError(result.error ?? "couldn't build the workflow — regenerate");
+      return;
+    }
+    setManifest(result.manifest);
+    setStep("review");
+  };
+
+  const describeDisabled = busy || familiarId.trim().length === 0 || goal.trim().length === 0;
 
   return (
     <div className="workflow-dialog-backdrop" role="presentation" onClick={onClose}>
@@ -53,61 +148,202 @@ export function WorkflowCreateDialog({ onClose, onCreate }: WorkflowCreateDialog
         <div className="workflow-panel-heading">
           <div>
             <p className="workflow-eyebrow">New workflow</p>
-            <h2>Create from pattern</h2>
+            <h2>{mode === "describe" ? "Describe it — your familiar builds it" : "Create from pattern"}</h2>
           </div>
           <button type="button" className="workflow-icon-button" onClick={onClose} aria-label="Close">
             <Icon name="ph:x" width={14} />
           </button>
         </div>
-        <label className="workflow-field">
-          <span>Name</span>
-          <input
-            type="text"
-            value={name}
-            autoFocus
-            placeholder="Nightly release review"
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <p className="workflow-muted">Saved as workflows/{id}.yaml</p>
-        <div className="workflow-pattern-grid" role="radiogroup" aria-label="Pattern">
-          {PATTERNS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              role="radio"
-              aria-checked={pattern === entry.id}
-              className={`workflow-pattern-option${pattern === entry.id ? " is-active" : ""}`}
-              onClick={() => setPattern(entry.id)}
-            >
-              <span className="workflow-pattern-name">{entry.id}</span>
-              <span className="workflow-pattern-hint">{entry.hint}</span>
-            </button>
-          ))}
-        </div>
-        <label className="workflow-field">
-          <span>Familiar (optional)</span>
-          <input
-            type="text"
-            value={familiar}
-            placeholder="nova"
-            onChange={(event) => setFamiliar(event.target.value)}
-          />
-        </label>
-        <div className="workflow-dialog-actions">
-          <button type="button" onClick={onClose}>
-            Cancel
+
+        <div className="workflow-create-mode-toggle" role="tablist" aria-label="Create mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "describe"}
+            className={`workflow-create-mode${mode === "describe" ? " is-active" : ""}`}
+            onClick={() => setMode("describe")}
+          >
+            <Icon name="ph:sparkle" width={13} /> Describe
           </button>
           <button
             type="button"
-            className="workflow-primary-button"
-            disabled={name.trim().length === 0}
-            onClick={() => onCreate({ name, pattern, familiar: familiar || undefined })}
+            role="tab"
+            aria-selected={mode === "pattern"}
+            className={`workflow-create-mode${mode === "pattern" ? " is-active" : ""}`}
+            onClick={() => setMode("pattern")}
           >
-            <Icon name="ph:plus-bold" width={13} />
-            Create workflow
+            Pattern
           </button>
         </div>
+
+        {mode === "pattern" ? (
+          <>
+            <label className="workflow-field">
+              <span>Name</span>
+              <input
+                type="text"
+                value={name}
+                autoFocus
+                placeholder="Nightly release review"
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <p className="workflow-muted">Saved as workflows/{id}.yaml</p>
+            <div className="workflow-pattern-grid" role="radiogroup" aria-label="Pattern">
+              {PATTERNS.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={pattern === entry.id}
+                  className={`workflow-pattern-option${pattern === entry.id ? " is-active" : ""}`}
+                  onClick={() => setPattern(entry.id)}
+                >
+                  <span className="workflow-pattern-name">{entry.id}</span>
+                  <span className="workflow-pattern-hint">{entry.hint}</span>
+                </button>
+              ))}
+            </div>
+            <label className="workflow-field">
+              <span>Familiar (optional)</span>
+              <input
+                type="text"
+                value={patternFamiliar}
+                placeholder="nova"
+                onChange={(event) => setPatternFamiliar(event.target.value)}
+              />
+            </label>
+            <div className="workflow-dialog-actions">
+              <button type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="workflow-primary-button"
+                disabled={name.trim().length === 0}
+                onClick={() => onCreate({ name, pattern, familiar: patternFamiliar || undefined })}
+              >
+                <Icon name="ph:plus-bold" width={13} />
+                Create workflow
+              </button>
+            </div>
+          </>
+        ) : step === "describe" ? (
+          <>
+            <label className="workflow-field">
+              <span>Name</span>
+              <input
+                type="text"
+                value={name}
+                autoFocus
+                placeholder="Triage inbound bugs"
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <label className="workflow-field">
+              <span>Familiar</span>
+              <select value={familiarId} onChange={(event) => setFamiliarId(event.target.value)}>
+                <option value="">Choose a familiar…</option>
+                {familiarOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="workflow-field">
+              <span>What should this workflow do?</span>
+              <textarea
+                className="workflow-run-input-field"
+                rows={4}
+                placeholder="Describe the goal in your own words…"
+                value={goal}
+                onChange={(event) => setGoal(event.target.value)}
+              />
+            </label>
+            {genError && <p className="workflow-import-error">{genError}</p>}
+            <div className="workflow-dialog-actions">
+              <button type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="button" className="workflow-primary-button" disabled={describeDisabled} onClick={() => void runQuestions()}>
+                {busy ? <Icon name="ph:circle-notch-bold" width={13} className="workflow-spin" /> : <Icon name="ph:sparkle" width={13} />}
+                {busy ? "Thinking…" : "Continue"}
+              </button>
+            </div>
+          </>
+        ) : step === "questions" ? (
+          <>
+            <p className="workflow-muted">{familiarName} wants to know a few things:</p>
+            <div className="workflow-run-inputs-list">
+              {questions.map((question, index) => (
+                <label className="workflow-field" key={question.id}>
+                  <span>{question.question}</span>
+                  {question.hint && <span className="workflow-run-input-hint">{question.hint}</span>}
+                  <textarea
+                    className="workflow-run-input-field"
+                    rows={2}
+                    autoFocus={index === 0}
+                    placeholder="Your answer…"
+                    value={answers[question.id] ?? ""}
+                    onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+            {genError && <p className="workflow-import-error">{genError}</p>}
+            <div className="workflow-dialog-actions">
+              <button type="button" onClick={() => { setGenError(null); setStep("describe"); }}>
+                Back
+              </button>
+              <button type="button" className="workflow-primary-button" disabled={busy} onClick={() => void runManifest()}>
+                {busy ? <Icon name="ph:circle-notch-bold" width={13} className="workflow-spin" /> : <Icon name="ph:sparkle" width={13} />}
+                {busy ? "Building…" : "Generate workflow"}
+              </button>
+            </div>
+          </>
+        ) : (
+          (() => {
+            const summary = manifest ? reviewSummary(manifest) : null;
+            return (
+              <>
+                <p className="workflow-muted">
+                  {summary
+                    ? `Proposed: pattern ${summary.pattern} · ${summary.steps.length} steps${summary.familiar ? ` · familiar ${summary.familiar}` : ""}`
+                    : "No workflow generated."}
+                </p>
+                {summary && (
+                  <ol className="workflow-review-steps">
+                    {summary.steps.map((s) => (
+                      <li key={s.id} className="workflow-review-step">
+                        <span className={`workflow-review-kind workflow-review-kind--${s.kind}`}>{s.kind}</span>
+                        <span className="workflow-review-name">{s.name ?? s.id}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {genError && <p className="workflow-import-error">{genError}</p>}
+                <div className="workflow-dialog-actions">
+                  <button type="button" onClick={() => { setGenError(null); setStep("questions"); }}>
+                    Back
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => void runManifest()}>
+                    {busy ? "Regenerating…" : "Regenerate"}
+                  </button>
+                  <button
+                    type="button"
+                    className="workflow-primary-button"
+                    disabled={!manifest}
+                    onClick={() => manifest && onCreateManifest(manifest)}
+                  >
+                    <Icon name="ph:plus-bold" width={13} />
+                    Create & open
+                  </button>
+                </div>
+              </>
+            );
+          })()
+        )}
       </div>
     </div>
   );
