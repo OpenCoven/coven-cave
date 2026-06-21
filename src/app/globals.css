@@ -5956,46 +5956,6 @@ a.mobile-handoff__link:hover {
 @media (prefers-reduced-motion: reduce) {
   .familiar-studio__drawer { animation: none; }
 }
-.familiar-studio__tabstrip {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-2);
-  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
-  border-right: 1px solid var(--border-hairline);
-}
-.familiar-studio__tab {
-  display: grid;
-  place-items: center;
-  gap: 4px;
-  padding: 9px 2px;
-  border-radius: var(--radius-control);
-  font-size: var(--text-2xs);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard),
-    background var(--duration-fast) var(--ease-standard);
-}
-.familiar-studio__tab:hover:not([aria-disabled="true"]):not(.familiar-studio__tab--active) {
-  color: var(--text-secondary);
-  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
-}
-.familiar-studio__tab--active {
-  color: var(--familiar-accent, var(--accent-presence));
-  background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 14%, transparent);
-}
-.familiar-studio__tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ring-focus);
-}
-.familiar-studio__tab[aria-disabled="true"] {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
 .familiar-studio__main { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
 .familiar-studio__header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-hairline); }
 .familiar-studio__heading { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
@@ -6429,7 +6389,6 @@ a.mobile-handoff__link:hover {
 
 /* Focus-visible rings for every interactive control in the studio drawer.
    Keyboard Tab landed invisibly across the modal before this. */
-.familiar-studio__tab:focus-visible,
 .familiar-studio__close:focus-visible,
 .familiar-studio__name:focus-visible,
 .familiar-studio-identity__reset:focus-visible,

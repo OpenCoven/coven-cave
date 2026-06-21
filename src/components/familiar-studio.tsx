@@ -5,9 +5,9 @@ import { Icon, type IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { Tabs } from "@/components/ui/tabs";
 import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
@@ -57,39 +57,11 @@ export function FamiliarStudio({ familiars }: Props) {
     window.location.assign("/settings");
   }, [setActiveTab]);
 
-  // Roving tabindex over the tablist. Arrow keys move focus across enabled
-  // tabs; Home/End jump to ends. We pair this with an effect below to also
-  // switch the active tab when focus moves (automatic activation per APG).
-  const tablistRef = useRef<HTMLDivElement | null>(null);
-  const { activeIndex } = useRovingTabIndex({
-    containerRef: tablistRef,
-    itemSelector: '[role="tab"]:not([aria-disabled="true"])',
-    // Tabstrip is visually a column (`flex-direction: column`), so vertical
-    // arrow keys move focus across tabs. aria-orientation below mirrors this.
-    orientation: "vertical",
-  });
-
   // Trap keyboard focus inside the open drawer, focus it on open, wire Escape,
   // and restore focus to the trigger on close — matching every other modal
   // (capabilities, board-inspector, …). Replaces the ad-hoc Escape listener.
   const drawerRef = useRef<HTMLElement | null>(null);
   useFocusTrap(drawerOpen, drawerRef, { onEscape: closeFamiliarStudio });
-
-  // Automatic activation: switch activeTab whenever the roving focus lands on
-  // a new tab. Studio tab panels are cheap, so APG recommends auto activation.
-  useEffect(() => {
-    if (!drawerOpen) return;
-    const enabledTabs = TABS.filter((t) =>
-      disableNonLifecycle ? t.id === "lifecycle" : true,
-    );
-    const target = enabledTabs[activeIndex];
-    if (target && target.id !== activeTab) {
-      setActiveTab(target.id);
-    }
-    // Intentionally omit activeTab/setActiveTab from deps: this effect drives
-    // activeTab from activeIndex, not the other way around.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, disableNonLifecycle, drawerOpen]);
 
   // No drawer when nothing is open.
   if (!drawerOpen) return null;
@@ -130,34 +102,20 @@ export function FamiliarStudio({ familiars }: Props) {
       style={familiar ? ({ ["--familiar-accent"]: familiar.color } as CSSProperties) : undefined}
     >
       {/* Tabstrip */}
-      <div
-        role="tablist"
-        aria-label="Studio sections"
-        aria-orientation="vertical"
-        ref={tablistRef}
-        className="familiar-studio__tabstrip"
-      >
-        {TABS.map((t) => {
-          const disabled = disableNonLifecycle && t.id !== "lifecycle";
-          const selected = drawerActiveTab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`familiar-studio-tab-${t.id}`}
-              aria-selected={selected}
-              aria-controls={`familiar-studio-panel-${t.id}`}
-              aria-disabled={disabled ? true : undefined}
-              onClick={() => !disabled && setActiveTab(t.id)}
-              className={`familiar-studio__tab${selected ? " familiar-studio__tab--active" : ""}`}
-            >
-              <Icon name={t.icon} width={18} />
-              <span>{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
+        <Tabs
+          variant="underline"
+          orientation="vertical"
+          idPrefix="familiar-studio"
+          ariaLabel="Studio sections"
+          value={drawerActiveTab}
+          onChange={setActiveTab}
+          items={TABS.map((t) => ({
+            id: t.id,
+            label: t.label,
+            icon: t.icon,
+            disabled: disableNonLifecycle && t.id !== "lifecycle",
+          }))}
+        />
 
       {/* Main column */}
       <div className="familiar-studio__main">

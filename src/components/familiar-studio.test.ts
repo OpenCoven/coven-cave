@@ -9,7 +9,7 @@ assert.match(source, /useFamiliarStudio/, "Must consume FamiliarStudio context")
 assert.match(source, /activeFamiliarId/, "Reads activeFamiliarId from context");
 assert.match(source, /Escape/, "Esc dismiss is wired");
 assert.match(source, /familiar-studio__drawer/, "Drawer root class must be present");
-assert.match(source, /familiar-studio__tabstrip/, "Tab strip class must be present");
+assert.match(source, /variant="underline"/, "Tab strip uses the shared underline Tabs component");
 assert.match(source, /role="dialog"/, "Drawer must have dialog role for a11y");
 assert.match(source, /aria-label/, "Drawer must have an accessible name");
 assert.match(source, /function HeaderName/, "Header must use inline-edit HeaderName component");
@@ -26,8 +26,8 @@ assert.match(
 
 assert.match(
   source,
-  /const tablistRef = useRef[\s\S]*if \(!drawerOpen\) return null/,
-  "Familiar Studio should call tabstrip hooks before early returns to keep hook order stable",
+  /const drawerOpen = Boolean[\s\S]*if \(!drawerOpen\) return null/,
+  "Familiar Studio computes drawerOpen before early returns to keep hook order stable",
 );
 
 // The header avatar is a click-to-upload control wired to the shared image hook.
