@@ -1,0 +1,89 @@
+/* World-class dark markdown styling for the native iOS chat bubbles.
+   Transparent background so it sits inside the SwiftUI assistant bubble. */
+:root {
+  --txt: #ECECF1;
+  --txt-muted: #A9A9B8;
+  --accent: #8B85F0;
+  --code-bg: #16161C;
+  --code-border: rgba(255,255,255,0.08);
+  --hairline: rgba(255,255,255,0.10);
+}
+* { box-sizing: border-box; -webkit-text-size-adjust: 100%; }
+html, body { margin: 0; padding: 0; background: transparent; }
+body {
+  color: var(--txt);
+  font: 15px/1.55 -apple-system, "SF Pro Text", system-ui, sans-serif;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+#root { padding: 0; }
+#root > :first-child { margin-top: 0; }
+#root > :last-child { margin-bottom: 0; }
+
+p { margin: 0 0 0.65em; }
+h1,h2,h3,h4,h5,h6 { margin: 1.1em 0 0.5em; font-weight: 650; line-height: 1.3; }
+h1 { font-size: 1.45em; } h2 { font-size: 1.28em; } h3 { font-size: 1.13em; }
+h4,h5,h6 { font-size: 1em; }
+a { color: var(--accent); text-decoration: none; }
+a:active { opacity: 0.7; }
+strong { font-weight: 680; }
+em { font-style: italic; }
+
+ul, ol { margin: 0 0 0.65em; padding-left: 1.4em; }
+li { margin: 0.18em 0; }
+li::marker { color: var(--accent); }
+
+blockquote {
+  margin: 0 0 0.7em; padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid var(--accent);
+  color: var(--txt-muted);
+}
+
+hr { border: 0; border-top: 1px solid var(--hairline); margin: 1em 0; }
+
+/* inline code — lavender pill */
+code {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 0.88em;
+  background: rgba(139,133,240,0.16);
+  color: #C8C2FF;
+  padding: 0.12em 0.4em;
+  border-radius: 5px;
+}
+
+/* fenced code block */
+pre {
+  margin: 0 0 0.7em;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 11px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+pre code {
+  background: none; color: #E6E6EF; padding: 0;
+  font-size: 0.86em; line-height: 1.5; border-radius: 0;
+  white-space: pre;
+}
+
+/* tables */
+table { border-collapse: collapse; width: 100%; margin: 0 0 0.7em; font-size: 0.92em; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--hairline); padding: 6px 10px; text-align: left; }
+th { background: rgba(255,255,255,0.04); font-weight: 640; }
+
+img { max-width: 100%; border-radius: 8px; }
+
+/* mermaid diagram — centered card */
+.cm-mermaid, .mermaid, [class*="mermaid"] {
+  margin: 0.2em 0 0.8em; text-align: center;
+}
+.cm-mermaid svg, .mermaid svg, [class*="mermaid"] svg {
+  max-width: 100%; height: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 11px; padding: 12px;
+}
+
+.task-list-item { list-style: none; }
+.task-list-item input { margin-right: 0.4em; }

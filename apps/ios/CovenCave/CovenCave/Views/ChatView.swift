@@ -62,7 +62,9 @@ struct ChatView: View {
                         MessageBubble(message: message,
                                       isGroup: thread.isGroup,
                                       familiar: message.familiarId.flatMap(app.familiar),
-                                      onDelete: { deleteMessage(message) })
+                                      isLast: message.id == thread.messages.last?.id,
+                                      onDelete: { deleteMessage(message) },
+                                      onSuggestion: { sendSuggestion($0) })
                         .id(message.id)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -180,6 +182,12 @@ struct ChatView: View {
             draft = ""
             thread.send(text, client: client) { app.touch(thread) }
         }
+    }
+
+    /// Tap a follow-up suggestion chip → send it as the next message.
+    private func sendSuggestion(_ text: String) {
+        guard let client = app.client else { return }
+        thread.send(text, client: client) { app.touch(thread) }
     }
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get

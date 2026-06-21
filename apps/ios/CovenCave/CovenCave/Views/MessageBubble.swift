@@ -4,9 +4,24 @@ struct MessageBubble: View {
     let message: DisplayMessage
     var isGroup: Bool
     var familiar: Familiar?
+    var isLast: Bool = false
     var onDelete: () -> Void
+    var onSuggestion: (String) -> Void = { _ in }
+
+    @State private var mdHeight: CGFloat = 0
 
     private var isUser: Bool { message.role == .user }
+
+    /// Assistant text minus the `<coven:next-paths>` block (parsed into chips).
+    private var parsed: (visible: String, suggestions: [String]) {
+        isUser ? (message.text, []) : NextPaths.extract(message.text)
+    }
+
+    /// Render the desktop-parity markdown WebView only for a settled, non-error
+    /// assistant reply. Streaming / user / error messages stay native Text.
+    private var rendersMarkdown: Bool {
+        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty
+    }
 
     var body: some View {
         if message.role == .system {
@@ -66,6 +81,10 @@ struct MessageBubble: View {
                             Label("Delete Message", systemImage: "trash")
                         }
                     }
+
+                if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
+                    SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)
+                }
             }
 
             if !isUser { Spacer(minLength: 48) }
@@ -77,8 +96,13 @@ struct MessageBubble: View {
             TypingIndicator()
                 .padding(.horizontal, 14).padding(.vertical, 11)
                 .background(bubbleBackground, in: bubbleShape)
+        } else if rendersMarkdown {
+            MarkdownWebView(markdown: parsed.visible, height: $mdHeight)
+                .frame(height: max(mdHeight, 1))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(bubbleBackground, in: bubbleShape)
         } else {
-            Text(message.text.isEmpty ? " " : message.text)
+            Text(parsed.visible.isEmpty ? " " : parsed.visible)
                 .textSelection(.enabled)
                 .foregroundStyle(isUser ? Color.white : Color.primary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
@@ -125,5 +149,42 @@ struct StreamingDot: View {
             .foregroundStyle(.secondary)
             .opacity(on ? 1 : 0.2)
             .onAppear { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { on = true } }
+    }
+}
+
+/// Follow-up suggestion chips parsed from the assistant's `<coven:next-paths>`
+/// block. The first is the recommended path (accent); tapping sends it.
+struct SuggestionPills: View {
+    let suggestions: [String]
+    var onTap: (String) -> Void
+
+    var body: some View {
+        FlowRow(spacing: 6) {
+            ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
+                Button { onTap(suggestion) } label: {
+                    HStack(spacing: 4) {
+                        if index == 0 {
+                            Image(systemName: "sparkle").font(.system(size: 10, weight: .semibold))
+                        }
+                        Text(suggestion).font(.caption.weight(.medium)).lineLimit(2)
+                    }
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .foregroundStyle(index == 0 ? Color.accentColor : Color.primary)
+                    .background(
+                        index == 0 ? Color.accentColor.opacity(0.16) : Color(.secondarySystemBackground),
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule().strokeBorder(
+                            index == 0 ? Color.accentColor.opacity(0.45) : Color(.separator).opacity(0.5),
+                            lineWidth: 1
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.leading, 4)
     }
 }
