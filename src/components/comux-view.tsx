@@ -551,6 +551,28 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     [daemonProjectRoot, selectedProjectRoot, sessions.length, terminalLayout.activeSessionId, visiblePaneSessionIds],
   );
 
+  // Direct-manipulation split: spawn a new terminal adjacent to THIS pane
+  // (inherits its cwd), complementing the global toolbar split + drag-to-split.
+  const splitFromPane = useCallback(
+    (targetSessionId: string, side: TerminalSplitSide) => {
+      const id = uid();
+      const target = sessions.find((x) => x.id === targetSessionId);
+      const root = target?.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot;
+      dispatchTerminalLayout({
+        type: "add",
+        session: {
+          id,
+          label: root ? `${projectName(root)} ${sessions.length + 1}` : `Terminal ${sessions.length + 1}`,
+          projectRoot: root,
+        },
+        placement: "split",
+        targetSessionId,
+        side,
+      });
+    },
+    [daemonProjectRoot, selectedProjectRoot, sessions],
+  );
+
   useEffect(() => {
     if (view !== "terminal" || !active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1025,6 +1047,37 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 <Icon name="ph:terminal-window" width={12} aria-hidden />
               )}
               <span className="min-w-0 flex-1 truncate">{s.label}</span>
+              {s.projectRoot ? (
+                <span className="comux-terminal-pane-cwd" title={s.projectRoot}>
+                  {projectName(s.projectRoot)}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                draggable={false}
+                className="comux-terminal-pane-action comux-terminal-pane-action--split"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  splitFromPane(s.id, "right");
+                }}
+                aria-label={`Split ${s.label} right`}
+                title="Split right"
+              >
+                <Icon name="ph:columns" width={10} aria-hidden />
+              </button>
+              <button
+                type="button"
+                draggable={false}
+                className="comux-terminal-pane-action comux-terminal-pane-action--split"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  splitFromPane(s.id, "bottom");
+                }}
+                aria-label={`Split ${s.label} down`}
+                title="Split down"
+              >
+                <Icon name="ph:rows" width={10} aria-hidden />
+              </button>
               {visiblePaneCount > 1 || zoomedSessionId === s.id ? (
                 <button
                   type="button"
@@ -1115,6 +1168,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       paneNumbers,
       selectedProjectRoot,
       sessionById,
+      splitFromPane,
       splitSessionIntoPane,
       visiblePaneCount,
       zoomedSessionId,
@@ -1217,7 +1271,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 title="Broadcast input to all panes (⌘⇧B)"
               >
                 <Icon name="ph:share-network" width={12} aria-hidden />
-                <span>{broadcast ? "Broadcasting" : "Broadcast"}</span>
+                <span>{broadcast ? `Broadcasting · ${visiblePaneSessionIds.length}` : "Broadcast"}</span>
               </button>
               <button
                 type="button"
@@ -1253,9 +1307,24 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     ⌘N
                   </kbd>
                 </div>
+                <div className="comux-terminal-empty-hints">
+                  <span><kbd>⌘N</kbd> new</span>
+                  <span><kbd>⌘⌥←↑↓→</kbd> focus pane</span>
+                  <span><kbd>⌘[</kbd> <kbd>⌘]</kbd> cycle</span>
+                  <span><kbd>⌘1–9</kbd> jump</span>
+                  <span><kbd>⌘⏎</kbd> zoom</span>
+                  <span><kbd>⌘⇧B</kbd> broadcast</span>
+                  <span>drag a pane edge to split</span>
+                </div>
               </div>
             ) : (
               <>
+                {broadcast && visiblePaneSessionIds.length > 1 ? (
+                  <div className="comux-terminal-broadcast-banner" role="status">
+                    <Icon name="ph:share-network" width={12} aria-hidden />
+                    <span>Broadcasting to {visiblePaneSessionIds.length} panes · ⌘⇧B to stop</span>
+                  </div>
+                ) : null}
                 {terminalLayout.root
                   ? zoomedSessionId && visiblePaneSessionIds.includes(zoomedSessionId)
                     ? renderTerminalNode({ kind: "leaf", sessionId: zoomedSessionId })

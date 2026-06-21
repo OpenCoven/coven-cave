@@ -8599,3 +8599,71 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 
 /* Bigger desktop search glyph (overrides the 1.15em default). */
 .menu-bar__search-icon { width: 2.5em; height: 2.5em; }
+
+/* ── Terminal chrome polish (PR1) ─────────────────────────────────────────── */
+.comux-terminal-pane-cwd {
+  flex-shrink: 0;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-cwd {
+  color: var(--text-secondary);
+}
+.comux-terminal-pane-action--split {
+  opacity: 0;
+}
+.comux-terminal-pane:hover .comux-terminal-pane-action--split,
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-action--split,
+.comux-terminal-pane-action--split:focus-visible {
+  opacity: 1;
+}
+.comux-terminal-broadcast-banner {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-warning) 22%, var(--bg-raised));
+  border: 1px solid color-mix(in oklch, var(--color-warning) 45%, transparent);
+  color: var(--color-warning);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.comux-terminal-empty-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 12px;
+  max-width: 30rem;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.comux-terminal-empty-hints span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.comux-terminal-empty-hints kbd {
+  border-radius: 4px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 50%, transparent);
+  padding: 1px 4px;
+  font-size: 9px;
+  color: var(--text-secondary);
+}
