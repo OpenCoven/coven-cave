@@ -145,7 +145,7 @@ function SidebarSection({
           <span className="sidebar-section-label__text">{label}</span>
           <Icon
             name="ph:caret-down-bold"
-            width="0.98rem"
+            width="1.4rem"
             className={`sidebar-section-label__chevron${collapsed ? " sidebar-section-label__chevron--collapsed" : ""}`}
           />
         </button>
@@ -190,7 +190,7 @@ function FolderRow({
       title={title}
       onClick={onClick}
     >
-      <Icon name={iconName} width={21} className="sidebar-folder-icon" />
+      <Icon name={iconName} width={30} className="sidebar-folder-icon" />
       <span className="sidebar-folder-label">{label}</span>
       {badge && <span className="sidebar-badge">{badge}</span>}
       {/* The ⌘-number shortcut is no longer shown as a chip here: the numbers
@@ -253,7 +253,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
       <div className="sidebar-actions">
         <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
-          <Icon name="ph:note-pencil" width={22} aria-hidden />
+          <Icon name="ph:note-pencil" width={32} aria-hidden />
           <span>New chat</span>
         </button>
       </div>
@@ -307,7 +307,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           title="Dashboard — activity overview and daily reports"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:squares-four" width={20} className="sidebar-foot-icon" />
+            <Icon name="ph:squares-four" width={28} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
         </a>
@@ -322,7 +322,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             <span className="sidebar-foot-icon-cell" aria-hidden="true">
               <Icon
                 name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
-                width={20}
+                width={28}
                 className="sidebar-foot-icon"
               />
             </span>
@@ -342,7 +342,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           title="Settings"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:gear-six" width={20} className="sidebar-foot-icon" />
+            <Icon name="ph:gear-six" width={28} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Settings</span>
         </button>
